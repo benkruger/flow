@@ -1,6 +1,6 @@
 ---
 name: start
-description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrades gems, opens a PR, and configures the workspace. Usage: /ror:start <feature name words>"
+description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrades gems, opens a PR, creates .claude/ror-state.json, and configures the workspace. Usage: /ror:start <feature name words>"
 ---
 
 # ROR Start — Phase 1: Start
@@ -14,7 +14,7 @@ description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrad
 Arguments become the feature name. Words are joined with hyphens:
 - Branch: `app-payment-webhooks`
 - Worktree: `.worktrees/app-payment-webhooks`
-- PR title: `App payment webhooks`
+- PR title: `App Payment Webhooks`
 
 <HARD-GATE>
 Do NOT proceed past Step 1 if the feature name is missing. Ask the user: "What is the feature name? e.g. /ror:start app payment webhooks"
@@ -63,13 +63,45 @@ Establishes the branch remotely before any code changes.
 ```bash
 gh pr create \
   --title "<Feature Name Title Cased>" \
-  --body "## What\n\n<Feature name as a sentence.>\n\n## Status\n\n- [ ] Phase 1: Start\n- [ ] Phase 2: Research\n- [ ] Phase 3: Design\n- [ ] Phase 4: Plan\n- [ ] Phase 5: Implement\n- [ ] Phase 6: Test\n- [ ] Phase 7: Review\n- [ ] Phase 8: Ship\n- [ ] Phase 9: Reflect\n- [ ] Phase 10: Cleanup" \
+  --body "## What\n\n<Feature name as a sentence.>" \
   --base main
 ```
 
-The PR body is auto-generated from the feature name. The phase checklist tracks progress.
+Capture the PR URL from the output. Extract the PR number from the URL (the trailing integer).
 
-### Step 5 — Configure workspace permissions
+### Step 5 — Create the ROR state file
+
+Create `.claude/ror-state.json` at the project root (not inside the worktree). Use the current UTC timestamp for `started_at` and `session_started_at` on Phase 1.
+
+```json
+{
+  "feature": "<Feature Name Title Cased>",
+  "branch": "<feature-name>",
+  "worktree": ".worktrees/<feature-name>",
+  "pr_number": <pr_number>,
+  "pr_url": "<pr_url>",
+  "started_at": "<current_utc_timestamp>",
+  "current_phase": 1,
+  "phases": {
+    "1":  { "name": "Start",     "status": "in_progress", "started_at": "<current_utc_timestamp>", "completed_at": null, "session_started_at": "<current_utc_timestamp>", "cumulative_seconds": 0, "visit_count": 1 },
+    "2":  { "name": "Research",  "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },
+    "3":  { "name": "Design",    "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },
+    "4":  { "name": "Plan",      "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },
+    "5":  { "name": "Implement", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },
+    "6":  { "name": "Test",      "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },
+    "7":  { "name": "Review",    "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },
+    "8":  { "name": "Ship",      "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },
+    "9":  { "name": "Reflect",   "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },
+    "10": { "name": "Cleanup",   "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 }
+  }
+}
+```
+
+Then create a task for each phase using TaskCreate:
+- Phase 1 (Start): status `in_progress`
+- Phases 2–10: status `pending`
+
+### Step 6 — Configure workspace permissions
 
 Check if `.claude/settings.json` exists in the project root.
 
@@ -82,22 +114,26 @@ Check if `.claude/settings.json` exists in the project root.
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push)",
-      "Bash(git push -u *)"
+      "Bash(git push -u *)",
+      "Bash(git worktree *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr edit *)",
+      "Bash(python3 *)"
     ]
   }
 }
 ```
 
-**If it exists**, read it and merge in any missing entries from the allow list above. Do not remove or overwrite existing entries. Do not add duplicates.
+**If it exists**, read it and merge in any missing entries. Do not remove or overwrite existing entries. Do not add duplicates.
 
-### Step 6 — Baseline `bin/ci`
+### Step 7 — Baseline `bin/ci`
 
 Run `bin/ci` inside the worktree. This captures the health of the codebase before any changes.
 
 - If it **passes** — note it as the baseline and continue.
 - If it **fails** — report the failures clearly. These are pre-existing issues, not caused by your changes. Ask the user whether to proceed anyway or stop.
 
-### Step 7 — Upgrade gems
+### Step 8 — Upgrade gems
 
 ```bash
 bundle update
@@ -105,16 +141,14 @@ bundle update
 
 Upgrades all gems to their latest compatible versions inside the worktree.
 
-### Step 8 — Post-update `bin/ci`
+### Step 9 — Post-update `bin/ci`
 
 Run `bin/ci` again after the gem upgrade.
 
-- If it **passes** — continue to Step 10.
-- If it **fails** — continue to Step 9.
+- If it **passes** — continue to Step 11.
+- If it **fails** — continue to Step 10.
 
-### Step 9 — Fix breakage from gem upgrade
-
-Gem updates commonly cause two types of failures:
+### Step 10 — Fix breakage from gem upgrade
 
 **RuboCop violations** — run the auto-fixer first:
 ```bash
@@ -130,28 +164,31 @@ Then run `bin/ci` again. If violations remain that cannot be auto-fixed, read th
 Fix each failure, then run `bin/ci` again. Repeat until green.
 
 <HARD-GATE>
-Do NOT proceed to Step 10 until bin/ci is green. If you cannot fix the failures after three attempts, stop and report exactly what is failing and what you tried.
+Do NOT proceed to Step 11 until bin/ci is green. If you cannot fix the failures after three attempts, stop and report exactly what is failing and what you tried.
 </HARD-GATE>
 
-### Step 10 — Commit and push
+### Step 11 — Commit and push
 
-Use `/ror:commit` to review and commit the changes (Gemfile.lock + any gem-related fixes).
+Use `/ror:commit` to review and commit the changes (`Gemfile.lock` and any gem-related fixes).
 
-The commit message should be: `chore: bundle update`
+### Done — Update state and complete phase
 
-### Step 11 — Mark Phase 0 complete on the PR
+Update `.claude/ror-state.json`:
+1. Calculate `cumulative_seconds` for Phase 1: `current_time - session_started_at`
+2. Set Phase 1 `status` to `complete`
+3. Set Phase 1 `completed_at` to current UTC timestamp
+4. Set Phase 1 `session_started_at` to `null`
+5. Set `current_phase` to `2`
 
-Update the PR body to check off Phase 0:
+Update the Phase 1 task to `completed`.
 
-```bash
-gh pr edit --body "..."
-```
+Ask the user:
 
-Replace `- [ ] Phase 1: Start` with `- [x] Phase 1: Start` in the PR body. All other checkboxes remain unchanged.
+> "Phase 1: Start is complete. Ready to proceed to Phase 2: Research?"
+> - **Yes, proceed** — print the completion banner
+> - **No, stay here** — ask what still needs to be done
 
-### Done
-
-Print the completion banner:
+On approval, print:
 
 ```
 ============================================

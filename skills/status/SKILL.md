@@ -1,11 +1,11 @@
 ---
 name: status
-description: "Show current ROR phase, PR link, phase checklist, and what comes next. Use any time you want to know where you are in the workflow."
+description: "Show current ROR phase, PR link, phase checklist, and what comes next. Rebuilds the task list from .claude/ror-state.json. Use any time you want to know where you are in the workflow."
 ---
 
 # ROR Status
 
-Show where you are in the ROR workflow at any moment.
+Show where you are in the ROR workflow and rebuild the task list from persisted state.
 
 ## Announce
 
@@ -19,64 +19,74 @@ Print:
 
 ## Steps
 
-### Step 1 — Find the current PR
+### Step 1 — Read the state file
 
-```bash
-gh pr list --head $(git branch --show-current) --json number,title,url,body
+Read `.claude/ror-state.json` from the project root.
+
+If the file does not exist, report:
 ```
+No ROR feature in progress. Start one with /ror:start <feature name>.
+```
+Then stop.
 
-If no PR is found, report: "No open PR found for this branch. Has Phase 0 been run?"
+### Step 2 — Rebuild the task list
 
-### Step 2 — Parse the phase checklist
+For each phase in the state file, call TaskCreate with:
+- Subject: `Phase <number>: <name>`
+- Status based on the phase's `status` field:
+  - `complete` → mark task as completed immediately after creating
+  - `in_progress` → mark task as in_progress
+  - `pending` → leave as pending
 
-Read the PR body and extract the Status checklist. Identify:
-- Which phases are checked `[x]` — completed
-- Which phases are unchecked `[ ]` — remaining
-- The first unchecked phase — current phase
+This replaces any stale task list from a previous session.
 
-### Step 3 — Print status
-
-Print a clear status report:
+### Step 3 — Print status panel
 
 ```
 ============================================
   ROR — Current Status
 ============================================
 
-  Feature : <PR title>
-  Branch  : <current branch>
-  PR      : <PR URL>
+  Feature : <feature>
+  Branch  : <branch>
+  PR      : <pr_url>
 
   Phases
   ------
-  [x] Phase 1: Start
-  [ ] Phase 2: Research   <-- YOU ARE HERE
-  [ ] Phase 3: Design
-  [ ] Phase 4: Plan
-  [ ] Phase 5: Implement
-  [ ] Phase 6: Test
-  [ ] Phase 7: Review
-  [ ] Phase 8: Ship
-  [ ] Phase 9: Reflect
+  [x] Phase 1:  Start
+  [>] Phase 2:  Research   <-- YOU ARE HERE
+  [ ] Phase 3:  Design
+  [ ] Phase 4:  Plan
+  [ ] Phase 5:  Implement
+  [ ] Phase 6:  Test
+  [ ] Phase 7:  Review
+  [ ] Phase 8:  Ship
+  [ ] Phase 9:  Reflect
   [ ] Phase 10: Cleanup
 
-  Next: /ror:research  (Phase 2)
+  Time in current phase : <cumulative_seconds formatted as Xh Ym>
+  Times visited         : <visit_count>
+
+  Next: /ror:research
 
 ============================================
 ```
 
+Use `[x]` for complete, `[>]` for in_progress, `[ ]` for pending.
+
 ### Step 4 — If all phases complete
 
-If all phases are checked, print:
+If all phases show `complete`, print:
 
 ```
 ============================================
   ROR — All phases complete!
-  This feature is ready to merge.
+  Feature: <feature>
+  This feature is fully done.
 ============================================
 ```
 
 ## Rules
 
-- Never modify the PR or any files — this skill is read-only
-- If the PR body has no Status checklist, report that Phase 0 may not have completed correctly
+- Never modify the state file or any other files — this skill is read-only
+- Always rebuild the full task list, not just the current phase

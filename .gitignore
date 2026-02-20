@@ -4,3 +4,4 @@
 
 # Keep local/personal Claude settings out of the repo
 .claude/settings.local.json
+.claude/ror-state.json
