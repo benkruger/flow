@@ -336,3 +336,5 @@ Invoke `flow:status`, then use AskUserQuestion:
 - **Never use `update_column`** — always `update!`
 - **Never rebase** — always merge
 - **Always read full class hierarchy** before touching any model
+- **Never disable a RuboCop cop** — fix the code, not the cop. No `# rubocop:disable` without direct user approval. Stop and ask if you believe it is genuinely necessary.
+- **Never modify `.rubocop.yml`** — fix the code, not the configuration. Ask the user explicitly before touching this file.

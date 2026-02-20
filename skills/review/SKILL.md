@@ -145,6 +145,26 @@ of the following explicitly — do not skip any:
 - Tests have assertions — no empty test methods
 - No inline comments in tests
 
+**RuboCop:**
+- Scan the full diff for any `# rubocop:disable` comments introduced in this feature:
+
+```bash
+git diff origin/main...HEAD | grep "rubocop:disable"
+```
+
+If any are found, this is an automatic finding — flag every one. RuboCop
+cops must never be disabled without explicit user approval. Fix the code,
+not the cop.
+
+Also check for `.rubocop.yml` modifications:
+
+```bash
+git diff origin/main...HEAD -- .rubocop.yml
+```
+
+Any change to `.rubocop.yml` is an automatic finding. Revert it and fix
+the code instead.
+
 **Code clarity:**
 - Descriptive variable names — no `bu`, `data`, `values`
 - No `owner` as a variable name — use `parent` or something descriptive
@@ -259,3 +279,5 @@ Invoke `flow:status`, then use AskUserQuestion:
 - Never skip the design alignment check
 - Never skip the research risk coverage check
 - Read the full diff before starting — no partial reviews
+- Any `# rubocop:disable` comment in the diff is an automatic finding — remove it and fix the code
+- Any modification to `.rubocop.yml` in the diff is an automatic finding — revert it and fix the code
