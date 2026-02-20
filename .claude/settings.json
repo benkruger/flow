@@ -5,10 +5,14 @@
       "Bash(git commit *)",
       "Bash(git push)",
       "Bash(git push -u *)",
+      "Bash(git pull *)",
       "Bash(git worktree *)",
       "Bash(gh pr create *)",
       "Bash(gh pr edit *)",
       "Bash(python3 *)"
+    ],
+    "deny": [
+      "Bash(git rebase *)"
     ]
   }
 }

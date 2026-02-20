@@ -98,8 +98,20 @@ Question: "Approve this commit?"
 
 1. `git add -A`
 2. `git commit -m "<message from Step 2>"`
-3. `git push`
-4. Confirm success and show the commit SHA.
+3. `git pull origin <current-branch>` — pull before pushing to pick up any changes merged while you were working
+4. If the pull produced merge conflicts:
+   - Run `git status` to identify every conflicting file
+   - Read each conflicting file carefully — understand both sides:
+     - `<<<<<<<` (HEAD) = our changes
+     - `>>>>>>>` (incoming) = what was merged to main
+   - For each conflict, attempt to resolve it intelligently:
+     - If both sides add different things that don't logically conflict → keep both
+     - If one side removes something the other side modified → understand intent, apply the right resolution
+     - If the resolution is obvious from context → fix it silently, `git add <file>`
+   - Only escalate to the user if a conflict requires a domain or business decision you cannot make — show exactly that conflict and ask specifically what to do
+   - Once all conflicts are resolved: `git add -A`, then continue to push
+5. If pull was clean: `git push`
+6. Confirm success and show the commit SHA.
 
 ### Step 5 — Handle denial
 
@@ -112,4 +124,6 @@ Listen to the reason, acknowledge it clearly, and stop. Do not commit. The user 
 - Never commit without showing the diff first
 - Never skip the approval step
 - Never use `--no-verify`
+- Always pull before pushing — other sessions may have merged changes
+- **Never rebase — ever.** Always merge. `git rebase` is forbidden.
 - If `bin/ci` has not been run since the last code change, warn the user before asking for approval
