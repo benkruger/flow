@@ -61,7 +61,6 @@ Update `.claude/sdlc-states/<branch>.json` for Phase 2:
 - `visit_count` → increment by 1
 - `current_phase` → `2`
 
-Update the Phase 2 task to `in_progress`.
 
 ---
 
@@ -249,8 +248,6 @@ Update `.claude/sdlc-states/<branch>.json`:
 4. Set Phase 2 `session_started_at` to `null`
 5. Set `current_phase` to `3`
 
-Update the Phase 2 task to `completed`.
-Update the Phase 3 task to `pending` (it already is, but confirm).
 
 Print:
 

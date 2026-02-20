@@ -1,11 +1,12 @@
 ---
 name: status
-description: "Show current SDLC phase, PR link, phase checklist, and what comes next. Rebuilds the task list from .claude/sdlc-state.json. Use any time you want to know where you are in the workflow."
+description: "Show current SDLC phase, PR link, timing, and what comes next. Reads .claude/sdlc-states/<branch>.json. Use any time you want to know where you are in the workflow."
 ---
 
 # SDLC Status
 
-Show where you are in the SDLC workflow and rebuild the task list from persisted state.
+Show where you are in the SDLC workflow. Reads the state file and
+prints a status panel. Read-only — never modifies anything.
 
 ## Announce
 
@@ -21,26 +22,16 @@ Print:
 
 ### Step 1 — Read the state file
 
-Read `.claude/sdlc-state.json` from the project root.
+Find the project root and read `.claude/sdlc-states/<branch>.json`.
 
-If the file does not exist, report:
+If no state file exists for the current branch, report:
 ```
-No SDLC feature in progress. Start one with /sdlc:start <feature name>.
+No SDLC feature in progress on this branch.
+Start one with /sdlc:start <feature name>.
 ```
 Then stop.
 
-### Step 2 — Rebuild the task list
-
-For each phase in the state file, call TaskCreate with:
-- Subject: `Phase <number>: <name>`
-- Status based on the phase's `status` field:
-  - `complete` → mark task as completed immediately after creating
-  - `in_progress` → mark task as in_progress
-  - `pending` → leave as pending
-
-This replaces any stale task list from a previous session.
-
-### Step 3 — Print status panel
+### Step 2 — Print status panel
 
 ```
 ============================================
@@ -74,9 +65,7 @@ This replaces any stale task list from a previous session.
 
 Use `[x]` for complete, `[>]` for in_progress, `[ ]` for pending.
 
-### Step 4 — If all phases complete
-
-If all phases show `complete`, print:
+If all phases are complete, print:
 
 ```
 ============================================
@@ -88,5 +77,5 @@ If all phases show `complete`, print:
 
 ## Rules
 
-- Never modify the state file or any other files — this skill is read-only
-- Always rebuild the full task list, not just the current phase
+- Read-only — never modifies the state file or any other files
+- Never calls TaskCreate or TaskUpdate

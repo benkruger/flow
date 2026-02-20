@@ -1,6 +1,6 @@
 ---
 name: resume
-description: "Resume the current SDLC feature. Mid-session: re-asks the last phase transition question. New session: reads state file, rebuilds task list, shows status, then asks."
+description: "Resume the current SDLC feature. Mid-session: re-asks the last phase transition question. New session: reads state file, shows status, then asks."
 ---
 
 # SDLC Resume
@@ -13,8 +13,8 @@ or starting fresh. Choose the right path below.
 ## Path A — Mid-session (you already have context)
 
 If you are in an active session and already know the current phase and
-feature — **do not read the state file**. Simply re-ask the phase
-transition question that was most recently declined:
+feature — simply re-ask the phase transition question that was most
+recently declined:
 
 Use AskUserQuestion:
 
@@ -77,38 +77,11 @@ If no state file is found — report it and stop.
 
 Read `worktree` from the state file and cd there.
 
-### Step 3 — Rebuild the task list
+### Step 3 — Show status panel
 
-For each phase in the state file, call TaskCreate:
-- `complete` phases → mark completed
-- `in_progress` phase → mark in_progress
-- `pending` phases → leave as pending
+Invoke the `sdlc:status` skill to display current state.
 
-### Step 4 — Show status panel
-
-```
-============================================
-  SDLC — Resuming
-============================================
-
-  Feature : <feature>
-  Branch  : <branch>
-  PR      : <pr_url>
-
-  Phases
-  ------
-  [x] Phase 1:  Start
-  [>] Phase 2:  Research   <-- YOU ARE HERE
-  [ ] Phase 3:  Design
-  ...
-
-  Time in current phase : <cumulative formatted>
-  Times visited         : <visit_count>
-
-============================================
-```
-
-### Step 5 — Ask the transition question
+### Step 4 — Ask the transition question
 
 Use AskUserQuestion:
 

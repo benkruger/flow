@@ -121,10 +121,6 @@ file at `.claude/sdlc-states/<branch-name>.json` with the current UTC timestamp:
 }
 ```
 
-Then create a task for each phase using TaskCreate:
-- Phase 1 (Start): `in_progress`
-- Phases 2–10: `pending`
-
 ### Step 7 — Configure workspace permissions
 
 Check if `.claude/settings.json` exists in the project root.

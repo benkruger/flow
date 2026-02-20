@@ -93,8 +93,6 @@ session will start clean.
 
 ### Done — Mark all phases complete and print banner
 
-Update all phase tasks to `completed`.
-
 Print:
 
 ```
