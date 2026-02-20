@@ -40,11 +40,10 @@ Shows where you are in the FLOW workflow at any moment. Reads `.claude/flow-stat
   [ ] Phase 3:  Design
   [ ] Phase 4:  Plan
   [ ] Phase 5:  Implement
-  [ ] Phase 6:  Test
   [ ] Phase 7:  Review
   [ ] Phase 8:  Ship
   [ ] Phase 9:  Reflect
-  [ ] Phase 10: Cleanup
+  [ ] Phase 9: Cleanup
 
   Time in current phase : 32m
   Times visited         : 1

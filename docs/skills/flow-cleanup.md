@@ -6,12 +6,12 @@ parent: Skills
 
 # /flow:cleanup
 
-**Phase:** 10 — Cleanup
+**Phase:** 9 — Cleanup
 
 **Usage:** `/flow:cleanup`
 
 The final phase. Removes the git worktree and deletes the state file.
-Requires Phase 9: Reflect to be complete before it will run.
+Requires Phase 8: Reflect to be complete before it will run.
 
 ---
 
@@ -37,7 +37,7 @@ from the FLOW workflow.
 
 ## Gates
 
-- Requires Phase 9: Reflect to be complete
+- Requires Phase 8: Reflect to be complete
 - Requires explicit user confirmation before removing the worktree
 - Must run from the project root — never from inside the worktree
 - Worktree removal is irreversible

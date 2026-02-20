@@ -49,11 +49,10 @@ Then stop.
   [ ] Phase 3:  Design
   [ ] Phase 4:  Plan
   [ ] Phase 5:  Implement
-  [ ] Phase 6:  Test
   [ ] Phase 7:  Review
   [ ] Phase 8:  Ship
   [ ] Phase 9:  Reflect
-  [ ] Phase 10: Cleanup
+  [ ] Phase 9: Cleanup
 
   Time in current phase : <cumulative_seconds formatted as Xh Ym>
   Times visited         : <visit_count>

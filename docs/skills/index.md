@@ -22,11 +22,10 @@ These skills correspond directly to a workflow phase. Each one starts and ends w
 | [`/flow:design`](flow-design.md) | 3 — Design | Propose 2-3 alternatives, get approval before any code |
 | [`/flow:plan`](flow-plan.md) | 4 — Plan | Break design into ordered TDD tasks, section by section |
 | `/flow:implement` | 5 — Implement | *(coming soon)* |
-| `/flow:test` | 6 — Test | *(coming soon)* |
-| `/flow:review` | 7 — Review | *(coming soon)* |
-| `/flow:ship` | 8 — Ship | *(coming soon)* |
-| `/flow:reflect` | 9 — Reflect | *(coming soon)* |
-| [`/flow:cleanup`](flow-cleanup.md) | 10 — Cleanup | Remove worktree and delete state file — final phase |
+| `/flow:review` | 6 — Review | *(coming soon)* |
+| `/flow:ship` | 7 — Ship | *(coming soon)* |
+| `/flow:reflect` | 8 — Reflect | *(coming soon)* |
+| [`/flow:cleanup`](flow-cleanup.md) | 9 — Cleanup | Remove worktree and delete state file — final phase |
 
 ---
 

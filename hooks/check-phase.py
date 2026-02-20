@@ -22,16 +22,14 @@ from pathlib import Path
 
 PHASES = {
     "1": "Start",     "2": "Research",  "3": "Design",
-    "4": "Plan",      "5": "Implement", "6": "Test",
-    "7": "Review",    "8": "Ship",      "9": "Reflect",
-    "10": "Cleanup"
+    "4": "Plan",      "5": "Implement", "6": "Review",
+    "7": "Ship",      "8": "Reflect",   "9": "Cleanup"
 }
 
 COMMANDS = {
     "1": "/flow:start",     "2": "/flow:research",  "3": "/flow:design",
-    "4": "/flow:plan",      "5": "/flow:implement",  "6": "/flow:test",
-    "7": "/flow:review",    "8": "/flow:ship",       "9": "/flow:reflect",
-    "10": "/flow:cleanup"
+    "4": "/flow:plan",      "5": "/flow:implement",  "6": "/flow:review",
+    "7": "/flow:ship",      "8": "/flow:reflect",    "9": "/flow:cleanup"
 }
 
 
