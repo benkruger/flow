@@ -1,0 +1,12 @@
+{
+  "name": "ror",
+  "description": "Opinionated Ruby on Rails development lifecycle for Claude Code",
+  "version": "0.1.0",
+  "author": {
+    "name": "Ben Kruger"
+  },
+  "homepage": "https://benkruger.github.io/ruby-on-rails-claude-ai-process",
+  "repository": "https://github.com/benkruger/ruby-on-rails-claude-ai-process",
+  "license": "MIT",
+  "keywords": ["ruby", "rails", "postgresql", "redis", "tdd", "workflow"]
+}

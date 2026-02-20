@@ -1,0 +1,7 @@
+title: ROR Process
+description: An opinionated Ruby on Rails development lifecycle for Claude Code
+theme: just-the-docs
+url: https://benkruger.github.io/ruby-on-rails-claude-ai-process
+
+nav_order_phases:
+  - Phase 0: Prepare
