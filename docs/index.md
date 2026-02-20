@@ -27,7 +27,7 @@ An opinionated Ruby on Rails development lifecycle for Claude Code. Every featur
 | 7 | Review | `/sdlc:review` | *(coming soon)* |
 | 8 | Ship | `/sdlc:ship` | *(coming soon)* |
 | 9 | Reflect | `/sdlc:reflect` | *(coming soon)* |
-| 10 | Cleanup | `/sdlc:cleanup` | *(coming soon)* |
+| 10 | [Cleanup](phases/phase-10-cleanup.md) | `/sdlc:cleanup` | Remove worktree and delete state file |
 
 ## Installation
 

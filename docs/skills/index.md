@@ -26,7 +26,7 @@ These skills correspond directly to a workflow phase. Each one starts and ends w
 | `/sdlc:review` | 7 — Review | *(coming soon)* |
 | `/sdlc:ship` | 8 — Ship | *(coming soon)* |
 | `/sdlc:reflect` | 9 — Reflect | *(coming soon)* |
-| `/sdlc:cleanup` | 10 — Cleanup | *(coming soon)* |
+| [`/sdlc:cleanup`](sdlc-cleanup.md) | 10 — Cleanup | Remove worktree and delete state file — final phase |
 
 ---
 
