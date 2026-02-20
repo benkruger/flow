@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# ROR Process — SessionStart hook
+# SDLC Process — SessionStart hook
 #
-# Scans .claude/ror-states/ for in-progress features.
+# Scans .claude/sdlc-states/ for in-progress features.
 # 0 files  → exits silently
 # 1 file   → injects context to cd into worktree and resume
 # 2+ files → injects context to ask user which feature to resume
 
 set -euo pipefail
 
-STATE_DIR=".claude/ror-states"
+STATE_DIR=".claude/sdlc-states"
 
 # No state directory or no state files — exit silently
 if [ ! -d "$STATE_DIR" ]; then
@@ -24,7 +24,7 @@ CONTEXT=$(python3 - << 'PYTHON'
 import json, sys
 from pathlib import Path
 
-state_dir = Path(".claude/ror-states")
+state_dir = Path(".claude/sdlc-states")
 files = sorted(state_dir.glob("*.json"))
 
 if not files:
@@ -61,8 +61,8 @@ if len(states) == 1:
     feature = s.get("feature", "")
     pr_url = s.get("pr_url", "")
 
-    print(f"""<ror-session-resume>
-ROR feature in progress: "{feature}"
+    print(f"""<sdlc-session-resume>
+SDLC feature in progress: "{feature}"
 Current phase: {cp} — {phase_name}
 PR: {pr_url}
 
@@ -70,15 +70,15 @@ Your FIRST actions before responding to anything else:
 1. Run: cd {worktree}
 2. Rebuild task list using TaskCreate for each phase — completed phases
    as completed, phase {cp} ({phase_name}) as in_progress, rest as pending
-3. Print the ROR status banner showing where we are
+3. Print the SDLC status banner showing where we are
 
 Do this before anything else.
-</ror-session-resume>""")
+</sdlc-session-resume>""")
 
 else:
     lines = [
-        "<ror-session-resume>",
-        "Multiple ROR features are in progress.",
+        "<sdlc-session-resume>",
+        "Multiple SDLC features are in progress.",
         "",
         "Your FIRST action before responding to anything else:",
         "Use AskUserQuestion to ask: \"Which feature would you like to work on?\"",
@@ -95,8 +95,8 @@ else:
         "Once selected:",
         "1. cd into that feature's worktree",
         "2. Rebuild task list",
-        "3. Print ROR status banner",
-        "</ror-session-resume>"
+        "3. Print SDLC status banner",
+        "</sdlc-session-resume>"
     ]
     print("\n".join(lines))
 PYTHON

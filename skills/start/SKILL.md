@@ -1,14 +1,14 @@
 ---
 name: start
-description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrades gems, opens a PR, creates .claude/ror-states/<branch>.json, and configures the workspace. Usage: /ror:start <feature name words>"
+description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrades gems, opens a PR, creates .claude/sdlc-states/<branch>.json, and configures the workspace. Usage: /sdlc:start <feature name words>"
 ---
 
-# ROR Start — Phase 1: Start
+# SDLC Start — Phase 1: Start
 
 ## Usage
 
 ```
-/ror:start app payment webhooks
+/sdlc:start app payment webhooks
 ```
 
 Arguments become the feature name. Words are joined with hyphens:
@@ -18,7 +18,7 @@ Arguments become the feature name. Words are joined with hyphens:
 
 <HARD-GATE>
 Do NOT proceed if the feature name is missing. Ask the user:
-"What is the feature name? e.g. /ror:start app payment webhooks"
+"What is the feature name? e.g. /sdlc:start app payment webhooks"
 </HARD-GATE>
 
 ## Announce
@@ -27,7 +27,7 @@ Print:
 
 ```
 ============================================
-  ROR — Phase 1: Start — STARTING
+  SDLC — Phase 1: Start — STARTING
 ============================================
 ```
 
@@ -42,12 +42,12 @@ python3 << 'PYCHECK'
 import json, sys
 from pathlib import Path
 
-state_dir = Path(".claude/ror-states")
+state_dir = Path(".claude/sdlc-states")
 if state_dir.exists():
     files = list(state_dir.glob("*.json"))
     if files:
         names = [f.stem for f in files]
-        print(f"WARNING: Active ROR feature(s) found: {', '.join(names)}")
+        print(f"WARNING: Active SDLC feature(s) found: {', '.join(names)}")
         sys.exit(1)
 sys.exit(0)
 PYCHECK
@@ -55,7 +55,7 @@ PYCHECK
 
 If this exits non-zero, use AskUserQuestion:
 
-> "An active ROR feature already exists. What would you like to do?"
+> "An active SDLC feature already exists. What would you like to do?"
 > - **Start a new feature anyway** — proceed
 > - **Cancel** — stop here
 
@@ -92,10 +92,10 @@ gh pr create \
 
 Capture the PR URL from the output. Extract the PR number from the URL.
 
-### Step 6 — Create the ROR state file
+### Step 6 — Create the SDLC state file
 
-Create `.claude/ror-states/` directory if it does not exist. Write the state
-file at `.claude/ror-states/<branch-name>.json` with the current UTC timestamp:
+Create `.claude/sdlc-states/` directory if it does not exist. Write the state
+file at `.claude/sdlc-states/<branch-name>.json` with the current UTC timestamp:
 
 ```json
 {
@@ -190,11 +190,11 @@ three attempts, stop and report exactly what is failing and what was tried.
 
 ### Step 12 — Commit and push
 
-Use `/ror:commit` to review and commit the changes (`Gemfile.lock` + any gem fixes).
+Use `/sdlc:commit` to review and commit the changes (`Gemfile.lock` + any gem fixes).
 
 ### Done — Update state and complete phase
 
-Update `.claude/ror-states/<branch>.json`:
+Update `.claude/sdlc-states/<branch>.json`:
 1. `cumulative_seconds` for Phase 1: `current_time - session_started_at`
 2. Phase 1 `status` → `complete`
 3. Phase 1 `completed_at` → current UTC timestamp
@@ -213,8 +213,8 @@ On approval, print:
 
 ```
 ============================================
-  ROR — Phase 1: Start — COMPLETE
-  Next: Phase 2: Research  (/ror:research)
+  SDLC — Phase 1: Start — COMPLETE
+  Next: Phase 2: Research  (/sdlc:research)
 ============================================
 ```
 

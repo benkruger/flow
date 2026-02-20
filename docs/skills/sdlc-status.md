@@ -1,16 +1,16 @@
 ---
-title: /ror:status
+title: /sdlc:status
 nav_order: 3
 parent: Skills
 ---
 
-# /ror:status
+# /sdlc:status
 
 **Phase:** Any
 
-**Usage:** `/ror:status`
+**Usage:** `/sdlc:status`
 
-Shows where you are in the ROR workflow at any moment. Reads the PR checklist and prints a clear picture of what has been completed and what comes next.
+Shows where you are in the SDLC workflow at any moment. Reads the PR checklist and prints a clear picture of what has been completed and what comes next.
 
 ---
 
@@ -27,7 +27,7 @@ Shows where you are in the ROR workflow at any moment. Reads the PR checklist an
 
 ```
 ============================================
-  ROR — Current Status
+  SDLC — Current Status
 ============================================
 
   Feature : App Payment Webhooks
@@ -45,7 +45,7 @@ Shows where you are in the ROR workflow at any moment. Reads the PR checklist an
   [ ] Phase 6: Review
   [ ] Phase 7: Ship
 
-  Next: /ror:research
+  Next: /sdlc:research
 
 ============================================
 ```

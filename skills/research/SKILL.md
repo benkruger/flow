@@ -1,9 +1,9 @@
 ---
 name: research
-description: "Phase 2: Research — explore the codebase before any design or implementation. Reads affected files, discovers risks, asks clarifying questions, and documents findings in ror-state.json."
+description: "Phase 2: Research — explore the codebase before any design or implementation. Reads affected files, discovers risks, asks clarifying questions, and documents findings in sdlc-state.json."
 ---
 
-# ROR Research — Phase 2: Research
+# SDLC Research — Phase 2: Research
 
 <HARD-GATE>
 Run this phase entry check as your very first action. If it exits
@@ -27,13 +27,13 @@ branch = subprocess.run(['git', 'branch', '--show-current'],
 state_file = project_root() / '.claude' / 'ror-states' / f'{branch}.json'
 
 if not state_file.exists():
-    print('BLOCKED: No ROR feature in progress. Run /ror:start first.')
+    print('BLOCKED: No SDLC feature in progress. Run /sdlc:start first.')
     sys.exit(1)
 
 state = json.loads(state_file.read_text())
 prev = state.get('phases', {}).get('1', {})
 if prev.get('status') != 'complete':
-    print('BLOCKED: Phase 1: Start must be complete. Run /ror:start first.')
+    print('BLOCKED: Phase 1: Start must be complete. Run /sdlc:start first.')
     sys.exit(1)
 PYCHECK
 ```
@@ -45,7 +45,7 @@ Print:
 
 ```
 ============================================
-  ROR — Phase 2: Research — STARTING
+  SDLC — Phase 2: Research — STARTING
 ============================================
 ```
 
@@ -54,7 +54,7 @@ Print:
 Read the state file. Get the worktree path from `state["worktree"]`.
 Run `cd <worktree>` immediately so all subsequent commands run there.
 
-Update `.claude/ror-states/<branch>.json` for Phase 2:
+Update `.claude/sdlc-states/<branch>.json` for Phase 2:
 - `status` → `in_progress`
 - `started_at` → current UTC timestamp (only if currently null — never overwrite)
 - `session_started_at` → current UTC timestamp
@@ -67,11 +67,11 @@ Update the Phase 2 task to `in_progress`.
 
 ## Step 1 — Read the feature context
 
-Read `.claude/ror-states/<branch>.json` to understand:
+Read `.claude/sdlc-states/<branch>.json` to understand:
 - The feature name and description
 - Whether this is a return visit (check `visit_count` and any existing `research` data)
 
-If returning to Research, read the previous findings in `ror-state.json["research"]` and note what was already discovered. Do not discard prior findings — extend them.
+If returning to Research, read the previous findings in `sdlc-state.json["research"]` and note what was already discovered. Do not discard prior findings — extend them.
 
 ---
 
@@ -139,7 +139,7 @@ For each batch, use a single `AskUserQuestion` call with up to 4 questions. Each
 
 If answers from the first batch reveal new questions, present a second batch.
 
-Record every question and answer in `ror-state.json["research"]["clarifications"]`:
+Record every question and answer in `sdlc-state.json["research"]["clarifications"]`:
 ```json
 [
   { "question": "What happens to existing webhooks when...", "answer": "They should be..." }
@@ -150,7 +150,7 @@ Record every question and answer in `ror-state.json["research"]["clarifications"
 
 ## Step 5 — Document findings
 
-Write the full research findings into `ror-state.json["research"]`:
+Write the full research findings into `sdlc-state.json["research"]`:
 
 ```json
 {
@@ -186,7 +186,7 @@ Show the user a clean summary:
 
 ```
 ============================================
-  ROR — Phase 2: Research — FINDINGS
+  SDLC — Phase 2: Research — FINDINGS
 ============================================
 
   Affected Files
@@ -227,7 +227,7 @@ If "No, keep researching" — ask what area still needs investigation and loop b
 
 ## Done — Update state and complete phase
 
-Update `.claude/ror-states/<branch>.json`:
+Update `.claude/sdlc-states/<branch>.json`:
 1. Calculate `cumulative_seconds`: `current_time - session_started_at` + existing `cumulative_seconds`
 2. Set Phase 2 `status` to `complete`
 3. Set Phase 2 `completed_at` to current UTC timestamp
@@ -241,8 +241,8 @@ Print:
 
 ```
 ============================================
-  ROR — Phase 2: Research — COMPLETE
-  Next: Phase 3: Design  (/ror:design)
+  SDLC — Phase 2: Research — COMPLETE
+  Next: Phase 3: Design  (/sdlc:design)
 ============================================
 ```
 

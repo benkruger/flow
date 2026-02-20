@@ -1,26 +1,26 @@
 ---
-title: /ror:research
+title: /sdlc:research
 nav_order: 4
 parent: Skills
 ---
 
-# /ror:research
+# /sdlc:research
 
 **Phase:** 2 — Research
 
-**Usage:** `/ror:research`
+**Usage:** `/sdlc:research`
 
-Explores the codebase before any design or implementation begins. Reads all affected code, discovers risks specific to Rails conventions, asks clarifying questions via tabbed UI, and documents findings in `.claude/ror-state.json`.
+Explores the codebase before any design or implementation begins. Reads all affected code, discovers risks specific to Rails conventions, asks clarifying questions via tabbed UI, and documents findings in `.claude/sdlc-state.json`.
 
 ---
 
 ## What It Does
 
-1. Reads feature context from `.claude/ror-state.json`
+1. Reads feature context from `.claude/sdlc-state.json`
 2. Explores all affected models (full class hierarchy), controllers, workers, routes, and schema
 3. Formulates clarifying questions based on what was found
 4. Presents questions in batches of up to 4 using the tabbed `AskUserQuestion` UI — navigate freely with ← → arrows
-5. Documents all findings into `ror-state.json["research"]`
+5. Documents all findings into `sdlc-state.json["research"]`
 6. Presents a clean findings summary
 7. Gates on user approval before proceeding to Design
 
@@ -43,7 +43,7 @@ Every Research run checks for:
 
 ## Findings Stored In State
 
-Research writes to `ror-state.json["research"]`:
+Research writes to `sdlc-state.json["research"]`:
 
 - `clarifications` — every Q&A pair from the session
 - `affected_files` — all files that will need to change
@@ -66,4 +66,4 @@ If Research is revisited, prior findings are extended — never discarded.
 
 ## See Also
 
-- [ROR State Schema](../reference/ror-state-schema.md)
+- [SDLC State Schema](../reference/sdlc-state-schema.md)

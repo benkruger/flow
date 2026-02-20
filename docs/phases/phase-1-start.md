@@ -5,9 +5,9 @@ nav_order: 2
 
 # Phase 1: Start
 
-**Command:** `/ror:start <feature name words>`
+**Command:** `/sdlc:start <feature name words>`
 
-**Example:** `/ror:start app payment webhooks`
+**Example:** `/sdlc:start app payment webhooks`
 
 This is always the first phase, for every feature without exception. It establishes an isolated workspace, verifies the health of the codebase, upgrades all dependencies, configures workspace permissions, and opens the PR before any feature work begins.
 
@@ -130,7 +130,7 @@ Repeat until `bin/ci` is green. If not fixed after three attempts, stop and repo
 
 ### 10. Commit and push
 
-Use `/ror:commit` to review and commit the changes (`Gemfile.lock` and any gem-related fixes), then mark Phase 0 complete on the PR.
+Use `/sdlc:commit` to review and commit the changes (`Gemfile.lock` and any gem-related fixes), then mark Phase 0 complete on the PR.
 
 ---
 
@@ -149,4 +149,4 @@ By the end of Phase 0:
 
 ## What Comes Next
 
-Phase 1: Research (`/ror:research`) — read all affected code before writing any.
+Phase 1: Research (`/sdlc:research`) — read all affected code before writing any.

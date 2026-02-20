@@ -3,7 +3,7 @@ title: Home
 nav_order: 1
 ---
 
-# ROR Process
+# SDLC Process
 
 An opinionated Ruby on Rails development lifecycle for Claude Code. Every feature — simple or complex — follows the same phases in the same order. No shortcuts.
 
@@ -18,30 +18,30 @@ An opinionated Ruby on Rails development lifecycle for Claude Code. Every featur
 
 | Phase | Name | Command | Purpose |
 |-------|------|---------|---------|
-| 1 | [Start](phases/phase-1-start.md) | `/ror:start` | Set up the worktree, update gems, establish the PR |
-| 2 | [Research](phases/phase-2-research.md) | `/ror:research` | Explore codebase, ask clarifying questions, document findings |
-| 3 | Design | `/ror:design` | *(coming soon)* |
-| 4 | Plan | `/ror:plan` | *(coming soon)* |
-| 5 | Implement | `/ror:implement` | *(coming soon)* |
-| 6 | Test | `/ror:test` | *(coming soon)* |
-| 7 | Review | `/ror:review` | *(coming soon)* |
-| 8 | Ship | `/ror:ship` | *(coming soon)* |
-| 9 | Reflect | `/ror:reflect` | *(coming soon)* |
-| 10 | Cleanup | `/ror:cleanup` | *(coming soon)* |
+| 1 | [Start](phases/phase-1-start.md) | `/sdlc:start` | Set up the worktree, update gems, establish the PR |
+| 2 | [Research](phases/phase-2-research.md) | `/sdlc:research` | Explore codebase, ask clarifying questions, document findings |
+| 3 | Design | `/sdlc:design` | *(coming soon)* |
+| 4 | Plan | `/sdlc:plan` | *(coming soon)* |
+| 5 | Implement | `/sdlc:implement` | *(coming soon)* |
+| 6 | Test | `/sdlc:test` | *(coming soon)* |
+| 7 | Review | `/sdlc:review` | *(coming soon)* |
+| 8 | Ship | `/sdlc:ship` | *(coming soon)* |
+| 9 | Reflect | `/sdlc:reflect` | *(coming soon)* |
+| 10 | Cleanup | `/sdlc:cleanup` | *(coming soon)* |
 
 ## Installation
 
 ```
 /plugin marketplace add benkruger/ruby-on-rails-claude-ai-process
-/plugin install ror@ruby-on-rails-claude-ai-process
+/plugin install sdlc@ruby-on-rails-claude-ai-process
 ```
 
 ## Commands
 
-All commands are namespaced under `ror:`. See the [Skills reference](skills/) for full documentation on each.
+All commands are namespaced under `sdlc:`. See the [Skills reference](skills/) for full documentation on each.
 
 | Command | Phase | Description |
 |---------|-------|-------------|
-| `/ror:start <name>` | 0 | Begin a new feature — sets up worktree, upgrades gems, opens PR |
-| `/ror:status` | any | Show current phase, PR link, and what comes next |
-| `/ror:commit` | any | Review diff, approve, and commit + push |
+| `/sdlc:start <name>` | 0 | Begin a new feature — sets up worktree, upgrades gems, opens PR |
+| `/sdlc:status` | any | Show current phase, PR link, and what comes next |
+| `/sdlc:commit` | any | Review diff, approve, and commit + push |

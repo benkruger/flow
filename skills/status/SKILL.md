@@ -1,11 +1,11 @@
 ---
 name: status
-description: "Show current ROR phase, PR link, phase checklist, and what comes next. Rebuilds the task list from .claude/ror-state.json. Use any time you want to know where you are in the workflow."
+description: "Show current SDLC phase, PR link, phase checklist, and what comes next. Rebuilds the task list from .claude/sdlc-state.json. Use any time you want to know where you are in the workflow."
 ---
 
-# ROR Status
+# SDLC Status
 
-Show where you are in the ROR workflow and rebuild the task list from persisted state.
+Show where you are in the SDLC workflow and rebuild the task list from persisted state.
 
 ## Announce
 
@@ -13,7 +13,7 @@ Print:
 
 ```
 ============================================
-  ROR — ror:status — STARTING
+  SDLC — sdlc:status — STARTING
 ============================================
 ```
 
@@ -21,11 +21,11 @@ Print:
 
 ### Step 1 — Read the state file
 
-Read `.claude/ror-state.json` from the project root.
+Read `.claude/sdlc-state.json` from the project root.
 
 If the file does not exist, report:
 ```
-No ROR feature in progress. Start one with /ror:start <feature name>.
+No SDLC feature in progress. Start one with /sdlc:start <feature name>.
 ```
 Then stop.
 
@@ -44,7 +44,7 @@ This replaces any stale task list from a previous session.
 
 ```
 ============================================
-  ROR — Current Status
+  SDLC — Current Status
 ============================================
 
   Feature : <feature>
@@ -67,7 +67,7 @@ This replaces any stale task list from a previous session.
   Time in current phase : <cumulative_seconds formatted as Xh Ym>
   Times visited         : <visit_count>
 
-  Next: /ror:research
+  Next: /sdlc:research
 
 ============================================
 ```
@@ -80,7 +80,7 @@ If all phases show `complete`, print:
 
 ```
 ============================================
-  ROR — All phases complete!
+  SDLC — All phases complete!
   Feature: <feature>
   This feature is fully done.
 ============================================

@@ -1,16 +1,16 @@
 ---
-title: /ror:commit
+title: /sdlc:commit
 nav_order: 2
 parent: Skills
 ---
 
-# /ror:commit
+# /sdlc:commit
 
 **Phase:** Any
 
-**Usage:** `/ror:commit`
+**Usage:** `/sdlc:commit`
 
-Reviews all pending changes before committing. You see the full diff and proposed commit message, then approve or deny before anything is pushed. This is the only way commits are made in the ROR workflow.
+Reviews all pending changes before committing. You see the full diff and proposed commit message, then approve or deny before anything is pushed. This is the only way commits are made in the SDLC workflow.
 
 ---
 

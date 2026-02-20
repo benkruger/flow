@@ -5,7 +5,7 @@ nav_order: 3
 
 # Phase 2: Research
 
-**Command:** `/ror:research`
+**Command:** `/sdlc:research`
 
 Research answers one question: *what exists?* Not what we will build — that is Design. Not how we will build it — that is Plan. Just the current state of the codebase as it relates to this feature.
 
@@ -28,7 +28,7 @@ Your `CLAUDE.md` knows these patterns at a project level. Research applies them 
 ## Steps
 
 ### 1. Read feature context
-Read `.claude/ror-state.json` for feature name, description, and any prior research findings.
+Read `.claude/sdlc-state.json` for feature name, description, and any prior research findings.
 
 ### 2. Explore the codebase
 Read all affected models (full class hierarchy), controllers, workers, routes, and schema. Check git history for anything non-obvious.
@@ -40,7 +40,7 @@ Based on exploration, identify everything genuinely ambiguous about the feature.
 Present questions in batches of up to 4 using the tabbed Q&A UI. Navigate between questions with ← → arrows. Record every answer.
 
 ### 5. Document findings
-Write all findings into `ror-state.json["research"]` — affected files, risks, clarifications, open questions, and a plain English summary.
+Write all findings into `sdlc-state.json["research"]` — affected files, risks, clarifications, open questions, and a plain English summary.
 
 ### 6. Present and gate
 Show findings summary. Require user approval before proceeding to Design.
@@ -62,11 +62,11 @@ By the end of Phase 2:
 - A complete list of affected files
 - Rails-specific risks identified and documented
 - All ambiguities resolved via Q&A
-- Findings persisted to `.claude/ror-state.json` for use in Design and Reflect
+- Findings persisted to `.claude/sdlc-state.json` for use in Design and Reflect
 - A known-good understanding of what exists before anything changes
 
 ---
 
 ## What Comes Next
 
-Phase 3: Design (`/ror:design`) — propose 2-3 approaches and get approval before writing a line of code.
+Phase 3: Design (`/sdlc:design`) — propose 2-3 approaches and get approval before writing a line of code.

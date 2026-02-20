@@ -1,9 +1,9 @@
 ---
 name: commit
-description: "Review the full diff, approve or deny, then git add + commit + push. Use at every commit checkpoint in the ROR workflow."
+description: "Review the full diff, approve or deny, then git add + commit + push. Use at every commit checkpoint in the SDLC workflow."
 ---
 
-# ROR Commit
+# SDLC Commit
 
 Review all pending changes as a diff before committing. You must get explicit approval before touching git.
 
@@ -13,7 +13,7 @@ At the very start, print:
 
 ```
 ============================================
-  ROR — ror:commit — STARTING
+  SDLC — sdlc:commit — STARTING
 ============================================
 ```
 
@@ -21,7 +21,7 @@ On completion (whether approved or denied), print:
 
 ```
 ============================================
-  ROR — ror:commit — COMPLETE
+  SDLC — sdlc:commit — COMPLETE
 ============================================
 ```
 
@@ -105,7 +105,7 @@ Question: "Approve this commit?"
 
 Ask: **What needs to be addressed before committing?**
 
-Listen to the reason, acknowledge it clearly, and stop. Do not commit. The user will make fixes and invoke `/ror:commit` again when ready.
+Listen to the reason, acknowledge it clearly, and stop. Do not commit. The user will make fixes and invoke `/sdlc:commit` again when ready.
 
 ## Rules
 
