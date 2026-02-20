@@ -102,6 +102,27 @@ Each phase entry has identical fields regardless of status.
 
 ---
 
+## Design Object
+
+Added to the state file when Phase 3: Design completes.
+
+```json
+"design": {
+  "feature_description": "User's own words describing what they're building",
+  "chosen_approach": "Approach title",
+  "rationale": "Why this approach was chosen over the alternatives",
+  "schema_changes": ["Add payments table with stripe_id column"],
+  "model_changes": ["Payment::Base / Payment::Create split, belongs_to :account"],
+  "controller_changes": ["New POST /api/webhooks/payment endpoint"],
+  "worker_changes": ["PaymentWebhookWorker on critical queue"],
+  "route_changes": ["api.rb: post 'webhooks/payment'"],
+  "risks": ["before_save on Payment::Base sets processed_at from Current"],
+  "approved_at": "2026-02-20T11:00:00Z"
+}
+```
+
+---
+
 ## Research Object
 
 Added to the state file when Phase 2: Research completes. Extended if Research is revisited.

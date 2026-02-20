@@ -64,7 +64,33 @@ Update `.claude/flow-states/<branch>.json` for Phase 2:
 
 ---
 
-## Step 1 — Read the feature context
+## Step 1 — What are we researching?
+
+Before reading any code, ask the user what to focus on.
+
+Use AskUserQuestion with two questions:
+
+**Question 1:** "What are we researching?"
+- New feature
+- Change to existing feature
+- Bug investigation
+- Refactor / restructure
+
+**Question 2:** "Describe what you're researching. What should we focus on?"
+- The full feature area — read broadly
+- Specific models or controllers — I'll describe which
+- A specific behaviour or bug — I'll describe it
+- Background workers or async flows
+
+The user's answers direct the entire exploration. Store the description
+in `state["research"]["scope"]` in the state file.
+
+If this is a return visit (`visit_count` > 1), show what was previously
+found and ask: "What gaps should we fill this time?"
+
+---
+
+## Step 2 — Read the feature context
 
 Read `.claude/flow-states/<branch>.json` to understand:
 - The feature name and description
