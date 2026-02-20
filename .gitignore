@@ -2,6 +2,9 @@
 !.claude/
 !.claude/settings.json
 
+# Un-ignore CLAUDE.md — it's part of the plugin
+!CLAUDE.md
+
 # Keep local/personal Claude settings out of the repo
 .claude/settings.local.json
 .claude/flow-states/
