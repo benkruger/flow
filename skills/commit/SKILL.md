@@ -29,14 +29,27 @@ On completion (whether approved or denied), print:
 
 ### Step 1 — Show the diff
 
-Run these as two separate commands:
+Run `git status` and `git diff HEAD` as two separate commands. Once both complete, render the output directly in your response — do not ask the user to expand tool output:
 
-1. `git status` — show what files have changed
-2. `git diff HEAD` — show the full diff
+**Format the status as:**
+```
+**Status**
+modified:   path/to/file.rb
+new file:   path/to/other.rb
+deleted:    path/to/removed.rb
+```
 
-Display the diff output in a `diff` code block so the user can review red/green inline.
+**Format the diff as a fenced diff code block:**
+````
+```diff
+- removed line
++ added line
+```
+````
 
-If `git status` shows nothing to commit, tell the user and stop.
+The `diff` code block renders red/green in most markdown environments.
+
+If `git status` shows nothing to commit, tell the user and stop. Do not run `git diff`.
 
 ### Step 2 — Commit Message
 
