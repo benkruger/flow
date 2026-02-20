@@ -10,16 +10,15 @@ parent: Skills
 
 **Usage:** `/sdlc:status`
 
-Shows where you are in the SDLC workflow at any moment. Reads the PR checklist and prints a clear picture of what has been completed and what comes next.
+Shows where you are in the SDLC workflow at any moment. Reads `.claude/sdlc-states/<branch>.json` and prints a clear picture of what has been completed and what comes next. Rebuilds the Claude task list from persisted state.
 
 ---
 
 ## What It Does
 
-1. Finds the open PR for the current branch
-2. Reads the phase checklist from the PR body
-3. Identifies completed phases, remaining phases, and the current phase
-4. Prints a status panel with the next command to run
+1. Reads `.claude/sdlc-states/<branch>.json` from the project root
+2. Rebuilds the task list using TaskCreate for each phase
+3. Prints a status panel with current phase, timing, and next command
 
 ---
 
@@ -36,14 +35,19 @@ Shows where you are in the SDLC workflow at any moment. Reads the PR checklist a
 
   Phases
   ------
-  [x] Phase 0: Start
-  [ ] Phase 1: Research   <-- YOU ARE HERE
-  [ ] Phase 2: Design
-  [ ] Phase 3: Plan
-  [ ] Phase 4: Implement
-  [ ] Phase 5: Test
-  [ ] Phase 6: Review
-  [ ] Phase 7: Ship
+  [x] Phase 1:  Start
+  [>] Phase 2:  Research   <-- YOU ARE HERE
+  [ ] Phase 3:  Design
+  [ ] Phase 4:  Plan
+  [ ] Phase 5:  Implement
+  [ ] Phase 6:  Test
+  [ ] Phase 7:  Review
+  [ ] Phase 8:  Ship
+  [ ] Phase 9:  Reflect
+  [ ] Phase 10: Cleanup
+
+  Time in current phase : 32m
+  Times visited         : 1
 
   Next: /sdlc:research
 
@@ -54,5 +58,5 @@ Shows where you are in the SDLC workflow at any moment. Reads the PR checklist a
 
 ## Gates
 
-- Read-only — never modifies the PR or any files
-- Reports clearly if no PR is found or the checklist is missing
+- Read-only — never modifies any files
+- Reports clearly if no state file is found for the current branch

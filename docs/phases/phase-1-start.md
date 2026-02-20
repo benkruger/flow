@@ -48,24 +48,15 @@ gh pr create \
   --base main
 ```
 
-A real PR, not a draft. The PR body is auto-generated from the feature name and includes a phase checklist that tracks progress throughout the workflow:
+A real PR, not a draft. The PR body is auto-generated from the feature name:
 
 ```
 ## What
 
 App payment webhooks.
-
-## Status
-
-- [ ] Phase 0: Prepare
-- [ ] Phase 1: Research
-- [ ] Phase 2: Design
-- [ ] Phase 3: Plan
-- [ ] Phase 4: Implement
-- [ ] Phase 5: Test
-- [ ] Phase 6: Review
-- [ ] Phase 7: Ship
 ```
+
+Phase progress is tracked in `.claude/sdlc-states/<branch>.json`, not in the PR body.
 
 ### 5. Configure workspace permissions
 
