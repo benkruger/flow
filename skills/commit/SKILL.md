@@ -11,16 +11,49 @@ Review all pending changes as a diff before committing. You must get explicit ap
 
 ### Step 1 — Show the diff
 
-Run `git diff HEAD` to capture all changes (staged and unstaged). Display the full output in a `diff` code block so the user can review red/green inline.
+Run these as two separate commands:
 
-If there is nothing to commit (`git status` shows clean), tell the user and stop.
+1. `git status` — show what files have changed
+2. `git diff HEAD` — show the full diff
 
-### Step 2 — Summarize what changed
+Display the diff output in a `diff` code block so the user can review red/green inline.
 
-Below the diff, write a brief plain-English summary:
-- Which files changed and why
-- Any migrations, schema changes, or Gemfile changes (call these out explicitly)
-- Anything that looks risky or unexpected
+If `git status` shows nothing to commit, tell the user and stop.
+
+### Step 2 — Commit Message
+
+Write a commit message that a developer reading `git log` six months from now would find genuinely useful.
+
+**Structure:**
+```
+Short subject line (imperative verb, under 72 characters)
+
+tl;dr
+
+One or two sentences explaining the WHY — what problem this solves,
+what behaviour changes, or what was wrong before.
+
+- path/to/file.rb: What changed and why
+- path/to/other.rb: What changed and why
+- path/to/another.rb: What changed and why
+```
+
+Note: `tl;dr` is on its own line with a blank line before the paragraph.
+
+**Subject line rules:**
+- Start with an imperative verb: Add, Fix, Update, Remove, Refactor, Extract
+- No prefix jargon (no `feat:`, `chore:`, `fix:` — just the verb)
+- Under 72 characters
+- No period at the end
+
+**Body rules:**
+- Blank line between subject and body
+- Explain the motivation — what prompted this change?
+- List each meaningful change with its file and a plain-English reason
+- Call out explicitly if the diff includes migrations, schema changes, or Gemfile changes
+- Do not pad with obvious restatements of the diff
+
+Display the full message under the heading **Commit Message** before asking for approval.
 
 ### Step 3 — Ask for approval
 
@@ -33,17 +66,9 @@ Question: "Approve this commit?"
 ### Step 4 — Commit and push (on approval)
 
 1. `git add -A`
-2. Generate a commit message using conventional commits format:
-   - `feat:` new feature or behaviour
-   - `fix:` bug fix
-   - `chore:` dependencies, tooling, config (e.g. `bundle update`)
-   - `refactor:` restructuring without behaviour change
-   - `test:` test changes only
-   - Keep the subject line under 72 characters
-   - No body unless something non-obvious needs explanation
-3. `git commit -m "<generated message>"`
-4. `git push`
-5. Confirm success and show the commit SHA.
+2. `git commit -m "<message from Step 2>"`
+3. `git push`
+4. Confirm success and show the commit SHA.
 
 ### Step 5 — Handle denial
 

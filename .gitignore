@@ -1,0 +1,3 @@
+# Un-ignore plugin settings — committed as part of the plugin
+!.claude/
+!.claude/settings.json
