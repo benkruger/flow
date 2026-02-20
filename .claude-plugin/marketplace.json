@@ -11,10 +11,7 @@
   "plugins": [
     {
       "name": "flow",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/benkruger/ruby-on-rails-claude-ai-process.git"
-      },
+      "source": "./",
       "description": "Opinionated Ruby on Rails development lifecycle — worktree-first, TDD, phase-gated workflow for Claude Code",
       "version": "0.1.0",
       "strict": true
