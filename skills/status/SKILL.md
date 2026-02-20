@@ -49,18 +49,18 @@ Print a clear status report:
 
   Phases
   ------
-  [x] Phase 0: Start
-  [ ] Phase 1: Research   <-- YOU ARE HERE
-  [ ] Phase 2: Design
-  [ ] Phase 3: Plan
-  [ ] Phase 4: Implement
-  [ ] Phase 5: Test
-  [ ] Phase 6: Review
-  [ ] Phase 7: Ship
-  [ ] Phase 8: Reflect
-  [ ] Phase 9: Cleanup
+  [x] Phase 1: Start
+  [ ] Phase 2: Research   <-- YOU ARE HERE
+  [ ] Phase 3: Design
+  [ ] Phase 4: Plan
+  [ ] Phase 5: Implement
+  [ ] Phase 6: Test
+  [ ] Phase 7: Review
+  [ ] Phase 8: Ship
+  [ ] Phase 9: Reflect
+  [ ] Phase 10: Cleanup
 
-  Next: /ror:research
+  Next: /ror:research  (Phase 2)
 
 ============================================
 ```

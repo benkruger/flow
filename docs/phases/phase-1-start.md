@@ -1,9 +1,9 @@
 ---
-title: "Phase 0: Start"
+title: "Phase 1: Start"
 nav_order: 2
 ---
 
-# Phase 0: Start
+# Phase 1: Start
 
 **Command:** `/ror:start <feature name words>`
 

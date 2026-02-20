@@ -6,7 +6,7 @@ parent: Skills
 
 # /ror:start
 
-**Phase:** 0 — Start
+**Phase:** 1 — Start
 
 **Usage:** `/ror:start <feature name words>`
 
@@ -53,4 +53,4 @@ Words after `/ror:start` are joined with hyphens to form the feature name:
 
 ## See Also
 
-- [Phase 0: Start](../phases/phase-0-start.md) — full phase documentation
+- [Phase 1: Start](../phases/phase-1-start.md) — full phase documentation

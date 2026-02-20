@@ -18,16 +18,16 @@ An opinionated Ruby on Rails development lifecycle for Claude Code. Every featur
 
 | Phase | Name | Command | Purpose |
 |-------|------|---------|---------|
-| 0 | [Start](phases/phase-0-start.md) | `/ror:start` | Set up the worktree, update gems, establish the PR |
-| 1 | Research | `/ror:research` | *(coming soon)* |
-| 2 | Design | `/ror:design` | *(coming soon)* |
-| 3 | Plan | `/ror:plan` | *(coming soon)* |
-| 4 | Implement | `/ror:implement` | *(coming soon)* |
-| 5 | Test | `/ror:test` | *(coming soon)* |
-| 6 | Review | `/ror:review` | *(coming soon)* |
-| 7 | Ship | `/ror:ship` | *(coming soon)* |
-| 8 | Reflect | `/ror:reflect` | *(coming soon)* |
-| 9 | Cleanup | `/ror:cleanup` | *(coming soon)* |
+| 1 | [Start](phases/phase-1-start.md) | `/ror:start` | Set up the worktree, update gems, establish the PR |
+| 2 | Research | `/ror:research` | *(coming soon)* |
+| 3 | Design | `/ror:design` | *(coming soon)* |
+| 4 | Plan | `/ror:plan` | *(coming soon)* |
+| 5 | Implement | `/ror:implement` | *(coming soon)* |
+| 6 | Test | `/ror:test` | *(coming soon)* |
+| 7 | Review | `/ror:review` | *(coming soon)* |
+| 8 | Ship | `/ror:ship` | *(coming soon)* |
+| 9 | Reflect | `/ror:reflect` | *(coming soon)* |
+| 10 | Cleanup | `/ror:cleanup` | *(coming soon)* |
 
 ## Installation
 

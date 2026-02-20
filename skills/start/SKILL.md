@@ -1,9 +1,9 @@
 ---
 name: start
-description: "Phase 0: Start — begin a new feature. Creates a worktree, upgrades gems, opens a PR, and configures the workspace. Usage: /ror:start <feature name words>"
+description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrades gems, opens a PR, and configures the workspace. Usage: /ror:start <feature name words>"
 ---
 
-# ROR Start — Phase 0: Start
+# ROR Start — Phase 1: Start
 
 ## Usage
 
@@ -26,7 +26,7 @@ At the very start, before doing anything, print:
 
 ```
 ============================================
-  ROR — Phase 0: Start — STARTING
+  ROR — Phase 1: Start — STARTING
 ============================================
 ```
 
@@ -63,7 +63,7 @@ Establishes the branch remotely before any code changes.
 ```bash
 gh pr create \
   --title "<Feature Name Title Cased>" \
-  --body "## What\n\n<Feature name as a sentence.>\n\n## Status\n\n- [ ] Phase 0: Start\n- [ ] Phase 1: Research\n- [ ] Phase 2: Design\n- [ ] Phase 3: Plan\n- [ ] Phase 4: Implement\n- [ ] Phase 5: Test\n- [ ] Phase 6: Review\n- [ ] Phase 7: Ship\n- [ ] Phase 8: Reflect\n- [ ] Phase 9: Cleanup" \
+  --body "## What\n\n<Feature name as a sentence.>\n\n## Status\n\n- [ ] Phase 1: Start\n- [ ] Phase 2: Research\n- [ ] Phase 3: Design\n- [ ] Phase 4: Plan\n- [ ] Phase 5: Implement\n- [ ] Phase 6: Test\n- [ ] Phase 7: Review\n- [ ] Phase 8: Ship\n- [ ] Phase 9: Reflect\n- [ ] Phase 10: Cleanup" \
   --base main
 ```
 
@@ -147,7 +147,7 @@ Update the PR body to check off Phase 0:
 gh pr edit --body "..."
 ```
 
-Replace `- [ ] Phase 0: Start` with `- [x] Phase 0: Start` in the PR body. All other checkboxes remain unchanged.
+Replace `- [ ] Phase 1: Start` with `- [x] Phase 1: Start` in the PR body. All other checkboxes remain unchanged.
 
 ### Done
 
@@ -155,8 +155,8 @@ Print the completion banner:
 
 ```
 ============================================
-  ROR — Phase 0: Start — COMPLETE
-  Next: Phase 1: Research  (/ror:research)
+  ROR — Phase 1: Start — COMPLETE
+  Next: Phase 2: Research  (/ror:research)
 ============================================
 ```
 

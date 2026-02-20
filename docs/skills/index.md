@@ -17,16 +17,16 @@ These skills correspond directly to a workflow phase. Each one starts and ends w
 
 | Skill | Phase | Description |
 |-------|-------|-------------|
-| [`/ror:start`](ror-start.md) | 0 — Start | Create the worktree, upgrade gems, open the PR, configure permissions |
-| `/ror:research` | 1 — Research | *(coming soon)* |
-| `/ror:design` | 2 — Design | *(coming soon)* |
-| `/ror:plan` | 3 — Plan | *(coming soon)* |
-| `/ror:implement` | 4 — Implement | *(coming soon)* |
-| `/ror:test` | 5 — Test | *(coming soon)* |
-| `/ror:review` | 6 — Review | *(coming soon)* |
-| `/ror:ship` | 7 — Ship | *(coming soon)* |
-| `/ror:reflect` | 8 — Reflect | *(coming soon)* |
-| `/ror:cleanup` | 9 — Cleanup | *(coming soon)* |
+| [`/ror:start`](ror-start.md) | 1 — Start | Create the worktree, upgrade gems, open the PR, configure permissions |
+| `/ror:research` | 2 — Research | *(coming soon)* |
+| `/ror:design` | 3 — Design | *(coming soon)* |
+| `/ror:plan` | 4 — Plan | *(coming soon)* |
+| `/ror:implement` | 5 — Implement | *(coming soon)* |
+| `/ror:test` | 6 — Test | *(coming soon)* |
+| `/ror:review` | 7 — Review | *(coming soon)* |
+| `/ror:ship` | 8 — Ship | *(coming soon)* |
+| `/ror:reflect` | 9 — Reflect | *(coming soon)* |
+| `/ror:cleanup` | 10 — Cleanup | *(coming soon)* |
 
 ---
 
