@@ -36,4 +36,5 @@ These skills are available at any point in the workflow, regardless of phase.
 |-------|-------------|
 | [`/flow:commit`](flow-commit.md) | Review the full diff, approve or deny, then git add + commit + push |
 | [`/flow:status`](flow-status.md) | Show current phase, PR link, phase checklist, and what comes next |
+| [`/flow:resume`](flow-resume.md) | Resume current feature — re-asks last transition question or rebuilds from state |
 | [`/flow:note`](flow-note.md) | Capture a correction or learning — invoked automatically on corrections |

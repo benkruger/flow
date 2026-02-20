@@ -75,7 +75,7 @@ def main():
         sys.exit(1)
 
     root = project_root()
-    state_file = root / ".claude" / "ror-states" / f"{branch}.json"
+    state_file = root / ".claude" / "flow-states" / f"{branch}.json"
 
     if not state_file.exists():
         print(f'BLOCKED: No FLOW feature in progress on branch "{branch}".')

@@ -10,15 +10,14 @@ parent: Skills
 
 **Usage:** `/flow:status`
 
-Shows where you are in the FLOW workflow at any moment. Reads `.claude/flow-states/<branch>.json` and prints a clear picture of what has been completed and what comes next. Rebuilds the Claude task list from persisted state.
+Shows where you are in the FLOW workflow at any moment. Reads `.claude/flow-states/<branch>.json` and prints a clear picture of what has been completed and what comes next. Read-only — never modifies any files.
 
 ---
 
 ## What It Does
 
 1. Reads `.claude/flow-states/<branch>.json` from the project root
-2. Rebuilds the task list using TaskCreate for each phase
-3. Prints a status panel with current phase, timing, and next command
+2. Prints a status panel with current phase, timing, and next command
 
 ---
 
@@ -40,10 +39,9 @@ Shows where you are in the FLOW workflow at any moment. Reads `.claude/flow-stat
   [ ] Phase 3:  Design
   [ ] Phase 4:  Plan
   [ ] Phase 5:  Code
-  [ ] Phase 7:  Review
+  [ ] Phase 6:  Review
   [ ] Phase 7:  Reflect
   [ ] Phase 8:  Cleanup
-  [ ] Phase 8: Cleanup
 
   Time in current phase : 32m
   Times visited         : 1

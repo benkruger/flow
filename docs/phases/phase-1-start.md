@@ -71,7 +71,11 @@ Check if `.claude/settings.json` exists in the project root.
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push)",
-      "Bash(git push -u *)"
+      "Bash(git push -u *)",
+      "Bash(git worktree *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr edit *)",
+      "Bash(python3 *)"
     ]
   }
 }
@@ -121,17 +125,17 @@ Repeat until `bin/ci` is green. If not fixed after three attempts, stop and repo
 
 ### 10. Commit and push
 
-Use `/flow:commit` to review and commit the changes (`Gemfile.lock` and any gem-related fixes), then mark Phase 0 complete on the PR.
+Use `/flow:commit` to review and commit the changes (`Gemfile.lock` and any gem-related fixes).
 
 ---
 
 ## What You Get
 
-By the end of Phase 0:
+By the end of Phase 1:
 
 - An isolated worktree at `.worktrees/<feature-name>`
 - A branch pushed to remote with CI running
-- An open PR with a phase progress checklist
+- An open PR
 - Workspace permissions configured in `.claude/settings.json`
 - All gems upgraded and `bin/ci` green
 - A clean, known-good baseline to build from
@@ -140,4 +144,4 @@ By the end of Phase 0:
 
 ## What Comes Next
 
-Phase 1: Research (`/flow:research`) — read all affected code before writing any.
+Phase 2: Research (`/flow:research`) — read all affected code before writing any.

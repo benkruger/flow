@@ -40,7 +40,7 @@ All commands are namespaced under `flow:`. See the [Skills reference](skills/) f
 
 | Command | Phase | Description |
 |---------|-------|-------------|
-| `/flow:start <name>` | 0 | Begin a new feature — sets up worktree, upgrades gems, opens PR |
+| `/flow:start <name>` | 1 | Begin a new feature — sets up worktree, upgrades gems, opens PR |
 | `/flow:resume` | any | Resume current feature — re-asks last transition question mid-session, or rebuilds from state on new session |
 | `/flow:status` | any | Show current phase, PR link, and what comes next |
 | `/flow:commit` | any | Review diff, approve, and commit + push |

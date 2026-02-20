@@ -49,10 +49,9 @@ Then stop.
   [ ] Phase 3:  Design
   [ ] Phase 4:  Plan
   [ ] Phase 5:  Code
-  [ ] Phase 7:  Review
+  [ ] Phase 6:  Review
   [ ] Phase 7:  Reflect
   [ ] Phase 8:  Cleanup
-  [ ] Phase 8: Cleanup
 
   Time in current phase : <cumulative_seconds formatted as Xh Ym>
   Times visited         : <visit_count>
