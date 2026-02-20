@@ -20,7 +20,7 @@ when building new phase skills.
 4. cd into worktree from state file
 5. [Phase-specific work]
 6. Update state file — set phase to complete, calculate cumulative_seconds
-7. Invoke sdlc:status  ← always, right before the transition question
+7. Invoke flow:status  ← always, right before the transition question
 8. AskUserQuestion — "Ready to begin Phase X+1?"
    - Yes → invoke next phase skill via Skill tool
    - Not yet → print paused banner
@@ -32,7 +32,7 @@ when building new phase skills.
 
 ```
 ============================================
-  SDLC — Phase N: Name — STARTING
+  FLOW — Phase N: Name — STARTING
 ============================================
 ```
 
@@ -40,8 +40,8 @@ when building new phase skills.
 
 ```
 ============================================
-  SDLC — Paused
-  Run /sdlc:resume when ready to continue.
+  FLOW — Paused
+  Run /flow:resume when ready to continue.
 ============================================
 ```
 
@@ -49,7 +49,7 @@ when building new phase skills.
 
 ```
 ============================================
-  SDLC — Phase N: Name — COMPLETE
+  FLOW — Phase N: Name — COMPLETE
 ============================================
 ```
 
@@ -92,10 +92,10 @@ def project_root():
 
 branch = subprocess.run(['git', 'branch', '--show-current'],
                         capture_output=True, text=True).stdout.strip()
-state_file = project_root() / '.claude' / 'sdlc-states' / f'{branch}.json'
+state_file = project_root() / '.claude' / 'flow-states' / f'{branch}.json'
 
 if not state_file.exists():
-    print('BLOCKED: No SDLC feature in progress. Run /sdlc:start first.')
+    print('BLOCKED: No FLOW feature in progress. Run /flow:start first.')
     sys.exit(1)
 
 state = json.loads(state_file.read_text())
@@ -112,7 +112,7 @@ PYCHECK
 
 - Never skip the HARD-GATE
 - Always cd into the worktree before running any commands
-- Always invoke `sdlc:status` before the transition question
-- Always use AskUserQuestion for the transition — never print "type /sdlc:next"
+- Always invoke `flow:status` before the transition question
+- Always use AskUserQuestion for the transition — never print "type /flow:next"
 - Yes → invoke next skill via Skill tool
 - Not yet → paused banner only

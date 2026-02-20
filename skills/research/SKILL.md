@@ -1,9 +1,9 @@
 ---
 name: research
-description: "Phase 2: Research — explore the codebase before any design or implementation. Reads affected files, discovers risks, asks clarifying questions, and documents findings in sdlc-state.json."
+description: "Phase 2: Research — explore the codebase before any design or implementation. Reads affected files, discovers risks, asks clarifying questions, and documents findings in flow-state.json."
 ---
 
-# SDLC Research — Phase 2: Research
+# FLOW Research — Phase 2: Research
 
 <HARD-GATE>
 Run this phase entry check as your very first action. If it exits
@@ -24,16 +24,16 @@ def project_root():
 
 branch = subprocess.run(['git', 'branch', '--show-current'],
                         capture_output=True, text=True).stdout.strip()
-state_file = project_root() / '.claude' / 'ror-states' / f'{branch}.json'
+state_file = project_root() / '.claude' / 'flow-states' / f'{branch}.json'
 
 if not state_file.exists():
-    print('BLOCKED: No SDLC feature in progress. Run /sdlc:start first.')
+    print('BLOCKED: No FLOW feature in progress. Run /flow:start first.')
     sys.exit(1)
 
 state = json.loads(state_file.read_text())
 prev = state.get('phases', {}).get('1', {})
 if prev.get('status') != 'complete':
-    print('BLOCKED: Phase 1: Start must be complete. Run /sdlc:start first.')
+    print('BLOCKED: Phase 1: Start must be complete. Run /flow:start first.')
     sys.exit(1)
 PYCHECK
 ```
@@ -45,7 +45,7 @@ Print:
 
 ```
 ============================================
-  SDLC — Phase 2: Research — STARTING
+  FLOW — Phase 2: Research — STARTING
 ============================================
 ```
 
@@ -54,7 +54,7 @@ Print:
 Read the state file. Get the worktree path from `state["worktree"]`.
 Run `cd <worktree>` immediately so all subsequent commands run there.
 
-Update `.claude/sdlc-states/<branch>.json` for Phase 2:
+Update `.claude/flow-states/<branch>.json` for Phase 2:
 - `status` → `in_progress`
 - `started_at` → current UTC timestamp (only if currently null — never overwrite)
 - `session_started_at` → current UTC timestamp
@@ -66,11 +66,11 @@ Update `.claude/sdlc-states/<branch>.json` for Phase 2:
 
 ## Step 1 — Read the feature context
 
-Read `.claude/sdlc-states/<branch>.json` to understand:
+Read `.claude/flow-states/<branch>.json` to understand:
 - The feature name and description
 - Whether this is a return visit (check `visit_count` and any existing `research` data)
 
-If returning to Research, read the previous findings in `sdlc-state.json["research"]` and note what was already discovered. Do not discard prior findings — extend them.
+If returning to Research, read the previous findings in `flow-state.json["research"]` and note what was already discovered. Do not discard prior findings — extend them.
 
 ---
 
@@ -138,7 +138,7 @@ For each batch, use a single `AskUserQuestion` call with up to 4 questions. Each
 
 If answers from the first batch reveal new questions, present a second batch.
 
-Record every question and answer in `sdlc-state.json["research"]["clarifications"]`:
+Record every question and answer in `flow-state.json["research"]["clarifications"]`:
 ```json
 [
   { "question": "What happens to existing webhooks when...", "answer": "They should be..." }
@@ -149,7 +149,7 @@ Record every question and answer in `sdlc-state.json["research"]["clarifications
 
 ## Step 5 — Document findings
 
-Write the full research findings into `sdlc-state.json["research"]`:
+Write the full research findings into `flow-state.json["research"]`:
 
 ```json
 {
@@ -185,7 +185,7 @@ Show the user a clean summary:
 
 ```
 ============================================
-  SDLC — Phase 2: Research — FINDINGS
+  FLOW — Phase 2: Research — FINDINGS
 ============================================
 
   Affected Files
@@ -214,17 +214,17 @@ Show the user a clean summary:
 
 ## Step 7 — Phase gate
 
-Invoke the `sdlc:status` skill to show the current state, then use AskUserQuestion:
+Invoke the `flow:status` skill to show the current state, then use AskUserQuestion:
 
 > "Phase 2: Research is complete. Ready to begin Phase 3: Design?"
 > - **Yes, start Phase 3 now**
 > - **Not yet**
 
-**If Yes** — invoke the `sdlc:design` skill using the Skill tool. Also print:
+**If Yes** — invoke the `flow:design` skill using the Skill tool. Also print:
 
 ```
 ============================================
-  SDLC — Phase 2: Research — COMPLETE
+  FLOW — Phase 2: Research — COMPLETE
 ============================================
 ```
 
@@ -232,8 +232,8 @@ Invoke the `sdlc:status` skill to show the current state, then use AskUserQuesti
 
 ```
 ============================================
-  SDLC — Paused
-  Run /sdlc:resume when ready to continue.
+  FLOW — Paused
+  Run /flow:resume when ready to continue.
 ============================================
 ```
 
@@ -241,7 +241,7 @@ Invoke the `sdlc:status` skill to show the current state, then use AskUserQuesti
 
 ## Done — Update state and complete phase
 
-Update `.claude/sdlc-states/<branch>.json`:
+Update `.claude/flow-states/<branch>.json`:
 1. Calculate `cumulative_seconds`: `current_time - session_started_at` + existing `cumulative_seconds`
 2. Set Phase 2 `status` to `complete`
 3. Set Phase 2 `completed_at` to current UTC timestamp
@@ -253,8 +253,8 @@ Print:
 
 ```
 ============================================
-  SDLC — Phase 2: Research — COMPLETE
-  Next: Phase 3: Design  (/sdlc:design)
+  FLOW — Phase 2: Research — COMPLETE
+  Next: Phase 3: Design  (/flow:design)
 ============================================
 ```
 

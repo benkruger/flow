@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-SDLC Phase Entry Guard
+FLOW Phase Entry Guard
 
 Usage:
   python3 hooks/check-phase.py --required <phase_number>
 
 Checks that the previous phase is complete before allowing entry into
-the requested phase. Reads .claude/sdlc-states/<branch>.json from the
+the requested phase. Reads .claude/flow-states/<branch>.json from the
 project root. Works correctly whether run from the project root or from
 inside a worktree.
 
@@ -28,10 +28,10 @@ PHASES = {
 }
 
 COMMANDS = {
-    "1": "/sdlc:start",     "2": "/sdlc:research",  "3": "/sdlc:design",
-    "4": "/sdlc:plan",      "5": "/sdlc:implement",  "6": "/sdlc:test",
-    "7": "/sdlc:review",    "8": "/sdlc:ship",       "9": "/sdlc:reflect",
-    "10": "/sdlc:cleanup"
+    "1": "/flow:start",     "2": "/flow:research",  "3": "/flow:design",
+    "4": "/flow:plan",      "5": "/flow:implement",  "6": "/flow:test",
+    "7": "/flow:review",    "8": "/flow:ship",       "9": "/flow:reflect",
+    "10": "/flow:cleanup"
 }
 
 
@@ -80,8 +80,8 @@ def main():
     state_file = root / ".claude" / "ror-states" / f"{branch}.json"
 
     if not state_file.exists():
-        print(f'BLOCKED: No SDLC feature in progress on branch "{branch}".')
-        print("Run /sdlc:start to begin a new feature.")
+        print(f'BLOCKED: No FLOW feature in progress on branch "{branch}".')
+        print("Run /flow:start to begin a new feature.")
         sys.exit(1)
 
     try:
@@ -94,7 +94,7 @@ def main():
     prev_data = state.get("phases", {}).get(prev, {})
     prev_status = prev_data.get("status", "pending")
     prev_name = PHASES.get(prev, f"Phase {prev}")
-    prev_cmd = COMMANDS.get(prev, f"/sdlc:phase{prev}")
+    prev_cmd = COMMANDS.get(prev, f"/flow:phase{prev}")
 
     if prev_status != "complete":
         print(f"BLOCKED: Phase {prev}: {prev_name} must be complete before "

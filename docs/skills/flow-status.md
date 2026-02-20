@@ -1,22 +1,22 @@
 ---
-title: /sdlc:status
+title: /flow:status
 nav_order: 3
 parent: Skills
 ---
 
-# /sdlc:status
+# /flow:status
 
 **Phase:** Any
 
-**Usage:** `/sdlc:status`
+**Usage:** `/flow:status`
 
-Shows where you are in the SDLC workflow at any moment. Reads `.claude/sdlc-states/<branch>.json` and prints a clear picture of what has been completed and what comes next. Rebuilds the Claude task list from persisted state.
+Shows where you are in the FLOW workflow at any moment. Reads `.claude/flow-states/<branch>.json` and prints a clear picture of what has been completed and what comes next. Rebuilds the Claude task list from persisted state.
 
 ---
 
 ## What It Does
 
-1. Reads `.claude/sdlc-states/<branch>.json` from the project root
+1. Reads `.claude/flow-states/<branch>.json` from the project root
 2. Rebuilds the task list using TaskCreate for each phase
 3. Prints a status panel with current phase, timing, and next command
 
@@ -26,7 +26,7 @@ Shows where you are in the SDLC workflow at any moment. Reads `.claude/sdlc-stat
 
 ```
 ============================================
-  SDLC — Current Status
+  FLOW — Current Status
 ============================================
 
   Feature : App Payment Webhooks
@@ -49,7 +49,7 @@ Shows where you are in the SDLC workflow at any moment. Reads `.claude/sdlc-stat
   Time in current phase : 32m
   Times visited         : 1
 
-  Next: /sdlc:research
+  Next: /flow:research
 
 ============================================
 ```

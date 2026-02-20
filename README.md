@@ -1,4 +1,4 @@
-# SDLC Process
+# FLOW Process
 
 An opinionated Ruby on Rails development lifecycle for Claude Code.
 
@@ -10,7 +10,7 @@ Every feature — simple or complex — follows the same phases in the same orde
 
 ```
 /plugin marketplace add benkruger/ruby-on-rails-claude-ai-process
-/plugin install sdlc@ruby-on-rails-claude-ai-process
+/plugin install flow@ruby-on-rails-claude-ai-process
 ```
 
 ## Enable GitHub Pages

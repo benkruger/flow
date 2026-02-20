@@ -1,11 +1,11 @@
 ---
 name: status
-description: "Show current SDLC phase, PR link, timing, and what comes next. Reads .claude/sdlc-states/<branch>.json. Use any time you want to know where you are in the workflow."
+description: "Show current SDLC phase, PR link, timing, and what comes next. Reads .claude/flow-states/<branch>.json. Use any time you want to know where you are in the workflow."
 ---
 
-# SDLC Status
+# FLOW Status
 
-Show where you are in the SDLC workflow. Reads the state file and
+Show where you are in the FLOW workflow. Reads the state file and
 prints a status panel. Read-only — never modifies anything.
 
 ## Announce
@@ -14,7 +14,7 @@ Print:
 
 ```
 ============================================
-  SDLC — sdlc:status — STARTING
+  FLOW — flow:status — STARTING
 ============================================
 ```
 
@@ -22,12 +22,12 @@ Print:
 
 ### Step 1 — Read the state file
 
-Find the project root and read `.claude/sdlc-states/<branch>.json`.
+Find the project root and read `.claude/flow-states/<branch>.json`.
 
 If no state file exists for the current branch, report:
 ```
-No SDLC feature in progress on this branch.
-Start one with /sdlc:start <feature name>.
+No FLOW feature in progress on this branch.
+Start one with /flow:start <feature name>.
 ```
 Then stop.
 
@@ -35,7 +35,7 @@ Then stop.
 
 ```
 ============================================
-  SDLC — Current Status
+  FLOW — Current Status
 ============================================
 
   Feature : <feature>
@@ -58,7 +58,7 @@ Then stop.
   Time in current phase : <cumulative_seconds formatted as Xh Ym>
   Times visited         : <visit_count>
 
-  Next: /sdlc:research
+  Next: /flow:research
 
 ============================================
 ```
@@ -69,7 +69,7 @@ If all phases are complete, print:
 
 ```
 ============================================
-  SDLC — All phases complete!
+  FLOW — All phases complete!
   Feature: <feature>
   This feature is fully done.
 ============================================

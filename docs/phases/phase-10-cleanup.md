@@ -5,7 +5,7 @@ nav_order: 12
 
 # Phase 10: Cleanup
 
-**Command:** `/sdlc:cleanup`
+**Command:** `/flow:cleanup`
 
 The final phase. Removes the git worktree and deletes the state file.
 This is what fully closes out a feature and resets the environment for
@@ -16,7 +16,7 @@ the next one.
 ## Steps
 
 ### 1. Read state
-Read `.claude/sdlc-states/<branch>.json` for the worktree path and feature name.
+Read `.claude/flow-states/<branch>.json` for the worktree path and feature name.
 
 ### 2. Confirm with user
 Explicit confirmation required before any destructive action.
@@ -31,7 +31,7 @@ git worktree remove .worktrees/<feature-name> --force
 
 ### 5. Delete the state file
 ```bash
-rm .claude/sdlc-states/<branch>.json
+rm .claude/flow-states/<branch>.json
 ```
 
 This resets the SessionStart hook — the next session starts clean.

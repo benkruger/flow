@@ -1,16 +1,16 @@
 ---
-title: /sdlc:start
+title: /flow:start
 nav_order: 1
 parent: Skills
 ---
 
-# /sdlc:start
+# /flow:start
 
 **Phase:** 1 — Start
 
-**Usage:** `/sdlc:start <feature name words>`
+**Usage:** `/flow:start <feature name words>`
 
-**Example:** `/sdlc:start app payment webhooks`
+**Example:** `/flow:start app payment webhooks`
 
 Begins a new feature. This is always the first command run for any piece of work. It sets up an isolated environment, ensures dependencies are current, and establishes the PR before any feature code is written.
 
@@ -26,13 +26,13 @@ Begins a new feature. This is always the first command run for any piece of work
 6. Runs `bin/ci` as a baseline health check
 7. Runs `bundle update` to upgrade all gems
 8. Runs `bin/ci` again and auto-fixes any breakage
-9. Commits via `/sdlc:commit` and marks Phase 0 complete on the PR
+9. Commits via `/flow:commit` and marks Phase 0 complete on the PR
 
 ---
 
 ## Naming
 
-Words after `/sdlc:start` are joined with hyphens to form the feature name:
+Words after `/flow:start` are joined with hyphens to form the feature name:
 
 | Part | Value |
 |------|-------|

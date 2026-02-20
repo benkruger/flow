@@ -5,9 +5,9 @@ nav_order: 3
 
 # Skills
 
-Skills are the building blocks of the SDLC workflow. Some are tied to a specific phase and invoked automatically as part of that phase. Others are utility skills available at any point.
+Skills are the building blocks of the FLOW workflow. Some are tied to a specific phase and invoked automatically as part of that phase. Others are utility skills available at any point.
 
-All skills are namespaced under `sdlc:` and announce themselves clearly when they start and finish.
+All skills are namespaced under `flow:` and announce themselves clearly when they start and finish.
 
 ---
 
@@ -17,16 +17,16 @@ These skills correspond directly to a workflow phase. Each one starts and ends w
 
 | Skill | Phase | Description |
 |-------|-------|-------------|
-| [`/sdlc:start`](sdlc-start.md) | 1 — Start | Create the worktree, upgrade gems, open the PR, configure permissions |
-| [`/sdlc:research`](sdlc-research.md) | 2 — Research | Explore codebase, ask clarifying questions, document findings |
-| `/sdlc:design` | 3 — Design | *(coming soon)* |
-| `/sdlc:plan` | 4 — Plan | *(coming soon)* |
-| `/sdlc:implement` | 5 — Implement | *(coming soon)* |
-| `/sdlc:test` | 6 — Test | *(coming soon)* |
-| `/sdlc:review` | 7 — Review | *(coming soon)* |
-| `/sdlc:ship` | 8 — Ship | *(coming soon)* |
-| `/sdlc:reflect` | 9 — Reflect | *(coming soon)* |
-| [`/sdlc:cleanup`](sdlc-cleanup.md) | 10 — Cleanup | Remove worktree and delete state file — final phase |
+| [`/flow:start`](flow-start.md) | 1 — Start | Create the worktree, upgrade gems, open the PR, configure permissions |
+| [`/flow:research`](flow-research.md) | 2 — Research | Explore codebase, ask clarifying questions, document findings |
+| `/flow:design` | 3 — Design | *(coming soon)* |
+| `/flow:plan` | 4 — Plan | *(coming soon)* |
+| `/flow:implement` | 5 — Implement | *(coming soon)* |
+| `/flow:test` | 6 — Test | *(coming soon)* |
+| `/flow:review` | 7 — Review | *(coming soon)* |
+| `/flow:ship` | 8 — Ship | *(coming soon)* |
+| `/flow:reflect` | 9 — Reflect | *(coming soon)* |
+| [`/flow:cleanup`](flow-cleanup.md) | 10 — Cleanup | Remove worktree and delete state file — final phase |
 
 ---
 
@@ -36,5 +36,5 @@ These skills are available at any point in the workflow, regardless of phase.
 
 | Skill | Description |
 |-------|-------------|
-| [`/sdlc:commit`](sdlc-commit.md) | Review the full diff, approve or deny, then git add + commit + push |
-| [`/sdlc:status`](sdlc-status.md) | Show current phase, PR link, phase checklist, and what comes next |
+| [`/flow:commit`](flow-commit.md) | Review the full diff, approve or deny, then git add + commit + push |
+| [`/flow:status`](flow-status.md) | Show current phase, PR link, phase checklist, and what comes next |

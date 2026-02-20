@@ -5,9 +5,9 @@ nav_order: 2
 
 # Phase 1: Start
 
-**Command:** `/sdlc:start <feature name words>`
+**Command:** `/flow:start <feature name words>`
 
-**Example:** `/sdlc:start app payment webhooks`
+**Example:** `/flow:start app payment webhooks`
 
 This is always the first phase, for every feature without exception. It establishes an isolated workspace, verifies the health of the codebase, upgrades all dependencies, configures workspace permissions, and opens the PR before any feature work begins.
 
@@ -56,7 +56,7 @@ A real PR, not a draft. The PR body is auto-generated from the feature name:
 App payment webhooks.
 ```
 
-Phase progress is tracked in `.claude/sdlc-states/<branch>.json`, not in the PR body.
+Phase progress is tracked in `.claude/flow-states/<branch>.json`, not in the PR body.
 
 ### 5. Configure workspace permissions
 
@@ -121,7 +121,7 @@ Repeat until `bin/ci` is green. If not fixed after three attempts, stop and repo
 
 ### 10. Commit and push
 
-Use `/sdlc:commit` to review and commit the changes (`Gemfile.lock` and any gem-related fixes), then mark Phase 0 complete on the PR.
+Use `/flow:commit` to review and commit the changes (`Gemfile.lock` and any gem-related fixes), then mark Phase 0 complete on the PR.
 
 ---
 
@@ -140,4 +140,4 @@ By the end of Phase 0:
 
 ## What Comes Next
 
-Phase 1: Research (`/sdlc:research`) — read all affected code before writing any.
+Phase 1: Research (`/flow:research`) — read all affected code before writing any.

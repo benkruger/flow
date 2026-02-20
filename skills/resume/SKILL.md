@@ -1,9 +1,9 @@
 ---
 name: resume
-description: "Resume the current SDLC feature. Mid-session: re-asks the last phase transition question. New session: reads state file, shows status, then asks."
+description: "Resume the current FLOW feature. Mid-session: re-asks the last phase transition question. New session: reads state file, shows status, then asks."
 ---
 
-# SDLC Resume
+# FLOW Resume
 
 This skill behaves differently depending on whether you are mid-session
 or starting fresh. Choose the right path below.
@@ -26,16 +26,16 @@ The Skill to invoke maps directly to the current phase:
 
 | Current phase | Skill to invoke |
 |--------------|----------------|
-| 1 — Start | `sdlc:start` |
-| 2 — Research | `sdlc:research` |
-| 3 — Design | `sdlc:design` |
-| 4 — Plan | `sdlc:plan` |
-| 5 — Implement | `sdlc:implement` |
-| 6 — Test | `sdlc:test` |
-| 7 — Review | `sdlc:review` |
-| 8 — Ship | `sdlc:ship` |
-| 9 — Reflect | `sdlc:reflect` |
-| 10 — Cleanup | `sdlc:cleanup` |
+| 1 — Start | `flow:start` |
+| 2 — Research | `flow:research` |
+| 3 — Design | `flow:design` |
+| 4 — Plan | `flow:plan` |
+| 5 — Implement | `flow:implement` |
+| 6 — Test | `flow:test` |
+| 7 — Review | `flow:review` |
+| 8 — Ship | `flow:ship` |
+| 9 — Reflect | `flow:reflect` |
+| 10 — Cleanup | `flow:cleanup` |
 
 ---
 
@@ -61,10 +61,10 @@ def project_root():
 
 branch = subprocess.run(['git', 'branch', '--show-current'],
                         capture_output=True, text=True).stdout.strip()
-state_file = project_root() / '.claude' / 'sdlc-states' / f'{branch}.json'
+state_file = project_root() / '.claude' / 'flow-states' / f'{branch}.json'
 
 if not state_file.exists():
-    print(f'No SDLC feature in progress on branch "{branch}".')
+    print(f'No FLOW feature in progress on branch "{branch}".')
     sys.exit(1)
 
 print(str(state_file))
@@ -79,7 +79,7 @@ Read `worktree` from the state file and cd there.
 
 ### Step 3 — Show status panel
 
-Invoke the `sdlc:status` skill to display current state.
+Invoke the `flow:status` skill to display current state.
 
 ### Step 4 — Ask the transition question
 
@@ -97,7 +97,7 @@ When the user selects "Not yet", always print:
 
 ```
 ============================================
-  SDLC — Paused
-  Run /sdlc:resume when ready to continue.
+  FLOW — Paused
+  Run /flow:resume when ready to continue.
 ============================================
 ```

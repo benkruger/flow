@@ -1,5 +1,5 @@
 {
-  "name": "sdlc",
+  "name": "flow",
   "description": "Opinionated Ruby on Rails development lifecycle for Claude Code",
   "version": "0.1.0",
   "author": {

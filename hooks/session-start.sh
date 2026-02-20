@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# SDLC Process — SessionStart hook
+# FLOW Process — SessionStart hook
 #
-# Scans .claude/sdlc-states/ for in-progress features.
+# Scans .claude/flow-states/ for in-progress features.
 # 0 files  → exits silently
 # 1 file   → resets interrupted session timing, injects resume instruction
 # 2+ files → asks user to pick a feature, then resumes
 
 set -euo pipefail
 
-STATE_DIR=".claude/sdlc-states"
+STATE_DIR=".claude/flow-states"
 
 # No state directory or no state files — exit silently
 if [ ! -d "$STATE_DIR" ]; then
@@ -24,7 +24,7 @@ CONTEXT=$(python3 - << 'PYTHON'
 import json, sys
 from pathlib import Path
 
-state_dir = Path(".claude/sdlc-states")
+state_dir = Path(".claude/flow-states")
 files = sorted(state_dir.glob("*.json"))
 
 if not files:
@@ -59,12 +59,12 @@ if len(states) == 1:
     phase_name = s.get("phases", {}).get(cp, {}).get("name", "")
     feature = s.get("feature", "")
 
-    print(f"""<sdlc-session-resume>
-SDLC feature in progress: "{feature}" — Phase {cp}: {phase_name}
+    print(f"""<flow-session-resume>
+FLOW feature in progress: "{feature}" — Phase {cp}: {phase_name}
 
 Your FIRST action before responding to anything else:
-Invoke the sdlc:resume skill.
-</sdlc-session-resume>""")
+Invoke the flow:resume skill.
+</flow-session-resume>""")
 
 else:
     features = []
@@ -75,14 +75,14 @@ else:
 
     feature_list = "\n".join(f"  - {f}" for f in features)
 
-    print(f"""<sdlc-session-resume>
-Multiple SDLC features are in progress:
+    print(f"""<flow-session-resume>
+Multiple FLOW features are in progress:
 {feature_list}
 
 Your FIRST action before responding to anything else:
 Use AskUserQuestion to ask which feature to work on.
-Once selected, cd into that feature's worktree then invoke the sdlc:resume skill.
-</sdlc-session-resume>""")
+Once selected, cd into that feature's worktree then invoke the flow:resume skill.
+</flow-session-resume>""")
 PYTHON
 )
 

@@ -1,19 +1,19 @@
 ---
-title: SDLC State Schema
+title: FLOW State Schema
 nav_order: 11
 parent: Reference
 ---
 
-# SDLC State Schema
+# FLOW State Schema
 
-State files live in `.claude/sdlc-states/` at the project root, named after the branch:
+State files live in `.claude/flow-states/` at the project root, named after the branch:
 
 ```
-.claude/sdlc-states/app-payment-webhooks.json
-.claude/sdlc-states/user-profile-redesign.json
+.claude/flow-states/app-payment-webhooks.json
+.claude/flow-states/user-profile-redesign.json
 ```
 
-One file per active feature. Multiple features can run simultaneously with no conflicts. The directory and all its contents are gitignored (covered by the global Claude gitignore on `.claude/`). Created by `/sdlc:start`, deleted by `/sdlc:cleanup`.
+One file per active feature. Multiple features can run simultaneously with no conflicts. The directory and all its contents are gitignored (covered by the global Claude gitignore on `.claude/`). Created by `/flow:start`, deleted by `/flow:cleanup`.
 
 ---
 
@@ -129,6 +129,6 @@ Added to the state file when Phase 2: Research completes. Extended if Research i
 
 ## State Machine
 
-Valid phase transitions are defined in `sdlc-phases.json` at the plugin root. Forward progression is always valid. Backward transitions are limited per phase.
+Valid phase transitions are defined in `flow-phases.json` at the plugin root. Forward progression is always valid. Backward transitions are limited per phase.
 
 See [Phase Comparison Reference](phase-comparison.md) for the full transition map.

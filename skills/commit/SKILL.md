@@ -1,9 +1,9 @@
 ---
 name: commit
-description: "Review the full diff, approve or deny, then git add + commit + push. Use at every commit checkpoint in the SDLC workflow."
+description: "Review the full diff, approve or deny, then git add + commit + push. Use at every commit checkpoint in the FLOW workflow."
 ---
 
-# SDLC Commit
+# FLOW Commit
 
 Review all pending changes as a diff before committing. You must get explicit approval before touching git.
 
@@ -13,7 +13,7 @@ At the very start, print:
 
 ```
 ============================================
-  SDLC — sdlc:commit — STARTING
+  FLOW — flow:commit — STARTING
 ============================================
 ```
 
@@ -21,7 +21,7 @@ On completion (whether approved or denied), print:
 
 ```
 ============================================
-  SDLC — sdlc:commit — COMPLETE
+  FLOW — flow:commit — COMPLETE
 ============================================
 ```
 
@@ -105,7 +105,7 @@ Question: "Approve this commit?"
 
 Ask: **What needs to be addressed before committing?**
 
-Listen to the reason, acknowledge it clearly, and stop. Do not commit. The user will make fixes and invoke `/sdlc:commit` again when ready.
+Listen to the reason, acknowledge it clearly, and stop. Do not commit. The user will make fixes and invoke `/flow:commit` again when ready.
 
 ## Rules
 

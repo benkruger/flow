@@ -6,7 +6,7 @@ parent: Reference
 
 # Phase Comparison: Metaswarm & Superpowers
 
-This document captures the full phase analysis from both source projects used as inspiration for SDLC Process. Use it to make informed decisions about what to adopt, adapt, or skip.
+This document captures the full phase analysis from both source projects used as inspiration for FLOW Process. Use it to make informed decisions about what to adopt, adapt, or skip.
 
 ---
 
@@ -85,7 +85,7 @@ brainstorming, using-git-worktrees, writing-plans, executing-plans, subagent-dri
 | PR tracking + closure (Phase 8) | Requires `bd close` CLI |
 | Learning extraction to JSONL (Phase 9) | Requires `.beads/knowledge/` JSONL store |
 
-**SDLC Process replacement:** Learnings are captured as generic Rails patterns written directly to the project's `CLAUDE.md`.
+**FLOW Process replacement:** Learnings are captured as generic Rails patterns written directly to the project's `CLAUDE.md`.
 
 ---
 

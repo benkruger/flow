@@ -3,7 +3,7 @@ name: cleanup
 description: "Phase 10: Cleanup — remove the worktree and delete the state file. Final phase. Requires Phase 9: Reflect to be complete."
 ---
 
-# SDLC Cleanup — Phase 10: Cleanup
+# FLOW Cleanup — Phase 10: Cleanup
 
 <HARD-GATE>
 Run this phase entry check as your very first action. If it exits
@@ -24,17 +24,17 @@ def project_root():
 
 branch = subprocess.run(['git', 'branch', '--show-current'],
                         capture_output=True, text=True).stdout.strip()
-state_file = project_root() / '.claude' / 'sdlc-states' / f'{branch}.json'
+state_file = project_root() / '.claude' / 'flow-states' / f'{branch}.json'
 
 if not state_file.exists():
-    print('BLOCKED: No SDLC feature in progress. Run /sdlc:start first.')
+    print('BLOCKED: No FLOW feature in progress. Run /flow:start first.')
     sys.exit(1)
 
 state = json.loads(state_file.read_text())
 prev = state.get('phases', {}).get('9', {})
 if prev.get('status') != 'complete':
     print('BLOCKED: Phase 9: Reflect must be complete before Cleanup.')
-    print('Run /sdlc:reflect first.')
+    print('Run /flow:reflect first.')
     sys.exit(1)
 PYCHECK
 ```
@@ -46,7 +46,7 @@ Print:
 
 ```
 ============================================
-  SDLC — Phase 10: Cleanup — STARTING
+  FLOW — Phase 10: Cleanup — STARTING
 ============================================
 ```
 
@@ -54,7 +54,7 @@ Print:
 
 ### Step 1 — Read state
 
-Read `.claude/sdlc-states/<branch>.json` from the project root.
+Read `.claude/flow-states/<branch>.json` from the project root.
 Note the `worktree` and `feature` values — you will need them.
 
 ### Step 2 — Confirm with user
@@ -86,7 +86,7 @@ This deletes the worktree directory and all its contents.
 
 ### Step 5 — Delete the state file
 
-Delete `.claude/sdlc-states/<branch>.json`.
+Delete `.claude/flow-states/<branch>.json`.
 
 This is what clears the feature from the SessionStart hook. The next
 session will start clean.
@@ -97,7 +97,7 @@ Print:
 
 ```
 ============================================
-  SDLC — Phase 10: Cleanup — COMPLETE
+  FLOW — Phase 10: Cleanup — COMPLETE
   Feature '<feature>' is fully done.
 ============================================
 ```

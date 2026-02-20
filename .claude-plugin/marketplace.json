@@ -1,5 +1,5 @@
 {
-  "name": "sdlc-marketplace",
+  "name": "flow-marketplace",
   "description": "Opinionated Ruby on Rails development lifecycle for Claude Code",
   "owner": {
     "name": "Ben Kruger"
@@ -10,7 +10,7 @@
   },
   "plugins": [
     {
-      "name": "sdlc",
+      "name": "flow",
       "source": {
         "source": "url",
         "url": "https://github.com/benkruger/ruby-on-rails-claude-ai-process.git"

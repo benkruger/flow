@@ -1,16 +1,16 @@
 ---
-title: /sdlc:commit
+title: /flow:commit
 nav_order: 2
 parent: Skills
 ---
 
-# /sdlc:commit
+# /flow:commit
 
 **Phase:** Any
 
-**Usage:** `/sdlc:commit`
+**Usage:** `/flow:commit`
 
-Reviews all pending changes before committing. You see the full diff and proposed commit message, then approve or deny before anything is pushed. This is the only way commits are made in the SDLC workflow.
+Reviews all pending changes before committing. You see the full diff and proposed commit message, then approve or deny before anything is pushed. This is the only way commits are made in the FLOW workflow.
 
 ---
 
