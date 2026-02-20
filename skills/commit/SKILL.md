@@ -124,6 +124,7 @@ Listen to the reason, acknowledge it clearly, and stop. Do not commit. The user 
 - Never commit without showing the diff first
 - Never skip the approval step
 - Never use `--no-verify`
+- Never add Co-Authored-By trailers or attribution lines — commits are authored by the user alone
 - Always pull before pushing — other sessions may have merged changes
 - **Never rebase — ever.** Always merge. `git rebase` is forbidden.
 - If `bin/ci` has not been run since the last code change, warn the user before asking for approval

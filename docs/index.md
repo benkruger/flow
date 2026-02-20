@@ -31,7 +31,7 @@ An opinionated Ruby on Rails development lifecycle for Claude Code. Every featur
 
 ```
 /plugin marketplace add benkruger/ruby-on-rails-claude-ai-process
-/plugin install flow@ruby-on-rails-claude-ai-process
+/plugin install flow@flow-marketplace
 ```
 
 ## Commands

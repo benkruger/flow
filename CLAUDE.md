@@ -10,7 +10,7 @@ A Claude Code plugin (`flow:` namespace) implementing an opinionated Rails devel
 
 ```
 /plugin marketplace add benkruger/ruby-on-rails-claude-ai-process
-/plugin install flow@ruby-on-rails-claude-ai-process
+/plugin install flow@flow-marketplace
 ```
 
 ## The 8 Phases

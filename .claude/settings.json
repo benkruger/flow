@@ -14,5 +14,9 @@
     "deny": [
       "Bash(git rebase *)"
     ]
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
   }
 }
