@@ -3,8 +3,8 @@
 #
 # Scans .claude/sdlc-states/ for in-progress features.
 # 0 files  → exits silently
-# 1 file   → injects context to cd into worktree and resume
-# 2+ files → injects context to ask user which feature to resume
+# 1 file   → resets interrupted session timing, injects resume instruction
+# 2+ files → asks user to pick a feature, then resumes
 
 set -euo pipefail
 
@@ -19,7 +19,7 @@ if [ -z "$(ls "$STATE_DIR"/*.json 2>/dev/null)" ]; then
   exit 0
 fi
 
-# Use Python to read state files, reset interrupted sessions, build context
+# Reset any interrupted session timing and build context
 CONTEXT=$(python3 - << 'PYTHON'
 import json, sys
 from pathlib import Path
@@ -57,48 +57,32 @@ if len(states) == 1:
     s = states[0]
     cp = str(s.get("current_phase", "1"))
     phase_name = s.get("phases", {}).get(cp, {}).get("name", "")
-    worktree = s.get("worktree", "")
     feature = s.get("feature", "")
-    pr_url = s.get("pr_url", "")
 
     print(f"""<sdlc-session-resume>
-SDLC feature in progress: "{feature}"
-Current phase: {cp} — {phase_name}
-PR: {pr_url}
+SDLC feature in progress: "{feature}" — Phase {cp}: {phase_name}
 
-Your FIRST actions before responding to anything else:
-1. Run: cd {worktree}
-2. Rebuild task list using TaskCreate for each phase — completed phases
-   as completed, phase {cp} ({phase_name}) as in_progress, rest as pending
-3. Print the SDLC status banner showing where we are
-
-Do this before anything else.
+Your FIRST action before responding to anything else:
+Invoke the sdlc:resume skill.
 </sdlc-session-resume>""")
 
 else:
-    lines = [
-        "<sdlc-session-resume>",
-        "Multiple SDLC features are in progress.",
-        "",
-        "Your FIRST action before responding to anything else:",
-        "Use AskUserQuestion to ask: \"Which feature would you like to work on?\"",
-        "Present each feature as an option:",
-        "",
-    ]
+    features = []
     for s in states:
         cp = str(s.get("current_phase", "1"))
         phase_name = s.get("phases", {}).get(cp, {}).get("name", "")
-        lines.append(f"  - {s.get('feature')} — Phase {cp}: {phase_name}")
+        features.append(f"{s.get('feature')} — Phase {cp}: {phase_name}")
 
-    lines += [
-        "",
-        "Once selected:",
-        "1. cd into that feature's worktree",
-        "2. Rebuild task list",
-        "3. Print SDLC status banner",
-        "</sdlc-session-resume>"
-    ]
-    print("\n".join(lines))
+    feature_list = "\n".join(f"  - {f}" for f in features)
+
+    print(f"""<sdlc-session-resume>
+Multiple SDLC features are in progress:
+{feature_list}
+
+Your FIRST action before responding to anything else:
+Use AskUserQuestion to ask which feature to work on.
+Once selected, cd into that feature's worktree then invoke the sdlc:resume skill.
+</sdlc-session-resume>""")
 PYTHON
 )
 

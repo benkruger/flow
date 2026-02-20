@@ -215,13 +215,28 @@ Show the user a clean summary:
 
 ## Step 7 — Phase gate
 
-Ask the user:
+Use AskUserQuestion:
 
-> "Phase 2: Research is complete. Ready to proceed to Phase 3: Design?"
-> - **Yes, proceed**
-> - **No, keep researching**
+> "Phase 2: Research is complete. Ready to begin Phase 3: Design?"
+> - **Yes, start Phase 3 now**
+> - **Not yet**
 
-If "No, keep researching" — ask what area still needs investigation and loop back to Step 2.
+**If Yes** — invoke the `sdlc:design` skill using the Skill tool. Also print:
+
+```
+============================================
+  SDLC — Phase 2: Research — COMPLETE
+============================================
+```
+
+**If Not yet** — print:
+
+```
+============================================
+  SDLC — Paused
+  Run /sdlc:resume when ready to continue.
+============================================
+```
 
 ---
 

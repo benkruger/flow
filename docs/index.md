@@ -43,5 +43,6 @@ All commands are namespaced under `sdlc:`. See the [Skills reference](skills/) f
 | Command | Phase | Description |
 |---------|-------|-------------|
 | `/sdlc:start <name>` | 0 | Begin a new feature — sets up worktree, upgrades gems, opens PR |
+| `/sdlc:resume` | any | Resume current feature — re-asks last transition question mid-session, or rebuilds from state on new session |
 | `/sdlc:status` | any | Show current phase, PR link, and what comes next |
 | `/sdlc:commit` | any | Review diff, approve, and commit + push |

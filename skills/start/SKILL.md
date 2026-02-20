@@ -203,22 +203,30 @@ Update `.claude/sdlc-states/<branch>.json`:
 
 Update Phase 1 task to `completed`.
 
-Ask the user:
+Use AskUserQuestion:
 
-> "Phase 1: Start is complete. Ready to proceed to Phase 2: Research?"
-> - **Yes, proceed**
-> - **No, stay here**
+> "Phase 1: Start is complete. Ready to begin Phase 2: Research?"
+> - **Yes, start Phase 2 now**
+> - **Not yet**
 
-On approval, print:
+**If Yes** — invoke the `sdlc:research` skill using the Skill tool. Also print:
 
 ```
 ============================================
   SDLC — Phase 1: Start — COMPLETE
-  Next: Phase 2: Research  (/sdlc:research)
 ============================================
 ```
 
-Report:
+**If Not yet** — print:
+
+```
+============================================
+  SDLC — Paused
+  Run /sdlc:resume when ready to continue.
+============================================
+```
+
+Then report:
 - Worktree location
 - PR link
 - Whether baseline `bin/ci` was clean
