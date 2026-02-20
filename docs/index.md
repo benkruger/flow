@@ -21,7 +21,7 @@ An opinionated Ruby on Rails development lifecycle for Claude Code. Every featur
 | 1 | [Start](phases/phase-1-start.md) | `/flow:start` | Set up the worktree, update gems, establish the PR |
 | 2 | [Research](phases/phase-2-research.md) | `/flow:research` | Explore codebase, ask clarifying questions, document findings |
 | 3 | [Design](phases/phase-3-design.md) | `/flow:design` | Propose 2-3 alternatives, get approval before any code |
-| 4 | Plan | `/flow:plan` | *(coming soon)* |
+| 4 | [Plan](phases/phase-4-plan.md) | `/flow:plan` | Break design into ordered TDD tasks, section by section |
 | 5 | Implement | `/flow:implement` | *(coming soon)* |
 | 6 | Test | `/flow:test` | *(coming soon)* |
 | 7 | Review | `/flow:review` | *(coming soon)* |

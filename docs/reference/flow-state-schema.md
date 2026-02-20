@@ -102,6 +102,40 @@ Each phase entry has identical fields regardless of status.
 
 ---
 
+## Plan Object
+
+Added to the state file progressively as Plan sections are approved.
+
+```json
+"plan": {
+  "sections": {
+    "schema":      { "status": "approved", "tasks": [1] },
+    "models":      { "status": "approved", "tasks": [2,3,4,5] },
+    "workers":     { "status": "skipped",  "tasks": [] },
+    "controllers": { "status": "pending",  "tasks": [] },
+    "integration": { "status": "pending",  "tasks": [] }
+  },
+  "current_section": "controllers",
+  "tasks": [
+    {
+      "id": 1,
+      "section": "schema",
+      "type": "schema",
+      "description": "Add payments table to data/release.sql",
+      "files": ["data/release.sql"],
+      "tdd": false,
+      "status": "pending"
+    }
+  ],
+  "approved_at": null
+}
+```
+
+Section statuses: `pending`, `approved`, `skipped`
+Task statuses: `pending`, `in_progress`, `complete` (updated by Implement)
+
+---
+
 ## Design Object
 
 Added to the state file when Phase 3: Design completes.
