@@ -1,9 +1,9 @@
 ---
 name: cleanup
-description: "Phase 9: Cleanup — remove the worktree and delete the state file. Final phase. Requires Phase 8: Reflect to be complete."
+description: "Phase 8: Cleanup — remove the worktree and delete the state file. Final phase. Requires Phase 7: Reflect to be complete."
 ---
 
-# FLOW Cleanup — Phase 9: Cleanup
+# FLOW Cleanup — Phase 8: Cleanup
 
 <HARD-GATE>
 Run this phase entry check as your very first action. If it exits
@@ -31,9 +31,9 @@ if not state_file.exists():
     sys.exit(1)
 
 state = json.loads(state_file.read_text())
-prev = state.get('phases', {}).get('8', {})
+prev = state.get('phases', {}).get('7', {})
 if prev.get('status') != 'complete':
-    print('BLOCKED: Phase 8: Reflect must be complete before Cleanup.')
+    print('BLOCKED: Phase 7: Reflect must be complete before Cleanup.')
     print('Run /flow:reflect first.')
     sys.exit(1)
 PYCHECK
@@ -46,7 +46,7 @@ Print:
 
 ```
 ============================================
-  FLOW — Phase 9: Cleanup — STARTING
+  FLOW — Phase 8: Cleanup — STARTING
 ============================================
 ```
 
@@ -97,7 +97,7 @@ Print:
 
 ```
 ============================================
-  FLOW — Phase 9: Cleanup — COMPLETE
+  FLOW — Phase 8: Cleanup — COMPLETE
   Feature '<feature>' is fully done.
 ============================================
 ```

@@ -24,9 +24,8 @@ An opinionated Ruby on Rails development lifecycle for Claude Code. Every featur
 | 4 | [Plan](phases/phase-4-plan.md) | `/flow:plan` | Break design into ordered TDD tasks, section by section |
 | 5 | Implement | `/flow:implement` | *(coming soon)* |
 | 6 | Review | `/flow:review` | *(coming soon)* |
-| 7 | Ship | `/flow:ship` | *(coming soon)* |
-| 8 | Reflect | `/flow:reflect` | *(coming soon)* |
-| 9 | [Cleanup](phases/phase-9-cleanup.md) | `/flow:cleanup` | Remove worktree and delete state file |
+| 7 | Reflect | `/flow:reflect` | *(coming soon)* |
+| 8 | [Cleanup](phases/phase-8-cleanup.md) | `/flow:cleanup` | Remove worktree and delete state file |
 
 ## Installation
 

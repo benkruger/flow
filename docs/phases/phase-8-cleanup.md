@@ -1,9 +1,9 @@
 ---
-title: "Phase 9: Cleanup"
+title: "Phase 8: Cleanup"
 nav_order: 11
 ---
 
-# Phase 9: Cleanup
+# Phase 8: Cleanup
 
 **Command:** `/flow:cleanup`
 
@@ -40,7 +40,7 @@ This resets the SessionStart hook — the next session starts clean.
 
 ## What You Get
 
-By the end of Phase 9:
+By the end of Phase 8:
 
 - Worktree and all its contents removed
 - State file deleted — no more session hook injection for this feature
@@ -50,6 +50,6 @@ By the end of Phase 9:
 
 ## Gates
 
-- Requires Phase 8: Reflect to be complete
+- Requires Phase 7: Reflect to be complete
 - Requires explicit user confirmation
 - Must run from project root

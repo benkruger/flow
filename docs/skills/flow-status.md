@@ -41,9 +41,9 @@ Shows where you are in the FLOW workflow at any moment. Reads `.claude/flow-stat
   [ ] Phase 4:  Plan
   [ ] Phase 5:  Implement
   [ ] Phase 7:  Review
-  [ ] Phase 8:  Ship
-  [ ] Phase 9:  Reflect
-  [ ] Phase 9: Cleanup
+  [ ] Phase 7:  Reflect
+  [ ] Phase 8:  Cleanup
+  [ ] Phase 8: Cleanup
 
   Time in current phase : 32m
   Times visited         : 1

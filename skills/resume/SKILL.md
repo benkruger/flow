@@ -32,9 +32,8 @@ The Skill to invoke maps directly to the current phase:
 | 4 — Plan | `flow:plan` |
 | 5 — Implement | `flow:implement` |
 | 6 — Review | `flow:review` |
-| 7 — Ship | `flow:ship` |
-| 8 — Reflect | `flow:reflect` |
-| 9 — Cleanup | `flow:cleanup` |
+| 7 — Reflect | `flow:reflect` |
+| 8 — Cleanup | `flow:cleanup` |
 
 ---
 
