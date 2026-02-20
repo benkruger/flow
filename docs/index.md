@@ -19,7 +19,7 @@ An opinionated Ruby on Rails development lifecycle for Claude Code. Every featur
 | Phase | Name | Command | Purpose |
 |-------|------|---------|---------|
 | 1 | [Start](phases/phase-1-start.md) | `/ror:start` | Set up the worktree, update gems, establish the PR |
-| 2 | Research | `/ror:research` | *(coming soon)* |
+| 2 | [Research](phases/phase-2-research.md) | `/ror:research` | Explore codebase, ask clarifying questions, document findings |
 | 3 | Design | `/ror:design` | *(coming soon)* |
 | 4 | Plan | `/ror:plan` | *(coming soon)* |
 | 5 | Implement | `/ror:implement` | *(coming soon)* |

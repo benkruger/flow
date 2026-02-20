@@ -95,6 +95,31 @@ Each phase entry has identical fields regardless of status.
 
 ---
 
+## Research Object
+
+Added to the state file when Phase 2: Research completes. Extended if Research is revisited.
+
+```json
+"research": {
+  "clarifications": [
+    { "question": "What happens to existing webhooks when...", "answer": "They should..." }
+  ],
+  "affected_files": [
+    "app/models/payment/base.rb",
+    "app/workers/payment_webhook_worker.rb"
+  ],
+  "risks": [
+    "Payment::Base has a before_save callback that sets processed_at from Current"
+  ],
+  "open_questions": [
+    "Stripe webhook signing secret — confirmed in ENV but not yet in credentials"
+  ],
+  "summary": "Plain English summary of what was found."
+}
+```
+
+---
+
 ## State Machine
 
 Valid phase transitions are defined in `ror-phases.json` at the plugin root. Forward progression is always valid. Backward transitions are limited per phase.

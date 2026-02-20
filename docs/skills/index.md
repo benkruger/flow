@@ -18,7 +18,7 @@ These skills correspond directly to a workflow phase. Each one starts and ends w
 | Skill | Phase | Description |
 |-------|-------|-------------|
 | [`/ror:start`](ror-start.md) | 1 — Start | Create the worktree, upgrade gems, open the PR, configure permissions |
-| `/ror:research` | 2 — Research | *(coming soon)* |
+| [`/ror:research`](ror-research.md) | 2 — Research | Explore codebase, ask clarifying questions, document findings |
 | `/ror:design` | 3 — Design | *(coming soon)* |
 | `/ror:plan` | 4 — Plan | *(coming soon)* |
 | `/ror:implement` | 5 — Implement | *(coming soon)* |
