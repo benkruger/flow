@@ -100,48 +100,63 @@ If returning to Research, read the previous findings in `flow-state.json["resear
 
 ---
 
-## Step 2 — Explore the codebase
+## Step 3 — Launch codebase explorer sub-agent
 
-Systematically read all code relevant to this feature. Work through each area below. Do not skip any that could be relevant.
+Launch a mandatory sub-agent to explore the codebase. Use the Task tool:
 
-### Models
-- Find all models related to the feature domain
-- For each model, read the **full class hierarchy**: the model itself, its parent (e.g. `ApplicationRecord`, `DigitalApplicationRecord`), and `ApplicationRecord`
-- Look for: `before_save`, `after_create`, `before_destroy` and all other callbacks
-- Look for: `default_scope` (soft deletes)
-- Look for: `self.inheritance_column = :_type_disabled` (no STI)
-- Look for: `belongs_to`, `has_many` with `dependent:` options
-- Note the Base/Create split pattern
+- `subagent_type`: `"Explore"`
+- `description`: `"Research codebase exploration"`
 
-### Controllers
-- Find affected controllers
-- Note the subdomain each belongs to (each subdomain has its own BaseController)
-- Note params pattern (`options` OpenStruct) and response helpers (`render_ok`, `render_error`)
+Provide these instructions to the sub-agent (fill in the feature and scope):
 
-### Workers
-- Find affected Sidekiq workers
-- Read `pre_perform!`, `perform!`, `post_perform!` structure
-- Check `config/sidekiq.yml` for queue names
+> You are exploring a Rails codebase for the FLOW research phase.
+> Feature: <feature name from state>
+> Research scope: <scope from Step 1>
+>
+> Systematically read all code relevant to this feature:
+>
+> **Models** — Find all related models. For each, read the full class
+> hierarchy (model + parent + ApplicationRecord). Look for: before_save,
+> after_create, before_destroy callbacks. Check for default_scope (soft
+> deletes), self.inheritance_column (no STI), belongs_to/has_many with
+> dependent: options. Note the Base/Create split pattern.
+>
+> **Controllers** — Find affected controllers. Note subdomain, BaseController
+> inheritance, params pattern (options OpenStruct), response helpers.
+>
+> **Workers** — Find affected Sidekiq workers. Read pre_perform!/perform!/
+> post_perform! structure. Check config/sidekiq.yml for queue names.
+>
+> **Routes** — Read config/routes/ files relevant to this feature. Note
+> scope with module:, as:, controller:, action: pattern.
+>
+> **Schema** — Read data/release.sql for all relevant tables. Note column
+> types, constraints, indexes, foreign keys.
+>
+> **Tests** — Search test/support/ for existing create_*! helpers for
+> affected models. Note existing test patterns.
+>
+> **Git history** — Run git log --oneline -10 on key files. Use git blame
+> on anything non-obvious.
+>
+> Return your findings as a structured summary:
+> - Affected files (full paths)
+> - Per-model: class hierarchy, callbacks, associations, soft deletes
+> - Per-controller: subdomain, BaseController, params pattern
+> - Per-worker: queue name, halt conditions
+> - Routes: file and pattern
+> - Schema: table structure
+> - Test helpers: existing create_*! helpers found
+> - Risks: anything that could cause problems (callback chains, soft
+>   deletes, Current attribute dependencies)
 
-### Routes
-- Read `config/routes/` files relevant to this feature
-- Note the `scope` with `module:`, `as:`, `controller:`, `action:` pattern
-
-### Schema
-- Read `data/release.sql` for all tables relevant to this feature
-- Note column types, constraints, indexes, foreign keys
-
-### Tests
-- Search `test/support/` for existing `create_*!` helpers for affected models
-- Note existing test patterns — do not invent new patterns when helpers exist
-
-### Git history
-- Run `git log --oneline -10 -- <affected_files>` on key files
-- If anything looks non-obvious, run `git blame` to understand why it exists
+Wait for the sub-agent to return before proceeding. Use the sub-agent's
+findings as the basis for all subsequent steps — do not re-read files
+the sub-agent already covered.
 
 ---
 
-## Step 3 — Formulate clarifying questions
+## Step 4 — Formulate clarifying questions
 
 Based on exploration, identify everything that is ambiguous or unclear about the feature. Write down all questions before presenting them.
 
@@ -156,7 +171,7 @@ Do NOT ask about things that can be inferred from the codebase. Only ask when ge
 
 ---
 
-## Step 4 — Ask clarifying questions
+## Step 5 — Ask clarifying questions
 
 Group questions into batches of up to 4. Present each batch using `AskUserQuestion` — the tab UI allows the user to navigate freely between questions with arrow keys.
 
@@ -173,7 +188,7 @@ Record every question and answer in `flow-state.json["research"]["clarifications
 
 ---
 
-## Step 5 — Document findings
+## Step 6 — Document findings
 
 Write the full research findings into `flow-state.json["research"]`:
 
@@ -205,7 +220,7 @@ Write the full research findings into `flow-state.json["research"]`:
 
 ---
 
-## Step 6 — Present findings
+## Step 7 — Present findings
 
 Show the user a clean summary:
 
@@ -238,13 +253,19 @@ Show the user a clean summary:
 
 ---
 
-## Step 7 — Phase gate
+## Step 8 — Phase gate
 
 Invoke the `flow:status` skill to show the current state, then use AskUserQuestion:
 
 > "Phase 2: Research is complete. Ready to begin Phase 3: Design?"
 > - **Yes, start Phase 3 now**
 > - **Not yet**
+> - **I have a correction or learning to capture**
+
+**If "I have a correction or learning to capture":**
+1. Ask the user what they want to capture
+2. Invoke `/flow:note` with their message
+3. Re-ask with only "Yes, start Phase 3 now" and "Not yet"
 
 **If Yes** — invoke the `flow:design` skill using the Skill tool. Also print:
 

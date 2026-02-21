@@ -203,6 +203,12 @@ Invoke the `flow:status` skill to show the current state, then use AskUserQuesti
 > "Phase 1: Start is complete. Ready to begin Phase 2: Research?"
 > - **Yes, start Phase 2 now**
 > - **Not yet**
+> - **I have a correction or learning to capture**
+
+**If "I have a correction or learning to capture":**
+1. Ask the user what they want to capture
+2. Invoke `/flow:note` with their message
+3. Re-ask with only "Yes, start Phase 2 now" and "Not yet"
 
 **If Yes** — invoke the `flow:research` skill using the Skill tool. Also print:
 

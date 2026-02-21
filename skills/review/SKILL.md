@@ -63,117 +63,91 @@ Update Phase 6:
 
 ---
 
-## Step 1 — Load context
+## Step 1 — Launch diff analyzer sub-agent
 
-Read the following from the state file:
+Read the following from the state file (small, structured — keep in main context):
 - `state["design"]` — what was approved to be built
 - `state["plan"]["tasks"]` — what was planned
 - `state["research"]["risks"]` — risks identified during Research
 
-Get the full feature diff:
+Then launch a mandatory sub-agent to analyze the full diff. Use the Task tool:
 
-```bash
-git diff origin/main...HEAD
-```
+- `subagent_type`: `"Explore"`
+- `description`: `"Review diff analysis"`
 
-This shows every change made in this feature branch. Read it completely
-before starting the review.
+Provide these instructions to the sub-agent (fill in the details):
 
----
+> You are analyzing a feature diff for the FLOW review phase.
+> Feature: <feature name from state>
+>
+> Approved design:
+> <paste state["design"] — chosen_approach, schema_changes, model_changes,
+> controller_changes, worker_changes, route_changes>
+>
+> Research risks:
+> <paste state["research"]["risks"]>
+>
+> Plan tasks:
+> <paste state["plan"]["tasks"] summaries>
+>
+> First, get the full diff:
+> ```bash
+> git diff origin/main...HEAD
+> ```
+>
+> Read every changed file completely. Then check:
+>
+> **Design alignment:**
+> - Do schema changes match design["schema_changes"]?
+> - Do model decisions match design["model_changes"]?
+> - Do controller/route changes match design?
+> - Do worker changes match design?
+> - Flag any deviation — minor drift or major mismatch.
+>
+> **Research risk coverage:**
+> - For each risk in the list, confirm it was handled in the diff.
+> - Flag any risk not addressed.
+>
+> **Rails anti-pattern check:**
+> - Associations: every belongs_to/has_many has inverse_of:, dependent:,
+>   class_name: explicit
+> - Queries: no N+1, no DB queries in views, no .first/.last for defaults
+> - Callbacks: Current attribute usage correct, no update_column
+> - Models: self.table_name in namespaced Base, no STI
+> - Soft deletes: .unscoped usage correct
+> - Workers: halt! in pre_perform!, queue matches sidekiq.yml
+> - Tests: create_*! helpers used, both branches tested, assertions present
+> - RuboCop: scan diff for rubocop:disable comments, check .rubocop.yml changes
+> - Code clarity: descriptive names, no inline comments, no over-engineering
+>
+> Return structured findings in three categories:
+> 1. Design alignment issues (with file:line references)
+> 2. Uncovered research risks (with which risk and why)
+> 3. Anti-pattern violations (with file:line and what to fix)
+> If a category has no findings, say so explicitly.
 
-## Step 2 — Design Alignment Check
-
-Compare the implementation against `state["design"]`:
-
-- Do the schema changes match `design["schema_changes"]`?
-- Do the model decisions match `design["model_changes"]`?
-- Do the controller/route changes match `design["controller_changes"]` and `design["route_changes"]`?
-- Do the worker changes match `design["worker_changes"]`?
-
-For each mismatch — flag it. Minor drift is a finding. Major drift means
-go back to Code.
-
----
-
-## Step 3 — Research Risk Coverage
-
-Read `state["research"]["risks"]` one by one.
-
-For each risk, confirm it was properly handled in the implementation.
-A risk identified in Research and not addressed is a bug waiting to happen.
-
-Flag any risk that was not accounted for.
-
----
-
-## Step 4 — Rails Anti-Pattern Review
-
-Read every changed file as if seeing it for the first time. Check each
-of the following explicitly — do not skip any:
-
-**Associations:**
-- Every `belongs_to` has `inverse_of:`
-- Every `has_many` has `dependent:` specified
-- Every `has_many` has `inverse_of:`
-- `class_name:` is explicit on all associations
-
-**Queries:**
-- No N+1 queries — check controllers, workers, and mailers
-- No database queries in views
-- `.where` not used when a named scope or association would be cleaner
-- No `.first` or `.last` to pick a "default" record — if the choice matters, find it by a meaningful attribute
-
-**Callbacks:**
-- Callbacks in parent classes that set values from `Current` — confirm the implementation uses `Current` correctly, not direct parameter passing
-- No `update_column` anywhere — only `update!`
-
-**Models:**
-- `self.table_name =` set explicitly in all namespaced Base classes
-- No STI (`self.inheritance_column = :_type_disabled` if needed)
-
-**Soft deletes:**
-- `.unscoped` used correctly where deleted records are intentionally accessed
-- Queries that should not include soft-deleted records do not use `.unscoped`
-
-**Workers:**
-- `halt!` called in `pre_perform!` for missing/invalid records
-- Queue name matches `config/sidekiq.yml`
-
-**Tests:**
-- `create_*!` helpers used — no `Model::Create.create!` directly
-- Both branches of every conditional tested
-- Tests have assertions — no empty test methods
-- No inline comments in tests
-
-**RuboCop:**
-- Scan the full diff for any `# rubocop:disable` comments introduced in this feature:
-
-```bash
-git diff origin/main...HEAD | grep "rubocop:disable"
-```
-
-If any are found, this is an automatic finding — flag every one. RuboCop
-cops must never be disabled without explicit user approval. Fix the code,
-not the cop.
-
-Also check for `.rubocop.yml` modifications:
-
-```bash
-git diff origin/main...HEAD -- .rubocop.yml
-```
-
-Any change to `.rubocop.yml` is an automatic finding. Revert it and fix
-the code instead.
-
-**Code clarity:**
-- Descriptive variable names — no `bu`, `data`, `values`
-- No `owner` as a variable name — use `parent` or something descriptive
-- No inline comments — code should be self-documenting
-- No over-engineering beyond what the task required
+Wait for the sub-agent to return before proceeding.
 
 ---
 
-## Step 5 — Fixing Findings
+## Step 2 — Review sub-agent findings
+
+Read the sub-agent's structured findings. For each category:
+
+**Design alignment issues** — Confirm each finding against the state file.
+Minor drift is a note. Major drift means go back to Code.
+
+**Uncovered research risks** — Confirm each finding. An unaddressed risk
+is a bug waiting to happen.
+
+**Anti-pattern violations** — Confirm each finding against the actual code.
+The sub-agent may have false positives — verify before flagging.
+
+Compile the confirmed findings list for Step 3.
+
+---
+
+## Step 3 — Fixing Findings
 
 For each finding:
 
@@ -199,7 +173,7 @@ Any fix made during Review requires bin/ci to run again.
 
 ---
 
-## Step 6 — Present review summary
+## Step 4 — Present review summary
 
 Show a summary of what was found and fixed:
 
@@ -252,6 +226,12 @@ Invoke `flow:status`, then use AskUserQuestion:
 > "Phase 6: Review is complete. Ready to begin Phase 7: Reflect?"
 > - **Yes, start Phase 7 now** — invoke `flow:reflect`
 > - **Not yet** — print paused banner
+> - **I have a correction or learning to capture**
+
+**If "I have a correction or learning to capture":**
+1. Ask the user what they want to capture
+2. Invoke `/flow:note` with their message
+3. Re-ask with only "Yes, start Phase 7 now" and "Not yet"
 
 **If Yes**, print:
 

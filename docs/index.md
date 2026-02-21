@@ -12,7 +12,9 @@ An opinionated Ruby on Rails development lifecycle for Claude Code. Every featur
 - **Always the same phases.** Simple things that seem simple often aren't. The process catches that.
 - **Worktree-first.** All work happens in an isolated git worktree. Main is never touched directly.
 - **Verify before and after.** `bin/ci` runs at every gate. Green in, green out.
+- **Sub-agents read, main decides.** Phases that explore the codebase use mandatory sub-agents to keep the main conversation context clean for decision-making.
 - **Learnings go to CLAUDE.md.** Patterns discovered during a feature get captured as generic Rails conventions, not one-off notes.
+- **Notes survive compaction.** Corrections and learnings are captured to the state file at every phase transition and whenever the user corrects Claude.
 
 ## Phases
 

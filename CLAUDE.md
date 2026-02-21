@@ -56,12 +56,30 @@ Lives in `.claude/flow-states/<branch>.json` in the target Rails project.
 Gitignored. Tracks: phase status, timing, visit counts, research findings,
 design decisions, plan tasks, and captured notes.
 
+## Sub-Agent Architecture
+
+Phases that read the codebase use mandatory sub-agents (Task tool, Explore type).
+The main conversation provides instructions, the sub-agent reads and reports,
+the main conversation decides. This keeps the main context clean for decisions.
+
+- **Sub-agents:** Research, Design, Plan, Review
+- **No sub-agents:** Start, Code, Reflect, Cleanup
+
+Code trusts the earlier phases — by Phase 5, the state file contains thorough
+findings from Research, validated alternatives from Design, and verified tasks
+from Plan, all produced by mandatory sub-agents.
+
+## Note Capture
+
+Two mechanisms, same destination (`state["notes"]`):
+- **Automatic:** Session hook injects instruction to invoke `/flow:note` when user corrects Claude
+- **At transitions:** Every phase transition (1-7) offers "I have a correction or learning to capture"
+
 ## What Still Needs Work
 
 - Test the plugin installation in a real Rails project
 - Enable GitHub Pages on the repo
 - The `flow-phases.json` `can_return_to` values may need tuning after real use
-- Each phase skill should also ask for an optional note at phase transitions (pattern is documented in `docs/reference/skill-pattern.md` but not yet updated in all skills)
 
 ## Conventions for This Repo
 

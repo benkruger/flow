@@ -116,7 +116,50 @@ it as the single recommendation.
 
 ---
 
-## Step 4 — Present alternatives
+## Step 4 — Validate alternatives via sub-agent
+
+Launch a mandatory sub-agent to validate each alternative against the codebase.
+Use the Task tool:
+
+- `subagent_type`: `"Explore"`
+- `description`: `"Design alternative validation"`
+
+Provide these instructions to the sub-agent (fill in the details):
+
+> You are validating design alternatives for the FLOW design phase.
+> Feature: <feature name from state>
+>
+> Research findings: <paste state["research"] summary, affected_files, risks>
+>
+> Alternatives to validate:
+> <paste the 2-3 alternatives drafted in Step 3>
+>
+> For each alternative, check the codebase:
+>
+> 1. **Feasibility** — Do the files it would touch exist? Does the route
+>    structure support it? Does the schema allow it?
+> 2. **Conflicts** — Any naming collisions with existing code? Callback
+>    chains that would interfere? Existing logic that contradicts the approach?
+> 3. **Reuse opportunities** — Existing helpers, shared modules, or patterns
+>    that this alternative could leverage instead of building from scratch?
+> 4. **Files to modify** — Exact list of files each alternative would need
+>    to create or modify.
+>
+> Return per-alternative:
+> - Feasibility: confirmed / blocked (with reason)
+> - Conflicts found (if any)
+> - Reuse opportunities (if any)
+> - Files that would need modification (full paths)
+
+Wait for the sub-agent to return. Incorporate its findings into the
+alternatives before presenting them to the user in Step 5.
+
+---
+
+## Step 5 — Present alternatives
+
+Include the sub-agent's validation findings in each alternative's markdown
+preview — feasibility status, conflicts, and reuse opportunities.
 
 Use AskUserQuestion with markdown previews — one option per alternative
 plus a return-to-research option. Use the `markdown` field to show each
@@ -154,7 +197,7 @@ Option D: Need more research first
 
 ---
 
-## Step 5 — Refine the chosen approach
+## Step 6 — Refine the chosen approach
 
 Based on the selection, ask targeted follow-up questions about the
 chosen approach only. Use AskUserQuestion in batches of up to 4.
@@ -170,7 +213,7 @@ have obvious answers from the research findings.
 
 ---
 
-## Step 6 — Present full design for approval
+## Step 7 — Present full design for approval
 
 Show the complete design based on the chosen approach and refinements:
 
@@ -217,7 +260,7 @@ Phase 2 back to `in_progress`, then invoke `flow:research`.
 
 ---
 
-## Step 7 — Save design to state
+## Step 8 — Save design to state
 
 Write to `.claude/flow-states/<branch>.json` under `design`:
 
@@ -252,6 +295,12 @@ Invoke `flow:status`, then use AskUserQuestion:
 > "Phase 3: Design is complete. Ready to begin Phase 4: Plan?"
 > - **Yes, start Phase 4 now** — invoke `flow:plan`
 > - **Not yet** — print paused banner
+> - **I have a correction or learning to capture**
+
+**If "I have a correction or learning to capture":**
+1. Ask the user what they want to capture
+2. Invoke `/flow:note` with their message
+3. Re-ask with only "Yes, start Phase 4 now" and "Not yet"
 
 **If Yes**, print:
 

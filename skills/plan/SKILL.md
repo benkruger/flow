@@ -141,9 +141,52 @@ skip the workers section and note it was skipped).
 Work through each section below in order. For each section:
 
 1. Generate tasks for that section
-2. Present them clearly
-3. Ask the section approval question
-4. Handle the response
+2. Verify tasks via mandatory sub-agent
+3. Adjust tasks based on sub-agent findings
+4. Present them clearly
+5. Ask the section approval question
+6. Handle the response
+
+### Section Verification via Sub-Agent
+
+After generating tasks for a section, launch a mandatory sub-agent to verify
+them. Use the Task tool:
+
+- `subagent_type`: `"Explore"`
+- `description`: `"Plan task verification — <section name>"`
+
+Provide these instructions to the sub-agent (fill in the details):
+
+> You are verifying plan tasks for the FLOW plan phase.
+> Feature: <feature name from state>
+> Section: <current section name>
+>
+> Design decisions: <paste relevant state["design"] fields>
+> Research findings: <paste relevant state["research"] fields>
+>
+> Tasks to verify:
+> <paste the draft tasks for this section>
+>
+> For each task, check the codebase:
+>
+> 1. **File paths** — Do the files referenced exist? Are the paths correct?
+>    For new files, does the parent directory exist?
+> 2. **Test helpers** — For test tasks, do the create_*! helpers exist in
+>    test/support/? If not, flag that a helper creation task is needed.
+> 3. **Route context** — For route/controller tasks, what routes already
+>    exist in the target file? What patterns are used?
+> 4. **Schema context** — For schema tasks, what does the current
+>    data/release.sql look like for related tables?
+>
+> Return per-task:
+> - File paths: verified / corrected
+> - Available helpers (if test task)
+> - Route context (if route/controller task)
+> - Schema context (if schema task)
+> - Any corrections needed
+
+Adjust tasks based on the sub-agent's findings before presenting the
+section to the user.
 
 ### Section Approval Question
 
@@ -361,6 +404,12 @@ Invoke `flow:status`, then use AskUserQuestion:
 > "Phase 4: Plan is complete. Ready to begin Phase 5: Code?"
 > - **Yes, start Phase 5 now** — invoke `flow:code`
 > - **Not yet** — print paused banner
+> - **I have a correction or learning to capture**
+
+**If "I have a correction or learning to capture":**
+1. Ask the user what they want to capture
+2. Invoke `/flow:note` with their message
+3. Re-ask with only "Yes, start Phase 5 now" and "Not yet"
 
 **If Yes**, print:
 

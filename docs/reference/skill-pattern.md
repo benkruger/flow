@@ -18,14 +18,14 @@ when building new phase skills.
 2. Announce banner
 3. Update state file — set phase to in_progress, record session_started_at
 4. cd into worktree from state file
-5. [Phase-specific work]
-6. Update state file — set phase to complete, calculate cumulative_seconds
-7. Invoke flow:status  ← always, right before the transition question
-8. AskUserQuestion — "Ready to begin Phase X+1?"
-   Also ask: "Any corrections or learnings from this phase to capture?"
-   If yes → invoke flow:note with their message before transitioning
-   - Yes → invoke next phase skill via Skill tool
+5. [Sub-agent codebase read — if this phase reads the codebase]
+6. [Phase-specific work — using sub-agent findings]
+7. Update state file — set phase to complete, calculate cumulative_seconds
+8. Invoke flow:status  ← always, right before the transition question
+9. AskUserQuestion — "Phase X: Name is complete. Ready to begin Phase X+1?"
+   - Yes, start Phase X+1 now → invoke next phase skill via Skill tool
    - Not yet → print paused banner
+   - I have a correction or learning to capture → invoke flow:note, then re-ask
 ```
 
 ---
@@ -107,6 +107,55 @@ if prev.get('status') != 'complete':
     sys.exit(1)
 PYCHECK
 ```
+
+---
+
+## Mandatory Sub-Agent Pattern
+
+**Rule:** Every phase that reads the codebase uses a mandatory sub-agent.
+
+Phases with sub-agents: Research, Design, Plan, Review.
+Phases without: Start, Code, Reflect, Cleanup.
+
+The pattern is the same in every phase:
+
+```
+1. Main conversation determines WHAT to look for (from state file + user input)
+2. Launch sub-agent via Task tool with subagent_type: "Explore"
+3. Sub-agent reads files, returns structured findings
+4. Main conversation uses findings to do the phase work
+5. Main conversation persists relevant findings to state file
+```
+
+Sub-agents do NOT: make decisions, write code, modify state, interact with users.
+They read and report. The main conversation decides.
+
+**Code phase rationale:** By the time Code starts, the state file contains
+thorough findings from Research, validated alternatives from Design, and verified
+tasks from Plan — all produced by mandatory sub-agents. Code trusts the earlier
+phases. It reads the state file and the specific file it's modifying — nothing more.
+
+---
+
+## Note Capture at Transitions
+
+Every phase transition (Phases 1-7) includes a third option:
+
+```
+"Phase X: Name is complete. Ready to begin Phase X+1?"
+- Yes, start Phase X+1 now
+- Not yet
+- I have a correction or learning to capture
+```
+
+If the user picks option 3:
+1. Ask what they want to capture (open text)
+2. Invoke `/flow:note` with their message
+3. Re-ask the transition question with only "Yes" and "Not yet"
+
+This is separate from the automatic correction capture in the session hook.
+The hook catches corrections as they happen mid-conversation. The transition
+prompt catches things the user thought of but didn't say.
 
 ---
 

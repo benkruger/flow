@@ -239,6 +239,12 @@ Invoke `flow:status`, then use AskUserQuestion:
 > "Phase 7: Reflect is complete. The PR now includes CLAUDE.md improvements. Ready to begin Phase 8: Cleanup?"
 > - **Yes, start Phase 8 now** — invoke `flow:cleanup`
 > - **Not yet** — print paused banner
+> - **I have a correction or learning to capture**
+
+**If "I have a correction or learning to capture":**
+1. Ask the user what they want to capture
+2. Invoke `/flow:note` with their message
+3. Re-ask with only "Yes, start Phase 8 now" and "Not yet"
 
 **If Yes**, print:
 
