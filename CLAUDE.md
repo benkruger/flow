@@ -18,6 +18,10 @@ A Claude Code plugin (`flow:` namespace) implementing an opinionated 8-phase Rai
 - Enable GitHub Pages on the repo
 - The `flow-phases.json` `can_return_to` values may need tuning after real use
 
+## Maintainer Skills (private to this repo)
+
+- `/release` — `.claude/skills/release/SKILL.md` — bump version, tag, push, create GitHub Release
+
 ## Conventions
 
 - All commits via `/flow:commit` skill
