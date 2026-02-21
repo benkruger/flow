@@ -17,7 +17,33 @@ Print:
 ============================================
 ```
 
-## Step 1 — Determine the new version
+## Step 1 — Check for uncommitted changes
+
+Run `git status`. If there are uncommitted changes, stop:
+
+> "There are uncommitted changes. Commit or stash them before releasing."
+
+Do not proceed until the working tree is clean.
+
+## Step 2 — Check main is up to date
+
+```bash
+git pull origin main
+```
+
+If this produces changes, warn the user that new commits were pulled.
+
+## Step 3 — Show what changed since last release
+
+Run:
+
+```bash
+git log --oneline $(git describe --tags --abbrev=0 2>/dev/null || echo HEAD~20)..HEAD
+```
+
+Display the commit list. This is what goes into the release.
+
+## Step 4 — Determine the new version
 
 Read the current version from `.claude-plugin/plugin.json`.
 
@@ -29,32 +55,6 @@ Use AskUserQuestion:
 > - **Major** — "<major+1>.0.0" (breaking changes)
 
 Display the exact new version number in each option description.
-
-## Step 2 — Check for uncommitted changes
-
-Run `git status`. If there are uncommitted changes, stop:
-
-> "There are uncommitted changes. Commit or stash them before releasing."
-
-Do not proceed until the working tree is clean.
-
-## Step 3 — Check main is up to date
-
-```bash
-git pull origin main
-```
-
-If this produces changes, warn the user that new commits were pulled.
-
-## Step 4 — Show what changed since last release
-
-Run:
-
-```bash
-git log --oneline $(git describe --tags --abbrev=0 2>/dev/null || echo HEAD~20)..HEAD
-```
-
-Display the commit list. This is what goes into the release.
 
 ## Step 5 — Bump version in both files
 
