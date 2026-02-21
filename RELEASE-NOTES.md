@@ -1,5 +1,20 @@
 # Release Notes
 
+## v0.2.1 — Release Skill Bug Fixes
+
+### Fixes
+
+- **Permission prompts eliminated** — `gh release create` was missing from the
+  allow list and the `--notes` heredoc fallback used shell metacharacters. Both
+  now resolved: command added to permissions, heredoc removed.
+- **GitHub Release body now shows only current version** — `--notes-file
+  RELEASE-NOTES.md` included all historical notes. A new
+  `hooks/extract-release-notes.py` script extracts just the current version's
+  section to a temp file, passed via `--notes-file` with no shell
+  metacharacters.
+
+---
+
 ## v0.2.0 — Release Skill and Sub-Agent Architecture
 
 ### New Features
