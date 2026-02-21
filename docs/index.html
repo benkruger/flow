@@ -349,6 +349,63 @@
       border-radius: 4px;
       white-space: nowrap;
     }
+
+    .cool-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+      margin: 24px 0;
+    }
+
+    @media (max-width: 760px) {
+      .cool-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 480px) {
+      .cool-grid { grid-template-columns: 1fr; }
+    }
+
+    .cool-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cool-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--accent);
+      border-radius: 12px 12px 0 0;
+    }
+
+    .cool-icon {
+      font-size: 28px;
+      line-height: 1;
+      margin-bottom: 14px;
+      display: block;
+    }
+
+    .cool-headline {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+      line-height: 1.3;
+    }
+
+    .cool-desc {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin: 0;
+      line-height: 1.5;
+    }
   </style>
 </head>
 <body>
@@ -503,6 +560,51 @@
         <tr><td><code>/flow:note</code></td><td>Captures corrections to state file &mdash; auto-invoked when Claude is wrong</td></tr>
       </tbody>
     </table>
+  </section>
+
+  <!-- COOL STUFF -->
+  <section>
+    <h2>Cool Stuff</h2>
+    <p>Implementation details that are quietly delightful &mdash; things you only notice once you start using it.</p>
+    <div class="cool-grid">
+
+      <div class="cool-card">
+        <span class="cool-icon">💾</span>
+        <div class="cool-headline">Close your laptop mid-feature</div>
+        <p class="cool-desc">State file plus session hook means full context is rebuilt on next open. <code>/compact</code>, a week away, new terminal &mdash; doesn&rsquo;t matter. Claude opens knowing exactly where it is.</p>
+      </div>
+
+      <div class="cool-card">
+        <span class="cool-icon">⛔</span>
+        <div class="cool-headline">&ldquo;BLOCKED&rdquo; means blocked</div>
+        <p class="cool-desc">Phase gates are Python scripts that execute before the skill loads. Not instructions. Not suggestions. The phase didn&rsquo;t start &mdash; there&rsquo;s nothing for Claude to interpret or override.</p>
+      </div>
+
+      <div class="cool-card">
+        <span class="cool-icon">🔀</span>
+        <div class="cool-headline">Go back when you need to</div>
+        <p class="cool-desc">A real state machine with valid back-transitions. Research &rarr; Design &rarr; back to Research if needed. Prior findings are preserved and extended, never discarded.</p>
+      </div>
+
+      <div class="cool-card">
+        <span class="cool-icon">📋</span>
+        <div class="cool-headline">Release notes write themselves</div>
+        <p class="cool-desc">The release skill reads your structured commit log &mdash; imperative verb, summary, per-file breakdown &mdash; and assembles release notes automatically. Commit well, get release notes free.</p>
+      </div>
+
+      <div class="cool-card">
+        <span class="cool-icon">🎯</span>
+        <div class="cool-headline">Corrections capture themselves</div>
+        <p class="cool-desc">Say Claude is wrong and <code>/flow:note</code> fires automatically &mdash; no command to remember. The correction lives in the state file, survives compaction, and becomes a <code>CLAUDE.md</code> pattern at Reflect.</p>
+      </div>
+
+      <div class="cool-card">
+        <span class="cool-icon">🌿</span>
+        <div class="cool-headline">Three features, three tabs</div>
+        <p class="cool-desc">State files are branch-named. Open three terminal tabs, run three features in parallel &mdash; FLOW sessions never interfere with each other.</p>
+      </div>
+
+    </div>
   </section>
 
   <!-- ECOSYSTEM -->
