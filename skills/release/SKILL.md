@@ -59,14 +59,30 @@ Display the commit list. This is what goes into the release.
 
 Read the current version from `.claude-plugin/plugin.json`.
 
+Analyze the commit list from Step 3 and recommend a release type using
+these rules (apply the highest that matches):
+
+- **Major** — any commit removes or renames a skill, changes a skill's
+  invocation command, or breaks backwards compatibility with existing
+  state files
+- **Minor** — any commit adds a new skill, adds a new phase, or adds
+  significant new behaviour to an existing skill
+- **Patch** — all commits are bug fixes, doc corrections, wording
+  improvements, or permission/config tweaks
+
+State your recommendation and the one-line reason before asking.
+
 Use AskUserQuestion:
 
-> "Current version is <current_version>. What type of release?"
-> - **Patch** — "<major>.<minor>.<patch+1>" (bug fixes, doc corrections)
-> - **Minor** — "<major>.<minor+1>.0" (new features, new skills)
-> - **Major** — "<major+1>.0.0" (breaking changes)
+> "I recommend **<type>** (<new_version>) — <one sentence reason>.
+>  Confirm the release type:"
+> - **<Recommended type>** — "<new_version>" (Recommended)
+> - **Patch** — "<major>.<minor>.<patch+1>"
+> - **Minor** — "<major>.<minor+1>.0"
+> - **Major** — "<major+1>.0.0"
 
-Display the exact new version number in each option description.
+Put the recommended type first in the list. Show all three options so
+the user can override.
 
 ## Step 5 — Bump version in both files
 
