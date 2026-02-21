@@ -10,6 +10,7 @@
       "Bash(git worktree *)",
       "Bash(gh pr create *)",
       "Bash(gh pr edit *)",
+      "Bash(gh release create *)",
       "Bash(python3 *)"
     ],
     "deny": [

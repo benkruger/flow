@@ -137,14 +137,11 @@ git push origin v<new_version>
 ## Step 9 — Create GitHub Release
 
 ```bash
-gh release create v<new_version> \
-  --title "v<new_version>" \
-  --notes-file RELEASE-NOTES.md
+gh release create v<new_version> --title "v<new_version>" --notes-file RELEASE-NOTES.md
 ```
 
-Note: `--notes-file` uses the full RELEASE-NOTES.md. GitHub will render it.
-If the full file is too long, extract only the section for this version and
-pass it via `--notes` with a heredoc instead.
+`--notes-file` passes the full RELEASE-NOTES.md to GitHub, which renders it.
+All historical versions are included — that is correct behaviour.
 
 ## Done
 
