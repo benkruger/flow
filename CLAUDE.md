@@ -10,21 +10,20 @@ A Claude Code plugin (`flow:` namespace) implementing an opinionated 8-phase Rai
 - `hooks/session-start.sh` — detects in-progress features, injects resume context
 - `hooks/check-phase.py` — reusable phase entry guard
 - `.claude/settings.json` — project permissions (git rebase denied)
-- `docs/` — GitHub Pages site (enable in Settings → Pages → main /docs)
+- `docs/` — GitHub Pages site (main /docs, static HTML)
 
 ## What Still Needs Work
 
 - Test the plugin installation in a real Rails project
-- Enable GitHub Pages on the repo
 - The `flow-phases.json` `can_return_to` values may need tuning after real use
 
 ## Maintainer Skills (private to this repo)
 
+- `/commit` — `.claude/skills/commit` — review diff, approve, commit, push
 - `/release` — `.claude/skills/release/SKILL.md` — bump version, tag, push, create GitHub Release
 
 ## Conventions
 
-- All commits via `/flow:commit` skill
+- All commits via `/commit` skill
 - Namespace is `flow:` — plugin.json name is `"flow"`
 - Never rebase — merge only (denied in `.claude/settings.json`)
-- Never disable RuboCop or modify `.rubocop.yml` without user approval
