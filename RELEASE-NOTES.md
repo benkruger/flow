@@ -1,5 +1,25 @@
 # Release Notes
 
+## v0.2.2 — Repo housekeeping and maintainer tooling
+
+### Improvements
+
+- **Repo renamed** — `ruby-on-rails-claude-ai-process` → `flow` across all
+  references, docs, and links.
+- **Docs site rebuilt** — Replaced Jekyll/just-the-docs with a hand-coded
+  static HTML landing page; GitHub Pages now serves `docs/index.html` directly.
+- **README rewritten** — Stronger framing, deeper architecture explanation.
+- **CLAUDE.md trimmed** — Removed user-facing documentation that belongs in
+  README; now a concise working guide for maintainers.
+- **Release skill moved to private** — `/flow:release` removed from the public
+  plugin (users don't need it); now lives in `.claude/skills/release/` as a
+  maintainer-only private skill invoked as `/release`.
+- **`/commit` available in this repo** — Symlinked `skills/commit` into
+  `.claude/skills/commit` so `/commit` works when developing in this repo
+  without the plugin being self-installed.
+
+---
+
 ## v0.2.1 — Release Skill Bug Fixes
 
 ### Fixes
