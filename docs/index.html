@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FLOW — Rails Development Lifecycle for Claude Code</title>
+  <meta name="description" content="An opinionated 8-phase development lifecycle plugin for Claude Code, built for Ruby on Rails. Research-first, design-first, TDD. Every feature, same phases, no shortcuts.">
+  <style>
+    :root {
+      --bg: #ffffff;
+      --surface: #faf5ff;
+      --border: #e9d5ff;
+      --text: #1e1b4b;
+      --text-muted: #64748b;
+      --accent: #7c3aed;
+      --accent-subtle: #f5f3ff;
+      --accent-fg: #6d28d9;
+      --green: #059669;
+      --orange: #d97706;
+      --purple: #7c3aed;
+      --red: #dc2626;
+      --step-num-text: #ffffff;
+      --sub-agent-bg: #f5f3ff;
+      --sub-agent-text: #7c3aed;
+      --prompt-border: #7c3aed;
+      --callout-border: #7c3aed;
+      --cta-bg: #7c3aed;
+      --cta-text: #ffffff;
+      --cta-hover-bg: #6d28d9;
+      --cta-hover-text: #ffffff;
+    }
+
+    [data-theme="dark"] {
+      --bg: #0c0a13;
+      --surface: #161422;
+      --border: #2a2542;
+      --text: #ede9fe;
+      --text-muted: #94a3b8;
+      --accent: #a78bfa;
+      --accent-subtle: #1e1a2e;
+      --accent-fg: #a78bfa;
+      --green: #34d399;
+      --orange: #fbbf24;
+      --purple: #c4b5fd;
+      --red: #f87171;
+      --step-num-text: #0c0a13;
+      --sub-agent-bg: #1e1a2e;
+      --sub-agent-text: #a78bfa;
+      --prompt-border: #a78bfa;
+      --callout-border: #a78bfa;
+      --cta-bg: #7c3aed;
+      --cta-text: #ffffff;
+      --cta-hover-bg: #6d28d9;
+      --cta-hover-text: #ffffff;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    .theme-toggle {
+      margin-left: auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 20px;
+      line-height: 1;
+      color: var(--text);
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+
+    .theme-toggle:hover { border-color: var(--accent); }
+
+    header {
+      padding: 48px 0 32px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    header h1 {
+      font-size: 42px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 12px;
+    }
+
+    header h1 span { color: var(--accent); }
+
+    header .tagline {
+      font-size: 18px;
+      color: var(--text-muted);
+    }
+
+    section {
+      padding: 48px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    section:last-of-type { border-bottom: none; }
+
+    h2 {
+      font-size: 28px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      letter-spacing: -0.3px;
+    }
+
+    h3 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      margin-top: 28px;
+      color: var(--text);
+    }
+
+    p {
+      color: var(--text-muted);
+      margin-bottom: 16px;
+      font-size: 16px;
+    }
+
+    p strong { color: var(--text); }
+
+    a { color: var(--accent-fg); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      overflow-x: auto;
+      margin: 16px 0 24px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
+      font-size: 14px;
+    }
+
+    p code, li code {
+      background: var(--surface);
+      padding: 2px 7px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+    }
+
+    .comment { color: var(--text-muted); }
+    .cmd { color: var(--green); }
+    .flag { color: var(--orange); }
+    .string { color: var(--purple); }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 2px;
+      margin: 24px 0;
+    }
+
+    .pipeline-step {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .pipeline-step:first-child { border-radius: 8px 8px 0 0; }
+    .pipeline-step:last-child { border-radius: 0 0 8px 8px; }
+
+    .step-num {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--step-num-text);
+      background: var(--accent);
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .step-label {
+      font-weight: 600;
+      font-size: 15px;
+      color: var(--text);
+    }
+
+    .step-detail {
+      color: var(--text-muted);
+      font-size: 13px;
+      margin-left: auto;
+    }
+
+    .sub-agent-badge {
+      background: var(--sub-agent-bg);
+      color: var(--sub-agent-text);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    .features {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 24px 0;
+    }
+
+    @media (max-width: 640px) {
+      .features { grid-template-columns: 1fr; }
+      .step-detail { display: none; }
+    }
+
+    .feature {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+    }
+
+    .feature h4 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .feature p {
+      font-size: 14px;
+      margin-bottom: 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+
+    th {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 2px solid var(--border);
+      color: var(--text);
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+
+    td:first-child {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    .callout {
+      background: var(--surface);
+      border-left: 3px solid var(--callout-border);
+      padding: 16px 20px;
+      margin: 20px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .callout p { margin-bottom: 0; }
+
+    footer {
+      padding: 48px 0;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    footer a { color: var(--text-muted); }
+    footer a:hover { color: var(--accent-fg); }
+
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      margin-bottom: 16px;
+    }
+
+    .cta {
+      display: inline-block;
+      background: var(--cta-bg);
+      color: var(--cta-text);
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 16px;
+      margin-top: 12px;
+      transition: background 0.15s;
+    }
+
+    .cta:hover {
+      background: var(--cta-hover-bg);
+      color: var(--cta-hover-text);
+      text-decoration: none;
+    }
+
+    ul, ol {
+      color: var(--text-muted);
+      padding-left: 24px;
+      margin-bottom: 16px;
+    }
+
+    li {
+      margin-bottom: 8px;
+      font-size: 15px;
+    }
+
+    li strong { color: var(--text); }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <nav style="display: flex; align-items: center; gap: 24px; padding: 24px 0; font-size: 14px;">
+    <a href="https://github.com/benkruger/ruby-on-rails-claude-ai-process">GitHub</a>
+    <a href="https://github.com/benkruger/ruby-on-rails-claude-ai-process/blob/main/RELEASE-NOTES.md">Changelog</a>
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle light/dark mode">
+      <span id="theme-icon">&#9788;</span>
+    </button>
+  </nav>
+
+  <header>
+    <h1><a href="https://github.com/benkruger/ruby-on-rails-claude-ai-process" style="color: inherit; text-decoration: none;"><span>FLOW</span></a></h1>
+    <p class="tagline">An opinionated 8-phase development lifecycle for Claude Code — built for Ruby on Rails. Every feature follows the same phases in the same order. No shortcuts.</p>
+  </header>
+
+  <!-- INSTALL -->
+  <section style="padding: 32px 0;">
+    <p style="color: var(--text-muted); font-size: 15px; margin-bottom: 12px;">Step 1: Install in Claude Code</p>
+    <div style="position: relative;">
+      <pre style="font-size: 15px; padding: 20px 24px; margin: 0;"><code>/plugin marketplace add benkruger/ruby-on-rails-claude-ai-process
+/plugin install flow@flow-marketplace</code></pre>
+      <button onclick="copyInstall()" style="position: absolute; top: 12px; right: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; cursor: pointer; color: var(--text-muted); line-height: 1; transition: color 0.15s, border-color 0.15s;" aria-label="Copy" id="copy-btn">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
+      </button>
+    </div>
+    <p style="color: var(--text-muted); font-size: 15px; margin-top: 20px; margin-bottom: 12px;">Step 2: Start a feature in your Rails project</p>
+    <div style="position: relative;">
+      <pre style="font-size: 15px; padding: 20px 24px; margin: 0;"><code>/flow:start user authentication</code></pre>
+      <button onclick="copyStart()" style="position: absolute; top: 12px; right: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; cursor: pointer; color: var(--text-muted); line-height: 1; transition: color 0.15s, border-color 0.15s;" aria-label="Copy" id="copy-btn-start">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
+      </button>
+    </div>
+    <p style="color: var(--text-muted); font-size: 14px; margin-top: 12px;">FLOW creates a git worktree, upgrades your gems, opens a GitHub PR, runs <code>bin/ci</code> to establish a green baseline, and lands you in Phase 2: Research.</p>
+  </section>
+
+  <!-- THE PROBLEM -->
+  <section>
+    <h2>The Problem</h2>
+    <p>Claude Code is powerful, but undisciplined by default.</p>
+    <p><strong>FLOW imposes structure. Not bureaucracy &mdash; discipline.</strong></p>
+  </section>
+
+  <!-- THE PIPELINE -->
+  <section>
+    <h2>The Pipeline</h2>
+    <p>Every feature goes through 8 phases. Each phase has mandatory entry guards, structured outputs written to a persistent state file, and back-navigation when something was missed. No phase can be skipped.</p>
+
+    <div class="pipeline">
+      <div class="pipeline-step">
+        <div class="step-num">1</div>
+        <span class="step-label">Start</span>
+        <span class="step-detail">Worktree &middot; bundle update &middot; bin/ci baseline &middot; PR created</span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">2</div>
+        <span class="step-label">Research</span>
+        <span class="step-detail">Full class hierarchy &middot; callbacks &middot; test/support/ &middot; risks documented</span>
+        <span class="sub-agent-badge">sub-agent</span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">3</div>
+        <span class="step-label">Design</span>
+        <span class="step-detail">2&ndash;3 alternatives validated &middot; user picks one &middot; approved before any code</span>
+        <span class="sub-agent-badge">sub-agent</span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">4</div>
+        <span class="step-label">Plan</span>
+        <span class="step-detail">Task feasibility verified &middot; TDD ordering &middot; section-by-section approval</span>
+        <span class="sub-agent-badge">sub-agent</span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">5</div>
+        <span class="step-label">Code</span>
+        <span class="step-detail">Test-first per task &middot; diff review &middot; bin/ci gate &middot; commit per task</span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">6</div>
+        <span class="step-label">Review</span>
+        <span class="step-detail">Design alignment &middot; research risk coverage &middot; Rails anti-patterns</span>
+        <span class="sub-agent-badge">sub-agent</span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">7</div>
+        <span class="step-label">Reflect</span>
+        <span class="step-detail">Corrections become CLAUDE.md patterns &middot; plugin gaps noted</span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">8</div>
+        <span class="step-label">Cleanup</span>
+        <span class="step-detail">Worktree removed &middot; state file deleted &middot; feature done</span>
+      </div>
+    </div>
+
+    <p>Phases 2, 3, 4, and 6 use mandatory Explore-type sub-agents to read the codebase. The main conversation stays focused on decisions. Sub-agents handle all file reads and return structured findings &mdash; keeping the main context clean for decision-making throughout a long session.</p>
+  </section>
+
+  <!-- ARCHITECTURE -->
+  <section>
+    <h2>Architecture</h2>
+
+    <div class="features">
+      <div class="feature">
+        <h4>Sub-Agent Architecture</h4>
+        <p>Research, Design, Plan, and Review phases launch Explore-type sub-agents. By the time Code begins, every callback has been found, every risk documented. Code trusts the state file &mdash; it doesn&rsquo;t re-explore.</p>
+      </div>
+      <div class="feature">
+        <h4>State File Persistence</h4>
+        <p>Every feature has a <code>.claude/flow-states/&lt;branch&gt;.json</code> file tracking research findings, design decisions, plan tasks, captured notes, and per-phase timing. State survives session breaks and compaction.</p>
+      </div>
+      <div class="feature">
+        <h4>Session Hook &mdash; Auto-Resume</h4>
+        <p>Every session start &mdash; new terminal, <code>/clear</code>, <code>/compact</code> &mdash; triggers a hook that scans for in-progress features. Claude&rsquo;s first action is <code>/flow:resume</code>. Close your laptop, open Claude Code the next morning, pick up exactly where you left off.</p>
+      </div>
+      <div class="feature">
+        <h4>The Learning Pipeline</h4>
+        <p>User corrects Claude &rarr; <code>/flow:note</code> captures it as a reusable pattern &rarr; Reflect synthesizes all notes &rarr; each approved pattern added to <code>CLAUDE.md</code> &rarr; every future feature benefits. The learnings compound.</p>
+      </div>
+      <div class="feature">
+        <h4>Phase Back-Navigation</h4>
+        <p>Not a linear checklist. If Design reveals a gap in Research, go back. If Code reveals a flaw in the Plan, go back. Prior findings are preserved and extended &mdash; never discarded. Later phases are invalidated and re-approved.</p>
+      </div>
+      <div class="feature">
+        <h4>100% Coverage Enforced</h4>
+        <p>Code cannot transition to Review until <code>coverage/uncovered.txt</code> is empty. <code>bin/ci</code> must be green before every commit and every phase transition. Technical debt is blocked at the source.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHAT IT ENFORCES -->
+  <section>
+    <h2>What It Enforces</h2>
+    <ul>
+      <li><strong>Worktree isolation</strong> &mdash; main is never touched directly; multiple features run in parallel</li>
+      <li><strong>Research before design</strong> &mdash; full class hierarchy read, callbacks found, risks documented first</li>
+      <li><strong>Design alternatives required</strong> &mdash; 2&ndash;3 distinct approaches validated before user picks one</li>
+      <li><strong>TDD always</strong> &mdash; test must fail before implementation is written; test must pass before commit</li>
+      <li><strong>bin/ci gate</strong> &mdash; must be green before every commit and every phase transition</li>
+      <li><strong>No disabling RuboCop</strong> &mdash; fix the code, not the cop; no <code># rubocop:disable</code> comments</li>
+      <li><strong>Commit discipline</strong> &mdash; imperative verb + tl;dr + per-file breakdown, every commit</li>
+    </ul>
+  </section>
+
+  <!-- UTILITY COMMANDS -->
+  <section>
+    <h2>Utility Commands</h2>
+    <p>Available at any point in the workflow, regardless of phase.</p>
+    <table>
+      <thead>
+        <tr><th>Command</th><th>What it does</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>/flow:commit</code></td><td>Full diff review, approved commit message, pull before push</td></tr>
+        <tr><td><code>/flow:status</code></td><td>Current phase, PR link, cumulative time per phase, next step</td></tr>
+        <tr><td><code>/flow:resume</code></td><td>Re-asks last transition question; rebuilds full context on new session</td></tr>
+        <tr><td><code>/flow:note</code></td><td>Captures corrections to state file &mdash; auto-invoked when Claude is wrong</td></tr>
+        <tr><td><code>/flow:release</code></td><td>Bump version, tag, create GitHub Release (maintainer use)</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- CTA -->
+  <section style="text-align: center; padding: 64px 0;">
+    <h2>Get Started</h2>
+    <p>All 8 phase skills, state file infrastructure, session hooks, and reference documentation in one plugin.</p>
+    <a href="https://github.com/benkruger/ruby-on-rails-claude-ai-process" class="cta">View on GitHub</a>
+  </section>
+
+</div>
+
+<footer>
+  <div class="container">
+    <div class="footer-links">
+      <a href="https://github.com/benkruger/ruby-on-rails-claude-ai-process">GitHub</a>
+      <a href="https://github.com/benkruger/ruby-on-rails-claude-ai-process/blob/main/RELEASE-NOTES.md">Changelog</a>
+      <a href="https://github.com/benkruger/ruby-on-rails-claude-ai-process/blob/main/LICENSE">MIT License</a>
+    </div>
+    <p>Built by <a href="https://github.com/benkruger">Ben Kruger</a>.</p>
+  </div>
+</footer>
+
+<script>
+  function copyText(text, btnId) {
+    navigator.clipboard.writeText(text);
+    var btn = document.getElementById(btnId);
+    var origHTML = btn.innerHTML;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/></svg>';
+    btn.style.color = 'var(--green)';
+    setTimeout(function() { btn.innerHTML = origHTML; btn.style.color = 'var(--text-muted)'; }, 2000);
+  }
+
+  function copyInstall() {
+    copyText('/plugin marketplace add benkruger/ruby-on-rails-claude-ai-process\n/plugin install flow@flow-marketplace', 'copy-btn');
+  }
+
+  function copyStart() {
+    copyText('/flow:start user authentication', 'copy-btn-start');
+  }
+
+  function setIcon(theme) {
+    document.getElementById('theme-icon').innerHTML = theme === 'dark' ? '&#9788;' : '&#9790;';
+  }
+
+  function toggleTheme() {
+    var html = document.documentElement;
+    var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', next);
+    setIcon(next);
+    localStorage.setItem('theme', next);
+  }
+
+  (function() {
+    var saved = localStorage.getItem('theme');
+    if (saved) { document.documentElement.setAttribute('data-theme', saved); setIcon(saved); }
+  })();
+</script>
+
+</body>
+</html>
