@@ -136,12 +136,17 @@ git push origin v<new_version>
 
 ## Step 9 — Create GitHub Release
 
+First extract just this version's section from RELEASE-NOTES.md:
+
 ```bash
-gh release create v<new_version> --title "v<new_version>" --notes-file RELEASE-NOTES.md
+python3 hooks/extract-release-notes.py v<new_version>
 ```
 
-`--notes-file` passes the full RELEASE-NOTES.md to GitHub, which renders it.
-All historical versions are included — that is correct behaviour.
+This writes `/tmp/release-notes-v<new_version>.md`. Then create the release:
+
+```bash
+gh release create v<new_version> --title "v<new_version>" --notes-file /tmp/release-notes-v<new_version>.md
+```
 
 ## Done
 
