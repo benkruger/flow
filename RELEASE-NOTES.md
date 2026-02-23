@@ -1,5 +1,44 @@
 # Release Notes
 
+## v0.3.0 — First real-world test: bug fixes and /flow:abort
+
+### New Features
+
+- **`/flow:abort`** — New escape hatch skill. Abandons a feature from any
+  phase: closes the PR, deletes the remote branch, removes the worktree, and
+  deletes the state file. No phase gate — available whenever you need to walk
+  away. Every step is best-effort so partial cleanup still works.
+
+### Fixes
+
+- **Start: PR creation no longer fails** — `gh pr create` was running from the
+  wrong directory and GitHub rejected PRs with zero commits between base and
+  head. Now creates an empty commit in the worktree before pushing and opening
+  the PR.
+- **Commit: new files visible in diff review** — Untracked files were invisible
+  to `git diff HEAD`, forcing workarounds like `cat`. Now uses the Read tool for
+  new files alongside `git diff HEAD` for tracked changes.
+- **Sub-agents use proper tools** — All four sub-agent prompts (Research,
+  Design, Plan, Review) now include explicit tool rules: use Glob/Read/Grep
+  instead of Bash for file checks. Eliminates unnecessary permission prompts
+  from `test -f` and `ls` commands.
+
+### Improvements
+
+- **Start step numbering cleaned up** — Old Steps 4+5 (push + PR) merged into
+  a single Step 4 with all commands running from the worktree. Steps renumbered
+  5-11.
+- **Permissions expanded** — `gh pr close` and `git push origin --delete` added
+  to the default allow list for the abort skill.
+
+### Docs
+
+- New docs page for `/flow:abort` with cleanup vs abort comparison table.
+- Utility commands table updated in README, marketing site, and docs index.
+- "Test plugin installation" removed from CLAUDE.md — tested successfully.
+
+---
+
 ## v0.2.3 — Marketing site overhaul and commit skill fixes
 
 ### Improvements
