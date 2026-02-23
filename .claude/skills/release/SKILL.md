@@ -84,14 +84,18 @@ Use AskUserQuestion:
 Put the recommended type first in the list. Show all three options so
 the user can override.
 
-## Step 5 — Bump version in both files
+## Step 5 — Bump version in all files
 
-Update the `version` field in both files to the new version:
+Update the version string in all four files to the new version:
 
 1. `.claude-plugin/plugin.json` — the `version` field
 2. `.claude-plugin/marketplace.json` — the `version` field inside the plugin entry
+3. `skills/start/SKILL.md` — the version in the announce banner (`FLOW v<version>`)
+4. `skills/status/SKILL.md` — the version in the status panel header (`FLOW v<version>`)
 
-Both must match exactly. No other fields are changed.
+All four must match exactly. Use `replace_all` to find and replace the old
+version string `FLOW v<old_version>` with `FLOW v<new_version>` in the skill
+files. No other fields or content are changed.
 
 ## Step 6 — Update RELEASE-NOTES.md
 
@@ -116,6 +120,8 @@ Commit exactly these files:
 
 - `.claude-plugin/plugin.json`
 - `.claude-plugin/marketplace.json`
+- `skills/start/SKILL.md`
+- `skills/status/SKILL.md`
 - `RELEASE-NOTES.md`
 
 Commit message:
