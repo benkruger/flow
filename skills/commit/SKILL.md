@@ -35,14 +35,19 @@ On completion (whether approved or denied), print the same way:
 
 First run `git status` to see what changed. If nothing to commit, tell the user and stop.
 
-Then show all changes — tracked and untracked:
+Then stage everything and diff the staged changes:
 
 ```bash
-git diff HEAD
+git add -A
 ```
 
-For any **new/untracked files** shown by `git status`, use the **Read tool** to
-show their contents. Never use `cat` via Bash to read files.
+```bash
+git diff --cached
+```
+
+This ensures new (untracked) files appear in the diff output — `git diff HEAD`
+misses untracked files entirely. Staging first gives one unified diff with
+consistent formatting for all changes.
 
 Render the output directly in your response — do not ask the user to expand tool output.
 
@@ -63,8 +68,6 @@ deleted:    path/to/removed.rb
 ````
 
 The `diff` code block renders red/green in most markdown environments.
-
-For new files, show the full contents under a **New file** heading with the path.
 
 ### Step 2 — Commit Message
 
@@ -121,8 +124,9 @@ Question: "Approve this commit?"
 
 ### Step 4 — Commit and push (on approval)
 
-1. `git add -A`
-2. Write the commit message to `/tmp/flow_commit_msg.txt` using a single-line `python3` command (encoding newlines as `\n`), then run `git commit -F /tmp/flow_commit_msg.txt`:
+Files are already staged from Step 1. No need to `git add -A` again.
+
+1. Write the commit message to `/tmp/flow_commit_msg.txt` using a single-line `python3` command (encoding newlines as `\n`), then run `git commit -F /tmp/flow_commit_msg.txt`:
    ```
    python3 -c "open('/tmp/flow_commit_msg.txt','w').write('subject\n\ntl;dr\n\nbody\n\n- file: reason')"
    git commit -F /tmp/flow_commit_msg.txt
@@ -146,7 +150,16 @@ Question: "Approve this commit?"
 
 ### Step 5 — Handle denial
 
-Ask: **What needs to be addressed before committing?**
+Unstage everything first (files were staged in Step 1 for diff purposes):
+
+```bash
+git reset HEAD
+```
+
+`git reset HEAD` only unstages — it moves files back from staged to unstaged.
+No code is deleted, no changes are lost. It is the opposite of `git add`.
+
+Then ask: **What needs to be addressed before committing?**
 
 Listen to the reason, acknowledge it clearly, and stop. Do not commit. The user will make fixes and invoke `/flow:commit` again when ready.
 

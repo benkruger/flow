@@ -139,6 +139,7 @@ Check if `.claude/settings.json` exists in the project root.
       "Bash(git commit *)",
       "Bash(git push)",
       "Bash(git push -u *)",
+      "Bash(git reset HEAD)",
       "Bash(git worktree *)",
       "Bash(gh pr create *)",
       "Bash(gh pr edit *)",
