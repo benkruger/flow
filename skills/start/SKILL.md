@@ -229,7 +229,8 @@ Provide these instructions (fill in the worktree path and bin/ci output):
 >    Understand the root cause. Fix the code, not the test (unless the
 >    test itself is wrong). Run `bin/rails test <file>` to verify,
 >    then `bin/ci` for a full check.
-> 3. **Coverage gaps** — write the missing test, then `bin/ci`
+> 3. **Coverage gaps** — read `test/coverage/uncovered.txt` to see exactly
+>    which lines are uncovered. Write the missing test, then `bin/ci`
 >
 > Max 3 attempts. After each fix, run `bin/ci`. If green, report what
 > was fixed and stop. If still failing after 3 attempts, report exactly
