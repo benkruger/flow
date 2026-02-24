@@ -36,15 +36,16 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 
 ## Logging
 
-Wrap every Bash command (except the HARD-GATE) with timestamps in the
-**same Bash call** — no separate calls for logging:
+Append a completion timestamp to every Bash command in the **same Bash call**:
 
 ```bash
-date -u +"%Y-%m-%dT%H:%M:%SZ [Phase 1] Step X — desc — START" >> /tmp/flow-<branch>.log; COMMAND; EC=$?; date -u +"%Y-%m-%dT%H:%M:%SZ [Phase 1] Step X — desc — DONE (exit $EC)" >> /tmp/flow-<branch>.log; exit $EC
+COMMAND; EC=$?; date -u +"%Y-%m-%dT%H:%M:%SZ [Phase 1] Step X — desc (exit $EC)" >> .claude/flow-states/<branch>.log; exit $EC
 ```
 
 Use the feature name as `<branch>` — it matches the branch name.
-The gap between DONE and the next START = Claude's processing time.
+The gap between consecutive entries is Claude's processing + command time.
+
+Begin logging at Step 7. Steps 2–5 are not logged (state directory not yet created).
 
 ---
 
@@ -141,8 +142,10 @@ Check if `.claude/settings.json` exists in the project root.
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push)",
+      "Bash(git push;*)",
       "Bash(git push -u *)",
       "Bash(git reset HEAD)",
+      "Bash(git reset HEAD;*)",
       "Bash(git worktree *)",
       "Bash(gh pr create *)",
       "Bash(gh pr edit *)",
@@ -150,10 +153,12 @@ Check if `.claude/settings.json` exists in the project root.
       "Bash(git push origin --delete *)",
       "Bash(python3 *)",
       "Bash(bin/ci)",
+      "Bash(bin/ci;*)",
       "Bash(bin/rails test *)",
       "Bash(rubocop *)",
       "Bash(rubocop -A)",
       "Bash(bundle update)",
+      "Bash(bundle update;*)",
       "Bash(bundle exec *)"
     ]
   }

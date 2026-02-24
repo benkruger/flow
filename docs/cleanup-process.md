@@ -22,11 +22,11 @@ git worktree remove .worktrees/<feature-name> --force
 
 If this fails (already removed, doesn't exist, path mismatch), note it and continue.
 
-## Step 3 — Delete the state file
+## Step 3 — Delete the state file and log
 
-Delete `.claude/flow-states/<branch>.json`.
+Delete `.claude/flow-states/<branch>.json` and `.claude/flow-states/<branch>.log`.
 
-If it doesn't exist, note it and continue.
+If either doesn't exist, note it and continue.
 
 ## Step 4 — Report results
 

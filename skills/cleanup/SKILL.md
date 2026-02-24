@@ -37,15 +37,14 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 
 ## Logging
 
-Wrap every Bash command (except the SOFT-GATE) with timestamps in the
-**same Bash call** — no separate calls for logging:
+Append a completion timestamp to every Bash command in the **same Bash call**:
 
 ```bash
-date -u +"%Y-%m-%dT%H:%M:%SZ [Phase 8] Step X — desc — START" >> /tmp/flow-<branch>.log; COMMAND; EC=$?; date -u +"%Y-%m-%dT%H:%M:%SZ [Phase 8] Step X — desc — DONE (exit $EC)" >> /tmp/flow-<branch>.log; exit $EC
+COMMAND; EC=$?; date -u +"%Y-%m-%dT%H:%M:%SZ [Phase 8] Step X — desc (exit $EC)" >> .claude/flow-states/<branch>.log; exit $EC
 ```
 
 Get `<branch>` from the state file or `git branch --show-current`. The gap
-between DONE and the next START = Claude's processing time.
+between consecutive entries is Claude's processing + command time.
 
 ---
 
