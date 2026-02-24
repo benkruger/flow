@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Opinionated Ruby on Rails development lifecycle for Claude Code",
-    "version": "0.6.1"
+    "version": "0.6.2"
   },
   "plugins": [
     {
       "name": "flow",
       "source": "./",
       "description": "Opinionated Ruby on Rails development lifecycle — worktree-first, TDD, phase-gated workflow for Claude Code",
-      "version": "0.6.1",
+      "version": "0.6.2",
       "strict": true
     }
   ]
