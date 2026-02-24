@@ -14,7 +14,7 @@ when building new phase skills.
 ## Standard Structure
 
 ```
-1. HARD-GATE entry check (inline Python — checks previous phase complete)
+1. HARD-GATE entry check (tool-based — checks previous phase complete)
 2. Announce banner
 3. Update state file — set phase to in_progress, record session_started_at
 4. cd into worktree from state file
@@ -32,28 +32,34 @@ when building new phase skills.
 
 ## Announce Banner
 
+````
 ```
 ============================================
   FLOW — Phase N: Name — STARTING
 ============================================
 ```
+````
 
 ## Paused Banner
 
+````
 ```
 ============================================
   FLOW — Paused
   Run /flow:resume when ready to continue.
 ============================================
 ```
+````
 
 ## Completion Banner (shown after Yes is selected)
 
+````
 ```
 ============================================
   FLOW — Phase N: Name — COMPLETE
 ============================================
 ```
+````
 
 ---
 
@@ -79,34 +85,15 @@ when building new phase skills.
 
 Replace `PREV` with the previous phase number and `PREV_NAME` with its name:
 
-```bash
-python3 << 'PYCHECK'
-import json, subprocess, sys
-from pathlib import Path
-
-def project_root():
-    r = subprocess.run(['git', 'worktree', 'list', '--porcelain'],
-                       capture_output=True, text=True)
-    for line in r.stdout.split('\n'):
-        if line.startswith('worktree '):
-            return Path(line.split(' ', 1)[1].strip())
-    return Path('.')
-
-branch = subprocess.run(['git', 'branch', '--show-current'],
-                        capture_output=True, text=True).stdout.strip()
-state_file = project_root() / '.claude' / 'flow-states' / f'{branch}.json'
-
-if not state_file.exists():
-    print('BLOCKED: No FLOW feature in progress. Run /flow:start first.')
-    sys.exit(1)
-
-state = json.loads(state_file.read_text())
-prev = state.get('phases', {}).get('PREV', {})
-if prev.get('status') != 'complete':
-    print('BLOCKED: Phase PREV: PREV_NAME must be complete first.')
-    sys.exit(1)
-PYCHECK
-```
+1. Find the project root: run `git worktree list --porcelain` and note the
+   path on the first `worktree` line.
+2. Get the current branch: run `git branch --show-current`.
+3. Use the Read tool to read `<project_root>/.claude/flow-states/<branch>.json`.
+   - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
+     Run /flow:start first."
+4. Check `phases.PREV.status` in the JSON.
+   - If not `"complete"`: STOP. "BLOCKED: Phase PREV: PREV_NAME must be
+     complete first."
 
 ---
 

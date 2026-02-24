@@ -23,29 +23,11 @@ Do not wait to be asked. Capture first, then respond.
 
 ### Step 1 — Find the state file
 
-```bash
-python3 << 'PYCHECK'
-import subprocess, sys
-from pathlib import Path
-
-def project_root():
-    r = subprocess.run(['git', 'worktree', 'list', '--porcelain'],
-                       capture_output=True, text=True)
-    for line in r.stdout.split('\n'):
-        if line.startswith('worktree '):
-            return Path(line.split(' ', 1)[1].strip())
-    return Path('.')
-
-branch = subprocess.run(['git', 'branch', '--show-current'],
-                        capture_output=True, text=True).stdout.strip()
-state_file = project_root() / '.claude' / 'flow-states' / f'{branch}.json'
-
-if not state_file.exists():
-    sys.exit(0)  # No feature in progress — skip silently
-
-print(str(state_file))
-PYCHECK
-```
+1. Get the current branch: run `git branch --show-current`.
+2. Find the project root: run `git worktree list --porcelain` and note the
+   path on the first `worktree` line.
+3. Use the Read tool to read `<project_root>/.claude/flow-states/<branch>.json`.
+   - If the file does not exist: skip silently — do not interrupt the session.
 
 If no state file is found, skip silently — do not interrupt the session.
 

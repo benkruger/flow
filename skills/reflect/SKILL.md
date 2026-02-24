@@ -6,50 +6,32 @@ description: "Phase 7: Reflect — review what went wrong, capture learnings in 
 # FLOW Reflect — Phase 7: Reflect
 
 <HARD-GATE>
-Run this phase entry check as your very first action. If it exits
-non-zero, stop immediately and show the error to the user.
+Run this phase entry check as your very first action. If any check fails,
+stop immediately and show the error to the user.
 
-```bash
-python3 << 'PYCHECK'
-import json, subprocess, sys
-from pathlib import Path
-
-def project_root():
-    r = subprocess.run(['git', 'worktree', 'list', '--porcelain'],
-                       capture_output=True, text=True)
-    for line in r.stdout.split('\n'):
-        if line.startswith('worktree '):
-            return Path(line.split(' ', 1)[1].strip())
-    return Path('.')
-
-branch = subprocess.run(['git', 'branch', '--show-current'],
-                        capture_output=True, text=True).stdout.strip()
-state_file = project_root() / '.claude' / 'flow-states' / f'{branch}.json'
-
-if not state_file.exists():
-    print('BLOCKED: No FLOW feature in progress. Run /flow:start first.')
-    sys.exit(1)
-
-state = json.loads(state_file.read_text())
-prev = state.get('phases', {}).get('6', {})
-if prev.get('status') != 'complete':
-    print('BLOCKED: Phase 6: Review must be complete before Reflect.')
-    print('Run /flow:review first.')
-    sys.exit(1)
-PYCHECK
-```
+1. Find the project root: run `git worktree list --porcelain` and note the
+   path on the first `worktree` line.
+2. Get the current branch: run `git branch --show-current`.
+3. Use the Read tool to read `<project_root>/.claude/flow-states/<branch>.json`.
+   - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
+     Run /flow:start first."
+4. Check `phases.6.status` in the JSON.
+   - If not `"complete"`: STOP. "BLOCKED: Phase 6: Review must be
+     complete. Run /flow:review first."
 </HARD-GATE>
 
 ## Announce
 
-Print:
+At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 
+````
 ```
 ============================================
   FLOW — Phase 7: Reflect — STARTING
   Recommended model: Sonnet
 ============================================
 ```
+````
 
 ## Update State
 
@@ -68,7 +50,7 @@ Wrap every Bash command (except the HARD-GATE) with timestamps in the
 **same Bash call** — no separate calls for logging:
 
 ```bash
-echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [Phase 7] Step X — desc — START" >> /tmp/flow-<branch>.log; COMMAND; EC=$?; echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [Phase 7] Step X — desc — DONE (exit $EC)" >> /tmp/flow-<branch>.log; exit $EC
+date -u +"%Y-%m-%dT%H:%M:%SZ [Phase 7] Step X — desc — START" >> /tmp/flow-<branch>.log; COMMAND; EC=$?; date -u +"%Y-%m-%dT%H:%M:%SZ [Phase 7] Step X — desc — DONE (exit $EC)" >> /tmp/flow-<branch>.log; exit $EC
 ```
 
 Get `<branch>` from the state file. The gap between DONE and the next
@@ -123,8 +105,9 @@ feature branch so CLAUDE.md improvements merge to main with the feature.
 
 ## Step 3 — Plugin improvement notes
 
-Present the plugin gaps as a separate list — these are not committed:
+Present the plugin gaps inside a fenced code block:
 
+````
 ```
 ============================================
   FLOW — Plugin Improvements to Consider
@@ -140,6 +123,7 @@ Present the plugin gaps as a separate list — these are not committed:
 
 ============================================
 ```
+````
 
 Use AskUserQuestion:
 
@@ -171,23 +155,27 @@ Invoke `flow:status`, then use AskUserQuestion:
 2. Invoke `/flow:note` with their message
 3. Re-ask with only "Yes, start Phase 8 now" and "Not yet"
 
-**If Yes**, print:
+**If Yes**, print inside a fenced code block:
 
+````
 ```
 ============================================
   FLOW — Phase 7: Reflect — COMPLETE
   Merge the PR, then run /flow:cleanup.
 ============================================
 ```
+````
 
-**If Not yet**, print:
+**If Not yet**, print inside a fenced code block:
 
+````
 ```
 ============================================
   FLOW — Paused
   Run /flow:resume when ready to continue.
 ============================================
 ```
+````
 
 ---
 

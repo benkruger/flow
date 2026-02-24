@@ -6,54 +6,34 @@ description: "Phase 8: Cleanup — remove the worktree and delete the state file
 # FLOW Cleanup — Phase 8: Cleanup
 
 <SOFT-GATE>
-Run this phase entry check as your very first action. It always exits 0
-(never blocks), but may print warnings that must be included in the
-confirmation step.
+Run this phase entry check as your very first action. This gate never
+blocks — it records warnings for the confirmation step.
 
-```bash
-python3 << 'PYCHECK'
-import json, subprocess, sys
-from pathlib import Path
+1. Find the project root: run `git worktree list --porcelain` and note the
+   path on the first `worktree` line.
+2. Get the current branch: run `git branch --show-current`.
+3. Use the Read tool to read `<project_root>/.claude/flow-states/<branch>.json`.
+   - If the file does not exist: record warning "No state file found for
+     branch '<branch>'."
+4. If the file exists, check `phases.7.status` in the JSON.
+   - If not `"complete"`: record warning "Phase 7 not complete
+     (status: <actual status>)."
 
-def project_root():
-    r = subprocess.run(['git', 'worktree', 'list', '--porcelain'],
-                       capture_output=True, text=True)
-    for line in r.stdout.split('\n'):
-        if line.startswith('worktree '):
-            return Path(line.split(' ', 1)[1].strip())
-    return Path('.')
-
-branch = subprocess.run(['git', 'branch', '--show-current'],
-                        capture_output=True, text=True).stdout.strip()
-state_file = project_root() / '.claude' / 'flow-states' / f'{branch}.json'
-
-if not state_file.exists():
-    print(f'WARNING: No state file found for branch "{branch}".')
-    sys.exit(0)
-
-state = json.loads(state_file.read_text())
-prev = state.get('phases', {}).get('7', {})
-if prev.get('status') != 'complete':
-    status = prev.get('status', 'not started')
-    print(f'WARNING: Phase 7 not complete (status: {status}).')
-    sys.exit(0)
-
-print('OK')
-sys.exit(0)
-PYCHECK
-```
+Carry any warnings forward to the confirmation step in Step 2.
 </SOFT-GATE>
 
 ## Announce
 
-Print:
+At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 
+````
 ```
 ============================================
   FLOW — Phase 8: Cleanup — STARTING
   Recommended model: Haiku
 ============================================
 ```
+````
 
 ## Logging
 
@@ -61,7 +41,7 @@ Wrap every Bash command (except the SOFT-GATE) with timestamps in the
 **same Bash call** — no separate calls for logging:
 
 ```bash
-echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [Phase 8] Step X — desc — START" >> /tmp/flow-<branch>.log; COMMAND; EC=$?; echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [Phase 8] Step X — desc — DONE (exit $EC)" >> /tmp/flow-<branch>.log; exit $EC
+date -u +"%Y-%m-%dT%H:%M:%SZ [Phase 8] Step X — desc — START" >> /tmp/flow-<branch>.log; COMMAND; EC=$?; date -u +"%Y-%m-%dT%H:%M:%SZ [Phase 8] Step X — desc — DONE (exit $EC)" >> /tmp/flow-<branch>.log; exit $EC
 ```
 
 Get `<branch>` from the state file or `git branch --show-current`. The gap
@@ -111,14 +91,16 @@ Follow the cleanup process in `docs/cleanup-process.md` (Steps 1 through 4).
 
 ### Done — Print banner
 
-Print:
+Print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 
+````
 ```
 ============================================
   FLOW — Phase 8: Cleanup — COMPLETE
   Feature '<feature>' is fully done.
 ============================================
 ```
+````
 
 ## Rules
 

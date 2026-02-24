@@ -36,7 +36,7 @@ Wrap every Bash command with timestamps in the **same Bash call** — no
 separate calls for logging:
 
 ```bash
-echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [Commit] Step X — desc — START" >> /tmp/flow-<branch>.log; COMMAND; EC=$?; echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [Commit] Step X — desc — DONE (exit $EC)" >> /tmp/flow-<branch>.log; exit $EC
+date -u +"%Y-%m-%dT%H:%M:%SZ [Commit] Step X — desc — START" >> /tmp/flow-<branch>.log; COMMAND; EC=$?; date -u +"%Y-%m-%dT%H:%M:%SZ [Commit] Step X — desc — DONE (exit $EC)" >> /tmp/flow-<branch>.log; exit $EC
 ```
 
 Get `<branch>` from `git branch --show-current`. The gap between DONE

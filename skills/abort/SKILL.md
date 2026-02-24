@@ -10,47 +10,31 @@ from any phase, no prerequisites.
 
 ## Entry Check
 
-```bash
-python3 << 'PYCHECK'
-import json, subprocess, sys
-from pathlib import Path
+Run this entry check as your very first action.
 
-def project_root():
-    r = subprocess.run(['git', 'worktree', 'list', '--porcelain'],
-                       capture_output=True, text=True)
-    for line in r.stdout.split('\n'):
-        if line.startswith('worktree '):
-            return Path(line.split(' ', 1)[1].strip())
-    return Path('.')
+1. Find the project root: run `git worktree list --porcelain` and note the
+   path on the first `worktree` line.
+2. Get the current branch: run `git branch --show-current`.
+3. Use the Read tool to read `<project_root>/.claude/flow-states/<branch>.json`.
+   - If the file does not exist: print "WARNING: No state file found for
+     branch '<branch>'. Will attempt best-effort cleanup using git state."
+     Continue — do not stop.
+   - If the file exists: print the feature name, branch, PR URL, and
+     current phase from the JSON.
 
-branch = subprocess.run(['git', 'branch', '--show-current'],
-                        capture_output=True, text=True).stdout.strip()
-state_file = project_root() / '.claude' / 'flow-states' / f'{branch}.json'
-
-if not state_file.exists():
-    print(f'WARNING: No state file found for branch "{branch}".')
-    print('Will attempt best-effort cleanup using git state.')
-    sys.exit(0)
-
-state = json.loads(state_file.read_text())
-print(f"Feature: {state.get('feature', 'unknown')}")
-print(f"Branch: {state.get('branch', 'unknown')}")
-print(f"PR: {state.get('pr_url', 'none')}")
-print(f"Current phase: {state.get('current_phase', '?')}")
-PYCHECK
-```
-
-If this exits non-zero, stop and show the message.
+If the Read tool fails for any other reason, stop and show the error.
 
 ## Announce
 
-Print:
+At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 
+````
 ```
 ============================================
   FLOW — Abort — STARTING
 ============================================
 ```
+````
 
 ## Steps
 
@@ -123,8 +107,9 @@ Follow `docs/cleanup-process.md` Step 3.
 
 ### Done
 
-Follow `docs/cleanup-process.md` Step 4 (report results), then print:
+Follow `docs/cleanup-process.md` Step 4 (report results), then print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 
+````
 ```
 ============================================
   FLOW — Abort — COMPLETE
@@ -133,6 +118,7 @@ Follow `docs/cleanup-process.md` Step 4 (report results), then print:
   worktree removed, state file deleted.
 ============================================
 ```
+````
 
 Report which steps succeeded and which were already cleaned up.
 

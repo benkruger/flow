@@ -23,14 +23,16 @@ Do NOT proceed if the feature name is missing. Ask the user:
 
 ## Announce
 
-Print:
+At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 
+````
 ```
 ============================================
   FLOW v0.5.0 — Phase 1: Start — STARTING
   Recommended model: Haiku
 ============================================
 ```
+````
 
 ## Logging
 
@@ -38,7 +40,7 @@ Wrap every Bash command (except the HARD-GATE) with timestamps in the
 **same Bash call** — no separate calls for logging:
 
 ```bash
-echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [Phase 1] Step X — desc — START" >> /tmp/flow-<branch>.log; COMMAND; EC=$?; echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [Phase 1] Step X — desc — DONE (exit $EC)" >> /tmp/flow-<branch>.log; exit $EC
+date -u +"%Y-%m-%dT%H:%M:%SZ [Phase 1] Step X — desc — START" >> /tmp/flow-<branch>.log; COMMAND; EC=$?; date -u +"%Y-%m-%dT%H:%M:%SZ [Phase 1] Step X — desc — DONE (exit $EC)" >> /tmp/flow-<branch>.log; exit $EC
 ```
 
 Use the feature name as `<branch>` — it matches the branch name.
@@ -50,25 +52,11 @@ The gap between DONE and the next START = Claude's processing time.
 
 ### Step 1 — Check for existing feature
 
-Run this check first:
+Use the Glob tool to check for existing state files matching `.claude/flow-states/*.json`.
 
-```bash
-python3 << 'PYCHECK'
-import json, sys
-from pathlib import Path
+If any files are found, list their names (the branch names from the filenames).
 
-state_dir = Path(".claude/flow-states")
-if state_dir.exists():
-    files = list(state_dir.glob("*.json"))
-    if files:
-        names = [f.stem for f in files]
-        print(f"WARNING: Active FLOW feature(s) found: {', '.join(names)}")
-        sys.exit(1)
-sys.exit(0)
-PYCHECK
-```
-
-If this exits non-zero, use AskUserQuestion:
+If any files are found, use AskUserQuestion:
 
 > "An active FLOW feature already exists. What would you like to do?"
 > - **Start a new feature anyway** — proceed
@@ -274,22 +262,26 @@ Invoke the `flow:status` skill to show the current state, then use AskUserQuesti
 2. Invoke `/flow:note` with their message
 3. Re-ask with only "Yes, start Phase 2 now" and "Not yet"
 
-**If Yes** — invoke the `flow:research` skill using the Skill tool. Also print:
+**If Yes** — invoke the `flow:research` skill using the Skill tool. Also print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 
+````
 ```
 ============================================
   FLOW — Phase 1: Start — COMPLETE
 ============================================
 ```
+````
 
-**If Not yet** — print:
+**If Not yet** — print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 
+````
 ```
 ============================================
   FLOW — Paused
   Run /flow:resume when ready to continue.
 ============================================
 ```
+````
 
 Then report:
 - Worktree location

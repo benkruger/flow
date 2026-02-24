@@ -44,30 +44,12 @@ feature, rebuild from the state file:
 
 ### Step 1 — Find the state file
 
-```bash
-python3 << 'PYCHECK'
-import subprocess, sys
-from pathlib import Path
-
-def project_root():
-    r = subprocess.run(['git', 'worktree', 'list', '--porcelain'],
-                       capture_output=True, text=True)
-    for line in r.stdout.split('\n'):
-        if line.startswith('worktree '):
-            return Path(line.split(' ', 1)[1].strip())
-    return Path('.')
-
-branch = subprocess.run(['git', 'branch', '--show-current'],
-                        capture_output=True, text=True).stdout.strip()
-state_file = project_root() / '.claude' / 'flow-states' / f'{branch}.json'
-
-if not state_file.exists():
-    print(f'No FLOW feature in progress on branch "{branch}".')
-    sys.exit(1)
-
-print(str(state_file))
-PYCHECK
-```
+1. Get the current branch: run `git branch --show-current`.
+2. Find the project root: run `git worktree list --porcelain` and note the
+   path on the first `worktree` line.
+3. Use the Read tool to read `<project_root>/.claude/flow-states/<branch>.json`.
+   - If the file does not exist: report "No FLOW feature in progress on
+     branch '<branch>'." and stop.
 
 If no state file is found — report it and stop.
 
@@ -91,11 +73,13 @@ Use AskUserQuestion:
 
 ## Paused Banner
 
-When the user selects "Not yet", always print:
+When the user selects "Not yet", always print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 
+````
 ```
 ============================================
   FLOW — Paused
   Run /flow:resume when ready to continue.
 ============================================
 ```
+````

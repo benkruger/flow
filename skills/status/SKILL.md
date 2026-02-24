@@ -10,13 +10,15 @@ prints a status panel. Read-only — never modifies anything.
 
 ## Announce
 
-Print:
+At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 
+````
 ```
 ============================================
   FLOW — flow:status — STARTING
 ============================================
 ```
+````
 
 ## Steps
 
@@ -24,15 +26,22 @@ Print:
 
 Find the project root and read `.claude/flow-states/<branch>.json`.
 
-If no state file exists for the current branch, report:
+If no state file exists for the current branch, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+
+````
 ```
 No FLOW feature in progress on this branch.
 Start one with /flow:start <feature name>.
 ```
+````
+
 Then stop.
 
 ### Step 2 — Print status panel
 
+Print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+
+````
 ```
 ============================================
   FLOW v0.5.0 — Current Status
@@ -60,11 +69,13 @@ Then stop.
 
 ============================================
 ```
+````
 
 Use `[x]` for complete, `[>]` for in_progress, `[ ]` for pending.
 
-If all phases are complete, print:
+If all phases are complete, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 
+````
 ```
 ============================================
   FLOW — All phases complete!
@@ -72,6 +83,7 @@ If all phases are complete, print:
   This feature is fully done.
 ============================================
 ```
+````
 
 ## Rules
 
