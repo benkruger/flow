@@ -8,17 +8,17 @@ description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrad
 ## Usage
 
 ```
-/flow:start app payment webhooks
+/flow:start invoice pdf export
 ```
 
 Arguments become the feature name. Words are joined with hyphens:
-- Branch: `app-payment-webhooks`
-- Worktree: `.worktrees/app-payment-webhooks`
-- PR title: `App Payment Webhooks`
+- Branch: `invoice-pdf-export`
+- Worktree: `.worktrees/invoice-pdf-export`
+- PR title: `Invoice Pdf Export`
 
 <HARD-GATE>
 Do NOT proceed if the feature name is missing. Ask the user:
-"What is the feature name? e.g. /flow:start app payment webhooks"
+"What is the feature name? e.g. /flow:start invoice pdf export"
 </HARD-GATE>
 
 ## Announce

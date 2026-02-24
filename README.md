@@ -25,7 +25,7 @@ Start → Research → Design → Plan → Code → Review → Reflect → Clean
 
 | Phase | Command | Model | What happens |
 |-------|---------|-------|-------------|
-| **1: Start** | `/flow:start <name>` | Haiku | New worktree, push branch, open PR, upgrade gems, `bin/ci` baseline — Sonnet sub-agent fixes CI failures |
+| **1: Start** | `/flow:start <name>` | Haiku | New worktree, push branch, open PR, `bin/ci` baseline, upgrade gems, `bin/ci` green — Sonnet sub-agent fixes CI failures |
 | **2: Research** | `/flow:research` | Sonnet | Sub-agent reads full class hierarchy, finds callbacks, checks `test/support/`, documents risks |
 | **3: Design** | `/flow:design` | **Opus** | Sub-agent validates 2-3 alternatives, user picks one, design is approved before any code |
 | **4: Plan** | `/flow:plan` | Sonnet | Sub-agent verifies tasks are executable, section-by-section approval, TDD ordering |
@@ -48,10 +48,10 @@ In any Claude Code session:
 Then start a feature:
 
 ```
-/flow:start app payment webhooks
+/flow:start invoice pdf export
 ```
 
-This creates branch `app-payment-webhooks`, a worktree at `.worktrees/app-payment-webhooks`, opens a GitHub PR, upgrades gems, and runs `bin/ci` to establish a green baseline. You land in Phase 2: Research.
+This creates branch `invoice-pdf-export`, a worktree at `.worktrees/invoice-pdf-export`, opens a GitHub PR, runs `bin/ci` to establish a baseline, upgrades gems, runs `bin/ci` again to confirm green, and lands you in Phase 2: Research.
 
 ---
 
@@ -73,7 +73,7 @@ Available at any point in the workflow:
 |---------|-------------|
 | `/flow:commit` | Full diff review, approved commit message, pull before push |
 | `/flow:status` | Current phase, PR link, cumulative time per phase, next step |
-| `/flow:resume` | Re-asks last transition question; rebuilds context on new session |
+| `/flow:resume` | Re-asks last transition question; rebuilds full context on new session |
 | `/flow:note` | Captures corrections to state file — auto-invoked when Claude is wrong |
 | `/flow:abort` | Abandon feature — close PR, delete remote branch, remove worktree, delete state |
 

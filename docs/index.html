@@ -495,7 +495,7 @@
       <div class="pipeline-step">
         <div class="step-num">1</div>
         <span class="step-label">Start</span>
-        <span class="step-detail">Worktree &middot; bundle update &middot; bin/ci baseline &middot; PR created</span>
+        <span class="step-detail">Worktree &middot; push branch &middot; PR &middot; bin/ci baseline &middot; bundle update &middot; bin/ci green</span>
         <span class="sub-agent-badge">sub-agent</span>
       </div>
       <div class="pipeline-step">
@@ -601,6 +601,7 @@
       <li><strong>Design alternatives required</strong> &mdash; 2&ndash;3 distinct approaches validated before user picks one</li>
       <li><strong>TDD always</strong> &mdash; test must fail before implementation is written; test must pass before commit</li>
       <li><strong>bin/ci gate</strong> &mdash; must be green before every commit and every phase transition</li>
+      <li><strong>100% test coverage</strong> &mdash; Code cannot transition to Review until coverage is complete</li>
       <li><strong>No disabling RuboCop</strong> &mdash; fix the code, not the cop; no <code># rubocop:disable</code> comments</li>
       <li><strong>Commit discipline</strong> &mdash; imperative verb + tl;dr + per-file breakdown, every commit</li>
     </ul>
@@ -746,7 +747,7 @@
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
       </button>
     </div>
-    <p style="color: var(--text-muted); font-size: 14px; margin-top: 12px; margin-bottom: 28px;">FLOW creates a git worktree, upgrades your gems, opens a GitHub PR, runs <code>bin/ci</code> to establish a green baseline, and lands you in Phase 2: Research.</p>
+    <p style="color: var(--text-muted); font-size: 14px; margin-top: 12px; margin-bottom: 28px;">FLOW creates a git worktree, opens a GitHub PR, runs <code>bin/ci</code> to establish a baseline, upgrades gems, runs <code>bin/ci</code> again to confirm green, and lands you in Phase 2: Research.</p>
 
     <div class="callout" style="margin-bottom: 32px;">
       <p>The plugin installs into Claude Code&rsquo;s managed plugin directory &mdash; nothing gets added to your Rails project. The only file FLOW writes is a gitignored <code>.claude/flow-states/&lt;branch&gt;.json</code> per active feature. Cleanup deletes even that. <strong>Two commands to install. One file while you work. Zero when you&rsquo;re done.</strong></p>
