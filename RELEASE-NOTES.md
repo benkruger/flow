@@ -1,5 +1,40 @@
 # Release Notes
 
+## v0.6.2 — Test coverage hardening and bug fixes
+
+### New Features
+
+- **bin/ci subprocess tests** — 4 tests covering both venv and system python
+  fallback paths. Uses wrapper scripts (not symlinks) for safe fixture isolation.
+- **Script-coverage contract test** — `test_every_script_has_a_test_file` in
+  `test_structural.py` globs `hooks/*.sh` and `bin/*` executables, fails CI if
+  any script lacks a corresponding test file.
+- **100% Python coverage enforcement** — pytest-cov added with `--fail-under=100`
+  for all Python files in `hooks/`. Subprocess coverage routing via conftest
+  session fixture.
+
+### Fixes
+
+- **Start phase permission prompts** — Fixed worktree and state file operations
+  triggering unnecessary permission prompts.
+- **Branch name length** — Capped at 32 characters, truncating at word boundaries.
+- **Abort/cleanup messages** — Fixed to mention both state file and log deletion.
+- **Commit temp file** — Moved from `/tmp/` to project root to avoid permission
+  prompts and support concurrent sessions.
+- **Bash /tmp/ references** — Contract test ensures no SKILL.md bash blocks
+  reference `/tmp/` paths.
+
+### Improvements
+
+- **18 tests from coverage audit** — Fixed `can_return_to` drift discovered
+  during audit.
+- **Cross-file consistency tests** — User-facing messages validated across skills.
+- **Suppressed noisy pytest output** — Header and version info hidden.
+- **CLAUDE.md lessons** — 6 new lessons including symlink safety, test-first
+  for bugs, and fixture resource tracing.
+
+---
+
 ## v0.6.1 — Documentation sync enforcement
 
 ### New Features
