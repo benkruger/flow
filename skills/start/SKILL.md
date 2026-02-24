@@ -28,7 +28,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````
 ```
 ============================================
-  FLOW v0.5.0 — Phase 1: Start — STARTING
+  FLOW v0.5.1 — Phase 1: Start — STARTING
   Recommended model: Haiku
 ============================================
 ```

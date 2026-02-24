@@ -1,5 +1,38 @@
 # Release Notes
 
+## v0.5.1 — Permission prompt fixes and reflection hardening
+
+### Fixes
+
+- **Python heredocs replaced with tool-based checks** — All phase entry gates
+  (`HARD-GATE`) now use the Read tool, Glob tool, and git commands instead of
+  `python3 << 'PYCHECK'` heredocs, which failed Bash permission pattern matching.
+- **`$(date)` command substitution eliminated** — All timestamp logging now uses
+  `date -u +FORMAT` as the command itself instead of `echo "$(date ...)"`, which
+  triggered "Command contains $() command substitution" warnings.
+- **Banner setext heading rendering fixed** — All `====` banners across every
+  skill are now wrapped in fenced code blocks so they render as plain monospace
+  text instead of markdown H1 headings.
+- **Commit message temp file scoped by repo and branch** — Prevents collisions
+  between concurrent sessions across different repos and branches. Uses
+  `/tmp/flow-commit-<repo>-<branch>.txt` with automatic cleanup after commit.
+- **Commit process uses Write tool** — Replaced `python3 -c` file creation with
+  the Write tool, avoiding shell interpretation of literal `$(...)` in commit
+  message bodies. Added guidance for large diffs (use `--stat` + Read tool on
+  persisted output).
+
+### Improvements
+
+- **Reflection self-check** — The shared reflection process now requires three
+  concrete pieces of evidence for each mistake (what Claude did wrong, what the
+  user said, how many correction rounds). Prevents softening mistakes in future
+  reflections.
+- **Three new CLAUDE.md lessons** — Always design for concurrent sessions, never
+  improvise outside documented processes, read code and git history before
+  proposing fixes.
+
+---
+
 ## v0.5.0 — Shared processes, best-effort cleanup, /reflect skill
 
 ### New Features
