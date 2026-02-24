@@ -25,6 +25,8 @@ A Claude Code plugin (`flow:` namespace) implementing an opinionated 8-phase Rai
 ## Conventions
 
 - All commits via `/commit` skill — no exceptions, no shortcuts, no "just this once"
+- All changes require `bin/ci` green before committing — tests are the gate
+- New skills are automatically covered by test_skill_contracts.py (glob-based discovery)
 - Namespace is `flow:` — plugin.json name is `"flow"`
 - Never rebase — merge only (denied in `.claude/settings.json`)
 

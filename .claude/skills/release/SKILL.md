@@ -33,6 +33,26 @@ git pull origin main
 
 If this produces changes, warn the user that new commits were pulled.
 
+## Step 2b — Verify CI is green
+
+Run:
+
+```bash
+gh run list --branch main --limit 1 --json conclusion,headSha,status
+```
+
+First verify the run's `headSha` matches `git rev-parse HEAD`.
+If not, CI hasn't run on the latest commit — tell the user and stop.
+
+Then check `conclusion`:
+
+- `"success"` → proceed
+- `"failure"` or `"cancelled"` → stop: "CI failed on main. Fix tests before releasing."
+- `null` (in_progress/queued) → poll: sleep 30 seconds, re-check, up to 3 retries
+  (90 seconds total). Print "CI still running... checking again in 30s (attempt N/3)"
+  each time. If still not done after 3 attempts, stop: "CI hasn't finished after
+  90 seconds. Check GitHub Actions manually."
+
 ## Step 3 — Show what changed since last release
 
 Run these two commands separately:

@@ -3,6 +3,11 @@
 Shared process used by both `/commit` (maintainer) and `/flow:commit` (FLOW plugin).
 Each calling skill handles its own announce and logging, then follows these steps.
 
+## Step 0 — Run tests
+
+Run `bin/ci`. If any test fails, stop and report the failure.
+Do not proceed to diff review until tests pass.
+
 ## Step 1 — Show the diff
 
 First run `git status` to see what changed. If nothing to commit, tell the user and stop.

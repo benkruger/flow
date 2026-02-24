@@ -8,3 +8,8 @@
 # Keep local/personal Claude settings out of the repo
 .claude/settings.local.json
 .claude/flow-states/
+
+# Python / test artifacts
+__pycache__/
+.venv/
+.pytest_cache/
