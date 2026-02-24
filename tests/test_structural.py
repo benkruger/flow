@@ -3,7 +3,7 @@
 import json
 import re
 
-from conftest import HOOKS_DIR, REPO_ROOT, SKILLS_DIR
+from conftest import HOOKS_DIR, REPO_ROOT, SKILLS_DIR, make_state
 
 
 def _load_phases():
@@ -109,3 +109,26 @@ def test_hooks_json_references_existing_files():
                 ).exists() or __import__("pathlib").Path(script_path).exists(), (
                     f"Hook command references non-existent file: {cmd}"
                 )
+
+
+def test_commands_are_unique():
+    """All phase commands must be unique — no two phases share a command."""
+    data = _load_phases()
+    commands = [phase["command"] for phase in data["phases"].values()]
+    assert len(commands) == len(set(commands)), (
+        f"Duplicate commands found: {[c for c in commands if commands.count(c) > 1]}"
+    )
+
+
+def test_conftest_phase_names_match_flow_phases():
+    """conftest.make_state() phase names must match flow-phases.json.
+    Catches drift between test fixtures and canonical phase definitions."""
+    data = _load_phases()
+    state = make_state()
+    for num_str, phase in data["phases"].items():
+        fixture_name = state["phases"][num_str]["name"]
+        canonical_name = phase["name"]
+        assert fixture_name == canonical_name, (
+            f"Phase {num_str}: conftest.make_state() uses '{fixture_name}' "
+            f"but flow-phases.json uses '{canonical_name}'"
+        )

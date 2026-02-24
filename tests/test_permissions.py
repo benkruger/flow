@@ -18,6 +18,15 @@ def _all_skill_names():
     return [d.name for d in sorted(SKILLS_DIR.iterdir()) if d.is_dir()]
 
 
+def _all_docs_files():
+    """Return (relative_path, content) for all .md files in docs/, recursively."""
+    result = []
+    for path in sorted(REPO_ROOT.joinpath("docs").rglob("*.md")):
+        rel = path.relative_to(REPO_ROOT)
+        result.append((str(rel), path.read_text()))
+    return result
+
+
 def _logging_skills():
     """Return skill names that have a ## Logging section."""
     return [
@@ -85,6 +94,11 @@ def _extract_primary_command(bash_block):
     if "COMMAND" in line:
         return None
 
+    # Skip angle-bracket placeholders (e.g. <branch>, <feature-name>)
+    # These are documentation templates, not executable commands
+    if re.search(r"<[a-z_-]+>", line, re.IGNORECASE):
+        return None
+
     # Strip cd prefix: cd <path> && REST -> REST
     line = re.sub(r'^cd\s+\S+\s*&&\s*', '', line)
 
@@ -119,6 +133,10 @@ def _extract_full_command(bash_block):
     if "COMMAND" in line:
         return None
 
+    # Skip angle-bracket placeholders (e.g. <branch>, <feature-name>)
+    if re.search(r"<[a-z_-]+>", line, re.IGNORECASE):
+        return None
+
     # NOTE: cd prefix is NOT stripped — preserves the full command
 
     if "; EC=$?" in line:
@@ -148,11 +166,8 @@ def test_no_bash_commands_reference_tmp():
         files_to_check.append(
             (f"skills/{name}/SKILL.md", _read_skill(name))
         )
-    for doc in sorted((REPO_ROOT / "docs").iterdir()):
-        if doc.suffix == ".md":
-            files_to_check.append(
-                (f"docs/{doc.name}", doc.read_text())
-            )
+    for rel, content in _all_docs_files():
+        files_to_check.append((rel, content))
 
     for filepath, content in files_to_check:
         bash_blocks = re.findall(r"```bash\s*\n(.*?)```", content, re.DOTALL)
@@ -265,11 +280,8 @@ def test_all_bash_commands_have_permission_coverage():
         files_to_check.append(
             (f"skills/{name}/SKILL.md", _read_skill(name))
         )
-    for doc in sorted((REPO_ROOT / "docs").iterdir()):
-        if doc.suffix == ".md":
-            files_to_check.append(
-                (f"docs/{doc.name}", doc.read_text())
-            )
+    for rel, content in _all_docs_files():
+        files_to_check.append((rel, content))
 
     for filepath, content in files_to_check:
         # Find all ```bash blocks
@@ -324,11 +336,8 @@ def test_cd_prefixed_commands_have_full_permission_coverage():
         files_to_check.append(
             (f"skills/{name}/SKILL.md", _read_skill(name))
         )
-    for doc in sorted((REPO_ROOT / "docs").iterdir()):
-        if doc.suffix == ".md":
-            files_to_check.append(
-                (f"docs/{doc.name}", doc.read_text())
-            )
+    for rel, content in _all_docs_files():
+        files_to_check.append((rel, content))
 
     for filepath, content in files_to_check:
         bash_blocks = re.findall(r"```bash\s*\n(.*?)```", content, re.DOTALL)

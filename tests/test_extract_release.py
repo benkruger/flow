@@ -92,6 +92,31 @@ def test_cli_writes_output_file(tmp_path):
     out_file.unlink()
 
 
+def test_cli_no_arguments_exits_1():
+    """Running the script with no arguments should exit 1 with usage message."""
+    result = subprocess.run(
+        [sys.executable, SCRIPT],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "Usage" in result.stdout
+
+
+def test_version_in_body_text_not_matched(tmp_path):
+    """A version string appearing in body text (not as a ## header) should not match."""
+    notes = tmp_path / "RELEASE-NOTES.md"
+    notes.write_text(
+        "# Release Notes\n\n"
+        "## v1.0.0 — First release\n\n"
+        "- Upgraded from v0.9.0 to v1.0.0\n\n"
+        "---\n\n"
+        "## v0.8.0 — Earlier release\n\n"
+        "- Feature\n"
+    )
+    result = extract("v0.9.0", notes)
+    assert result == ""
+
+
 def test_cli_missing_version_exits_1():
     result = subprocess.run(
         [sys.executable, SCRIPT, "v99.99.99"],

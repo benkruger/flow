@@ -412,6 +412,133 @@ def test_phase_transition_names_current_phase():
         )
 
 
+def test_phase_8_has_soft_gate_not_hard_gate():
+    """Phase 8 (cleanup) should have a SOFT-GATE, not a HARD-GATE.
+    Cleanup warns but never blocks — it's the final escape hatch."""
+    content = _read_skill("cleanup")
+    assert "<SOFT-GATE>" in content, (
+        "Phase 8 (cleanup) should have <SOFT-GATE> — cleanup warns but never blocks"
+    )
+    assert "<HARD-GATE>" not in content, (
+        "Phase 8 (cleanup) should NOT have <HARD-GATE> — cleanup must never block"
+    )
+
+
+def test_phase_transitions_have_note_capture_option():
+    """Phases 1-7 transition questions must offer a note-capture option.
+    This is the third AskUserQuestion option at every phase boundary."""
+    phase_skills = _phase_skills()
+    for phase_num in range(1, 8):
+        skill_name = phase_skills[phase_num]
+        content = _read_skill(skill_name)
+        assert "correction or learning to capture" in content, (
+            f"Phase {phase_num} ({skill_name}) transition question missing "
+            f"'correction or learning to capture' option"
+        )
+
+
+def test_phase_1_hard_gate_checks_feature_name():
+    """Phase 1 (start) should have a HARD-GATE that checks for feature name,
+    not for a previous phase status."""
+    content = _read_skill("start")
+    assert "<HARD-GATE>" in content, "start/SKILL.md has no <HARD-GATE>"
+    # Gate should mention feature name requirement
+    gate_match = re.search(
+        r"<HARD-GATE>(.*?)</HARD-GATE>", content, re.DOTALL
+    )
+    assert gate_match, "Could not extract HARD-GATE content from start/SKILL.md"
+    gate_text = gate_match.group(1)
+    assert "feature" in gate_text.lower(), (
+        "start/SKILL.md HARD-GATE should check for feature name"
+    )
+
+
+def test_phase_skills_have_logging_section():
+    """All 8 phase skills must have a ## Logging section."""
+    phase_skills = _phase_skills()
+    for phase_num, skill_name in phase_skills.items():
+        content = _read_skill(skill_name)
+        assert "## Logging" in content, (
+            f"Phase {phase_num} ({skill_name}) has no '## Logging' section"
+        )
+
+
+def test_phase_8_has_delete_state_instructions():
+    """Phase 8 (cleanup) should have instructions to delete the state file,
+    not update it."""
+    content = _read_skill("cleanup")
+    has_delete = (
+        "delete" in content.lower()
+        or "remove" in content.lower()
+        or "rm " in content
+    )
+    assert has_delete, (
+        "Phase 8 (cleanup) should have delete/remove instructions for state file"
+    )
+    # Should NOT have "Update State" section like other phases
+    has_update_state = bool(re.search(r"##.*Update State", content, re.IGNORECASE))
+    assert not has_update_state, (
+        "Phase 8 (cleanup) should NOT have an 'Update State' section — "
+        "it deletes the state file instead"
+    )
+
+
+def test_back_navigation_names_match_can_return_to():
+    """Back navigation options in each skill (using phase names like
+    'Go back to Research') must only reference phases listed in can_return_to."""
+    data = _load_phases()
+    phase_skills = _phase_skills()
+
+    # Build name -> phase number mapping
+    name_to_num = {}
+    for num_str, phase in data["phases"].items():
+        name_to_num[phase["name"]] = num_str
+
+    for num_str, phase in data["phases"].items():
+        phase_num = int(num_str)
+        skill_name = phase_skills[phase_num]
+        content = _read_skill(skill_name)
+
+        # Match "Go back to <Name>" patterns (names, not numbers)
+        back_refs = re.findall(
+            r"Go back to (\w+)", content, re.IGNORECASE
+        )
+
+        for ref_name in back_refs:
+            ref_num = name_to_num.get(ref_name)
+            if ref_num is None:
+                continue  # Not a phase name (e.g., "Go back to an approved section")
+            assert ref_num in phase["can_return_to"], (
+                f"Phase {phase_num} ({skill_name}) has 'Go back to {ref_name}' "
+                f"(Phase {ref_num}) but can_return_to only allows "
+                f"{phase['can_return_to']}"
+            )
+
+
+def test_can_return_to_targets_are_reachable():
+    """Every can_return_to target must appear as a back navigation option
+    in the skill text."""
+    data = _load_phases()
+    phase_skills = _phase_skills()
+
+    for num_str, phase in data["phases"].items():
+        phase_num = int(num_str)
+        if not phase["can_return_to"]:
+            continue
+
+        skill_name = phase_skills[phase_num]
+        content = _read_skill(skill_name)
+
+        for target in phase["can_return_to"]:
+            target_name = data["phases"][target]["name"]
+            pattern = rf"(?:Go back|Return|Back) to {re.escape(target_name)}"
+            assert re.search(pattern, content, re.IGNORECASE), (
+                f"Phase {phase_num} ({skill_name}) has can_return_to "
+                f"target Phase {target} ({target_name}) but no matching "
+                f"back navigation text found"
+            )
+
+
 def test_status_skill_phase_names_match_flow_phases():
     """Status skill template must list all 8 phases with correct names from
     flow-phases.json."""

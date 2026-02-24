@@ -73,6 +73,7 @@ One file per active feature. Multiple features can run simultaneously with no co
 | `pr_url` | string | Full GitHub PR URL |
 | `started_at` | ISO 8601 | When the feature was started (Phase 1 entry) |
 | `current_phase` | integer | The currently active phase number |
+| `notes` | array | Corrections captured via `/flow:note` — see [Notes Array](#notes-array) |
 
 ---
 

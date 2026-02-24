@@ -174,6 +174,49 @@ def test_phase_8_requires_phase_7_complete(git_repo, state_dir):
 # --- Worktree resolution ---
 
 
+def test_missing_phases_key_blocks(git_repo, state_dir):
+    """State file with no 'phases' key should block (defaults to pending)."""
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=str(git_repo), capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    state = {"feature": "Test", "branch": branch, "current_phase": 2}
+    write_state(state_dir, branch, state)
+    result = _run(git_repo, 2)
+    assert result.returncode == 1
+    assert "BLOCKED" in result.stdout
+
+
+def test_blocked_message_includes_correct_command(git_repo, state_dir):
+    """Blocked message should include the correct /flow:X command for the missing phase."""
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=str(git_repo), capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    state = make_state(current_phase=4, phase_statuses={
+        1: "complete", 2: "complete", 3: "pending",
+    })
+    write_state(state_dir, branch, state)
+    result = _run(git_repo, 4)
+    assert result.returncode == 1
+    assert "/flow:design" in result.stdout
+
+
+def test_phase_0_blocks(git_repo, state_dir):
+    """Phase 0 is invalid — should block because phase -1 doesn't exist."""
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=str(git_repo), capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    state = make_state(current_phase=1, phase_statuses={1: "complete"})
+    write_state(state_dir, branch, state)
+    result = _run(git_repo, 0)
+    assert result.returncode == 1
+
+
+# --- Worktree resolution ---
+
+
 def test_worktree_finds_state_in_main_repo(git_repo, state_dir):
     """Running from a worktree should find state files in the main repo."""
     # Create a branch for the worktree
