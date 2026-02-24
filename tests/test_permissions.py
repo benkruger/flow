@@ -5,9 +5,13 @@ ensure the logging pattern doesn't break permission matching, and that every
 Bash command in every skill has a matching permission entry.
 """
 
+import json
 import re
 
 from conftest import REPO_ROOT, SKILLS_DIR
+
+MAINTAINER_SKILLS_DIR = REPO_ROOT / ".claude" / "skills"
+SETTINGS_JSON = REPO_ROOT / ".claude" / "settings.json"
 
 
 def _read_skill(name):
@@ -395,4 +399,74 @@ def test_permissions_step_precedes_worktree_commands():
         f"Permissions step (Step {perm_step}) must come before the first "
         f"worktree command step (Step {earliest_cd_step}). Otherwise "
         f"cd-prefixed commands won't match any permission pattern."
+    )
+
+
+def _load_settings_permissions():
+    """Load allowed permission patterns from .claude/settings.json."""
+    data = json.loads(SETTINGS_JSON.read_text())
+    return data["permissions"]["allow"]
+
+
+def _maintainer_files():
+    """Collect maintainer skill files and shared process docs.
+
+    These run in this repo (not the target Rails project), so their bash
+    commands must be covered by .claude/settings.json, not Start Step 4.
+    """
+    files = []
+    for d in sorted(MAINTAINER_SKILLS_DIR.iterdir()):
+        if d.is_dir():
+            skill_md = d / "SKILL.md"
+            if skill_md.exists():
+                files.append((f".claude/skills/{d.name}/SKILL.md", skill_md.read_text()))
+    # Shared process docs referenced by maintainer skills
+    for name in ("commit-process.md", "reflection-process.md"):
+        path = REPO_ROOT / "docs" / name
+        if path.exists():
+            files.append((f"docs/{name}", path.read_text()))
+    return files
+
+
+def test_maintainer_bash_commands_have_settings_coverage():
+    """Every ```bash``` block in maintainer skills and shared process docs
+    must match a permission in .claude/settings.json or be auto-allowed.
+
+    Maintainer skills (.claude/skills/) run in this repo, not the target
+    Rails project, so they need coverage in settings.json — not Start Step 4."""
+    permissions = _load_settings_permissions()
+    regexes = [_permission_to_regex(p) for p in permissions]
+    regexes = [r for r in regexes if r is not None]
+
+    errors = []
+
+    for filepath, content in _maintainer_files():
+        bash_blocks = re.findall(r"```bash\s*\n(.*?)```", content, re.DOTALL)
+        for block in bash_blocks:
+            cmd = _extract_primary_command(block)
+            if cmd is None:
+                continue
+
+            # Check if auto-allowed
+            is_auto = False
+            for allowed in AUTO_ALLOWED:
+                if cmd == allowed or cmd.startswith(allowed + " "):
+                    is_auto = True
+                    break
+            if is_auto:
+                continue
+
+            # Check against settings.json permission regexes
+            matched = any(r.match(cmd) for r in regexes)
+            if not matched:
+                errors.append(
+                    f"{filepath}: command '{cmd}' has no matching permission "
+                    f"in .claude/settings.json. Add a Bash({cmd} *) or "
+                    f"Bash({cmd}) entry."
+                )
+
+    assert not errors, (
+        f"Found {len(errors)} maintainer Bash command(s) without "
+        f".claude/settings.json coverage:\n"
+        + "\n".join(f"  - {e}" for e in errors)
     )
