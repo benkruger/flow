@@ -23,6 +23,11 @@ consistent formatting for all changes.
 
 Render the output directly in your response — do not ask the user to expand tool output.
 
+If the diff is too large to render inline (the Bash tool truncates and
+persists the output), use `git diff --cached --stat` for the summary
+and read the persisted output file with the Read tool. Never redirect
+output to `/tmp/` — shell redirects trigger permission prompts.
+
 **Format the status as:**
 ```
 **Status**
@@ -98,12 +103,12 @@ Question: "Approve this commit?"
 
 Files are already staged from Step 1. No need to `git add -A` again.
 
-1. Write the commit message to `/tmp/flow_commit_msg.txt` using a single-line `python3` command (encoding newlines as `\n`), then run `git commit -F /tmp/flow_commit_msg.txt`:
+1. Use the Write tool to write the commit message to `/tmp/flow_commit_msg.txt`, then commit:
    ```
-   python3 -c "open('/tmp/flow_commit_msg.txt','w').write('subject\n\ntl;dr\n\nbody\n\n- file: reason')"
    git commit -F /tmp/flow_commit_msg.txt
    ```
-   - Both stay single-line, matching the existing allow-list patterns `Bash(python3 *)` and `Bash(git commit *)`
+   - The Write tool handles newlines and special characters safely — no shell escaping needed
+   - Never use `python3 -c` to write the message — literal `$(...)` in the body triggers command substitution warnings
    - Never use `git commit -m` with heredoc — the multi-line command fails permission pattern matching
 3. `git pull origin <current-branch>` — pull before pushing to pick up any changes merged while you were working
 4. If the pull produced merge conflicts:
