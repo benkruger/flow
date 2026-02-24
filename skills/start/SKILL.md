@@ -16,6 +16,8 @@ Arguments become the feature name. Words are joined with hyphens:
 - Worktree: `.worktrees/invoice-pdf-export`
 - PR title: `Invoice Pdf Export`
 
+Branch names are capped at **32 characters**. If the hyphenated name exceeds 32 characters, truncate at the last whole word (hyphen boundary) that fits. Strip any trailing hyphen.
+
 <HARD-GATE>
 Do NOT proceed if the feature name is missing. Ask the user:
 "What is the feature name? e.g. /flow:start invoice pdf export"
