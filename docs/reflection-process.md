@@ -14,6 +14,13 @@ nearly broken during the session. Quote the specific rule.
 **Claude mistakes** — things Claude got wrong that the user had to correct.
 Be specific and honest. Name the mistake clearly — do not soften or hedge.
 
+For each mistake, state:
+1. What Claude did wrong (the actual behavior, not a euphemism)
+2. What the user said or did to correct it (quote or paraphrase)
+3. How many rounds of correction it took before Claude got it right
+
+If you cannot answer all three, you are probably softening the mistake.
+
 **Missing rules** — situations where Claude did the wrong thing but no
 existing rule covered it. These are gaps in CLAUDE.md.
 
