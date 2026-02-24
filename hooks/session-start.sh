@@ -19,8 +19,8 @@ if [ -z "$(ls "$STATE_DIR"/*.json 2>/dev/null)" ]; then
   exit 0
 fi
 
-# Reset any interrupted session timing and build context
-CONTEXT=$(python3 - << 'PYTHON'
+# Reset any interrupted session timing, build context, and emit JSON output
+python3 - << 'PYTHON'
 import json, sys
 from pathlib import Path
 
@@ -59,16 +59,18 @@ if len(states) == 1:
     phase_name = s.get("phases", {}).get(cp, {}).get("name", "")
     feature = s.get("feature", "")
 
-    print(f"""<flow-session-resume>
-FLOW feature in progress: "{feature}" — Phase {cp}: {phase_name}
-
-Your FIRST action before responding to anything else:
-Invoke the flow:resume skill.
-
-Throughout this session: whenever the user corrects you, disagrees
-with your response, or says something was wrong, invoke flow:note
-immediately before replying to capture the correction.
-</flow-session-resume>""")
+    context = (
+        "<flow-session-resume>\n"
+        f'FLOW feature in progress: "{feature}" — Phase {cp}: {phase_name}\n'
+        "\n"
+        "Your FIRST action before responding to anything else:\n"
+        "Invoke the flow:resume skill.\n"
+        "\n"
+        "Throughout this session: whenever the user corrects you, disagrees\n"
+        "with your response, or says something was wrong, invoke flow:note\n"
+        "immediately before replying to capture the correction.\n"
+        "</flow-session-resume>"
+    )
 
 else:
     features = []
@@ -79,41 +81,25 @@ else:
 
     feature_list = "\n".join(f"  - {f}" for f in features)
 
-    print(f"""<flow-session-resume>
-Multiple FLOW features are in progress:
-{feature_list}
+    context = (
+        "<flow-session-resume>\n"
+        "Multiple FLOW features are in progress:\n"
+        f"{feature_list}\n"
+        "\n"
+        "Your FIRST action before responding to anything else:\n"
+        "Use AskUserQuestion to ask which feature to work on.\n"
+        "Once selected, cd into that feature's worktree then invoke the flow:resume skill.\n"
+        "</flow-session-resume>"
+    )
 
-Your FIRST action before responding to anything else:
-Use AskUserQuestion to ask which feature to work on.
-Once selected, cd into that feature's worktree then invoke the flow:resume skill.
-</flow-session-resume>""")
+output = {
+    "additional_context": context,
+    "hookSpecificOutput": {
+        "hookEventName": "SessionStart",
+        "additionalContext": context,
+    },
+}
+print(json.dumps(output))
 PYTHON
-)
-
-if [ -z "$CONTEXT" ]; then
-  exit 0
-fi
-
-escape_for_json() {
-    local s="$1"
-    s="${s//\\/\\\\}"
-    s="${s//\"/\\\"}"
-    s="${s//$'\n'/\\n}"
-    s="${s//$'\r'/\\r}"
-    s="${s//$'\t'/\\t}"
-    printf '%s' "$s"
-}
-
-CONTEXT_ESCAPED=$(escape_for_json "$CONTEXT")
-
-cat << EOF
-{
-  "additional_context": "${CONTEXT_ESCAPED}",
-  "hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": "${CONTEXT_ESCAPED}"
-  }
-}
-EOF
 
 exit 0

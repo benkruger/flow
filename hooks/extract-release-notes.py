@@ -7,6 +7,7 @@ Usage: python3 hooks/extract-release-notes.py <version>
 Example: python3 hooks/extract-release-notes.py v0.2.0
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -34,6 +35,10 @@ def main():
         sys.exit(1)
 
     version = sys.argv[1]
+    if not re.match(r'^v?\d+\.\d+\.\d+$', version):
+        print(f"Error: invalid version format: {version}")
+        sys.exit(1)
+
     notes_file = Path(__file__).parent.parent / "RELEASE-NOTES.md"
 
     if not notes_file.exists():

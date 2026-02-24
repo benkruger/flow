@@ -133,6 +133,7 @@ Check if `.claude/settings.json` exists in the **project root** (one level up fr
       "Bash(gh pr edit *)",
       "Bash(gh pr close *)",
       "Bash(git push origin --delete *)",
+      "Bash(git branch -D *)",
       "Bash(python3 *)",
       "Bash(bin/ci)",
       "Bash(bin/ci;*)",

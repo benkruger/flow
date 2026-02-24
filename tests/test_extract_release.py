@@ -126,6 +126,16 @@ def test_cli_missing_version_exits_1():
     assert "no section found" in result.stdout
 
 
+def test_cli_invalid_version_format_exits_1():
+    """Running the script with a non-semver version should exit 1."""
+    result = subprocess.run(
+        [sys.executable, SCRIPT, "../../etc/passwd"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "invalid version format" in result.stdout
+
+
 # --- In-process test for exception path not reachable via subprocess ---
 
 
