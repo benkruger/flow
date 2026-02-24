@@ -9,6 +9,9 @@
 .claude/settings.local.json
 .claude/flow-states/
 
+# Commit message temp file (cleaned up by rm, gitignored as safety net)
+.flow-commit-msg
+
 # Python / test artifacts
 __pycache__/
 .venv/

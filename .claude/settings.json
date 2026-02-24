@@ -18,9 +18,8 @@
       "Bash(chmod *)",
       "Bash(env *)",
       "Bash(open *)",
-      "Bash(rm /tmp/flow-commit-*)",
-      "Bash(bin/ci)",
-      "Write(/tmp/flow-commit-*)"
+      "Bash(rm .flow-commit-*)",
+      "Bash(bin/ci)"
     ],
     "deny": [
       "Bash(git rebase *)"

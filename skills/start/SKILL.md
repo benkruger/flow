@@ -112,9 +112,8 @@ Check if `.claude/settings.json` exists in the project root.
       "Bash(rubocop -A)",
       "Bash(bundle update)",
       "Bash(bundle update;*)",
-      "Bash(rm /tmp/flow-commit-*)",
-      "Bash(bundle exec *)",
-      "Write(/tmp/flow-commit-*)"
+      "Bash(rm .flow-commit-*)",
+      "Bash(bundle exec *)"
     ]
   }
 }
