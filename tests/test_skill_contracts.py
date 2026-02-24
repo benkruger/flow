@@ -8,7 +8,7 @@ and back navigation rules. All parseable with regex.
 import json
 import re
 
-from conftest import REPO_ROOT, SKILLS_DIR
+from conftest import DOCS_DIR, REPO_ROOT, SKILLS_DIR
 
 
 def _load_phases():
@@ -364,4 +364,64 @@ def test_model_recommendations_match_documented_table():
         assert match.group(1) == expected_model, (
             f"skills/{skill_name}/SKILL.md recommends '{match.group(1)}' "
             f"but expected '{expected_model}'"
+        )
+
+
+# --- Cross-file consistency ---
+
+
+def test_cleanup_and_abort_mention_log_when_docs_delete_log():
+    """If cleanup-process.md deletes .log files, abort and cleanup user-facing
+    text must mention 'state file and log' (not just 'state file')."""
+    cleanup_doc = (DOCS_DIR / "cleanup-process.md").read_text()
+    if ".log" not in cleanup_doc:
+        return  # Conditional contract — docs don't mention .log yet
+
+    for skill_name in ("abort", "cleanup"):
+        content = _read_skill(skill_name)
+        # Extract user-facing text: blockquote lines and fenced code blocks
+        user_facing = []
+        for line in content.splitlines():
+            if line.startswith("> "):
+                user_facing.append(line)
+        for block in re.findall(r"```\n(.*?)```", content, re.DOTALL):
+            user_facing.extend(block.splitlines())
+        combined = "\n".join(user_facing)
+
+        assert "state file and log" in combined, (
+            f"skills/{skill_name}/SKILL.md user-facing text mentions 'state file' "
+            f"but not 'state file and log' — cleanup-process.md deletes both "
+            f".json and .log files"
+        )
+
+
+def test_phase_transition_names_current_phase():
+    """Phase N's transition question should include 'Phase N: Name is complete'."""
+    phase_skills = _phase_skills()
+    data = _load_phases()
+
+    for phase_num in range(1, 8):  # 1-7 have transitions
+        skill_name = phase_skills[phase_num]
+        content = _read_skill(skill_name)
+        name = data["phases"][str(phase_num)]["name"]
+
+        pattern = rf"Phase\s+{phase_num}:\s*{re.escape(name)}\s+is complete"
+        assert re.search(pattern, content), (
+            f"Phase {phase_num} ({skill_name}) does not contain "
+            f"'Phase {phase_num}: {name} is complete' in its transition"
+        )
+
+
+def test_status_skill_phase_names_match_flow_phases():
+    """Status skill template must list all 8 phases with correct names from
+    flow-phases.json."""
+    data = _load_phases()
+    content = _read_skill("status")
+
+    for num_str, phase in data["phases"].items():
+        pattern = rf"Phase\s+{num_str}:\s+{re.escape(phase['name'])}"
+        assert re.search(pattern, content), (
+            f"skills/status/SKILL.md does not contain "
+            f"'Phase {num_str}: {phase['name']}' — "
+            f"phase name may be out of sync with flow-phases.json"
         )
