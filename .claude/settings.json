@@ -11,7 +11,9 @@
       "Bash(gh pr create *)",
       "Bash(gh pr edit *)",
       "Bash(gh release create *)",
-      "Bash(python3 *)"
+      "Bash(gh run list *)",
+      "Bash(python3 *)",
+      "Bash(bin/ci)"
     ],
     "deny": [
       "Bash(git rebase *)"
