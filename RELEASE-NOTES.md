@@ -1,5 +1,29 @@
 # Release Notes
 
+## v0.6.3 — CLAUDE.md architecture documentation
+
+### Improvements
+
+- **Architecture section** — New section documenting plugin vs target project,
+  skills-are-markdown, shared process docs pattern, state file schema pointers,
+  sub-agent architecture, logging pattern, and version locations.
+- **Test Architecture section** — New section mapping each test file to what it
+  enforces, plus shared fixture inventory.
+- **Key Files expanded** — Added 8 missing entries: extract-release-notes.py,
+  3 shared process docs, schema reference, skill pattern template,
+  marketplace.json, and GitHub Actions CI workflow.
+- **Development environment docs** — Added venv, bin/ci, and dependency
+  management guidance.
+- **Reflect convention** — Documented that CLAUDE.md changes go through
+  /reflect only.
+
+### Fixes
+
+- **Logging permission prompt** — Replaced Bash `>>` append (triggers
+  permission prompt) with Read+Write tool pattern for completion logging.
+- **Stale section removed** — Removed "What Still Needs Work" section
+  containing a single speculative item.
+
 ## v0.6.2 — Test coverage hardening and permission fixes
 
 ### New Features
