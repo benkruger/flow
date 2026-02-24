@@ -20,7 +20,7 @@
 
 - **CI-gated commits** — `docs/commit-process.md` now has Step 0: run `bin/ci`
   before showing the diff. Every commit in this repo is tested.
-- **CI-gated releases** — `/release` now checks GitHub Actions status (Step 2b)
+- **CI-gated releases** — `/release` now checks GitHub Actions status (Step 3)
   before proceeding. Polls up to 3 times (90 seconds) for in-progress runs.
 - **Permissions expanded** — `gh run list` and `bin/ci` added to the project
   allow list.

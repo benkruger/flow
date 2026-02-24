@@ -33,7 +33,7 @@ git pull origin main
 
 If this produces changes, warn the user that new commits were pulled.
 
-## Step 2b — Verify CI is green
+## Step 3 — Verify CI is green
 
 Run:
 
@@ -53,7 +53,7 @@ Then check `conclusion`:
   each time. If still not done after 3 attempts, stop: "CI hasn't finished after
   90 seconds. Check GitHub Actions manually."
 
-## Step 3 — Show what changed since last release
+## Step 4 — Show what changed since last release
 
 Run these two commands separately:
 
@@ -75,11 +75,11 @@ git log --oneline HEAD~20..HEAD
 
 Display the commit list. This is what goes into the release.
 
-## Step 4 — Determine the new version
+## Step 5 — Determine the new version
 
 Read the current version from `.claude-plugin/plugin.json`.
 
-Analyze the commit list from Step 3 and recommend a release type using
+Analyze the commit list from Step 4 and recommend a release type using
 these rules (apply the highest that matches):
 
 - **Major** — any commit removes or renames a skill, changes a skill's
@@ -104,7 +104,7 @@ Use AskUserQuestion:
 Put the recommended type first in the list. Show all three options so
 the user can override.
 
-## Step 5 — Bump version in all files
+## Step 6 — Bump version in all files
 
 Update the version string in all four files to the new version:
 
@@ -117,14 +117,14 @@ All four must match exactly. Use `replace_all` to find and replace the old
 version string `FLOW v<old_version>` with `FLOW v<new_version>` in the skill
 files. No other fields or content are changed.
 
-## Step 6 — Update RELEASE-NOTES.md
+## Step 7 — Update RELEASE-NOTES.md
 
 Read the current `RELEASE-NOTES.md`. Add a new section at the top (below the `# Release Notes` heading) for the new version:
 
 ```
 ## v<new_version> — <short description>
 
-<Summary of what changed — written from the commit list in Step 4.
+<Summary of what changed — written from the commit list in Step 5.
 Group by: new features, fixes, improvements. Be concise.>
 ```
 
@@ -134,7 +134,7 @@ Use AskUserQuestion to show the draft release notes:
 > - **Yes, looks good**
 > - **Needs changes** — describe in Other
 
-## Step 7 — Commit the version bump
+## Step 8 — Commit the version bump
 
 Commit exactly these files:
 
@@ -152,7 +152,7 @@ Release v<new_version>
 
 No body needed — the release notes tell the story.
 
-## Step 8 — Tag and push
+## Step 9 — Tag and push
 
 ```bash
 git tag v<new_version>
@@ -160,7 +160,7 @@ git push origin main
 git push origin v<new_version>
 ```
 
-## Step 9 — Create GitHub Release
+## Step 10 — Create GitHub Release
 
 First extract just this version's section from RELEASE-NOTES.md:
 
