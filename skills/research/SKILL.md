@@ -12,7 +12,7 @@ stop immediately and show the error to the user.
 1. Find the project root: run `git worktree list --porcelain` and note the
    path on the first `worktree` line.
 2. Get the current branch: run `git branch --show-current`.
-3. Use the Read tool to read `<project_root>/.claude/flow-states/<branch>.json`.
+3. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
      Run /flow:start first."
 4. Check `phases.1.status` in the JSON.
@@ -38,7 +38,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 Read the state file. Get the worktree path from `state["worktree"]`.
 Run `cd <worktree>` immediately so all subsequent commands run there.
 
-Update `.claude/flow-states/<branch>.json` for Phase 2:
+Update `.flow-states/<branch>.json` for Phase 2:
 - `status` → `in_progress`
 - `started_at` → current UTC timestamp (only if currently null — never overwrite)
 - `session_started_at` → current UTC timestamp
@@ -47,7 +47,7 @@ Update `.claude/flow-states/<branch>.json` for Phase 2:
 
 ## Logging
 
-After every Bash command completes, log it to `.claude/flow-states/<branch>.log`.
+After every Bash command completes, log it to `.flow-states/<branch>.log`.
 
 Run the command with exit code capture:
 
@@ -55,15 +55,12 @@ Run the command with exit code capture:
 COMMAND; EC=$?; exit $EC
 ```
 
-Then Read `.claude/flow-states/<branch>.log` (empty string if it does not
+Then Read `.flow-states/<branch>.log` (empty string if it does not
 exist yet) and Write it back with this line appended:
 
 ```
 YYYY-MM-DDTHH:MM:SSZ [Phase 2] Step X — desc (exit EC)
 ```
-
-Do NOT use Bash `>>` to write to `.claude/` paths — it triggers Claude
-Code's built-in directory protection that settings.json cannot suppress.
 
 Get `<branch>` from the state file.
 
@@ -101,7 +98,7 @@ found and ask: "What gaps should we fill this time?"
 
 ## Step 2 — Check for prior findings
 
-Read `.claude/flow-states/<branch>.json` to check:
+Read `.flow-states/<branch>.json` to check:
 - Whether this is a return visit (check `visit_count` and any existing `research` data)
 
 If returning to Research, read the previous findings in `flow-state.json["research"]` and note what was already discovered. Do not discard prior findings — extend them.
@@ -305,7 +302,7 @@ Invoke the `flow:status` skill to show the current state, then use AskUserQuesti
 
 ## Done — Update state and complete phase
 
-Update `.claude/flow-states/<branch>.json`:
+Update `.flow-states/<branch>.json`:
 1. Calculate `cumulative_seconds`: `current_time - session_started_at` + existing `cumulative_seconds`
 2. Set Phase 2 `status` to `complete`
 3. Set Phase 2 `completed_at` to current UTC timestamp

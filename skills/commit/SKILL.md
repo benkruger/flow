@@ -32,7 +32,7 @@ On completion (whether approved or denied), print the same way:
 
 ## Logging
 
-After every Bash command completes, log it to `.claude/flow-states/<branch>.log`.
+After every Bash command completes, log it to `.flow-states/<branch>.log`.
 
 Run the command with exit code capture:
 
@@ -40,15 +40,12 @@ Run the command with exit code capture:
 COMMAND; EC=$?; exit $EC
 ```
 
-Then Read `.claude/flow-states/<branch>.log` (empty string if it does not
+Then Read `.flow-states/<branch>.log` (empty string if it does not
 exist yet) and Write it back with this line appended:
 
 ```
 YYYY-MM-DDTHH:MM:SSZ [Commit] Step X — desc (exit EC)
 ```
-
-Do NOT use Bash `>>` to write to `.claude/` paths — it triggers Claude
-Code's built-in directory protection that settings.json cannot suppress.
 
 Get `<branch>` from `git branch --show-current`.
 

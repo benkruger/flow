@@ -12,7 +12,7 @@ stop immediately and show the error to the user.
 1. Find the project root: run `git worktree list --porcelain` and note the
    path on the first `worktree` line.
 2. Get the current branch: run `git branch --show-current`.
-3. Use the Read tool to read `<project_root>/.claude/flow-states/<branch>.json`.
+3. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
      Run /flow:start first."
 4. Check `phases.3.status` in the JSON.
@@ -35,7 +35,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 
 ## Update State
 
-Read `.claude/flow-states/<branch>.json`. cd into the worktree.
+Read `.flow-states/<branch>.json`. cd into the worktree.
 
 Update Phase 4:
 - `status` → `in_progress`
@@ -63,7 +63,7 @@ Initialise `state["plan"]` if it does not exist:
 
 ## Logging
 
-After every Bash command completes, log it to `.claude/flow-states/<branch>.log`.
+After every Bash command completes, log it to `.flow-states/<branch>.log`.
 
 Run the command with exit code capture:
 
@@ -71,15 +71,12 @@ Run the command with exit code capture:
 COMMAND; EC=$?; exit $EC
 ```
 
-Then Read `.claude/flow-states/<branch>.log` (empty string if it does not
+Then Read `.flow-states/<branch>.log` (empty string if it does not
 exist yet) and Write it back with this line appended:
 
 ```
 YYYY-MM-DDTHH:MM:SSZ [Phase 4] Step X — desc (exit EC)
 ```
-
-Do NOT use Bash `>>` to write to `.claude/` paths — it triggers Claude
-Code's built-in directory protection that settings.json cannot suppress.
 
 Get `<branch>` from the state file.
 
@@ -372,7 +369,7 @@ Then use AskUserQuestion:
 
 ## Step 4 — Save plan to state
 
-Write to `.claude/flow-states/<branch>.json` under `plan`:
+Write to `.flow-states/<branch>.json` under `plan`:
 
 ```json
 "plan": {

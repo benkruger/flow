@@ -57,7 +57,7 @@ By the end of Phase 3:
 - A clearly described feature with explicit approval
 - Chosen approach documented with rationale
 - Schema, model, controller, worker, and route decisions captured
-- All stored in `.claude/flow-states/<branch>.json`
+- All stored in `.flow-states/<branch>.json`
 - A foundation Plan can execute directly from
 
 ---

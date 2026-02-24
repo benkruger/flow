@@ -56,7 +56,7 @@ A real PR, not a draft. The PR body is auto-generated from the feature name:
 App payment webhooks.
 ```
 
-Phase progress is tracked in `.claude/flow-states/<branch>.json`, not in the PR body.
+Phase progress is tracked in `.flow-states/<branch>.json`, not in the PR body.
 
 ### 5. Configure workspace permissions
 

@@ -40,7 +40,7 @@ def _logging_skills():
 
 
 def _extract_step6_permissions():
-    """Extract permissions from Start Step 4 JSON block."""
+    """Extract permissions from Start Step 5 JSON block."""
     content = _read_skill("start")
     # Find the JSON block inside Step 4 that has "permissions"
     blocks = re.findall(r"```json\s*\n(.*?)```", content, re.DOTALL)
@@ -76,7 +76,8 @@ def _permission_to_regex(perm):
 
 # Auto-allowed commands that Claude Code never prompts for (read-only)
 AUTO_ALLOWED = {"cd", "cat", "git status", "git diff", "git log", "git branch",
-                "git show", "git blame", "git worktree list", "git pull"}
+                "git show", "git blame", "git worktree list", "git pull",
+                "git rev-parse"}
 
 
 def _extract_primary_command(bash_block):
@@ -226,7 +227,7 @@ def test_no_bash_redirects_to_dot_claude():
 
 
 def test_logging_uses_project_local_path():
-    """Every skill's ## Logging section must reference .claude/flow-states/,
+    """Every skill's ## Logging section must reference .flow-states/,
     not /tmp/."""
     for name in _logging_skills():
         content = _read_skill(name)
@@ -239,11 +240,11 @@ def test_logging_uses_project_local_path():
 
         assert "/tmp/" not in logging_section, (
             f"skills/{name}/SKILL.md ## Logging section references /tmp/ — "
-            f"must use .claude/flow-states/<branch>.log instead"
+            f"must use .flow-states/<branch>.log instead"
         )
-        assert ".claude/flow-states/" in logging_section, (
+        assert ".flow-states/" in logging_section, (
             f"skills/{name}/SKILL.md ## Logging section does not reference "
-            f".claude/flow-states/ for the log path"
+            f".flow-states/ for the log path"
         )
 
 
@@ -270,7 +271,7 @@ def test_logging_template_is_command_first():
 
 
 def test_exact_permissions_have_logged_variants():
-    """Every exact-match permission Bash(foo) (no trailing *) in Start Step 4
+    """Every exact-match permission Bash(foo) (no trailing *) in Start Step 5
     must have a corresponding Bash(foo;*) entry — unless a wildcard sibling
     already covers the logged form (e.g. Bash(rubocop *) covers rubocop -A;...)."""
     permissions = _extract_step6_permissions()
@@ -297,7 +298,7 @@ def test_exact_permissions_have_logged_variants():
         test_logged = f"{cmd}; EC=$?"
         covered = any(r.match(test_logged) for r in regexes)
         assert covered, (
-            f"Exact-match permission '{perm}' in Start Step 4 has no "
+            f"Exact-match permission '{perm}' in Start Step 5 has no "
             f"logged variant '{variant}' and no wildcard permission "
             f"covers '{test_logged}'. Add a variant to support the "
             f"command-first logging pattern."
@@ -306,7 +307,7 @@ def test_exact_permissions_have_logged_variants():
 
 def test_all_bash_commands_have_permission_coverage():
     """Every ```bash``` block in all SKILL.md and docs/*.md files must match
-    at least one permission from Start Step 4 or be in the auto-allowed set."""
+    at least one permission from Start Step 5 or be in the auto-allowed set."""
     permissions = _extract_step6_permissions()
     regexes = [_permission_to_regex(p) for p in permissions]
     regexes = [r for r in regexes if r is not None]
@@ -349,7 +350,7 @@ def test_all_bash_commands_have_permission_coverage():
             if not matched:
                 errors.append(
                     f"{filepath}: command '{cmd}' has no matching permission "
-                    f"in Start Step 4. Add a Bash({cmd} *) or Bash({cmd}) "
+                    f"in Start Step 5. Add a Bash({cmd} *) or Bash({cmd}) "
                     f"entry to the permissions block."
                 )
 
@@ -457,7 +458,7 @@ def _maintainer_files():
     """Collect maintainer skill files and shared process docs.
 
     These run in this repo (not the target Rails project), so their bash
-    commands must be covered by .claude/settings.json, not Start Step 4.
+    commands must be covered by .claude/settings.json, not Start Step 5.
     """
     files = []
     for d in sorted(MAINTAINER_SKILLS_DIR.iterdir()):
@@ -478,7 +479,7 @@ def test_maintainer_bash_commands_have_settings_coverage():
     must match a permission in .claude/settings.json or be auto-allowed.
 
     Maintainer skills (.claude/skills/) run in this repo, not the target
-    Rails project, so they need coverage in settings.json — not Start Step 4."""
+    Rails project, so they need coverage in settings.json — not Start Step 5."""
     permissions = _load_settings_permissions()
     regexes = [_permission_to_regex(p) for p in permissions]
     regexes = [r for r in regexes if r is not None]

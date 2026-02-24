@@ -31,7 +31,7 @@ If you are in an active session and already know the current phase:
 
 If this is a new session or context has been compacted:
 
-1. Finds `.claude/flow-states/<branch>.json` from the project root
+1. Finds `.flow-states/<branch>.json` from the project root
 2. Changes into the worktree
 3. Invokes `/flow:status` to display current state
 4. Asks whether to continue the current phase

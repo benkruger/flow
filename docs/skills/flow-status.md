@@ -10,13 +10,13 @@ parent: Skills
 
 **Usage:** `/flow:status`
 
-Shows where you are in the FLOW workflow at any moment. Reads `.claude/flow-states/<branch>.json` and prints a clear picture of what has been completed and what comes next. Read-only — never modifies any files.
+Shows where you are in the FLOW workflow at any moment. Reads `.flow-states/<branch>.json` and prints a clear picture of what has been completed and what comes next. Read-only — never modifies any files.
 
 ---
 
 ## What It Does
 
-1. Reads `.claude/flow-states/<branch>.json` from the project root
+1. Reads `.flow-states/<branch>.json` from the project root
 2. Prints a status panel with current phase, timing, and next command
 
 ---

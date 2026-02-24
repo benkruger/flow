@@ -15,7 +15,7 @@ Run this entry check as your very first action.
 1. Find the project root: run `git worktree list --porcelain` and note the
    path on the first `worktree` line.
 2. Get the current branch: run `git branch --show-current`.
-3. Use the Read tool to read `<project_root>/.claude/flow-states/<branch>.json`.
+3. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file does not exist: print "WARNING: No state file found for
      branch '<branch>'. Will attempt best-effort cleanup using git state."
      Continue — do not stop.
@@ -40,7 +40,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 
 ### Step 1 — Read state
 
-If the state file exists, read `.claude/flow-states/<branch>.json` from
+If the state file exists, read `.flow-states/<branch>.json` from
 the project root. Note `feature`, `branch`, `worktree`, `pr_number`,
 and `pr_url`.
 

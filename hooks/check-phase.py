@@ -6,7 +6,7 @@ Usage:
   python3 hooks/check-phase.py --required <phase_number>
 
 Checks that the previous phase is complete before allowing entry into
-the requested phase. Reads .claude/flow-states/<branch>.json from the
+the requested phase. Reads .flow-states/<branch>.json from the
 project root. Works correctly whether run from the project root or from
 inside a worktree.
 
@@ -75,7 +75,7 @@ def main():
         sys.exit(1)
 
     root = project_root()
-    state_file = root / ".claude" / "flow-states" / f"{branch}.json"
+    state_file = root / ".flow-states" / f"{branch}.json"
 
     if not state_file.exists():
         print(f'BLOCKED: No FLOW feature in progress on branch "{branch}".')

@@ -66,8 +66,8 @@ def git_repo(tmp_path):
 
 @pytest.fixture
 def state_dir(git_repo):
-    """Create .claude/flow-states/ inside the git repo."""
-    d = git_repo / ".claude" / "flow-states"
+    """Create .flow-states/ inside the git repo."""
+    d = git_repo / ".flow-states"
     d.mkdir(parents=True)
     return d
 

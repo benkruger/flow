@@ -1,6 +1,6 @@
 ---
 name: start
-description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrades gems, opens a PR, creates .claude/flow-states/<branch>.json, and configures the workspace. Usage: /flow:start <feature name words>"
+description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrades gems, opens a PR, creates .flow-states/<branch>.json, and configures the workspace. Usage: /flow:start <feature name words>"
 ---
 
 # FLOW Start — Phase 1: Start
@@ -38,7 +38,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 
 ## Logging
 
-After every Bash command completes, log it to `.claude/flow-states/<branch>.log`.
+After every Bash command completes, log it to `.flow-states/<branch>.log`.
 
 Run the command with exit code capture:
 
@@ -46,19 +46,16 @@ Run the command with exit code capture:
 COMMAND; EC=$?; exit $EC
 ```
 
-Then Read `.claude/flow-states/<branch>.log` (empty string if it does not
+Then Read `.flow-states/<branch>.log` (empty string if it does not
 exist yet) and Write it back with this line appended:
 
 ```
 YYYY-MM-DDTHH:MM:SSZ [Phase 1] Step X — desc (exit EC)
 ```
 
-Do NOT use Bash `>>` to write to `.claude/` paths — it triggers Claude
-Code's built-in directory protection that settings.json cannot suppress.
-
 Use the feature name as `<branch>` — it matches the branch name.
 
-Begin logging at Step 7. Steps 2–6 are not logged (state directory not yet created).
+Begin logging at Step 8. Steps 2–7 are not logged (state directory not yet created).
 
 ---
 
@@ -66,7 +63,7 @@ Begin logging at Step 7. Steps 2–6 are not logged (state directory not yet cre
 
 ### Step 1 — Check for existing feature
 
-Use the Glob tool to check for existing state files matching `.claude/flow-states/*.json`.
+Use the Glob tool to check for existing state files matching `.flow-states/*.json`.
 
 If any files are found, list their names (the branch names from the filenames).
 
@@ -100,7 +97,20 @@ The Bash tool persists working directory between calls, so all subsequent
 commands run inside the worktree automatically. Do NOT repeat `cd .worktrees/`
 in later steps — it would look for a nested `.worktrees/` that doesn't exist.
 
-### Step 4 — Configure workspace permissions
+### Step 4 — Configure git exclude
+
+Ensure `.flow-states/` and `.worktrees/` are excluded from version control
+using the per-repo local exclude (not committed, not in `.gitignore`).
+
+```bash
+git rev-parse --git-common-dir
+```
+
+Read `<git-common-dir>/info/exclude`. If `.flow-states/` or `.worktrees/`
+are missing from the file, append them. Use the Edit tool (or Write if the
+file does not exist) — one entry per line.
+
+### Step 5 — Configure workspace permissions
 
 Check if `.claude/settings.json` exists in the **project root** (one level up from the worktree).
 
@@ -140,7 +150,7 @@ Check if `.claude/settings.json` exists in the **project root** (one level up fr
 
 **If it exists**, read it and merge in any missing entries. Do not remove existing entries. No duplicates.
 
-### Step 5 — Initial commit, push, and open PR
+### Step 6 — Initial commit, push, and open PR
 
 GitHub requires at least one commit between base and head to create a PR.
 Already inside the worktree from Step 3:
@@ -162,9 +172,9 @@ gh pr create \
 
 Capture the PR URL from the output. Extract the PR number from the URL.
 
-### Step 6 — Create the FLOW state file
+### Step 7 — Create the FLOW state file
 
-Use the Write tool to write the state file at `.claude/flow-states/<branch-name>.json`
+Use the Write tool to write the state file at `.flow-states/<branch-name>.json`
 with the current UTC timestamp. The Write tool creates parent directories automatically.
 
 ```json
@@ -190,39 +200,39 @@ with the current UTC timestamp. The Write tool creates parent directories automa
 }
 ```
 
-### Step 7 — Baseline `bin/ci`
+### Step 8 — Baseline `bin/ci`
 
 ```bash
 bin/ci
 ```
 
 - **Passes** — note as baseline and continue
-- **Fails** — launch the CI fix sub-agent (see Step 10). Pass the full
+- **Fails** — launch the CI fix sub-agent (see Step 11). Pass the full
   `bin/ci` output. After the sub-agent returns:
   - **Fixed** — use `/flow:commit` to commit the fix, then continue
   - **Not fixed** — stop and report to the user what is failing
 
-### Step 8 — Upgrade gems
+### Step 9 — Upgrade gems
 
 ```bash
 bundle update
 ```
 
-### Step 9 — Post-update `bin/ci`
+### Step 10 — Post-update `bin/ci`
 
 ```bash
 bin/ci
 ```
 
-- **Passes** — continue to Step 11
-- **Fails** — launch the CI fix sub-agent (see Step 10). Pass the full
+- **Passes** — continue to Step 12
+- **Fails** — launch the CI fix sub-agent (see Step 11). Pass the full
   `bin/ci` output. After the sub-agent returns:
-  - **Fixed** — continue to Step 11 (Gemfile.lock + fixes committed together)
+  - **Fixed** — continue to Step 12 (Gemfile.lock + fixes committed together)
   - **Not fixed** — stop and report to the user what is failing
 
-### Step 10 — CI fix sub-agent
+### Step 11 — CI fix sub-agent
 
-When `bin/ci` fails in Step 7 or Step 9, launch a sub-agent to diagnose
+When `bin/ci` fails in Step 8 or Step 10, launch a sub-agent to diagnose
 and fix the failures. Use the Task tool:
 
 - `subagent_type`: `"general-purpose"`
@@ -260,16 +270,16 @@ Provide these instructions (fill in the worktree path and bin/ci output):
 Wait for the sub-agent to return.
 
 <HARD-GATE>
-Do NOT proceed past Step 7 or Step 9 until bin/ci is green.
+Do NOT proceed past Step 8 or Step 10 until bin/ci is green.
 </HARD-GATE>
 
-### Step 11 — Commit and push
+### Step 12 — Commit and push
 
 Use `/flow:commit` to review and commit the changes (`Gemfile.lock` + any gem fixes).
 
 ### Done — Update state and complete phase
 
-Update `.claude/flow-states/<branch>.json`:
+Update `.flow-states/<branch>.json`:
 1. `cumulative_seconds` for Phase 1: `current_time - session_started_at`
 2. Phase 1 `status` → `complete`
 3. Phase 1 `completed_at` → current UTC timestamp

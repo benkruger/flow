@@ -400,6 +400,6 @@ Available at any point in the workflow:
 
 - SessionStart hook — detects in-progress features, injects resume context
 - Phase entry guards — prevents skipping phases
-- Per-feature state files — `.claude/flow-states/<branch>.json`
+- Per-feature state files — `.flow-states/<branch>.json`
 - Git rebase denied in settings
 - Documentation site (GitHub Pages with Jekyll)

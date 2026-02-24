@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # FLOW Process — SessionStart hook
 #
-# Scans .claude/flow-states/ for in-progress features.
+# Scans .flow-states/ for in-progress features.
 # 0 files  → exits silently
 # 1 file   → resets interrupted session timing, injects resume instruction
 # 2+ files → asks user to pick a feature, then resumes
 
 set -euo pipefail
 
-STATE_DIR=".claude/flow-states"
+STATE_DIR=".flow-states"
 
 # No state directory or no state files — exit silently
 if [ ! -d "$STATE_DIR" ]; then
@@ -24,7 +24,7 @@ CONTEXT=$(python3 - << 'PYTHON'
 import json, sys
 from pathlib import Path
 
-state_dir = Path(".claude/flow-states")
+state_dir = Path(".flow-states")
 files = sorted(state_dir.glob("*.json"))
 
 if not files:

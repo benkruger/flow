@@ -6,14 +6,14 @@ parent: Reference
 
 # FLOW State Schema
 
-State files live in `.claude/flow-states/` at the project root, named after the branch:
+State files live in `.flow-states/` at the project root, named after the branch:
 
 ```
-.claude/flow-states/app-payment-webhooks.json
-.claude/flow-states/user-profile-redesign.json
+.flow-states/app-payment-webhooks.json
+.flow-states/user-profile-redesign.json
 ```
 
-One file per active feature. Multiple features can run simultaneously with no conflicts. The directory and all its contents are gitignored (covered by the global Claude gitignore on `.claude/`). Created by `/flow:start`, deleted by `/flow:cleanup`.
+One file per active feature. Multiple features can run simultaneously with no conflicts. The directory is added to `.git/info/exclude` by `/flow:start` (per-repo, not committed). Created by `/flow:start`, deleted by `/flow:cleanup`.
 
 ---
 

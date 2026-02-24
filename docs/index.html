@@ -553,7 +553,7 @@
       </div>
       <div class="feature">
         <h4>State File Persistence</h4>
-        <p>Every feature has a <code>.claude/flow-states/&lt;branch&gt;.json</code> file tracking research findings, design decisions, plan tasks, captured notes, and per-phase timing. State survives session breaks and compaction.</p>
+        <p>Every feature has a <code>.flow-states/&lt;branch&gt;.json</code> file tracking research findings, design decisions, plan tasks, captured notes, and per-phase timing. State survives session breaks and compaction.</p>
       </div>
       <div class="feature">
         <h4>Session Hook &mdash; Auto-Resume</h4>
@@ -573,7 +573,7 @@
       </div>
       <div class="feature">
         <h4>Zero Project Footprint</h4>
-        <p>Installing FLOW adds nothing to your Rails project. The only file it creates is a gitignored <code>.claude/flow-states/&lt;branch&gt;.json</code> per active feature. Cleanup deletes even that. No dotfiles, no config directories, no scripts left behind.</p>
+        <p>Installing FLOW adds nothing to your Rails project. The only file it creates is a gitignored <code>.flow-states/&lt;branch&gt;.json</code> per active feature. Cleanup deletes even that. No dotfiles, no config directories, no scripts left behind.</p>
       </div>
     </div>
 
@@ -750,7 +750,7 @@
     <p style="color: var(--text-muted); font-size: 14px; margin-top: 12px; margin-bottom: 28px;">FLOW creates a git worktree, opens a GitHub PR, runs <code>bin/ci</code> to establish a baseline, upgrades gems, runs <code>bin/ci</code> again to confirm green, and lands you in Phase 2: Research.</p>
 
     <div class="callout" style="margin-bottom: 32px;">
-      <p>The plugin installs into Claude Code&rsquo;s managed plugin directory &mdash; nothing gets added to your Rails project. The only file FLOW writes is a gitignored <code>.claude/flow-states/&lt;branch&gt;.json</code> per active feature. Cleanup deletes even that. <strong>Two commands to install. One file while you work. Zero when you&rsquo;re done.</strong></p>
+      <p>The plugin installs into Claude Code&rsquo;s managed plugin directory &mdash; nothing gets added to your Rails project. The only file FLOW writes is a gitignored <code>.flow-states/&lt;branch&gt;.json</code> per active feature. Cleanup deletes even that. <strong>Two commands to install. One file while you work. Zero when you&rsquo;re done.</strong></p>
     </div>
 
     <a href="https://github.com/benkruger/flow" class="cta">View on GitHub</a>

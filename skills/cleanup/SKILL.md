@@ -12,7 +12,7 @@ blocks — it records warnings for the confirmation step.
 1. Find the project root: run `git worktree list --porcelain` and note the
    path on the first `worktree` line.
 2. Get the current branch: run `git branch --show-current`.
-3. Use the Read tool to read `<project_root>/.claude/flow-states/<branch>.json`.
+3. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file does not exist: record warning "No state file found for
      branch '<branch>'."
 4. If the file exists, check `phases.7.status` in the JSON.
@@ -37,7 +37,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 
 ## Logging
 
-After every Bash command completes, log it to `.claude/flow-states/<branch>.log`.
+After every Bash command completes, log it to `.flow-states/<branch>.log`.
 
 Run the command with exit code capture:
 
@@ -45,15 +45,12 @@ Run the command with exit code capture:
 COMMAND; EC=$?; exit $EC
 ```
 
-Then Read `.claude/flow-states/<branch>.log` (empty string if it does not
+Then Read `.flow-states/<branch>.log` (empty string if it does not
 exist yet) and Write it back with this line appended:
 
 ```
 YYYY-MM-DDTHH:MM:SSZ [Phase 8] Step X — desc (exit EC)
 ```
-
-Do NOT use Bash `>>` to write to `.claude/` paths — it triggers Claude
-Code's built-in directory protection that settings.json cannot suppress.
 
 Get `<branch>` from the state file or `git branch --show-current`.
 
@@ -63,7 +60,7 @@ Get `<branch>` from the state file or `git branch --show-current`.
 
 ### Step 1 — Read state (handle missing)
 
-If the state file exists, read `.claude/flow-states/<branch>.json` from
+If the state file exists, read `.flow-states/<branch>.json` from
 the project root. Note the `worktree` and `feature` values.
 
 If the state file is missing, infer what you can:

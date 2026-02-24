@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-A Claude Code plugin (`flow:` namespace) implementing an opinionated 8-phase Rails development lifecycle. Skills live in `skills/<name>/SKILL.md`. State lives in `.claude/flow-states/<branch>.json` in the target Rails project.
+A Claude Code plugin (`flow:` namespace) implementing an opinionated 8-phase Rails development lifecycle. Skills live in `skills/<name>/SKILL.md`. State lives in `.flow-states/<branch>.json` in the target Rails project.
 
 ## Key Files
 
@@ -30,7 +30,7 @@ A Claude Code plugin (`flow:` namespace) implementing an opinionated 8-phase Rai
 
 ### Plugin vs Target Project
 
-This repo is the plugin source. When installed, skills and hooks run in the target Rails project's working directory. State files live in the target project's `.claude/flow-states/`. Worktrees are created in the target project. Hooks must be tested in the context of a target project directory structure, not this repo.
+This repo is the plugin source. When installed, skills and hooks run in the target Rails project's working directory. State files live in the target project's `.flow-states/`. Worktrees are created in the target project. Hooks must be tested in the context of a target project directory structure, not this repo.
 
 ### Skills Are Markdown, Not Code
 
@@ -47,7 +47,7 @@ When adding shared behavior, create a doc in `docs/` and reference it from each 
 
 ### State File
 
-The state file (`.claude/flow-states/<branch>.json`) is the backbone. Schema reference: `docs/reference/flow-state-schema.md`. Test fixture: `tests/conftest.py:make_state()`.
+The state file (`.flow-states/<branch>.json`) is the backbone. Schema reference: `docs/reference/flow-state-schema.md`. Test fixture: `tests/conftest.py:make_state()`.
 
 ### Sub-Agents
 
@@ -55,7 +55,7 @@ Four phase skills launch mandatory Explore-type sub-agents: Research, Design, Pl
 
 ### Logging
 
-Phase skills log completion events to `.claude/flow-states/<branch>.log` using a command-first pattern (no START timestamps). Logging goes to `.claude/flow-states/`, never `/tmp/`.
+Phase skills log completion events to `.flow-states/<branch>.log` using a command-first pattern (no START timestamps). Logging goes to `.flow-states/`, never `/tmp/`.
 
 ### Version Locations
 

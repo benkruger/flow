@@ -88,7 +88,7 @@ Replace `PREV` with the previous phase number and `PREV_NAME` with its name:
 1. Find the project root: run `git worktree list --porcelain` and note the
    path on the first `worktree` line.
 2. Get the current branch: run `git branch --show-current`.
-3. Use the Read tool to read `<project_root>/.claude/flow-states/<branch>.json`.
+3. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
      Run /flow:start first."
 4. Check `phases.PREV.status` in the JSON.

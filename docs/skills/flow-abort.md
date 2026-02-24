@@ -20,7 +20,7 @@ file is missing, but proceeds after user confirmation.
 
 ## What It Does
 
-1. Reads `.claude/flow-states/<branch>.json` for feature details
+1. Reads `.flow-states/<branch>.json` for feature details
    (or infers from git state if the file is missing)
 2. Confirms with the user before any destructive action, including any
    warnings from the entry check
@@ -29,7 +29,7 @@ file is missing, but proceeds after user confirmation.
 5. Removes the worktree with `git worktree remove --force`
 6. Deletes the remote branch with `git push origin --delete`
 7. Deletes the local branch with `git branch -D`
-8. Deletes `.claude/flow-states/<branch>.json`
+8. Deletes `.flow-states/<branch>.json`
 
 Steps 3–8 follow a mix of abort-specific actions and the shared cleanup
 process (`docs/cleanup-process.md`). Every step after confirmation is

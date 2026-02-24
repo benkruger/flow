@@ -59,7 +59,7 @@ This creates branch `invoice-pdf-export`, a worktree at `.worktrees/invoice-pdf-
 
 The plugin itself installs into Claude Code's managed plugin directory — one place, fully managed by Claude Code. That's it.
 
-Nothing gets added to your Rails project. No dotfiles. No config directories. No scripts scattered through your codebase. The only thing FLOW writes into your project is a single gitignored JSON state file per active feature at `.claude/flow-states/<branch>.json`. When the feature is done and Cleanup runs, that file is deleted too.
+Nothing gets added to your Rails project. No dotfiles. No config directories. No scripts scattered through your codebase. The only thing FLOW writes into your project is a single gitignored JSON state file per active feature at `.flow-states/<branch>.json`. When the feature is done and Cleanup runs, that file is deleted too.
 
 **Two commands to install. One file while you work. Zero when you're done.**
 
@@ -122,7 +122,7 @@ FLOW uses the right model for each phase — Opus for hard thinking, Sonnet for 
 
 ### State File Persistence
 
-Every feature has a state file at `.claude/flow-states/<branch>.json`. It stores:
+Every feature has a state file at `.flow-states/<branch>.json`. It stores:
 
 - **Research findings** — affected files, callbacks, risks, clarifications
 - **Design decisions** — chosen approach, schema/model/controller/worker changes, rationale
@@ -134,7 +134,7 @@ State survives session breaks and compaction. Multiple features can run simultan
 
 ### Session Hook — Auto-Resume
 
-Every Claude Code session start — new terminal, `/clear`, `/compact` — triggers a hook that scans `.claude/flow-states/` for in-progress features.
+Every Claude Code session start — new terminal, `/clear`, `/compact` — triggers a hook that scans `.flow-states/` for in-progress features.
 
 If a feature is found, Claude's **first action** is to invoke `/flow:resume`. No prompt needed. No "what were we working on?" You close your laptop, open Claude Code the next morning, and the session opens with your feature's current phase, PR link, and time spent — then asks one question: "Ready to continue Phase 4: Plan?" Say yes and you're back exactly where you left off.
 

@@ -19,7 +19,7 @@ but proceeds after user confirmation.
 ## Steps
 
 ### 1. Read state
-Read `.claude/flow-states/<branch>.json` for the worktree path and feature name.
+Read `.flow-states/<branch>.json` for the worktree path and feature name.
 If the state file is missing, infer from git state (branch name, worktree list).
 
 ### 2. Confirm with user
@@ -37,7 +37,7 @@ If this fails (already removed), note it and continue.
 
 ### 5. Delete the state file
 ```bash
-rm .claude/flow-states/<branch>.json
+rm .flow-states/<branch>.json
 ```
 If this doesn't exist, note it and continue.
 

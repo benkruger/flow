@@ -1,6 +1,6 @@
 ---
 name: status
-description: "Show current SDLC phase, PR link, timing, and what comes next. Reads .claude/flow-states/<branch>.json. Use any time you want to know where you are in the workflow."
+description: "Show current SDLC phase, PR link, timing, and what comes next. Reads .flow-states/<branch>.json. Use any time you want to know where you are in the workflow."
 ---
 
 # FLOW Status
@@ -24,7 +24,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 
 ### Step 1 — Read the state file
 
-Find the project root and read `.claude/flow-states/<branch>.json`.
+Find the project root and read `.flow-states/<branch>.json`.
 
 If no state file exists for the current branch, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 

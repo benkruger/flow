@@ -24,7 +24,7 @@ If this fails (already removed, doesn't exist, path mismatch), note it and conti
 
 ## Step 3 — Delete the state file and log
 
-Delete `.claude/flow-states/<branch>.json` and `.claude/flow-states/<branch>.log`.
+Delete `.flow-states/<branch>.json` and `.flow-states/<branch>.log`.
 
 If either doesn't exist, note it and continue.
 
