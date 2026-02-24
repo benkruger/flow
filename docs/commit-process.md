@@ -117,17 +117,22 @@ Question: "Approve this commit?"
 
 Files are already staged from Step 1. No need to `git add -A` again.
 
-1. Use the Write tool to write the commit message to `/tmp/flow-commit-<repo>-<branch>.txt` (where `<repo>` is the repository directory name and `<branch>` is from `git branch --show-current`), then commit and delete the temp file:
-   ```
-   git commit -F /tmp/flow-commit-<repo>-<branch>.txt && rm /tmp/flow-commit-<repo>-<branch>.txt
-   ```
+1. Use the Write tool to write the commit message to `/tmp/flow-commit-<repo>-<branch>.txt` (where `<repo>` is the repository directory name and `<branch>` is from `git branch --show-current`).
    - Repo+branch scoped filename prevents collisions between concurrent sessions across different repos
-   - The `rm` prevents the Write tool from showing a confusing diff of old→new message on the next commit
    - The Write tool handles newlines and special characters safely — no shell escaping needed
    - Never use `python3 -c` to write the message — literal `$(...)` in the body triggers command substitution warnings
    - Never use `git commit -m` with heredoc — the multi-line command fails permission pattern matching
-3. `git pull origin <current-branch>` — pull before pushing to pick up any changes merged while you were working
-4. If the pull produced merge conflicts:
+2. Commit from the temp file:
+   ```bash
+   git commit -F /tmp/flow-commit-<repo>-<branch>.txt
+   ```
+3. Delete the temp file:
+   ```bash
+   rm /tmp/flow-commit-<repo>-<branch>.txt
+   ```
+   The `rm` prevents the Write tool from showing a confusing diff of old→new message on the next commit.
+4. `git pull origin <current-branch>` — pull before pushing to pick up any changes merged while you were working
+5. If the pull produced merge conflicts:
    - Run `git status` to identify every conflicting file
    - Read each conflicting file carefully — understand both sides:
      - `<<<<<<<` (HEAD) = our changes
@@ -138,8 +143,8 @@ Files are already staged from Step 1. No need to `git add -A` again.
      - If the resolution is obvious from context → fix it silently, `git add <file>`
    - Only escalate to the user if a conflict requires a domain or business decision you cannot make — show exactly that conflict and ask specifically what to do
    - Once all conflicts are resolved: `git add -A`, then continue to push
-5. If pull was clean: `git push`
-6. Confirm success and show the commit SHA.
+6. If pull was clean: `git push`
+7. Confirm success and show the commit SHA.
 
 ## Step 5 — Handle denial
 
