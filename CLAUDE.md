@@ -12,6 +12,12 @@ A Claude Code plugin (`flow:` namespace) implementing an opinionated 8-phase Rai
 - `.claude/settings.json` — project permissions (git rebase denied)
 - `docs/` — GitHub Pages site (main /docs, static HTML)
 
+## Development Environment
+
+- Python virtualenv at `.venv/` — `bin/ci` uses `.venv/bin/python3` automatically
+- Run tests with `bin/ci` only — never invoke pytest directly
+- Dependencies managed in the venv, not system Python
+
 ## What Still Needs Work
 
 - The `flow-phases.json` `can_return_to` values may need tuning after real use
@@ -29,6 +35,7 @@ A Claude Code plugin (`flow:` namespace) implementing an opinionated 8-phase Rai
 - New skills are automatically covered by test_skill_contracts.py (glob-based discovery)
 - Namespace is `flow:` — plugin.json name is `"flow"`
 - Never rebase — merge only (denied in `.claude/settings.json`)
+- CLAUDE.md changes only through `/reflect` — never edit CLAUDE.md directly. The `/reflect` skill exists to review mistakes, propose additions, get individual approval for each change, and commit. Editing CLAUDE.md outside of `/reflect` bypasses all of that.
 
 ## Lessons Learned
 
