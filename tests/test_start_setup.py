@@ -29,7 +29,7 @@ def git_repo_with_remote(tmp_path):
 
     # Create bare remote
     subprocess.run(
-        ["git", "init", "--bare", str(bare)],
+        ["git", "init", "--bare", "-b", "main", str(bare)],
         capture_output=True, check=True,
     )
 
