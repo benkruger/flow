@@ -24,7 +24,8 @@
   from Read+Write tool pattern to Bash append (`>>`).
 - **CLAUDE.md lessons** — Added lessons on bin/test usage, test-first for all
   changes, plan-before-editing, scoping fixes, and never removing safety checks.
-- **Release skill** — Removed automated marketplace update step.
+- **Release skill** — Restored automated marketplace update step that was
+  incorrectly removed in a previous session.
 
 ---
 
