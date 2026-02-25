@@ -1,5 +1,41 @@
 # Release Notes
 
+## v0.6.5 — Permission hardening, phase timing, and markdown linting
+
+### New Features
+
+- **Phase timing in banners** — COMPLETE banners and the status panel now
+  show elapsed time for each phase.
+- **Markdown linting** — `bin/ci` now runs pymarkdownlnt before pytest.
+  Re-enabled MD041 (first-line heading) now that frontmatter is handled.
+
+### Security
+
+- **Destructive git commands denied** — `git reset --hard`, `git stash`,
+  `git checkout`, and `git clean` are now denied in both workspace and
+  maintainer permission sets.
+- **Permission deny list test** — New test in `test_permissions.py`
+  validates deny entries exist for destructive operations.
+- **Read-only shell utilities allowed** — `wc`, `sort`, `uniq`, and similar
+  read-only commands added to maintainer permissions.
+- **bypassPermissions banned** — Sub-agents must never use
+  `bypassPermissions` mode. Lesson captured in CLAUDE.md.
+
+### Improvements
+
+- **Workspace permissions reordered** — Moved before worktree creation in
+  Start so permissions apply from the first command.
+- **Shared process docs inlined** — Eliminated shared doc references in
+  favor of inline instructions in each skill.
+- **Permission patterns fixed** — Corrected patterns that didn't match
+  actual commands.
+- **Marketplace update step** — Release skill now runs
+  `claude plugin marketplace update` after creating the GitHub Release.
+- **CLAUDE.md lessons** — Added TDD-first, plan-before-editing, and
+  bypassPermissions lessons from reflect sessions.
+
+---
+
 ## v0.6.4 — Security hardening and bug fixes
 
 ### Fixes
