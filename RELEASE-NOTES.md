@@ -1,5 +1,30 @@
 # Release Notes
 
+## v0.7.2 — Banner consistency fixes
+
+### Fixes
+
+- **Time formatting** — Completion banners now show formatted time (`3m`, `1h 5m`)
+  instead of raw seconds (`235s`). All 8 phase COMPLETE banners use
+  `<formatted_time>` with the same format spec as the status panel.
+- **Suppress timing computation** — Added "Do not print the calculation"
+  to phases 1-7 state update sections. Prevents Claude from showing
+  work like "Phase 1 started at 07:35:12Z, now 07:39:07Z = 235 seconds."
+  before the completion banner.
+- **Version in all banners** — All STARTING and COMPLETE banners across
+  all 12 skill files now include the version (`FLOW v0.7.2`). Previously
+  only Start and Status showed it.
+
+### Improvements
+
+- **Release skill covers all skills** — Step 6 now replaces version
+  across every `skills/*/SKILL.md` and `.claude/skills/release/SKILL.md`
+  instead of just Start and Status.
+- **6 new contract tests** — Enforce version in announce/complete banners,
+  formatted_time usage, time format instructions, and output suppression.
+
+---
+
 ## v0.7.1 — Fix Start phase permission prompt regression
 
 ### Fixes
