@@ -11,6 +11,7 @@ Output (JSON to stdout):
 """
 
 import json
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -295,6 +296,16 @@ def main():
         # Step 2c — Create worktree
         wt_path = _create_worktree(project_root, branch)
         _log(project_root, branch, f"git worktree add .worktrees/{branch} (exit 0)")
+
+        # Step 2c+ — Copy settings into worktree
+        wt_settings_dir = wt_path / ".claude"
+        wt_settings_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(
+            project_root / ".claude" / "settings.json",
+            wt_settings_dir / "settings.json",
+        )
+        _log(project_root, branch,
+             "copy .claude/settings.json to worktree (exit 0)")
 
         # Step 2d — Configure git exclude
         _configure_exclude(project_root)

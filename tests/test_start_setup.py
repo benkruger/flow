@@ -409,6 +409,30 @@ def test_branch_name_single_long_word():
     assert result == "a" * 32
 
 
+def test_settings_copied_to_worktree(git_repo_with_remote):
+    """Settings file is copied into the worktree .claude/ directory."""
+    _run_no_gh(git_repo_with_remote, "test feature")
+    wt_settings = (git_repo_with_remote / ".worktrees" / "test-feature"
+                   / ".claude" / "settings.json")
+    assert wt_settings.exists()
+    data = json.loads(wt_settings.read_text())
+    assert "Bash(bin/ci)" in data["permissions"]["allow"]
+    assert "Bash(bin/ci; *)" in data["permissions"]["allow"]
+
+
+def test_worktree_settings_match_project_root(git_repo_with_remote):
+    """Worktree settings must be identical to project root settings."""
+    _run_no_gh(git_repo_with_remote, "test feature")
+    root_settings = json.loads(
+        (git_repo_with_remote / ".claude" / "settings.json").read_text()
+    )
+    wt_settings = json.loads(
+        (git_repo_with_remote / ".worktrees" / "test-feature"
+         / ".claude" / "settings.json").read_text()
+    )
+    assert root_settings == wt_settings
+
+
 def test_extract_pr_number_malformed_url():
     """Malformed PR URL returns 0."""
     assert _mod._extract_pr_number("not-a-url") == 0

@@ -108,6 +108,10 @@ The Bash tool persists working directory between calls, so all subsequent
 commands run inside the worktree automatically. Do NOT repeat `cd .worktrees/`
 in later steps — it would look for a nested `.worktrees/` that doesn't exist.
 
+Then reload workspace permissions: Read `.claude/settings.json` and Write it
+back with identical content. This triggers Claude Code to detect and apply the
+FLOW permission entries that `start-setup.py` configured.
+
 **On failure** — stdout is error JSON, details on stderr:
 
 ```json
@@ -254,7 +258,9 @@ Then report:
 
 ## Reference: Workspace Permissions
 
-The `start-setup.py` script configures these permissions in `.claude/settings.json`:
+The `start-setup.py` script configures these permissions in `.claude/settings.json`
+and copies the merged file into the worktree's `.claude/` directory so permissions
+are available immediately after `cd .worktrees/<branch>`:
 
 ```json
 {
