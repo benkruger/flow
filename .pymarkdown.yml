@@ -15,10 +15,8 @@ plugins:
   md036:
     # Emphasis as heading — disabled. Skills intentionally use **bold** as sub-headings.
     enabled: false
-  md041:
-    # First line heading — disabled. SKILL.md files start with YAML frontmatter.
-    enabled: false
-
 extensions:
   front-matter:
+    # Recognizes YAML frontmatter so MD041 (first line heading) passes on
+    # frontmatter files without needing to disable the rule.
     enabled: true
