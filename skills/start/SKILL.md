@@ -31,7 +31,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````text
 ```
 ============================================
-  FLOW v0.6.5 — Phase 1: Start — STARTING
+  FLOW v0.7.0 — Phase 1: Start — STARTING
   Recommended model: Haiku
 ============================================
 ```

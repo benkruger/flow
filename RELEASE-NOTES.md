@@ -1,5 +1,33 @@
 # Release Notes
 
+## v0.7.0 — Start phase consolidation
+
+### New Features
+
+- **Consolidated setup script** — Start phase Steps 2-7 (git pull, settings
+  merge, worktree creation, git exclude, empty commit+push+PR, state file
+  creation) consolidated into a single Python script (`hooks/start-setup.py`).
+  Reduces ~15 API round-trips to ~5, eliminating ~1m46s of LLM overhead.
+- **`bin/test` wrapper** — New pytest wrapper for targeted test runs during
+  development. Matches `bin/ci` pattern with venv detection.
+
+### Fixes
+
+- **Start phase PR creation** — Fixed PR creation failing when run from the
+  wrong directory with insufficient commits.
+- **CI fixture default branch** — Fixed `git_repo_with_remote` fixture failing
+  in GitHub Actions by explicitly setting `-b main` on bare repo init.
+
+### Improvements
+
+- **Start SKILL.md rewritten** — Reduced from 12 steps to 7. Logging changed
+  from Read+Write tool pattern to Bash append (`>>`).
+- **CLAUDE.md lessons** — Added lessons on bin/test usage, test-first for all
+  changes, plan-before-editing, scoping fixes, and never removing safety checks.
+- **Release skill** — Removed automated marketplace update step.
+
+---
+
 ## v0.6.5 — Permission hardening, phase timing, and markdown linting
 
 ### New Features

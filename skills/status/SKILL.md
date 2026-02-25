@@ -44,7 +44,7 @@ Print inside a fenced code block (triple backticks) so it renders as plain monos
 ````markdown
 ```text
 ============================================
-  FLOW v0.6.5 — Current Status
+  FLOW v0.7.0 — Current Status
 ============================================
 
   Feature : <feature>
