@@ -23,7 +23,16 @@
       "Bash(git rm .flow-commit-*)",
       "Bash(rm .flow-commit-*)",
       "Bash(bin/ci)",
-      "Bash(claude plugin marketplace update *)"
+      "Bash(claude plugin marketplace update *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(grep *)",
+      "Bash(cut *)",
+      "Bash(find *)",
+      "Bash(wc *)",
+      "Bash(sort *)",
+      "Bash(cat *)",
+      "Bash(diff *)"
     ],
     "deny": [
       "Bash(git rebase *)",
