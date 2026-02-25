@@ -607,3 +607,16 @@ def test_start_references_setup_script():
         "start/SKILL.md must reference start-setup.py — "
         "Steps 2-7 are consolidated into a single Python script"
     )
+
+
+# --- Release skill (maintainer) ---
+
+
+def test_release_complete_banner_confirms_marketplace_update():
+    """Release COMPLETE banner must say 'Local plugin upgraded:' to confirm
+    the marketplace update ran, not ask the user to run it manually."""
+    content = (REPO_ROOT / ".claude" / "skills" / "release" / "SKILL.md").read_text()
+    assert "Local plugin upgraded:" in content, (
+        "Release COMPLETE banner must confirm the marketplace update ran — "
+        "use 'Local plugin upgraded:' not 'Run manually'"
+    )
