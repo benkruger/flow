@@ -14,7 +14,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````text
 ```
 ============================================
-  FLOW v0.7.2 — flow:commit — STARTING
+  FLOW v0.7.3 — flow:commit — STARTING
   Recommended model: Sonnet
 ============================================
 ```
@@ -25,7 +25,7 @@ On completion (whether approved or denied), print the same way:
 ````text
 ```
 ============================================
-  FLOW v0.7.2 — flow:commit — COMPLETE
+  FLOW v0.7.3 — flow:commit — COMPLETE
 ============================================
 ```
 ````

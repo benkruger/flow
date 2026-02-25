@@ -27,7 +27,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````markdown
 ```text
 ============================================
-  FLOW v0.7.2 — Phase 7: Reflect — STARTING
+  FLOW v0.7.3 — Phase 7: Reflect — STARTING
   Recommended model: Sonnet
 ============================================
 ```
@@ -273,7 +273,7 @@ Print inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW v0.7.2 — Phase 7: Reflect — COMPLETE (<formatted_time>)
+  FLOW v0.7.3 — Phase 7: Reflect — COMPLETE (<formatted_time>)
   Merge the PR, then run /flow:cleanup.
 ============================================
 ```

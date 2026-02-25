@@ -31,7 +31,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````text
 ```
 ============================================
-  FLOW v0.7.2 — Phase 1: Start — STARTING
+  FLOW v0.7.3 — Phase 1: Start — STARTING
   Recommended model: Haiku
 ============================================
 ```
@@ -216,7 +216,7 @@ Print inside a fenced code block (triple backticks) so it renders as plain monos
 ````text
 ```
 ============================================
-  FLOW v0.7.2 — Phase 1: Start — COMPLETE (<formatted_time>)
+  FLOW v0.7.3 — Phase 1: Start — COMPLETE (<formatted_time>)
 ============================================
 ```
 ````

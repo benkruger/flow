@@ -1,5 +1,24 @@
 # Release Notes
 
+## v0.7.3 — Fix workspace permissions in worktrees
+
+### Fixes
+
+- **Worktree permissions** — `start-setup.py` writes FLOW workspace permissions
+  to `.claude/settings.json` in the project root, but `git worktree add`
+  populates the worktree from HEAD (the committed version without FLOW entries).
+  Every FLOW command after `cd .worktrees/<branch>` triggered a permission
+  prompt. The script now copies the merged settings file into the worktree's
+  `.claude/` directory after creation.
+- **Settings reload** — Added a Read+Write reload step in the Start skill after
+  `cd` into the worktree. This triggers Claude Code to detect and apply the
+  copied permission entries before any commands run.
+- **Release skill bypassed /commit** — Step 8 had its own `git commit`
+  instructions instead of invoking `/commit`. This skipped `bin/ci`, diff
+  review, and approval. Step 8 now delegates to `/commit`.
+
+---
+
 ## v0.7.2 — Banner consistency fixes
 
 ### Fixes

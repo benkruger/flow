@@ -13,7 +13,7 @@ Print:
 
 ```
 ============================================
-  FLOW v0.7.2 — release — STARTING
+  FLOW v0.7.3 — release — STARTING
 ============================================
 ```
 
@@ -136,21 +136,9 @@ Use AskUserQuestion to show the draft release notes:
 
 ## Step 8 — Commit the version bump
 
-Commit exactly these files:
-
-- `.claude-plugin/plugin.json`
-- `.claude-plugin/marketplace.json`
-- `skills/*/SKILL.md` (all skill files with version in banners)
-- `.claude/skills/release/SKILL.md`
-- `RELEASE-NOTES.md`
-
-Commit message:
-
-```
-Release v<new_version>
-```
-
-No body needed — the release notes tell the story.
+Use `/commit` to review and commit the version bump. The commit message
+should be `Release v<new_version>` — no body needed, the release notes
+tell the story.
 
 ## Step 9 — Tag and push
 
@@ -188,7 +176,7 @@ Print:
 
 ```
 ============================================
-  FLOW v0.7.2 — release — COMPLETE
+  FLOW v0.7.3 — release — COMPLETE
   Released v<new_version>
   https://github.com/benkruger/flow/releases/tag/v<new_version>
 

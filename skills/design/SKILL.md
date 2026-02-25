@@ -27,7 +27,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````markdown
 ```text
 ============================================
-  FLOW v0.7.2 — Phase 3: Design — STARTING
+  FLOW v0.7.3 — Phase 3: Design — STARTING
   Recommended model: Opus
 ============================================
 ```
@@ -307,7 +307,7 @@ Print inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW v0.7.2 — Phase 3: Design — COMPLETE (<formatted_time>)
+  FLOW v0.7.3 — Phase 3: Design — COMPLETE (<formatted_time>)
 ============================================
 ```
 ````
