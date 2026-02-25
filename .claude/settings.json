@@ -19,6 +19,7 @@
       "Bash(gh run list *)",
       "Bash(python3 hooks/check-phase.py *)",
       "Bash(python3 hooks/extract-release-notes.py *)",
+      "Bash(python3 hooks/start-setup.py *)",
       "Bash(git check-ignore *)",
       "Bash(git rm .flow-commit-*)",
       "Bash(rm .flow-commit-*)",
@@ -32,7 +33,8 @@
       "Bash(wc *)",
       "Bash(sort *)",
       "Bash(cat *)",
-      "Bash(diff *)"
+      "Bash(diff *)",
+      "Bash(bin/test *)"
     ],
     "deny": [
       "Bash(git rebase *)",

@@ -39,24 +39,15 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 
 ## Logging
 
-After every Bash command completes, log it to `.flow-states/<branch>.log`.
+After every Bash command in Steps 3–7, log it to `.flow-states/<branch>.log` using Bash append. Step 2 handles its own logging internally.
 
-Run the command with exit code capture:
+Run the command with exit code capture and inline log append:
 
 ```bash
-COMMAND; EC=$?; exit $EC
-```
-
-Then Read `.flow-states/<branch>.log` (empty string if it does not
-exist yet) and Write it back with this line appended:
-
-```text
-YYYY-MM-DDTHH:MM:SSZ [Phase 1] Step X — desc (exit EC)
+COMMAND; EC=$?; echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [Phase 1] Step X — desc (exit $EC)" >> .flow-states/<branch>.log; exit $EC
 ```
 
 Use the feature name as `<branch>` — it matches the branch name.
-
-Begin logging at Step 8. Steps 2–7 are not logged (state directory not yet created).
 
 ---
 
@@ -75,176 +66,82 @@ If any files are found, use AskUserQuestion:
 > - **Start a new feature anyway** — proceed
 > - **Cancel** — stop here
 
-### Step 2 — Pull main
+### Step 2 — Set up workspace
+
+Run the consolidated setup script:
 
 ```bash
-git pull origin main
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/start-setup.py "<feature-name>"
 ```
 
-If this fails, stop and report why.
+The script performs these operations in a single process:
 
-### Step 3 — Configure workspace permissions
+1. `git pull origin main`
+2. Create/merge `.claude/settings.json` with workspace permissions
+3. `git worktree add .worktrees/<branch> -b <branch>`
+4. Configure `info/exclude` with `.flow-states/` and `.worktrees/`
+5. `git commit --allow-empty` + `git push -u origin` + `gh pr create`
+6. Create `.flow-states/<branch>.json` (initial state, all 8 phases)
 
-Check if `.claude/settings.json` exists in the **project root**.
+The script logs each operation to `.flow-states/<branch>.log` internally.
 
-**If it does not exist**, create it:
+**On success** — stdout is JSON:
 
 ```json
-{
-  "permissions": {
-    "allow": [
-      "Bash(cd .worktrees/* && *)",
-      "Bash(git add *)",
-      "Bash(git commit *)",
-      "Bash(git push)",
-      "Bash(git push; *)",
-      "Bash(git push -u *)",
-      "Bash(git reset HEAD)",
-      "Bash(git reset HEAD; *)",
-      "Bash(git worktree *)",
-      "Bash(gh pr create *)",
-      "Bash(gh pr edit *)",
-      "Bash(gh pr close *)",
-      "Bash(git push origin --delete *)",
-      "Bash(git branch -D *)",
-      "Bash(bin/ci)",
-      "Bash(bin/ci; *)",
-      "Bash(bin/rails test *)",
-      "Bash(rubocop *)",
-      "Bash(rubocop -A)",
-      "Bash(bundle update --all)",
-      "Bash(bundle update --all; *)",
-      "Bash(rm .flow-commit-*)",
-      "Bash(bundle exec *)"
-    ],
-    "deny": [
-      "Bash(git rebase *)",
-      "Bash(git push --force *)",
-      "Bash(git push -f *)",
-      "Bash(git reset --hard *)",
-      "Bash(git stash *)",
-      "Bash(git checkout *)",
-      "Bash(git clean *)"
-    ]
-  },
-  "defaultMode": "acceptEdits"
-}
+{"status": "ok", "worktree": ".worktrees/<branch>", "pr_url": "...", "pr_number": 123, "feature": "...", "branch": "..."}
 ```
 
-**If it exists**, read it and merge in any missing entries. Do not remove existing entries. No duplicates. Only add `"defaultMode": "acceptEdits"` if `"defaultMode"` is not already set — do not override an existing mode preference.
-
-### Step 4 — Create the worktree and cd into it
+Parse the JSON. Then cd into the worktree:
 
 ```bash
-git worktree add .worktrees/<feature-name> -b <feature-name>
-```
-
-Then change into the worktree:
-
-```bash
-cd .worktrees/<feature-name>
+cd .worktrees/<branch>
 ```
 
 The Bash tool persists working directory between calls, so all subsequent
 commands run inside the worktree automatically. Do NOT repeat `cd .worktrees/`
 in later steps — it would look for a nested `.worktrees/` that doesn't exist.
 
-### Step 5 — Configure git exclude
-
-Ensure `.flow-states/` and `.worktrees/` are excluded from version control
-using the per-repo local exclude (not committed, not in `.gitignore`).
-
-```bash
-git rev-parse --git-common-dir
-```
-
-Read `<git-common-dir>/info/exclude`. If `.flow-states/` or `.worktrees/`
-are missing from the file, append them. Use the Edit tool (or Write if the
-file does not exist) — one entry per line.
-
-### Step 6 — Initial commit, push, and open PR
-
-GitHub requires at least one commit between base and head to create a PR.
-Already inside the worktree from Step 4:
-
-```bash
-git commit --allow-empty -m "Start <feature-name> branch"
-```
-
-```bash
-git push -u origin <feature-name>
-```
-
-```bash
-gh pr create \
-  --title "<Feature Name Title Cased>" \
-  --body "## What\n\n<Feature name as a sentence.>" \
-  --base main
-```
-
-Capture the PR URL from the output. Extract the PR number from the URL.
-
-### Step 7 — Create the FLOW state file
-
-Use the Write tool to write the state file at `.flow-states/<branch-name>.json`
-with the current UTC timestamp. The Write tool creates parent directories automatically.
+**On failure** — stdout is error JSON, details on stderr:
 
 ```json
-{
-  "feature": "<Feature Name Title Cased>",
-  "branch": "<feature-name>",
-  "worktree": ".worktrees/<feature-name>",
-  "pr_number": <pr_number>,
-  "pr_url": "<pr_url>",
-  "started_at": "<current_utc_timestamp>",
-  "current_phase": 1,
-  "notes": [],
-  "phases": {
-    "1":  { "name": "Start",     "status": "in_progress", "started_at": "<now>", "completed_at": null, "session_started_at": "<now>", "cumulative_seconds": 0, "visit_count": 1 },
-    "2":  { "name": "Research",  "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },
-    "3":  { "name": "Design",    "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },
-    "4":  { "name": "Plan",      "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },
-    "5":  { "name": "Code", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },
-    "6":  { "name": "Review",   "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },
-    "7":  { "name": "Reflect",   "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },
-    "8":  { "name": "Cleanup",   "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 }
-  }
-}
+{"status": "error", "step": "git_pull", "message": "..."}
 ```
 
-### Step 8 — Baseline `bin/ci`
+Read the stderr output for details. Report the failure to the user and stop.
+
+### Step 3 — Baseline `bin/ci`
 
 ```bash
 bin/ci
 ```
 
 - **Passes** — note as baseline and continue
-- **Fails** — launch the CI fix sub-agent (see Step 11). Pass the full
+- **Fails** — launch the CI fix sub-agent (see Step 6). Pass the full
   `bin/ci` output. After the sub-agent returns:
   - **Fixed** — use `/flow:commit` to commit the fix, then continue
   - **Not fixed** — stop and report to the user what is failing
 
-### Step 9 — Upgrade gems
+### Step 4 — Upgrade gems
 
 ```bash
 bundle update --all
 ```
 
-### Step 10 — Post-update `bin/ci`
+### Step 5 — Post-update `bin/ci`
 
 ```bash
 bin/ci
 ```
 
-- **Passes** — continue to Step 12
-- **Fails** — launch the CI fix sub-agent (see Step 11). Pass the full
+- **Passes** — continue to Step 7
+- **Fails** — launch the CI fix sub-agent (see Step 6). Pass the full
   `bin/ci` output. After the sub-agent returns:
-  - **Fixed** — continue to Step 12 (Gemfile.lock + fixes committed together)
+  - **Fixed** — continue to Step 7 (Gemfile.lock + fixes committed together)
   - **Not fixed** — stop and report to the user what is failing
 
-### Step 11 — CI fix sub-agent
+### Step 6 — CI fix sub-agent
 
-When `bin/ci` fails in Step 8 or Step 10, launch a sub-agent to diagnose
+When `bin/ci` fails in Step 3 or Step 5, launch a sub-agent to diagnose
 and fix the failures. Use the Task tool:
 
 - `subagent_type`: `"general-purpose"`
@@ -283,10 +180,10 @@ Provide these instructions (fill in the worktree path and bin/ci output):
 Wait for the sub-agent to return.
 
 <HARD-GATE>
-Do NOT proceed past Step 8 or Step 10 until bin/ci is green.
+Do NOT proceed past Step 3 or Step 5 until bin/ci is green.
 </HARD-GATE>
 
-### Step 12 — Commit and push
+### Step 7 — Commit and push
 
 Use `/flow:commit` to review and commit the changes (`Gemfile.lock` + any gem fixes).
 
@@ -343,3 +240,51 @@ Then report:
 - Whether baseline `bin/ci` was clean
 - Which gems were upgraded (`git diff Gemfile.lock` summary)
 - Confirmation `bin/ci` is green
+
+---
+
+## Reference: Workspace Permissions
+
+The `start-setup.py` script configures these permissions in `.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd .worktrees/* && *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push)",
+      "Bash(git push; *)",
+      "Bash(git push -u *)",
+      "Bash(git reset HEAD)",
+      "Bash(git reset HEAD; *)",
+      "Bash(git worktree *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr edit *)",
+      "Bash(gh pr close *)",
+      "Bash(git push origin --delete *)",
+      "Bash(git branch -D *)",
+      "Bash(bin/ci)",
+      "Bash(bin/ci; *)",
+      "Bash(bin/rails test *)",
+      "Bash(rubocop *)",
+      "Bash(rubocop -A)",
+      "Bash(bundle update --all)",
+      "Bash(bundle update --all; *)",
+      "Bash(rm .flow-commit-*)",
+      "Bash(bundle exec *)"
+    ],
+    "deny": [
+      "Bash(git rebase *)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard *)",
+      "Bash(git stash *)",
+      "Bash(git checkout *)",
+      "Bash(git clean *)"
+    ]
+  },
+  "defaultMode": "acceptEdits"
+}
+```

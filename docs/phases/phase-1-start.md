@@ -15,82 +15,31 @@ This is always the first phase, for every feature without exception. It establis
 
 ## Steps
 
-### 1. Pull main
+### 1. Check for existing features
 
-```bash
-git pull origin main
-```
+Scans for active `.flow-states/*.json` files. If any exist, asks whether to proceed or cancel.
 
-Ensure the starting point is current. If this fails, stop and report why.
+### 2. Set up workspace
 
-### 2. Create the worktree
+A single Python script (`hooks/start-setup.py`) handles all mechanical setup in one process:
 
-```bash
-git worktree add .worktrees/app-payment-webhooks -b app-payment-webhooks
-```
+1. `git pull origin main`
+2. Create/merge `.claude/settings.json` with workspace permissions
+3. Create a git worktree at `.worktrees/app-payment-webhooks`
+4. Configure `info/exclude` with `.flow-states/` and `.worktrees/`
+5. Empty commit, push branch, and open a PR via `gh pr create`
+6. Create `.flow-states/app-payment-webhooks.json` (initial state)
 
-The worktree name and branch are derived from the command arguments joined with hyphens. All subsequent work happens inside the worktree — main is never modified.
+The script returns JSON with the worktree path, PR URL, and PR number. Claude then `cd`s into the worktree for all remaining steps.
 
-### 3. Push branch to remote immediately
-
-```bash
-git push -u origin app-payment-webhooks
-```
-
-Establishes the branch remotely before any code changes.
-
-### 4. Open the PR
-
-```bash
-gh pr create \
-  --title "App Payment Webhooks" \
-  --body "..." \
-  --base main
-```
-
-A real PR, not a draft. The PR body is auto-generated from the feature name:
-
-```text
-## What
-
-App payment webhooks.
-```
-
-Phase progress is tracked in `.flow-states/<branch>.json`, not in the PR body.
-
-### 5. Configure workspace permissions
-
-Check if `.claude/settings.json` exists in the project root.
-
-**If it does not exist**, create it:
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "Bash(git add *)",
-      "Bash(git commit *)",
-      "Bash(git push)",
-      "Bash(git push -u *)",
-      "Bash(git worktree *)",
-      "Bash(gh pr create *)",
-      "Bash(gh pr edit *)",
-      "Bash(python3 *)"
-    ]
-  }
-}
-```
-
-**If it exists**, read it and merge in any missing entries. Existing entries are never removed or overwritten. No duplicates are added.
-
-### 6. Baseline `bin/ci`
+### 3. Baseline `bin/ci`
 
 Run `bin/ci` inside the worktree to capture the health of the codebase before any changes.
 
 - **Passes** — note it as the baseline and continue
-- **Fails** — report the failures clearly. These are pre-existing issues, not caused by this work. Ask the user whether to proceed or stop.
+- **Fails** — launch a sub-agent to diagnose and fix. If not fixable after three attempts, stop and report.
 
-### 7. Upgrade gems
+### 4. Upgrade gems
 
 ```bash
 bundle update --all
@@ -98,7 +47,7 @@ bundle update --all
 
 Upgrades all gems to their latest compatible versions. Runs inside the worktree so `Gemfile.lock` changes stay on the feature branch.
 
-### 8. Post-update `bin/ci`
+### 5. Post-update `bin/ci`
 
 Run `bin/ci` again after the gem upgrade. Gem updates commonly introduce:
 
@@ -106,24 +55,19 @@ Run `bin/ci` again after the gem upgrade. Gem updates commonly introduce:
 - Breaking API changes causing test failures
 - Deprecation warnings promoted to errors
 
-### 9. Fix breakage (if needed)
+If failures occur, the same CI fix sub-agent handles diagnosis and repair.
 
-**RuboCop violations** — run the auto-fixer first:
+### 6. Fix breakage (if needed)
 
-```bash
-rubocop -A
-```
+A general-purpose Sonnet sub-agent handles CI failures from Steps 3 and 5:
 
-Then run `bin/ci` again. Fix any remaining violations manually.
+1. **RuboCop violations** — `rubocop -A` to auto-fix
+2. **Test failures** — read the failing test and fix the code
+3. **Coverage gaps** — read `test/coverage/uncovered.txt` and write the missing test
 
-**Test failures** — read the output carefully. Common causes:
-- Changed gem APIs (update call sites)
-- New validation behaviour (update fixtures or assertions)
-- Deprecation warnings promoted to errors (follow the deprecation message)
+Max 3 attempts. Will not proceed until `bin/ci` is green.
 
-Repeat until `bin/ci` is green. If not fixed after three attempts, stop and report what is failing and what was tried.
-
-### 10. Commit and push
+### 7. Commit and push
 
 Use `/flow:commit` to review and commit the changes (`Gemfile.lock` and any gem-related fixes).
 

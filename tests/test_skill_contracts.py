@@ -8,7 +8,7 @@ and back navigation rules. All parseable with regex.
 import json
 import re
 
-from conftest import DOCS_DIR, REPO_ROOT, SKILLS_DIR
+from conftest import DOCS_DIR, HOOKS_DIR, REPO_ROOT, SKILLS_DIR
 
 
 def _load_phases():
@@ -126,26 +126,23 @@ def _clean_template_json(block):
 
 
 def test_initial_state_template_has_all_8_phases():
-    """start/SKILL.md initial state template must have all 8 phases."""
-    content = _read_skill("start")
-    # Find the state file JSON block (the big one with "phases")
-    blocks = re.findall(r"```json\s*\n(.*?)```", content, re.DOTALL)
+    """start-setup.py state template must have all 8 phases."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "start_setup", HOOKS_DIR / "start-setup.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
 
-    state_block = None
-    for block in blocks:
-        if '"phases"' in block:
-            cleaned = _clean_template_json(block)
-            try:
-                parsed = json.loads(cleaned)
-                if "phases" in parsed:
-                    state_block = parsed
-                    break
-            except json.JSONDecodeError:
-                continue
+    # Call _create_state_file's phase construction logic via a temp dir
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        from pathlib import Path
+        root = Path(tmp)
+        mod._create_state_file(root, "test", "Test", "http://x/pull/1", 1)
+        state = json.loads((root / ".flow-states" / "test.json").read_text())
 
-    assert state_block is not None, "Could not find state template in start/SKILL.md"
-
-    phases = state_block["phases"]
+    phases = state["phases"]
     assert len(phases) == 8, f"Expected 8 phases, got {len(phases)}"
 
     required_fields = [
@@ -162,31 +159,30 @@ def test_initial_state_template_has_all_8_phases():
 
 
 def test_phase_names_in_state_match_flow_phases():
-    """Phase names in start/SKILL.md initial state must match flow-phases.json."""
+    """Phase names in start-setup.py state must match flow-phases.json."""
+    import importlib.util
+    import tempfile
+    from pathlib import Path
+
     data = _load_phases()
-    content = _read_skill("start")
-    blocks = re.findall(r"```json\s*\n(.*?)```", content, re.DOTALL)
 
-    for block in blocks:
-        if '"phases"' not in block:
-            continue
-        cleaned = _clean_template_json(block)
-        try:
-            parsed = json.loads(cleaned)
-        except json.JSONDecodeError:
-            continue
-        if "phases" not in parsed:
-            continue
+    spec = importlib.util.spec_from_file_location(
+        "start_setup", HOOKS_DIR / "start-setup.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
 
-        for num, phase in data["phases"].items():
-            assert parsed["phases"][num]["name"] == phase["name"], (
-                f"Phase {num}: state template has "
-                f"'{parsed['phases'][num]['name']}' but flow-phases.json "
-                f"has '{phase['name']}'"
-            )
-        return
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        mod._create_state_file(root, "test", "Test", "http://x/pull/1", 1)
+        state = json.loads((root / ".flow-states" / "test.json").read_text())
 
-    raise AssertionError("Could not find state template to validate phase names")
+    for num, phase in data["phases"].items():
+        assert state["phases"][num]["name"] == phase["name"], (
+            f"Phase {num}: start-setup.py has "
+            f"'{state['phases'][num]['name']}' but flow-phases.json "
+            f"has '{phase['name']}'"
+        )
 
 
 # --- Cross-skill invocations ---
@@ -578,4 +574,36 @@ def test_status_panel_shows_timing_for_completed_phases():
     assert match, (
         "skills/status/SKILL.md template missing timing on completed "
         "phase lines — [x] lines should include (Xh Ym)"
+    )
+
+
+# --- Start phase setup script ---
+
+
+def test_start_logging_uses_bash_append():
+    """Start SKILL.md logging section must use >> (Bash append) and must NOT
+    instruct Claude to use Read + Write for logging."""
+    content = _read_skill("start")
+    logging_match = re.search(
+        r"## Logging\n(.*?)(?=\n## |\n---|\Z)", content, re.DOTALL
+    )
+    assert logging_match, "start/SKILL.md has no ## Logging section"
+    logging_section = logging_match.group(1)
+
+    assert ">>" in logging_section, (
+        "start/SKILL.md ## Logging section must use >> (Bash append) "
+        "instead of Read + Write round-trips"
+    )
+    assert "Read" not in logging_section and "Write" not in logging_section, (
+        "start/SKILL.md ## Logging section must NOT use Read/Write tools — "
+        "use >> (Bash append) to avoid LLM round-trips"
+    )
+
+
+def test_start_references_setup_script():
+    """Start SKILL.md must reference start-setup.py for consolidated setup."""
+    content = _read_skill("start")
+    assert "start-setup.py" in content, (
+        "start/SKILL.md must reference start-setup.py — "
+        "Steps 2-7 are consolidated into a single Python script"
     )

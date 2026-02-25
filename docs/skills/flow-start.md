@@ -18,15 +18,13 @@ Begins a new feature. This is always the first command run for any piece of work
 
 ## What It Does
 
-1. Pulls main to ensure a current starting point
-2. Creates a git worktree at `.worktrees/<feature-name>`
-3. Pushes the branch to remote immediately
-4. Opens a real PR with an auto-generated phase checklist
-5. Merges required permissions into `.claude/settings.json`
-6. Runs `bin/ci` as a baseline health check
-7. Runs `bundle update` to upgrade all gems
-8. Runs `bin/ci` again and auto-fixes any breakage
-9. Commits via `/flow:commit` and marks Phase 0 complete on the PR
+1. Checks for existing active FLOW features
+2. Runs `hooks/start-setup.py` — a single script that handles git pull, worktree creation, settings merge, git exclude, empty commit + push + PR, and state file creation
+3. Runs `bin/ci` as a baseline health check
+4. Runs `bundle update --all` to upgrade all gems
+5. Runs `bin/ci` again and auto-fixes any breakage (via a Sonnet sub-agent)
+6. Commits via `/flow:commit`
+7. Marks Phase 1 complete and transitions to Phase 2: Research
 
 ---
 
@@ -39,6 +37,8 @@ Words after `/flow:start` are joined with hyphens to form the feature name:
 | Branch | `app-payment-webhooks` |
 | Worktree | `.worktrees/app-payment-webhooks` |
 | PR title | `App Payment Webhooks` |
+
+Branch names are capped at 32 characters, truncated at word boundaries.
 
 ---
 
