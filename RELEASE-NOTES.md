@@ -1,5 +1,35 @@
 # Release Notes
 
+## v0.8.0 — One-time project setup with /flow:init
+
+### New Features
+
+- **`/flow:init` skill** — New utility skill that runs once after installing
+  or upgrading FLOW. Configures workspace permissions in `.claude/settings.json`,
+  sets up git excludes for `.flow-states/` and `.worktrees/`, writes a version
+  marker to `.claude/flow.json`, and commits. Solves the chicken-and-egg problem
+  where permissions written mid-session were never picked up because Claude Code
+  snapshots settings at startup.
+- **Version gate in `/flow:start`** — `start-setup.py` now checks
+  `.claude/flow.json` before any setup work. If FLOW hasn't been initialized or
+  the version doesn't match, the user gets a clear error directing them to run
+  `/flow:init`. This ensures permissions stay current across upgrades.
+
+### Improvements
+
+- **Settings logic removed from start-setup.py** — `_configure_settings()`,
+  `_configure_exclude()`, and worktree settings copy all removed. Permissions
+  are committed once via `/flow:init` and inherited by worktrees automatically.
+- **Start skill simplified** — Removed the Read+Write settings reload hack and
+  the "Reference: Workspace Permissions" section. Start now focuses on git,
+  worktree, PR, and state file creation.
+- **README and docs updated** — Installation instructions now include
+  `/flow:init` as a required step. "Zero Footprint" updated to "Minimal
+  Footprint" to acknowledge the committed `.claude/settings.json` and
+  `.claude/flow.json`.
+
+---
+
 ## v0.7.3 — Fix workspace permissions in worktrees
 
 ### Fixes
