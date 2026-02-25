@@ -236,8 +236,6 @@ def main():
             "step": e.step,
             "message": e.message,
         }))
-        print(e.message, file=sys.stderr)
-        sys.exit(1)
 
 
 if __name__ == "__main__":

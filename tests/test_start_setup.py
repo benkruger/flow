@@ -184,7 +184,7 @@ def test_git_pull_failure_returns_error(tmp_path):
     )
     _write_flow_json(tmp_path, _current_plugin_version())
     result = _run(tmp_path, "test feature")
-    assert result.returncode == 1
+    assert result.returncode == 0
     data = json.loads(result.stdout)
     assert data["status"] == "error"
     assert data["step"] == "git_pull"
@@ -196,7 +196,7 @@ def test_git_pull_failure_returns_error(tmp_path):
 def test_fails_when_flow_json_missing(tmp_path):
     """start-setup.py returns error JSON with step init_check when flow.json missing."""
     result = _run(tmp_path, "test feature")
-    assert result.returncode == 1
+    assert result.returncode == 0
     data = json.loads(result.stdout)
     assert data["status"] == "error"
     assert data["step"] == "init_check"
@@ -207,7 +207,7 @@ def test_fails_when_flow_version_mismatch(tmp_path):
     """start-setup.py returns error when flow.json has wrong version."""
     _write_flow_json(tmp_path, "0.0.0")
     result = _run(tmp_path, "test feature")
-    assert result.returncode == 1
+    assert result.returncode == 0
     data = json.loads(result.stdout)
     assert data["status"] == "error"
     assert data["step"] == "init_check"
