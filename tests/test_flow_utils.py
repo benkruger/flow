@@ -1,4 +1,4 @@
-"""Tests for hooks/flow_utils.py — shared utilities."""
+"""Tests for lib/flow_utils.py — shared utilities."""
 
 import importlib.util
 import subprocess
@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from conftest import HOOKS_DIR
+from conftest import LIB_DIR
 
 # Import flow_utils for in-process unit tests
 _spec = importlib.util.spec_from_file_location(
-    "flow_utils", HOOKS_DIR / "flow_utils.py"
+    "flow_utils", LIB_DIR / "flow_utils.py"
 )
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)

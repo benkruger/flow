@@ -10,6 +10,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HOOKS_DIR = REPO_ROOT / "hooks"
+LIB_DIR = REPO_ROOT / "lib"
 SKILLS_DIR = REPO_ROOT / "skills"
 DOCS_DIR = REPO_ROOT / "docs"
 BIN_DIR = REPO_ROOT / "bin"
@@ -30,7 +31,7 @@ def _subprocess_coverage():
         f"data_file = {REPO_ROOT / '.coverage'}\n"
         "parallel = true\n"
         f"source =\n"
-        f"    {HOOKS_DIR}\n"
+        f"    {LIB_DIR}\n"
     )
     fd, config_path = tempfile.mkstemp(suffix=".ini", prefix="cov_subprocess_")
     os.write(fd, config.encode())

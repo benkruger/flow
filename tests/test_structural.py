@@ -4,7 +4,7 @@ import json
 import os
 import re
 
-from conftest import BIN_DIR, HOOKS_DIR, REPO_ROOT, SKILLS_DIR, make_state
+from conftest import BIN_DIR, HOOKS_DIR, LIB_DIR, REPO_ROOT, SKILLS_DIR, make_state
 
 
 def _load_phases():
@@ -68,7 +68,7 @@ def test_every_skill_dir_has_skill_md():
 def test_check_phase_dicts_match_flow_phases():
     """PHASES and COMMANDS in check-phase.py must match flow-phases.json."""
     data = _load_phases()
-    script = (HOOKS_DIR / "check-phase.py").read_text()
+    script = (LIB_DIR / "check-phase.py").read_text()
 
     # Extract PHASES dict from script
     phases_match = re.search(

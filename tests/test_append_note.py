@@ -1,17 +1,17 @@
-"""Tests for hooks/append-note.py — the note appender."""
+"""Tests for lib/append-note.py — the note appender."""
 
 import importlib.util
 import json
 import subprocess
 import sys
 
-from conftest import HOOKS_DIR, make_state, write_state
+from conftest import LIB_DIR, make_state, write_state
 
-SCRIPT = str(HOOKS_DIR / "append-note.py")
+SCRIPT = str(LIB_DIR / "append-note.py")
 
 # Import append-note.py for in-process unit tests
 _spec = importlib.util.spec_from_file_location(
-    "append_note", HOOKS_DIR / "append-note.py"
+    "append_note", LIB_DIR / "append-note.py"
 )
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)

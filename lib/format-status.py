@@ -1,6 +1,6 @@
 """Format the FLOW status panel.
 
-Usage: python3 hooks/format-status.py <state_file_path> <plugin_version>
+Usage: bin/flow format-status <state_file_path> <plugin_version>
 
 Reads the state file and outputs the formatted status panel text to stdout.
 The skill wraps the output in a fenced code block.

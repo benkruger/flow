@@ -4,7 +4,7 @@ Merges permissions into .claude/settings.json, writes .flow.json version
 marker, and updates .git/info/exclude. Does NOT commit — the skill handles
 git add + commit after this script runs.
 
-Usage: python3 hooks/init-setup.py <project_root>
+Usage: bin/flow init-setup <project_root>
 
 Output (JSON to stdout):
   Success: {"status": "ok", "settings_merged": true, "exclude_updated": true, "version_marker": true}
@@ -40,6 +40,7 @@ FLOW_ALLOW = [
     "Bash(bundle update --all; *)",
     "Bash(rm .flow-commit-*)",
     "Bash(bundle exec *)",
+    "Bash(*bin/flow *)",
 ]
 
 FLOW_DENY = [

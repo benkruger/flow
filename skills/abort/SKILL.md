@@ -70,7 +70,7 @@ If the entry check printed warnings, include them in the confirmation:
 Run the cleanup script from the project root with abort flags:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/cleanup.py <project_root> --branch <branch> --worktree <worktree_path> --pr <pr_number> --delete-remote
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup <project_root> --branch <branch> --worktree <worktree_path> --pr <pr_number> --delete-remote
 ```
 
 If `pr_number` is unknown, omit `--pr`. The `--delete-remote` flag tells the script to also delete the remote branch and local branch.

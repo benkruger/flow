@@ -30,7 +30,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ### Step 1 — Run init setup script
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/init-setup.py <project_root>
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow init-setup <project_root>
 ```
 
 The script handles:
@@ -73,7 +73,8 @@ The FLOW permissions merged by the script:
       "Bash(bundle update --all)",
       "Bash(bundle update --all; *)",
       "Bash(rm .flow-commit-*)",
-      "Bash(bundle exec *)"
+      "Bash(bundle exec *)",
+      "Bash(*bin/flow *)"
     ],
     "deny": [
       "Bash(git rebase *)",

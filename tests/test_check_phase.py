@@ -1,11 +1,11 @@
-"""Tests for hooks/check-phase.py — the phase entry guard."""
+"""Tests for lib/check-phase.py — the phase entry guard."""
 
 import subprocess
 import sys
 
-from conftest import HOOKS_DIR, make_state, write_state
+from conftest import LIB_DIR, make_state, write_state
 
-SCRIPT = str(HOOKS_DIR / "check-phase.py")
+SCRIPT = str(LIB_DIR / "check-phase.py")
 
 
 def _run(git_repo, phase, state_dir=None):

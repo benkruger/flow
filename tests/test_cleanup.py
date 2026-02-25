@@ -1,17 +1,17 @@
-"""Tests for hooks/cleanup.py — the cleanup orchestrator."""
+"""Tests for lib/cleanup.py — the cleanup orchestrator."""
 
 import importlib.util
 import json
 import subprocess
 import sys
 
-from conftest import HOOKS_DIR, make_state, write_state
+from conftest import LIB_DIR, make_state, write_state
 
-SCRIPT = str(HOOKS_DIR / "cleanup.py")
+SCRIPT = str(LIB_DIR / "cleanup.py")
 
 # Import cleanup.py for in-process unit tests
 _spec = importlib.util.spec_from_file_location(
-    "cleanup", HOOKS_DIR / "cleanup.py"
+    "cleanup", LIB_DIR / "cleanup.py"
 )
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)

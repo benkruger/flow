@@ -3,8 +3,8 @@
 Extract release notes for a specific version from RELEASE-NOTES.md.
 Writes the extracted section to /tmp/release-notes-<version>.md.
 
-Usage: python3 hooks/extract-release-notes.py <version>
-Example: python3 hooks/extract-release-notes.py v0.2.0
+Usage: bin/flow extract-release-notes <version>
+Example: bin/flow extract-release-notes v0.2.0
 """
 
 import re
@@ -31,7 +31,7 @@ def extract(version: str, notes_file: Path) -> str:
 
 def main():
     if len(sys.argv) != 2:
-        print("Usage: python3 hooks/extract-release-notes.py <version>")
+        print("Usage: bin/flow extract-release-notes <version>")
         sys.exit(1)
 
     version = sys.argv[1]

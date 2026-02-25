@@ -3,7 +3,7 @@
 FLOW Phase Entry Guard
 
 Usage:
-  python3 hooks/check-phase.py --required <phase_number>
+  bin/flow check-phase --required <phase_number>
 
 Checks that the previous phase is complete before allowing entry into
 the requested phase. Reads .flow-states/<branch>.json from the

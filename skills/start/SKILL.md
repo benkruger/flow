@@ -78,7 +78,7 @@ If any files are found, use AskUserQuestion:
 Run the consolidated setup script:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/start-setup.py "<feature-name>"
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>"
 ```
 
 The script performs these operations in a single process:

@@ -1,17 +1,17 @@
-"""Tests for hooks/format-status.py — the status panel formatter."""
+"""Tests for lib/format-status.py — the status panel formatter."""
 
 import importlib.util
 import json
 import subprocess
 import sys
 
-from conftest import HOOKS_DIR, make_state, write_state
+from conftest import LIB_DIR, make_state, write_state
 
-SCRIPT = str(HOOKS_DIR / "format-status.py")
+SCRIPT = str(LIB_DIR / "format-status.py")
 
 # Import format-status.py for in-process unit tests
 _spec = importlib.util.spec_from_file_location(
-    "format_status", HOOKS_DIR / "format-status.py"
+    "format_status", LIB_DIR / "format-status.py"
 )
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)

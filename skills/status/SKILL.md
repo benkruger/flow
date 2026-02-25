@@ -35,7 +35,7 @@ Find the project root and current branch:
 Read `plugin.json` from the plugin installation directory to get the version.
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/format-status.py <state_file_path> <version>
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-status <state_file_path> <version>
 ```
 
 The script outputs JSON:

@@ -99,7 +99,7 @@ If there were no warnings:
 Run the cleanup script from the project root:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/cleanup.py <project_root> --branch <branch> --worktree <worktree_path>
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup <project_root> --branch <branch> --worktree <worktree_path>
 ```
 
 The script outputs JSON with a `steps` dict showing what happened to each resource (worktree, state\_file, log\_file). Each step reports "removed"/"deleted", "skipped", or "failed: reason".

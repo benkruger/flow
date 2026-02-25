@@ -4,7 +4,7 @@ Shared by /flow:cleanup (Phase 8) and /flow:abort. Performs best-effort
 cleanup steps, continuing on failure.
 
 Usage:
-  python3 hooks/cleanup.py <project_root> --branch <name> --worktree <path> [--pr <number>] [--delete-remote]
+  bin/flow cleanup <project_root> --branch <name> --worktree <path> [--pr <number>] [--delete-remote]
 
 Output (JSON to stdout):
   {"status": "ok", "steps": {"worktree": "removed", "state_file": "deleted", ...}}

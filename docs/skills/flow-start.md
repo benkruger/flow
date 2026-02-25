@@ -21,7 +21,7 @@ Begins a new feature. This is always the first command run for any piece of work
 ## What It Does
 
 1. Checks for existing active FLOW features
-2. Runs `hooks/start-setup.py` — verifies `/flow:init` version gate, git pull, worktree creation, empty commit + push + PR, and state file creation
+2. Runs `lib/start-setup.py` — verifies `/flow:init` version gate, git pull, worktree creation, empty commit + push + PR, and state file creation
 3. Runs `bin/ci` as a baseline health check
 4. Runs `bundle update --all` to upgrade all gems
 5. Runs `bin/ci` again and auto-fixes any breakage (via a Sonnet sub-agent)

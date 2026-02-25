@@ -4,8 +4,8 @@ Bump the FLOW plugin version across all files.
 
 Updates plugin.json, marketplace.json, and all skill banners.
 
-Usage: python3 hooks/bump-version.py <new_version>
-Example: python3 hooks/bump-version.py 0.9.0
+Usage: bin/flow bump-version <new_version>
+Example: bin/flow bump-version 0.9.0
 """
 
 import json
@@ -43,7 +43,7 @@ def bump_skill(path: Path, old: str, new: str) -> bool:
 
 def main():
     if len(sys.argv) != 2:
-        print("Usage: python3 hooks/bump-version.py <new_version>")
+        print("Usage: bin/flow bump-version <new_version>")
         sys.exit(1)
 
     new_version = sys.argv[1]

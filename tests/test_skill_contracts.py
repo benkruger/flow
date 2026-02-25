@@ -8,7 +8,7 @@ and back navigation rules. All parseable with regex.
 import json
 import re
 
-from conftest import DOCS_DIR, HOOKS_DIR, REPO_ROOT, SKILLS_DIR
+from conftest import DOCS_DIR, LIB_DIR, REPO_ROOT, SKILLS_DIR
 
 
 def _load_phases():
@@ -137,7 +137,7 @@ def test_initial_state_template_has_all_8_phases():
     """start-setup.py state template must have all 8 phases."""
     import importlib.util
     spec = importlib.util.spec_from_file_location(
-        "start_setup", HOOKS_DIR / "start-setup.py"
+        "start_setup", LIB_DIR / "start-setup.py"
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -175,7 +175,7 @@ def test_phase_names_in_state_match_flow_phases():
     data = _load_phases()
 
     spec = importlib.util.spec_from_file_location(
-        "start_setup", HOOKS_DIR / "start-setup.py"
+        "start_setup", LIB_DIR / "start-setup.py"
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -551,7 +551,7 @@ def test_status_formatter_phase_names_match_flow_phases():
     flow-phases.json."""
     import importlib.util
     spec = importlib.util.spec_from_file_location(
-        "format_status", HOOKS_DIR / "format-status.py"
+        "format_status", LIB_DIR / "format-status.py"
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -599,7 +599,7 @@ def test_status_formatter_shows_timing_for_completed_phases():
     ([x] lines)."""
     import importlib.util
     spec = importlib.util.spec_from_file_location(
-        "format_status", HOOKS_DIR / "format-status.py"
+        "format_status", LIB_DIR / "format-status.py"
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -648,8 +648,8 @@ def test_start_logging_uses_read_write():
 def test_start_references_setup_script():
     """Start SKILL.md must reference start-setup.py for consolidated setup."""
     content = _read_skill("start")
-    assert "start-setup.py" in content, (
-        "start/SKILL.md must reference start-setup.py — "
+    assert "start-setup" in content, (
+        "start/SKILL.md must reference start-setup — "
         "Steps 2-7 are consolidated into a single Python script"
     )
 

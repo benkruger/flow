@@ -21,7 +21,7 @@ Scans for active `.flow-states/*.json` files. If any exist, asks whether to proc
 
 ### 2. Set up workspace
 
-A single Python script (`hooks/start-setup.py`) handles all mechanical setup in one process:
+A single Python script (`lib/start-setup.py`) handles all mechanical setup in one process:
 
 1. `git pull origin main`
 2. Create/merge `.claude/settings.json` with workspace permissions

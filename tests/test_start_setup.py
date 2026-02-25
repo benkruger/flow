@@ -1,4 +1,4 @@
-"""Tests for hooks/start-setup.py — the consolidated Start phase setup script."""
+"""Tests for lib/start-setup.py — the consolidated Start phase setup script."""
 
 import importlib.util
 import json
@@ -9,13 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from conftest import HOOKS_DIR
+from conftest import LIB_DIR
 
-SCRIPT = str(HOOKS_DIR / "start-setup.py")
+SCRIPT = str(LIB_DIR / "start-setup.py")
 
 # Import start-setup.py for in-process unit tests of edge cases
 _spec = importlib.util.spec_from_file_location(
-    "start_setup", HOOKS_DIR / "start-setup.py"
+    "start_setup", LIB_DIR / "start-setup.py"
 )
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)

@@ -1,7 +1,7 @@
 """Append a structured note to the FLOW state file.
 
 Usage:
-  python3 hooks/append-note.py <state_file_path> --phase <N> --type <correction|learning> --note "text"
+  bin/flow append-note <state_file_path> --phase <N> --type <correction|learning> --note "text"
 
 Output (JSON to stdout):
   Success: {"status": "ok", "note_count": N}

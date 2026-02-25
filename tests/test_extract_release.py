@@ -1,4 +1,4 @@
-"""Tests for hooks/extract-release-notes.py."""
+"""Tests for lib/extract-release-notes.py."""
 
 import importlib.util
 import subprocess
@@ -7,17 +7,17 @@ from pathlib import Path
 
 import pytest
 
-from conftest import HOOKS_DIR
+from conftest import LIB_DIR
 
 # Import the hyphenated module directly
 _spec = importlib.util.spec_from_file_location(
-    "extract_release_notes", HOOKS_DIR / "extract-release-notes.py"
+    "extract_release_notes", LIB_DIR / "extract-release-notes.py"
 )
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 extract = _mod.extract
 
-SCRIPT = str(HOOKS_DIR / "extract-release-notes.py")
+SCRIPT = str(LIB_DIR / "extract-release-notes.py")
 
 SAMPLE_NOTES = """\
 # Release Notes
@@ -76,7 +76,7 @@ def test_missing_version_returns_empty(notes_file):
 def test_cli_writes_output_file(tmp_path):
     notes = tmp_path / "RELEASE-NOTES.md"
     notes.write_text(SAMPLE_NOTES)
-    # Run from the parent of hooks/ so the script finds RELEASE-NOTES.md
+    # Run from the parent of lib/ so the script finds RELEASE-NOTES.md
     # But the script uses Path(__file__).parent.parent, so we need to
     # supply the file via the actual repo. Instead, test via subprocess
     # pointing at the real repo's RELEASE-NOTES.md.

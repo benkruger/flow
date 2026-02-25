@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# FLOW dispatcher — routes subcommands to lib/*.py scripts.
+#
+# Usage: bin/flow <subcommand> [args...]
+# Example: bin/flow start-setup "Invoice Pdf Export"
+
+set -euo pipefail
+
+LIB_DIR="$(cd "$(dirname "$0")/../lib" && pwd)"
+
+if [ $# -eq 0 ]; then
+  echo '{"status":"error","message":"Usage: bin/flow <subcommand> [args...]"}'
+  exit 1
+fi
+
+subcmd="$1"
+shift
+
+script="$LIB_DIR/$subcmd.py"
+
+if [ ! -f "$script" ]; then
+  echo "{\"status\":\"error\",\"message\":\"Unknown subcommand: $subcmd\"}"
+  exit 1
+fi
+
+exec python3 "$script" "$@"

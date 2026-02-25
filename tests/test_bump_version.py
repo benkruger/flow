@@ -1,4 +1,4 @@
-"""Tests for hooks/bump-version.py."""
+"""Tests for lib/bump-version.py."""
 
 import importlib.util
 import json
@@ -8,11 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from conftest import HOOKS_DIR
+from conftest import LIB_DIR
 
 # Import the hyphenated module directly
 _spec = importlib.util.spec_from_file_location(
-    "bump_version", HOOKS_DIR / "bump-version.py"
+    "bump_version", LIB_DIR / "bump-version.py"
 )
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
@@ -21,7 +21,7 @@ read_current_version = _mod.read_current_version
 bump_json = _mod.bump_json
 bump_skill = _mod.bump_skill
 
-SCRIPT = str(HOOKS_DIR / "bump-version.py")
+SCRIPT = str(LIB_DIR / "bump-version.py")
 
 
 @pytest.fixture

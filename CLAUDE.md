@@ -8,11 +8,12 @@ A Claude Code plugin (`flow:` namespace) implementing an opinionated 8-phase Rai
 - `skills/<name>/SKILL.md` — each skill's instructions
 - `hooks/hooks.json` — SessionStart hook registration
 - `hooks/session-start.sh` — detects in-progress features, injects resume context
-- `hooks/check-phase.py` — reusable phase entry guard
+- `lib/check-phase.py` — reusable phase entry guard
 - `.claude/settings.json` — project permissions (git rebase denied)
 - `docs/` — GitHub Pages site (main /docs, static HTML)
-- `hooks/extract-release-notes.py` — extracts version sections from RELEASE-NOTES.md for GitHub Releases
-- `hooks/start-setup.py` — consolidated Start phase setup (git pull, worktree, settings, PR, state file)
+- `lib/extract-release-notes.py` — extracts version sections from RELEASE-NOTES.md for GitHub Releases
+- `lib/start-setup.py` — consolidated Start phase setup (git pull, worktree, settings, PR, state file)
+- `bin/flow` — dispatcher script routing subcommands to `lib/*.py`
 - `docs/reference/flow-state-schema.md` — state file schema reference
 - `docs/reference/skill-pattern.md` — template pattern for building new phase skills
 - `marketplace.json` — marketplace registry (version must match plugin.json)
@@ -33,7 +34,7 @@ This repo is the plugin source. When installed, skills and hooks run in the targ
 
 ### Skills Are Markdown, Not Code
 
-Skills are pure Markdown instructions (`skills/<name>/SKILL.md`). The only executable code is `hooks/check-phase.py`, `hooks/extract-release-notes.py`, `hooks/start-setup.py`, `hooks/session-start.sh` (with embedded Python), `bin/ci`, and `bin/test`. Everything else is instructions that Claude reads and follows.
+Skills are pure Markdown instructions (`skills/<name>/SKILL.md`). The only executable code is `bin/flow` (dispatcher), `lib/*.py` (utility scripts), `hooks/session-start.sh` (with embedded Python), `bin/ci`, and `bin/test`. Everything else is instructions that Claude reads and follows.
 
 ### State File
 

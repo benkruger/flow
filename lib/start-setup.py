@@ -3,7 +3,7 @@
 Checks /flow:init version gate, runs git pull, creates worktree,
 makes initial commit + push + PR, creates state file, and logs all operations.
 
-Usage: python3 hooks/start-setup.py "<feature name>"
+Usage: bin/flow start-setup "<feature name>"
 
 Output (JSON to stdout):
   Success: {"status": "ok", "worktree": "...", "pr_url": "...", "pr_number": N, "feature": "...", "branch": "..."}
