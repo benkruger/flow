@@ -12,6 +12,7 @@ A Claude Code plugin (`flow:` namespace) implementing an opinionated 8-phase Rai
 - `.claude/settings.json` — project permissions (git rebase denied)
 - `docs/` — GitHub Pages site (main /docs, static HTML)
 - `hooks/extract-release-notes.py` — extracts version sections from RELEASE-NOTES.md for GitHub Releases
+- `hooks/start-setup.py` — consolidated Start phase setup (git pull, worktree, settings, PR, state file)
 - `docs/reference/flow-state-schema.md` — state file schema reference
 - `docs/reference/skill-pattern.md` — template pattern for building new phase skills
 - `marketplace.json` — marketplace registry (version must match plugin.json)
@@ -21,6 +22,7 @@ A Claude Code plugin (`flow:` namespace) implementing an opinionated 8-phase Rai
 
 - Python virtualenv at `.venv/` — `bin/ci` uses `.venv/bin/python3` automatically
 - Run tests with `bin/ci` only — never invoke pytest directly
+- **Use `bin/test <path>` for targeted test runs during development** — `bin/ci` runs the full suite and is the gate before committing. `bin/test tests/test_specific.py` runs a subset via the same venv. Never call pytest directly — always use one of the two wrappers.
 - Dependencies managed in the venv, not system Python
 
 ## Architecture
@@ -31,7 +33,7 @@ This repo is the plugin source. When installed, skills and hooks run in the targ
 
 ### Skills Are Markdown, Not Code
 
-Skills are pure Markdown instructions (`skills/<name>/SKILL.md`). The only executable code is `hooks/check-phase.py`, `hooks/extract-release-notes.py`, `hooks/session-start.sh` (with embedded Python), and `bin/ci`. Everything else is instructions that Claude reads and follows.
+Skills are pure Markdown instructions (`skills/<name>/SKILL.md`). The only executable code is `hooks/check-phase.py`, `hooks/extract-release-notes.py`, `hooks/start-setup.py`, `hooks/session-start.sh` (with embedded Python), `bin/ci`, and `bin/test`. Everything else is instructions that Claude reads and follows.
 
 ### State File
 
@@ -62,6 +64,8 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 | `test_docs_sync.py` | Docs completeness: every skill has a docs page, every phase has a docs page, index and README mention all commands |
 | `test_permissions.py` | Permission coverage: every Bash command in every SKILL.md has coverage in settings.json. Adding a new Bash command to a skill without updating settings.json will fail this test |
 | `test_bin_ci.py` | CI runner: venv detection, pass/fail behavior |
+| `test_bin_test.py` | Test runner: venv detection, pass/fail, argument passthrough |
+| `test_start_setup.py` | Start setup script: branch naming, settings merge, worktree, state file, logging, error paths |
 | `test_extract_release.py` | Release notes extraction from RELEASE-NOTES.md |
 
 ## Maintainer Skills (private to this repo)
