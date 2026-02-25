@@ -27,7 +27,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````text
 ```
 ============================================
-  FLOW v0.8.0 — Phase 4: Plan — STARTING
+  FLOW v0.8.1 — Phase 4: Plan — STARTING
   Recommended model: Sonnet
 ============================================
 ```
@@ -419,7 +419,7 @@ Print inside a fenced code block:
 ````text
 ```
 ============================================
-  FLOW v0.8.0 — Phase 4: Plan — COMPLETE (<formatted_time>)
+  FLOW v0.8.1 — Phase 4: Plan — COMPLETE (<formatted_time>)
 ============================================
 ```
 ````

@@ -1,5 +1,19 @@
 # Release Notes
 
+## v0.8.1 — Fix /flow:init UX issues
+
+### Fixes
+
+- **Version marker moved out of .claude/** — `/flow:init` wrote `.claude/flow.json`,
+  but Claude Code protects the `.claude/` directory and triggered a permission
+  prompt. Moved to `.flow.json` in the project root.
+- **Setup error output cleaned up** — `start-setup.py` printed error messages to
+  both stdout (JSON) and stderr (raw text), then exited 1. The Bash tool showed
+  a red "Error: Exit code 1" banner with duplicated text. Now exits 0 for all
+  handled errors — the JSON `"status": "error"` is the signal, not the exit code.
+
+---
+
 ## v0.8.0 — One-time project setup with /flow:init
 
 ### New Features
