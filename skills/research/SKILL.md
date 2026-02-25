@@ -265,44 +265,6 @@ Show the user a clean summary. Print inside a fenced code block (triple backtick
 
 ---
 
-## Step 8 — Phase gate
-
-Invoke the `flow:status` skill to show the current state, then use AskUserQuestion:
-
-> "Phase 2: Research is complete. Ready to begin Phase 3: Design?"
->
-> - **Yes, start Phase 3 now**
-> - **Not yet**
-> - **I have a correction or learning to capture**
-
-**If "I have a correction or learning to capture":**
-1. Ask the user what they want to capture
-2. Invoke `/flow:note` with their message
-3. Re-ask with only "Yes, start Phase 3 now" and "Not yet"
-
-**If Yes** — invoke the `flow:design` skill using the Skill tool. Also print inside a fenced code block:
-
-````markdown
-```text
-============================================
-  FLOW — Phase 2: Research — COMPLETE (<cumulative_seconds>)
-============================================
-```
-````
-
-**If Not yet** — print inside a fenced code block:
-
-````markdown
-```text
-============================================
-  FLOW — Paused
-  Run /flow:resume when ready to continue.
-============================================
-```
-````
-
----
-
 ## Done — Update state and complete phase
 
 Update `.flow-states/<branch>.json`:
@@ -319,6 +281,32 @@ Print inside a fenced code block:
 ============================================
   FLOW — Phase 2: Research — COMPLETE (<cumulative_seconds>)
   Next: Phase 3: Design  (/flow:design)
+============================================
+```
+````
+
+Invoke the `flow:status` skill to show the current state, then use AskUserQuestion:
+
+> "Phase 2: Research is complete. Ready to begin Phase 3: Design?"
+>
+> - **Yes, start Phase 3 now**
+> - **Not yet**
+> - **I have a correction or learning to capture**
+
+**If "I have a correction or learning to capture":**
+1. Ask the user what they want to capture
+2. Invoke `/flow:note` with their message
+3. Re-ask with only "Yes, start Phase 3 now" and "Not yet"
+
+**If Yes** — invoke the `flow:design` skill using the Skill tool.
+
+**If Not yet** — print inside a fenced code block:
+
+````markdown
+```text
+============================================
+  FLOW — Paused
+  Run /flow:resume when ready to continue.
 ============================================
 ```
 ````

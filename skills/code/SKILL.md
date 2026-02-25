@@ -313,6 +313,16 @@ Update Phase 5 in state:
 4. `session_started_at` → `null`
 5. `current_phase` → `6`
 
+Print inside a fenced code block:
+
+````text
+```
+============================================
+  FLOW — Phase 5: Code — COMPLETE (<cumulative_seconds>)
+============================================
+```
+````
+
 Invoke `flow:status`, then use AskUserQuestion:
 
 > "Phase 5: Code is complete. Ready to begin Phase 6: Review?"
@@ -326,15 +336,7 @@ Invoke `flow:status`, then use AskUserQuestion:
 2. Invoke `/flow:note` with their message
 3. Re-ask with only "Yes, start Phase 6 now" and "Not yet"
 
-**If Yes**, print inside a fenced code block:
-
-````text
-```
-============================================
-  FLOW — Phase 5: Code — COMPLETE (<cumulative_seconds>)
-============================================
-```
-````
+**If Yes** — invoke `flow:review` using the Skill tool.
 
 **If Not yet**, print inside a fenced code block:
 

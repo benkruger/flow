@@ -266,6 +266,17 @@ Update Phase 7 in state:
 4. `session_started_at` → `null`
 5. `current_phase` → `8`
 
+Print inside a fenced code block:
+
+````markdown
+```text
+============================================
+  FLOW — Phase 7: Reflect — COMPLETE (<cumulative_seconds>)
+  Merge the PR, then run /flow:cleanup.
+============================================
+```
+````
+
 Invoke `flow:status`, then use AskUserQuestion:
 
 > "Phase 7: Reflect is complete. The PR now includes CLAUDE.md improvements. Ready to begin Phase 8: Cleanup?"
@@ -279,16 +290,7 @@ Invoke `flow:status`, then use AskUserQuestion:
 2. Invoke `/flow:note` with their message
 3. Re-ask with only "Yes, start Phase 8 now" and "Not yet"
 
-**If Yes**, print inside a fenced code block:
-
-````markdown
-```text
-============================================
-  FLOW — Phase 7: Reflect — COMPLETE (<cumulative_seconds>)
-  Merge the PR, then run /flow:cleanup.
-============================================
-```
-````
+**If Yes** — invoke `flow:cleanup` using the Skill tool.
 
 **If Not yet**, print inside a fenced code block:
 

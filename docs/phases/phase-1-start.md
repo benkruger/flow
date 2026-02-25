@@ -93,7 +93,7 @@ Run `bin/ci` inside the worktree to capture the health of the codebase before an
 ### 7. Upgrade gems
 
 ```bash
-bundle update
+bundle update --all
 ```
 
 Upgrades all gems to their latest compatible versions. Runs inside the worktree so `Gemfile.lock` changes stay on the feature branch.

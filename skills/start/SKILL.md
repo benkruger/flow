@@ -112,12 +112,10 @@ Check if `.claude/settings.json` exists in the **project root**.
       "Bash(bin/rails test *)",
       "Bash(rubocop *)",
       "Bash(rubocop -A)",
-      "Bash(bundle update)",
-      "Bash(bundle update; *)",
+      "Bash(bundle update --all)",
+      "Bash(bundle update --all; *)",
       "Bash(rm .flow-commit-*)",
-      "Bash(bundle exec *)",
-      "Write(.flow-states/*)",
-      "Edit(.flow-states/*)"
+      "Bash(bundle exec *)"
     ],
     "deny": [
       "Bash(git rebase *)",
@@ -128,11 +126,12 @@ Check if `.claude/settings.json` exists in the **project root**.
       "Bash(git checkout *)",
       "Bash(git clean *)"
     ]
-  }
+  },
+  "defaultMode": "acceptEdits"
 }
 ```
 
-**If it exists**, read it and merge in any missing entries. Do not remove existing entries. No duplicates.
+**If it exists**, read it and merge in any missing entries. Do not remove existing entries. No duplicates. Only add `"defaultMode": "acceptEdits"` if `"defaultMode"` is not already set — do not override an existing mode preference.
 
 ### Step 4 — Create the worktree and cd into it
 
@@ -228,7 +227,7 @@ bin/ci
 ### Step 9 — Upgrade gems
 
 ```bash
-bundle update
+bundle update --all
 ```
 
 ### Step 10 — Post-update `bin/ci`
@@ -302,6 +301,16 @@ Update `.flow-states/<branch>.json`:
 
 Update Phase 1 task to `completed`.
 
+Print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+
+````text
+```
+============================================
+  FLOW — Phase 1: Start — COMPLETE (<cumulative_seconds>)
+============================================
+```
+````
+
 Invoke the `flow:status` skill to show the current state, then use AskUserQuestion:
 
 > "Phase 1: Start is complete. Ready to begin Phase 2: Research?"
@@ -315,15 +324,7 @@ Invoke the `flow:status` skill to show the current state, then use AskUserQuesti
 2. Invoke `/flow:note` with their message
 3. Re-ask with only "Yes, start Phase 2 now" and "Not yet"
 
-**If Yes** — invoke the `flow:research` skill using the Skill tool. Also print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
-
-````text
-```
-============================================
-  FLOW — Phase 1: Start — COMPLETE (<cumulative_seconds>)
-============================================
-```
-````
+**If Yes** — invoke the `flow:research` skill using the Skill tool.
 
 **If Not yet** — print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 
