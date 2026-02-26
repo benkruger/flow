@@ -48,10 +48,10 @@ Update Phase 6:
 
 After every Bash command completes, log it to `.flow-states/<branch>.log`.
 
-Run the command with exit code capture:
+Run the command directly — do not append any suffix:
 
 ```bash
-COMMAND; EC=$?; exit $EC
+COMMAND
 ```
 
 Then Read `.flow-states/<branch>.log` (empty string if it does not

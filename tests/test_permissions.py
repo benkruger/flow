@@ -1,8 +1,9 @@
-"""Tests for Bash permission coverage and logging patterns.
+"""Tests for Bash permission coverage.
 
-Every SKILL.md uses a logging pattern that wraps Bash commands. These tests
-ensure the logging pattern doesn't break permission matching, and that every
-Bash command in every skill has a matching permission entry.
+Every Bash command in every skill must have a matching permission entry in
+init/SKILL.md (for plugin skills) or .claude/settings.json (for maintainer
+skills). Prohibition tests enforce that bash blocks never contain patterns
+that break permission matching or shell behavior.
 """
 
 import json
@@ -123,9 +124,7 @@ def _extract_primary_command(bash_block):
 
     # Take only the first command in a chain (before ;)
     # But handle git commit -F /tmp/... && rm ... as one unit
-    if "; EC=$?" in line:
-        line = line.split("; EC=$?")[0]
-    elif ";" in line and "&&" not in line:
+    if ";" in line and "&&" not in line:
         line = line.split(";")[0]
 
     # Strip trailing continuation
@@ -158,9 +157,7 @@ def _extract_full_command(bash_block):
 
     # NOTE: cd prefix is NOT stripped — preserves the full command
 
-    if "; EC=$?" in line:
-        line = line.split("; EC=$?")[0]
-    elif ";" in line and "&&" not in line:
+    if ";" in line and "&&" not in line:
         line = line.split(";")[0]
 
     line = line.strip()
@@ -319,39 +316,40 @@ def test_logging_template_is_command_first():
         )
 
 
-def test_exact_permissions_have_logged_variants():
-    """Every exact-match permission Bash(foo) (no trailing *) in init/SKILL.md
-    must have a corresponding Bash(foo;*) entry — unless a wildcard sibling
-    already covers the logged form (e.g. Bash(rubocop *) covers rubocop -A;...)."""
-    permissions = _extract_init_permissions()
-    regexes = [_permission_to_regex(p) for p in permissions]
-    regexes = [r for r in regexes if r is not None]
+def test_no_exit_in_bash_blocks():
+    """No ```bash``` block in any SKILL.md or docs/*.md should contain exit.
 
-    # Find exact-match permissions (no trailing *)
-    exact = [p for p in permissions if not p.endswith("*)")]
+    Appending '; EC=$?; exit $EC' (or any exit variant) to bash commands
+    turns them into compound commands that bypass permission matching and
+    kill the shell, breaking working directory persistence. The Bash tool
+    returns the exit code natively — the wrapper adds nothing."""
+    errors = []
 
-    for perm in exact:
-        # Extract the command pattern
-        match = re.match(r"Bash\((.+)\)", perm)
-        if not match:
-            continue
-        cmd = match.group(1)
-        variant = f"Bash({cmd};*)"
-
-        # Check if variant exists directly
-        if variant in permissions:
-            continue
-
-        # Check if a wildcard sibling already covers the logged form
-        # e.g. "rubocop -A; EC=$?" matches "Bash(rubocop *)"
-        test_logged = f"{cmd}; EC=$?"
-        covered = any(r.match(test_logged) for r in regexes)
-        assert covered, (
-            f"Exact-match permission '{perm}' in init/SKILL.md has no "
-            f"logged variant '{variant}' and no wildcard permission "
-            f"covers '{test_logged}'. Add a variant to support the "
-            f"command-first logging pattern."
+    files_to_check = []
+    for name in _all_skill_names():
+        files_to_check.append(
+            (f"skills/{name}/SKILL.md", _read_skill(name))
         )
+    for rel, content in _all_docs_files():
+        files_to_check.append((rel, content))
+
+    for filepath, content in files_to_check:
+        bash_blocks = re.findall(r"```bash\s*\n(.*?)```", content, re.DOTALL)
+        for block in bash_blocks:
+            if "; exit" in block or "exit $" in block:
+                cmd = block.strip().split("\n")[0]
+                errors.append(
+                    f"{filepath}: bash block contains exit: '{cmd}'"
+                )
+
+    assert not errors, (
+        f"Found {len(errors)} bash block(s) containing exit commands. "
+        f"Chained exit commands ('; EC=$?; exit $EC') break permission "
+        f"matching (compound commands don't match simple patterns) and "
+        f"kill the shell (breaking working directory persistence). The "
+        f"Bash tool returns exit codes natively — just run COMMAND alone.\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
 
 
 def test_all_bash_commands_have_permission_coverage():

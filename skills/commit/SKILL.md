@@ -30,27 +30,6 @@ On completion (whether approved or denied), print the same way:
 ```
 ````
 
-## Logging
-
-After every Bash command completes, log it to `.flow-states/<branch>.log`.
-
-Run the command with exit code capture:
-
-```bash
-COMMAND; EC=$?; exit $EC
-```
-
-Then Read `.flow-states/<branch>.log` (empty string if it does not
-exist yet) and Write it back with this line appended:
-
-```text
-YYYY-MM-DDTHH:MM:SSZ [Commit] Step X — desc (exit EC)
-```
-
-Get `<branch>` from `git branch --show-current`.
-
----
-
 ## Flag: --auto
 
 When the user invokes `/flow:commit --auto`, skip the Step 3 approval prompt and proceed directly to Step 4 (commit and push). Everything else is identical: `bin/ci`, diff display, commit message generation and display, pull-before-push.

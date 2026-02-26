@@ -41,10 +41,10 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 
 After every Bash command in Steps 3–7, log it to `.flow-states/<branch>.log`. Step 2 handles its own logging internally.
 
-Run the command with exit code capture:
+Run the command directly — do not append any suffix:
 
 ```bash
-COMMAND; EC=$?; exit $EC
+COMMAND
 ```
 
 Then Read `.flow-states/<branch>.log` (empty string if it does not
@@ -167,13 +167,18 @@ Provide these instructions (fill in the worktree path and bin/ci output):
 >
 > Fix the failures in this order:
 >
-> 1. **RuboCop violations** — run `rubocop -A` to auto-fix, then `bin/ci`
+> 1. **RuboCop violations** — ALWAYS run `rubocop -A` first. This
+>    auto-corrects most violations. Then run `bin/ci`. If violations
+>    remain, fix the code manually to satisfy the cop.
 > 2. **Test failures** — read the failing test and the code it tests.
 >    Understand the root cause. Fix the code, not the test (unless the
 >    test itself is wrong). Run `bin/rails test <file>` to verify,
 >    then `bin/ci` for a full check.
 > 3. **Coverage gaps** — read `test/coverage/uncovered.txt` to see exactly
 >    which lines are uncovered. Write the missing test, then `bin/ci`
+>
+> **Never modify `.rubocop.yml` or any RuboCop configuration.**
+> Fix the code, never the rules. Do not add exclusions or disable cops.
 >
 > Max 3 attempts. After each fix, run `bin/ci`. If green, report what
 > was fixed and stop. If still failing after 3 attempts, report exactly
