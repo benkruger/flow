@@ -10,17 +10,17 @@ parent: Skills
 
 **Usage:** `/flow:research`
 
-Explores the codebase before any design or implementation begins. Reads all affected code, discovers risks specific to Rails conventions, asks clarifying questions via tabbed UI, and documents findings in `.claude/flow-state.json`.
+Explores the codebase before any design or implementation begins. Reads all affected code, discovers risks specific to Rails conventions, asks clarifying questions via tabbed UI, and documents findings in `.flow-states/<branch>.json`.
 
 ---
 
 ## What It Does
 
-1. Reads feature context from `.claude/flow-state.json`
+1. Reads feature context from `.flow-states/<branch>.json`
 2. Explores all affected models (full class hierarchy), controllers, workers, routes, and schema
 3. Formulates clarifying questions based on what was found
 4. Presents questions in batches of up to 4 using the tabbed `AskUserQuestion` UI — navigate freely with ← → arrows
-5. Documents all findings into `flow-state.json["research"]`
+5. Documents all findings into `.flow-states/<branch>.json["research"]`
 6. Presents a clean findings summary
 7. Gates on user approval before proceeding to Design
 
@@ -43,7 +43,7 @@ Every Research run checks for:
 
 ## Findings Stored In State
 
-Research writes to `flow-state.json["research"]`:
+Research writes to `.flow-states/<branch>.json["research"]`:
 
 - `clarifications` — every Q&A pair from the session
 - `affected_files` — all files that will need to change

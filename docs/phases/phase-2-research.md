@@ -29,7 +29,7 @@ Your `CLAUDE.md` knows these patterns at a project level. Research applies them 
 
 ### 1. Read feature context
 
-Read `.claude/flow-state.json` for feature name, description, and any prior research findings.
+Read `.flow-states/<branch>.json` for feature name, description, and any prior research findings.
 
 ### 2. Explore the codebase
 
@@ -45,7 +45,7 @@ Present questions in batches of up to 4 using the tabbed Q&A UI. Navigate betwee
 
 ### 5. Document findings
 
-Write all findings into `flow-state.json["research"]` — affected files, risks, clarifications, open questions, and a plain English summary.
+Write all findings into `.flow-states/<branch>.json["research"]` — affected files, risks, clarifications, open questions, and a plain English summary.
 
 ### 6. Present and gate
 
@@ -68,7 +68,7 @@ By the end of Phase 2:
 - A complete list of affected files
 - Rails-specific risks identified and documented
 - All ambiguities resolved via Q&A
-- Findings persisted to `.claude/flow-state.json` for use in Design and Reflect
+- Findings persisted to `.flow-states/<branch>.json` for use in Design and Reflect
 - A known-good understanding of what exists before anything changes
 
 ---
