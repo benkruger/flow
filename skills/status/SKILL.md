@@ -22,20 +22,10 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 
 ## Steps
 
-### Step 1 — Get state file path
-
-Find the project root and current branch:
-
-1. Run `git worktree list --porcelain` and note the path on the first `worktree` line.
-2. Run `git branch --show-current`.
-3. Build the state file path: `<project_root>/.flow-states/<branch>.json`.
-
-### Step 2 — Run the status formatter
-
-Read `plugin.json` from the plugin installation directory to get the version.
+### Step 1 — Run the status formatter
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-status <state_file_path> <version>
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-status
 ```
 
 The script outputs JSON:

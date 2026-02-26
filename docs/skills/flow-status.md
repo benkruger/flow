@@ -25,20 +25,23 @@ Shows where you are in the FLOW workflow at any moment. Reads `.flow-states/<bra
 
 ```text
 ============================================
-  FLOW — Current Status
+  FLOW v0.8.4 — Current Status
 ============================================
 
   Feature : App Payment Webhooks
   Branch  : app-payment-webhooks
   PR      : https://github.com/org/repo/pull/42
+  Elapsed : 1h 15m
+  Notes   : 2
+  Tasks   : 3/7 complete
 
   Phases
   ------
-  [x] Phase 1:  Start
-  [>] Phase 2:  Research   <-- YOU ARE HERE
-  [ ] Phase 3:  Design
-  [ ] Phase 4:  Plan
-  [ ] Phase 5:  Code
+  [x] Phase 1:  Start          (<1m)
+  [x] Phase 2:  Research       (15m)
+  [x] Phase 3:  Design         (22m)
+  [x] Phase 4:  Plan           (8m)
+  [>] Phase 5:  Code           <-- YOU ARE HERE
   [ ] Phase 6:  Review
   [ ] Phase 7:  Reflect
   [ ] Phase 8:  Cleanup
@@ -46,7 +49,7 @@ Shows where you are in the FLOW workflow at any moment. Reads `.flow-states/<bra
   Time in current phase : 32m
   Times visited         : 1
 
-  Next: /flow:research
+  Continue: /flow:code
 
 ============================================
 ```

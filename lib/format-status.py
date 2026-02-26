@@ -1,9 +1,9 @@
 """Format the FLOW status panel.
 
-Usage: bin/flow format-status <state_file_path> <plugin_version>
+Usage: bin/flow format-status
 
-Reads the state file and outputs the formatted status panel text to stdout.
-The skill wraps the output in a fenced code block.
+Derives state file path (via git) and plugin version (via plugin.json)
+internally — no arguments needed.
 
 Output (JSON to stdout):
   Success: {"status": "ok", "panel": "..."}
@@ -13,11 +13,12 @@ Output (JSON to stdout):
 
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import format_time
+from flow_utils import current_branch, format_time, project_root
 
 PHASE_NAMES = {
     1: "Start", 2: "Research", 3: "Design", 4: "Plan",
@@ -34,7 +35,26 @@ COMMANDS = {
 NAME_WIDTH = 12
 
 
-def format_panel(state, version):
+def _elapsed_since(started_at, now=None):
+    """Calculate elapsed seconds from an ISO timestamp to now."""
+    if not started_at:
+        return 0
+    if now is None:
+        now = datetime.now(timezone.utc)
+    start = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+    return max(0, int((now - start).total_seconds()))
+
+
+def _read_version():
+    """Read plugin version from plugin.json next to this script."""
+    plugin_json = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
+    try:
+        return json.loads(plugin_json.read_text())["version"]
+    except Exception:
+        return "?"
+
+
+def format_panel(state, version, now=None):
     """Build the status panel string from state dict and version."""
     phases = state.get("phases", {})
 
@@ -45,13 +65,7 @@ def format_panel(state, version):
     )
 
     if all_complete:
-        return (
-            "============================================\n"
-            f"  FLOW — All phases complete!\n"
-            f"  Feature: {state['feature']}\n"
-            f"  This feature is fully done.\n"
-            "============================================"
-        )
+        return _format_all_complete(state, version, phases)
 
     lines = []
     lines.append("============================================")
@@ -61,6 +75,23 @@ def format_panel(state, version):
     lines.append(f"  Feature : {state['feature']}")
     lines.append(f"  Branch  : {state['branch']}")
     lines.append(f"  PR      : {state.get('pr_url', 'N/A')}")
+
+    # Elapsed time
+    elapsed = _elapsed_since(state.get("started_at"), now)
+    lines.append(f"  Elapsed : {format_time(elapsed)}")
+
+    # Notes count (omit if zero)
+    notes = state.get("notes", [])
+    if notes:
+        lines.append(f"  Notes   : {len(notes)}")
+
+    # Plan task progress (only when plan exists)
+    plan = state.get("plan")
+    if plan:
+        tasks = plan.get("tasks", [])
+        done = sum(1 for t in tasks if t.get("status") == "complete")
+        lines.append(f"  Tasks   : {done}/{len(tasks)} complete")
+
     lines.append("")
     lines.append("  Phases")
     lines.append("  ------")
@@ -96,14 +127,49 @@ def format_panel(state, version):
         lines.append(f"  Times visited         : {visits}")
         lines.append("")
 
-    # Find next command
+    # Continue (in_progress) vs Next (phase complete)
     current = state.get("current_phase", 1)
     current_status = phases.get(str(current), {}).get("status", "pending")
     if current_status == "in_progress":
         cmd = COMMANDS.get(current, f"/flow:phase{current}")
+        lines.append(f"  Continue: {cmd}")
     else:
         cmd = COMMANDS.get(current + 1, COMMANDS.get(current, ""))
-    lines.append(f"  Next: {cmd}")
+        lines.append(f"  Next: {cmd}")
+    lines.append("")
+    lines.append("============================================")
+
+    return "\n".join(lines)
+
+
+def _format_all_complete(state, version, phases):
+    """Build the enriched all-complete panel."""
+    lines = []
+    lines.append("============================================")
+    lines.append(f"  FLOW v{version} — All Phases Complete!")
+    lines.append("============================================")
+    lines.append("")
+    lines.append(f"  Feature : {state['feature']}")
+    lines.append(f"  PR      : {state.get('pr_url', 'N/A')}")
+
+    # Total elapsed from phase timings
+    total = sum(
+        phases.get(str(i), {}).get("cumulative_seconds", 0)
+        for i in range(1, 9)
+    )
+    lines.append(f"  Elapsed : {format_time(total)}")
+
+    lines.append("")
+    lines.append("  Phases")
+    lines.append("  ------")
+
+    for i in range(1, 9):
+        phase = phases.get(str(i), {})
+        seconds = phase.get("cumulative_seconds", 0)
+        time_str = format_time(seconds)
+        padded_name = PHASE_NAMES[i].ljust(NAME_WIDTH)
+        lines.append(f"  [x] Phase {i}:  {padded_name} ({time_str})")
+
     lines.append("")
     lines.append("============================================")
 
@@ -111,19 +177,23 @@ def format_panel(state, version):
 
 
 def main():
-    if len(sys.argv) < 3:
+    root = project_root()
+    branch = current_branch()
+
+    if not branch:
         print(json.dumps({
             "status": "error",
-            "message": "Usage: python3 format-status.py <state_file_path> <version>",
+            "message": "Could not determine current branch",
         }))
         sys.exit(1)
 
-    state_path = Path(sys.argv[1])
-    version = sys.argv[2]
+    state_path = root / ".flow-states" / f"{branch}.json"
 
     if not state_path.exists():
         print(json.dumps({"status": "no_state"}))
         sys.exit(0)
+
+    version = _read_version()
 
     try:
         state = json.loads(state_path.read_text())

@@ -4,6 +4,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+from datetime import datetime, timezone
 
 from conftest import LIB_DIR, make_state, write_state
 
@@ -19,11 +20,11 @@ _spec.loader.exec_module(_mod)
 VERSION = "0.8.2"
 
 
-def _run(state_path, version=VERSION):
-    """Run format-status.py via subprocess."""
+def _run(cwd):
+    """Run format-status.py via subprocess with no args, from cwd."""
     result = subprocess.run(
-        [sys.executable, SCRIPT, str(state_path), version],
-        capture_output=True, text=True,
+        [sys.executable, SCRIPT],
+        capture_output=True, text=True, cwd=str(cwd),
     )
     return result
 
@@ -31,41 +32,50 @@ def _run(state_path, version=VERSION):
 # --- CLI behavior ---
 
 
-def test_missing_args_returns_error():
-    result = subprocess.run(
-        [sys.executable, SCRIPT],
-        capture_output=True, text=True,
-    )
+def test_no_branch_returns_error(tmp_path):
+    """Running outside a git repo (no branch) returns an error."""
+    result = _run(tmp_path)
     assert result.returncode == 1
     data = json.loads(result.stdout)
     assert data["status"] == "error"
+    assert "branch" in data["message"]
 
 
-def test_nonexistent_state_returns_no_state(tmp_path):
-    result = _run(tmp_path / "missing.json")
+def test_no_state_file_returns_no_state(git_repo):
+    result = _run(git_repo)
     assert result.returncode == 0
     data = json.loads(result.stdout)
     assert data["status"] == "no_state"
 
 
-def test_corrupt_json_returns_error(tmp_path):
-    bad_file = tmp_path / "bad.json"
+def test_corrupt_json_returns_error(state_dir, git_repo):
+    branch_result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        capture_output=True, text=True, cwd=str(git_repo),
+    )
+    branch = branch_result.stdout.strip()
+    bad_file = state_dir / f"{branch}.json"
     bad_file.write_text("{bad json")
-    result = _run(bad_file)
+    result = _run(git_repo)
     assert result.returncode == 1
     data = json.loads(result.stdout)
     assert data["status"] == "error"
     assert "Could not read" in data["message"]
 
 
-def test_happy_path_returns_ok_with_panel(state_dir):
+def test_happy_path_returns_ok_with_panel(state_dir, git_repo):
+    branch_result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        capture_output=True, text=True, cwd=str(git_repo),
+    )
+    branch = branch_result.stdout.strip()
     state = make_state(
         current_phase=2,
         phase_statuses={1: "complete", 2: "in_progress"},
     )
     state["phases"]["1"]["cumulative_seconds"] = 300
-    path = write_state(state_dir, "test-feature", state)
-    result = _run(path)
+    write_state(state_dir, branch, state)
+    result = _run(git_repo)
     assert result.returncode == 0
     data = json.loads(result.stdout)
     assert data["status"] == "ok"
@@ -136,24 +146,97 @@ def test_panel_shows_current_phase_timing():
     assert "Times visited         : 2" in panel
 
 
-def test_panel_shows_next_command():
+def test_panel_shows_elapsed_time():
+    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    state["started_at"] = "2026-01-01T00:00:00Z"
+    now = datetime(2026, 1, 1, 2, 0, 0, tzinfo=timezone.utc)
+    panel = _mod.format_panel(state, VERSION, now=now)
+    assert "Elapsed : 2h 0m" in panel
+
+
+def test_panel_shows_notes_count():
+    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    state["notes"] = [
+        {"text": "note 1"},
+        {"text": "note 2"},
+        {"text": "note 3"},
+    ]
+    panel = _mod.format_panel(state, VERSION)
+    assert "Notes   : 3" in panel
+
+
+def test_panel_hides_notes_when_zero():
+    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    state["notes"] = []
+    panel = _mod.format_panel(state, VERSION)
+    assert "Notes" not in panel
+
+
+def test_panel_shows_plan_progress():
+    state = make_state(current_phase=5, phase_statuses={
+        1: "complete", 2: "complete", 3: "complete", 4: "complete", 5: "in_progress",
+    })
+    state["plan"] = {
+        "tasks": [
+            {"status": "complete"},
+            {"status": "complete"},
+            {"status": "complete"},
+            {"status": "pending"},
+            {"status": "pending"},
+            {"status": "pending"},
+            {"status": "pending"},
+        ],
+    }
+    panel = _mod.format_panel(state, VERSION)
+    assert "Tasks   : 3/7 complete" in panel
+
+
+def test_panel_hides_plan_when_absent():
+    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    panel = _mod.format_panel(state, VERSION)
+    assert "Tasks" not in panel
+
+
+def test_panel_continue_label_when_in_progress():
     state = make_state(
         current_phase=2,
         phase_statuses={1: "complete", 2: "in_progress"},
     )
     panel = _mod.format_panel(state, VERSION)
-    assert "Next: /flow:research" in panel
+    assert "Continue: /flow:research" in panel
+    assert "Next:" not in panel
 
 
-def test_panel_all_complete():
+def test_panel_next_label_when_phase_complete():
+    state = make_state(
+        current_phase=2,
+        phase_statuses={1: "complete", 2: "complete"},
+    )
+    panel = _mod.format_panel(state, VERSION)
+    assert "Next: /flow:design" in panel
+    assert "Continue:" not in panel
+
+
+def test_panel_all_complete_shows_timing():
     state = make_state(
         current_phase=8,
         phase_statuses={i: "complete" for i in range(1, 9)},
     )
+    state["phases"]["1"]["cumulative_seconds"] = 30
+    state["phases"]["2"]["cumulative_seconds"] = 900
+    state["phases"]["3"]["cumulative_seconds"] = 600
+    state["phases"]["4"]["cumulative_seconds"] = 1200
+    state["phases"]["5"]["cumulative_seconds"] = 3600
+    state["phases"]["6"]["cumulative_seconds"] = 450
+    state["phases"]["7"]["cumulative_seconds"] = 300
+    state["phases"]["8"]["cumulative_seconds"] = 20
     panel = _mod.format_panel(state, VERSION)
-    assert "All phases complete!" in panel
-    assert "This feature is fully done." in panel
-    assert "Feature: Test Feature" in panel
+    assert f"FLOW v{VERSION} — All Phases Complete!" in panel
+    assert "Feature : Test Feature" in panel
+    assert "PR      : https://github.com/test/test/pull/1" in panel
+    assert "Elapsed : 1h 58m" in panel
+    for i in range(1, 9):
+        assert f"[x] Phase {i}:" in panel
 
 
 def test_panel_timing_formats():
@@ -177,10 +260,10 @@ def test_panel_has_all_8_phases():
         assert f"Phase {i}:" in panel
 
 
-def test_panel_next_command_when_current_phase_not_in_progress():
-    state = make_state(
-        current_phase=2,
-        phase_statuses={1: "complete", 2: "complete"},
-    )
-    panel = _mod.format_panel(state, VERSION)
-    assert "Next: /flow:design" in panel
+def test_elapsed_since_with_no_started_at():
+    assert _mod._elapsed_since(None) == 0
+
+
+def test_read_version_returns_fallback_when_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(_mod, "__file__", str(tmp_path / "lib" / "format-status.py"))
+    assert _mod._read_version() == "?"
