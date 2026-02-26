@@ -146,6 +146,7 @@ If any element is missing or out of order, rewrite before displaying.
 
 **Subject line rules:**
 - Start with an imperative verb: Add, Fix, Update, Remove, Refactor, Extract
+- Describe the goal, not the mechanism — when a change has both, the subject says why it matters. "Consolidate 7 permission entries into 1" (goal) not "Move scripts from hooks/ to lib/" (mechanism)
 - No prefix jargon (no `feat:`, `chore:`, `fix:` — just the verb)
 - Under 72 characters
 - No period at the end
