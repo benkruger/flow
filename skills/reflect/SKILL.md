@@ -32,7 +32,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````markdown
 ```text
 ============================================
-  FLOW v0.8.4 — Phase 7: Reflect — STARTING
+  FLOW v0.8.5 — Phase 7: Reflect — STARTING
 ============================================
 ```
 ````
@@ -261,7 +261,7 @@ Print inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW v0.8.4 — Phase 7: Reflect — COMPLETE (<formatted_time>)
+  FLOW v0.8.5 — Phase 7: Reflect — COMPLETE (<formatted_time>)
   Merge the PR, then run /flow:cleanup.
 ============================================
 ```

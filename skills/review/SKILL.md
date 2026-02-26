@@ -28,7 +28,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````markdown
 ```text
 ============================================
-  FLOW v0.8.4 — Phase 6: Review — STARTING
+  FLOW v0.8.5 — Phase 6: Review — STARTING
 ============================================
 ```
 ````
@@ -244,7 +244,7 @@ Print inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW v0.8.4 — Phase 6: Review — COMPLETE (<formatted_time>)
+  FLOW v0.8.5 — Phase 6: Review — COMPLETE (<formatted_time>)
 ============================================
 ```
 ````

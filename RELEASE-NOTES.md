@@ -1,5 +1,19 @@
 # Release Notes
 
+## v0.8.5 — Performance and cleanup
+
+- **Renamed**: `/flow:resume` → `/flow:continue` to avoid conflict with Claude Code's built-in `/resume` command
+- **Optimized**: Reduced redundant tool calls across 6 skills — Research, Design, Plan, Code, Reflect, and Continue — cutting unnecessary file reads at phase entry
+- **Improved**: `/flow:status` upgraded to zero-arg CLI with richer panel output
+- **Improved**: `/flow:note` made zero-arg, `PHASE_NAMES` deduplicated into shared constant
+- **Fixed**: Stale state file paths in Research docs
+- **Fixed**: `/flow:cleanup` — removed redundant read, dead logging code, stale docs references
+- **Fixed**: `/flow:abort` — removed PR comment step, eliminated duplicate state reads
+- **Added**: `psql` to user workspace permissions
+- **Added**: CLAUDE.md rule — search before claiming something doesn't exist
+
+---
+
 ## v0.8.4 — Performance and bug fixes
 
 ### Improvements

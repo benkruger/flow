@@ -33,7 +33,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````markdown
 ```text
 ============================================
-  FLOW v0.8.4 — Phase 8: Cleanup — STARTING
+  FLOW v0.8.5 — Phase 8: Cleanup — STARTING
 ============================================
 ```
 ````
@@ -105,7 +105,7 @@ Print inside a fenced code block (triple backticks) so it renders as plain monos
 ````markdown
 ```text
 ============================================
-  FLOW v0.8.4 — Phase 8: Cleanup — COMPLETE (<formatted_time>)
+  FLOW v0.8.5 — Phase 8: Cleanup — COMPLETE (<formatted_time>)
   Feature '<feature>' is fully done.
   Worktree removed, state file and log deleted.
 ============================================
