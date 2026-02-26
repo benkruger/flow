@@ -41,8 +41,7 @@ def cleanup(project_root, branch, worktree, pr_number=None, delete_remote=False)
     # Close PR (abort only)
     if pr_number:
         ok, output = _run_cmd(
-            ["gh", "pr", "close", str(pr_number),
-             "--comment", "Aborted via /flow:abort"],
+            ["gh", "pr", "close", str(pr_number)],
             root,
         )
         steps["pr_close"] = "closed" if ok else f"failed: {output}"

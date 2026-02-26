@@ -16,13 +16,22 @@ Run this entry check as your very first action.
    path on the first `worktree` line.
 2. Get the current branch: run `git branch --show-current`.
 3. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
-   - If the file does not exist: print "WARNING: No state file found for
-     branch '<branch>'. Will attempt best-effort cleanup using git state."
-     Continue — do not stop.
-   - If the file exists: print the feature name, branch, PR URL, and
-     current phase from the JSON.
+   - If the file exists: extract `feature`, `branch`, `worktree`,
+     `pr_number`, and `pr_url`. Print the feature name, branch, PR URL,
+     and current phase.
+   - If the file does not exist: infer what you can from git state:
+     - `branch` from `git branch --show-current` (already known)
+     - Detect worktree path from `git worktree list`
+     - Use the branch name as the feature name
+     - `pr_number` unknown — skip PR close step later
+     - Print "WARNING: No state file found for branch '<branch>'. Will
+       attempt best-effort cleanup using git state." and tell the user
+       what was inferred. Continue — do not stop.
 
 If the Read tool fails for any other reason, stop and show the error.
+
+Use these values for all subsequent steps — do not re-read the state file
+or re-run git commands to gather the same information.
 
 ## Announce
 
@@ -38,21 +47,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 
 ## Steps
 
-### Step 1 — Read state
-
-If the state file exists, read `.flow-states/<branch>.json` from
-the project root. Note `feature`, `branch`, `worktree`, `pr_number`,
-and `pr_url`.
-
-If the state file is missing, infer what you can:
-- `branch` from `git branch --show-current`
-- Detect worktree path from `git worktree list`
-- Use the branch name as the feature name
-- `pr_number` unknown — skip PR close step
-
-Tell the user what was inferred.
-
-### Step 2 — Confirm with user
+### Step 1 — Confirm with user
 
 This is destructive and irreversible. Use AskUserQuestion.
 
@@ -65,7 +60,7 @@ If the entry check printed warnings, include them in the confirmation:
 - **Yes, abort everything** — proceed
 - **No, keep going** — stop here
 
-### Steps 3–8 — Run cleanup script
+### Steps 2–7 — Run cleanup script
 
 Run the cleanup script from the project root with abort flags:
 
