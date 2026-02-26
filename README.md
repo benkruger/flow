@@ -113,7 +113,7 @@ By the time Code begins, every affected file has been read, every callback has b
 
 ### Model Recommendations
 
-FLOW uses the right model for each phase — Opus for hard thinking, Sonnet for structured work, Haiku for mechanical steps. Each phase banner shows the recommended model.
+FLOW automatically selects the right model for each phase — Opus for hard thinking, Sonnet for structured work, Haiku for mechanical steps. Each skill's frontmatter sets the model, so invoking the skill switches automatically.
 
 | Phase | Model | Why |
 |-------|-------|-----|

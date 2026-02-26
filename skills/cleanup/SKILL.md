@@ -1,6 +1,7 @@
 ---
 name: cleanup
 description: "Phase 8: Cleanup — remove the worktree and delete the state file. Final phase. Requires Phase 7: Reflect to be complete."
+model: haiku
 ---
 
 # FLOW Cleanup — Phase 8: Cleanup
@@ -30,7 +31,6 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ```text
 ============================================
   FLOW v0.8.3 — Phase 8: Cleanup — STARTING
-  Recommended model: Haiku
 ============================================
 ```
 ````

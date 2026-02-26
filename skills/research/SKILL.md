@@ -1,6 +1,7 @@
 ---
 name: research
 description: "Phase 2: Research — explore the codebase before any design or implementation. Reads affected files, discovers risks, asks clarifying questions, and documents findings in flow-state.json."
+model: sonnet
 ---
 
 # FLOW Research — Phase 2: Research
@@ -28,7 +29,6 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ```text
 ============================================
   FLOW v0.8.3 — Phase 2: Research — STARTING
-  Recommended model: Sonnet
 ============================================
 ```
 ````

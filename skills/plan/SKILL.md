@@ -1,6 +1,7 @@
 ---
 name: plan
 description: "Phase 4: Plan — break the approved design into ordered, executable tasks section by section. Each section is approved individually. Supports back navigation within the plan and to Design or Research."
+model: sonnet
 ---
 
 # FLOW Plan — Phase 4: Plan
@@ -28,7 +29,6 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ```
 ============================================
   FLOW v0.8.3 — Phase 4: Plan — STARTING
-  Recommended model: Sonnet
 ============================================
 ```
 ````

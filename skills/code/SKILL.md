@@ -1,6 +1,7 @@
 ---
 name: code
 description: "Phase 5: Code — execute plan tasks one at a time with TDD. Review diff before each commit. bin/ci must pass before moving to the next task. All Rails architecture standards enforced."
+model: opus
 ---
 
 # FLOW Code — Phase 5: Code
@@ -28,7 +29,6 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ```
 ============================================
   FLOW v0.8.3 — Phase 5: Code — STARTING
-  Recommended model: Opus
 ============================================
 ```
 ````

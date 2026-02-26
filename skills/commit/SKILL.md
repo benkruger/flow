@@ -1,6 +1,7 @@
 ---
 name: commit
 description: "Review the full diff, approve or deny, then git add + commit + push. Use at every commit checkpoint in the FLOW workflow."
+model: sonnet
 ---
 
 # FLOW Commit
@@ -15,7 +16,6 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ```
 ============================================
   FLOW v0.8.3 — flow:commit — STARTING
-  Recommended model: Sonnet
 ============================================
 ```
 ````

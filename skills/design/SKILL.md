@@ -1,6 +1,7 @@
 ---
 name: design
 description: "Phase 3: Design — ask what we're building, propose 2-3 alternatives, get approval before any code. Can return to Research if gaps are found."
+model: opus
 ---
 
 # FLOW Design — Phase 3: Design
@@ -28,7 +29,6 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ```text
 ============================================
   FLOW v0.8.3 — Phase 3: Design — STARTING
-  Recommended model: Opus
 ============================================
 ```
 ````

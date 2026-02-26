@@ -1,6 +1,7 @@
 ---
 name: reflect
 description: "Phase 7: Reflect — review what went wrong, capture learnings in CLAUDE.md, note plugin improvements. Runs before the PR is merged. The only commits are CLAUDE.md and .claude/ changes."
+model: sonnet
 ---
 
 # FLOW Reflect — Phase 7: Reflect
@@ -28,7 +29,6 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ```text
 ============================================
   FLOW v0.8.3 — Phase 7: Reflect — STARTING
-  Recommended model: Sonnet
 ============================================
 ```
 ````

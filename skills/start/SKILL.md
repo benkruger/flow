@@ -1,6 +1,7 @@
 ---
 name: start
 description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrades gems, opens a PR, creates .flow-states/<branch>.json, and configures the workspace. Usage: /flow:start <feature name words>"
+model: haiku
 ---
 
 # FLOW Start — Phase 1: Start
@@ -32,7 +33,6 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ```
 ============================================
   FLOW v0.8.3 — Phase 1: Start — STARTING
-  Recommended model: Haiku
 ============================================
 ```
 ````

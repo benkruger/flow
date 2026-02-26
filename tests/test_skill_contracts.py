@@ -333,44 +333,44 @@ def test_phase_skills_have_update_state_section():
 # --- Recommended models ---
 
 
-def test_model_recommendations_are_valid():
-    """Every skill with a 'Recommended model' line must specify Haiku, Sonnet, or Opus."""
-    valid_models = {"Haiku", "Sonnet", "Opus"}
+def test_model_frontmatter_is_valid():
+    """Every skill with a 'model' frontmatter field must specify haiku, sonnet, or opus."""
+    valid_models = {"haiku", "sonnet", "opus"}
     for d in sorted(SKILLS_DIR.iterdir()):
         if not d.is_dir():
             continue
         content = (d / "SKILL.md").read_text()
-        match = re.search(r"Recommended model:\s*(\w+)", content)
+        match = re.search(r"^model:\s*(\w+)", content, re.MULTILINE)
         if match:
             model = match.group(1)
             assert model in valid_models, (
-                f"skills/{d.name}/SKILL.md recommends '{model}' — "
+                f"skills/{d.name}/SKILL.md has model '{model}' — "
                 f"must be one of {valid_models}"
             )
 
 
-def test_model_recommendations_match_documented_table():
-    """Model recommendations must match: Opus for Design/Code, Sonnet for
-    Research/Plan/Review/Reflect/Commit, Haiku for Start/Cleanup."""
+def test_model_frontmatter_matches_documented_table():
+    """Model frontmatter must match: opus for Design/Code, sonnet for
+    Research/Plan/Review/Reflect/Commit, haiku for Start/Cleanup."""
     expected = {
-        "start": "Haiku",
-        "research": "Sonnet",
-        "design": "Opus",
-        "plan": "Sonnet",
-        "code": "Opus",
-        "review": "Sonnet",
-        "reflect": "Sonnet",
-        "cleanup": "Haiku",
-        "commit": "Sonnet",
+        "start": "haiku",
+        "research": "sonnet",
+        "design": "opus",
+        "plan": "sonnet",
+        "code": "opus",
+        "review": "sonnet",
+        "reflect": "sonnet",
+        "cleanup": "haiku",
+        "commit": "sonnet",
     }
     for skill_name, expected_model in expected.items():
         content = _read_skill(skill_name)
-        match = re.search(r"Recommended model:\s*(\w+)", content)
+        match = re.search(r"^model:\s*(\w+)", content, re.MULTILINE)
         assert match, (
-            f"skills/{skill_name}/SKILL.md has no 'Recommended model' line"
+            f"skills/{skill_name}/SKILL.md has no 'model' in frontmatter"
         )
         assert match.group(1) == expected_model, (
-            f"skills/{skill_name}/SKILL.md recommends '{match.group(1)}' "
+            f"skills/{skill_name}/SKILL.md has model '{match.group(1)}' "
             f"but expected '{expected_model}'"
         )
 

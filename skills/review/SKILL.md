@@ -1,6 +1,7 @@
 ---
 name: review
 description: "Phase 6: Review — systematic code review against design, research risks, and Rails anti-patterns. Fixes issues found, runs bin/ci after any fix, then transitions to Reflect."
+model: sonnet
 ---
 
 # FLOW Review — Phase 6: Review
@@ -28,7 +29,6 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ```text
 ============================================
   FLOW v0.8.3 — Phase 6: Review — STARTING
-  Recommended model: Sonnet
 ============================================
 ```
 ````
