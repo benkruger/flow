@@ -13,7 +13,7 @@ Print:
 
 ```
 ============================================
-  FLOW v0.10.0 — release — STARTING
+  FLOW v0.11.0 — release — STARTING
 ============================================
 ```
 
@@ -196,7 +196,7 @@ Print:
 
 ```
 ============================================
-  FLOW v0.10.0 — release — COMPLETE
+  FLOW v0.11.0 — release — COMPLETE
   Released v<new_version>
   https://github.com/benkruger/flow/releases/tag/v<new_version>
 

@@ -1,5 +1,14 @@
 # Release Notes
 
+## v0.11.0 — Multi-destination learning routing
+
+- **New**: Reflect routes learnings to 5 destinations — each approved learning goes to the right permanent home: global CLAUDE.md, project CLAUDE.md, global rules, project rules, or project memory. Claude recommends a destination; user confirms or overrides with one click.
+- **New**: Worktree auto-memory rescue — Reflect reads Claude's auto-memory from the worktree before Cleanup destroys it, surfacing useful patterns as "Worth preserving" proposals that get routed to permanent storage.
+- **New**: 4th source — Reflect now synthesises from four sources instead of three (state file, notes, conversation, worktree memory).
+- **Fixed**: Logging wrapper that broke permissions and shell persistence.
+
+---
+
 ## v0.10.0 — Auto-mode flags for commit and release
 
 - **New**: `/flow:commit --auto` skips the approval prompt — user-invoked only, skills cannot call it programmatically

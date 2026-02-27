@@ -15,7 +15,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````markdown
 ```text
 ============================================
-  FLOW v0.10.0 — flow:status — STARTING
+  FLOW v0.11.0 — flow:status — STARTING
 ============================================
 ```
 ````
