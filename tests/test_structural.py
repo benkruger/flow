@@ -1,5 +1,6 @@
 """Structural invariant tests for FLOW plugin configuration files."""
 
+import configparser
 import json
 import os
 import re
@@ -164,7 +165,6 @@ def test_pytest_xdist_in_requirements():
 
 
 def test_n_auto_in_pytest_ini():
-    import configparser
     config = configparser.ConfigParser()
     config.read(REPO_ROOT / "pytest.ini")
     addopts = config.get("pytest", "addopts")
