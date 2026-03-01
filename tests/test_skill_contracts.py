@@ -284,9 +284,14 @@ def test_subagent_types_match_requirements():
             f"skills/{name}/SKILL.md should use Explore subagent_type"
         )
 
-    start_content = _read_skill("start")
+    # Start's general-purpose sub-agent may be in SKILL.md or a framework fragment
+    start_dir = SKILLS_DIR / "start"
+    start_content = ""
+    for md_file in sorted(start_dir.glob("*.md")):
+        start_content += md_file.read_text()
     assert '"general-purpose"' in start_content, (
-        "skills/start/SKILL.md should use general-purpose subagent_type"
+        "skills/start/ should use general-purpose subagent_type "
+        "(in SKILL.md or framework fragment)"
     )
 
 

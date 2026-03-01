@@ -126,88 +126,14 @@ If the error step is `init_check`, tell the user to run `/flow:init` first
 and stop. For all other errors, read the stderr output for details, report
 the failure to the user, and stop.
 
-### Step 3 — Baseline `bin/ci`
+### Step 3 — Framework-specific setup
 
-```bash
-bin/ci
-```
+Read the framework-specific instructions from
+`${CLAUDE_PLUGIN_ROOT}/skills/start/<framework>.md`
+where `<framework>` is the `framework` field from the state file
+(`.flow-states/<branch>.json`).
 
-- **Passes** — note as baseline and continue
-- **Fails** — launch the CI fix sub-agent (see Step 6). Pass the full
-  `bin/ci` output. After the sub-agent returns:
-  - **Fixed** — use `/flow:commit` to commit the fix, then continue
-  - **Not fixed** — stop and report to the user what is failing
-
-### Step 4 — Upgrade gems
-
-```bash
-bundle update --all
-```
-
-### Step 5 — Post-update `bin/ci`
-
-```bash
-bin/ci
-```
-
-- **Passes** — continue to Step 7
-- **Fails** — launch the CI fix sub-agent (see Step 6). Pass the full
-  `bin/ci` output. After the sub-agent returns:
-  - **Fixed** — continue to Step 7 (Gemfile.lock + fixes committed together)
-  - **Not fixed** — stop and report to the user what is failing
-
-### Step 6 — CI fix sub-agent
-
-When `bin/ci` fails in Step 3 or Step 5, launch a sub-agent to diagnose
-and fix the failures. Use the Task tool:
-
-- `subagent_type`: `"general-purpose"`
-- `model`: `"sonnet"`
-- `description`: `"Fix bin/ci failures"`
-
-Provide these instructions (fill in the worktree path and bin/ci output):
-
-> You are fixing CI failures in a Rails worktree.
-> Worktree: `<worktree path>`
-> cd into the worktree before running any commands.
->
-> The `bin/ci` output:
-> <paste the full bin/ci output>
->
-> Fix the failures in this order:
->
-> 1. **RuboCop violations** — ALWAYS run `rubocop -A` first. This
->    auto-corrects most violations. Then run `bin/ci`. If violations
->    remain, fix the code manually to satisfy the cop.
-> 2. **Test failures** — read the failing test and the code it tests.
->    Understand the root cause. Fix the code, not the test (unless the
->    test itself is wrong). Run `bin/rails test <file>` to verify,
->    then `bin/ci` for a full check.
-> 3. **Coverage gaps** — read `test/coverage/uncovered.txt` to see exactly
->    which lines are uncovered. Write the missing test, then `bin/ci`
->
-> **Never modify `.rubocop.yml` or any RuboCop configuration.**
-> Fix the code, never the rules. Do not add exclusions or disable cops.
->
-> Max 3 attempts. After each fix, run `bin/ci`. If green, report what
-> was fixed and stop. If still failing after 3 attempts, report exactly
-> what is failing and what was tried.
->
-> Return:
->
-> 1. Status: fixed / not_fixed
-> 2. What was wrong
-> 3. What was changed (files modified)
-
-Wait for the sub-agent to return.
-
-<HARD-GATE>
-Do NOT proceed past Step 3 or Step 5 until bin/ci is green.
-</HARD-GATE>
-
-### Step 7 — Commit and push
-
-Use `/flow:commit` to review and commit the changes (`Gemfile.lock` + any gem fixes).
+Follow all steps in the fragment before proceeding to Done.
 
 ### Done — Update state and complete phase
 
@@ -261,6 +187,4 @@ Invoke the `flow:status` skill to show the current state, then use AskUserQuesti
 Then report:
 - Worktree location
 - PR link
-- Whether baseline `bin/ci` was clean
-- Which gems were upgraded (`git diff Gemfile.lock` summary)
-- Confirmation `bin/ci` is green
+- Any additional report items from the framework fragment
