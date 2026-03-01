@@ -33,7 +33,12 @@
       "Bash(cat *)",
       "Bash(diff *)",
       "Bash(bin/test *)",
-      "Bash(make *)"
+      "Bash(make *)",
+      "Bash(cd .worktrees/* && *)",
+      "Bash(gh pr close *)",
+      "Bash(git push origin --delete *)",
+      "Bash(git branch -D *)",
+      "Bash(*bin/flow *)"
     ],
     "deny": [
       "Bash(git rebase *)",
