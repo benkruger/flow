@@ -76,17 +76,17 @@ def _current_plugin_version():
     return json.loads(plugin_path.read_text())["version"]
 
 
-def _write_flow_json(repo, version):
-    """Write .flow.json with a version marker."""
+def _write_flow_json(repo, version, framework="rails"):
+    """Write .flow.json with a version marker and framework."""
     (repo / ".flow.json").write_text(
-        json.dumps({"flow_version": version})
+        json.dumps({"flow_version": version, "framework": framework})
     )
 
 
-def _run_no_gh(cwd, feature_name, extra_args=None):
+def _run_no_gh(cwd, feature_name, extra_args=None, framework="rails"):
     """Run start-setup.py with gh stubbed out and flow.json initialized."""
     # Ensure flow.json exists with correct version for the version gate
-    _write_flow_json(cwd, _current_plugin_version())
+    _write_flow_json(cwd, _current_plugin_version(), framework)
 
     env = os.environ.copy()
     # Create a stub gh that returns a fake PR URL
@@ -438,3 +438,38 @@ def test_standard_mode_has_no_mode_in_output(git_repo_with_remote):
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)
     assert "mode" not in data
+
+
+# --- Framework propagation ---
+
+
+def test_state_file_includes_framework(git_repo_with_remote):
+    """State file must include framework from .flow.json."""
+    result = _run_no_gh(git_repo_with_remote, "test feature")
+    assert result.returncode == 0, result.stderr
+    state_path = git_repo_with_remote / ".flow-states" / "test-feature.json"
+    data = json.loads(state_path.read_text())
+    assert data["framework"] == "rails"
+
+
+def test_state_file_includes_python_framework(git_repo_with_remote):
+    """State file must include python framework when .flow.json says python."""
+    result = _run_no_gh(git_repo_with_remote, "test feature", framework="python")
+    assert result.returncode == 0, result.stderr
+    state_path = git_repo_with_remote / ".flow-states" / "test-feature.json"
+    data = json.loads(state_path.read_text())
+    assert data["framework"] == "python"
+
+
+def test_missing_framework_in_flow_json_returns_error(git_repo_with_remote):
+    """start-setup.py returns error when .flow.json has no framework field."""
+    version = _current_plugin_version()
+    (git_repo_with_remote / ".flow.json").write_text(
+        json.dumps({"flow_version": version})
+    )
+    result = _run(git_repo_with_remote, "test feature")
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "error"
+    assert data["step"] == "init_check"
+    assert "framework" in data["message"].lower()

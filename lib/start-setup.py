@@ -112,7 +112,7 @@ def _extract_pr_number(pr_url):
 
 
 def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                       light_mode=False):
+                       light_mode=False, framework="rails"):
     """Create the FLOW state file."""
     now = _now()
     phase_names = {
@@ -161,6 +161,7 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
         "pr_url": pr_url,
         "started_at": now,
         "current_phase": 1,
+        "framework": framework,
         "notes": [],
         "phases": phases,
     }
@@ -219,6 +220,12 @@ def main():
                 f"v{init_data.get('flow_version')}, plugin is "
                 f"v{plugin_version}. Run /flow:init to upgrade.",
             )
+        framework = init_data.get("framework")
+        if framework not in ("rails", "python"):
+            raise SetupError(
+                "init_check",
+                "Missing framework in .flow.json. Run /flow:init to configure.",
+            )
 
         # Step 2a — Git pull
         _git_pull(project_root)
@@ -234,7 +241,7 @@ def main():
 
         # Step 2f — Create state file
         _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                           light_mode=light_mode)
+                           light_mode=light_mode, framework=framework)
         _log(project_root, branch, f"create .flow-states/{branch}.json (exit 0)")
 
         output = {
