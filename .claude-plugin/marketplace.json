@@ -1,18 +1,18 @@
 {
   "name": "flow-marketplace",
-  "description": "Opinionated Ruby on Rails development lifecycle for Claude Code",
+  "description": "Opinionated development lifecycle for Claude Code — supports Rails and Python",
   "owner": {
     "name": "Ben Kruger"
   },
   "metadata": {
-    "description": "Opinionated Ruby on Rails development lifecycle for Claude Code",
+    "description": "Opinionated development lifecycle for Claude Code — supports Rails and Python",
     "version": "0.12.0"
   },
   "plugins": [
     {
       "name": "flow",
       "source": "./",
-      "description": "Opinionated Ruby on Rails development lifecycle — worktree-first, TDD, phase-gated workflow for Claude Code",
+      "description": "Opinionated development lifecycle — worktree-first, TDD, phase-gated workflow for Claude Code. Supports Rails and Python",
       "version": "0.12.0",
       "strict": true
     }

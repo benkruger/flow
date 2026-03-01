@@ -1,6 +1,6 @@
 {
   "name": "flow",
-  "description": "Opinionated Ruby on Rails development lifecycle for Claude Code",
+  "description": "Opinionated development lifecycle for Claude Code — supports Rails and Python",
   "version": "0.12.0",
   "author": {
     "name": "Ben Kruger"
@@ -8,5 +8,5 @@
   "homepage": "https://benkruger.github.io/flow",
   "repository": "https://github.com/benkruger/flow",
   "license": "MIT",
-  "keywords": ["ruby", "rails", "postgresql", "redis", "tdd", "workflow"]
+  "keywords": ["rails", "python", "tdd", "workflow", "sdlc"]
 }
