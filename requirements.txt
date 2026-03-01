@@ -1,3 +1,4 @@
 pymarkdownlnt
 pytest
 pytest-cov
+pytest-xdist
