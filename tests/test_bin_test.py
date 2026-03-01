@@ -61,3 +61,12 @@ def test_passes_arguments_through(test_project):
     assert result.returncode == 0
     assert "test_ok" in result.stdout
     assert "test_also" in result.stdout
+
+
+def test_passes_no_cov_flag(test_project):
+    """bin/test must always pass --no-cov so coverage is skipped."""
+    (test_project / "tests" / "test_pass.py").write_text(
+        "def test_ok(): assert True\n"
+    )
+    result = _run(test_project, "tests/", "-v", "--collect-only")
+    assert "--no-cov" in (test_project / "bin" / "test").read_text()
