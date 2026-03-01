@@ -47,7 +47,7 @@ The script handles:
 
 - Reading or creating `.claude/settings.json`
 - Merging FLOW permissions (additive only — preserves existing entries)
-- Setting `defaultMode` to `acceptEdits` if not already set
+- Setting `defaultMode` to `acceptEdits` (overrides existing values — FLOW requires this for state file writes without prompts)
 - Writing `.flow.json` with version marker and framework
 - Adding `.flow-states/` and `.worktrees/` to `.git/info/exclude`
 
@@ -76,6 +76,7 @@ All permissions (universal + both framework sets) for reference:
       "Bash(git push -u *)",
       "Bash(git reset HEAD)",
       "Bash(git worktree *)",
+      "Bash(git pull origin *)",
       "Bash(gh pr create *)",
       "Bash(gh pr edit *)",
       "Bash(gh pr close *)",

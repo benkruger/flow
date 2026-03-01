@@ -106,8 +106,35 @@ def _permission_to_regex(perm):
 
 # Auto-allowed commands that Claude Code never prompts for (read-only)
 AUTO_ALLOWED = {"cd", "cat", "git status", "git diff", "git log", "git branch",
-                "git show", "git blame", "git worktree list", "git pull",
+                "git show", "git blame", "git worktree list",
                 "git rev-parse"}
+
+
+PLACEHOLDER_SUBS = {
+    "<feature-name>": "test-feature",
+    "<branch>": "test-branch",
+    "<project_root>": "/tmp/test",
+    "<framework>": "rails",
+    "<worktree_path>": ".worktrees/test-branch",
+    "<pr_number>": "123",
+    "<note_text>": "test note",
+    "<current-branch>": "test-branch",
+    "<test/path/to/file_test.rb>": "test/models/user_test.rb",
+    "<tests/path/to/test_file.py>": "tests/test_foo.py",
+}
+
+
+def _substitute_placeholders(line):
+    """Replace angle-bracket placeholders with concrete test values.
+
+    Returns the substituted line, or None if unrecognized placeholders remain.
+    """
+    for placeholder, value in PLACEHOLDER_SUBS.items():
+        line = line.replace(placeholder, value)
+    # If any angle-bracket placeholders remain, skip (safety net)
+    if re.search(r"<[a-z_/-]+>", line, re.IGNORECASE):
+        return None
+    return line
 
 
 def _extract_primary_command(bash_block):
@@ -129,9 +156,9 @@ def _extract_primary_command(bash_block):
     if "COMMAND" in line:
         return None
 
-    # Skip angle-bracket placeholders (e.g. <branch>, <feature-name>)
-    # These are documentation templates, not executable commands
-    if re.search(r"<[a-z_-]+>", line, re.IGNORECASE):
+    # Substitute angle-bracket placeholders with concrete test values
+    line = _substitute_placeholders(line)
+    if line is None:
         return None
 
     # Strip cd prefix: cd <path> && REST -> REST
@@ -147,6 +174,10 @@ def _extract_primary_command(bash_block):
 
     # Collapse multi-line (backslash continuation)
     line = re.sub(r'\s*\\\n\s*', ' ', line)
+
+    # Take only the first line (multi-line blocks list alternatives)
+    if "\n" in line:
+        line = line.split("\n")[0].strip()
 
     return line if line else None
 
@@ -166,8 +197,9 @@ def _extract_full_command(bash_block):
     if "COMMAND" in line:
         return None
 
-    # Skip angle-bracket placeholders (e.g. <branch>, <feature-name>)
-    if re.search(r"<[a-z_-]+>", line, re.IGNORECASE):
+    # Substitute angle-bracket placeholders with concrete test values
+    line = _substitute_placeholders(line)
+    if line is None:
         return None
 
     # NOTE: cd prefix is NOT stripped — preserves the full command
@@ -177,6 +209,10 @@ def _extract_full_command(bash_block):
 
     line = line.strip()
     line = re.sub(r'\s*\\\n\s*', ' ', line)
+
+    # Take only the first line (multi-line blocks list alternatives)
+    if "\n" in line:
+        line = line.split("\n")[0].strip()
 
     return line if line else None
 

@@ -115,7 +115,8 @@ def test_settings_preserves_existing_entries(git_repo):
     assert "Bash(custom deny)" in settings["permissions"]["deny"]
 
 
-def test_settings_preserves_existing_default_mode(git_repo):
+def test_settings_overrides_existing_default_mode(git_repo):
+    """FLOW always sets defaultMode to acceptEdits, even if project had plan."""
     settings_dir = git_repo / ".claude"
     settings_dir.mkdir()
     existing = {
@@ -127,10 +128,11 @@ def test_settings_preserves_existing_default_mode(git_repo):
     }
     (settings_dir / "settings.json").write_text(json.dumps(existing))
 
-    _run(git_repo)
+    result = _run(git_repo)
 
     settings = json.loads((settings_dir / "settings.json").read_text())
-    assert settings["permissions"]["defaultMode"] == "plan"
+    assert settings["permissions"]["defaultMode"] == "acceptEdits"
+    assert "overriding" in result.stderr.lower()
 
 
 def test_settings_no_duplicate_entries(git_repo):

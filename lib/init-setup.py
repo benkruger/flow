@@ -24,6 +24,7 @@ UNIVERSAL_ALLOW = [
     "Bash(git push -u *)",
     "Bash(git reset HEAD)",
     "Bash(git worktree *)",
+    "Bash(git pull origin *)",
     "Bash(gh pr create *)",
     "Bash(gh pr edit *)",
     "Bash(gh pr close *)",
@@ -96,9 +97,16 @@ def merge_settings(project_root, framework):
         if entry not in existing_deny:
             settings["permissions"]["deny"].append(entry)
 
-    # Set defaultMode only if not already set
-    if "defaultMode" not in settings["permissions"]:
-        settings["permissions"]["defaultMode"] = "acceptEdits"
+    # Always set defaultMode to acceptEdits — FLOW requires it for state
+    # file writes without permission prompts
+    existing_mode = settings["permissions"].get("defaultMode")
+    if existing_mode and existing_mode != "acceptEdits":
+        print(
+            f"Warning: Overriding defaultMode '{existing_mode}' with "
+            f"'acceptEdits' — FLOW requires acceptEdits for state file writes",
+            file=sys.stderr,
+        )
+    settings["permissions"]["defaultMode"] = "acceptEdits"
 
     # Write back
     settings_dir.mkdir(parents=True, exist_ok=True)
