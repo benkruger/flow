@@ -9,4 +9,4 @@ else
   PYTHON="python3"
 fi
 
-"$PYTHON" -m pytest "$@"
+"$PYTHON" -m pytest --no-cov "$@"
