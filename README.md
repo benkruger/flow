@@ -252,6 +252,36 @@ FLOW is part of a growing community of disciplined Claude Code plugins. Two proj
 
 ---
 
+## Maintainer Tools
+
+These skills and scripts live in the FLOW repo itself (`.claude/skills/` and `lib/`). They are not part of the user-facing plugin — they exist to develop, test, and release FLOW.
+
+| Command | What it does |
+|---------|-------------|
+| `/commit` | Full diff review, commit message draft, approval gate, pull-before-push |
+| `/reflect` | Review session mistakes against CLAUDE.md rules, propose targeted improvements |
+| `/release` | Bump version in plugin.json and marketplace.json, tag, push, create GitHub Release |
+| `/qa` | Link plugin cache to source repo, test in a live session, unlink when done |
+
+### Local QA Workflow
+
+Every plugin change can be tested locally before releasing:
+
+```bash
+/qa
+```
+
+This runs `bin/ci`, then symlinks the installed plugin cache to the source repo (`bin/flow dev-link`). You open a new Claude Code session in a target project, test whatever you need, come back, and `/qa` unlinks the cache and reports the result.
+
+The underlying scripts can also be run directly:
+
+```bash
+bin/flow dev-link      # symlink cache → source repo
+bin/flow dev-unlink    # restore original cache
+```
+
+---
+
 ## Updating
 
 From the command line:
