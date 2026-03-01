@@ -16,12 +16,13 @@ One-time project setup. Configures workspace permissions in `.claude/settings.js
 
 ## What It Does
 
-1. Reads `.claude/settings.json` (or starts with `{}`)
-2. Merges FLOW allow/deny permission entries, preserving existing entries
-3. Writes the merged `.claude/settings.json`
-4. Writes `.flow.json` with the current FLOW version
-5. Adds `.flow-states/` and `.worktrees/` to `.git/info/exclude`
-6. Commits `.claude/settings.json` and `.flow.json`
+1. Asks which framework the project uses (Rails or Python)
+2. Reads `.claude/settings.json` (or starts with `{}`)
+3. Merges FLOW allow/deny permission entries (universal + framework-specific), preserving existing entries
+4. Writes the merged `.claude/settings.json`
+5. Writes `.flow.json` with the current FLOW version and framework
+6. Adds `.flow-states/` and `.worktrees/` to `.git/info/exclude`
+7. Commits `.claude/settings.json` and `.flow.json`
 
 ---
 

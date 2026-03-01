@@ -28,6 +28,7 @@ One file per active feature. Multiple features can run simultaneously with no co
   "pr_url": "https://github.com/org/repo/pull/42",
   "started_at": "2026-02-20T10:00:00Z",
   "current_phase": 2,
+  "framework": "rails",
   "phases": {
     "1": {
       "name": "Start",
@@ -73,6 +74,7 @@ One file per active feature. Multiple features can run simultaneously with no co
 | `pr_url` | string | Full GitHub PR URL |
 | `started_at` | ISO 8601 | When the feature was started (Phase 1 entry) |
 | `current_phase` | integer | The currently active phase number |
+| `framework` | string | `"rails"` or `"python"` — set during `/flow:init`, copied to state by `/flow:start` |
 | `mode` | string / absent | `"light"` for light mode features, absent for standard mode |
 | `notes` | array | Corrections captured via `/flow:note` — see [Notes Array](#notes-array) |
 
@@ -127,6 +129,9 @@ and session restarts. Read by Reflect as a primary source.
 ## Plan Object
 
 Added to the state file progressively as Plan sections are approved.
+Section names are framework-defined (Rails uses `schema`, `models`,
+`workers`, `controllers`, `integration`; Python uses `modules`, `scripts`,
+`tests`).
 
 ```json
 "plan": {
@@ -187,7 +192,10 @@ Finding statuses: `pending`, `fixed`
 
 ## Design Object
 
-Added to the state file when Phase 3: Design completes.
+Added to the state file when Phase 3: Design completes. The change category
+fields are framework-defined (Rails uses `schema_changes`, `model_changes`,
+`controller_changes`, `worker_changes`, `route_changes`; Python uses
+`module_changes`, `test_changes`, `script_changes`).
 
 ```json
 "design": {
