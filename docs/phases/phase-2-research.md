@@ -13,15 +13,7 @@ Research answers one question: *what exists?* Not what we will build — that is
 
 ## Why Research First
 
-Rails has conventions that bite you if you skip research:
-
-- Callbacks in parent classes that silently overwrite values you pass to `update!`
-- Soft deletes with `default_scope` hiding records you think you are querying
-- The Base/Create model split — you need to understand both sides
-- Test helpers in `test/support/` that must be used — never `Model::Create.create!` directly
-- Schema lives in `data/release.sql`, not migrations
-
-Your `CLAUDE.md` knows these patterns at a project level. Research applies them to the *specific files* being touched.
+Every framework has conventions that bite you if you skip research — callbacks that silently overwrite values, hidden scoping, test infrastructure that must be used. Your `CLAUDE.md` knows these patterns at a project level. Research applies them to the *specific files* being touched. The framework fragment defines which checks to run.
 
 ---
 
@@ -33,7 +25,7 @@ Read `.flow-states/<branch>.json` for feature name, description, and any prior r
 
 ### 2. Explore the codebase
 
-Read all affected models (full class hierarchy), controllers, workers, routes, and schema. Check git history for anything non-obvious.
+Read all affected code — full hierarchy, dependencies, test infrastructure. Check git history for anything non-obvious.
 
 ### 3. Formulate questions
 
@@ -66,7 +58,7 @@ Show findings summary. Require user approval before proceeding to Design.
 By the end of Phase 2:
 
 - A complete list of affected files
-- Rails-specific risks identified and documented
+- Framework-specific risks identified and documented
 - All ambiguities resolved via Q&A
 - Findings persisted to `.flow-states/<branch>.json` for use in Design and Reflect
 - A known-good understanding of what exists before anything changes

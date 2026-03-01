@@ -16,20 +16,7 @@ the code is safe.
 
 ## What Security Checks
 
-The security sub-agent runs 10 checks against the full diff:
-
-| # | Check | What to look for |
-|---|-------|-----------------|
-| 1 | Authorization gaps | Missing `before_action` auth on new actions, skipped auth filters |
-| 2 | Unscoped record access | `find(params[:id])` without scoping to current user/account/tenant |
-| 3 | Mass assignment | `params.permit!`, overly broad `permit`, params passed directly |
-| 4 | SQL injection | String interpolation in `where`, `execute`, `find_by_sql`, `select`, `order` |
-| 5 | Data exposure | Sensitive fields in `as_json`/`to_json`/serializers, PII in logs, credentials |
-| 6 | CSRF bypass | `skip_before_action :verify_authenticity_token` without API-only justification |
-| 7 | Open redirects | `redirect_to` with user-controlled input |
-| 8 | RuboCop disables | Any `# rubocop:disable` in the diff — automatic finding |
-| 9 | Auth test coverage | New auth check with no test for unauthorized/forbidden case |
-| 10 | Route exposure | New route to action with no auth filter |
+The security sub-agent runs 10 checks against the full diff. The specific checks are defined by the framework fragment — each framework has its own security checklist tailored to its common vulnerability patterns (e.g., authorization gaps and CSRF for Rails; command injection and path traversal for Python).
 
 ---
 

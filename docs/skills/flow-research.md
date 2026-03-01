@@ -10,14 +10,14 @@ parent: Skills
 
 **Usage:** `/flow:research`
 
-Explores the codebase before any design or implementation begins. Reads all affected code, discovers risks specific to Rails conventions, asks clarifying questions via tabbed UI, and documents findings in `.flow-states/<branch>.json`.
+Explores the codebase before any design or implementation begins. Reads all affected code, discovers risks specific to framework conventions, asks clarifying questions via tabbed UI, and documents findings in `.flow-states/<branch>.json`.
 
 ---
 
 ## What It Does
 
 1. Reads feature context from `.flow-states/<branch>.json`
-2. Explores all affected models (full class hierarchy), controllers, workers, routes, and schema
+2. Explores all affected code — full hierarchy, dependencies, test infrastructure
 3. Formulates clarifying questions based on what was found
 4. Presents questions in batches of up to 4 using the tabbed `AskUserQuestion` UI — navigate freely with ← → arrows
 5. Documents all findings into `.flow-states/<branch>.json["research"]`
@@ -26,18 +26,9 @@ Explores the codebase before any design or implementation begins. Reads all affe
 
 ---
 
-## Rails-Specific Checks
+## Framework-Specific Checks
 
-Every Research run checks for:
-
-| Concern | Why it matters |
-|---------|---------------|
-| Callback hierarchy | `before_save` in parent classes silently overwrite values passed to `update!` |
-| Soft deletes | `default_scope { where(active: true) }` hides deleted records — use `.unscoped` when needed |
-| Base/Create split | Models have separate classes for reading vs creating — understand both |
-| Test helpers | `test/support/` contains `create_*!` helpers — never use `Model::Create.create!` directly |
-| Worker queues | Check `config/sidekiq.yml` for correct queue names before adding new workers |
-| Schema | `data/release.sql` is the source of truth — not migrations |
+Every Research run checks for framework-specific concerns defined by the framework fragment. Each framework has its own checklist of conventions and gotchas (e.g., callback hierarchy and soft deletes for Rails; circular imports and fixture patterns for Python).
 
 ---
 
@@ -47,7 +38,7 @@ Research writes to `.flow-states/<branch>.json["research"]`:
 
 - `clarifications` — every Q&A pair from the session
 - `affected_files` — all files that will need to change
-- `risks` — Rails-specific gotchas discovered
+- `risks` — framework-specific gotchas discovered
 - `open_questions` — anything still unresolved
 - `summary` — plain English description of what exists
 
@@ -75,7 +66,7 @@ change — not design alternatives. Plan and Review read it unchanged.
 
 - Never proposes solutions — that is Design's job (in light mode, the design object is factual)
 - Never writes or modifies any application code
-- Always reads full class hierarchy for every affected model
+- Always reads full code hierarchy for every affected component
 - Requires user approval before proceeding to Phase 3: Design (or Phase 4: Plan in light mode)
 
 ---

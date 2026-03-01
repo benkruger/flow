@@ -10,7 +10,7 @@ parent: Skills
 
 **Usage:** `/flow:review`
 
-Systematic review against design, research risks, and Rails
+Systematic review against design, research risks, and framework
 anti-patterns. Fixes findings, runs bin/ci after every fix, then
 transitions to Security.
 
@@ -22,11 +22,8 @@ transitions to Security.
 |------|------|
 | Design alignment | Implementation matches `state["design"]` |
 | Research risks | Every risk in `state["research"]["risks"]` accounted for |
-| Associations | `inverse_of:`, `dependent:`, `class_name:` all explicit |
-| Queries | No N+1, no queries in views, no arbitrary `.first`/`.last` |
-| Callbacks | `Current` used correctly, no `update_column` |
-| Soft deletes | `.unscoped` used only where appropriate |
-| Tests | `create_*!` helpers, both branches covered, assertions present |
+| Anti-patterns | Framework-specific checks from the framework fragment |
+| Tests | Test infrastructure used correctly, both branches covered, assertions present |
 | Clarity | Descriptive names, no inline comments, no over-engineering |
 
 ---

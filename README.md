@@ -1,6 +1,6 @@
-# FLOW — Rails Development Lifecycle for Claude Code
+# FLOW — Software Development Lifecycle for Claude Code
 
-An opinionated 9-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces research-first, design-first, TDD discipline on every feature in a Ruby on Rails codebase.
+An opinionated 9-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces research-first, design-first, TDD discipline on every feature. Supports Rails and Python.
 
 **Every feature. Same 9 phases. Same order. No shortcuts.**
 
@@ -25,12 +25,12 @@ Start → Research → Design → Plan → Code → Review → Security → Refl
 
 | Phase | Command | Model | What happens |
 |-------|---------|-------|-------------|
-| **1: Start** | `/flow:start <name>` | Haiku | New worktree, push branch, open PR, `bin/ci` baseline, upgrade gems, `bin/ci` green — Sonnet sub-agent fixes CI failures |
-| **2: Research** | `/flow:research` | Sonnet | Sub-agent reads full class hierarchy, finds callbacks, checks `test/support/`, documents risks |
+| **1: Start** | `/flow:start <name>` | Haiku | New worktree, push branch, open PR, `bin/ci` baseline, upgrade dependencies, `bin/ci` green — Sonnet sub-agent fixes CI failures |
+| **2: Research** | `/flow:research` | Sonnet | Sub-agent explores affected code, finds framework-specific risks, documents findings |
 | **3: Design** | `/flow:design` | **Opus** | Sub-agent validates 2-3 alternatives, user picks one, design is approved before any code |
 | **4: Plan** | `/flow:plan` | Sonnet | Sub-agent verifies tasks are executable, section-by-section approval, TDD ordering |
 | **5: Code** | `/flow:code` | **Opus** | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
-| **6: Review** | `/flow:review` | Sonnet | Sub-agent checks design alignment, research risk coverage, Rails anti-patterns |
+| **6: Review** | `/flow:review` | Sonnet | Sub-agent checks design alignment, research risk coverage, framework anti-patterns |
 | **7: Security** | `/flow:security` | **Opus** | Sub-agent scans diff for vulnerabilities, auth gaps, data exposure, injection risks |
 | **8: Reflect** | `/flow:reflect` | Sonnet | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
 | **9: Cleanup** | `/flow:cleanup` | Haiku | Worktree removed, state file deleted, feature done |
@@ -46,7 +46,7 @@ In any Claude Code session:
 /plugin install flow@flow-marketplace
 ```
 
-Then initialize in your Rails project (once per project, and again after each FLOW upgrade):
+Then initialize in your project (once per project, and again after each FLOW upgrade):
 
 ```bash
 /flow:init
@@ -58,7 +58,7 @@ Start a new Claude Code session so permissions take effect, then start a feature
 /flow:start invoice pdf export
 ```
 
-This creates branch `invoice-pdf-export`, a worktree at `.worktrees/invoice-pdf-export`, opens a GitHub PR, runs `bin/ci` to establish a baseline, upgrades gems, runs `bin/ci` again to confirm green, and lands you in Phase 2: Research.
+This creates branch `invoice-pdf-export`, a worktree at `.worktrees/invoice-pdf-export`, opens a GitHub PR, runs `bin/ci` to establish a baseline, upgrades dependencies, runs `bin/ci` again to confirm green, and lands you in Phase 2: Research.
 
 ### Light Mode
 
@@ -107,10 +107,10 @@ Six phases use sub-agents. Research, Design, Plan, Review, and Security launch E
 Main conversation          Sub-agent (Explore)
       |                          |
       |─── Task: explore ───────>|
-      |    (what to look for)    |─── Read models
-      |                          |─── Find callbacks
-      |                          |─── Check test/support/
-      |                          |─── Scan routes, schema...
+      |    (what to look for)    |─── Read affected code
+      |                          |─── Find conventions/risks
+      |                          |─── Check test infrastructure
+      |                          |─── Scan dependencies...
       |<── Structured findings ──|
       |
       |─── Makes decisions
@@ -118,7 +118,7 @@ Main conversation          Sub-agent (Explore)
       |─── Updates state file
 ```
 
-Phase 1 also uses a **general-purpose Sonnet sub-agent** when `bin/ci` fails — whether from a dirty main branch, RuboCop changes after gem upgrades, or flaky tests. The sub-agent runs `rubocop -A`, fixes test failures, iterates up to 3 times, then reports back. The main Haiku agent handles the mechanical setup at speed.
+Phase 1 also uses a **general-purpose Sonnet sub-agent** when `bin/ci` fails — whether from a dirty main branch, dependency upgrade breakage, or flaky tests. The sub-agent diagnoses failures, fixes them, iterates up to 3 times, then reports back. The main Haiku agent handles the mechanical setup at speed.
 
 By the time Code begins, every affected file has been read, every callback has been found, every risk has been documented. Code doesn't re-explore — it trusts the state file. This keeps the main context clean for decision-making throughout a long session.
 
@@ -132,7 +132,7 @@ FLOW automatically selects the right model for each phase — Opus for hard thin
 | 2: Research | Sonnet | Sub-agent does the heavy codebase reading |
 | 3: Design | **Opus** | Architectural judgment — bad design cascades through all later phases |
 | 4: Plan | Sonnet | Structured task generation, constrained by locked design |
-| 5: Code | **Opus** | Writing correct code against complex Rails codebase |
+| 5: Code | **Opus** | Writing correct code against complex codebase |
 | 6: Review | Sonnet | Sub-agent analyzes diff, fixes are targeted and small |
 | 7: Security | **Opus** | Security analysis requires architectural reasoning about attack vectors and data flows |
 | 8: Reflect | Sonnet | Synthesizing learnings into reusable patterns |
@@ -143,8 +143,8 @@ FLOW automatically selects the right model for each phase — Opus for hard thin
 
 Every feature has a state file at `.flow-states/<branch>.json`. It stores:
 
-- **Research findings** — affected files, callbacks, risks, clarifications
-- **Design decisions** — chosen approach, schema/model/controller/worker changes, rationale
+- **Research findings** — affected files, risks, clarifications
+- **Design decisions** — chosen approach, change categories (framework-defined), rationale
 - **Plan tasks** — ordered, section-by-section, with TDD flags and status
 - **Notes** — corrections captured automatically throughout the session
 - **Timing** — per-phase cumulative seconds and visit counts
@@ -205,12 +205,12 @@ When returning, state is reset appropriately. Later phases are invalidated. Prio
 ## What It Enforces
 
 - **Worktree isolation** — main is never touched directly; multiple features run in parallel
-- **Research before design** — full class hierarchy read, callbacks found, risks documented
+- **Research before design** — affected code explored, risks found and documented
 - **Design alternatives required** — 2-3 distinct approaches validated before user picks one
 - **TDD always** — test must fail before implementation is written; test must pass before commit
 - **`bin/ci` gate** — must be green before every commit and every phase transition
 - **100% test coverage** — Code phase cannot transition to Review without it
-- **No disabling RuboCop** — fix the code, not the cop; no `# rubocop:disable` comments
+- **No disabling linters** — fix the code, not the linter; no lint suppression comments
 - **Commit discipline** — imperative verb + tl;dr + per-file breakdown, every commit
 
 ---
@@ -246,7 +246,7 @@ Three independent mechanisms enforce this:
 
 FLOW is part of a growing community of disciplined Claude Code plugins. Two projects worth knowing that inspired and motivated me:
 
-- **[metaswarm](https://github.com/dsifry/metaswarm)** by Dave Sifry — a multi-agent orchestration framework with 18 specialized agents, cross-model adversarial review, and full pipeline orchestration from GitHub issue to merged PR. If FLOW is disciplined Rails development, metaswarm is disciplined development at scale.
+- **[metaswarm](https://github.com/dsifry/metaswarm)** by Dave Sifry — a multi-agent orchestration framework with 18 specialized agents, cross-model adversarial review, and full pipeline orchestration from GitHub issue to merged PR. If FLOW is disciplined feature development, metaswarm is disciplined development at scale.
 
 - **[Superpowers](https://github.com/obra/superpowers)** by Jesse Vincent — foundational agentic skills for Claude Code including TDD, systematic debugging, and plan writing. Proved that disciplined agent workflows are not overhead — they're what make autonomous development reliable.
 

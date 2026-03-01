@@ -26,12 +26,9 @@ For each task in the plan, in order:
 
 ---
 
-## Rails Testing Rules
+## Framework Testing Rules
 
-- Always use `create_*!` helpers from `test/support/` — never `Model::Create.create!`
-- Always `update!` — never `update_column`
-- Always read full class hierarchy before touching a model (model + parent + ApplicationRecord)
-- Always check `config/sidekiq.yml` for correct worker queue
+Architecture checks and testing conventions are defined by the framework fragment. Each framework enforces its own rules (e.g., Rails requires test helpers and full class hierarchy reads; Python requires fixture checks and import analysis).
 
 ---
 
@@ -39,9 +36,7 @@ For each task in the plan, in order:
 
 During the TDD cycle, run the specific file for fast feedback:
 
-```bash
-bin/rails test test/models/payment/base_test.rb
-```
+The targeted test command is defined by the framework fragment (e.g., `bin/rails test <file>` for Rails, `bin/test <file>` for Python).
 
 `bin/ci` only runs when the task is done and the diff is approved.
 
@@ -62,7 +57,7 @@ By the end of Phase 5:
 - Every planned task complete and committed
 - Full TDD — every implementation has a test that was written first
 - `bin/ci` green with 100% coverage
-- All Rails architecture standards followed
+- All framework architecture standards followed
 
 ---
 

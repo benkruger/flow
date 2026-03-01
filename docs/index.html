@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FLOW — Rails Development Lifecycle for Claude Code</title>
-  <meta name="description" content="An opinionated 9-phase software development lifecycle plugin for Claude Code, built for Ruby on Rails. Research-first, design-first, TDD. Every feature, same phases, no shortcuts.">
+  <title>FLOW — Software Development Lifecycle for Claude Code</title>
+  <meta name="description" content="An opinionated 9-phase software development lifecycle plugin for Claude Code. Research-first, design-first, TDD. Every feature, same phases, no shortcuts. Supports Rails and Python.">
   <style>
     :root {
       --bg: #ffffff;
@@ -475,7 +475,7 @@
 
   <header>
     <h1><a href="https://github.com/benkruger/flow" style="color: inherit; text-decoration: none;"><span>FLOW</span></a></h1>
-    <p class="tagline">An opinionated 9-phase software development lifecycle for Claude Code — built for Ruby on Rails. Every feature follows the same phases in the same order. No shortcuts.</p>
+    <p class="tagline">An opinionated 9-phase software development lifecycle for Claude Code. Every feature follows the same phases in the same order. No shortcuts. Supports Rails and Python.</p>
   </header>
 
   <!-- WHY -->
@@ -495,13 +495,13 @@
       <div class="pipeline-step">
         <div class="step-num">1</div>
         <span class="step-label">Start</span>
-        <span class="step-detail">Worktree &middot; push branch &middot; PR &middot; bin/ci baseline &middot; bundle update &middot; bin/ci green</span>
+        <span class="step-detail">Worktree &middot; push branch &middot; PR &middot; bin/ci baseline &middot; dependency upgrade &middot; bin/ci green</span>
         <span class="sub-agent-badge">sub-agent</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">2</div>
         <span class="step-label">Research</span>
-        <span class="step-detail">Full class hierarchy &middot; callbacks &middot; test/support/ &middot; risks documented</span>
+        <span class="step-detail">Affected code explored &middot; conventions checked &middot; risks documented</span>
         <span class="sub-agent-badge">sub-agent</span>
       </div>
       <div class="pipeline-step">
@@ -524,7 +524,7 @@
       <div class="pipeline-step">
         <div class="step-num">6</div>
         <span class="step-label">Review</span>
-        <span class="step-detail">Design alignment &middot; research risk coverage &middot; Rails anti-patterns</span>
+        <span class="step-detail">Design alignment &middot; research risk coverage &middot; framework anti-patterns</span>
         <span class="sub-agent-badge">sub-agent</span>
       </div>
       <div class="pipeline-step">
@@ -608,7 +608,7 @@
       <li><strong>TDD always</strong> &mdash; test must fail before implementation is written; test must pass before commit</li>
       <li><strong>bin/ci gate</strong> &mdash; must be green before every commit and every phase transition</li>
       <li><strong>100% test coverage</strong> &mdash; Code cannot transition to Review until coverage is complete</li>
-      <li><strong>No disabling RuboCop</strong> &mdash; fix the code, not the cop; no <code># rubocop:disable</code> comments</li>
+      <li><strong>No disabling linters</strong> &mdash; fix the code, not the linter; no lint suppression comments</li>
       <li><strong>Commit discipline</strong> &mdash; imperative verb + tl;dr + per-file breakdown, every commit</li>
     </ul>
 
@@ -789,7 +789,7 @@
     <h2>Part of the Ecosystem</h2>
     <p>FLOW is part of a growing community of disciplined Claude Code plugins. Two projects worth knowing that inspired and motivated me:</p>
     <div class="callout">
-      <p><strong><a href="https://github.com/dsifry/metaswarm">metaswarm</a></strong> by Dave Sifry. A multi-agent orchestration framework with 18 specialized agents, cross-model adversarial review, and full pipeline orchestration from GitHub issue to merged PR. If FLOW is disciplined Rails development, metaswarm is disciplined development at scale.</p>
+      <p><strong><a href="https://github.com/dsifry/metaswarm">metaswarm</a></strong> by Dave Sifry. A multi-agent orchestration framework with 18 specialized agents, cross-model adversarial review, and full pipeline orchestration from GitHub issue to merged PR. If FLOW is disciplined feature development, metaswarm is disciplined development at scale.</p>
     </div>
     <div class="callout">
       <p><strong><a href="https://github.com/obra/superpowers">Superpowers</a></strong> by Jesse Vincent. Foundational agentic skills for Claude Code including TDD, systematic debugging, and plan writing. Proved that disciplined agent workflows are not overhead &mdash; they&rsquo;re what make autonomous development reliable.</p>
@@ -809,7 +809,7 @@
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
       </button>
     </div>
-    <p style="color: var(--text-muted); font-size: 15px; margin-top: 20px; margin-bottom: 12px;">Step 2: Initialize in your Rails project (once per project)</p>
+    <p style="color: var(--text-muted); font-size: 15px; margin-top: 20px; margin-bottom: 12px;">Step 2: Initialize in your project (once per project)</p>
     <div style="position: relative;">
       <pre style="font-size: 15px; padding: 20px 24px; margin: 0;"><code>/flow:init</code></pre>
       <button onclick="copyInit()" style="position: absolute; top: 12px; right: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; cursor: pointer; color: var(--text-muted); line-height: 1; transition: color 0.15s, border-color 0.15s;" aria-label="Copy" id="copy-btn-init">
@@ -823,7 +823,7 @@
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
       </button>
     </div>
-    <p style="color: var(--text-muted); font-size: 14px; margin-top: 12px; margin-bottom: 12px;">FLOW creates a git worktree, opens a GitHub PR, runs <code>bin/ci</code> to establish a baseline, upgrades gems, runs <code>bin/ci</code> again to confirm green, and lands you in Phase 2: Research.</p>
+    <p style="color: var(--text-muted); font-size: 14px; margin-top: 12px; margin-bottom: 12px;">FLOW creates a git worktree, opens a GitHub PR, runs <code>bin/ci</code> to establish a baseline, upgrades dependencies, runs <code>bin/ci</code> again to confirm green, and lands you in Phase 2: Research.</p>
     <p style="color: var(--text-muted); font-size: 15px; margin-top: 12px; margin-bottom: 12px;">For bug fixes and small changes, use light mode:</p>
     <div style="position: relative;">
       <pre style="font-size: 15px; padding: 20px 24px; margin: 0;"><code>/flow:start --light fix login bug</code></pre>

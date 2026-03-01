@@ -30,21 +30,15 @@ For each task:
 
 ---
 
-## Rails Architecture Enforced
+## Framework Architecture Enforced
 
-| Rule | Detail |
-|------|--------|
-| Test helpers | Always `create_*!` from `test/support/` — never direct creation |
-| Model changes | Read full class hierarchy before touching any model |
-| Callbacks | Check parent classes — callbacks silently overwrite values |
-| Workers | Check `config/sidekiq.yml` for correct queue |
-| Updates | Always `update!` — never `update_column` |
+Architecture checks are defined by the framework fragment. Each framework enforces its own rules for reading code before writing, using test infrastructure correctly, and following framework conventions.
 
 ---
 
 ## Test Runs
 
-- **During TDD**: `bin/rails test <specific_file>` — fast feedback
+- **During TDD**: targeted test command from framework fragment — fast feedback
 - **Before commit**: `bin/ci` — full suite, must be green
 - **End of phase**: `coverage/uncovered.txt` must be empty
 

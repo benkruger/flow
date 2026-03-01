@@ -15,17 +15,7 @@ TDD order is built in: tests always come before implementations.
 
 ## Sections
 
-Tasks are generated in Rails execution order:
-
-| Section | What it covers |
-|---------|---------------|
-| Schema | `data/release.sql` changes — tables, columns, indexes |
-| Models + Tests | Base/Create split, TDD pairs for each model |
-| Workers + Tests | Sidekiq workers, TDD pairs (if needed) |
-| Controllers + Routes | Routes, controller actions, TDD pairs |
-| Integration Tests | End-to-end test coverage |
-
-Sections with no changes are skipped automatically.
+Tasks are generated in execution order defined by the framework fragment. Each framework defines its own sections (e.g., Rails uses schema/models/workers/controllers/integration; Python uses modules/scripts/tests). Sections with no changes are skipped automatically.
 
 ---
 

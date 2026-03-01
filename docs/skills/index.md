@@ -17,12 +17,12 @@ These skills correspond directly to a workflow phase. Each one starts and ends w
 
 | Skill | Phase | Description |
 |-------|-------|-------------|
-| [`/flow:start`](flow-start.md) | 1 — Start | Create the worktree, upgrade gems, open the PR. Use `--light` for bug fixes |
+| [`/flow:start`](flow-start.md) | 1 — Start | Create the worktree, upgrade dependencies, open the PR. Use `--light` for bug fixes |
 | [`/flow:research`](flow-research.md) | 2 — Research | Explore codebase, ask clarifying questions, document findings |
 | [`/flow:design`](flow-design.md) | 3 — Design | Propose 2-3 alternatives, get approval before any code |
 | [`/flow:plan`](flow-plan.md) | 4 — Plan | Break design into ordered TDD tasks, section by section |
 | [`/flow:code`](flow-code.md) | 5 — Code | TDD task by task, diff review, bin/ci gate before each commit |
-| [`/flow:review`](flow-review.md) | 6 — Review | Design alignment, research risk coverage, Rails anti-pattern check |
+| [`/flow:review`](flow-review.md) | 6 — Review | Design alignment, research risk coverage, framework anti-pattern check |
 | [`/flow:security`](flow-security.md) | 7 — Security | Scan for security issues in the feature diff |
 | [`/flow:reflect`](flow-reflect.md) | 8 — Reflect | Extract learnings, update CLAUDE.md, note plugin gaps |
 | [`/flow:cleanup`](flow-cleanup.md) | 9 — Cleanup | Remove worktree and delete state file — final phase |

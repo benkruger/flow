@@ -54,7 +54,7 @@ The user confirms or overrides with one click.
 > "Never assume branch-behind is unlikely in a multi-session workflow"
 
 **Bad:** Feature-specific note that only applies here
-> "Payment::Base uses the critical Sidekiq queue"
+> "The payments module uses a specific queue configuration"
 
 ---
 

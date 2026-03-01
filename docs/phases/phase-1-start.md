@@ -9,7 +9,7 @@ nav_order: 2
 
 **Example:** `/flow:start app payment webhooks`
 
-This is always the first phase, for every feature without exception. It establishes an isolated workspace, verifies the health of the codebase, upgrades all dependencies, configures workspace permissions, and opens the PR before any feature work begins.
+This is always the first phase, for every feature without exception. It establishes an isolated workspace, verifies the health of the codebase, configures workspace permissions, and opens the PR before any feature work begins. Framework-specific setup (dependency upgrades, CI fixes) is handled by the framework fragment.
 
 ---
 
@@ -39,37 +39,13 @@ Run `bin/ci` inside the worktree to capture the health of the codebase before an
 - **Passes** — note it as the baseline and continue
 - **Fails** — launch a sub-agent to diagnose and fix. If not fixable after three attempts, stop and report.
 
-### 4. Upgrade gems
+### 4. Framework-specific setup
 
-```bash
-bundle update --all
-```
+Runs framework-specific steps defined in the framework fragment (e.g., dependency upgrades for Rails, baseline checks for Python). A general-purpose Sonnet sub-agent handles any CI failures — max 3 attempts before escalating to the user.
 
-Upgrades all gems to their latest compatible versions. Runs inside the worktree so `Gemfile.lock` changes stay on the feature branch.
+### 5. Commit and push
 
-### 5. Post-update `bin/ci`
-
-Run `bin/ci` again after the gem upgrade. Gem updates commonly introduce:
-
-- New RuboCop rules requiring code changes
-- Breaking API changes causing test failures
-- Deprecation warnings promoted to errors
-
-If failures occur, the same CI fix sub-agent handles diagnosis and repair.
-
-### 6. Fix breakage (if needed)
-
-A general-purpose Sonnet sub-agent handles CI failures from Steps 3 and 5:
-
-1. **RuboCop violations** — `rubocop -A` to auto-fix
-2. **Test failures** — read the failing test and fix the code
-3. **Coverage gaps** — read `test/coverage/uncovered.txt` and write the missing test
-
-Max 3 attempts. Will not proceed until `bin/ci` is green.
-
-### 7. Commit and push
-
-Use `/flow:commit` to review and commit the changes (`Gemfile.lock` and any gem-related fixes).
+Use `/flow:commit` to review and commit any changes from the framework-specific setup.
 
 ---
 
@@ -81,7 +57,7 @@ By the end of Phase 1:
 - A branch pushed to remote with CI running
 - An open PR
 - Workspace permissions configured in `.claude/settings.json`
-- All gems upgraded and `bin/ci` green
+- Dependencies current and `bin/ci` green
 - A clean, known-good baseline to build from
 
 ---
