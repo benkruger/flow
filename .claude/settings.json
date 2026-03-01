@@ -1,6 +1,6 @@
 {
   "permissions": {
-    "defaultMode": "plan",
+    "defaultMode": "acceptEdits",
     "allow": [
       "Bash(git add *)",
       "Bash(git commit *)",
