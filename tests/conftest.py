@@ -63,6 +63,10 @@ def git_repo(tmp_path):
         capture_output=True, check=True,
     )
     subprocess.run(
+        ["git", "config", "commit.gpgsign", "false"], cwd=tmp_path,
+        capture_output=True, check=True,
+    )
+    subprocess.run(
         ["git", "commit", "--allow-empty", "-m", "init"], cwd=tmp_path,
         capture_output=True, check=True,
     )

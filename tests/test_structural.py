@@ -161,3 +161,11 @@ def test_every_script_has_a_test_file():
 def test_pytest_xdist_in_requirements():
     requirements = (REPO_ROOT / "requirements.txt").read_text()
     assert "pytest-xdist" in requirements, "pytest-xdist missing from requirements.txt"
+
+
+def test_n_auto_in_pytest_ini():
+    import configparser
+    config = configparser.ConfigParser()
+    config.read(REPO_ROOT / "pytest.ini")
+    addopts = config.get("pytest", "addopts")
+    assert "-n auto" in addopts, "-n auto not found in pytest.ini addopts"

@@ -46,6 +46,10 @@ def git_repo_with_remote(tmp_path):
         ["git", "config", "user.name", "Test"],
         cwd=str(repo), capture_output=True, check=True,
     )
+    subprocess.run(
+        ["git", "config", "commit.gpgsign", "false"],
+        cwd=str(repo), capture_output=True, check=True,
+    )
     # Initial commit so main branch exists
     subprocess.run(
         ["git", "commit", "--allow-empty", "-m", "init"],
@@ -179,6 +183,10 @@ def test_git_pull_failure_returns_error(tmp_path):
     )
     subprocess.run(
         ["git", "config", "user.name", "Test"],
+        cwd=tmp_path, capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["git", "config", "commit.gpgsign", "false"],
         cwd=tmp_path, capture_output=True, check=True,
     )
     subprocess.run(
