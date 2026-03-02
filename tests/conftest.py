@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -47,30 +48,39 @@ def _subprocess_coverage():
     os.unlink(config_path)
 
 
+@pytest.fixture(scope="session")
+def _git_repo_template(tmp_path_factory):
+    """Create a git repo template once per worker for copying."""
+    template = tmp_path_factory.mktemp("git-template")
+    subprocess.run(
+        ["git", "init"], cwd=template,
+        capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@test.com"], cwd=template,
+        capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"], cwd=template,
+        capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["git", "config", "commit.gpgsign", "false"], cwd=template,
+        capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "init"], cwd=template,
+        capture_output=True, check=True,
+    )
+    return template
+
+
 @pytest.fixture
-def git_repo(tmp_path):
-    """Create a minimal git repo with an initial commit."""
-    subprocess.run(
-        ["git", "init"], cwd=tmp_path,
-        capture_output=True, check=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.email", "test@test.com"], cwd=tmp_path,
-        capture_output=True, check=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test"], cwd=tmp_path,
-        capture_output=True, check=True,
-    )
-    subprocess.run(
-        ["git", "config", "commit.gpgsign", "false"], cwd=tmp_path,
-        capture_output=True, check=True,
-    )
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "init"], cwd=tmp_path,
-        capture_output=True, check=True,
-    )
-    return tmp_path
+def git_repo(_git_repo_template, tmp_path):
+    """Copy the template git repo for per-test isolation."""
+    repo = tmp_path / "repo"
+    shutil.copytree(_git_repo_template, repo)
+    return repo
 
 
 @pytest.fixture
