@@ -23,7 +23,7 @@ For each task:
 1. Architecture check (read full hierarchy, find test helpers)
 2. Write failing test → confirm it fails
 3. Write code → confirm test passes → refactor
-4. Show diff → AskUserQuestion review
+4. Show diff → AskUserQuestion review (streamline available after first task)
 5. bin/ci green (required)
 6. `/flow:commit` for this task
 7. Next task

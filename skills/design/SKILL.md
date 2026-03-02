@@ -46,6 +46,12 @@ Using the state data from the gate, cd into the worktree and update Phase 3:
 - `visit_count` → increment by 1
 - `current_phase` → `3`
 
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields listed above in memory, then use the Write tool to
+write the entire file back. Never use the Edit tool for state file
+changes — field names repeat across phases and cause non-unique match
+errors.
+
 ## Logging
 
 No logging for this phase. Design runs no Bash commands beyond the entry
@@ -73,7 +79,7 @@ Each alternative must address:
 
 #### Validation Sub-Agent Prompt
 
-Provide these instructions to the Step 4 sub-agent (fill in the details):
+Provide these instructions to the Step 3 sub-agent (fill in the details):
 
 > You are validating design alternatives for the FLOW design phase.
 > Feature: <feature name from state>
@@ -177,7 +183,7 @@ Each alternative must address:
 
 #### Validation Sub-Agent Prompt
 
-Provide these instructions to the Step 4 sub-agent (fill in the details):
+Provide these instructions to the Step 3 sub-agent (fill in the details):
 
 > You are validating design alternatives for the FLOW design phase.
 > Feature: <feature name from state>
@@ -263,42 +269,47 @@ Write to `.flow-states/<branch>.json` under `design`:
 
 ---
 
-## Step 1 — What are we building?
+## Step 1 — Review research and scope the design
 
-Before proposing anything, ask the user to describe what they want.
+Before proposing anything, review the research findings from state:
+- `summary` — what exists
+- `affected_files` — what code will be touched
+- `risks` — gotchas discovered
+- `clarifications` — decisions already made
+
+Present a brief summary to the user:
+
+> "Research found: [summary]. [N] files affected. [N] risks identified."
+
+Then ask targeted questions that build on the research:
 
 Use AskUserQuestion with two questions:
 
-**Question 1:** "What are we building?"
+**Question 1:** "What type of change is this?"
 - New feature from scratch
 - Enhancement to existing feature
 - Changing existing behaviour
 - Fixing a bug that needs design
 
-**Question 2:** "Describe what you're building in detail. What should it do? What does success look like?"
+**Question 2:** "Based on the research findings above, describe what success looks like. What should change from the current behavior?"
 - I'll describe it (type in Other)
 - It's straightforward — same as the feature name
 - It's complex — I'll explain the edge cases
 - I have specific constraints to consider
 
-Store the user's full description in `state["design"]["feature_description"]`.
+Store the user's description in `state["design"]["feature_description"]`.
+
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields in memory, then use the Write tool to write the
+entire file back. Never use the Edit tool for state file changes —
+field names repeat across phases and cause non-unique match errors.
+
+Do not propose anything that contradicts what Research found without
+flagging it explicitly.
 
 ---
 
-## Step 2 — Review research findings
-
-Review the research data already in context from the gate:
-- `affected_files` — what code will be touched
-- `risks` — gotchas already discovered
-- `clarifications` — decisions already made via Q&A
-- `summary` — plain English of what exists
-
-This is the foundation for your alternatives. Do not propose anything
-that contradicts what Research found without flagging it explicitly.
-
----
-
-## Step 3 — Propose 2-3 alternatives
+## Step 2 — Propose 2-3 alternatives
 
 Based on the feature description and research findings, propose 2-3
 genuinely distinct approaches. Structure each alternative using the
@@ -310,12 +321,12 @@ it as the single recommendation.
 
 ---
 
-## Step 4 — Validate alternatives via sub-agent
+## Step 3 — Validate alternatives via sub-agent
 
 Launch a mandatory sub-agent to validate each alternative against the codebase.
 Use the Task tool:
 
-- `subagent_type`: `"Explore"`
+- `subagent_type`: `"general-purpose"`
 - `description`: `"Design alternative validation"`
 
 Provide the sub-agent with the **Validation Sub-Agent Prompt** from the
@@ -327,7 +338,7 @@ alternatives before presenting them to the user in Step 5.
 
 ---
 
-## Step 5 — Present alternatives
+## Step 4 — Present alternatives
 
 Include the sub-agent's validation findings in each alternative's markdown
 preview — feasibility status, conflicts, and reuse opportunities.
@@ -365,7 +376,7 @@ Option D: Need more research first
 
 ---
 
-## Step 6 — Refine the chosen approach
+## Step 5 — Refine the chosen approach
 
 Based on the selection, ask targeted follow-up questions about the
 chosen approach only. Use AskUserQuestion in batches of up to 4.
@@ -381,7 +392,7 @@ have obvious answers from the research findings.
 
 ---
 
-## Step 7 — Present full design for approval
+## Step 6 — Present full design for approval
 
 Show the complete design based on the chosen approach and refinements using
 the **Design Presentation Format** from the framework section above.
@@ -399,10 +410,15 @@ Phase 2 back to `in_progress`, then invoke `flow:research`.
 
 ---
 
-## Step 8 — Save design to state
+## Step 7 — Save design to state
 
 Write the design to `.flow-states/<branch>.json` under `design` using the
 **Design Object Schema** from the framework section above.
+
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields in memory, then use the Write tool to write the
+entire file back. Never use the Edit tool for state file changes —
+field names repeat across phases and cause non-unique match errors.
 
 ---
 
@@ -414,6 +430,12 @@ Update Phase 3 in state:
 3. `completed_at` → current UTC timestamp
 4. `session_started_at` → `null`
 5. `current_phase` → `4`
+
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields listed above in memory, then use the Write tool to
+write the entire file back. Never use the Edit tool for state file
+changes — field names repeat across phases and cause non-unique match
+errors.
 
 For the banner below, compute `<formatted_time>` from the integer `cumulative_seconds` stored above: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60. Do not write the formatted string back to the state file.
 

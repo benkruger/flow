@@ -46,6 +46,12 @@ Using the state data from the gate, cd into the worktree and update Phase 8:
 - `visit_count` → increment by 1
 - `current_phase` → `8`
 
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields listed above in memory, then use the Write tool to
+write the entire file back. Never use the Edit tool for state file
+changes — field names repeat across phases and cause non-unique match
+errors.
+
 ## Logging
 
 No logging for this phase. Reflect runs no Bash commands beyond the entry
@@ -96,6 +102,8 @@ worktree. This memory will be lost when Cleanup removes the worktree.
    (e.g. `/Users/ben/code/hh/.worktrees/my-feature` becomes
    `Users-ben-code-hh-.worktrees-my-feature`)
 3. Read `~/.claude/projects/<escaped-path>/memory/MEMORY.md`
+   Use the Read tool for this — the path is outside the project directory
+   and Bash cat would trigger a permission prompt.
 4. If it exists, include its contents as evidence alongside Sources A-C
 5. If it does not exist (no auto-memory was written), skip silently
 
@@ -351,6 +359,12 @@ Update Phase 8 in state:
 3. `completed_at` → current UTC timestamp
 4. `session_started_at` → `null`
 5. `current_phase` → `9`
+
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields listed above in memory, then use the Write tool to
+write the entire file back. Never use the Edit tool for state file
+changes — field names repeat across phases and cause non-unique match
+errors.
 
 For the banner below, compute `<formatted_time>` from the integer `cumulative_seconds` stored above: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60. Do not write the formatted string back to the state file.
 

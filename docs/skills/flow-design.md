@@ -18,12 +18,11 @@ gets explicit approval before Plan can begin.
 
 ## What It Does
 
-1. Asks "What are we building?" before proposing anything
-2. Reads `state["research"]` for context — never designs blind
-3. Proposes 2-3 distinct alternatives with trade-offs in tabbed preview UI
-4. Asks targeted follow-up questions on the chosen approach
-5. Presents full design for approval
-6. Saves all decisions to `state["design"]`
+1. Reviews Research findings, then asks targeted questions about what to build
+2. Proposes 2-3 distinct alternatives with trade-offs in tabbed preview UI
+3. Asks targeted follow-up questions on the chosen approach
+4. Presents full design for approval
+5. Saves all decisions to `state["design"]`
 
 ---
 

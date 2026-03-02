@@ -44,6 +44,12 @@ Update Phase 6:
 - `visit_count` → increment by 1
 - `current_phase` → `6`
 
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields listed above in memory, then use the Write tool to
+write the entire file back. Never use the Edit tool for state file
+changes — field names repeat across phases and cause non-unique match
+errors.
+
 ## Logging
 
 After every Bash command completes, log it to `.flow-states/<branch>.log`.
@@ -220,7 +226,7 @@ Read the following from the state file (small, structured — keep in main conte
 
 Then launch a mandatory sub-agent to analyze the full diff. Use the Task tool:
 
-- `subagent_type`: `"Explore"`
+- `subagent_type`: `"general-purpose"`
 - `description`: `"Review diff analysis"`
 
 Provide the sub-agent with the **Diff Analysis Sub-Agent Prompt** from the
@@ -323,6 +329,12 @@ Update Phase 6 in state:
 3. `completed_at` → current UTC timestamp
 4. `session_started_at` → `null`
 5. `current_phase` → `7`
+
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields listed above in memory, then use the Write tool to
+write the entire file back. Never use the Edit tool for state file
+changes — field names repeat across phases and cause non-unique match
+errors.
 
 For the banner below, compute `<formatted_time>` from the integer `cumulative_seconds` stored above: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60. Do not write the formatted string back to the state file.
 

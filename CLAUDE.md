@@ -42,7 +42,7 @@ The state file (`.flow-states/<branch>.json`) is the backbone. Schema reference:
 
 ### Sub-Agents
 
-Five phase skills launch mandatory Explore-type sub-agents: Research, Design, Plan, Review, Security. Start uses a general-purpose Sonnet sub-agent for CI failures. Code has no sub-agent. Sub-agent prompts must include a tool restriction rule and must not use Bash for file checks.
+Five phase skills launch mandatory general-purpose sub-agents: Research, Design, Plan, Review, Security. Start uses a general-purpose Sonnet sub-agent for CI failures. Code has no sub-agent. Sub-agent prompts must include a tool restriction rule and must not use Bash for file checks.
 
 ### Memory
 
@@ -95,7 +95,6 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 - CLAUDE.md changes only through `/reflect` — never edit CLAUDE.md directly. The `/reflect` skill exists to review mistakes, propose additions, get individual approval for each change, and commit. Editing CLAUDE.md outside of `/reflect` bypasses all of that.
 - **Never add pymarkdown exclusions** — The `.pymarkdown.yml` disables MD013 (line length), MD025 (multiple H1 with frontmatter), MD033 (inline HTML), and MD036 (emphasis as heading) because those conflict with this repo's intentional patterns. No further rule disablements or path exclusions may be added. If a markdown file triggers a lint error, fix the file — do not suppress the rule. If a rule genuinely cannot be satisfied, surface it to the user for a decision.
 - **Prefer dedicated tools over Bash for all non-execution tasks** — Read files with the Read tool, search with Glob and Grep, create with Write, modify with Edit. Bash should only be used for commands that genuinely require shell execution: `bin/ci`, `bin/test`, `bin/flow`, `make`, and `git`. In this project's strict permission environment (`defaultMode: "plan"`), every Bash command not in the allow list triggers a permission prompt. When you need to explore, understand, or modify files, use dedicated tools — they never prompt.
-- **Explore agents use Bash internally** — In this project's strict permission environment, launching an Explore agent for codebase research will trigger Bash permission prompts and block. Use Glob, Grep, and Read directly for all research tasks. Only use the Agent tool when you need a general-purpose agent that will run allowed commands (bin/ci, bin/test, git).
 
 ## Lessons Learned
 

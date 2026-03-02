@@ -46,6 +46,12 @@ Using the state data from the gate, cd into the worktree and update Phase 2:
 - `visit_count` → increment by 1
 - `current_phase` → `2`
 
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields listed above in memory, then use the Write tool to
+write the entire file back. Never use the Edit tool for state file
+changes — field names repeat across phases and cause non-unique match
+errors.
+
 ## Logging
 
 No logging for this phase. Research runs no Bash commands beyond the entry
@@ -302,7 +308,7 @@ Store the user's description in `state["research"]["scope"]`.
 Check recent git history before deep exploration:
 
 1. Launch a sub-agent. Use the Task tool:
-   - `subagent_type`: `"Explore"`
+   - `subagent_type`: `"general-purpose"`
    - `description`: `"Light research — recent changes first"`
 
    Provide the sub-agent with the **Light Mode Sub-Agent Prompt** from the
@@ -364,7 +370,7 @@ state file.
 
 Launch a mandatory sub-agent to explore the codebase. Use the Task tool:
 
-- `subagent_type`: `"Explore"`
+- `subagent_type`: `"general-purpose"`
 - `description`: `"Research codebase exploration"`
 
 Provide the sub-agent with the **Full Mode Sub-Agent Prompt** from the
@@ -434,6 +440,11 @@ Write the full research findings into `flow-state.json["research"]`:
 }
 ```
 
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields in memory, then use the Write tool to write the
+entire file back. Never use the Edit tool for state file changes —
+field names repeat across phases and cause non-unique match errors.
+
 ---
 
 ## Step 6 — Present findings
@@ -479,6 +490,12 @@ Update `.flow-states/<branch>.json`:
 3. Set Phase 2 `completed_at` to current UTC timestamp
 4. Set Phase 2 `session_started_at` to `null`
 5. If `state["mode"] == "light"`: set `current_phase` to `4` (Design was skipped). Otherwise: set `current_phase` to `3`.
+
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields listed above in memory, then use the Write tool to
+write the entire file back. Never use the Edit tool for state file
+changes — field names repeat across phases and cause non-unique match
+errors.
 
 For the banner below, compute `<formatted_time>` from the integer `cumulative_seconds` stored above: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60. Do not write the formatted string back to the state file.
 

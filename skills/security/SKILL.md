@@ -46,6 +46,12 @@ Using the state data from the gate, cd into the worktree and update Phase 7:
 - `visit_count` → increment by 1
 - `current_phase` → `7`
 
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields listed above in memory, then use the Write tool to
+write the entire file back. Never use the Edit tool for state file
+changes — field names repeat across phases and cause non-unique match
+errors.
+
 ## Logging
 
 After every Bash command completes, log it to `.flow-states/<branch>.log`.
@@ -301,7 +307,7 @@ Read the following from the state file (small, structured — keep in main conte
 Then launch a mandatory sub-agent to analyze the feature diff for security
 issues. Use the Task tool:
 
-- `subagent_type`: `"Explore"`
+- `subagent_type`: `"general-purpose"`
 - `description`: `"Security analysis"`
 
 Provide the sub-agent with the **Security Analysis Sub-Agent Prompt** from the
@@ -346,6 +352,11 @@ every confirmed finding. `scanned_at` is the current UTC timestamp.
 If there are no confirmed findings, set `findings` to an empty array, list
 all 10 checks in `clean_checks`, and skip to Step 4.
 
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields in memory, then use the Write tool to write the
+entire file back. Never use the Edit tool for state file changes —
+field names repeat across phases and cause non-unique match errors.
+
 ---
 
 ## Step 3 — Fix findings
@@ -357,6 +368,11 @@ Fix each confirmed finding one at a time, in order:
 3. Invoke `/flow:commit` for the fix
 4. Update the finding's `status` to `"fixed"` in the state file
 5. Move to the next finding
+
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields in memory, then use the Write tool to write the
+entire file back. Never use the Edit tool for state file changes —
+field names repeat across phases and cause non-unique match errors.
 
 <HARD-GATE>
 bin/ci must be green after every fix. Do not move to the next finding
@@ -407,6 +423,12 @@ Update Phase 7 in state:
 3. `completed_at` → current UTC timestamp
 4. `session_started_at` → `null`
 5. `current_phase` → `8`
+
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields listed above in memory, then use the Write tool to
+write the entire file back. Never use the Edit tool for state file
+changes — field names repeat across phases and cause non-unique match
+errors.
 
 For the banner below, compute `<formatted_time>` from the integer `cumulative_seconds` stored above: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60. Do not write the formatted string back to the state file.
 

@@ -46,6 +46,12 @@ Using the state data from the gate, cd into the worktree and update Phase 5:
 - `visit_count` → increment by 1
 - `current_phase` → `5`
 
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields listed above in memory, then use the Write tool to
+write the entire file back. Never use the Edit tool for state file
+changes — field names repeat across phases and cause non-unique match
+errors.
+
 ## Framework Instructions
 
 Read the `framework` field from the state file and follow only the matching
@@ -213,6 +219,11 @@ Work through `state["plan"]["tasks"]` in order. For each task:
 
 Update the task in state: `status → in_progress`, `started_at → now`.
 
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields in memory, then use the Write tool to write the
+entire file back. Never use the Edit tool for state file changes —
+field names repeat across phases and cause non-unique match errors.
+
 Print inside a fenced code block:
 
 ````text
@@ -281,15 +292,24 @@ new file:   <path/to/test_file>
 - removed lines
 ```
 
-Then use AskUserQuestion:
+**If streamline mode is active** (see below), skip the AskUserQuestion
+and proceed directly to bin/ci.
+
+Otherwise, use AskUserQuestion:
 
 > "Task <id>: <description> — does this look right?"
 >
 > - **Yes, run bin/ci and commit**
 > - **Needs changes** — describe what to fix
+> - **Streamline remaining tasks** — (only shown from the second task onward)
 
 **If "Needs changes"** — fix the issue, re-run the test, show the diff
 again. Loop until approved.
+
+**If "Streamline remaining tasks"** — set a session-only flag (not
+persisted to state). For all remaining tasks, still show the diff for
+user visibility, but skip the AskUserQuestion and proceed directly to
+bin/ci and commit.
 
 ---
 
@@ -327,6 +347,11 @@ Add <what was built> — Task <id> of <total>
 Update the task in state:
 - `status → complete`
 - `completed_at → now`
+
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields in memory, then use the Write tool to write the
+entire file back. Never use the Edit tool for state file changes —
+field names repeat across phases and cause non-unique match errors.
 
 Print inside a fenced code block:
 
@@ -397,6 +422,12 @@ Update Phase 5 in state:
 4. `session_started_at` → `null`
 5. `current_phase` → `6`
 
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields listed above in memory, then use the Write tool to
+write the entire file back. Never use the Edit tool for state file
+changes — field names repeat across phases and cause non-unique match
+errors.
+
 For the banner below, compute `<formatted_time>` from the integer `cumulative_seconds` stored above: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60. Do not write the formatted string back to the state file.
 
 Print inside a fenced code block:
@@ -440,7 +471,7 @@ Invoke `flow:status`, then use AskUserQuestion:
 ## Hard Rules
 
 - **Never skip the TDD cycle** — test must fail before code is written
-- **Never skip the review** — user approves every task before bin/ci runs
+- **Never skip the review for the first task** — after the first task, the user may opt into streamline mode which auto-proceeds through remaining tasks
 - **Never skip bin/ci** — must be green before every commit
 - **Never move to the next task** until the current task is committed
 - **Never rebase** — always merge

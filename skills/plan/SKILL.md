@@ -46,6 +46,12 @@ Using the state data from the gate, cd into the worktree and update Phase 4:
 - `visit_count` → increment by 1
 - `current_phase` → `4`
 
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields listed above in memory, then use the Write tool to
+write the entire file back. Never use the Edit tool for state file
+changes — field names repeat across phases and cause non-unique match
+errors.
+
 ## Framework Instructions
 
 Read the `framework` field from the state file and follow only the matching
@@ -465,7 +471,7 @@ Work through each section below in order. For each section:
 After generating tasks for a section, launch a mandatory sub-agent to verify
 them. Use the Task tool:
 
-- `subagent_type`: `"Explore"`
+- `subagent_type`: `"general-purpose"`
 - `description`: `"Plan task verification — <section name>"`
 
 Provide the sub-agent with the **Section Verification Sub-Agent Prompt**
@@ -548,6 +554,11 @@ Then use AskUserQuestion:
 Write the plan to `.flow-states/<branch>.json` under `plan` using the
 **Plan Save Schema** from the framework section above.
 
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields in memory, then use the Write tool to write the
+entire file back. Never use the Edit tool for state file changes —
+field names repeat across phases and cause non-unique match errors.
+
 ---
 
 ## Done — Update state and complete phase
@@ -558,6 +569,12 @@ Update Phase 4 in state:
 3. `completed_at` → current UTC timestamp
 4. `session_started_at` → `null`
 5. `current_phase` → `5`
+
+**How to update:** Read `.flow-states/<branch>.json`, parse the JSON,
+modify the fields listed above in memory, then use the Write tool to
+write the entire file back. Never use the Edit tool for state file
+changes — field names repeat across phases and cause non-unique match
+errors.
 
 For the banner below, compute `<formatted_time>` from the integer `cumulative_seconds` stored above: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60. Do not write the formatted string back to the state file.
 

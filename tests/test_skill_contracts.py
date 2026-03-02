@@ -279,12 +279,12 @@ def test_subagent_prompts_include_tool_restriction():
 
 
 def test_subagent_types_match_requirements():
-    """Research/Design/Plan/Review use Explore; Start uses general-purpose."""
-    explore_skills = ["research", "design", "plan", "review", "security"]
-    for name in explore_skills:
+    """Research/Design/Plan/Review/Security and Start use general-purpose."""
+    subagent_skills = ["research", "design", "plan", "review", "security"]
+    for name in subagent_skills:
         content = _read_skill(name)
-        assert '"Explore"' in content, (
-            f"skills/{name}/SKILL.md should use Explore subagent_type"
+        assert '"general-purpose"' in content, (
+            f"skills/{name}/SKILL.md should use general-purpose subagent_type"
         )
 
     # Start's general-purpose sub-agent is in SKILL.md (framework sections merged)

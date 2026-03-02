@@ -19,7 +19,7 @@ For each task in the plan, in order:
 
 1. **Architecture check** — read what needs to be read before writing anything
 2. **TDD cycle** — write failing test, confirm it fails, write code, confirm it passes, refactor
-3. **Diff review** — show the changes, AskUserQuestion approval before bin/ci
+3. **Diff review** — show the changes, AskUserQuestion approval before bin/ci. After the first task, the user can opt into streamline mode which auto-proceeds through remaining tasks
 4. **bin/ci** — must be green, 100% coverage
 5. **`/flow:commit`** — commit this task
 6. **Next task**
