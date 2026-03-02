@@ -23,11 +23,12 @@ Begins a new feature. This is always the first command run for any piece of work
 ## What It Does
 
 1. Checks for existing active FLOW features
-2. Runs `lib/start-setup.py` — verifies `/flow:init` version gate, git pull, worktree creation, empty commit + push + PR, and state file creation
-3. Runs `bin/ci` as a baseline health check
-4. Runs framework-specific setup (dependency upgrades, CI fixes via a Sonnet sub-agent)
-5. Commits via `/flow:commit`
-6. Marks Phase 1 complete and transitions to Phase 2: Research
+2. Runs `bin/ci` on main to verify the codebase is healthy
+3. Runs `lib/start-setup.py` — verifies `/flow:init` version gate, git pull, worktree creation, empty commit + push + PR, and state file creation
+4. Runs `bin/ci` as a baseline health check
+5. Runs framework-specific setup (dependency upgrades, CI fixes via a Sonnet sub-agent)
+6. Commits via `/flow:commit`
+7. Marks Phase 1 complete and transitions to Phase 2: Research
 
 ---
 
@@ -48,6 +49,7 @@ Branch names are capped at 32 characters, truncated at word boundaries.
 ## Gates
 
 - Stops immediately if no feature name is provided
+- Stops if `bin/ci` fails on main before creating worktree
 - Stops if `git pull` fails
 - Will not proceed past dependency upgrade until `bin/ci` is green
 - Escalates to the user if `bin/ci` cannot be fixed after three attempts

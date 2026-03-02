@@ -62,7 +62,35 @@ Tell the user what was inferred:
 > "No state file found. Inferring from git: branch '<branch>',
 > worktree '<path>'."
 
-### Step 2 — Confirm with user
+### Step 2 — Check PR merge status
+
+Verify the PR has been merged before allowing cleanup.
+
+If the state file had a `pr_number`, run:
+
+```bash
+gh pr view <pr_number> --json state --jq .state
+```
+
+If the state file had no `pr_number` (or no state file was found), try the branch name:
+
+```bash
+gh pr view <branch> --json state --jq .state
+```
+
+If the result is `MERGED`, continue to Step 3.
+
+If the result is anything else (e.g., `OPEN`, `CLOSED`), stop:
+
+> "Your PR must be merged before cleanup. Current PR status: **<state>**.
+> Merge the PR first, then run `/flow:cleanup` again."
+
+If both commands fail (no PR found), stop:
+
+> "Could not find a PR for this branch. Merge your PR first, then run
+> `/flow:cleanup` again."
+
+### Step 3 — Confirm with user
 
 This phase is destructive and irreversible. Use AskUserQuestion.
 
@@ -84,7 +112,7 @@ If there were no warnings:
 - **Yes, clean up** — proceed
 - **No, not yet** — stop here
 
-### Step 3 — Run cleanup script
+### Step 4 — Run cleanup script
 
 Run the cleanup script from the project root:
 

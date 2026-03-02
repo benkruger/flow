@@ -23,12 +23,17 @@ but proceeds after user confirmation.
 Read `.flow-states/<branch>.json` for the worktree path and feature name.
 If the state file is missing, infer from git state (branch name, worktree list).
 
-### 2. Confirm with user
+### 2. Check PR merge status
+
+Verify the PR has been merged. If the PR is not merged, stop — the user
+must merge the PR before cleanup can proceed.
+
+### 3. Confirm with user
 
 Explicit confirmation required before any destructive action. Any warnings
 from the entry check are included in the confirmation message.
 
-### 3. Run cleanup
+### 4. Run cleanup
 
 `bin/flow cleanup` handles all three resources from the project root:
 worktree removal, state file deletion, and log file deletion. Each step
@@ -56,6 +61,7 @@ By the end of Phase 9:
 | State file exists, Phase 8 complete | Normal cleanup — no warnings |
 | State file exists, Phase 8 incomplete | Warns, proceeds after confirmation |
 | State file missing | Warns, infers from git, proceeds after confirmation |
+| PR not merged | Hard block, does not proceed |
 
 Every step after confirmation is best-effort — if one fails, continue to the next.
 
@@ -63,6 +69,7 @@ Every step after confirmation is best-effort — if one fails, continue to the n
 
 ## Gates
 
+- PR must be merged — hard block if not
 - Phase 8 complete is a warning, not a hard block
 - Missing state file is a warning, not a hard block
 - Requires explicit user confirmation

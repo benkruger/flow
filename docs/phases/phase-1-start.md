@@ -19,7 +19,12 @@ This is always the first phase, for every feature without exception. It establis
 
 Scans for active `.flow-states/*.json` files. If any exist, asks whether to proceed or cancel.
 
-### 2. Set up workspace
+### 2. Verify main is green
+
+Run `bin/ci` on main. If it fails, stop — fix CI before starting a feature.
+No worktree, PR, or state file is created if main is broken.
+
+### 3. Set up workspace
 
 A single Python script (`lib/start-setup.py`) handles all mechanical setup in one process:
 
@@ -32,18 +37,18 @@ A single Python script (`lib/start-setup.py`) handles all mechanical setup in on
 
 The script returns JSON with the worktree path, PR URL, and PR number. Claude then `cd`s into the worktree for all remaining steps.
 
-### 3. Baseline `bin/ci`
+### 4. Baseline `bin/ci`
 
 Run `bin/ci` inside the worktree to capture the health of the codebase before any changes.
 
 - **Passes** — note it as the baseline and continue
 - **Fails** — launch a sub-agent to diagnose and fix. If not fixable after three attempts, stop and report.
 
-### 4. Framework-specific setup
+### 5. Framework-specific setup
 
 Runs framework-specific steps defined in the skill (e.g., dependency upgrades for Rails, baseline checks for Python). A general-purpose Sonnet sub-agent handles any CI failures — max 3 attempts before escalating to the user.
 
-### 5. Commit and push
+### 6. Commit and push
 
 Use `/flow:commit` to review and commit any changes from the framework-specific setup.
 

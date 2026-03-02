@@ -27,9 +27,24 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 
 ## Steps
 
-### Step 1 — Ask framework
+### Step 1 — Detect framework
 
-Use AskUserQuestion:
+Auto-detect the framework from project files:
+
+1. Use the Glob tool to check for `Gemfile` at the project root — Rails indicator
+2. Use the Glob tool to check for `pyproject.toml`, `setup.py`, or `requirements.txt` at the project root — Python indicator
+
+If exactly one framework is detected, confirm with AskUserQuestion:
+
+- If Rails detected: "Detected **Rails** project (found Gemfile). Is this correct?"
+  - Option 1: **Yes, Rails** — "Proceed with Rails setup"
+  - Option 2: **No, it's Python** — "Use Python setup instead"
+
+- If Python detected: "Detected **Python** project (found pyproject.toml/setup.py/requirements.txt). Is this correct?"
+  - Option 1: **Yes, Python** — "Proceed with Python setup"
+  - Option 2: **No, it's Rails** — "Use Rails setup instead"
+
+If no framework files detected, or both detected, fall back to asking:
 
 - Question: "What framework does this project use?"
 - Option 1: **Rails** — "Ruby on Rails project"
@@ -85,6 +100,7 @@ All permissions (universal + both framework sets) for reference:
       "Bash(bin/ci)",
       "Bash(rm .flow-commit-*)",
       "Bash(*bin/flow *)",
+      "Bash(gh pr view *)",
       "Bash(bin/rails test *)",
       "Bash(rubocop *)",
       "Bash(rubocop -A)",

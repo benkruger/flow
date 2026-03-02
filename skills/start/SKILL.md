@@ -46,7 +46,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 
 ## Logging
 
-After every Bash command in Steps 3–7, log it to `.flow-states/<branch>.log`. Step 2 handles its own logging internally.
+After every Bash command in Step 4, log it to `.flow-states/<branch>.log`. Step 3 handles its own logging internally.
 
 Run the command directly — do not append any suffix:
 
@@ -80,7 +80,21 @@ If any files are found, use AskUserQuestion:
 > - **Start a new feature anyway** — proceed
 > - **Cancel** — stop here
 
-### Step 2 — Set up workspace
+### Step 2 — Verify main is green
+
+Run `bin/ci` on main before creating any resources:
+
+```bash
+bin/ci
+```
+
+If it fails, stop immediately:
+
+> "bin/ci is failing on main. Please fix CI before starting a new feature."
+
+Do not create a worktree, PR, or state file. Exit the skill entirely.
+
+### Step 3 — Set up workspace
 
 Run the consolidated setup script. If `--light` was specified, pass it as a
 second argument:
@@ -126,46 +140,46 @@ If the error step is `init_check`, tell the user to run `/flow:init` first
 and stop. For all other errors, read the stderr output for details, report
 the failure to the user, and stop.
 
-### Step 3 — Framework-specific setup
+### Step 4 — Framework-specific setup
 
 Read the `framework` field from the state file (`.flow-states/<branch>.json`)
 and follow only the matching section below.
 
 #### If Rails
 
-##### Step 3a — Baseline `bin/ci`
+##### Step 4a — Baseline `bin/ci`
 
 ```bash
 bin/ci
 ```
 
 - **Passes** — note as baseline and continue
-- **Fails** — launch the CI fix sub-agent (see Step 3d). Pass the full
+- **Fails** — launch the CI fix sub-agent (see Step 4d). Pass the full
   `bin/ci` output. After the sub-agent returns:
   - **Fixed** — use `/flow:commit` to commit the fix, then continue
   - **Not fixed** — stop and report to the user what is failing
 
-##### Step 3b — Upgrade gems
+##### Step 4b — Upgrade gems
 
 ```bash
 bundle update --all
 ```
 
-##### Step 3c — Post-update `bin/ci`
+##### Step 4c — Post-update `bin/ci`
 
 ```bash
 bin/ci
 ```
 
-- **Passes** — continue to Step 3e
-- **Fails** — launch the CI fix sub-agent (see Step 3d). Pass the full
+- **Passes** — continue to Step 4e
+- **Fails** — launch the CI fix sub-agent (see Step 4d). Pass the full
   `bin/ci` output. After the sub-agent returns:
-  - **Fixed** — continue to Step 3e (Gemfile.lock + fixes committed together)
+  - **Fixed** — continue to Step 4e (Gemfile.lock + fixes committed together)
   - **Not fixed** — stop and report to the user what is failing
 
-##### Step 3d — CI fix sub-agent
+##### Step 4d — CI fix sub-agent
 
-When `bin/ci` fails in Step 3a or Step 3c, launch a sub-agent to diagnose
+When `bin/ci` fails in Step 4a or Step 4c, launch a sub-agent to diagnose
 and fix the failures. Use the Task tool:
 
 - `subagent_type`: `"general-purpose"`
@@ -215,10 +229,10 @@ Provide these instructions (fill in the worktree path and bin/ci output):
 Wait for the sub-agent to return.
 
 <HARD-GATE>
-Do NOT proceed past Step 3a or Step 3c until bin/ci is green.
+Do NOT proceed past Step 4a or Step 4c until bin/ci is green.
 </HARD-GATE>
 
-##### Step 3e — Commit and push
+##### Step 4e — Commit and push
 
 Use `/flow:commit` to review and commit the changes (`Gemfile.lock` + any gem fixes).
 
@@ -232,21 +246,21 @@ Include in the Done report:
 
 #### If Python
 
-##### Step 3a — Baseline `bin/ci`
+##### Step 4a — Baseline `bin/ci`
 
 ```bash
 bin/ci
 ```
 
 - **Passes** — note as baseline and continue to Done
-- **Fails** — launch the CI fix sub-agent (see Step 3b). Pass the full
+- **Fails** — launch the CI fix sub-agent (see Step 4b). Pass the full
   `bin/ci` output. After the sub-agent returns:
   - **Fixed** — use `/flow:commit` to commit the fix, then continue to Done
   - **Not fixed** — stop and report to the user what is failing
 
-##### Step 3b — CI fix sub-agent
+##### Step 4b — CI fix sub-agent
 
-When `bin/ci` fails in Step 3a, launch a sub-agent to diagnose
+When `bin/ci` fails in Step 4a, launch a sub-agent to diagnose
 and fix the failures. Use the Agent tool:
 
 - `subagent_type`: `"general-purpose"`
@@ -292,10 +306,10 @@ Provide these instructions (fill in the worktree path and bin/ci output):
 Wait for the sub-agent to return.
 
 <HARD-GATE>
-Do NOT proceed past Step 3a until bin/ci is green.
+Do NOT proceed past Step 4a until bin/ci is green.
 </HARD-GATE>
 
-##### Step 3c — Commit fixes (if any)
+##### Step 4c — Commit fixes (if any)
 
 If the CI fix sub-agent made changes, use `/flow:commit` to commit them.
 

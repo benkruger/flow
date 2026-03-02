@@ -16,7 +16,7 @@ One-time project setup. Configures workspace permissions in `.claude/settings.js
 
 ## What It Does
 
-1. Asks which framework the project uses (Rails or Python)
+1. Auto-detects framework from project files (Gemfile → Rails, pyproject.toml/setup.py/requirements.txt → Python) and confirms with the user
 2. Reads `.claude/settings.json` (or starts with `{}`)
 3. Merges FLOW allow/deny permission entries (universal + framework-specific), preserving existing entries
 4. Writes the merged `.claude/settings.json`
