@@ -45,12 +45,8 @@ def test_no_state_file_exits_1(git_repo):
     assert "/flow:start" in result.stdout
 
 
-def test_corrupt_json_exits_1(git_repo, state_dir):
+def test_corrupt_json_exits_1(git_repo, state_dir, branch):
     """Corrupt JSON state file should block with parse error message."""
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=str(git_repo), capture_output=True, text=True, check=True,
-    ).stdout.strip()
     (state_dir / f"{branch}.json").write_text("{bad json")
     result = _run(git_repo, 2)
     assert result.returncode == 1
@@ -60,12 +56,8 @@ def test_corrupt_json_exits_1(git_repo, state_dir):
 # --- Phase status checks ---
 
 
-def test_previous_phase_pending_blocks(git_repo, state_dir):
+def test_previous_phase_pending_blocks(git_repo, state_dir, branch):
     """Previous phase 'pending' should block entry."""
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=str(git_repo), capture_output=True, text=True, check=True,
-    ).stdout.strip()
     state = make_state(current_phase=2, phase_statuses={1: "pending"})
     write_state(state_dir, branch, state)
     result = _run(git_repo, 2)
@@ -74,12 +66,8 @@ def test_previous_phase_pending_blocks(git_repo, state_dir):
     assert "pending" in result.stdout
 
 
-def test_previous_phase_in_progress_blocks(git_repo, state_dir):
+def test_previous_phase_in_progress_blocks(git_repo, state_dir, branch):
     """Previous phase 'in_progress' should also block."""
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=str(git_repo), capture_output=True, text=True, check=True,
-    ).stdout.strip()
     state = make_state(current_phase=2, phase_statuses={1: "in_progress"})
     write_state(state_dir, branch, state)
     result = _run(git_repo, 2)
@@ -88,24 +76,16 @@ def test_previous_phase_in_progress_blocks(git_repo, state_dir):
     assert "in_progress" in result.stdout
 
 
-def test_previous_phase_complete_allows(git_repo, state_dir):
+def test_previous_phase_complete_allows(git_repo, state_dir, branch):
     """Previous phase 'complete' should allow entry."""
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=str(git_repo), capture_output=True, text=True, check=True,
-    ).stdout.strip()
     state = make_state(current_phase=2, phase_statuses={1: "complete"})
     write_state(state_dir, branch, state)
     result = _run(git_repo, 2)
     assert result.returncode == 0
 
 
-def test_sequential_chain_phase_5_with_1_to_4_complete(git_repo, state_dir):
+def test_sequential_chain_phase_5_with_1_to_4_complete(git_repo, state_dir, branch):
     """Phase 5 entry should work when phases 1-4 are complete."""
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=str(git_repo), capture_output=True, text=True, check=True,
-    ).stdout.strip()
     state = make_state(
         current_phase=5,
         phase_statuses={1: "complete", 2: "complete", 3: "complete", 4: "complete"},
@@ -118,12 +98,8 @@ def test_sequential_chain_phase_5_with_1_to_4_complete(git_repo, state_dir):
 # --- Re-entry ---
 
 
-def test_re_entering_completed_phase_shows_note(git_repo, state_dir):
+def test_re_entering_completed_phase_shows_note(git_repo, state_dir, branch):
     """Re-entering a completed phase should exit 0 with a 'previously completed' note."""
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=str(git_repo), capture_output=True, text=True, check=True,
-    ).stdout.strip()
     state = make_state(
         current_phase=2,
         phase_statuses={1: "complete", 2: "complete"},
@@ -136,12 +112,8 @@ def test_re_entering_completed_phase_shows_note(git_repo, state_dir):
     assert "2 visit(s)" in result.stdout
 
 
-def test_first_visit_no_previously_completed_message(git_repo, state_dir):
+def test_first_visit_no_previously_completed_message(git_repo, state_dir, branch):
     """First visit to a pending phase should not show 'previously completed'."""
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=str(git_repo), capture_output=True, text=True, check=True,
-    ).stdout.strip()
     state = make_state(current_phase=2, phase_statuses={1: "complete"})
     write_state(state_dir, branch, state)
     result = _run(git_repo, 2)
@@ -149,12 +121,8 @@ def test_first_visit_no_previously_completed_message(git_repo, state_dir):
     assert "previously completed" not in result.stdout
 
 
-def test_phase_8_requires_phase_7_complete(git_repo, state_dir):
+def test_phase_8_requires_phase_7_complete(git_repo, state_dir, branch):
     """Phase 8 (Reflect) requires phase 7 (Security) to be complete."""
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=str(git_repo), capture_output=True, text=True, check=True,
-    ).stdout.strip()
     state = make_state(
         current_phase=8,
         phase_statuses={
@@ -168,12 +136,8 @@ def test_phase_8_requires_phase_7_complete(git_repo, state_dir):
     assert "Phase 7" in result.stdout
 
 
-def test_phase_9_requires_phase_8_complete(git_repo, state_dir):
+def test_phase_9_requires_phase_8_complete(git_repo, state_dir, branch):
     """Phase 9 (Cleanup) requires phase 8 (Reflect) to be complete."""
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=str(git_repo), capture_output=True, text=True, check=True,
-    ).stdout.strip()
     state = make_state(
         current_phase=9,
         phase_statuses={
@@ -190,12 +154,8 @@ def test_phase_9_requires_phase_8_complete(git_repo, state_dir):
 # --- Worktree resolution ---
 
 
-def test_missing_phases_key_blocks(git_repo, state_dir):
+def test_missing_phases_key_blocks(git_repo, state_dir, branch):
     """State file with no 'phases' key should block (defaults to pending)."""
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=str(git_repo), capture_output=True, text=True, check=True,
-    ).stdout.strip()
     state = {"feature": "Test", "branch": branch, "current_phase": 2}
     write_state(state_dir, branch, state)
     result = _run(git_repo, 2)
@@ -203,12 +163,8 @@ def test_missing_phases_key_blocks(git_repo, state_dir):
     assert "BLOCKED" in result.stdout
 
 
-def test_skipped_phase_satisfies_gate(git_repo, state_dir):
+def test_skipped_phase_satisfies_gate(git_repo, state_dir, branch):
     """Phase marked complete+skipped (light mode) satisfies the next phase's gate."""
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=str(git_repo), capture_output=True, text=True, check=True,
-    ).stdout.strip()
     state = make_state(
         current_phase=4,
         phase_statuses={1: "complete", 2: "complete", 3: "complete"},
@@ -222,12 +178,8 @@ def test_skipped_phase_satisfies_gate(git_repo, state_dir):
     assert result.returncode == 0
 
 
-def test_blocked_message_includes_correct_command(git_repo, state_dir):
+def test_blocked_message_includes_correct_command(git_repo, state_dir, branch):
     """Blocked message should include the correct /flow:X command for the missing phase."""
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=str(git_repo), capture_output=True, text=True, check=True,
-    ).stdout.strip()
     state = make_state(current_phase=4, phase_statuses={
         1: "complete", 2: "complete", 3: "pending",
     })
@@ -237,12 +189,8 @@ def test_blocked_message_includes_correct_command(git_repo, state_dir):
     assert "/flow:design" in result.stdout
 
 
-def test_phase_0_blocks(git_repo, state_dir):
+def test_phase_0_blocks(git_repo, state_dir, branch):
     """Phase 0 is invalid — should block because phase -1 doesn't exist."""
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=str(git_repo), capture_output=True, text=True, check=True,
-    ).stdout.strip()
     state = make_state(current_phase=1, phase_statuses={1: "complete"})
     write_state(state_dir, branch, state)
     result = _run(git_repo, 0)

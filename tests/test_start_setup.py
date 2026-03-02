@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -21,19 +22,17 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
-@pytest.fixture
-def git_repo_with_remote(tmp_path):
-    """Create a git repo with a bare remote (origin) for push/pull/PR tests."""
-    bare = tmp_path / "bare.git"
-    repo = tmp_path / "repo"
+@pytest.fixture(scope="session")
+def _git_repo_with_remote_template(tmp_path_factory):
+    """Create a bare+clone pair once per worker for copying."""
+    parent = tmp_path_factory.mktemp("remote-template")
+    bare = parent / "bare.git"
+    repo = parent / "repo"
 
-    # Create bare remote
     subprocess.run(
         ["git", "init", "--bare", "-b", "main", str(bare)],
         capture_output=True, check=True,
     )
-
-    # Create working repo
     subprocess.run(
         ["git", "clone", str(bare), str(repo)],
         capture_output=True, check=True,
@@ -50,13 +49,26 @@ def git_repo_with_remote(tmp_path):
         ["git", "config", "commit.gpgsign", "false"],
         cwd=str(repo), capture_output=True, check=True,
     )
-    # Initial commit so main branch exists
     subprocess.run(
         ["git", "commit", "--allow-empty", "-m", "init"],
         cwd=str(repo), capture_output=True, check=True,
     )
     subprocess.run(
         ["git", "push", "-u", "origin", "main"],
+        cwd=str(repo), capture_output=True, check=True,
+    )
+    return parent
+
+
+@pytest.fixture
+def git_repo_with_remote(_git_repo_with_remote_template, tmp_path):
+    """Copy the template bare+clone pair for per-test isolation."""
+    parent_copy = tmp_path / "remote-setup"
+    shutil.copytree(_git_repo_with_remote_template, parent_copy)
+    repo = parent_copy / "repo"
+    bare = parent_copy / "bare.git"
+    subprocess.run(
+        ["git", "remote", "set-url", "origin", str(bare)],
         cwd=str(repo), capture_output=True, check=True,
     )
     return repo

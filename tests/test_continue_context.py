@@ -46,12 +46,7 @@ def test_no_state_file_returns_no_state(git_repo):
     assert "branch" in data
 
 
-def test_corrupt_json_returns_error(state_dir, git_repo):
-    branch_result = subprocess.run(
-        ["git", "branch", "--show-current"],
-        capture_output=True, text=True, cwd=str(git_repo),
-    )
-    branch = branch_result.stdout.strip()
+def test_corrupt_json_returns_error(state_dir, git_repo, branch):
     bad_file = state_dir / f"{branch}.json"
     bad_file.write_text("{bad json")
     result = _run(git_repo)
@@ -61,12 +56,7 @@ def test_corrupt_json_returns_error(state_dir, git_repo):
     assert "Could not read" in data["message"]
 
 
-def test_happy_path_returns_ok_with_all_fields(state_dir, git_repo):
-    branch_result = subprocess.run(
-        ["git", "branch", "--show-current"],
-        capture_output=True, text=True, cwd=str(git_repo),
-    )
-    branch = branch_result.stdout.strip()
+def test_happy_path_returns_ok_with_all_fields(state_dir, git_repo, branch):
     state = make_state(
         current_phase=2,
         phase_statuses={1: "complete", 2: "in_progress"},
@@ -84,12 +74,7 @@ def test_happy_path_returns_ok_with_all_fields(state_dir, git_repo):
     assert data["worktree"] == ".worktrees/test-feature"
 
 
-def test_all_complete_returns_ok_with_phase_9(state_dir, git_repo):
-    branch_result = subprocess.run(
-        ["git", "branch", "--show-current"],
-        capture_output=True, text=True, cwd=str(git_repo),
-    )
-    branch = branch_result.stdout.strip()
+def test_all_complete_returns_ok_with_phase_9(state_dir, git_repo, branch):
     state = make_state(
         current_phase=9,
         phase_statuses={i: "complete" for i in range(1, 10)},
@@ -104,13 +89,8 @@ def test_all_complete_returns_ok_with_phase_9(state_dir, git_repo):
     assert data["phase_command"] == "/flow:cleanup"
 
 
-def test_missing_worktree_still_returns_ok(state_dir, git_repo):
+def test_missing_worktree_still_returns_ok(state_dir, git_repo, branch):
     """Worktree field from state is passed through even if dir doesn't exist."""
-    branch_result = subprocess.run(
-        ["git", "branch", "--show-current"],
-        capture_output=True, text=True, cwd=str(git_repo),
-    )
-    branch = branch_result.stdout.strip()
     state = make_state(
         current_phase=3,
         phase_statuses={1: "complete", 2: "complete", 3: "in_progress"},
@@ -127,7 +107,7 @@ def test_missing_worktree_still_returns_ok(state_dir, git_repo):
 # --- Regression: panel identity ---
 
 
-def test_panel_matches_format_status_output(state_dir, git_repo):
+def test_panel_matches_format_status_output(state_dir, git_repo, branch):
     """The panel from continue-context must be identical to format-status."""
     # Import format-status for comparison
     fs_spec = importlib.util.spec_from_file_location(
@@ -135,12 +115,6 @@ def test_panel_matches_format_status_output(state_dir, git_repo):
     )
     fs_mod = importlib.util.module_from_spec(fs_spec)
     fs_spec.loader.exec_module(fs_mod)
-
-    branch_result = subprocess.run(
-        ["git", "branch", "--show-current"],
-        capture_output=True, text=True, cwd=str(git_repo),
-    )
-    branch = branch_result.stdout.strip()
     state = make_state(
         current_phase=5,
         phase_statuses={
