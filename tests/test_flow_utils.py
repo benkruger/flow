@@ -45,6 +45,21 @@ def test_format_time_large_values():
     assert _mod.format_time(36000) == "10h 0m"
 
 
+def test_format_time_string_input():
+    assert _mod.format_time("120") == "2m"
+    assert _mod.format_time("3661") == "1h 1m"
+    assert _mod.format_time("30") == "<1m"
+
+
+def test_format_time_non_numeric_string():
+    assert _mod.format_time("<1m") == "?"
+    assert _mod.format_time("fast") == "?"
+
+
+def test_format_time_none_input():
+    assert _mod.format_time(None) == "?"
+
+
 # --- project_root ---
 
 

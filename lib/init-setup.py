@@ -46,6 +46,7 @@ RAILS_ALLOW = [
 
 PYTHON_ALLOW = [
     "Bash(bin/test *)",
+    "Bash(.venv/bin/pip install *)",
 ]
 
 FLOW_DENY = [

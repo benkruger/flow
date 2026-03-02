@@ -336,7 +336,9 @@ Task <id> complete. <n> of <total> done.
 ```
 ````
 
-Then move to the next task. Loop.
+Without pausing or asking for confirmation, read the next pending task
+from `state["plan"]["tasks"]` and go back to "Before Starting a Task".
+Only stop looping when all tasks are `complete`.
 
 ---
 
@@ -395,7 +397,7 @@ Update Phase 5 in state:
 4. `session_started_at` → `null`
 5. `current_phase` → `6`
 
-Format `cumulative_seconds` as `<formatted_time>`: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60.
+For the banner below, compute `<formatted_time>` from the integer `cumulative_seconds` stored above: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60. Do not write the formatted string back to the state file.
 
 Print inside a fenced code block:
 

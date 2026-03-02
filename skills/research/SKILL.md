@@ -69,9 +69,11 @@ Provide these instructions to the Step 2 sub-agent (fill in the scope):
 > You are exploring a Rails codebase for the FLOW research phase.
 > Research scope: <user's description from Step 1 — paste verbatim>
 >
-> **Tool rules:** Use Glob and Read tools for all file and directory checks.
-> Use Grep for searching code. Never use Bash for file existence checks,
-> directory listings, or reading file contents (`test -f`, `ls`, `cat`, etc.).
+> **Tool rules:** Use Glob and Read tools for all file and directory
+> operations. Use Grep for searching code. Only use Bash for commands
+> explicitly listed in these instructions. Never use Bash for any other
+> purpose — no find, ls, cat, wc, test -f, stat, or running project
+> tooling (pytest, python, pip, etc.).
 >
 > Systematically read all code relevant to this feature:
 >
@@ -118,9 +120,11 @@ Provide these instructions to the Light Step 2 sub-agent (fill in the descriptio
 > You are investigating a bug or small change in a Rails codebase.
 > Description: <user's description from Light Step 1 — paste verbatim>
 >
-> **Tool rules:** Use Glob and Read tools for all file and directory checks.
-> Use Grep for searching code. Never use Bash for file existence checks,
-> directory listings, or reading file contents (`test -f`, `ls`, `cat`, etc.).
+> **Tool rules:** Use Glob and Read tools for all file and directory
+> operations. Use Grep for searching code. Only use Bash for commands
+> explicitly listed in these instructions. Never use Bash for any other
+> purpose — no find, ls, cat, wc, test -f, stat, or running project
+> tooling (pytest, python, pip, etc.).
 >
 > **Start with recent changes:**
 >
@@ -178,9 +182,11 @@ Provide these instructions to the Step 2 sub-agent (fill in the scope):
 > You are exploring a Python codebase for the FLOW research phase.
 > Research scope: <user's description from Step 1 — paste verbatim>
 >
-> **Tool rules:** Use Glob and Read tools for all file and directory checks.
-> Use Grep for searching code. Never use Bash for file existence checks,
-> directory listings, or reading file contents (`test -f`, `ls`, `cat`, etc.).
+> **Tool rules:** Use Glob and Read tools for all file and directory
+> operations. Use Grep for searching code. Only use Bash for commands
+> explicitly listed in these instructions. Never use Bash for any other
+> purpose — no find, ls, cat, wc, test -f, stat, or running project
+> tooling (pytest, python, pip, etc.).
 >
 > Systematically read all code relevant to this feature:
 >
@@ -218,9 +224,11 @@ Provide these instructions to the Light Step 2 sub-agent (fill in the descriptio
 > You are investigating a bug or small change in a Python codebase.
 > Description: <user's description from Light Step 1 — paste verbatim>
 >
-> **Tool rules:** Use Glob and Read tools for all file and directory checks.
-> Use Grep for searching code. Never use Bash for file existence checks,
-> directory listings, or reading file contents (`test -f`, `ls`, `cat`, etc.).
+> **Tool rules:** Use Glob and Read tools for all file and directory
+> operations. Use Grep for searching code. Only use Bash for commands
+> explicitly listed in these instructions. Never use Bash for any other
+> purpose — no find, ls, cat, wc, test -f, stat, or running project
+> tooling (pytest, python, pip, etc.).
 >
 > **Start with recent changes:**
 >
@@ -472,7 +480,7 @@ Update `.flow-states/<branch>.json`:
 4. Set Phase 2 `session_started_at` to `null`
 5. If `state["mode"] == "light"`: set `current_phase` to `4` (Design was skipped). Otherwise: set `current_phase` to `3`.
 
-Format `cumulative_seconds` as `<formatted_time>`: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60.
+For the banner below, compute `<formatted_time>` from the integer `cumulative_seconds` stored above: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60. Do not write the formatted string back to the state file.
 
 ### If light mode (`state["mode"] == "light"`)
 

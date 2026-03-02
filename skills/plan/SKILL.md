@@ -91,8 +91,11 @@ Provide these instructions to the section verification sub-agent
 > Tasks to verify:
 > <paste the draft tasks for this section>
 >
-> **Tool rules:** Use Glob and Read tools for all file and directory checks.
-> Never use Bash for file existence checks (`test -f`, `ls`, `stat`, etc.).
+> **Tool rules:** Use Glob and Read tools for all file and directory
+> operations. Use Grep for searching code. Only use Bash for commands
+> explicitly listed in these instructions. Never use Bash for any other
+> purpose — no find, ls, cat, wc, test -f, stat, or running project
+> tooling (pytest, python, pip, etc.).
 >
 > For each task, check the codebase:
 >
@@ -277,8 +280,11 @@ Provide these instructions to the section verification sub-agent
 > Tasks to verify:
 > <paste the draft tasks for this section>
 >
-> **Tool rules:** Use Glob and Read tools for all file and directory checks.
-> Never use Bash for file existence checks (`test -f`, `ls`, `stat`, etc.).
+> **Tool rules:** Use Glob and Read tools for all file and directory
+> operations. Use Grep for searching code. Only use Bash for commands
+> explicitly listed in these instructions. Never use Bash for any other
+> purpose — no find, ls, cat, wc, test -f, stat, or running project
+> tooling (pytest, python, pip, etc.).
 >
 > For each task, check the codebase:
 >
@@ -553,7 +559,7 @@ Update Phase 4 in state:
 4. `session_started_at` → `null`
 5. `current_phase` → `5`
 
-Format `cumulative_seconds` as `<formatted_time>`: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60.
+For the banner below, compute `<formatted_time>` from the integer `cumulative_seconds` stored above: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60. Do not write the formatted string back to the state file.
 
 Print inside a fenced code block:
 

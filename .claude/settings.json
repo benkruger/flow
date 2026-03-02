@@ -38,7 +38,8 @@
       "Bash(gh pr close *)",
       "Bash(git push origin --delete *)",
       "Bash(git branch -D *)",
-      "Bash(*bin/flow *)"
+      "Bash(*bin/flow *)",
+      "Bash(.venv/bin/pip install *)"
     ],
     "deny": [
       "Bash(git rebase *)",

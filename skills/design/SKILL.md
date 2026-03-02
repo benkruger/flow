@@ -78,9 +78,11 @@ Provide these instructions to the Step 4 sub-agent (fill in the details):
 > You are validating design alternatives for the FLOW design phase.
 > Feature: <feature name from state>
 >
-> **Tool rules:** Use Glob and Read tools for all file and directory checks.
-> Use Grep for searching code. Never use Bash for file existence checks,
-> directory listings, or reading file contents (`test -f`, `ls`, `cat`, etc.).
+> **Tool rules:** Use Glob and Read tools for all file and directory
+> operations. Use Grep for searching code. Only use Bash for commands
+> explicitly listed in these instructions. Never use Bash for any other
+> purpose — no find, ls, cat, wc, test -f, stat, or running project
+> tooling (pytest, python, pip, etc.).
 >
 > Research findings: <paste state["research"] summary, affected_files, risks>
 >
@@ -180,9 +182,11 @@ Provide these instructions to the Step 4 sub-agent (fill in the details):
 > You are validating design alternatives for the FLOW design phase.
 > Feature: <feature name from state>
 >
-> **Tool rules:** Use Glob and Read tools for all file and directory checks.
-> Use Grep for searching code. Never use Bash for file existence checks,
-> directory listings, or reading file contents (`test -f`, `ls`, `cat`, etc.).
+> **Tool rules:** Use Glob and Read tools for all file and directory
+> operations. Use Grep for searching code. Only use Bash for commands
+> explicitly listed in these instructions. Never use Bash for any other
+> purpose — no find, ls, cat, wc, test -f, stat, or running project
+> tooling (pytest, python, pip, etc.).
 >
 > Research findings: <paste state["research"] summary, affected_files, risks>
 >
@@ -411,7 +415,7 @@ Update Phase 3 in state:
 4. `session_started_at` → `null`
 5. `current_phase` → `4`
 
-Format `cumulative_seconds` as `<formatted_time>`: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60.
+For the banner below, compute `<formatted_time>` from the integer `cumulative_seconds` stored above: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60. Do not write the formatted string back to the state file.
 
 Print inside a fenced code block:
 

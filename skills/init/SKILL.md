@@ -91,7 +91,8 @@ All permissions (universal + both framework sets) for reference:
       "Bash(bundle update --all)",
       "Bash(bundle exec *)",
       "Bash(psql *)",
-      "Bash(bin/test *)"
+      "Bash(bin/test *)",
+      "Bash(.venv/bin/pip install *)"
     ],
     "deny": [
       "Bash(git rebase *)",

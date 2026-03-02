@@ -20,6 +20,11 @@ def format_time(seconds):
 
     Returns "Xh Ym" if >= 3600, "Xm" if >= 60, "<1m" if < 60.
     """
+    if not isinstance(seconds, (int, float)):
+        try:
+            seconds = int(seconds)
+        except (ValueError, TypeError):
+            return "?"
     if seconds >= 3600:
         hours = seconds // 3600
         minutes = (seconds % 3600) // 60

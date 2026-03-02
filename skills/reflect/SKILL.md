@@ -352,7 +352,7 @@ Update Phase 8 in state:
 4. `session_started_at` → `null`
 5. `current_phase` → `9`
 
-Format `cumulative_seconds` as `<formatted_time>`: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60.
+For the banner below, compute `<formatted_time>` from the integer `cumulative_seconds` stored above: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60. Do not write the formatted string back to the state file.
 
 Print inside a fenced code block:
 

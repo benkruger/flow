@@ -181,7 +181,11 @@ Provide these instructions (fill in the worktree path and bin/ci output):
 > The `bin/ci` output:
 > <paste the full bin/ci output>
 >
-> Use the Glob and Read tools to explore code — do not use Bash for file checks.
+> **Tool rules:** Use Glob and Read tools for all file and directory
+> operations. Use Grep for searching code. Only use Bash for commands
+> explicitly listed in these instructions (bin/ci, bin/rails test,
+> rubocop -A, rubocop). Never use Bash for any other purpose — no find,
+> ls, cat, wc, test -f, stat, or running project tooling not listed here.
 >
 > Fix the failures in this order:
 >
@@ -258,7 +262,11 @@ Provide these instructions (fill in the worktree path and bin/ci output):
 > The `bin/ci` output:
 > <paste the full bin/ci output>
 >
-> Use the Glob and Read tools to explore code — do not use Bash for file checks.
+> **Tool rules:** Use Glob and Read tools for all file and directory
+> operations. Use Grep for searching code. Only use Bash for commands
+> explicitly listed in these instructions (bin/ci, bin/test). Never use
+> Bash for any other purpose — no find, ls, cat, wc, test -f, stat, or
+> running project tooling not listed here.
 >
 > Fix the failures in this order:
 >
@@ -311,7 +319,7 @@ Update `.flow-states/<branch>.json`:
 
 Update Phase 1 task to `completed`.
 
-Format `cumulative_seconds` as `<formatted_time>`: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60.
+For the banner below, compute `<formatted_time>` from the integer `cumulative_seconds` stored above: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60. Do not write the formatted string back to the state file.
 
 Print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 

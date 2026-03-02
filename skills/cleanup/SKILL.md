@@ -98,7 +98,7 @@ Report the results to the user: what was cleaned, what was already gone, and wha
 
 ### Done — Print banner
 
-Format the total `cumulative_seconds` (from the state file read in Step 1) as `<formatted_time>`: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60.
+For the banner below, compute `<formatted_time>` from the integer `cumulative_seconds` read in Step 1: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60. Do not write the formatted string back to the state file.
 
 Print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 
