@@ -53,8 +53,13 @@ Parse the JSON output:
 - `"status": "no_state"` — report "No FLOW feature in progress on
   branch '<branch>'." and stop.
 - `"status": "error"` — report the error message and stop.
+- `"status": "multiple_features"` — multiple active features, none on
+  the current branch. Use AskUserQuestion to present the `features`
+  list (each has `feature`, `branch`, `phase_name`, `worktree`).
+  Once selected, cd into that feature's `worktree` and re-run
+  `bin/flow continue-context`.
 - `"status": "ok"` — continue to Step 2. The response contains
-  `panel`, `worktree`, `current_phase`, `phase_name`, and
+  `panel`, `branch`, `worktree`, `current_phase`, `phase_name`, and
   `phase_command`.
 
 ### Step 2 — cd and show status

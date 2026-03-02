@@ -41,6 +41,11 @@ Start one with /flow:start <feature name>.
 
 Then stop.
 
+- `{"status": "multiple_features", "panel": "..."}` — multiple active
+  features found, none on the current branch. Print the `panel` value
+  inside a fenced code block (triple backticks with `text` language
+  tag). The panel lists all active features with their branch and phase.
+
 - `{"status": "ok", "panel": "..."}` — print the `panel` value inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading.
 
 - `{"status": "error", "message": "..."}` — show the error message and stop.

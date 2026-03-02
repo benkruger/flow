@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import current_branch, project_root, PHASE_NAMES
+from flow_utils import current_branch, find_state_files, project_root, PHASE_NAMES
 
 # Import format_panel from format-status.py (same pattern as tests)
 _spec = importlib.util.spec_from_file_location(
@@ -49,20 +49,31 @@ def main():
         }))
         sys.exit(1)
 
-    state_path = root / ".flow-states" / f"{branch}.json"
+    results = find_state_files(root, branch)
 
-    if not state_path.exists():
+    if not results:
         print(json.dumps({"status": "no_state", "branch": branch}))
         sys.exit(0)
 
-    try:
-        state = json.loads(state_path.read_text())
-    except Exception as e:
+    if len(results) > 1:
+        features = []
+        for path, state, matched_branch in results:
+            features.append({
+                "feature": state.get("feature", matched_branch),
+                "branch": matched_branch,
+                "current_phase": state.get("current_phase", 1),
+                "phase_name": PHASE_NAMES.get(
+                    state.get("current_phase", 1), "?"
+                ),
+                "worktree": state.get("worktree", ""),
+            })
         print(json.dumps({
-            "status": "error",
-            "message": f"Could not read state file: {e}",
+            "status": "multiple_features",
+            "features": features,
         }))
-        sys.exit(1)
+        sys.exit(0)
+
+    state_path, state, matched_branch = results[0]
 
     version = _fs_mod._read_version()
     panel = format_panel(state, version)
@@ -71,6 +82,7 @@ def main():
     print(json.dumps({
         "status": "ok",
         "panel": panel,
+        "branch": matched_branch,
         "worktree": state.get("worktree", ""),
         "current_phase": current_phase,
         "phase_name": PHASE_NAMES.get(current_phase, f"Phase {current_phase}"),

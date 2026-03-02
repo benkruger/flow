@@ -48,14 +48,14 @@ def test_no_state_file_returns_no_state(git_repo):
     assert data["status"] == "no_state"
 
 
-def test_corrupt_json_returns_error(state_dir, git_repo, branch):
+def test_corrupt_json_returns_no_state(state_dir, git_repo, branch):
+    """Corrupt state file for current branch is treated as no state."""
     bad_file = state_dir / f"{branch}.json"
     bad_file.write_text("{bad json")
     result = _run(git_repo)
-    assert result.returncode == 1
+    assert result.returncode == 0
     data = json.loads(result.stdout)
-    assert data["status"] == "error"
-    assert "Could not read" in data["message"]
+    assert data["status"] == "no_state"
 
 
 def test_happy_path_returns_ok_with_panel(state_dir, git_repo, branch):
@@ -249,3 +249,35 @@ def test_elapsed_since_with_no_started_at():
 def test_read_version_returns_fallback_when_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(_mod, "__file__", str(tmp_path / "lib" / "format-status.py"))
     assert _mod._read_version() == "?"
+
+
+# --- Fallback behavior (wrong branch) ---
+
+
+def test_wrong_branch_single_feature_returns_ok(state_dir, git_repo, branch):
+    """When on wrong branch but single state file exists, falls back to it."""
+    state = make_state(
+        current_phase=3,
+        phase_statuses={1: "complete", 2: "complete", 3: "in_progress"},
+    )
+    state["branch"] = "feature-xyz"
+    write_state(state_dir, "feature-xyz", state)
+    result = _run(git_repo)
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+    assert "panel" in data
+
+
+def test_wrong_branch_multiple_features_returns_multiple(state_dir, git_repo, branch):
+    """When on wrong branch with multiple state files, returns multiple_features."""
+    for name in ["feature-a", "feature-b"]:
+        state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+        state["feature"] = name
+        state["branch"] = name
+        write_state(state_dir, name, state)
+    result = _run(git_repo)
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "multiple_features"
+    assert "panel" in data

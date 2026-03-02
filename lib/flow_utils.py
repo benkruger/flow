@@ -7,6 +7,7 @@ Provides common functions used across multiple hook scripts:
 - current_branch: get the current git branch name
 """
 
+import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -78,3 +79,34 @@ def current_branch():
         return result.stdout.strip() or None
     except Exception:
         return None
+
+
+def find_state_files(root, branch):
+    """Find state file(s), trying exact branch match first.
+
+    Returns list of (Path, dict, str) tuples: (path, state, branch_name).
+    Empty list = nothing found. Single item = unambiguous match.
+    Multiple items = caller must disambiguate.
+    """
+    state_dir = root / ".flow-states"
+
+    exact_path = state_dir / f"{branch}.json"
+    if exact_path.exists():
+        try:
+            state = json.loads(exact_path.read_text())
+            return [(exact_path, state, branch)]
+        except (json.JSONDecodeError, ValueError):
+            return []
+
+    if not state_dir.is_dir():
+        return []
+
+    results = []
+    for path in sorted(state_dir.glob("*.json")):
+        try:
+            state = json.loads(path.read_text())
+            results.append((path, state, path.stem))
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    return results

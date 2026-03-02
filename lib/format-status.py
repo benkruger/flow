@@ -18,7 +18,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import current_branch, format_time, PACIFIC, project_root, PHASE_NAMES
+from flow_utils import (
+    current_branch, find_state_files, format_time, PACIFIC,
+    project_root, PHASE_NAMES,
+)
 
 COMMANDS = {
     1: "/flow:start", 2: "/flow:plan", 3: "/flow:code",
@@ -166,6 +169,31 @@ def _format_all_complete(state, version, phases):
     return "\n".join(lines)
 
 
+def format_multi_panel(results, version):
+    """Build a summary panel listing multiple active features."""
+    lines = []
+    lines.append("============================================")
+    lines.append(f"  FLOW v{version} — Multiple Features Active")
+    lines.append("============================================")
+    lines.append("")
+
+    for i, (path, state, matched_branch) in enumerate(results, 1):
+        phase = state.get("current_phase", 1)
+        phase_name = PHASE_NAMES.get(phase, f"Phase {phase}")
+        phase_status = state.get("phases", {}).get(
+            str(phase), {},
+        ).get("status", "pending")
+        cmd = COMMANDS.get(phase, f"/flow:phase{phase}")
+        lines.append(f"  {i}. {state.get('feature', matched_branch)}")
+        lines.append(f"     Branch : {matched_branch}")
+        lines.append(f"     Phase  : {phase} — {phase_name} ({phase_status})")
+        lines.append(f"     Next   : {cmd}")
+        lines.append("")
+
+    lines.append("============================================")
+    return "\n".join(lines)
+
+
 def main():
     root = project_root()
     branch = current_branch()
@@ -177,23 +205,23 @@ def main():
         }))
         sys.exit(1)
 
-    state_path = root / ".flow-states" / f"{branch}.json"
+    results = find_state_files(root, branch)
 
-    if not state_path.exists():
+    if not results:
         print(json.dumps({"status": "no_state"}))
         sys.exit(0)
 
     version = _read_version()
 
-    try:
-        state = json.loads(state_path.read_text())
-    except Exception as e:
+    if len(results) > 1:
+        panel = format_multi_panel(results, version)
         print(json.dumps({
-            "status": "error",
-            "message": f"Could not read state file: {e}",
+            "status": "multiple_features",
+            "panel": panel,
         }))
-        sys.exit(1)
+        sys.exit(0)
 
+    state_path, state, matched_branch = results[0]
     panel = format_panel(state, version)
     print(json.dumps({"status": "ok", "panel": panel}))
 
