@@ -115,14 +115,16 @@ def format_panel(state, version, now=None):
         lines.append(f"  Times visited         : {visits}")
         lines.append("")
 
-    # Continue (in_progress) vs Next (phase complete)
+    # Continue (in_progress) vs Next (pending)
+    # current_phase already points to the next phase after phase-transition
+    # --action complete, so COMMANDS[current] is always the right command.
     current = state.get("current_phase", 1)
     current_status = phases.get(str(current), {}).get("status", "pending")
     if current_status == "in_progress":
         cmd = COMMANDS.get(current, f"/flow:phase{current}")
         lines.append(f"  Continue: {cmd}")
     else:
-        cmd = COMMANDS.get(current + 1, COMMANDS.get(current, ""))
+        cmd = COMMANDS.get(current, "")
         lines.append(f"  Next: {cmd}")
     lines.append("")
     lines.append("============================================")

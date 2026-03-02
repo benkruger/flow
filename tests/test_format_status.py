@@ -179,12 +179,24 @@ def test_panel_continue_label_when_in_progress():
 
 
 def test_panel_next_label_when_phase_complete():
+    """After phase 2 completes, current_phase=3, so Next shows /flow:code."""
     state = make_state(
-        current_phase=2,
+        current_phase=3,
         phase_statuses={1: "complete", 2: "complete"},
     )
     panel = _mod.format_panel(state, VERSION)
     assert "Next: /flow:code" in panel
+    assert "Continue:" not in panel
+
+
+def test_panel_next_label_when_phase_pending():
+    """After phase 1 completes, current_phase=2 (pending), Next shows /flow:plan."""
+    state = make_state(
+        current_phase=2,
+        phase_statuses={1: "complete"},
+    )
+    panel = _mod.format_panel(state, VERSION)
+    assert "Next: /flow:plan" in panel
     assert "Continue:" not in panel
 
 
