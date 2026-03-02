@@ -241,7 +241,7 @@ These skills and scripts live in the FLOW repo itself (`.claude/skills/` and `li
 | `/commit` | Full diff review, commit message draft, approval gate, pull-before-push |
 | `/reflect` | Review session mistakes against CLAUDE.md rules, propose targeted improvements |
 | `/release` | Bump version in plugin.json and marketplace.json, tag, push, create GitHub Release |
-| `/qa` | Link plugin cache to source repo, test in a live session, unlink when done |
+| `/qa` | Switch marketplace to local source, test in a live session, restore when done |
 
 ### Local QA Workflow
 
@@ -251,13 +251,15 @@ Every plugin change can be tested locally before releasing:
 /qa
 ```
 
-This runs `bin/ci`, then symlinks the installed plugin cache to the source repo (`bin/flow dev-link`). You open a new Claude Code session in a target project, test whatever you need, come back, and `/qa` unlinks the cache and reports the result.
+This runs `bin/ci`, then re-registers the marketplace to point at the local source directory and updates the plugin cache. You open a new Claude Code session in a target project, test whatever you need, come back, and `/qa` restores the marketplace to the GitHub source and reports the result.
 
-The underlying scripts can also be run directly:
+The underlying commands can also be run directly:
 
 ```bash
-bin/flow dev-link      # symlink cache → source repo
-bin/flow dev-unlink    # restore original cache
+claude plugin marketplace add /path/to/flow    # point cache at local source
+claude plugin marketplace update flow-marketplace
+claude plugin marketplace add benkruger/flow    # restore production source
+claude plugin marketplace update flow-marketplace
 ```
 
 ---

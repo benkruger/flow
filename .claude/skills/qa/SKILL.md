@@ -1,6 +1,6 @@
 ---
 name: qa
-description: "QA the FLOW plugin locally. Links plugin cache to source repo, waits for manual testing, then unlinks."
+description: "QA the FLOW plugin locally. Switch marketplace to local source, test in a live session, restore when done."
 ---
 
 # FLOW QA
@@ -23,24 +23,22 @@ Run `bin/ci`. If it fails, stop:
 
 > "bin/ci failed. Fix the failures before QA testing."
 
-## Step 2 — Link plugin cache to source
+## Step 2 — Switch marketplace to local source
 
 Run:
 
 ```bash
-bin/flow dev-link
+claude plugin marketplace add <project_root>
+claude plugin marketplace update flow-marketplace
 ```
-
-If the output JSON has `"status": "error"`, print the error message and stop.
 
 ## Step 3 — Wait for manual testing
 
 Print:
 
-> Dev mode active. The plugin cache now points to this source repo.
+> Dev mode active. The plugin cache now contains this source repo's files.
 >
 > Open a **new** Claude Code session in a target project to test.
-> Changes to skill files here are immediately visible in the new session.
 >
 > Return here when done.
 
@@ -50,17 +48,18 @@ Then ask:
 AskUserQuestion: "Did QA pass?"
   - "Yes — QA passed"
   - "No — QA failed"
-  - "Not done yet — keep dev-link active"
+  - "Not done yet — keep testing"
 ```
 
 If **"Not done yet"**: re-ask the same question (loop until Yes or No).
 
-## Step 4 — Unlink plugin cache
+## Step 4 — Restore production marketplace
 
 Run:
 
 ```bash
-bin/flow dev-unlink
+claude plugin marketplace add benkruger/flow
+claude plugin marketplace update flow-marketplace
 ```
 
 ## Step 5 — Report

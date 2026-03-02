@@ -22,6 +22,7 @@
       "Bash(git rm .flow-commit-*)",
       "Bash(rm .flow-commit-*)",
       "Bash(bin/ci)",
+      "Bash(claude plugin marketplace add *)",
       "Bash(claude plugin marketplace update *)",
       "Bash(head *)",
       "Bash(tail *)",
