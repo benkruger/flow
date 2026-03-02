@@ -9,6 +9,12 @@ from conftest import LIB_DIR, make_state, write_state
 
 SCRIPT = str(LIB_DIR / "phase-transition.py")
 
+_spec = importlib.util.spec_from_file_location(
+    "phase_transition", LIB_DIR / "phase-transition.py"
+)
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+
 
 def _run(git_repo, phase, action, next_phase=None):
     """Run phase-transition.py with the given args."""
@@ -21,30 +27,21 @@ def _run(git_repo, phase, action, next_phase=None):
     return result
 
 
-def _read_state(state_dir, branch):
-    """Read and parse the state file."""
-    return json.loads((state_dir / f"{branch}.json").read_text())
+# --- Phase entry (in-process) ---
 
 
-# --- Phase entry ---
-
-
-def test_enter_sets_all_fields(git_repo, state_dir, branch):
+def test_enter_sets_all_fields():
     """Enter sets status, started_at, session_started_at, visit_count, current_phase."""
     state = make_state(current_phase=1, phase_statuses={1: "complete"})
-    write_state(state_dir, branch, state)
 
-    result = _run(git_repo, 2, "enter")
-    assert result.returncode == 0
+    updated, result = _mod.phase_enter(state, 2)
 
-    output = json.loads(result.stdout)
-    assert output["status"] == "ok"
-    assert output["phase"] == 2
-    assert output["action"] == "enter"
-    assert output["visit_count"] == 1
-    assert output["first_visit"] is True
+    assert result["status"] == "ok"
+    assert result["phase"] == 2
+    assert result["action"] == "enter"
+    assert result["visit_count"] == 1
+    assert result["first_visit"] is True
 
-    updated = _read_state(state_dir, branch)
     assert updated["phases"]["2"]["status"] == "in_progress"
     assert updated["phases"]["2"]["started_at"] is not None
     assert updated["phases"]["2"]["session_started_at"] is not None
@@ -52,134 +49,134 @@ def test_enter_sets_all_fields(git_repo, state_dir, branch):
     assert updated["current_phase"] == 2
 
 
-def test_enter_first_visit_sets_started_at(git_repo, state_dir, branch):
+def test_enter_first_visit_sets_started_at():
     """First visit sets started_at when it is null."""
     state = make_state(current_phase=1, phase_statuses={1: "complete"})
     assert state["phases"]["2"]["started_at"] is None
-    write_state(state_dir, branch, state)
 
-    _run(git_repo, 2, "enter")
+    updated, result = _mod.phase_enter(state, 2)
 
-    updated = _read_state(state_dir, branch)
     assert updated["phases"]["2"]["started_at"] is not None
 
 
-def test_enter_reentry_preserves_started_at(git_repo, state_dir, branch):
+def test_enter_reentry_preserves_started_at():
     """Re-entry preserves started_at and increments visit_count."""
     state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "complete"})
     state["phases"]["2"]["started_at"] = "2026-01-15T10:00:00Z"
     state["phases"]["2"]["visit_count"] = 2
-    write_state(state_dir, branch, state)
 
-    result = _run(git_repo, 2, "enter")
-    output = json.loads(result.stdout)
-    assert output["visit_count"] == 3
-    assert output["first_visit"] is False
+    updated, result = _mod.phase_enter(state, 2)
 
-    updated = _read_state(state_dir, branch)
+    assert result["visit_count"] == 3
+    assert result["first_visit"] is False
     assert updated["phases"]["2"]["started_at"] == "2026-01-15T10:00:00Z"
     assert updated["phases"]["2"]["visit_count"] == 3
 
 
-# --- Phase completion ---
+# --- Phase completion (in-process) ---
 
 
-def test_complete_sets_all_fields(git_repo, state_dir, branch):
+def test_complete_sets_all_fields():
     """Complete sets cumulative_seconds, status, completed_at, session_started_at=null, current_phase."""
     state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
-    write_state(state_dir, branch, state)
 
-    result = _run(git_repo, 2, "complete")
-    assert result.returncode == 0
+    updated, result = _mod.phase_complete(state, 2)
 
-    output = json.loads(result.stdout)
-    assert output["status"] == "ok"
-    assert output["phase"] == 2
-    assert output["action"] == "complete"
-    assert "cumulative_seconds" in output
-    assert "formatted_time" in output
-    assert output["next_phase"] == 3
+    assert result["status"] == "ok"
+    assert result["phase"] == 2
+    assert result["action"] == "complete"
+    assert "cumulative_seconds" in result
+    assert "formatted_time" in result
+    assert result["next_phase"] == 3
 
-    updated = _read_state(state_dir, branch)
     assert updated["phases"]["2"]["status"] == "complete"
     assert updated["phases"]["2"]["completed_at"] is not None
     assert updated["phases"]["2"]["session_started_at"] is None
     assert updated["current_phase"] == 3
 
 
-def test_complete_adds_to_existing_cumulative(git_repo, state_dir, branch):
+def test_complete_adds_to_existing_cumulative():
     """Complete adds elapsed time to existing cumulative_seconds."""
     state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
     state["phases"]["2"]["cumulative_seconds"] = 600
-    write_state(state_dir, branch, state)
 
-    result = _run(git_repo, 2, "complete")
-    output = json.loads(result.stdout)
-    assert output["cumulative_seconds"] >= 600
+    updated, result = _mod.phase_complete(state, 2)
+
+    assert result["cumulative_seconds"] >= 600
 
 
-def test_complete_formatted_time_less_than_one_minute(git_repo, state_dir, branch):
+def test_complete_formatted_time_less_than_one_minute():
     """Formatted time shows <1m for short durations."""
     state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
     state["phases"]["2"]["cumulative_seconds"] = 0
     state["phases"]["2"]["session_started_at"] = None
-    write_state(state_dir, branch, state)
 
-    result = _run(git_repo, 2, "complete")
-    output = json.loads(result.stdout)
-    assert output["formatted_time"] == "<1m"
+    updated, result = _mod.phase_complete(state, 2)
+
+    assert result["formatted_time"] == "<1m"
 
 
-def test_complete_next_phase_override(git_repo, state_dir, branch):
-    """--next-phase overrides the default phase+1."""
+def test_complete_next_phase_override():
+    """next_phase parameter overrides the default phase+1."""
     state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
-    write_state(state_dir, branch, state)
 
-    result = _run(git_repo, 2, "complete", next_phase=4)
-    output = json.loads(result.stdout)
-    assert output["next_phase"] == 4
+    updated, result = _mod.phase_complete(state, 2, next_phase=4)
 
-    updated = _read_state(state_dir, branch)
+    assert result["next_phase"] == 4
     assert updated["current_phase"] == 4
 
 
-def test_complete_null_session_started_at(git_repo, state_dir, branch):
+def test_complete_null_session_started_at():
     """Null session_started_at on complete results in elapsed=0."""
     state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
     state["phases"]["2"]["session_started_at"] = None
     state["phases"]["2"]["cumulative_seconds"] = 100
-    write_state(state_dir, branch, state)
 
-    result = _run(git_repo, 2, "complete")
-    output = json.loads(result.stdout)
-    assert output["cumulative_seconds"] == 100
+    updated, result = _mod.phase_complete(state, 2)
 
-
-# --- Formatted time values ---
+    assert result["cumulative_seconds"] == 100
 
 
-def test_formatted_time_minutes(git_repo, state_dir, branch):
+# --- Formatted time values (in-process) ---
+
+
+def test_formatted_time_minutes():
     """Formatted time shows Xm for >= 60 seconds."""
     state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
     state["phases"]["2"]["cumulative_seconds"] = 300
     state["phases"]["2"]["session_started_at"] = None
-    write_state(state_dir, branch, state)
 
-    result = _run(git_repo, 2, "complete")
-    output = json.loads(result.stdout)
-    assert output["formatted_time"] == "5m"
+    updated, result = _mod.phase_complete(state, 2)
+
+    assert result["formatted_time"] == "5m"
 
 
-def test_formatted_time_hours(git_repo, state_dir, branch):
+def test_formatted_time_hours():
     """Formatted time shows Xh Ym for >= 3600 seconds."""
     state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
     state["phases"]["2"]["cumulative_seconds"] = 3900
     state["phases"]["2"]["session_started_at"] = None
+
+    updated, result = _mod.phase_complete(state, 2)
+
+    assert result["formatted_time"] == "1h 5m"
+
+
+# --- CLI integration (subprocess) ---
+
+
+def test_cli_enter_and_complete_happy_path(git_repo, state_dir, branch):
+    """CLI happy path: enter then complete a phase via subprocess."""
+    state = make_state(current_phase=1, phase_statuses={1: "complete"})
     write_state(state_dir, branch, state)
 
-    result = _run(git_repo, 2, "complete")
-    output = json.loads(result.stdout)
-    assert output["formatted_time"] == "1h 5m"
+    enter_result = _run(git_repo, 2, "enter")
+    assert enter_result.returncode == 0
+    assert json.loads(enter_result.stdout)["status"] == "ok"
+
+    complete_result = _run(git_repo, 2, "complete")
+    assert complete_result.returncode == 0
+    assert json.loads(complete_result.stdout)["status"] == "ok"
 
 
 # --- Error cases ---
@@ -257,15 +254,9 @@ def test_error_detached_head(git_repo, state_dir, branch):
 
 def test_complete_future_session_started_clamps_to_zero():
     """If session_started_at is in the future, elapsed clamps to 0."""
-    spec = importlib.util.spec_from_file_location(
-        "phase_transition", LIB_DIR / "phase-transition.py"
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-
     state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
     state["phases"]["2"]["session_started_at"] = "2099-12-31T23:59:59Z"
     state["phases"]["2"]["cumulative_seconds"] = 50
 
-    updated, result = mod.phase_complete(state, 2)
+    updated, result = _mod.phase_complete(state, 2)
     assert result["cumulative_seconds"] == 50
