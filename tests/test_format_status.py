@@ -48,12 +48,7 @@ def test_no_state_file_returns_no_state(git_repo):
     assert data["status"] == "no_state"
 
 
-def test_corrupt_json_returns_error(state_dir, git_repo):
-    branch_result = subprocess.run(
-        ["git", "branch", "--show-current"],
-        capture_output=True, text=True, cwd=str(git_repo),
-    )
-    branch = branch_result.stdout.strip()
+def test_corrupt_json_returns_error(state_dir, git_repo, branch):
     bad_file = state_dir / f"{branch}.json"
     bad_file.write_text("{bad json")
     result = _run(git_repo)
@@ -63,12 +58,7 @@ def test_corrupt_json_returns_error(state_dir, git_repo):
     assert "Could not read" in data["message"]
 
 
-def test_happy_path_returns_ok_with_panel(state_dir, git_repo):
-    branch_result = subprocess.run(
-        ["git", "branch", "--show-current"],
-        capture_output=True, text=True, cwd=str(git_repo),
-    )
-    branch = branch_result.stdout.strip()
+def test_happy_path_returns_ok_with_panel(state_dir, git_repo, branch):
     state = make_state(
         current_phase=2,
         phase_statuses={1: "complete", 2: "in_progress"},
