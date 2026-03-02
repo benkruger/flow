@@ -21,9 +21,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from flow_utils import current_branch, format_time, PACIFIC, project_root, PHASE_NAMES
 
 COMMANDS = {
-    1: "/flow:start", 2: "/flow:research", 3: "/flow:design",
-    4: "/flow:plan", 5: "/flow:code", 6: "/flow:review",
-    7: "/flow:security", 8: "/flow:reflect", 9: "/flow:cleanup",
+    1: "/flow:start", 2: "/flow:plan", 3: "/flow:code",
+    4: "/flow:review", 5: "/flow:security", 6: "/flow:reflect",
+    7: "/flow:cleanup",
 }
 
 # Column width for phase name alignment
@@ -56,7 +56,7 @@ def format_panel(state, version, now=None):
     # Check if all phases are complete
     all_complete = all(
         phases.get(str(i), {}).get("status") == "complete"
-        for i in range(1, 10)
+        for i in range(1, 8)
     )
 
     if all_complete:
@@ -80,29 +80,18 @@ def format_panel(state, version, now=None):
     if notes:
         lines.append(f"  Notes   : {len(notes)}")
 
-    # Plan task progress (only when plan exists)
-    plan = state.get("plan")
-    if plan:
-        tasks = plan.get("tasks", [])
-        done = sum(1 for t in tasks if t.get("status") == "complete")
-        lines.append(f"  Tasks   : {done}/{len(tasks)} complete")
-
     lines.append("")
     lines.append("  Phases")
     lines.append("  ------")
 
     current_phase_data = None
 
-    for i in range(1, 10):
+    for i in range(1, 8):
         phase = phases.get(str(i), {})
         status = phase.get("status", "pending")
         name = PHASE_NAMES[i]
 
-        if status == "complete" and phase.get("skipped"):
-            marker = "[~]"
-            padded_name = name.ljust(NAME_WIDTH)
-            lines.append(f"  {marker} Phase {i}:  {padded_name} (skipped)")
-        elif status == "complete":
+        if status == "complete":
             marker = "[x]"
             seconds = phase.get("cumulative_seconds", 0)
             time_str = format_time(seconds)
@@ -154,7 +143,7 @@ def _format_all_complete(state, version, phases):
     # Total elapsed from phase timings
     total = sum(
         phases.get(str(i), {}).get("cumulative_seconds", 0)
-        for i in range(1, 10)
+        for i in range(1, 8)
     )
     lines.append(f"  Elapsed : {format_time(total)}")
 
@@ -162,15 +151,12 @@ def _format_all_complete(state, version, phases):
     lines.append("  Phases")
     lines.append("  ------")
 
-    for i in range(1, 10):
+    for i in range(1, 8):
         phase = phases.get(str(i), {})
         padded_name = PHASE_NAMES[i].ljust(NAME_WIDTH)
-        if phase.get("skipped"):
-            lines.append(f"  [~] Phase {i}:  {padded_name} (skipped)")
-        else:
-            seconds = phase.get("cumulative_seconds", 0)
-            time_str = format_time(seconds)
-            lines.append(f"  [x] Phase {i}:  {padded_name} ({time_str})")
+        seconds = phase.get("cumulative_seconds", 0)
+        time_str = format_time(seconds)
+        lines.append(f"  [x] Phase {i}:  {padded_name} ({time_str})")
 
     lines.append("")
     lines.append("============================================")

@@ -1,10 +1,10 @@
 ---
 name: cleanup
-description: "Phase 9: Cleanup — remove the worktree and delete the state file. Final phase. Requires Phase 8: Reflect to be complete."
+description: "Phase 7: Cleanup — remove the worktree and delete the state file. Final phase. Requires Phase 6: Reflect to be complete."
 model: haiku
 ---
 
-# FLOW Cleanup — Phase 9: Cleanup
+# FLOW Cleanup — Phase 7: Cleanup
 
 <SOFT-GATE>
 Run this entry check as your very first action. This gate never
@@ -15,8 +15,8 @@ blocks — it records warnings for the confirmation step.
 2. Get the current branch: run `git branch --show-current`.
 3. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file exists: extract `feature`, `worktree`, and
-     `cumulative_seconds`. Check `phases.8.status` — if not `"complete"`,
-     record warning "Phase 8 not complete (status: <actual status>)."
+     `cumulative_seconds`. Check `phases.6.status` — if not `"complete"`,
+     record warning "Phase 6 not complete (status: <actual status>)."
    - If the file does not exist: record warning "No state file found for
      branch '<branch>'."
 
@@ -33,7 +33,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````markdown
 ```text
 ============================================
-  FLOW v0.13.1 — Phase 9: Cleanup — STARTING
+  FLOW v0.13.1 — Phase 7: Cleanup — STARTING
 ============================================
 ```
 ````
@@ -133,7 +133,7 @@ Print inside a fenced code block (triple backticks) so it renders as plain monos
 ````markdown
 ```text
 ============================================
-  FLOW v0.13.1 — Phase 9: Cleanup — COMPLETE (<formatted_time>)
+  FLOW v0.13.1 — Phase 7: Cleanup — COMPLETE (<formatted_time>)
   Feature '<feature>' is fully done.
   Worktree removed, state file and log deleted.
 ============================================

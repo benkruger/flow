@@ -28,14 +28,12 @@ The Skill to invoke maps directly to the current phase:
 | Current phase | Skill to invoke |
 |--------------|----------------|
 | 1 — Start | `flow:start` |
-| 2 — Research | `flow:research` |
-| 3 — Design | `flow:design` |
-| 4 — Plan | `flow:plan` |
-| 5 — Code | `flow:code` |
-| 6 — Review | `flow:review` |
-| 7 — Security | `flow:security` |
-| 8 — Reflect | `flow:reflect` |
-| 9 — Cleanup | `flow:cleanup` |
+| 2 — Plan | `flow:plan` |
+| 3 — Code | `flow:code` |
+| 4 — Review | `flow:review` |
+| 5 — Security | `flow:security` |
+| 6 — Reflect | `flow:reflect` |
+| 7 — Cleanup | `flow:cleanup` |
 
 ---
 

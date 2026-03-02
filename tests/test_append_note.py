@@ -77,7 +77,7 @@ def test_note_written_to_state_file(state_dir, git_repo):
     assert len(updated["notes"]) == 1
     note = updated["notes"][0]
     assert note["phase"] == 2
-    assert note["phase_name"] == "Research"
+    assert note["phase_name"] == "Plan"
     assert note["type"] == "correction"
     assert note["note"] == "Always merge, never rebase"
     assert "T" in note["timestamp"]  # ISO 8601 format

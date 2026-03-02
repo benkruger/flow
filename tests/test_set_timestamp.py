@@ -141,9 +141,9 @@ def test_multiple_set_args(git_repo, state_dir, branch):
 
 def test_security_scanned_at(git_repo, state_dir, branch):
     """security.scanned_at=NOW sets the scan timestamp."""
-    state = make_state(current_phase=7, phase_statuses={
+    state = make_state(current_phase=5, phase_statuses={
         1: "complete", 2: "complete", 3: "complete", 4: "complete",
-        5: "complete", 6: "complete", 7: "in_progress",
+        5: "in_progress",
     })
     state["security"] = {"findings": [], "clean_checks": [], "scanned_at": None}
     write_state(state_dir, branch, state)

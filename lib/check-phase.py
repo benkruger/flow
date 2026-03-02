@@ -24,9 +24,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from flow_utils import current_branch, project_root, PHASE_NAMES
 
 COMMANDS = {
-    "1": "/flow:start",     "2": "/flow:research",  "3": "/flow:design",
-    "4": "/flow:plan",      "5": "/flow:code",      "6": "/flow:review",
-    "7": "/flow:security",  "8": "/flow:reflect",   "9": "/flow:cleanup",
+    "1": "/flow:start",     "2": "/flow:plan",      "3": "/flow:code",
+    "4": "/flow:review",    "5": "/flow:security",  "6": "/flow:reflect",
+    "7": "/flow:cleanup",
 }
 
 

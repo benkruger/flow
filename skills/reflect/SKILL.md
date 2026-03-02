@@ -1,10 +1,10 @@
 ---
 name: reflect
-description: "Phase 8: Reflect — review what went wrong, capture learnings, route each to its correct permanent home. Runs before the PR is merged. The only commits are CLAUDE.md and .claude/ changes."
+description: "Phase 6: Reflect — review what went wrong, capture learnings, route each to its correct permanent home. Runs before the PR is merged. The only commits are CLAUDE.md and .claude/ changes."
 model: sonnet
 ---
 
-# FLOW Reflect — Phase 8: Reflect
+# FLOW Reflect — Phase 6: Reflect
 
 <HARD-GATE>
 Run this phase entry check as your very first action. If any check fails,
@@ -16,8 +16,8 @@ stop immediately and show the error to the user.
 2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
      Run /flow:start first."
-3. Check `phases.7.status` in the JSON.
-   - If not `"complete"`: STOP. "BLOCKED: Phase 7: Security must be
+3. Check `phases.5.status` in the JSON.
+   - If not `"complete"`: STOP. "BLOCKED: Phase 5: Security must be
      complete. Run /flow:security first."
 </HARD-GATE>
 
@@ -34,7 +34,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````markdown
 ```text
 ============================================
-  FLOW v0.13.1 — Phase 8: Reflect — STARTING
+  FLOW v0.13.1 — Phase 6: Reflect — STARTING
 ============================================
 ```
 ````
@@ -44,7 +44,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 Update state for phase entry:
 
 ```bash
-bin/flow phase-transition --phase 8 --action enter
+bin/flow phase-transition --phase 6 --action enter
 ```
 
 Parse the JSON output to confirm `"status": "ok"`.
@@ -61,16 +61,17 @@ gate — there is nothing to log.
 
 Read and synthesise from four sources before asking the user anything:
 
-### Source A — State file data
+### Source A — State file and plan file data
 
 For each phase, note:
 - `visit_count` > 1 → this phase had friction, was revisited
 - `cumulative_seconds` — note the time each phase took for context
 - `state["notes"]` → explicit corrections captured during the session
-- `state["research"]["risks"]` → risks found, check if any caused problems
-- `state["research"]["open_questions"]` → anything that was unresolved
-- `state["design"]["rationale"]` → why this approach was chosen, did it hold up?
-- Plan sections that needed multiple revisions
+
+Read `plan_file` from the state file to get the plan file path. Use the
+Read tool to read the plan file. Note:
+- Risks identified in the plan → check if any caused problems during implementation
+- Approach rationale → did it hold up through Code and Review?
 - Review findings that were caught late
 
 ### Source B — Captured notes
@@ -354,7 +355,7 @@ Use AskUserQuestion:
 Complete the phase:
 
 ```bash
-bin/flow phase-transition --phase 8 --action complete
+bin/flow phase-transition --phase 6 --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -366,7 +367,7 @@ Print inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW v0.13.1 — Phase 8: Reflect — COMPLETE (<formatted_time>)
+  FLOW v0.13.1 — Phase 6: Reflect — COMPLETE (<formatted_time>)
   Merge the PR, then run /flow:cleanup.
 ============================================
 ```
@@ -374,16 +375,16 @@ Print inside a fenced code block:
 
 Invoke `flow:status`, then use AskUserQuestion:
 
-> "Phase 8: Reflect is complete. The PR now includes CLAUDE.md improvements. Ready to begin Phase 9: Cleanup?"
+> "Phase 6: Reflect is complete. The PR now includes CLAUDE.md improvements. Ready to begin Phase 7: Cleanup?"
 >
-> - **Yes, start Phase 9 now** — invoke `flow:cleanup`
+> - **Yes, start Phase 7 now** — invoke `flow:cleanup`
 > - **Not yet** — print paused banner
 > - **I have a correction or learning to capture**
 
 **If "I have a correction or learning to capture":**
 1. Ask the user what they want to capture
 2. Invoke `/flow:note` with their message
-3. Re-ask with only "Yes, start Phase 9 now" and "Not yet"
+3. Re-ask with only "Yes, start Phase 7 now" and "Not yet"
 
 **If Yes** — invoke `flow:cleanup` using the Skill tool.
 

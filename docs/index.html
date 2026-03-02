@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FLOW — Software Development Lifecycle for Claude Code</title>
-  <meta name="description" content="An opinionated 9-phase software development lifecycle plugin for Claude Code. Research-first, design-first, TDD. Every feature, same phases, no shortcuts. Supports Rails and Python.">
+  <meta name="description" content="An opinionated 7-phase software development lifecycle plugin for Claude Code. Plan-first, TDD. Every feature, same phases, no shortcuts. Supports Rails and Python.">
   <style>
     :root {
       --bg: #ffffff;
@@ -213,6 +213,18 @@
     }
 
     .sub-agent-badge {
+      background: var(--sub-agent-bg);
+      color: var(--sub-agent-text);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    .plan-mode-badge {
       background: var(--sub-agent-bg);
       color: var(--sub-agent-text);
       padding: 2px 8px;
@@ -475,7 +487,7 @@
 
   <header>
     <h1><a href="https://github.com/benkruger/flow" style="color: inherit; text-decoration: none;"><span>FLOW</span></a></h1>
-    <p class="tagline">An opinionated 9-phase software development lifecycle for Claude Code. Every feature follows the same phases in the same order. No shortcuts. Supports Rails and Python.</p>
+    <p class="tagline">An opinionated 7-phase software development lifecycle for Claude Code. Every feature follows the same phases in the same order. No shortcuts. Supports Rails and Python.</p>
   </header>
 
   <!-- WHY -->
@@ -489,7 +501,7 @@
   <!-- HOW -->
   <section>
     <h2>How</h2>
-    <p>Every feature goes through a <span class="highlight-phrase">9-phase orchestration</span>. Each phase has mandatory entry guards, structured outputs written to a persistent state file, and back-navigation when something was missed. In standard mode, every phase runs. In <code>--light</code> mode, Design is skipped for bug fixes and small changes.</p>
+    <p>Every feature goes through a <span class="highlight-phrase">7-phase orchestration</span>. Each phase has mandatory entry guards, structured outputs written to a persistent state file, and back-navigation when something was missed.</p>
 
     <div class="pipeline">
       <div class="pipeline-step">
@@ -500,66 +512,54 @@
       </div>
       <div class="pipeline-step">
         <div class="step-num">2</div>
-        <span class="step-label">Research</span>
-        <span class="step-detail">Affected code explored &middot; conventions checked &middot; risks documented</span>
-        <span class="sub-agent-badge">sub-agent</span>
+        <span class="step-label">Plan</span>
+        <span class="step-detail">Explore codebase &middot; design approach &middot; identify risks &middot; ordered tasks</span>
+        <span class="plan-mode-badge">plan mode</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">3</div>
-        <span class="step-label">Design</span>
-        <span class="step-detail">2&ndash;3 alternatives validated &middot; user picks one &middot; approved before any code</span>
-        <span class="sub-agent-badge">sub-agent</span>
-      </div>
-      <div class="pipeline-step">
-        <div class="step-num">4</div>
-        <span class="step-label">Plan</span>
-        <span class="step-detail">Task feasibility verified &middot; TDD ordering &middot; section-by-section approval</span>
-        <span class="sub-agent-badge">sub-agent</span>
-      </div>
-      <div class="pipeline-step">
-        <div class="step-num">5</div>
         <span class="step-label">Code</span>
         <span class="step-detail">Test-first per task &middot; diff review &middot; bin/ci gate &middot; commit per task</span>
       </div>
       <div class="pipeline-step">
-        <div class="step-num">6</div>
+        <div class="step-num">4</div>
         <span class="step-label">Review</span>
-        <span class="step-detail">Design alignment &middot; research risk coverage &middot; framework anti-patterns</span>
+        <span class="step-detail">Plan alignment &middot; risk coverage &middot; framework anti-patterns</span>
         <span class="sub-agent-badge">sub-agent</span>
       </div>
       <div class="pipeline-step">
-        <div class="step-num">7</div>
+        <div class="step-num">5</div>
         <span class="step-label">Security</span>
         <span class="step-detail">Vulnerability scan &middot; auth gaps &middot; data exposure &middot; injection risks</span>
         <span class="sub-agent-badge">sub-agent</span>
       </div>
       <div class="pipeline-step">
-        <div class="step-num">8</div>
+        <div class="step-num">6</div>
         <span class="step-label">Reflect</span>
         <span class="step-detail">Learnings routed to 5 destinations &middot; worktree memory rescued &middot; plugin gaps noted</span>
       </div>
       <div class="pipeline-step">
-        <div class="step-num">9</div>
+        <div class="step-num">7</div>
         <span class="step-label">Cleanup</span>
         <span class="step-detail">Worktree removed &middot; state file deleted &middot; feature done</span>
       </div>
     </div>
 
-    <p>Phases 2, 3, 4, 6, and 7 use mandatory Explore-type sub-agents to read the codebase. Phase 1 uses a general-purpose Sonnet sub-agent to fix CI failures automatically &mdash; whether from a dirty main branch, gem upgrade breakage, or flaky tests. The main conversation stays focused on decisions while sub-agents handle the heavy lifting.</p>
+    <p>Review and Security use mandatory general-purpose sub-agents to analyze the diff. Start uses a Sonnet sub-agent to fix CI failures automatically. Plan uses Claude Code&rsquo;s native plan mode &mdash; Claude explores, designs, and plans in one integrated flow, then the user approves the whole plan before Code begins.</p>
 
     <h3>Architecture</h3>
     <div class="features">
       <div class="feature">
-        <h4>Sub-Agent Architecture</h4>
-        <p>Research, Design, Plan, Review, and Security launch Explore sub-agents. Start launches a Sonnet sub-agent to fix CI failures. By the time Code begins, every callback has been found, every risk documented. Code trusts the state file.</p>
+        <h4>Native Plan Mode</h4>
+        <p>Plan uses Claude Code&rsquo;s built-in plan mode (<code>EnterPlanMode</code>/<code>ExitPlanMode</code>). Claude explores the codebase, designs the approach, identifies risks, and produces ordered tasks &mdash; all in one context. The user iterates directly until the plan is right.</p>
       </div>
       <div class="feature">
         <h4>Smart Model Selection</h4>
-        <p>Each phase automatically selects the right model via skill frontmatter. Opus for Design, Code, and Security where reasoning matters most. Sonnet for structured phases. Haiku for mechanical steps. CI failures in Start are delegated to a Sonnet sub-agent.</p>
+        <p>Each phase automatically selects the right model via skill frontmatter. Opus for Plan, Code, and Security where reasoning matters most. Sonnet for structured phases. Haiku for mechanical steps. CI failures in Start are delegated to a Sonnet sub-agent.</p>
       </div>
       <div class="feature">
         <h4>State File Persistence</h4>
-        <p>Every feature has a <code>.flow-states/&lt;branch&gt;.json</code> file tracking research findings, design decisions, plan tasks, captured notes, and per-phase timing. State survives session breaks and compaction.</p>
+        <p>Every feature has a <code>.flow-states/&lt;branch&gt;.json</code> file tracking the plan file path, captured notes, security findings, and per-phase timing. State survives session breaks and compaction.</p>
       </div>
       <div class="feature">
         <h4>Session Hook &mdash; Auto-Continue</h4>
@@ -571,7 +571,7 @@
       </div>
       <div class="feature">
         <h4>Phase Back-Navigation</h4>
-        <p>Not a linear checklist. If Design reveals a gap in Research, go back. If Code reveals a flaw in the Plan, go back. Prior findings are preserved and extended &mdash; never discarded. Later phases are invalidated and re-approved.</p>
+        <p>Not a linear checklist. If Code reveals a flaw in the Plan, go back. If Review finds a missed risk, go back to Code or Plan. Prior findings are preserved and extended &mdash; never discarded.</p>
       </div>
       <div class="feature">
         <h4>100% Coverage Enforced</h4>
@@ -584,7 +584,7 @@
     </div>
 
     <h3>Instructions Are Advisory. Gates Aren&rsquo;t.</h3>
-    <p>Most agent workflows put enforcement in instructions: &ldquo;always run bin/ci&rdquo;, &ldquo;never skip Research&rdquo;. Instructions work until they don&rsquo;t. FLOW&rsquo;s phase enforcement is layered and deterministic. There is no instruction path from an incomplete phase to the next one running.</p>
+    <p>Most agent workflows put enforcement in instructions: &ldquo;always run bin/ci&rdquo;, &ldquo;never skip Plan&rdquo;. Instructions work until they don&rsquo;t. FLOW&rsquo;s phase enforcement is layered and deterministic. There is no instruction path from an incomplete phase to the next one running.</p>
     <div class="features">
       <div class="feature">
         <h4>Inline Phase Guard</h4>
@@ -603,8 +603,7 @@
     <h3>What It Enforces</h3>
     <ul>
       <li><strong>Worktree isolation</strong> &mdash; main is never touched directly; multiple features run in parallel</li>
-      <li><strong>Research before design</strong> &mdash; full class hierarchy read, callbacks found, risks documented first</li>
-      <li><strong>Design alternatives required</strong> &mdash; 2&ndash;3 distinct approaches validated before user picks one</li>
+      <li><strong>Plan before code</strong> &mdash; codebase explored, risks identified, approach approved before any implementation</li>
       <li><strong>TDD always</strong> &mdash; test must fail before implementation is written; test must pass before commit</li>
       <li><strong>bin/ci gate</strong> &mdash; must be green before every commit and every phase transition</li>
       <li><strong>100% test coverage</strong> &mdash; Code cannot transition to Review until coverage is complete</li>
@@ -734,7 +733,7 @@
           <div class="cool-card-back">
             <span class="cool-icon">🔀</span>
             <div class="cool-headline">Go back when you need to</div>
-            <p class="cool-desc">A real state machine with valid back-transitions. Research &rarr; Design &rarr; back to Research if needed. Prior findings are preserved and extended, never discarded.</p>
+            <p class="cool-desc">A real state machine with valid back-transitions. Code &rarr; Plan if the approach needs rethinking. Review &rarr; Code or Plan. Prior findings are preserved and extended, never discarded.</p>
           </div>
         </div>
       </div>
@@ -799,7 +798,7 @@
   <!-- CTA -->
   <section style="padding: 64px 0;">
     <h2>Get Started</h2>
-    <p>All 9 phase skills, state file infrastructure, session hooks, and reference documentation in one plugin.</p>
+    <p>All 7 phase skills, state file infrastructure, session hooks, and reference documentation in one plugin.</p>
 
     <p style="color: var(--text-muted); font-size: 15px; margin-bottom: 12px;">Step 1: Install in Claude Code</p>
     <div style="position: relative;">
@@ -823,12 +822,7 @@
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
       </button>
     </div>
-    <p style="color: var(--text-muted); font-size: 14px; margin-top: 12px; margin-bottom: 12px;">FLOW creates a git worktree, opens a GitHub PR, runs <code>bin/ci</code> to establish a baseline, upgrades dependencies, runs <code>bin/ci</code> again to confirm green, and lands you in Phase 2: Research.</p>
-    <p style="color: var(--text-muted); font-size: 15px; margin-top: 12px; margin-bottom: 12px;">For bug fixes and small changes, use light mode:</p>
-    <div style="position: relative;">
-      <pre style="font-size: 15px; padding: 20px 24px; margin: 0;"><code>/flow:start --light fix login bug</code></pre>
-    </div>
-    <p style="color: var(--text-muted); font-size: 14px; margin-top: 12px; margin-bottom: 28px;">Light mode skips Design. Research checks <code>git log</code> first, writes a simplified design object, and transitions directly to Plan. Same safety gates, less ceremony.</p>
+    <p style="color: var(--text-muted); font-size: 14px; margin-top: 12px; margin-bottom: 28px;">FLOW creates a git worktree, opens a GitHub PR, runs <code>bin/ci</code> to establish a baseline, upgrades dependencies, runs <code>bin/ci</code> again to confirm green, and lands you in Phase 2: Plan.</p>
 
     <div class="callout" style="margin-bottom: 32px;">
       <p>The plugin installs into Claude Code&rsquo;s managed plugin directory. <code>/flow:init</code> commits workspace permissions in <code>.claude/settings.json</code> and a version marker in <code>.flow.json</code> (once per project). During active development, a single gitignored <code>.flow-states/&lt;branch&gt;.json</code> per feature tracks state. Cleanup deletes even that. <strong>Three commands to set up. One file while you work. Zero when you&rsquo;re done.</strong></p>

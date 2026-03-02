@@ -99,7 +99,7 @@ def _write_flow_json(repo, version, framework="rails"):
     )
 
 
-def _run_no_gh(cwd, feature_name, extra_args=None, framework="rails"):
+def _run_no_gh(cwd, feature_name, framework="rails"):
     """Run start-setup.py with gh stubbed out and flow.json initialized."""
     # Ensure flow.json exists with correct version for the version gate
     _write_flow_json(cwd, _current_plugin_version(), framework)
@@ -116,8 +116,6 @@ def _run_no_gh(cwd, feature_name, extra_args=None, framework="rails"):
     gh_stub.chmod(0o755)
     env["PATH"] = f"{stub_dir}:{env['PATH']}"
     cmd = [sys.executable, SCRIPT, feature_name]
-    if extra_args:
-        cmd.extend(extra_args)
     result = subprocess.run(
         cmd,
         capture_output=True, text=True, cwd=str(cwd), env=env,
@@ -271,18 +269,17 @@ def test_state_file_created(git_repo_with_remote):
     assert data["notes"] == []
 
 
-def test_state_file_has_all_9_phases(git_repo_with_remote):
-    """State file must have all 9 phases with correct names."""
+def test_state_file_has_all_7_phases(git_repo_with_remote):
+    """State file must have all 7 phases with correct names."""
     _run_no_gh(git_repo_with_remote, "test feature")
     state_path = git_repo_with_remote / ".flow-states" / "test-feature.json"
     data = json.loads(state_path.read_text())
 
     expected_names = {
-        "1": "Start", "2": "Research", "3": "Design", "4": "Plan",
-        "5": "Code", "6": "Review", "7": "Security", "8": "Reflect",
-        "9": "Cleanup",
+        "1": "Start", "2": "Plan", "3": "Code", "4": "Review",
+        "5": "Security", "6": "Reflect", "7": "Cleanup",
     }
-    assert len(data["phases"]) == 9
+    assert len(data["phases"]) == 7
     for num, name in expected_names.items():
         assert data["phases"][num]["name"] == name
 
@@ -297,7 +294,7 @@ def test_state_file_phase_fields(git_repo_with_remote):
         "name", "status", "started_at", "completed_at",
         "session_started_at", "cumulative_seconds", "visit_count",
     ]
-    for num in range(1, 10):
+    for num in range(1, 8):
         phase = data["phases"][str(num)]
         for field in required_fields:
             assert field in phase, f"Phase {num} missing field '{field}'"
@@ -317,12 +314,12 @@ def test_state_file_phase_1_in_progress(git_repo_with_remote):
 
 
 def test_state_file_other_phases_pending(git_repo_with_remote):
-    """Phases 2-8 should be pending with null timestamps."""
+    """Phases 2-7 should be pending with null timestamps."""
     _run_no_gh(git_repo_with_remote, "test feature")
     state_path = git_repo_with_remote / ".flow-states" / "test-feature.json"
     data = json.loads(state_path.read_text())
 
-    for num in range(2, 10):
+    for num in range(2, 8):
         phase = data["phases"][str(num)]
         assert phase["status"] == "pending"
         assert phase["started_at"] is None
@@ -400,64 +397,17 @@ def test_extract_pr_number_non_numeric():
     assert _mod._extract_pr_number("https://github.com/org/repo/pull/abc") == 0
 
 
-# --- Light mode ---
+# --- plan_file field ---
 
 
-def test_light_flag_sets_mode_in_state_file(git_repo_with_remote):
-    """--light sets mode: "light" in the state file."""
-    result = _run_no_gh(git_repo_with_remote, "fix login bug", extra_args=["--light"])
+def test_state_file_has_plan_file_null(git_repo_with_remote):
+    """State file must have plan_file: null on creation."""
+    result = _run_no_gh(git_repo_with_remote, "test feature")
     assert result.returncode == 0, result.stderr
-    state_path = git_repo_with_remote / ".flow-states" / "fix-login-bug.json"
+    state_path = git_repo_with_remote / ".flow-states" / "test-feature.json"
     data = json.loads(state_path.read_text())
-    assert data["mode"] == "light"
-
-
-def test_light_flag_marks_phase_3_complete_and_skipped(git_repo_with_remote):
-    """--light marks Phase 3: Design as complete with skipped: true."""
-    result = _run_no_gh(git_repo_with_remote, "fix login bug", extra_args=["--light"])
-    assert result.returncode == 0, result.stderr
-    state_path = git_repo_with_remote / ".flow-states" / "fix-login-bug.json"
-    data = json.loads(state_path.read_text())
-    phase3 = data["phases"]["3"]
-    assert phase3["status"] == "complete"
-    assert phase3["skipped"] is True
-    assert phase3["cumulative_seconds"] == 0
-    assert phase3["visit_count"] == 0
-
-
-def test_light_flag_not_in_branch_name(git_repo_with_remote):
-    """--light must not appear in the branch name."""
-    result = _run_no_gh(git_repo_with_remote, "fix login bug", extra_args=["--light"])
-    assert result.returncode == 0, result.stderr
-    data = json.loads(result.stdout)
-    assert "--light" not in data["branch"]
-    assert "light" not in data["branch"]
-    assert data["branch"] == "fix-login-bug"
-
-
-def test_light_flag_in_output_json(git_repo_with_remote):
-    """--light includes mode: "light" in the output JSON."""
-    result = _run_no_gh(git_repo_with_remote, "fix login bug", extra_args=["--light"])
-    assert result.returncode == 0, result.stderr
-    data = json.loads(result.stdout)
-    assert data["mode"] == "light"
-
-
-def test_standard_mode_has_no_mode_field(git_repo_with_remote):
-    """Standard mode (no --light) should not have a mode field in state file."""
-    result = _run_no_gh(git_repo_with_remote, "new feature")
-    assert result.returncode == 0, result.stderr
-    state_path = git_repo_with_remote / ".flow-states" / "new-feature.json"
-    data = json.loads(state_path.read_text())
-    assert "mode" not in data
-
-
-def test_standard_mode_has_no_mode_in_output(git_repo_with_remote):
-    """Standard mode (no --light) should not have a mode field in output JSON."""
-    result = _run_no_gh(git_repo_with_remote, "new feature")
-    assert result.returncode == 0, result.stderr
-    data = json.loads(result.stdout)
-    assert "mode" not in data
+    assert "plan_file" in data
+    assert data["plan_file"] is None
 
 
 # --- .venv symlink in worktree ---

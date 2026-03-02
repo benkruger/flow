@@ -1,10 +1,10 @@
 ---
 name: review
-description: "Phase 6: Review — systematic code review against design, research risks, and framework anti-patterns. Fixes issues found, runs bin/ci after any fix, then transitions to Reflect."
+description: "Phase 4: Review — systematic code review against the plan, identified risks, and framework anti-patterns. Fixes issues found, runs bin/ci after any fix, then transitions to Security."
 model: sonnet
 ---
 
-# FLOW Review — Phase 6: Review
+# FLOW Review — Phase 4: Review
 
 <HARD-GATE>
 Run this phase entry check as your very first action. If any check fails,
@@ -16,8 +16,8 @@ stop immediately and show the error to the user.
 3. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
      Run /flow:start first."
-4. Check `phases.5.status` in the JSON.
-   - If not `"complete"`: STOP. "BLOCKED: Phase 5: Code must be
+4. Check `phases.3.status` in the JSON.
+   - If not `"complete"`: STOP. "BLOCKED: Phase 3: Code must be
      complete. Run /flow:code first."
 </HARD-GATE>
 
@@ -28,7 +28,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````markdown
 ```text
 ============================================
-  FLOW v0.13.1 — Phase 6: Review — STARTING
+  FLOW v0.13.1 — Phase 4: Review — STARTING
 ============================================
 ```
 ````
@@ -38,7 +38,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 Update state for phase entry:
 
 ```bash
-bin/flow phase-transition --phase 6 --action enter
+bin/flow phase-transition --phase 4 --action enter
 ```
 
 Parse the JSON output to confirm `"status": "ok"`.
@@ -58,7 +58,7 @@ Then Read `.flow-states/<branch>.log` (empty string if it does not
 exist yet) and Write it back with this line appended:
 
 ```text
-YYYY-MM-DDTHH:MM:SSZ [Phase 6] Step X — desc (exit EC)
+YYYY-MM-DDTHH:MM:SSZ [Phase 4] Step X — desc (exit EC)
 ```
 
 Get `<branch>` from the state file.
@@ -84,15 +84,8 @@ Provide these instructions to the Step 1 sub-agent (fill in the details):
 > (git diff, git log, git blame). Never use Bash for any other purpose —
 > no find, ls, cat, wc, test -f, stat, or running project tooling.
 >
-> Approved design:
-> <paste state["design"] — chosen_approach, schema_changes, model_changes,
-> controller_changes, worker_changes, route_changes>
->
-> Research risks:
-> <paste state["research"]["risks"]>
->
-> Plan tasks:
-> <paste state["plan"]["tasks"] summaries>
+> Plan file:
+> <paste the plan file contents — includes context, approach, risks, and tasks>
 >
 > First, get the full diff:
 >
@@ -102,17 +95,17 @@ Provide these instructions to the Step 1 sub-agent (fill in the details):
 >
 > Read every changed file completely. Then check:
 >
-> **Design alignment:**
+> **Plan alignment:**
 >
-> - Do schema changes match design["schema_changes"]?
-> - Do model decisions match design["model_changes"]?
-> - Do controller/route changes match design?
-> - Do worker changes match design?
+> - Does the implementation match the approach described in the plan?
+> - Do schema changes match what was planned?
+> - Do model, controller, worker, and route changes match the plan?
+> - Are all planned tasks reflected in the diff?
 > - Flag any deviation — minor drift or major mismatch.
 >
-> **Research risk coverage:**
+> **Risk coverage:**
 >
-> - For each risk in the list, confirm it was handled in the diff.
+> - For each risk identified in the plan, confirm it was handled in the diff.
 > - Flag any risk not addressed.
 >
 > **Rails anti-pattern check:**
@@ -130,8 +123,8 @@ Provide these instructions to the Step 1 sub-agent (fill in the details):
 >
 > Return structured findings in three categories:
 >
-> 1. Design alignment issues (with file:line references)
-> 2. Uncovered research risks (with which risk and why)
+> 1. Plan alignment issues (with file:line references)
+> 2. Uncovered risks (with which risk and why)
 > 3. Anti-pattern violations (with file:line and what to fix)
 >
 > If a category has no findings, say so explicitly.
@@ -155,15 +148,8 @@ Provide these instructions to the Step 1 sub-agent (fill in the details):
 > (git diff, git log, git blame). Never use Bash for any other purpose —
 > no find, ls, cat, wc, test -f, stat, or running project tooling.
 >
-> Approved design:
-> <paste state["design"] — chosen_approach, module_changes, test_changes,
-> script_changes>
->
-> Research risks:
-> <paste state["research"]["risks"]>
->
-> Plan tasks:
-> <paste state["plan"]["tasks"] summaries>
+> Plan file:
+> <paste the plan file contents — includes context, approach, risks, and tasks>
 >
 > First, get the full diff:
 >
@@ -173,16 +159,16 @@ Provide these instructions to the Step 1 sub-agent (fill in the details):
 >
 > Read every changed file completely. Then check:
 >
-> **Design alignment:**
+> **Plan alignment:**
 >
-> - Do module changes match design["module_changes"]?
-> - Do test changes match design["test_changes"]?
-> - Do script changes match design["script_changes"]?
+> - Does the implementation match the approach described in the plan?
+> - Do module and script changes match what was planned?
+> - Are all planned tasks reflected in the diff?
 > - Flag any deviation — minor drift or major mismatch.
 >
-> **Research risk coverage:**
+> **Risk coverage:**
 >
-> - For each risk in the list, confirm it was handled in the diff.
+> - For each risk identified in the plan, confirm it was handled in the diff.
 > - Flag any risk not addressed.
 >
 > **Python anti-pattern check:**
@@ -199,8 +185,8 @@ Provide these instructions to the Step 1 sub-agent (fill in the details):
 >
 > Return structured findings in three categories:
 >
-> 1. Design alignment issues (with file:line references)
-> 2. Uncovered research risks (with which risk and why)
+> 1. Plan alignment issues (with file:line references)
+> 2. Uncovered risks (with which risk and why)
 > 3. Anti-pattern violations (with file:line and what to fix)
 >
 > If a category has no findings, say so explicitly.
@@ -214,10 +200,9 @@ Provide these instructions to the Step 1 sub-agent (fill in the details):
 
 ## Step 1 — Launch diff analyzer sub-agent
 
-Read the following from the state file (small, structured — keep in main context):
-- `state["design"]` — what was approved to be built
-- `state["plan"]["tasks"]` — what was planned
-- `state["research"]["risks"]` — risks identified during Research
+Read `plan_file` from the state file to get the plan file path. Use the
+Read tool to read the plan file — it contains the approach, risks, and
+planned tasks.
 
 Then launch a mandatory sub-agent to analyze the full diff. Use the Task tool:
 
@@ -225,7 +210,7 @@ Then launch a mandatory sub-agent to analyze the full diff. Use the Task tool:
 - `description`: `"Review diff analysis"`
 
 Provide the sub-agent with the **Diff Analysis Sub-Agent Prompt** from the
-framework section above (fill in the feature name, design, risks, and tasks).
+framework section above (fill in the feature name and plan file contents).
 
 Wait for the sub-agent to return before proceeding.
 
@@ -235,10 +220,10 @@ Wait for the sub-agent to return before proceeding.
 
 Read the sub-agent's structured findings. For each category:
 
-**Design alignment issues** — Confirm each finding against the state file.
+**Plan alignment issues** — Confirm each finding against the plan file.
 Minor drift is a note. Major drift means go back to Code.
 
-**Uncovered research risks** — Confirm each finding. An unaddressed risk
+**Uncovered risks** — Confirm each finding. An unaddressed risk
 is a bug waiting to happen.
 
 **Anti-pattern violations** — Confirm each finding against the actual code.
@@ -256,7 +241,7 @@ For each finding:
 - Fix it directly
 - Describe what was fixed and why
 
-**Significant finding** (logic error, missing risk coverage, design mismatch):
+**Significant finding** (logic error, missing risk coverage, plan mismatch):
 - Use AskUserQuestion:
   > "Found a significant issue: <description>. How would you like to proceed?"
   >
@@ -269,7 +254,7 @@ After fixing any findings, run `/flow:commit` for the Review fixes.
 Then run `bin/ci` — required before any state transition.
 
 <HARD-GATE>
-bin/ci must be green before transitioning to Reflect.
+bin/ci must be green before transitioning to Security.
 Any fix made during Review requires bin/ci to run again.
 </HARD-GATE>
 
@@ -282,11 +267,11 @@ Show a summary of what was found and fixed inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW — Phase 6: Review — SUMMARY
+  FLOW — Phase 4: Review — SUMMARY
 ============================================
 
-  Design alignment  : ✓ matches approved design
-  Research risks    : ✓ all risks accounted for
+  Plan alignment    : ✓ matches approved plan
+  Risk coverage     : ✓ all risks accounted for
 
   Findings fixed
   --------------
@@ -308,11 +293,12 @@ Use AskUserQuestion if a finding is too significant to fix in Review:
 
 > - **Go back to Code** — implementation issue
 > - **Go back to Plan** — plan was missing something
-> - **Go back to Design** — approach needs rethinking
-> - **Go back to Research** — something fundamental was missed
 
-Update state for all phases between current and target before invoking
-the target skill.
+**Go back to Code:** update Phase 4 to `pending`, Phase 3 to
+`in_progress`, then invoke `flow:code`.
+
+**Go back to Plan:** update Phases 4 and 3 to `pending`, Phase 2 to
+`in_progress`, then invoke `flow:plan`.
 
 ---
 
@@ -321,7 +307,7 @@ the target skill.
 Complete the phase:
 
 ```bash
-bin/flow phase-transition --phase 6 --action complete
+bin/flow phase-transition --phase 4 --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -333,23 +319,23 @@ Print inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW v0.13.1 — Phase 6: Review — COMPLETE (<formatted_time>)
+  FLOW v0.13.1 — Phase 4: Review — COMPLETE (<formatted_time>)
 ============================================
 ```
 ````
 
 Invoke `flow:status`, then use AskUserQuestion:
 
-> "Phase 6: Review is complete. Ready to begin Phase 7: Security?"
+> "Phase 4: Review is complete. Ready to begin Phase 5: Security?"
 >
-> - **Yes, start Phase 7 now** — invoke `flow:security`
+> - **Yes, start Phase 5 now** — invoke `flow:security`
 > - **Not yet** — print paused banner
 > - **I have a correction or learning to capture**
 
 **If "I have a correction or learning to capture":**
 1. Ask the user what they want to capture
 2. Invoke `/flow:note` with their message
-3. Re-ask with only "Yes, start Phase 7 now" and "Not yet"
+3. Re-ask with only "Yes, start Phase 5 now" and "Not yet"
 
 **If Yes** — invoke `flow:security` using the Skill tool.
 
@@ -369,8 +355,8 @@ Invoke `flow:status`, then use AskUserQuestion:
 ## Hard Rules
 
 - Always run `bin/ci` after any fix made during Review
-- Never transition to Reflect unless bin/ci is green
-- Never skip the design alignment check
-- Never skip the research risk coverage check
+- Never transition to Security unless bin/ci is green
+- Never skip the plan alignment check
+- Never skip the risk coverage check
 - Read the full diff before starting — no partial reviews
 - Plus the **Framework-Specific Hard Rules** from the framework section above

@@ -18,11 +18,10 @@ when building new phase skills.
 2. Announce banner
 3. Update state file — set phase to in_progress, record session_started_at
 4. cd into worktree from state file
-5. [Sub-agent codebase read — if this phase reads the codebase]
-6. [Phase-specific work — using sub-agent findings]
-7. Update state file — set phase to complete, calculate cumulative_seconds
-8. Invoke flow:status  ← always, right before the transition question
-9. AskUserQuestion — "Phase X: Name is complete. Ready to begin Phase X+1?"
+5. [Phase-specific work]
+6. Update state file — set phase to complete, calculate cumulative_seconds
+7. Invoke flow:status  ← always, right before the transition question
+8. AskUserQuestion — "Phase X: Name is complete. Ready to begin Phase X+1?"
    - Yes, start Phase X+1 now → invoke next phase skill via Skill tool
    - Not yet → print paused banner
    - I have a correction or learning to capture → invoke flow:note, then re-ask
@@ -81,8 +80,7 @@ The `phase-transition` script handles all timing, counters, and status
 fields. Skills must never compute timestamps, time differences, or
 counter increments — all computation goes through `bin/flow` commands.
 
-For mid-phase timestamp fields (`approved_at`, `scanned_at`, task
-status changes), use:
+For mid-phase timestamp fields (`scanned_at`, plan file path), use:
 
 ```bash
 bin/flow set-timestamp --set <path>=NOW
@@ -106,18 +104,18 @@ Replace `PREV` with the previous phase number and `PREV_NAME` with its name:
 
 ---
 
-## Mandatory Sub-Agent Pattern
+## Sub-Agent Pattern
 
-**Rule:** Every phase that reads the codebase uses a mandatory sub-agent.
+Phases with sub-agents: Review, Security.
+Start uses a Sonnet sub-agent for CI failures.
+Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`).
+Phases without sub-agents: Code, Reflect, Cleanup.
 
-Phases with sub-agents: Research, Design, Plan, Review, Security.
-Phases without: Start, Code, Reflect, Cleanup.
-
-The pattern is the same in every phase:
+The pattern for Review and Security:
 
 ```text
-1. Main conversation determines WHAT to look for (from state file + user input)
-2. Launch sub-agent via Task tool with subagent_type: "Explore"
+1. Main conversation determines WHAT to check (from plan file + state file)
+2. Launch sub-agent via Task tool with subagent_type: "general-purpose"
 3. Sub-agent reads files, returns structured findings
 4. Main conversation uses findings to do the phase work
 5. Main conversation persists relevant findings to state file
@@ -126,16 +124,16 @@ The pattern is the same in every phase:
 Sub-agents do NOT: make decisions, write code, modify state, interact with users.
 They read and report. The main conversation decides.
 
-**Code phase rationale:** By the time Code starts, the state file contains
-thorough findings from Research, validated alternatives from Design, and verified
-tasks from Plan — all produced by mandatory sub-agents. Code trusts the earlier
-phases. It reads the state file and the specific file it's modifying — nothing more.
+**Code phase rationale:** By the time Code starts, the plan file contains
+thorough exploration, a validated approach, identified risks, and ordered
+tasks — all produced during Plan phase. Code trusts the plan. It reads
+the plan file and the specific file it's modifying — nothing more.
 
 ---
 
 ## Note Capture at Transitions
 
-Every phase transition (Phases 1-8) includes a third option:
+Every phase transition (Phases 1-6) includes a third option:
 
 ```text
 "Phase X: Name is complete. Ready to begin Phase X+1?"

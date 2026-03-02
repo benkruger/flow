@@ -69,22 +69,22 @@ def test_happy_path_returns_ok_with_all_fields(state_dir, git_repo, branch):
     assert data["status"] == "ok"
     assert "panel" in data
     assert data["current_phase"] == 2
-    assert data["phase_name"] == "Research"
-    assert data["phase_command"] == "/flow:research"
+    assert data["phase_name"] == "Plan"
+    assert data["phase_command"] == "/flow:plan"
     assert data["worktree"] == ".worktrees/test-feature"
 
 
-def test_all_complete_returns_ok_with_phase_9(state_dir, git_repo, branch):
+def test_all_complete_returns_ok_with_phase_7(state_dir, git_repo, branch):
     state = make_state(
-        current_phase=9,
-        phase_statuses={i: "complete" for i in range(1, 10)},
+        current_phase=7,
+        phase_statuses={i: "complete" for i in range(1, 8)},
     )
     write_state(state_dir, branch, state)
     result = _run(git_repo)
     assert result.returncode == 0
     data = json.loads(result.stdout)
     assert data["status"] == "ok"
-    assert data["current_phase"] == 9
+    assert data["current_phase"] == 7
     assert data["phase_name"] == "Cleanup"
     assert data["phase_command"] == "/flow:cleanup"
 
@@ -146,8 +146,8 @@ def test_panel_matches_format_status_output(state_dir, git_repo, branch):
 # --- In-process unit tests ---
 
 
-def test_commands_dict_has_all_9():
-    for i in range(1, 10):
+def test_commands_dict_has_all_7():
+    for i in range(1, 8):
         assert i in _mod.COMMANDS
 
 

@@ -1,66 +1,62 @@
 ---
 title: /flow:plan
-nav_order: 6
+nav_order: 4
 parent: Skills
 ---
 
 # /flow:plan
 
-**Phase:** 4 — Plan
+**Phase:** 2 — Plan
 
 **Usage:** `/flow:plan`
 
-Breaks the approved design into ordered, executable tasks section by
-section. Each section is approved individually. TDD order is enforced
-throughout — tests always come before implementations.
+Explores the codebase, designs the approach, and produces an ordered
+implementation plan using Claude Code's native plan mode. Replaces the
+former Research, Design, and Plan phases with a single integrated phase.
 
 ---
 
 ## What It Does
 
-1. Reads `state["design"]` for all design decisions
-2. Generates tasks section by section (schema, models, workers, controllers, integration)
-3. Presents each section for approval with back navigation
-4. Shows complete task list for final sign-off
-5. Saves to `state["plan"]` with per-task and per-section tracking
+1. Asks what you're building and what success looks like
+2. Enters Claude Code's native plan mode (`EnterPlanMode`)
+3. In plan mode: explores the codebase, identifies risks, designs the
+   approach, and writes the plan to a plan file
+4. User iterates directly with the plan via plan mode's revision loop
+5. On approval (`ExitPlanMode`), stores the plan file path in the state file
+6. Completes the phase and transitions to Code
 
 ---
 
-## Section Navigation
+## Plan File Structure
 
-At every section:
-- **Yes** — mark approved, move to next
-- **Needs changes** — revise and re-present
-- **Go back to previous section** — re-opens it, invalidates later sections
-- **Go back further** — picker of all approved sections
+The plan file lives at `~/.claude/plans/<name>.md` and includes:
 
----
-
-## Task Structure
-
-```json
-{
-  "id": 1,
-  "section": "schema",
-  "type": "schema",
-  "description": "Add payments table to data/release.sql",
-  "files": ["data/release.sql"],
-  "tdd": false,
-  "status": "pending"
-}
-```
+- **Context** — what the user wants to build and why
+- **Exploration** — what exists in the codebase, affected files, patterns
+- **Risks** — what could go wrong, edge cases, constraints
+- **Approach** — the chosen approach and rationale
+- **Tasks** — ordered implementation tasks with files and TDD notes
 
 ---
 
-## Back Navigation
+## Resuming
 
-- Within Plan: go back to any previous section
-- From final review: go back to Design or Research
+If the session breaks mid-plan, `/flow:continue` checks whether
+`plan_file` is already set in the state file. If set, the plan was
+already approved — the phase completes and transitions to Code.
+If not set, the plan mode flow restarts.
 
 ---
 
 ## Gates
 
-- Requires Phase 3: Design to be complete
-- TDD order enforced — test task always precedes implementation task
-- Never writes code — task descriptions only
+- Requires Phase 1: Start to be complete
+- Plan mode approval required before proceeding to Code
+- Plan file path must be stored in state before phase completion
+
+---
+
+## See Also
+
+- [FLOW State Schema](../reference/flow-state-schema.md)

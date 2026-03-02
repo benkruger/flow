@@ -92,17 +92,17 @@ def phase_complete(state, phase, next_phase=None):
 def main():
     parser = argparse.ArgumentParser(description="Phase entry/completion transitions")
     parser.add_argument("--phase", type=int, required=True,
-                        help="Phase number (1-9)")
+                        help="Phase number (1-7)")
     parser.add_argument("--action", required=True, choices=["enter", "complete"],
                         help="Action: enter or complete")
     parser.add_argument("--next-phase", type=int, default=None,
                         help="Override next phase number (default: phase + 1)")
     args = parser.parse_args()
 
-    if args.phase < 1 or args.phase > 9:
+    if args.phase < 1 or args.phase > 7:
         print(json.dumps({
             "status": "error",
-            "message": f"Invalid phase number: {args.phase}. Must be 1-9.",
+            "message": f"Invalid phase number: {args.phase}. Must be 1-7.",
         }))
         sys.exit(1)
 

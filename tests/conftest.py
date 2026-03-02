@@ -101,17 +101,16 @@ def state_dir(git_repo):
     return d
 
 
-def make_state(current_phase=1, phase_statuses=None, mode=None, framework="rails"):
+def make_state(current_phase=1, phase_statuses=None, framework="rails"):
     """Build a minimal state dict.
 
     phase_statuses is a dict like {1: "complete", 2: "in_progress"}.
     Unspecified phases default to "pending".
-    mode is an optional string ("light") added to the top-level state.
     framework is "rails" or "python" (default "rails").
     """
     phase_statuses = phase_statuses or {}
     phases = {}
-    for i in range(1, 10):
+    for i in range(1, 8):
         status = phase_statuses.get(i, "pending")
         phases[str(i)] = {
             "name": PHASE_NAMES[i],
@@ -131,11 +130,10 @@ def make_state(current_phase=1, phase_statuses=None, mode=None, framework="rails
         "started_at": "2026-01-01T00:00:00Z",
         "current_phase": current_phase,
         "framework": framework,
+        "plan_file": None,
         "notes": [],
         "phases": phases,
     }
-    if mode is not None:
-        state["mode"] = mode
     return state
 
 

@@ -1,15 +1,15 @@
 ---
-title: "Phase 7: Security"
-nav_order: 8
+title: "Phase 5: Security"
+nav_order: 6
 ---
 
-# Phase 7: Security
+# Phase 5: Security
 
 **Command:** `/flow:security`
 
 Security analysis of the feature diff. Scans for vulnerabilities,
 authentication gaps, data exposure, and injection risks. Review
-confirmed that the code matches the design — Security confirms
+confirmed that the code matches the plan — Security confirms
 the code is safe.
 
 ---
@@ -36,5 +36,5 @@ Security does not transition to Reflect until bin/ci is green.
 
 ## What Comes Next
 
-Phase 8: Reflect (`/flow:reflect`) — extract learnings and update
+Phase 6: Reflect (`/flow:reflect`) — extract learnings and update
 CLAUDE.md before the PR is merged.

@@ -113,15 +113,15 @@ def _extract_pr_number(pr_url):
 
 
 def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                       light_mode=False, framework="rails"):
+                       framework="rails"):
     """Create the FLOW state file."""
     current_time = now()
     phase_names = {
-        1: "Start", 2: "Research", 3: "Design", 4: "Plan",
-        5: "Code", 6: "Review", 7: "Security", 8: "Reflect", 9: "Cleanup",
+        1: "Start", 2: "Plan", 3: "Code", 4: "Review",
+        5: "Security", 6: "Reflect", 7: "Cleanup",
     }
     phases = {}
-    for i in range(1, 10):
+    for i in range(1, 8):
         if i == 1:
             phases[str(i)] = {
                 "name": phase_names[i],
@@ -131,17 +131,6 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
                 "session_started_at": current_time,
                 "cumulative_seconds": 0,
                 "visit_count": 1,
-            }
-        elif i == 3 and light_mode:
-            phases[str(i)] = {
-                "name": phase_names[i],
-                "status": "complete",
-                "started_at": None,
-                "completed_at": None,
-                "session_started_at": None,
-                "cumulative_seconds": 0,
-                "visit_count": 0,
-                "skipped": True,
             }
         else:
             phases[str(i)] = {
@@ -163,11 +152,10 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
         "started_at": current_time,
         "current_phase": 1,
         "framework": framework,
+        "plan_file": None,
         "notes": [],
         "phases": phases,
     }
-    if light_mode:
-        state["mode"] = "light"
 
     state_dir = project_root / ".flow-states"
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -196,7 +184,6 @@ def main():
         sys.exit(1)
 
     feature_words = sys.argv[1]
-    light_mode = "--light" in sys.argv[2:]
     branch = _branch_name(feature_words)
     feature_title = _title_case(feature_words)
     project_root = Path.cwd()
@@ -242,7 +229,7 @@ def main():
 
         # Step 2f — Create state file
         _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                           light_mode=light_mode, framework=framework)
+                           framework=framework)
         _log(project_root, branch, f"create .flow-states/{branch}.json (exit 0)")
 
         output = {
@@ -253,8 +240,6 @@ def main():
             "feature": feature_title,
             "branch": branch,
         }
-        if light_mode:
-            output["mode"] = "light"
         print(json.dumps(output))
 
     except SetupError as e:

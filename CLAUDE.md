@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-A Claude Code plugin (`flow:` namespace) implementing an opinionated 9-phase development lifecycle. Supports Rails and Python via framework-specific skill fragments. Skills live in `skills/<name>/SKILL.md` with framework content in `skills/<phase>/rails.md` and `skills/<phase>/python.md`. State lives in `.flow-states/<branch>.json` in the target project.
+A Claude Code plugin (`flow:` namespace) implementing an opinionated 7-phase development lifecycle. Supports Rails and Python via framework-specific skill fragments. Skills live in `skills/<name>/SKILL.md` with framework content in `skills/<phase>/rails.md` and `skills/<phase>/python.md`. State lives in `.flow-states/<branch>.json` in the target project.
 
 ## Key Files
 
@@ -15,7 +15,7 @@ A Claude Code plugin (`flow:` namespace) implementing an opinionated 9-phase dev
 - `lib/start-setup.py` — consolidated Start phase setup (git pull, worktree, settings, PR, state file)
 - `lib/flow_utils.py` — shared utilities: `now()` (Pacific Time timestamps), `PACIFIC` timezone, `format_time()`, `current_branch()`, `project_root()`, `PHASE_NAMES`
 - `lib/phase-transition.py` — phase entry/completion (timing, counters, status, formatted_time)
-- `lib/set-timestamp.py` — mid-phase timestamp fields and task updates via dot-path notation
+- `lib/set-timestamp.py` — mid-phase timestamp fields via dot-path notation
 - `bin/flow` — dispatcher script routing subcommands to `lib/*.py`
 - `docs/reference/flow-state-schema.md` — state file schema reference
 - `docs/reference/skill-pattern.md` — template pattern for building new phase skills
@@ -45,7 +45,7 @@ The state file (`.flow-states/<branch>.json`) is the backbone. Schema reference:
 
 ### Sub-Agents
 
-Five phase skills launch mandatory general-purpose sub-agents: Research, Design, Plan, Review, Security. Start uses a general-purpose Sonnet sub-agent for CI failures. Code has no sub-agent. Sub-agent prompts must include a tool restriction rule and must not use Bash for file checks.
+Three phase skills launch mandatory sub-agents: Review and Security (general-purpose). Start uses a Sonnet sub-agent for CI failures. Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`) instead of sub-agents. Code has no sub-agent. Sub-agent prompts must include a tool restriction rule and must not use Bash for file checks.
 
 ### Memory
 
@@ -63,7 +63,7 @@ The version lives in 4 places, all must match: `plugin.json`, `marketplace.json`
 
 ### State Mutations
 
-Claude never computes timestamps, time differences, or counter increments. All standard state mutations go through `bin/flow` commands: `phase-transition` for entry/completion, `set-timestamp` for mid-phase fields. Claude still writes complex content objects (design, plan, research, security) via Read+Write, but timestamp fields within those objects are set to null and filled separately by `set-timestamp`.
+Claude never computes timestamps, time differences, or counter increments. All standard state mutations go through `bin/flow` commands: `phase-transition` for entry/completion, `set-timestamp` for mid-phase fields. Claude still writes complex content objects (security) via Read+Write, but timestamp fields within those objects are set to null and filled separately by `set-timestamp`. The plan file lives at `~/.claude/plans/` (Claude Code's native location) and its path is stored in `state["plan_file"]`.
 
 ### Permission Invariant
 
@@ -75,7 +75,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 
 | Test File | What It Enforces |
 |-----------|------------------|
-| `test_structural.py` | Config invariants: phases 1-9 exist, versions match across 4 files, commands unique, hooks reference existing files |
+| `test_structural.py` | Config invariants: phases 1-7 exist, versions match across 4 files, commands unique, hooks reference existing files |
 | `test_skill_contracts.py` | SKILL.md content: HARD-GATE presence, announce banners, state updates, sub-agent types, model frontmatter, logging sections, note-capture options. Uses glob-based discovery — new skills are automatically covered |
 | `test_check_phase.py` | Phase guard: blocks on incomplete prerequisites, allows on complete, handles worktrees, re-entry notes |
 | `test_session_start.py` | Session hook: feature detection, timing reset, resume injection, multi-feature handling |
@@ -85,7 +85,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 | `test_bin_test.py` | Test runner: venv detection, pass/fail, argument passthrough |
 | `test_start_setup.py` | Start setup script: branch naming, settings merge, worktree, state file, logging, error paths |
 | `test_phase_transition.py` | Phase entry/completion: timing, counters, status, formatted_time |
-| `test_set_timestamp.py` | Mid-phase timestamps: dot-path navigation, NOW replacement, task updates |
+| `test_set_timestamp.py` | Mid-phase timestamps: dot-path navigation, NOW replacement |
 | `test_extract_release.py` | Release notes extraction from RELEASE-NOTES.md |
 
 ## Maintainer Skills (private to this repo)

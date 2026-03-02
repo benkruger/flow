@@ -113,7 +113,7 @@ def test_index_mentions_every_skill_command():
 
 
 def test_index_phase_table_shows_all_phases():
-    """docs/skills/index.md phase table must show 'N — Name' for all 9 phases."""
+    """docs/skills/index.md phase table must show 'N — Name' for all 7 phases."""
     data = _load_phases()
     index = (DOCS_DIR / "skills" / "index.md").read_text()
     for num, phase in data["phases"].items():
@@ -128,7 +128,7 @@ def test_index_phase_table_shows_all_phases():
 
 
 def test_readme_mentions_all_phase_commands():
-    """README.md must mention all 9 phase commands and 'N: Name' strings."""
+    """README.md must mention all 7 phase commands and 'N: Name' strings."""
     readme = (REPO_ROOT / "README.md").read_text()
     data = _load_phases()
     for num, phase in data["phases"].items():
@@ -155,7 +155,7 @@ def test_readme_mentions_all_utility_commands():
 
 
 def test_landing_page_mentions_all_phase_names():
-    """docs/index.html must mention all 9 phase names."""
+    """docs/index.html must mention all 7 phase names."""
     html = (DOCS_DIR / "index.html").read_text()
     data = _load_phases()
     for num, phase in data["phases"].items():

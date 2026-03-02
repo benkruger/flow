@@ -1,10 +1,10 @@
 ---
 name: code
-description: "Phase 5: Code — execute plan tasks one at a time with TDD. Review diff before each commit. bin/ci must pass before moving to the next task. Framework architecture standards enforced."
+description: "Phase 3: Code — execute plan tasks one at a time with TDD. Review diff before each commit. bin/ci must pass before moving to the next task. Framework architecture standards enforced."
 model: opus
 ---
 
-# FLOW Code — Phase 5: Code
+# FLOW Code — Phase 3: Code
 
 <HARD-GATE>
 Run this phase entry check as your very first action. If any check fails,
@@ -16,8 +16,8 @@ stop immediately and show the error to the user.
 2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
      Run /flow:start first."
-3. Check `phases.4.status` in the JSON.
-   - If not `"complete"`: STOP. "BLOCKED: Phase 4: Plan must be
+3. Check `phases.2.status` in the JSON.
+   - If not `"complete"`: STOP. "BLOCKED: Phase 2: Plan must be
      complete. Run /flow:plan first."
 </HARD-GATE>
 
@@ -34,7 +34,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````text
 ```
 ============================================
-  FLOW v0.13.1 — Phase 5: Code — STARTING
+  FLOW v0.13.1 — Phase 3: Code — STARTING
 ============================================
 ```
 ````
@@ -44,7 +44,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 Update state for phase entry:
 
 ```bash
-bin/flow phase-transition --phase 5 --action enter
+bin/flow phase-transition --phase 3 --action enter
 ```
 
 Parse the JSON output to confirm `"status": "ok"`.
@@ -183,54 +183,59 @@ Then Read `.flow-states/<branch>.log` (empty string if it does not
 exist yet) and Write it back with this line appended:
 
 ```text
-YYYY-MM-DDTHH:MM:SSZ [Phase 5] Step X — desc (exit EC)
+YYYY-MM-DDTHH:MM:SSZ [Phase 3] Step X — desc (exit EC)
 ```
 
 Get `<branch>` from the state file.
 
 ---
 
+## Reading the Plan
+
+Read `plan_file` from the state file to get the plan file path. Use the
+Read tool to read the plan file. Identify the Tasks section — this is the
+ordered list of implementation tasks to execute.
+
+---
+
 ## Resuming Mid-Code
 
-If any tasks in `state["plan"]["tasks"]` have `status: "in_progress"`,
-this is a resume. Print inside a fenced code block:
+If this is a resume (re-entering the phase), determine progress by
+comparing the plan to committed work:
+
+```bash
+git log --oneline origin/main..HEAD
+```
+
+Compare commit messages to the tasks in the plan file. Continue from the
+first task that doesn't have a matching commit. Print inside a fenced
+code block:
 
 ````text
 ```
 ============================================
   FLOW — Resuming Code
 ============================================
-  Resuming at Task <id>: <description>
+  Resuming at: <task description>
   Tasks complete: <n> of <total>
 ============================================
 ```
 ````
 
-Continue from the first task with `status: "in_progress"` or `"pending"`.
-
 ---
 
 ## Task Loop
 
-Work through `state["plan"]["tasks"]` in order. For each task:
+Work through each task from the plan file in order. For each task:
 
 ### Before Starting a Task
-
-Update the task in state:
-
-```bash
-bin/flow set-timestamp --set plan.tasks.<task_index>.status=in_progress --set plan.tasks.<task_index>.started_at=NOW
-```
-
-Replace `<task_index>` with the task's 0-based index in the
-`state["plan"]["tasks"]` array.
 
 Print inside a fenced code block:
 
 ````text
 ```
 ============================================
-  Task <id> of <total> — <type>
+  Task <n> of <total>
   <description>
   Files: <files>
 ============================================
@@ -298,7 +303,7 @@ and proceed directly to bin/ci.
 
 Otherwise, use AskUserQuestion:
 
-> "Task <id>: <description> — does this look right?"
+> "Task <n>: <description> — does this look right?"
 >
 > - **Yes, run bin/ci and commit**
 > - **Needs changes** — describe what to fix
@@ -338,33 +343,23 @@ Use `/flow:commit` to review and commit this task's changes.
 The commit message subject should reference the task:
 
 ```text
-Add <what was built> — Task <id> of <total>
+Add <what was built> — Task <n> of <total>
 ```
 
 ---
 
-### Complete the Task
-
-Update the task in state:
-
-```bash
-bin/flow set-timestamp --set plan.tasks.<task_index>.status=complete --set plan.tasks.<task_index>.completed_at=NOW
-```
-
-Replace `<task_index>` with the task's 0-based index in the
-`state["plan"]["tasks"]` array.
+### Continue to Next Task
 
 Print inside a fenced code block:
 
 ````text
 ```
-Task <id> complete. <n> of <total> done.
+Task <n> complete. <completed> of <total> done.
 ```
 ````
 
-Without pausing or asking for confirmation, read the next pending task
-from `state["plan"]["tasks"]` and go back to "Before Starting a Task".
-Only stop looping when all tasks are `complete`.
+Without pausing or asking for confirmation, move to the next task
+from the plan file. Only stop looping when all tasks are complete.
 
 ---
 
@@ -374,23 +369,15 @@ At any point during the task loop, if something fundamental is wrong:
 
 Use AskUserQuestion:
 > - **Go back to Plan** — task description is wrong or missing tasks
-> - **Go back to Design** — the approach itself needs rethinking
-> - **Go back to Research** — something was missed that changes everything
 
-**Go back to Plan:** update Phase 5 to `pending`, Phase 4 to
+**Go back to Plan:** update Phase 3 to `pending`, Phase 2 to
 `in_progress`, then invoke `flow:plan`.
-
-**Go back to Design:** update Phases 5 and 4 to `pending`, Phase 3 to
-`in_progress`, then invoke `flow:design`.
-
-**Go back to Research:** update Phases 5, 4, and 3 to `pending`, Phase 2 to
-`in_progress`, then invoke `flow:research`.
 
 ---
 
 ## All Tasks Complete
 
-Once every task in `state["plan"]["tasks"]` is `complete`:
+Once every task from the plan file is complete:
 
 **Final bin/ci sweep:**
 
@@ -419,7 +406,7 @@ is empty. 100% coverage is mandatory.
 Complete the phase:
 
 ```bash
-bin/flow phase-transition --phase 5 --action complete
+bin/flow phase-transition --phase 3 --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -431,23 +418,23 @@ Print inside a fenced code block:
 ````text
 ```
 ============================================
-  FLOW v0.13.1 — Phase 5: Code — COMPLETE (<formatted_time>)
+  FLOW v0.13.1 — Phase 3: Code — COMPLETE (<formatted_time>)
 ============================================
 ```
 ````
 
 Invoke `flow:status`, then use AskUserQuestion:
 
-> "Phase 5: Code is complete. Ready to begin Phase 6: Review?"
+> "Phase 3: Code is complete. Ready to begin Phase 4: Review?"
 >
-> - **Yes, start Phase 6 now** — invoke `flow:review`
+> - **Yes, start Phase 4 now** — invoke `flow:review`
 > - **Not yet** — print paused banner
 > - **I have a correction or learning to capture**
 
 **If "I have a correction or learning to capture":**
 1. Ask the user what they want to capture
 2. Invoke `/flow:note` with their message
-3. Re-ask with only "Yes, start Phase 6 now" and "Not yet"
+3. Re-ask with only "Yes, start Phase 4 now" and "Not yet"
 
 **If Yes** — invoke `flow:review` using the Skill tool.
 

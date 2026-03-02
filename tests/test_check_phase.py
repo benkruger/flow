@@ -84,14 +84,14 @@ def test_previous_phase_complete_allows(git_repo, state_dir, branch):
     assert result.returncode == 0
 
 
-def test_sequential_chain_phase_5_with_1_to_4_complete(git_repo, state_dir, branch):
-    """Phase 5 entry should work when phases 1-4 are complete."""
+def test_sequential_chain_phase_4_with_1_to_3_complete(git_repo, state_dir, branch):
+    """Phase 4 entry should work when phases 1-3 are complete."""
     state = make_state(
-        current_phase=5,
-        phase_statuses={1: "complete", 2: "complete", 3: "complete", 4: "complete"},
+        current_phase=4,
+        phase_statuses={1: "complete", 2: "complete", 3: "complete"},
     )
     write_state(state_dir, branch, state)
-    result = _run(git_repo, 5)
+    result = _run(git_repo, 4)
     assert result.returncode == 0
 
 
@@ -121,34 +121,34 @@ def test_first_visit_no_previously_completed_message(git_repo, state_dir, branch
     assert "previously completed" not in result.stdout
 
 
-def test_phase_8_requires_phase_7_complete(git_repo, state_dir, branch):
-    """Phase 8 (Reflect) requires phase 7 (Security) to be complete."""
+def test_phase_6_requires_phase_5_complete(git_repo, state_dir, branch):
+    """Phase 6 (Reflect) requires phase 5 (Security) to be complete."""
     state = make_state(
-        current_phase=8,
+        current_phase=6,
         phase_statuses={
             1: "complete", 2: "complete", 3: "complete", 4: "complete",
-            5: "complete", 6: "complete", 7: "pending",
+            5: "pending",
         },
     )
     write_state(state_dir, branch, state)
-    result = _run(git_repo, 8)
+    result = _run(git_repo, 6)
     assert result.returncode == 1
-    assert "Phase 7" in result.stdout
+    assert "Phase 5" in result.stdout
 
 
-def test_phase_9_requires_phase_8_complete(git_repo, state_dir, branch):
-    """Phase 9 (Cleanup) requires phase 8 (Reflect) to be complete."""
+def test_phase_7_requires_phase_6_complete(git_repo, state_dir, branch):
+    """Phase 7 (Cleanup) requires phase 6 (Reflect) to be complete."""
     state = make_state(
-        current_phase=9,
+        current_phase=7,
         phase_statuses={
             1: "complete", 2: "complete", 3: "complete", 4: "complete",
-            5: "complete", 6: "complete", 7: "complete", 8: "pending",
+            5: "complete", 6: "pending",
         },
     )
     write_state(state_dir, branch, state)
-    result = _run(git_repo, 9)
+    result = _run(git_repo, 7)
     assert result.returncode == 1
-    assert "Phase 8" in result.stdout
+    assert "Phase 6" in result.stdout
 
 
 # --- Worktree resolution ---
@@ -163,21 +163,6 @@ def test_missing_phases_key_blocks(git_repo, state_dir, branch):
     assert "BLOCKED" in result.stdout
 
 
-def test_skipped_phase_satisfies_gate(git_repo, state_dir, branch):
-    """Phase marked complete+skipped (light mode) satisfies the next phase's gate."""
-    state = make_state(
-        current_phase=4,
-        phase_statuses={1: "complete", 2: "complete", 3: "complete"},
-        mode="light",
-    )
-    state["phases"]["3"]["skipped"] = True
-    state["phases"]["3"]["cumulative_seconds"] = 0
-    state["phases"]["3"]["visit_count"] = 0
-    write_state(state_dir, branch, state)
-    result = _run(git_repo, 4)
-    assert result.returncode == 0
-
-
 def test_blocked_message_includes_correct_command(git_repo, state_dir, branch):
     """Blocked message should include the correct /flow:X command for the missing phase."""
     state = make_state(current_phase=4, phase_statuses={
@@ -186,7 +171,7 @@ def test_blocked_message_includes_correct_command(git_repo, state_dir, branch):
     write_state(state_dir, branch, state)
     result = _run(git_repo, 4)
     assert result.returncode == 1
-    assert "/flow:design" in result.stdout
+    assert "/flow:code" in result.stdout
 
 
 def test_phase_0_blocks(git_repo, state_dir, branch):

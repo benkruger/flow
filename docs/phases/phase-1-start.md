@@ -60,4 +60,4 @@ By the end of Phase 1:
 
 ## What Comes Next
 
-Phase 2: Research (`/flow:research`) — read all affected code before writing any.
+Phase 2: Plan (`/flow:plan`) — explore the codebase, design the approach, and produce an ordered implementation plan.

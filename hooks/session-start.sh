@@ -58,11 +58,9 @@ if len(states) == 1:
     cp = str(s.get("current_phase", "1"))
     phase_name = s.get("phases", {}).get(cp, {}).get("name", "")
     feature = s.get("feature", "")
-    mode_suffix = " (light mode)" if s.get("mode") == "light" else ""
-
     context = (
         "<flow-session-continue>\n"
-        f'FLOW feature in progress: "{feature}" — Phase {cp}: {phase_name}{mode_suffix}\n'
+        f'FLOW feature in progress: "{feature}" — Phase {cp}: {phase_name}\n'
         "\n"
         "Your FIRST action before responding to anything else:\n"
         "Invoke the flow:continue skill.\n"
@@ -78,8 +76,7 @@ else:
     for s in states:
         cp = str(s.get("current_phase", "1"))
         phase_name = s.get("phases", {}).get(cp, {}).get("name", "")
-        mode_suffix = " (light mode)" if s.get("mode") == "light" else ""
-        features.append(f"{s.get('feature')} — Phase {cp}: {phase_name}{mode_suffix}")
+        features.append(f"{s.get('feature')} — Phase {cp}: {phase_name}")
 
     feature_list = "\n".join(f"  - {f}" for f in features)
 

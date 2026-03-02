@@ -1,10 +1,10 @@
 ---
 name: security
-description: "Phase 7: Security — scan for security issues in the feature diff. In-flow: diff-only after Review. Standalone: full repo, report-only, no state file required."
+description: "Phase 5: Security — scan for security issues in the feature diff. In-flow: diff-only after Review. Standalone: full repo, report-only, no state file required."
 model: opus
 ---
 
-# FLOW Security — Phase 7: Security
+# FLOW Security — Phase 5: Security
 
 <HARD-GATE>
 Run this phase entry check as your very first action. If any check fails,
@@ -16,8 +16,8 @@ stop immediately and show the error to the user.
 2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
      Run /flow:start first."
-3. Check `phases.6.status` in the JSON.
-   - If not `"complete"`: STOP. "BLOCKED: Phase 6: Review must be
+3. Check `phases.4.status` in the JSON.
+   - If not `"complete"`: STOP. "BLOCKED: Phase 4: Review must be
      complete. Run /flow:review first."
 </HARD-GATE>
 
@@ -34,7 +34,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````markdown
 ```text
 ============================================
-  FLOW v0.13.1 — Phase 7: Security — STARTING
+  FLOW v0.13.1 — Phase 5: Security — STARTING
 ============================================
 ```
 ````
@@ -44,7 +44,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 Update state for phase entry:
 
 ```bash
-bin/flow phase-transition --phase 7 --action enter
+bin/flow phase-transition --phase 5 --action enter
 ```
 
 Parse the JSON output to confirm `"status": "ok"`.
@@ -64,7 +64,7 @@ Then Read `.flow-states/<branch>.log` (empty string if it does not
 exist yet) and Write it back with this line appended:
 
 ```text
-YYYY-MM-DDTHH:MM:SSZ [Phase 7] Step X — desc (exit EC)
+YYYY-MM-DDTHH:MM:SSZ [Phase 5] Step X — desc (exit EC)
 ```
 
 Get `<branch>` from the state file.
@@ -90,12 +90,8 @@ Provide these instructions to the Step 1 sub-agent (fill in the details):
 > (git diff, git log, git blame). Never use Bash for any other purpose —
 > no find, ls, cat, wc, test -f, stat, or running project tooling.
 >
-> Approved design:
-> <paste state["design"] — chosen_approach, schema_changes, model_changes,
-> controller_changes, worker_changes, route_changes>
->
-> Research risks:
-> <paste state["research"]["risks"]>
+> Plan file:
+> <paste the plan file contents — includes approach and risks>
 >
 > First, get the full diff:
 >
@@ -206,12 +202,8 @@ Provide these instructions to the Step 1 sub-agent (fill in the details):
 > (git diff, git log, git blame). Never use Bash for any other purpose —
 > no find, ls, cat, wc, test -f, stat, or running project tooling.
 >
-> Approved design:
-> <paste state["design"] — chosen_approach, module_changes, test_changes,
-> script_changes>
->
-> Research risks:
-> <paste state["research"]["risks"]>
+> Plan file:
+> <paste the plan file contents — includes approach and risks>
 >
 > First, get the full diff:
 >
@@ -299,9 +291,8 @@ Provide these instructions to the Step 1 sub-agent (fill in the details):
 
 ## Step 1 — Launch security analysis sub-agent
 
-Read the following from the state file (small, structured — keep in main context):
-- `state["design"]` — what was approved to be built
-- `state["research"]["risks"]` — risks identified during Research
+Read `plan_file` from the state file to get the plan file path. Use the
+Read tool to read the plan file — it contains the approach and risks.
 
 Then launch a mandatory sub-agent to analyze the feature diff for security
 issues. Use the Task tool:
@@ -310,7 +301,7 @@ issues. Use the Task tool:
 - `description`: `"Security analysis"`
 
 Provide the sub-agent with the **Security Analysis Sub-Agent Prompt** from the
-framework section above (fill in the feature name, design, and risks).
+framework section above (fill in the feature name and plan file contents).
 
 Wait for the sub-agent to return before proceeding.
 
@@ -395,7 +386,7 @@ Show a summary of what was found and fixed inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW — Phase 7: Security — SUMMARY
+  FLOW — Phase 5: Security — SUMMARY
 ============================================
 
   Checks run       : 10
@@ -425,7 +416,7 @@ Show a summary of what was found and fixed inside a fenced code block:
 Complete the phase:
 
 ```bash
-bin/flow phase-transition --phase 7 --action complete
+bin/flow phase-transition --phase 5 --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -437,23 +428,23 @@ Print inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW v0.13.1 — Phase 7: Security — COMPLETE (<formatted_time>)
+  FLOW v0.13.1 — Phase 5: Security — COMPLETE (<formatted_time>)
 ============================================
 ```
 ````
 
 Invoke `flow:status`, then use AskUserQuestion:
 
-> "Phase 7: Security is complete. Ready to begin Phase 8: Reflect?"
+> "Phase 5: Security is complete. Ready to begin Phase 6: Reflect?"
 >
-> - **Yes, start Phase 8 now** — invoke `flow:reflect`
+> - **Yes, start Phase 6 now** — invoke `flow:reflect`
 > - **Not yet** — print paused banner
 > - **I have a correction or learning to capture**
 
 **If "I have a correction or learning to capture":**
 1. Ask the user what they want to capture
 2. Invoke `/flow:note` with their message
-3. Re-ask with only "Yes, start Phase 8 now" and "Not yet"
+3. Re-ask with only "Yes, start Phase 6 now" and "Not yet"
 
 **If Yes** — invoke `flow:reflect` using the Skill tool.
 

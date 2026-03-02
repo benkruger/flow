@@ -1,8 +1,8 @@
 # FLOW — Software Development Lifecycle for Claude Code
 
-An opinionated 9-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces research-first, design-first, TDD discipline on every feature. Supports Rails and Python.
+An opinionated 7-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces plan-first, TDD discipline on every feature. Supports Rails and Python.
 
-**Every feature. Same 9 phases. Same order. No shortcuts.**
+**Every feature. Same 7 phases. Same order. No shortcuts.**
 
 **Documentation:** [benkruger.github.io/flow](https://benkruger.github.io/flow)
 
@@ -19,21 +19,19 @@ FLOW imposes structure. Not bureaucracy — discipline.
 ## The Workflow
 
 ```text
-Start → Research → Design → Plan → Code → Review → Security → Reflect → Cleanup
-  1         2         3       4      5        6         7          8         9
+Start → Plan → Code → Review → Security → Reflect → Cleanup
+  1       2      3       4          5          6         7
 ```
 
 | Phase | Command | Model | What happens |
 |-------|---------|-------|-------------|
 | **1: Start** | `/flow:start <name>` | Haiku | New worktree, push branch, open PR, `bin/ci` baseline, upgrade dependencies, `bin/ci` green — Sonnet sub-agent fixes CI failures |
-| **2: Research** | `/flow:research` | Sonnet | Sub-agent explores affected code, finds framework-specific risks, documents findings |
-| **3: Design** | `/flow:design` | **Opus** | Sub-agent validates 2-3 alternatives, user picks one, design is approved before any code |
-| **4: Plan** | `/flow:plan` | Sonnet | Sub-agent verifies tasks are executable, section-by-section approval, TDD ordering |
-| **5: Code** | `/flow:code` | **Opus** | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
-| **6: Review** | `/flow:review` | Sonnet | Sub-agent checks design alignment, research risk coverage, framework anti-patterns |
-| **7: Security** | `/flow:security` | **Opus** | Sub-agent scans diff for vulnerabilities, auth gaps, data exposure, injection risks |
-| **8: Reflect** | `/flow:reflect` | Sonnet | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
-| **9: Cleanup** | `/flow:cleanup` | Haiku | Worktree removed, state file deleted, feature done |
+| **2: Plan** | `/flow:plan` | **Opus** | Native plan mode — explore codebase, design approach, produce ordered tasks with risks |
+| **3: Code** | `/flow:code` | **Opus** | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
+| **4: Review** | `/flow:review` | Sonnet | Sub-agent checks plan alignment, risk coverage, framework anti-patterns |
+| **5: Security** | `/flow:security` | **Opus** | Sub-agent scans diff for vulnerabilities, auth gaps, data exposure, injection risks |
+| **6: Reflect** | `/flow:reflect` | Sonnet | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
+| **7: Cleanup** | `/flow:cleanup` | Haiku | Worktree removed, state file deleted, feature done |
 
 ---
 
@@ -58,17 +56,7 @@ Start a new Claude Code session so permissions take effect, then start a feature
 /flow:start invoice pdf export
 ```
 
-This creates branch `invoice-pdf-export`, a worktree at `.worktrees/invoice-pdf-export`, opens a GitHub PR, runs `bin/ci` to establish a baseline, upgrades dependencies, runs `bin/ci` again to confirm green, and lands you in Phase 2: Research.
-
-### Light Mode
-
-For bug fixes and small changes that don't need full Design ceremony:
-
-```bash
-/flow:start --light fix login bug
-```
-
-Light mode skips Phase 3: Design. Research uses a "recent changes first" protocol — checking `git log` for recent relevant commits before deep exploration — and writes a simplified design object directly. The workflow goes Start, Research, Plan, Code, Review, Security, Reflect, Cleanup. Same safety gates, less ceremony.
+This creates branch `invoice-pdf-export`, a worktree at `.worktrees/invoice-pdf-export`, opens a GitHub PR, runs `bin/ci` to establish a baseline, upgrades dependencies, runs `bin/ci` again to confirm green, and lands you in Phase 2: Plan.
 
 ---
 
@@ -101,13 +89,13 @@ Available at any point in the workflow:
 
 ### Sub-Agent Architecture
 
-Six phases use sub-agents. Research, Design, Plan, Review, and Security launch Explore-type sub-agents to read the codebase. Start launches a general-purpose Sonnet sub-agent when `bin/ci` fails. The main conversation stays focused on decisions while sub-agents handle the heavy lifting.
+Three phase skills launch mandatory sub-agents: Review and Security (general-purpose). Start uses a Sonnet sub-agent for CI failures. Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`) instead of sub-agents. Code has no sub-agent.
 
 ```text
-Main conversation          Sub-agent (Explore)
+Main conversation          Sub-agent (general-purpose)
       |                          |
-      |─── Task: explore ───────>|
-      |    (what to look for)    |─── Read affected code
+      |─── Task: analyze ───────>|
+      |    (what to check)       |─── Read affected code
       |                          |─── Find conventions/risks
       |                          |─── Check test infrastructure
       |                          |─── Scan dependencies...
@@ -120,8 +108,6 @@ Main conversation          Sub-agent (Explore)
 
 Phase 1 also uses a **general-purpose Sonnet sub-agent** when `bin/ci` fails — whether from a dirty main branch, dependency upgrade breakage, or flaky tests. The sub-agent diagnoses failures, fixes them, iterates up to 3 times, then reports back. The main Haiku agent handles the mechanical setup at speed.
 
-By the time Code begins, every affected file has been read, every callback has been found, every risk has been documented. Code doesn't re-explore — it trusts the state file. This keeps the main context clean for decision-making throughout a long session.
-
 ### Model Recommendations
 
 FLOW automatically selects the right model for each phase — Opus for hard thinking, Sonnet for structured work, Haiku for mechanical steps. Each skill's frontmatter sets the model, so invoking the skill switches automatically.
@@ -129,25 +115,22 @@ FLOW automatically selects the right model for each phase — Opus for hard thin
 | Phase | Model | Why |
 |-------|-------|-----|
 | 1: Start | Haiku | Mechanical setup; CI failures delegated to Sonnet sub-agent |
-| 2: Research | Sonnet | Sub-agent does the heavy codebase reading |
-| 3: Design | **Opus** | Architectural judgment — bad design cascades through all later phases |
-| 4: Plan | Sonnet | Structured task generation, constrained by locked design |
-| 5: Code | **Opus** | Writing correct code against complex codebase |
-| 6: Review | Sonnet | Sub-agent analyzes diff, fixes are targeted and small |
-| 7: Security | **Opus** | Security analysis requires architectural reasoning about attack vectors and data flows |
-| 8: Reflect | Sonnet | Synthesizing learnings into reusable patterns |
-| 9: Cleanup | Haiku | Delete worktree and state file |
+| 2: Plan | **Opus** | Codebase exploration, architectural judgment, and task planning — bad plans cascade through all later phases |
+| 3: Code | **Opus** | Writing correct code against complex codebase |
+| 4: Review | Sonnet | Sub-agent analyzes diff, fixes are targeted and small |
+| 5: Security | **Opus** | Security analysis requires architectural reasoning about attack vectors and data flows |
+| 6: Reflect | Sonnet | Synthesizing learnings into reusable patterns |
+| 7: Cleanup | Haiku | Delete worktree and state file |
 | Commit | Sonnet | Writing clear, well-structured commit messages |
 
 ### State File Persistence
 
 Every feature has a state file at `.flow-states/<branch>.json`. It stores:
 
-- **Research findings** — affected files, risks, clarifications
-- **Design decisions** — chosen approach, change categories (framework-defined), rationale
-- **Plan tasks** — ordered, section-by-section, with TDD flags and status
+- **Plan file path** — reference to the plan file at `~/.claude/plans/<name>.md`
 - **Notes** — corrections captured automatically throughout the session
 - **Timing** — per-phase cumulative seconds and visit counts
+- **Security findings** — vulnerability tracking with fix status
 
 State survives session breaks and compaction. Multiple features can run simultaneously in separate worktrees with separate state files.
 
@@ -155,7 +138,7 @@ State survives session breaks and compaction. Multiple features can run simultan
 
 Every Claude Code session start — new terminal, `/clear`, `/compact` — triggers a hook that scans `.flow-states/` for in-progress features.
 
-If a feature is found, Claude's **first action** is to invoke `/flow:continue`. No prompt needed. No "what were we working on?" You close your laptop, open Claude Code the next morning, and the session opens with your feature's current phase, PR link, and time spent — then asks one question: "Ready to continue Phase 4: Plan?" Say yes and you're back exactly where you left off.
+If a feature is found, Claude's **first action** is to invoke `/flow:continue`. No prompt needed. No "what were we working on?" You close your laptop, open Claude Code the next morning, and the session opens with your feature's current phase, PR link, and time spent — then asks one question: "Ready to continue Phase 2: Plan?" Say yes and you're back exactly where you left off.
 
 If two features are in progress across two worktrees, the hook asks which one to resume before proceeding.
 
@@ -189,14 +172,12 @@ The learnings don't evaporate at session end. They compound.
 
 ### Phase Back-Navigation
 
-Every phase that allows it offers back-navigation when something was missed:
+Phases that allow it offer back-navigation when something was missed:
 
 | Phase | Can return to |
 |-------|--------------|
-| Design | Research |
-| Plan | Design, Research |
-| Code | Plan, Design, Research |
-| Review | Code, Plan, Design, Research |
+| Code | Plan |
+| Review | Code, Plan |
 
 When returning, state is reset appropriately. Later phases are invalidated. Prior findings are preserved and extended — never discarded.
 
@@ -205,8 +186,7 @@ When returning, state is reset appropriately. Later phases are invalidated. Prio
 ## What It Enforces
 
 - **Worktree isolation** — main is never touched directly; multiple features run in parallel
-- **Research before design** — affected code explored, risks found and documented
-- **Design alternatives required** — 2-3 distinct approaches validated before user picks one
+- **Plan before code** — codebase explored, risks identified, approach approved before any implementation
 - **TDD always** — test must fail before implementation is written; test must pass before commit
 - **`bin/ci` gate** — must be green before every commit and every phase transition
 - **100% test coverage** — Code phase cannot transition to Review without it
@@ -222,7 +202,7 @@ Every completed feature produces:
 - A merged PR with clean, TDD-tested, reviewed code
 - Individual commits per plan task with detailed messages
 - 100% test coverage maintained
-- All research risks addressed (verified by Review phase)
+- All identified risks addressed (verified by Review phase)
 - New CLAUDE.md patterns from corrections and learnings
 - A clean state file (deleted at Cleanup)
 
@@ -230,7 +210,7 @@ Every completed feature produces:
 
 ## Instructions Are Advisory. Gates Aren't
 
-Most agent workflows put enforcement in instructions: "always run bin/ci", "never skip Research". Instructions work until they don't. FLOW's phase enforcement is layered and deterministic. There is no instruction path from an incomplete phase to the next one running.
+Most agent workflows put enforcement in instructions: "always run bin/ci", "never skip Plan". Instructions work until they don't. FLOW's phase enforcement is layered and deterministic. There is no instruction path from an incomplete phase to the next one running.
 
 Three independent mechanisms enforce this:
 

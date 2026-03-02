@@ -1,9 +1,9 @@
 ---
-title: "Phase 8: Reflect"
-nav_order: 10
+title: "Phase 6: Reflect"
+nav_order: 7
 ---
 
-# Phase 8: Reflect
+# Phase 6: Reflect
 
 **Command:** `/flow:reflect`
 
@@ -18,7 +18,7 @@ application code is never touched.
 
 Reflect synthesises from all four before asking the user anything:
 
-1. **State file data** — visit counts, timing, captured `/flow:note` entries, research risks, open questions
+1. **State file data** — visit counts, timing, captured `/flow:note` entries, plan file risks
 2. **Captured notes** — corrections logged automatically by `/flow:note` throughout the session
 3. **Conversation context** — what Claude can still see of the session's back-and-forth
 4. **Worktree auto-memory** — patterns and observations Claude wrote to auto-memory during feature work, which will be lost when Cleanup removes the worktree
@@ -61,4 +61,4 @@ The user confirms or overrides with one click.
 ## What Comes Next
 
 Merge the PR manually (which now includes CLAUDE.md improvements),
-then run Phase 9: Cleanup (`/flow:cleanup`).
+then run Phase 7: Cleanup (`/flow:cleanup`).

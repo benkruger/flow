@@ -200,7 +200,7 @@ def test_error_invalid_phase(git_repo, state_dir, branch):
     state = make_state(current_phase=1)
     write_state(state_dir, branch, state)
 
-    result = _run(git_repo, 10, "enter")
+    result = _run(git_repo, 8, "enter")
     assert result.returncode == 1
 
     output = json.loads(result.stdout)

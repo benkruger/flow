@@ -10,7 +10,6 @@ model: haiku
 
 ```text
 /flow:start invoice pdf export
-/flow:start --light fix login bug
 ```
 
 Arguments become the feature name. Words are joined with hyphens:
@@ -20,12 +19,6 @@ Arguments become the feature name. Words are joined with hyphens:
 - PR title: `Invoice Pdf Export`
 
 Branch names are capped at **32 characters**. If the hyphenated name exceeds 32 characters, truncate at the last whole word (hyphen boundary) that fits. Strip any trailing hyphen.
-
-**`--light` flag:** For bug fixes and small changes that don't need full Design
-ceremony. When present, strip `--light` from the feature name before deriving
-the branch. Design (Phase 3) is marked complete+skipped in the state file.
-Research writes a simplified design object so Plan and Review work unchanged.
-Pass `--light` to `start-setup` as a separate argument after the feature name.
 
 <HARD-GATE>
 Do NOT proceed if the feature name is missing. Ask the user:
@@ -96,12 +89,10 @@ Do not create a worktree, PR, or state file. Exit the skill entirely.
 
 ### Step 3 — Set up workspace
 
-Run the consolidated setup script. If `--light` was specified, pass it as a
-second argument:
+Run the consolidated setup script:
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>"
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --light
 ```
 
 The script performs these operations in a single process:
@@ -110,7 +101,7 @@ The script performs these operations in a single process:
 2. `git pull origin main`
 3. `git worktree add .worktrees/<branch> -b <branch>`
 4. `git commit --allow-empty` + `git push -u origin` + `gh pr create`
-5. Create `.flow-states/<branch>.json` (initial state, all 9 phases)
+5. Create `.flow-states/<branch>.json` (initial state, all 7 phases)
 
 The script logs each operation to `.flow-states/<branch>.log` internally.
 
@@ -260,7 +251,7 @@ Print inside a fenced code block (triple backticks) so it renders as plain monos
 
 Invoke the `flow:status` skill to show the current state, then use AskUserQuestion:
 
-> "Phase 1: Start is complete. Ready to begin Phase 2: Research?"
+> "Phase 1: Start is complete. Ready to begin Phase 2: Plan?"
 >
 > - **Yes, start Phase 2 now**
 > - **Not yet**
@@ -271,7 +262,7 @@ Invoke the `flow:status` skill to show the current state, then use AskUserQuesti
 2. Invoke `/flow:note` with their message
 3. Re-ask with only "Yes, start Phase 2 now" and "Not yet"
 
-**If Yes** — invoke the `flow:research` skill using the Skill tool.
+**If Yes** — invoke the `flow:plan` skill using the Skill tool.
 
 **If Not yet** — print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 

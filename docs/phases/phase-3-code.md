@@ -1,9 +1,9 @@
 ---
-title: "Phase 5: Code"
-nav_order: 6
+title: "Phase 3: Code"
+nav_order: 4
 ---
 
-# Phase 5: Code
+# Phase 3: Code
 
 **Command:** `/flow:code`
 
@@ -45,14 +45,12 @@ The targeted test command is defined by the framework instructions (e.g., `bin/r
 ## Back Navigation
 
 - **Go back to Plan** — task description is wrong or tasks are missing
-- **Go back to Design** — the approach needs rethinking
-- **Go back to Research** — something was missed that changes everything
 
 ---
 
 ## What You Get
 
-By the end of Phase 5:
+By the end of Phase 3:
 
 - Every planned task complete and committed
 - Full TDD — every implementation has a test that was written first
@@ -63,4 +61,4 @@ By the end of Phase 5:
 
 ## What Comes Next
 
-Phase 6: Review (`/flow:review`) — code review before merging.
+Phase 4: Review (`/flow:review`) — code review before merging.
