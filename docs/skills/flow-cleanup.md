@@ -6,13 +6,14 @@ parent: Skills
 
 # /flow:cleanup
 
-**Phase:** 9 — Cleanup
+**Phase:** 7 — Cleanup
 
-**Usage:** `/flow:cleanup`
+**Usage:** `/flow:cleanup` or `/flow:cleanup --manual`
 
 The final phase. Removes the git worktree and deletes the state file.
-Best-effort — warns if the state file is missing or Phase 8 is incomplete,
-but proceeds after user confirmation.
+By default, skips confirmation and proceeds directly to cleanup.
+Use `--manual` to prompt for confirmation before any destructive action.
+Best-effort — warns if the state file is missing or Phase 6 is incomplete.
 
 ---
 
@@ -21,7 +22,7 @@ but proceeds after user confirmation.
 1. Reads `.flow-states/<branch>.json` for worktree and feature name
    (or infers from git state if the file is missing)
 2. Checks PR merge status — hard block if the PR has not been merged
-3. Confirms with the user before any destructive action, including any
+3. Confirms with the user (only when `--manual` is passed), including any
    warnings from the entry check
 4. Runs the cleanup process:
    navigate to root, remove worktree, delete state file and log, report results
@@ -43,12 +44,12 @@ Cleanup handles three scenarios gracefully:
 
 | Scenario | Behavior |
 |---|---|
-| State file exists, Phase 8 complete | Normal cleanup — no warnings |
-| State file exists, Phase 8 incomplete | Warns, proceeds after confirmation |
-| State file missing | Warns, infers from git state, proceeds after confirmation |
+| State file exists, Phase 6 complete | Normal cleanup — no warnings |
+| State file exists, Phase 6 incomplete | Warns, proceeds (confirms if `--manual`) |
+| State file missing | Warns, infers from git state, proceeds (confirms if `--manual`) |
 | PR not merged | Hard block, does not proceed |
 
-Every step after user confirmation is best-effort. If worktree removal
+Every step after the PR merge check is best-effort. If worktree removal
 fails (already removed), it continues to state file deletion. If the
 state file doesn't exist, it notes that and finishes.
 
@@ -57,8 +58,8 @@ state file doesn't exist, it notes that and finishes.
 ## Gates
 
 - PR must be merged — hard block if not
-- Phase 8 complete is a warning, not a hard block
+- Phase 6 complete is a warning, not a hard block
 - Missing state file is a warning, not a hard block
-- Requires explicit user confirmation before removing the worktree
+- Confirmation only when `--manual` is passed
 - Must run from the project root — never from inside the worktree
 - Worktree removal is irreversible

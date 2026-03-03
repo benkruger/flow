@@ -6,6 +6,16 @@ model: haiku
 
 # FLOW Cleanup — Phase 7: Cleanup
 
+## Usage
+
+```text
+/flow:cleanup
+/flow:cleanup --manual
+```
+
+- `/flow:cleanup` — default. Skips confirmation and proceeds directly to cleanup.
+- `/flow:cleanup --manual` — prompts for user confirmation before any destructive action.
+
 <SOFT-GATE>
 Run this entry check as your very first action. This gate never
 blocks — it records warnings for the confirmation step.
@@ -24,6 +34,9 @@ Use these values for all subsequent steps — do not re-read the state file
 or re-run git commands to gather the same information.
 
 Carry any warnings forward to the confirmation step in Step 2.
+
+Parse the skill arguments: if `--manual` was passed, set `manual = true`.
+Otherwise `manual = false`.
 </SOFT-GATE>
 
 ## Announce
@@ -90,9 +103,11 @@ If both commands fail (no PR found), stop:
 > "Could not find a PR for this branch. Merge your PR first, then run
 > `/flow:cleanup` again."
 
-### Step 3 — Confirm with user
+### Step 3 — Confirm with user (--manual only)
 
-This phase is destructive and irreversible. Use AskUserQuestion.
+Skip this step if `manual` is `false` — proceed directly to Step 4.
+
+If `manual` is `true`, this phase is destructive and irreversible. Use AskUserQuestion.
 
 If the SOFT-GATE printed warnings, include them in the confirmation so
 the user knows what's off before confirming:
@@ -143,6 +158,6 @@ Print inside a fenced code block (triple backticks) so it renders as plain monos
 ## Rules
 
 - Never run from inside the worktree — always navigate to project root first
-- Always confirm with the user before cleanup — removal is irreversible
+- Confirm with the user only when `--manual` is passed
 - State file deletion is what resets the session hook — do not skip it
 - Every step after confirmation is best-effort — if one fails, continue to the next
