@@ -254,19 +254,24 @@ def test_read_version_returns_fallback_when_missing(tmp_path, monkeypatch):
 # --- Fallback behavior (wrong branch) ---
 
 
-def test_wrong_branch_single_feature_returns_ok(state_dir, git_repo, branch):
-    """When on wrong branch but single state file exists, falls back to it."""
+def test_wrong_branch_single_feature_returns_ok(tmp_path):
+    """find_state_files() falls back to the only state file; format_panel() produces a panel."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
     state = make_state(
         current_phase=3,
         phase_statuses={1: "complete", 2: "complete", 3: "in_progress"},
     )
     state["branch"] = "feature-xyz"
-    write_state(state_dir, "feature-xyz", state)
-    result = _run(git_repo)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
-    assert data["status"] == "ok"
-    assert "panel" in data
+    (state_dir / "feature-xyz.json").write_text(json.dumps(state))
+
+    results = _mod.find_state_files(tmp_path, "some-other-branch")
+
+    assert len(results) == 1
+    _, matched_state, matched_branch = results[0]
+    assert matched_branch == "feature-xyz"
+    panel = _mod.format_panel(matched_state, _mod._read_version())
+    assert isinstance(panel, str) and len(panel) > 0
 
 
 def test_wrong_branch_multiple_features_returns_multiple(state_dir, git_repo, branch):
