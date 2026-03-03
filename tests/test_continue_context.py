@@ -100,6 +100,9 @@ def test_missing_worktree_still_returns_ok(state_dir, git_repo, branch):
 
 def test_panel_matches_format_status_output():
     """Panel from continue-context uses the same format_panel() as format-status."""
+    # continue-context.py does `format_panel = _fs_mod.format_panel` — verify identity
+    assert _mod.format_panel is _mod._fs_mod.format_panel
+
     state = make_state(
         current_phase=5,
         phase_statuses={
@@ -114,10 +117,10 @@ def test_panel_matches_format_status_output():
     state["notes"] = [{"text": "note 1"}, {"text": "note 2"}]
 
     version = _mod._fs_mod._read_version()
-    # continue-context imports format_panel directly from format-status
-    # so _mod.format_panel is the same function as _mod._fs_mod.format_panel
     panel = _mod.format_panel(state, version)
-    assert panel == _mod._fs_mod.format_panel(state, version)
+    assert isinstance(panel, str) and len(panel) > 0
+    assert "Phase 5" in panel
+    assert "Notes   : 2" in panel
 
 
 # --- In-process unit tests ---
