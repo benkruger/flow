@@ -55,12 +55,12 @@ def test_happy_path_returns_ok(git_repo):
     assert data["version_marker"] is True
 
 
-# --- Settings merge ---
+# --- Settings merge (in-process) ---
 
 
-def test_creates_settings_from_scratch(git_repo):
-    _run(git_repo)
-    settings_path = git_repo / ".claude" / "settings.json"
+def test_creates_settings_from_scratch(tmp_path):
+    _mod.merge_settings(tmp_path, "rails")
+    settings_path = tmp_path / ".claude" / "settings.json"
     assert settings_path.exists()
     settings = json.loads(settings_path.read_text())
     assert "permissions" in settings
@@ -68,37 +68,37 @@ def test_creates_settings_from_scratch(git_repo):
     assert "deny" in settings["permissions"]
 
 
-def test_settings_has_all_allow_entries_rails(git_repo):
-    _run(git_repo, framework="rails")
-    settings = json.loads((git_repo / ".claude" / "settings.json").read_text())
+def test_settings_has_all_allow_entries_rails(tmp_path):
+    _mod.merge_settings(tmp_path, "rails")
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
     expected = _mod.UNIVERSAL_ALLOW + _mod.RAILS_ALLOW
     for entry in expected:
         assert entry in settings["permissions"]["allow"]
 
 
-def test_settings_has_all_allow_entries_python(git_repo):
-    _run(git_repo, framework="python")
-    settings = json.loads((git_repo / ".claude" / "settings.json").read_text())
+def test_settings_has_all_allow_entries_python(tmp_path):
+    _mod.merge_settings(tmp_path, "python")
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
     expected = _mod.UNIVERSAL_ALLOW + _mod.PYTHON_ALLOW
     for entry in expected:
         assert entry in settings["permissions"]["allow"]
 
 
-def test_settings_has_all_deny_entries(git_repo):
-    _run(git_repo)
-    settings = json.loads((git_repo / ".claude" / "settings.json").read_text())
+def test_settings_has_all_deny_entries(tmp_path):
+    _mod.merge_settings(tmp_path, "rails")
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
     for entry in _mod.FLOW_DENY:
         assert entry in settings["permissions"]["deny"]
 
 
-def test_settings_sets_default_mode(git_repo):
-    _run(git_repo)
-    settings = json.loads((git_repo / ".claude" / "settings.json").read_text())
+def test_settings_sets_default_mode(tmp_path):
+    _mod.merge_settings(tmp_path, "rails")
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
     assert settings["permissions"]["defaultMode"] == "acceptEdits"
 
 
-def test_settings_preserves_existing_entries(git_repo):
-    settings_dir = git_repo / ".claude"
+def test_settings_preserves_existing_entries(tmp_path):
+    settings_dir = tmp_path / ".claude"
     settings_dir.mkdir()
     existing = {
         "permissions": {
@@ -108,16 +108,16 @@ def test_settings_preserves_existing_entries(git_repo):
     }
     (settings_dir / "settings.json").write_text(json.dumps(existing))
 
-    _run(git_repo)
+    _mod.merge_settings(tmp_path, "rails")
 
     settings = json.loads((settings_dir / "settings.json").read_text())
     assert "Bash(custom command)" in settings["permissions"]["allow"]
     assert "Bash(custom deny)" in settings["permissions"]["deny"]
 
 
-def test_settings_overrides_existing_default_mode(git_repo):
+def test_settings_overrides_existing_default_mode(tmp_path, capsys):
     """FLOW always sets defaultMode to acceptEdits, even if project had plan."""
-    settings_dir = git_repo / ".claude"
+    settings_dir = tmp_path / ".claude"
     settings_dir.mkdir()
     existing = {
         "permissions": {
@@ -128,60 +128,61 @@ def test_settings_overrides_existing_default_mode(git_repo):
     }
     (settings_dir / "settings.json").write_text(json.dumps(existing))
 
-    result = _run(git_repo)
+    _mod.merge_settings(tmp_path, "rails")
 
     settings = json.loads((settings_dir / "settings.json").read_text())
     assert settings["permissions"]["defaultMode"] == "acceptEdits"
-    assert "overriding" in result.stderr.lower()
+    captured = capsys.readouterr()
+    assert "overriding" in captured.err.lower()
 
 
-def test_settings_no_duplicate_entries(git_repo):
-    _run(git_repo)
-    _run(git_repo)
+def test_settings_no_duplicate_entries(tmp_path):
+    _mod.merge_settings(tmp_path, "rails")
+    _mod.merge_settings(tmp_path, "rails")
 
-    settings = json.loads((git_repo / ".claude" / "settings.json").read_text())
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
     allow_list = settings["permissions"]["allow"]
     assert len(allow_list) == len(set(allow_list))
     deny_list = settings["permissions"]["deny"]
     assert len(deny_list) == len(set(deny_list))
 
 
-# --- Version marker ---
+# --- Version marker (in-process) ---
 
 
-def test_version_marker_created(git_repo):
-    _run(git_repo)
-    flow_json = git_repo / ".flow.json"
+def test_version_marker_created(tmp_path):
+    _mod.write_version_marker(tmp_path, _mod._plugin_version(), "rails")
+    flow_json = tmp_path / ".flow.json"
     assert flow_json.exists()
     data = json.loads(flow_json.read_text())
     assert "flow_version" in data
 
 
-def test_version_marker_matches_plugin_version(git_repo):
-    _run(git_repo)
-    flow_data = json.loads((git_repo / ".flow.json").read_text())
-    assert flow_data["flow_version"] == _mod._plugin_version()
+def test_version_marker_matches_plugin_version(tmp_path):
+    version = _mod._plugin_version()
+    _mod.write_version_marker(tmp_path, version, "rails")
+    flow_data = json.loads((tmp_path / ".flow.json").read_text())
+    assert flow_data["flow_version"] == version
 
 
-def test_settings_file_has_trailing_newline(git_repo):
-    _run(git_repo)
-    content = (git_repo / ".claude" / "settings.json").read_text()
+def test_settings_file_has_trailing_newline(tmp_path):
+    _mod.merge_settings(tmp_path, "rails")
+    content = (tmp_path / ".claude" / "settings.json").read_text()
     assert content.endswith("\n")
 
 
-def test_version_marker_has_trailing_newline(git_repo):
-    _run(git_repo)
-    content = (git_repo / ".flow.json").read_text()
+def test_version_marker_has_trailing_newline(tmp_path):
+    _mod.write_version_marker(tmp_path, _mod._plugin_version(), "rails")
+    content = (tmp_path / ".flow.json").read_text()
     assert content.endswith("\n")
 
 
-# --- Git exclude ---
+# --- Git exclude (in-process) ---
 
 
 def test_git_exclude_updated(git_repo):
-    result = _run(git_repo)
-    data = json.loads(result.stdout)
-    assert data["exclude_updated"] is True
+    updated = _mod.update_git_exclude(git_repo)
+    assert updated is True
 
     exclude_path = git_repo / ".git" / "info" / "exclude"
     content = exclude_path.read_text()
@@ -190,8 +191,8 @@ def test_git_exclude_updated(git_repo):
 
 
 def test_git_exclude_idempotent(git_repo):
-    _run(git_repo)
-    _run(git_repo)
+    _mod.update_git_exclude(git_repo)
+    _mod.update_git_exclude(git_repo)
 
     exclude_path = git_repo / ".git" / "info" / "exclude"
     content = exclude_path.read_text()
@@ -205,7 +206,7 @@ def test_git_exclude_preserves_existing_content(git_repo):
     exclude_path = info_dir / "exclude"
     exclude_path.write_text("*.log\n")
 
-    _run(git_repo)
+    _mod.update_git_exclude(git_repo)
 
     content = exclude_path.read_text()
     assert "*.log" in content
@@ -217,9 +218,8 @@ def test_git_exclude_not_updated_when_already_present(git_repo):
     info_dir.mkdir(parents=True, exist_ok=True)
     (info_dir / "exclude").write_text(".flow-states/\n.worktrees/\n")
 
-    result = _run(git_repo)
-    data = json.loads(result.stdout)
-    assert data["exclude_updated"] is False
+    updated = _mod.update_git_exclude(git_repo)
+    assert updated is False
 
 
 # --- In-process tests ---
@@ -307,28 +307,28 @@ def test_invalid_framework_returns_error(git_repo):
     assert "framework" in data["message"].lower()
 
 
-def test_flow_json_includes_framework_rails(git_repo):
-    _run(git_repo, framework="rails")
-    data = json.loads((git_repo / ".flow.json").read_text())
+def test_flow_json_includes_framework_rails(tmp_path):
+    _mod.write_version_marker(tmp_path, _mod._plugin_version(), "rails")
+    data = json.loads((tmp_path / ".flow.json").read_text())
     assert data["framework"] == "rails"
 
 
-def test_flow_json_includes_framework_python(git_repo):
-    _run(git_repo, framework="python")
-    data = json.loads((git_repo / ".flow.json").read_text())
+def test_flow_json_includes_framework_python(tmp_path):
+    _mod.write_version_marker(tmp_path, _mod._plugin_version(), "python")
+    data = json.loads((tmp_path / ".flow.json").read_text())
     assert data["framework"] == "python"
 
 
-def test_rails_framework_excludes_python_permissions(git_repo):
-    _run(git_repo, framework="rails")
-    settings = json.loads((git_repo / ".claude" / "settings.json").read_text())
+def test_rails_framework_excludes_python_permissions(tmp_path):
+    _mod.merge_settings(tmp_path, "rails")
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
     for entry in _mod.PYTHON_ALLOW:
         assert entry not in settings["permissions"]["allow"]
 
 
-def test_python_framework_excludes_rails_permissions(git_repo):
-    _run(git_repo, framework="python")
-    settings = json.loads((git_repo / ".claude" / "settings.json").read_text())
+def test_python_framework_excludes_rails_permissions(tmp_path):
+    _mod.merge_settings(tmp_path, "python")
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
     for entry in _mod.RAILS_ALLOW:
         assert entry not in settings["permissions"]["allow"]
 
@@ -340,11 +340,14 @@ def test_framework_output_in_ok_response(git_repo):
     assert data["framework"] == "python"
 
 
-def test_rerun_preserves_framework(git_repo):
-    _run(git_repo, framework="rails")
-    _run(git_repo, framework="rails")
-    data = json.loads((git_repo / ".flow.json").read_text())
+def test_rerun_preserves_framework(tmp_path):
+    version = _mod._plugin_version()
+    _mod.merge_settings(tmp_path, "rails")
+    _mod.write_version_marker(tmp_path, version, "rails")
+    _mod.merge_settings(tmp_path, "rails")
+    _mod.write_version_marker(tmp_path, version, "rails")
+    data = json.loads((tmp_path / ".flow.json").read_text())
     assert data["framework"] == "rails"
-    settings = json.loads((git_repo / ".claude" / "settings.json").read_text())
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
     allow_list = settings["permissions"]["allow"]
     assert len(allow_list) == len(set(allow_list))
