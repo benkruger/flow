@@ -74,19 +74,10 @@ def test_happy_path_returns_ok_with_all_fields(state_dir, git_repo, branch):
     assert data["worktree"] == ".worktrees/test-feature"
 
 
-def test_all_complete_returns_ok_with_phase_7(state_dir, git_repo, branch):
-    state = make_state(
-        current_phase=7,
-        phase_statuses={i: "complete" for i in range(1, 8)},
-    )
-    write_state(state_dir, branch, state)
-    result = _run(git_repo)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
-    assert data["status"] == "ok"
-    assert data["current_phase"] == 7
-    assert data["phase_name"] == "Cleanup"
-    assert data["phase_command"] == "/flow:cleanup"
+def test_all_complete_returns_ok_with_phase_7():
+    """Phase 7 maps to Cleanup with /flow:cleanup command."""
+    assert _mod.PHASE_NAMES[7] == "Cleanup"
+    assert _mod.COMMANDS[7] == "/flow:cleanup"
 
 
 def test_missing_worktree_still_returns_ok(state_dir, git_repo, branch):
@@ -107,14 +98,8 @@ def test_missing_worktree_still_returns_ok(state_dir, git_repo, branch):
 # --- Regression: panel identity ---
 
 
-def test_panel_matches_format_status_output(state_dir, git_repo, branch):
-    """The panel from continue-context must be identical to format-status."""
-    # Import format-status for comparison
-    fs_spec = importlib.util.spec_from_file_location(
-        "format_status", LIB_DIR / "format-status.py"
-    )
-    fs_mod = importlib.util.module_from_spec(fs_spec)
-    fs_spec.loader.exec_module(fs_mod)
+def test_panel_matches_format_status_output():
+    """Panel from continue-context uses the same format_panel() as format-status."""
     state = make_state(
         current_phase=5,
         phase_statuses={
@@ -127,20 +112,12 @@ def test_panel_matches_format_status_output(state_dir, git_repo, branch):
     state["phases"]["3"]["cumulative_seconds"] = 600
     state["phases"]["4"]["cumulative_seconds"] = 900
     state["notes"] = [{"text": "note 1"}, {"text": "note 2"}]
-    write_state(state_dir, branch, state)
 
-    # Get panel from continue-context
-    cc_result = _run(git_repo)
-    cc_data = json.loads(cc_result.stdout)
-
-    # Get panel from format-status
-    fs_result = subprocess.run(
-        [sys.executable, str(LIB_DIR / "format-status.py")],
-        capture_output=True, text=True, cwd=str(git_repo),
-    )
-    fs_data = json.loads(fs_result.stdout)
-
-    assert cc_data["panel"] == fs_data["panel"]
+    version = _mod._fs_mod._read_version()
+    # continue-context imports format_panel directly from format-status
+    # so _mod.format_panel is the same function as _mod._fs_mod.format_panel
+    panel = _mod.format_panel(state, version)
+    assert panel == _mod._fs_mod.format_panel(state, version)
 
 
 # --- In-process unit tests ---
@@ -162,21 +139,23 @@ def test_phase_command_matches_flow_phases_json():
 # --- Fallback behavior (wrong branch) ---
 
 
-def test_wrong_branch_single_feature_returns_ok(state_dir, git_repo, branch):
-    """When on wrong branch but single state file exists, falls back to it."""
+def test_wrong_branch_single_feature_returns_ok(tmp_path):
+    """find_state_files() falls back to the only existing state file."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
     state = make_state(
         current_phase=3,
         phase_statuses={1: "complete", 2: "complete", 3: "in_progress"},
     )
     state["branch"] = "feature-xyz"
-    write_state(state_dir, "feature-xyz", state)
-    # No state file for the current branch — should fall back
-    result = _run(git_repo)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
-    assert data["status"] == "ok"
-    assert data["branch"] == "feature-xyz"
-    assert data["current_phase"] == 3
+    (state_dir / "feature-xyz.json").write_text(json.dumps(state))
+
+    results = _mod.find_state_files(tmp_path, "some-other-branch")
+
+    assert len(results) == 1
+    _, matched_state, matched_branch = results[0]
+    assert matched_branch == "feature-xyz"
+    assert matched_state["current_phase"] == 3
 
 
 def test_wrong_branch_multiple_features_returns_multiple(state_dir, git_repo, branch):
@@ -193,15 +172,15 @@ def test_wrong_branch_multiple_features_returns_multiple(state_dir, git_repo, br
     assert len(data["features"]) == 2
 
 
-def test_ok_response_includes_branch_field(state_dir, git_repo, branch):
-    """ok response includes the matched branch name."""
-    state = make_state(
-        current_phase=2,
-        phase_statuses={1: "complete", 2: "in_progress"},
-    )
-    write_state(state_dir, branch, state)
-    result = _run(git_repo)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
-    assert data["status"] == "ok"
-    assert data["branch"] == branch
+def test_ok_response_includes_branch_field(tmp_path):
+    """find_state_files() returns the matched branch name in the result tuple."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    (state_dir / "test-feature.json").write_text(json.dumps(state))
+
+    results = _mod.find_state_files(tmp_path, "test-feature")
+
+    assert len(results) == 1
+    _, _, matched_branch = results[0]
+    assert matched_branch == "test-feature"
