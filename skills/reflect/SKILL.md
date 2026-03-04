@@ -4,25 +4,28 @@ description: "Phase 6: Reflect — review what went wrong, capture learnings, ro
 model: sonnet
 ---
 
-# FLOW Reflect — Phase 6: Reflect
+# Reflect
 
 <HARD-GATE>
-Run this phase entry check as your very first action. If any check fails,
+Run this entry check as your very first action. If any check fails,
 stop immediately and show the error to the user.
 
 1. Run both commands in parallel (two Bash calls in one response):
    - `git worktree list --porcelain` — note the path on the first `worktree` line (this is the project root).
    - `git branch --show-current` — this is the current branch.
 2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
-   - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
-     Run /flow:start first."
-3. Check `phases.5.status` in the JSON.
-   - If not `"complete"`: STOP. "BLOCKED: Phase 5: Security must be
-     complete. Run /flow:security first."
+3. **Determine mode:**
+   - **State file exists + `phases.5.status` == `"complete"`** → **Phase 6** mode
+   - **State file exists + phase 5 incomplete** → STOP. "BLOCKED: Phase 5:
+     Security must be complete. Run /flow:security first."
+   - **No state file** → Use Glob to check for `flow-phases.json` in the
+     project root.
+     - Exists → **Maintainer** mode (this is the plugin source repo)
+     - Does not exist → **Standalone** mode
 </HARD-GATE>
 
-Keep the project root, branch, and state data from the gate in context —
-use the project root to build Read tool paths (e.g.
+Keep the project root, branch, state data, and detected mode in context.
+Use the project root to build Read tool paths (e.g.
 `<project_root>/.flow-states/<branch>.json`). Do not re-read the state
 file or re-run git commands to gather the same information. Do not `cd`
 to the project root — `bin/flow` commands find paths internally.
@@ -30,6 +33,8 @@ to the project root — `bin/flow` commands find paths internally.
 ## Announce
 
 At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+
+**Phase 6 mode:**
 
 ````markdown
 ```text
@@ -39,7 +44,19 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ```
 ````
 
+**Maintainer or Standalone mode:**
+
+````markdown
+```text
+============================================
+  Reflect — STARTING
+============================================
+```
+````
+
 ## Update State
+
+**Phase 6 only.** Skip for Maintainer and Standalone.
 
 Update state for phase entry:
 
@@ -57,11 +74,28 @@ gate — there is nothing to log.
 
 ---
 
-## Step 1 — Gather all sources
+## Step 1 — Gather sources
 
-Read and synthesise from four sources before doing anything else:
+Read and synthesise before doing anything else.
 
-### Source A — State file and plan file data
+### Source A — CLAUDE.md rules (all modes)
+
+Read the project's `CLAUDE.md`. These are the rules that should have been
+followed. Note every rule, convention, and lesson learned entry.
+
+### Source B — Conversation context (all modes)
+
+Review the current conversation for:
+- Moments where the user corrected Claude
+- Responses where Claude was overruled or pushed back
+- Misunderstandings that required clarification
+- Suggestions Claude made that were rejected
+
+Note: context may have been compacted. Use what is available.
+
+### Source C — State file and plan file data (Phase 6 only)
+
+Skip for Maintainer and Standalone.
 
 For each phase, note:
 - `visit_count` > 1 → this phase had friction, was revisited
@@ -74,24 +108,13 @@ Read tool to read the plan file. Note:
 - Approach rationale → did it hold up through Code and Review?
 - Review findings that were caught late
 
-### Source B — Captured notes
-
 Read `state["notes"]` in full. These are corrections and learnings
 captured during the session via `/flow:note`. They are the most direct
 signal of what went wrong.
 
-### Source C — Conversation context
+### Source D — Worktree auto-memory (Phase 6 only)
 
-Review the current conversation for:
-- Moments where the user corrected Claude
-- Responses where Claude was overruled or pushed back
-- Misunderstandings that required clarification
-- Suggestions Claude made that were rejected
-
-Note: context may have been compacted. Use what is available.
-Sources A and B are the guaranteed record.
-
-### Source D — Worktree auto-memory
+Skip for Maintainer and Standalone.
 
 Claude writes auto-memory during feature work to a path scoped to the
 worktree. This memory will be lost when Cleanup removes the worktree.
@@ -110,7 +133,7 @@ worktree. This memory will be lost when Cleanup removes the worktree.
 
 ## Step 2 — Synthesize findings
 
-Organize all gathered evidence into five categories:
+Organize all gathered evidence into categories:
 
 **Process violations** — existing rules in CLAUDE.md that were broken or
 nearly broken during the session. Quote the specific rule.
@@ -132,10 +155,11 @@ existing rule covered it. These are gaps in CLAUDE.md.
 skills, workflows) should be improved. These are not CLAUDE.md rules —
 they are process changes.
 
-**Worth preserving** — items from the worktree auto-memory (Source D) that
-contain useful patterns, observations, or context that future sessions
-should know. Filter for durable value — not everything in auto-memory is
-worth keeping. Skip this category if Source D was empty or did not exist.
+**Worth preserving** (Phase 6 only) — items from the worktree auto-memory
+(Source D) that contain useful patterns, observations, or context that
+future sessions should know. Filter for durable value — not everything in
+auto-memory is worth keeping. Skip this category if Source D was empty or
+did not exist, or if not in Phase 6 mode.
 
 ---
 
@@ -149,13 +173,13 @@ without asking the user.
 | # | Name | Path | Write method |
 |---|------|------|-------------|
 | 1 | Global CLAUDE.md | `~/.claude/CLAUDE.md` | Edit directly |
-| 2 | Project CLAUDE.md | `CLAUDE.md` in worktree | Edit, commit via `/flow:commit --auto` |
+| 2 | Project CLAUDE.md | `CLAUDE.md` in project | Edit on disk |
 | 3 | Global rules | `~/.claude/rules/<topic>.md` | Edit directly |
-| 4 | Project rules | `.claude/rules/<topic>.md` in worktree | Edit, commit via `/flow:commit --auto` |
+| 4 | Project rules | `.claude/rules/<topic>.md` in project | Edit on disk |
 | 5 | Project memory | `~/.claude/projects/<repo-root>/memory/MEMORY.md` | Edit directly |
 
 Destinations 1, 3, 5 are user-private (outside the repo, not committed).
-Destinations 2, 4 are committed to the feature branch via PR.
+Destinations 2, 4 are on disk — committed in Step 4 if applicable.
 
 ### Routing heuristics
 
@@ -199,10 +223,12 @@ For each private destination with changes:
 ### Repo destinations (2, 4) — committed in Step 4
 
 For each repo destination with changes:
-1. Read the target file in the worktree
+1. Read the target file in the project
 2. Apply all additions and rewordings for that destination
 
-### Worktree memory rescue
+### Worktree memory rescue (Phase 6 only)
+
+Skip for Maintainer and Standalone.
 
 If Source D contained items that were routed to a destination above, they
 are already handled. For any remaining useful items in the worktree
@@ -218,17 +244,26 @@ leading `-`.
 
 ---
 
-## Step 4 — Commit
+## Step 4 — Commit (conditional)
 
-If any repo-destination changes were made (destinations 2 or 4), commit
-once via `/flow:commit --auto`. Only CLAUDE.md and `.claude/` files are
-committed — never application code.
+**Phase 6:** If any repo-destination changes were made (destinations 2 or
+4), commit once via `/flow:commit --auto`. Only CLAUDE.md and `.claude/`
+files are committed — never application code. If `git add -A` results in
+nothing staged (stealth user with excluded files), skip the commit
+gracefully — do not error.
 
-If no repo-destination changes were made, skip this step.
+**Maintainer:** If any repo-destination changes were made, commit once via
+`/commit --auto`.
+
+**Standalone:** Skip entirely — no commit.
+
+If no repo-destination changes were made, skip this step regardless of mode.
 
 ---
 
-## Step 5 — File GitHub issues
+## Step 5 — File GitHub issues (Phase 6 only)
+
+Skip for Maintainer and Standalone.
 
 For each item in "Process gaps", file a GitHub issue on the plugin repo:
 
@@ -290,7 +325,7 @@ Present the full report to the user:
   Global CLAUDE.md: 2 additions
   Project rules (.claude/rules/testing.md): 1 addition
   Project memory: 3 items rescued from worktree
-  Project CLAUDE.md: 1 addition (committed)
+  Project CLAUDE.md: 1 addition (committed / uncommitted)
 
   Issues filed
   ------------
@@ -301,13 +336,19 @@ Present the full report to the user:
 ```
 ````
 
-Omit the "Worth preserving" section if Source D was empty or had nothing
-worth keeping. Omit "Changes applied" if no changes were made. Omit
-"Issues filed" if no issues were filed.
+Omit the "Worth preserving" section if not in Phase 6 mode, or if Source D
+was empty or had nothing worth keeping. Omit "Changes applied" if no
+changes were made. Omit "Issues filed" if no issues were filed or not in
+Phase 6 mode.
+
+In the "Changes applied" section, show "(committed)" or "(uncommitted)"
+next to each repo-destination file to indicate whether Step 4 committed it.
 
 ---
 
-## Done — Update state and complete phase
+## Done
+
+### Phase 6 mode
 
 Complete the phase:
 
@@ -356,15 +397,31 @@ Invoke `flow:status`, then use AskUserQuestion:
 ```
 ````
 
+### Maintainer and Standalone mode
+
+Print inside a fenced code block:
+
+````markdown
+```text
+============================================
+  Reflect — COMPLETE
+============================================
+```
+````
+
+No phase transition, no transition question.
+
 ---
 
 ## Hard Rules
 
 - Never commit application code in Reflect — only CLAUDE.md and .claude/
-- Always read all four sources before synthesizing findings
+- Always read CLAUDE.md and conversation context before synthesizing findings
+- In Phase 6, read all four sources before synthesizing findings
 - Follow the reflection process (Steps 1 through 6) exactly — do not skip or reorder steps
 - Decisions on destinations and wording are autonomous — do not ask the user for approval mid-process
 - The report in Step 6 is the user's review point — make it comprehensive
 - Global writes (`~/.claude/CLAUDE.md`, `~/.claude/rules/`, `~/.claude/projects/`) are direct edits — never committed
-- Repo writes (`CLAUDE.md`, `.claude/rules/`) go through `/flow:commit --auto`
+- Repo writes (`CLAUDE.md`, `.claude/rules/`) go through `/flow:commit --auto` (Phase 6) or `/commit --auto` (Maintainer)
 - Plugin improvement notes are filed as GitHub issues on the plugin repo — never committed to the target project
+- Only CLAUDE.md and `.claude/` files are modified — never application code

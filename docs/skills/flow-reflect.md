@@ -56,7 +56,24 @@ Destinations 2, 4 are committed to the feature branch via `/flow:commit --auto`.
 
 ---
 
+## Modes
+
+Reflect auto-detects its context:
+
+| Mode | When | Sources | Commits |
+|------|------|---------|---------|
+| Phase 6 | State file with Security complete | All 4 | `/flow:commit --auto` |
+| Maintainer | No state file, `flow-phases.json` exists | A + B | `/commit --auto` |
+| Standalone | No state file, no `flow-phases.json` | A + B | None |
+
+Standalone mode lets any project use `/flow:reflect` without a FLOW
+feature in progress — just reflect on the current session and apply
+learnings.
+
+---
+
 ## Gates
 
-- Phase 5: Security must be complete
+- **Phase 6**: Phase 5: Security must be complete
+- **Maintainer/Standalone**: No gate — runs immediately
 - Only CLAUDE.md and `.claude/` files are committed — never application code

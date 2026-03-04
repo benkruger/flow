@@ -49,9 +49,11 @@ Three phase skills launch mandatory sub-agents: Review and Security (general-pur
 
 ### Memory
 
-During feature work, Claude writes auto-memory scoped to the worktree path (`~/.claude/projects/<worktree-path>/memory/MEMORY.md`). When Cleanup removes the worktree, this memory becomes orphaned. Reflect rescues worktree memory by reading it as a fourth source and routing useful items to permanent destinations.
+During feature work, Claude writes auto-memory scoped to the worktree path (`~/.claude/projects/<worktree-path>/memory/MEMORY.md`). When Cleanup removes the worktree, this memory becomes orphaned. In Phase 6 mode, Reflect rescues worktree memory by reading it as a fourth source and routing useful items to permanent destinations.
 
-The 5 destinations: global CLAUDE.md (`~/.claude/CLAUDE.md`), project CLAUDE.md (`CLAUDE.md` in worktree), global rules (`~/.claude/rules/`), project rules (`.claude/rules/` in worktree), project memory (`~/.claude/projects/<repo-root>/memory/MEMORY.md`). Private destinations (1, 3, 5) are written directly outside the repo. Repo destinations (2, 4) are committed via PR. Notes captured by `/flow:note` feed into the same routing mechanism.
+Reflect is a unified tri-modal skill. It auto-detects Phase 6 (state file with Security complete), Maintainer (no state file, `flow-phases.json` exists), or Standalone (no state file, no `flow-phases.json`). All three modes edit the same 5 destinations on disk. Phase 6 adds worktree memory rescue, GitHub issues, and phase transitions. Maintainer commits via `/commit --auto`. Standalone never commits.
+
+The 5 destinations: global CLAUDE.md (`~/.claude/CLAUDE.md`), project CLAUDE.md (`CLAUDE.md` in project), global rules (`~/.claude/rules/`), project rules (`.claude/rules/` in project), project memory (`~/.claude/projects/<repo-root>/memory/MEMORY.md`). Private destinations (1, 3, 5) are written directly outside the repo. Repo destinations (2, 4) are committed via PR (Phase 6) or `/commit --auto` (Maintainer). Notes captured by `/flow:note` feed into the same routing mechanism.
 
 ### Logging
 
@@ -92,7 +94,6 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 
 - `/commit` — `.claude/skills/commit` — review diff, approve, commit, push
 - `/qa` — `.claude/skills/qa/SKILL.md` — switch marketplace to local source, test in a live session, restore when done
-- `/reflect` — `.claude/skills/reflect/SKILL.md` — review session mistakes, propose CLAUDE.md improvements
 - `/release` — `.claude/skills/release/SKILL.md` — bump version, tag, push, create GitHub Release
 - `/reset` — `.claude/skills/reset/SKILL.md` — remove all FLOW artifacts (worktrees, branches, PRs, state files)
 
