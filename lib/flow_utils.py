@@ -21,8 +21,8 @@ def now():
     return datetime.now(PACIFIC).isoformat(timespec="seconds")
 
 PHASE_NAMES = {
-    1: "Start", 2: "Plan", 3: "Code", 4: "Review",
-    5: "Security", 6: "Reflect", 7: "Cleanup",
+    1: "Start", 2: "Plan", 3: "Code", 4: "Simplify",
+    5: "Review", 6: "Security", 7: "Reflect", 8: "Cleanup",
 }
 
 
