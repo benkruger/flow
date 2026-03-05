@@ -709,11 +709,11 @@ def test_permission_to_regex_known_conversions():
     assert r.match("git push origin main")
     assert not r.match("git pull")
 
-    # Binary with trailing glob
-    r = _permission_to_regex("Bash(bin/ci*)")
+    # Exact binary — no glob
+    r = _permission_to_regex("Bash(bin/ci)")
     assert r is not None
     assert r.match("bin/ci")
-    assert r.match("bin/ci --if-dirty")
+    assert not r.match("bin/ci --if-dirty")
     assert not r.match("bin/test")
 
     # cd prefix with glob

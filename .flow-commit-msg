@@ -1,19 +1,23 @@
-Add --if-dirty flag to bin/ci to skip redundant runs
+Skip redundant CI runs between phase transitions
 
 tl;dr
 
-When git reports a clean working tree and a sentinel file exists from the
-last green run, `bin/ci --if-dirty` exits 0 immediately. This avoids
-back-to-back CI runs with no file changes in between (e.g., after commit
-pushes, then the next phase gate re-checks).
+--if-dirty only skipped on a fully clean tree, which never happens during
+active development. Now it stores and compares git status snapshots — same
+snapshot means nothing changed since CI last passed, so skip. Moved from
+shell logic in bin/ci to lib/ci.py routed through bin/flow ci.
 
-- bin/ci: Add --if-dirty flag, touch .flow-states/.ci-passed on success
-- .claude/settings.json: Widen permission from Bash(bin/ci) to Bash(bin/ci*)
-- lib/init-setup.py: Same permission change in runtime source
-- skills/init/SKILL.md: Same permission change in reference docs
-- skills/commit/SKILL.md: Step 0 uses bin/ci --if-dirty
-- skills/code/SKILL.md: Final sweep uses bin/ci --if-dirty
-- skills/review/SKILL.md: Pre-transition gate uses bin/ci --if-dirty
-- skills/security/SKILL.md: Per-fix step uses bin/ci --if-dirty
-- tests/test_bin_ci.py: 4 new tests for --if-dirty and sentinel behavior
-- tests/test_permissions.py: Update regex unit test for bin/ci* pattern
+- lib/ci.py: CI wrapper with snapshot-based dirty checking and JSON output
+- bin/ci: Remove --if-dirty and sentinel logic (moved to lib/ci.py)
+- .claude/skills/commit/SKILL.md: Step 0 uses bin/flow ci --if-dirty
+- skills/code/SKILL.md: Final sweep uses bin/flow ci --if-dirty
+- skills/commit/SKILL.md: Same update for plugin commit skill
+- skills/review/SKILL.md: Pre-transition gate uses bin/flow ci --if-dirty
+- skills/security/SKILL.md: Per-fix step uses bin/flow ci --if-dirty
+- .claude/settings.json: Narrow permission from bin/ci* to exact bin/ci
+- lib/init-setup.py: Same permission narrowing in runtime source
+- skills/init/SKILL.md: Same permission narrowing in reference docs
+- tests/test_ci.py: New tests for snapshot-based dirty checking
+- tests/test_bin_ci.py: Remove migrated --if-dirty tests
+- tests/test_bin_flow.py: Add FLOW_CI_RUNNING guard to prevent recursion
+- tests/test_permissions.py: Update regex test for exact bin/ci match

@@ -23,7 +23,7 @@
       "Bash(rm .flow-commit-*)",
       "Bash(rm .flow-states/.dev-mode)",
       "Bash(rm -rf ~/.claude/plugins/cache/flow-marketplace)",
-      "Bash(bin/ci*)",
+      "Bash(bin/ci)",
       "Bash(claude plugin marketplace add *)",
       "Bash(claude plugin marketplace update *)",
       "Bash(head *)",

@@ -251,7 +251,7 @@ For each finding:
 
 After fixing any findings, run `/flow:commit` for the Review fixes.
 
-Then run `bin/ci --if-dirty` — required before any state transition.
+Then run `bin/flow ci --if-dirty` — required before any state transition.
 
 <HARD-GATE>
 bin/ci must be green before transitioning to Security.

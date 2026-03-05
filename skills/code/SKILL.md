@@ -382,7 +382,7 @@ Once every task from the plan file is complete:
 **Final bin/ci sweep:**
 
 ```bash
-bin/ci --if-dirty
+bin/flow ci --if-dirty
 ```
 
 Then check coverage:

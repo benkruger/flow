@@ -360,7 +360,7 @@ bin/flow set-timestamp --set security.scanned_at=NOW
 Fix each confirmed finding one at a time, in order:
 
 1. Fix the issue in code
-2. Run `bin/ci --if-dirty`
+2. Run `bin/flow ci --if-dirty`
 3. Invoke `/flow:commit` for the fix
 4. Update the finding's `status` to `"fixed"` in the state file
 5. Move to the next finding

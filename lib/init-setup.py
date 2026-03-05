@@ -30,7 +30,7 @@ UNIVERSAL_ALLOW = [
     "Bash(gh pr close *)",
     "Bash(git push origin --delete *)",
     "Bash(git branch -D *)",
-    "Bash(bin/ci*)",
+    "Bash(bin/ci)",
     "Bash(rm .flow-commit-*)",
     "Bash(*bin/flow *)",
     "Bash(gh pr view *)",

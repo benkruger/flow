@@ -1,6 +1,7 @@
 """Tests for bin/flow — the subcommand dispatcher."""
 
 import json
+import os
 import subprocess
 
 from conftest import BIN_DIR, LIB_DIR, REPO_ROOT
@@ -9,12 +10,16 @@ from conftest import BIN_DIR, LIB_DIR, REPO_ROOT
 SCRIPT = str(BIN_DIR / "flow")
 
 
-def _run(*args, cwd=None):
+def _run(*args, cwd=None, extra_env=None):
     """Run bin/flow with the given arguments."""
+    env = None
+    if extra_env:
+        env = {**os.environ, **extra_env}
     result = subprocess.run(
         ["bash", SCRIPT, *args],
         capture_output=True, text=True,
         cwd=cwd or str(REPO_ROOT),
+        env=env,
     )
     return result
 
@@ -72,7 +77,9 @@ def test_every_lib_script_is_reachable():
         # Verify the script file exists and bin/flow can find it
         # (we check by running with no args — the script should run,
         # not produce "Unknown subcommand")
-        result = _run(subcmd)
+        # FLOW_CI_RUNNING prevents bin/flow ci from running the full
+        # test suite recursively when cwd is a repo with bin/ci.
+        result = _run(subcmd, extra_env={"FLOW_CI_RUNNING": "1"})
         assert "Unknown subcommand" not in result.stdout, (
             f"bin/flow cannot find subcommand '{subcmd}' "
             f"for lib/{script.name}"

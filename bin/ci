@@ -2,15 +2,6 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SENTINEL="$REPO_ROOT/.flow-states/.ci-passed"
-
-# --if-dirty: skip when working tree is clean and sentinel exists
-if [ "${1:-}" = "--if-dirty" ]; then
-  if [ -f "$SENTINEL" ] && [ -z "$(git -C "$REPO_ROOT" status --porcelain)" ]; then
-    echo "bin/ci: skipping (no changes since last green run)"
-    exit 0
-  fi
-fi
 
 # Use venv if available, else system python
 if [ -x "$REPO_ROOT/.venv/bin/python3" ]; then
@@ -21,6 +12,3 @@ fi
 
 "$PYTHON" -m pymarkdown -c "$REPO_ROOT/.pymarkdown.yml" scan -r -e ".venv" -e ".pytest_cache" -e ".claude" .
 "$PYTHON" -m pytest tests/
-
-mkdir -p "$(dirname "$SENTINEL")"
-touch "$SENTINEL"
