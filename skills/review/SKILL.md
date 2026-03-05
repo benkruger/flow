@@ -1,10 +1,10 @@
 ---
 name: review
-description: "Phase 4: Review — systematic code review against the plan, identified risks, and framework anti-patterns. Fixes issues found, runs bin/flow ci after any fix, then transitions to Security."
+description: "Phase 5: Review — systematic code review against the plan, identified risks, and framework anti-patterns. Fixes issues found, runs bin/flow ci after any fix, then transitions to Security."
 model: sonnet
 ---
 
-# FLOW Review — Phase 4: Review
+# FLOW Review — Phase 5: Review
 
 <HARD-GATE>
 Run this phase entry check as your very first action. If any check fails,
@@ -16,9 +16,9 @@ stop immediately and show the error to the user.
 3. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
      Run /flow:start first."
-4. Check `phases.3.status` in the JSON.
-   - If not `"complete"`: STOP. "BLOCKED: Phase 3: Code must be
-     complete. Run /flow:code first."
+4. Check `phases.4.status` in the JSON.
+   - If not `"complete"`: STOP. "BLOCKED: Phase 4: Simplify must be
+     complete. Run /flow:simplify first."
 </HARD-GATE>
 
 ## Announce
@@ -28,7 +28,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````markdown
 ```text
 ============================================
-  FLOW v0.15.0 — Phase 4: Review — STARTING
+  FLOW v0.15.0 — Phase 5: Review — STARTING
 ============================================
 ```
 ````
@@ -38,7 +38,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 Update state for phase entry:
 
 ```bash
-bin/flow phase-transition --phase 4 --action enter
+bin/flow phase-transition --phase 5 --action enter
 ```
 
 Parse the JSON output to confirm `"status": "ok"`.
@@ -58,7 +58,7 @@ Then Read `.flow-states/<branch>.log` (empty string if it does not
 exist yet) and Write it back with this line appended:
 
 ```text
-YYYY-MM-DDTHH:MM:SSZ [Phase 4] Step X — desc (exit EC)
+YYYY-MM-DDTHH:MM:SSZ [Phase 5] Step X — desc (exit EC)
 ```
 
 Get `<branch>` from the state file.
@@ -267,7 +267,7 @@ Show a summary of what was found and fixed inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW — Phase 4: Review — SUMMARY
+  FLOW — Phase 5: Review — SUMMARY
 ============================================
 
   Plan alignment    : ✓ matches approved plan
@@ -294,10 +294,10 @@ Use AskUserQuestion if a finding is too significant to fix in Review:
 > - **Go back to Code** — implementation issue
 > - **Go back to Plan** — plan was missing something
 
-**Go back to Code:** update Phase 4 to `pending`, Phase 3 to
+**Go back to Code:** update Phases 5 and 4 to `pending`, Phase 3 to
 `in_progress`, then invoke `flow:code`.
 
-**Go back to Plan:** update Phases 4 and 3 to `pending`, Phase 2 to
+**Go back to Plan:** update Phases 5, 4, and 3 to `pending`, Phase 2 to
 `in_progress`, then invoke `flow:plan`.
 
 ---
@@ -307,7 +307,7 @@ Use AskUserQuestion if a finding is too significant to fix in Review:
 Complete the phase:
 
 ```bash
-bin/flow phase-transition --phase 4 --action complete
+bin/flow phase-transition --phase 5 --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -319,23 +319,23 @@ Print inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW v0.15.0 — Phase 4: Review — COMPLETE (<formatted_time>)
+  FLOW v0.15.0 — Phase 5: Review — COMPLETE (<formatted_time>)
 ============================================
 ```
 ````
 
 Invoke `flow:status`, then use AskUserQuestion:
 
-> "Phase 4: Review is complete. Ready to begin Phase 5: Security?"
+> "Phase 5: Review is complete. Ready to begin Phase 6: Security?"
 >
-> - **Yes, start Phase 5 now** — invoke `flow:security`
+> - **Yes, start Phase 6 now** — invoke `flow:security`
 > - **Not yet** — print paused banner
 > - **I have a correction or learning to capture**
 
 **If "I have a correction or learning to capture":**
 1. Ask the user what they want to capture
 2. Invoke `/flow:note` with their message
-3. Re-ask with only "Yes, start Phase 5 now" and "Not yet"
+3. Re-ask with only "Yes, start Phase 6 now" and "Not yet"
 
 **If Yes** — invoke `flow:security` using the Skill tool.
 

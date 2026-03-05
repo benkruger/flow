@@ -245,15 +245,15 @@ def test_state_file_created(_default_run):
     assert state["notes"] == []
 
 
-def test_state_file_has_all_7_phases(_default_run):
-    """State file must have all 7 phases with correct names."""
+def test_state_file_has_all_8_phases(_default_run):
+    """State file must have all 8 phases with correct names."""
     data, state, log, repo = _default_run
 
     expected_names = {
-        "1": "Start", "2": "Plan", "3": "Code", "4": "Review",
-        "5": "Security", "6": "Reflect", "7": "Cleanup",
+        "1": "Start", "2": "Plan", "3": "Code", "4": "Simplify",
+        "5": "Review", "6": "Security", "7": "Reflect", "8": "Cleanup",
     }
-    assert len(state["phases"]) == 7
+    assert len(state["phases"]) == 8
     for num, name in expected_names.items():
         assert state["phases"][num]["name"] == name
 
@@ -266,7 +266,7 @@ def test_state_file_phase_fields(_default_run):
         "name", "status", "started_at", "completed_at",
         "session_started_at", "cumulative_seconds", "visit_count",
     ]
-    for num in range(1, 8):
+    for num in range(1, 9):
         phase = state["phases"][str(num)]
         for field in required_fields:
             assert field in phase, f"Phase {num} missing field '{field}'"

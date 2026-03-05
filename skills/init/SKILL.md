@@ -110,7 +110,8 @@ All permissions (universal + both framework sets) for reference:
       "Bash(bundle exec *)",
       "Bash(psql *)",
       "Bash(bin/test *)",
-      "Bash(.venv/bin/pip install *)"
+      "Bash(.venv/bin/pip install *)",
+      "Bash(git restore *)"
     ],
     "deny": [
       "Bash(git rebase *)",

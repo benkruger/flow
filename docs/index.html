@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FLOW — Software Development Lifecycle for Claude Code</title>
-  <meta name="description" content="An opinionated 7-phase software development lifecycle plugin for Claude Code. Plan-first, TDD. Every feature, same phases, no shortcuts. Supports Rails and Python.">
+  <meta name="description" content="An opinionated 8-phase software development lifecycle plugin for Claude Code. Plan-first, TDD. Every feature, same phases, no shortcuts. Supports Rails and Python.">
   <style>
     :root {
       --bg: #ffffff;
@@ -487,7 +487,7 @@
 
   <header>
     <h1><a href="https://github.com/benkruger/flow" style="color: inherit; text-decoration: none;"><span>FLOW</span></a></h1>
-    <p class="tagline">An opinionated 7-phase software development lifecycle for Claude Code. Every feature follows the same phases in the same order. No shortcuts. Supports Rails and Python.</p>
+    <p class="tagline">An opinionated 8-phase software development lifecycle for Claude Code. Every feature follows the same phases in the same order. No shortcuts. Supports Rails and Python.</p>
   </header>
 
   <!-- WHY -->
@@ -501,7 +501,7 @@
   <!-- HOW -->
   <section>
     <h2>How</h2>
-    <p>Every feature goes through a <span class="highlight-phrase">7-phase orchestration</span>. Each phase has mandatory entry guards, structured outputs written to a persistent state file, and back-navigation when something was missed.</p>
+    <p>Every feature goes through a <span class="highlight-phrase">8-phase orchestration</span>. Each phase has mandatory entry guards, structured outputs written to a persistent state file, and back-navigation when something was missed.</p>
 
     <div class="pipeline">
       <div class="pipeline-step">
@@ -523,23 +523,28 @@
       </div>
       <div class="pipeline-step">
         <div class="step-num">4</div>
+        <span class="step-label">Simplify</span>
+        <span class="step-detail">Invoke /simplify &middot; refactor for clarity &middot; auto-commit</span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">5</div>
         <span class="step-label">Review</span>
         <span class="step-detail">Plan alignment &middot; risk coverage &middot; framework anti-patterns</span>
         <span class="sub-agent-badge">sub-agent</span>
       </div>
       <div class="pipeline-step">
-        <div class="step-num">5</div>
+        <div class="step-num">6</div>
         <span class="step-label">Security</span>
         <span class="step-detail">Vulnerability scan &middot; auth gaps &middot; data exposure &middot; injection risks</span>
         <span class="sub-agent-badge">sub-agent</span>
       </div>
       <div class="pipeline-step">
-        <div class="step-num">6</div>
+        <div class="step-num">7</div>
         <span class="step-label">Reflect</span>
         <span class="step-detail">Learnings routed to 5 destinations &middot; worktree memory rescued &middot; plugin gaps noted</span>
       </div>
       <div class="pipeline-step">
-        <div class="step-num">7</div>
+        <div class="step-num">8</div>
         <span class="step-label">Cleanup</span>
         <span class="step-detail">Worktree removed &middot; state file deleted &middot; feature done</span>
       </div>
@@ -575,7 +580,7 @@
       </div>
       <div class="feature">
         <h4>100% Coverage Enforced</h4>
-        <p>Code cannot transition to Review until <code>coverage/uncovered.txt</code> is empty. <code>bin/ci</code> must be green before every commit and every phase transition. Technical debt is blocked at the source.</p>
+        <p>Code cannot transition to Simplify until <code>coverage/uncovered.txt</code> is empty. <code>bin/ci</code> must be green before every commit and every phase transition. Technical debt is blocked at the source.</p>
       </div>
       <div class="feature">
         <h4>Minimal Project Footprint</h4>
@@ -606,7 +611,7 @@
       <li><strong>Plan before code</strong> &mdash; codebase explored, risks identified, approach approved before any implementation</li>
       <li><strong>TDD always</strong> &mdash; test must fail before implementation is written; test must pass before commit</li>
       <li><strong>bin/ci gate</strong> &mdash; must be green before every commit and every phase transition</li>
-      <li><strong>100% test coverage</strong> &mdash; Code cannot transition to Review until coverage is complete</li>
+      <li><strong>100% test coverage</strong> &mdash; Code cannot transition to Simplify until coverage is complete</li>
       <li><strong>No disabling linters</strong> &mdash; fix the code, not the linter; no lint suppression comments</li>
       <li><strong>Commit discipline</strong> &mdash; imperative verb + tl;dr + per-file breakdown, every commit</li>
     </ul>
@@ -798,7 +803,7 @@
   <!-- CTA -->
   <section style="padding: 64px 0;">
     <h2>Get Started</h2>
-    <p>All 7 phase skills, state file infrastructure, session hooks, and reference documentation in one plugin.</p>
+    <p>All 8 phase skills, state file infrastructure, session hooks, and reference documentation in one plugin.</p>
 
     <p style="color: var(--text-muted); font-size: 15px; margin-bottom: 12px;">Step 1: Install in Claude Code</p>
     <div style="position: relative;">

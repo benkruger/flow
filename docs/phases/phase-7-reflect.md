@@ -1,9 +1,9 @@
 ---
-title: "Phase 6: Reflect"
-nav_order: 7
+title: "Phase 7: Reflect"
+nav_order: 8
 ---
 
-# Phase 6: Reflect
+# Phase 7: Reflect
 
 **Command:** `/flow:reflect`
 
@@ -62,7 +62,7 @@ Reflect auto-detects its context and adjusts behavior:
 
 | Mode | Trigger | Sources | Commits | Settings audit | GitHub issues |
 |------|---------|---------|---------|----------------|---------------|
-| Phase 6 | State file with Security complete | 4 (state, notes, context, worktree memory) | `/flow:commit --auto` | No | Yes |
+| Phase 7 | State file with Security complete | 4 (state, notes, context, worktree memory) | `/flow:commit --auto` | No | Yes |
 | Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow:commit --auto` | Yes | No |
 | Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | No | No |
 
@@ -75,4 +75,4 @@ mechanism prevents excluded files from being staged.
 ## What Comes Next
 
 Merge the PR manually (which now includes CLAUDE.md improvements),
-then run Phase 7: Cleanup (`/flow:cleanup`).
+then run Phase 8: Cleanup (`/flow:cleanup`).

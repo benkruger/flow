@@ -135,7 +135,7 @@ def test_first_visit_no_previously_completed_message():
 
 
 def test_phase_6_requires_phase_5_complete():
-    """Phase 6 (Reflect) requires phase 5 (Security) to be complete."""
+    """Phase 6 (Security) requires phase 5 (Review) to be complete."""
     state = make_state(
         current_phase=6,
         phase_statuses={
@@ -149,7 +149,7 @@ def test_phase_6_requires_phase_5_complete():
 
 
 def test_phase_7_requires_phase_6_complete():
-    """Phase 7 (Cleanup) requires phase 6 (Reflect) to be complete."""
+    """Phase 7 (Reflect) requires phase 6 (Security) to be complete."""
     state = make_state(
         current_phase=7,
         phase_statuses={
@@ -160,6 +160,20 @@ def test_phase_7_requires_phase_6_complete():
     allowed, output = _mod.check_phase(state, 7)
     assert not allowed
     assert "Phase 6" in output
+
+
+def test_phase_8_requires_phase_7_complete():
+    """Phase 8 (Cleanup) requires phase 7 (Reflect) to be complete."""
+    state = make_state(
+        current_phase=8,
+        phase_statuses={
+            1: "complete", 2: "complete", 3: "complete", 4: "complete",
+            5: "complete", 6: "complete", 7: "pending",
+        },
+    )
+    allowed, output = _mod.check_phase(state, 8)
+    assert not allowed
+    assert "Phase 7" in output
 
 
 def test_missing_phases_key_blocks():

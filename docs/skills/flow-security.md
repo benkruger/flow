@@ -6,7 +6,7 @@ parent: Skills
 
 # /flow:security
 
-**Phase:** 7 — Security
+**Phase:** 6 — Security
 
 **Usage:** `/flow:security`
 
@@ -36,7 +36,7 @@ Every confirmed finding gets fixed directly:
 
 ## Gates
 
-- Phase 6: Review must be complete
+- Phase 5: Review must be complete
 - `bin/flow ci` must be green after every fix
 - `bin/flow ci` must be green before transitioning to Reflect
 - Full diff must be read before analysis begins

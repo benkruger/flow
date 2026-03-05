@@ -59,7 +59,7 @@ def format_panel(state, version, now=None, dev_mode=False):
     # Check if all phases are complete
     all_complete = all(
         phases.get(str(i), {}).get("status") == "complete"
-        for i in range(1, 8)
+        for i in range(1, 9)
     )
 
     if all_complete:
@@ -90,7 +90,7 @@ def format_panel(state, version, now=None, dev_mode=False):
 
     current_phase_data = None
 
-    for i in range(1, 8):
+    for i in range(1, 9):
         phase = phases.get(str(i), {})
         status = phase.get("status", "pending")
         name = PHASE_NAMES[i]
@@ -150,7 +150,7 @@ def _format_all_complete(state, version, phases, dev_mode=False):
     # Total elapsed from phase timings
     total = sum(
         phases.get(str(i), {}).get("cumulative_seconds", 0)
-        for i in range(1, 8)
+        for i in range(1, 9)
     )
     lines.append(f"  Elapsed : {format_time(total)}")
 
@@ -158,7 +158,7 @@ def _format_all_complete(state, version, phases, dev_mode=False):
     lines.append("  Phases")
     lines.append("  ------")
 
-    for i in range(1, 8):
+    for i in range(1, 9):
         phase = phases.get(str(i), {})
         padded_name = PHASE_NAMES[i].ljust(NAME_WIDTH)
         seconds = phase.get("cumulative_seconds", 0)

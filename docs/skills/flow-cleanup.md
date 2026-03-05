@@ -6,14 +6,14 @@ parent: Skills
 
 # /flow:cleanup
 
-**Phase:** 7 — Cleanup
+**Phase:** 8 — Cleanup
 
 **Usage:** `/flow:cleanup` or `/flow:cleanup --manual`
 
 The final phase. Removes the git worktree and deletes the state file.
 By default, skips confirmation and proceeds directly to cleanup.
 Use `--manual` to prompt for confirmation before any destructive action.
-Best-effort — warns if the state file is missing or Phase 6 is incomplete.
+Best-effort — warns if the state file is missing or Phase 7 is incomplete.
 
 ---
 
@@ -45,8 +45,8 @@ Cleanup handles three scenarios gracefully:
 
 | Scenario | Behavior |
 |---|---|
-| State file exists, Phase 6 complete | Normal cleanup — no warnings |
-| State file exists, Phase 6 incomplete | Warns, proceeds (confirms if `--manual`) |
+| State file exists, Phase 7 complete | Normal cleanup — no warnings |
+| State file exists, Phase 7 incomplete | Warns, proceeds (confirms if `--manual`) |
 | State file missing | Warns, infers from git state, proceeds (confirms if `--manual`) |
 | PR not merged | Hard block, does not proceed |
 
@@ -59,7 +59,7 @@ state file doesn't exist, it notes that and finishes.
 ## Gates
 
 - PR must be merged — hard block if not
-- Phase 6 complete is a warning, not a hard block
+- Phase 7 complete is a warning, not a hard block
 - Missing state file is a warning, not a hard block
 - Confirmation only when `--manual` is passed
 - Must run from the project root — never from inside the worktree
