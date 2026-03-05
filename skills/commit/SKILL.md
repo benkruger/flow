@@ -32,7 +32,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````text
 ```
 ============================================
-  FLOW v0.14.0 — flow:commit — STARTING
+  FLOW v0.15.0 — flow:commit — STARTING
 ============================================
 ```
 ````
@@ -54,7 +54,7 @@ On completion (whether approved or denied), print the same way:
 ````text
 ```
 ============================================
-  FLOW v0.14.0 — flow:commit — COMPLETE
+  FLOW v0.15.0 — flow:commit — COMPLETE
 ============================================
 ```
 ````

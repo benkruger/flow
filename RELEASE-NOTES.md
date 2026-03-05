@@ -1,5 +1,27 @@
 # Release Notes
 
+## v0.15.0 — Post-flow improvements
+
+### New Features
+
+- **Reflect: settings.local.json audit (Maintainer mode)** — After a FLOW cycle,
+  permissions added via "Always allow" land in settings.local.json. Reflect now
+  reads that file, asks which entries to promote to settings.json, and deletes it.
+- **Cleanup: pull main after finishing** — Local main now has the merged feature
+  code when cleanup completes, so the next /flow:start begins from up-to-date main.
+
+### Improvements
+
+- **Plan enters plan mode earlier** — EnterPlanMode now runs immediately after
+  Update State, before asking the user what to build. The entire planning flow
+  runs inside plan mode where no file edits are possible.
+- **Standardized bin/flow ci across all skills** — All skill bash blocks and prose
+  now use `bin/flow ci` (or `bin/flow ci --if-dirty`) instead of bare `bin/ci`.
+  Consistent dispatcher usage across Start, Code, Review, Security, and Commit.
+- **Unified commit skill** — Maintainer and flow:commit merged into a single
+  tri-modal skill (FLOW, Maintainer, Standalone). Version gate moved before bin/ci
+  for fast feedback on stale /flow:init.
+
 ## v0.14.0 — Collapse phases, unify Reflect, speed up tests
 
 ### New Features
