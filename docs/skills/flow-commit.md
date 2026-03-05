@@ -74,6 +74,6 @@ Pass `--auto` to skip the approval prompt when you already know the change is go
 
 Everything else stays identical: `bin/ci` runs first, the full diff is displayed, the commit message is generated and shown, and pull-before-push happens. The only difference is that Step 3 (approval prompt) is skipped.
 
-**Python projects** automatically use auto mode — when the target project's framework is `python` (per `.flow.json`), the approval prompt is always skipped.
+**Python projects (FLOW mode only)** automatically use auto mode — when the target project's framework is `python` (per `.flow.json`), the approval prompt is always skipped. This applies only in FLOW mode; Maintainer and Standalone modes always require explicit approval.
 
 `--auto` is user-invoked only. Claude must never call `/flow:commit --auto` programmatically.

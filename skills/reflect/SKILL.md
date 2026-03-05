@@ -422,6 +422,6 @@ No phase transition, no transition question.
 - Decisions on destinations and wording are autonomous — do not ask the user for approval mid-process
 - The report in Step 6 is the user's review point — make it comprehensive
 - Global writes (`~/.claude/CLAUDE.md`, `~/.claude/rules/`, `~/.claude/projects/`) are direct edits — never committed
-- Repo writes (`CLAUDE.md`, `.claude/rules/`) go through `/flow:commit --auto` (Phase 6) or `/flow:commit --auto` (Maintainer)
+- Repo writes (`CLAUDE.md`, `.claude/rules/`) go through `/flow:commit --auto` (Phase 6 and Maintainer)
 - Plugin improvement notes are filed as GitHub issues on the plugin repo — never committed to the target project
 - Only CLAUDE.md and `.claude/` files are modified — never application code
