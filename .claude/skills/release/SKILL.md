@@ -81,6 +81,10 @@ git log --oneline HEAD~20..HEAD
 
 Display the commit list. This is what goes into the release.
 
+If the commit list is empty (no output), stop:
+
+> "Nothing to release — HEAD is already tagged as `<last_tag>`."
+
 ## Step 5 — Determine version and draft release notes
 
 Read the current version from `.claude-plugin/plugin.json`.
