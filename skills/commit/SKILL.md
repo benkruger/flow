@@ -15,11 +15,11 @@ Determine the operating mode before proceeding:
 1. Run both commands in parallel (two Bash calls in one response):
    - `git worktree list --porcelain` — note the path on the first `worktree` line (this is the project root).
    - `git branch --show-current` — this is the current branch.
-2. Use the Read tool to check for `<project_root>/.flow-states/<branch>.json`.
-3. **State file exists** → **FLOW** mode
-4. **No state file** → Use Glob to check for `flow-phases.json` in the project root.
-   - Exists → **Maintainer** mode (this is the plugin source repo)
-   - Does not exist → **Standalone** mode
+2. Read `<project_root>/.flow-states/<branch>.json` with the Read tool.
+   - **File exists** (content returned) → **FLOW** mode
+   - **File does not exist** (error returned) → use Glob to check for `flow-phases.json` in the project root.
+     - Exists → **Maintainer** mode (this is the plugin source repo)
+     - Does not exist → **Standalone** mode
 
 Keep the project root, branch, and detected mode in context for the rest of this skill.
 
