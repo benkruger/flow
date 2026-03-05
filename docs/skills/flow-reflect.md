@@ -63,7 +63,7 @@ Reflect auto-detects its context:
 | Mode | When | Sources | Commits |
 |------|------|---------|---------|
 | Phase 6 | State file with Security complete | All 4 | `/flow:commit --auto` |
-| Maintainer | No state file, `flow-phases.json` exists | A + B | `/commit --auto` |
+| Maintainer | No state file, `flow-phases.json` exists | A + B | `/flow:commit --auto` |
 | Standalone | No state file, no `flow-phases.json` | A + B | None |
 
 Standalone mode lets any project use `/flow:reflect` without a FLOW

@@ -41,12 +41,26 @@ Subject starts with an imperative verb — Add, Fix, Update, Remove, Refactor. N
 
 ---
 
+## Modes
+
+Commit auto-detects its context:
+
+| Mode | When | Banner | Python auto-approval |
+|------|------|--------|---------------------|
+| FLOW | State file exists | Versioned (`FLOW v0.14.0 — flow:commit`) | Yes (via `.flow.json`) |
+| Maintainer | No state file, `flow-phases.json` exists | Plain (`Commit`) | No |
+| Standalone | No state file, no `flow-phases.json` | Plain (`Commit`) | No |
+
+All three modes share the same diff/message/approval/push process.
+
+---
+
 ## Gates
 
 - Never commits without showing the diff first
-- Never skips the approval step — unless `--auto` or Python framework
+- Never skips the approval step — unless `--auto` or Python framework (FLOW mode only)
 - Never uses `--no-verify`
-- Warns if `bin/ci` has not been run since the last code change
+- FLOW mode: Warns if `bin/ci` has not been run since the last code change
 
 ---
 

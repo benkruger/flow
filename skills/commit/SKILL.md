@@ -4,13 +4,28 @@ description: "Review the full diff, approve or deny, then git add + commit + pus
 model: sonnet
 ---
 
-# FLOW Commit
+# Commit
 
 Review all pending changes as a diff before committing. You must get explicit approval before touching git.
+
+## Mode Detection
+
+Determine the operating mode before proceeding:
+
+1. Run `git branch --show-current` to get the current branch.
+2. Use the Read tool to check for `.flow-states/<branch>.json`.
+3. **State file exists** → **FLOW** mode
+4. **No state file** → Use Glob to check for `flow-phases.json` in the project root.
+   - Exists → **Maintainer** mode (this is the plugin source repo)
+   - Does not exist → **Standalone** mode
+
+Keep the detected mode in context for the rest of this skill.
 
 ## Announce
 
 At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+
+**FLOW mode:**
 
 ````text
 ```
@@ -20,7 +35,19 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ```
 ````
 
+**Maintainer and Standalone mode:**
+
+````text
+```
+============================================
+  Commit — STARTING
+============================================
+```
+````
+
 On completion (whether approved or denied), print the same way:
+
+**FLOW mode:**
 
 ````text
 ```
@@ -30,11 +57,21 @@ On completion (whether approved or denied), print the same way:
 ```
 ````
 
+**Maintainer and Standalone mode:**
+
+````text
+```
+============================================
+  Commit — COMPLETE
+============================================
+```
+````
+
 ## Flag: --auto
 
 When the user invokes `/flow:commit --auto`, skip the Step 3 approval prompt and proceed directly to Step 4 (commit and push). Everything else is identical: `bin/ci`, diff display, commit message generation and display, pull-before-push.
 
-**Python projects:** When the target project's framework is `python` (check `.flow.json`), `--auto` is always on — skip the approval prompt regardless of whether `--auto` was explicitly passed.
+**FLOW mode only — Python auto-approval:** When the target project's framework is `python` (check `.flow.json`), `--auto` is always on — skip the approval prompt regardless of whether `--auto` was explicitly passed.
 
 `--auto` is user-invoked only. Claude must never call `/flow:commit --auto` programmatically — except in `/flow:reflect`, which is fully autonomous and commits without mid-process approval.
 
@@ -152,7 +189,9 @@ Display the full message under the heading **Commit Message** before asking for 
 
 ### Step 3 — Ask for approval
 
-If `--auto` was passed, or the project framework is `python` (read `.flow.json`), skip this step and proceed directly to Step 4.
+If `--auto` was passed, skip this step and proceed directly to Step 4.
+
+**FLOW mode only:** If the project framework is `python` (read `.flow.json`), also skip this step.
 
 Otherwise, use the `AskUserQuestion` tool with exactly these two options:
 
@@ -218,7 +257,7 @@ will make fixes and re-invoke the commit skill when ready.
 ### Hard Rules
 
 - Never commit without showing the diff first
-- Never skip the approval step — unless `--auto` was passed by the user or the project framework is `python`
+- Never skip the approval step — unless `--auto` was passed by the user or the project framework is `python` (FLOW mode only)
 - `--auto` is user-invoked only. Claude must never call `/flow:commit --auto` programmatically — except in `/flow:reflect`, which is fully autonomous and commits without mid-process approval.
 - Never use `--no-verify`
 - Never add Co-Authored-By trailers or attribution lines — commits are authored by the user alone
@@ -227,4 +266,4 @@ will make fixes and re-invoke the commit skill when ready.
 
 ## Additional Rules
 
-- If `bin/ci` has not been run since the last code change, warn the user before asking for approval
+- **FLOW mode only:** If `bin/ci` has not been run since the last code change, warn the user before asking for approval

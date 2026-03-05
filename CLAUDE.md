@@ -51,9 +51,11 @@ Three phase skills launch mandatory sub-agents: Review and Security (general-pur
 
 During feature work, Claude writes auto-memory scoped to the worktree path (`~/.claude/projects/<worktree-path>/memory/MEMORY.md`). When Cleanup removes the worktree, this memory becomes orphaned. In Phase 6 mode, Reflect rescues worktree memory by reading it as a fourth source and routing useful items to permanent destinations.
 
-Reflect is a unified tri-modal skill. It auto-detects Phase 6 (state file with Security complete), Maintainer (no state file, `flow-phases.json` exists), or Standalone (no state file, no `flow-phases.json`). All three modes edit the same 5 destinations on disk. Phase 6 adds worktree memory rescue, GitHub issues, and phase transitions. Maintainer commits via `/commit --auto`. Standalone never commits.
+Reflect is a unified tri-modal skill. It auto-detects Phase 6 (state file with Security complete), Maintainer (no state file, `flow-phases.json` exists), or Standalone (no state file, no `flow-phases.json`). All three modes edit the same 5 destinations on disk. Phase 6 adds worktree memory rescue, GitHub issues, and phase transitions. Maintainer commits via `/flow:commit --auto`. Standalone never commits.
 
-The 5 destinations: global CLAUDE.md (`~/.claude/CLAUDE.md`), project CLAUDE.md (`CLAUDE.md` in project), global rules (`~/.claude/rules/`), project rules (`.claude/rules/` in project), project memory (`~/.claude/projects/<repo-root>/memory/MEMORY.md`). Private destinations (1, 3, 5) are written directly outside the repo. Repo destinations (2, 4) are committed via PR (Phase 6) or `/commit --auto` (Maintainer). Notes captured by `/flow:note` feed into the same routing mechanism.
+The 5 destinations: global CLAUDE.md (`~/.claude/CLAUDE.md`), project CLAUDE.md (`CLAUDE.md` in project), global rules (`~/.claude/rules/`), project rules (`.claude/rules/` in project), project memory (`~/.claude/projects/<repo-root>/memory/MEMORY.md`). Private destinations (1, 3, 5) are written directly outside the repo. Repo destinations (2, 4) are committed via PR (Phase 6) or `/flow:commit --auto` (Maintainer). Notes captured by `/flow:note` feed into the same routing mechanism.
+
+Commit is also tri-modal. It auto-detects FLOW (state file exists), Maintainer (no state file, `flow-phases.json` exists), or Standalone (neither). FLOW mode adds version banners and Python auto-approval. All three modes share the same diff/message/approval/push process.
 
 ### Logging
 
@@ -92,14 +94,13 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 
 ## Maintainer Skills (private to this repo)
 
-- `/commit` — `.claude/skills/commit` — review diff, approve, commit, push
 - `/qa` — `.claude/skills/qa/SKILL.md` — `--start`/`--stop` dev mode with cache nuke, swap marketplace source
 - `/release` — `.claude/skills/release/SKILL.md` — bump version, tag, push, create GitHub Release
 - `/reset` — `.claude/skills/reset/SKILL.md` — remove all FLOW artifacts (worktrees, branches, PRs, state files)
 
 ## Conventions
 
-- All commits via `/commit` skill — no exceptions, no shortcuts, no "just this once"
+- All commits via `/flow:commit` skill — no exceptions, no shortcuts, no "just this once"
 - All changes require `bin/ci` green before committing — tests are the gate
 - New skills are automatically covered by test_skill_contracts.py (glob-based discovery)
 - Namespace is `flow:` — plugin.json name is `"flow"`
@@ -112,7 +113,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 
 ## Lessons Learned
 
-- **Never bypass `/commit`** — even when the change is small, even when you just used it two commits ago. "All commits via `/commit` skill" is not a guideline, it is a rule. The user had to interrupt mid-commit to stop this.
+- **Never bypass `/flow:commit`** — even when the change is small, even when you just used it two commits ago. "All commits via `/flow:commit` skill" is not a guideline, it is a rule. The user had to interrupt mid-commit to stop this.
 - **When fixing mistakes, propose the safe variant first** — `git reset --soft` is safe (keeps changes staged). Bare `git reset` is forbidden. Always specify `--soft` and explain why it's non-destructive before asking permission.
 - **Consistency audits require comparing the canonical source first** — When reconciling README and docs, start by identifying the canonical example (the marketing page) and grep for every divergence. Do not edit piecemeal and hope you caught everything. The most obvious inconsistency (different feature example names across files) was the one missed.
 - **Verify edits against the source of truth before saving** — When fixing an ordering issue, re-read the SKILL.md to confirm the correct order before writing the edit. Editing from memory introduced the exact error being fixed.

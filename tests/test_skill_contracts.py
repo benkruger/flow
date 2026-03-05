@@ -810,18 +810,30 @@ def test_phase_skills_have_time_format_instruction():
 
 
 def test_commit_auto_flag_restriction():
-    """Both commit SKILL.md copies must document that --auto is user-invoked only."""
-    plugin_commit = (SKILLS_DIR / "commit" / "SKILL.md").read_text()
-    maintainer_commit = (
-        REPO_ROOT / ".claude" / "skills" / "commit" / "SKILL.md"
-    ).read_text()
+    """Commit SKILL.md must document that --auto is user-invoked only."""
+    content = (SKILLS_DIR / "commit" / "SKILL.md").read_text()
 
     restriction = "`--auto` is user-invoked only"
-    assert restriction in plugin_commit, (
+    assert restriction in content, (
         "skills/commit/SKILL.md missing '--auto is user-invoked only' restriction"
     )
-    assert restriction in maintainer_commit, (
-        ".claude/skills/commit/SKILL.md missing '--auto is user-invoked only' restriction"
+
+
+def test_commit_tri_modal_detection():
+    """Commit SKILL.md must have tri-modal detection (FLOW/Maintainer/Standalone)."""
+    content = (SKILLS_DIR / "commit" / "SKILL.md").read_text()
+
+    assert "flow-phases.json" in content, (
+        "skills/commit/SKILL.md missing 'flow-phases.json' for mode detection"
+    )
+    assert "Maintainer" in content, (
+        "skills/commit/SKILL.md missing 'Maintainer' mode reference"
+    )
+    assert "Standalone" in content, (
+        "skills/commit/SKILL.md missing 'Standalone' mode reference"
+    )
+    assert ".flow-states" in content, (
+        "skills/commit/SKILL.md missing '.flow-states' for FLOW mode detection"
     )
 
 

@@ -236,7 +236,6 @@ These skills and scripts live in the FLOW repo itself (`.claude/skills/` and `li
 
 | Command | What it does |
 |---------|-------------|
-| `/commit` | Full diff review, commit message draft, approval gate, pull-before-push |
 | `/reflect` | Review session mistakes against CLAUDE.md rules, propose targeted improvements |
 | `/release` | Bump version in plugin.json and marketplace.json, tag, push, create GitHub Release |
 | `/qa` | `--start`/`--stop` dev mode — nukes plugin cache, swaps marketplace source, tracks via `.dev-mode` marker |
