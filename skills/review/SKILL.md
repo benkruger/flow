@@ -294,10 +294,10 @@ Use AskUserQuestion if a finding is too significant to fix in Review:
 > - **Go back to Code** — implementation issue
 > - **Go back to Plan** — plan was missing something
 
-**Go back to Code:** update Phase 5 to `pending`, Phase 3 to
+**Go back to Code:** update Phases 5 and 4 to `pending`, Phase 3 to
 `in_progress`, then invoke `flow:code`.
 
-**Go back to Plan:** update Phases 4 and 3 to `pending`, Phase 2 to
+**Go back to Plan:** update Phases 5, 4, and 3 to `pending`, Phase 2 to
 `in_progress`, then invoke `flow:plan`.
 
 ---

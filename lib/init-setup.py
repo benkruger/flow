@@ -36,6 +36,7 @@ UNIVERSAL_ALLOW = [
     "Bash(*bin/flow *)",
     "Bash(gh pr view *)",
     "Bash(gh issue create *)",
+    "Bash(git restore *)",
 ]
 
 RAILS_ALLOW = [

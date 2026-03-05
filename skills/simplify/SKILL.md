@@ -118,12 +118,12 @@ Then use AskUserQuestion:
 run `git diff HEAD` again to show the revised diff. Then ask again:
 "Ready to commit?" with the two options: **Yes, commit** or **No, revert**.
 
-**If "No, revert"**: Run `git checkout .` to discard `/simplify`'s changes,
+**If "No, revert"**: Run `git restore .` to discard `/simplify`'s changes,
 then proceed directly to Done.
 
 **If "Yes, commit"**: Proceed to Step 3.
 
-**If "Go back to Code"**: Run `git checkout .` to discard changes,
+**If "Go back to Code"**: Run `git restore .` to discard changes,
 update Phase 4 to `pending`, Phase 3 to `in_progress`, then invoke
 `flow:code`.
 

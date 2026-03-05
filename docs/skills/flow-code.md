@@ -49,5 +49,5 @@ Architecture checks are defined by the framework instructions in the skill. Each
 - Test must fail before writing implementation
 - User approves diff before `bin/flow ci` runs
 - `bin/flow ci` must be green before every commit
-- 100% coverage before transitioning to Review
+- 100% coverage before transitioning to Simplify
 - Never rebase

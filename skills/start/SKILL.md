@@ -110,7 +110,7 @@ The script performs these operations in a single process:
 1. `git pull origin main`
 2. `git worktree add .worktrees/<branch> -b <branch>`
 3. `git commit --allow-empty` + `git push -u origin` + `gh pr create`
-4. Create `.flow-states/<branch>.json` (initial state, all 7 phases)
+4. Create `.flow-states/<branch>.json` (initial state, all 8 phases)
 
 The script logs each operation to `.flow-states/<branch>.log` internally.
 
