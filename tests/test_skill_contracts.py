@@ -24,7 +24,7 @@ def _plugin_version():
 
 
 def _phase_skills():
-    """Return {phase_number: skill_name} for phases 1-7."""
+    """Return {phase_number: skill_name} for phases 1-8."""
     data = _load_phases()
     result = {}
     for num, phase in data["phases"].items():
@@ -50,10 +50,10 @@ def _utility_skills():
 # --- Phase gate consistency ---
 
 
-def test_phase_skills_2_through_6_have_hard_gate_checking_previous_phase():
-    """Phases 2-6 must have a HARD-GATE that checks phases.<N-1>.status."""
+def test_phase_skills_2_through_7_have_hard_gate_checking_previous_phase():
+    """Phases 2-7 must have a HARD-GATE that checks phases.<N-1>.status."""
     phase_skills = _phase_skills()
-    for phase_num in range(2, 7):
+    for phase_num in range(2, 8):
         skill_name = phase_skills[phase_num]
         content = _read_skill(skill_name)
         prev = phase_num - 1
@@ -135,8 +135,8 @@ def _clean_template_json(block):
     return cleaned
 
 
-def test_initial_state_template_has_all_7_phases():
-    """start-setup.py state template must have all 7 phases."""
+def test_initial_state_template_has_all_8_phases():
+    """start-setup.py state template must have all 8 phases."""
     import importlib.util
     spec = importlib.util.spec_from_file_location(
         "start_setup", LIB_DIR / "start-setup.py"
@@ -153,13 +153,13 @@ def test_initial_state_template_has_all_7_phases():
         state = json.loads((root / ".flow-states" / "test.json").read_text())
 
     phases = state["phases"]
-    assert len(phases) == 7, f"Expected 7 phases, got {len(phases)}"
+    assert len(phases) == 8, f"Expected 8 phases, got {len(phases)}"
 
     required_fields = [
         "name", "status", "started_at", "completed_at",
         "session_started_at", "cumulative_seconds", "visit_count",
     ]
-    for i in range(1, 8):
+    for i in range(1, 9):
         key = str(i)
         assert key in phases, f"Phase {i} missing from initial state template"
         for field in required_fields:
@@ -219,7 +219,7 @@ def test_phase_transitions_follow_sequence():
     phase_skills = _phase_skills()
     data = _load_phases()
 
-    for phase_num in range(1, 7):  # 1-6 transition to next
+    for phase_num in range(1, 8):  # 1-7 transition to next
         skill_name = phase_skills[phase_num]
         content = _read_skill(skill_name)
         next_num = phase_num + 1
@@ -319,12 +319,12 @@ def test_phase_skills_have_announce_banner():
 
 
 def test_phase_skills_have_update_state_section():
-    """Phases 1-6 should have state update instructions.
-    Phase 7 (cleanup) deletes the state file instead of updating it."""
+    """Phases 1-7 should have state update instructions.
+    Phase 8 (cleanup) deletes the state file instead of updating it."""
     phase_skills = _phase_skills()
 
     for phase_num, skill_name in phase_skills.items():
-        if phase_num == 7:
+        if phase_num == 8:
             continue  # Cleanup deletes state, doesn't update it
         content = _read_skill(skill_name)
 
@@ -348,7 +348,7 @@ def test_phase_skills_with_content_writes_have_state_write_instruction():
     Skills that only use bin/flow commands for state mutations (start, code,
     review, reflect) do not need this instruction."""
     phase_skills = _phase_skills()
-    content_write_phases = {5}  # security
+    content_write_phases = {6}  # security
     for phase_num in content_write_phases:
         skill_name = phase_skills[phase_num]
         content = _read_skill(skill_name)
@@ -362,11 +362,11 @@ def test_phase_skills_with_content_writes_have_state_write_instruction():
 
 
 def test_phase_skills_use_phase_transition_for_entry():
-    """Phases 2-6 must use bin/flow phase-transition for state entry.
+    """Phases 2-7 must use bin/flow phase-transition for state entry.
     Phase 1 uses start-setup.py which creates the state file directly.
-    Phase 7 (cleanup) uses bin/flow cleanup instead."""
+    Phase 8 (cleanup) uses bin/flow cleanup instead."""
     phase_skills = _phase_skills()
-    for phase_num in range(2, 7):
+    for phase_num in range(2, 8):
         skill_name = phase_skills[phase_num]
         content = _read_skill(skill_name)
         assert "phase-transition" in content, (
@@ -380,9 +380,9 @@ def test_phase_skills_use_phase_transition_for_entry():
 
 
 def test_phase_skills_use_phase_transition_for_completion():
-    """Phases 1-6 must use bin/flow phase-transition for state completion."""
+    """Phases 1-7 must use bin/flow phase-transition for state completion."""
     phase_skills = _phase_skills()
-    for phase_num in range(1, 7):
+    for phase_num in range(1, 8):
         skill_name = phase_skills[phase_num]
         content = _read_skill(skill_name)
         assert "--action complete" in content, (
@@ -482,7 +482,7 @@ def test_phase_transition_names_current_phase():
     phase_skills = _phase_skills()
     data = _load_phases()
 
-    for phase_num in range(1, 7):  # 1-6 have transitions
+    for phase_num in range(1, 8):  # 1-7 have transitions
         skill_name = phase_skills[phase_num]
         content = _read_skill(skill_name)
         name = data["phases"][str(phase_num)]["name"]
@@ -494,23 +494,23 @@ def test_phase_transition_names_current_phase():
         )
 
 
-def test_phase_7_has_soft_gate_not_hard_gate():
-    """Phase 7 (cleanup) should have a SOFT-GATE, not a HARD-GATE.
+def test_phase_8_has_soft_gate_not_hard_gate():
+    """Phase 8 (cleanup) should have a SOFT-GATE, not a HARD-GATE.
     Cleanup warns but never blocks — it's the final escape hatch."""
     content = _read_skill("cleanup")
     assert "<SOFT-GATE>" in content, (
-        "Phase 7 (cleanup) should have <SOFT-GATE> — cleanup warns but never blocks"
+        "Phase 8 (cleanup) should have <SOFT-GATE> — cleanup warns but never blocks"
     )
     assert "<HARD-GATE>" not in content, (
-        "Phase 7 (cleanup) should NOT have <HARD-GATE> — cleanup must never block"
+        "Phase 8 (cleanup) should NOT have <HARD-GATE> — cleanup must never block"
     )
 
 
 def test_phase_transitions_have_note_capture_option():
-    """Phases 1-6 transition questions must offer a note-capture option.
+    """Phases 1-7 transition questions must offer a note-capture option.
     This is the third AskUserQuestion option at every phase boundary."""
     phase_skills = _phase_skills()
-    for phase_num in range(1, 7):
+    for phase_num in range(1, 8):
         skill_name = phase_skills[phase_num]
         content = _read_skill(skill_name)
         assert "correction or learning to capture" in content, (
@@ -545,8 +545,8 @@ def test_phase_skills_have_logging_section():
         )
 
 
-def test_phase_7_has_delete_state_instructions():
-    """Phase 7 (cleanup) should have instructions to delete the state file,
+def test_phase_8_has_delete_state_instructions():
+    """Phase 8 (cleanup) should have instructions to delete the state file,
     not update it."""
     content = _read_skill("cleanup")
     has_delete = (
@@ -760,12 +760,12 @@ def test_utility_skill_banners_include_version():
 
 
 def test_phase_state_updates_suppress_output():
-    """Phases 1-6 state update sections must tell Claude not to print the
+    """Phases 1-7 state update sections must tell Claude not to print the
     timing calculation. Without this, Claude shows work like
     'Phase 1 started at X, now Y = Z seconds.' before the banner."""
     phase_skills = _phase_skills()
 
-    for phase_num in range(1, 7):
+    for phase_num in range(1, 8):
         skill_name = phase_skills[phase_num]
         content = _read_skill(skill_name)
 
@@ -886,12 +886,13 @@ def test_commit_python_auto_approval():
 
 
 def test_no_skill_invokes_commit_with_auto():
-    """No skill other than commit and reflect may reference /flow:commit --auto.
+    """No skill other than commit, reflect, and simplify may reference /flow:commit --auto.
 
     Reflect uses --auto because the phase is fully autonomous — Claude
-    gathers, routes, applies, and commits without mid-process user approval."""
+    gathers, routes, applies, and commits without mid-process user approval.
+    Simplify uses --auto because the user already approved changes in Step 2."""
     for d in sorted(SKILLS_DIR.iterdir()):
-        if not d.is_dir() or d.name in ("commit", "reflect"):
+        if not d.is_dir() or d.name in ("commit", "reflect", "simplify"):
             continue
         content = (d / "SKILL.md").read_text()
         assert "/flow:commit --auto" not in content, (

@@ -112,6 +112,7 @@ Then use AskUserQuestion:
 > - **Yes, commit these changes** — accept and proceed to auto-commit
 > - **No, revert** — undo the simplifications
 > - **Edit manually** — make specific changes before committing
+> - **Go back to Code** — revert changes and return to Code phase
 
 **If "Edit manually"**: The user will describe changes. After editing,
 run `git diff HEAD` again to show the revised diff. Then ask again:
@@ -121,6 +122,10 @@ run `git diff HEAD` again to show the revised diff. Then ask again:
 then proceed directly to Done.
 
 **If "Yes, commit"**: Proceed to Step 3.
+
+**If "Go back to Code"**: Run `git checkout .` to discard changes,
+update Phase 4 to `pending`, Phase 3 to `in_progress`, then invoke
+`flow:code`.
 
 ---
 

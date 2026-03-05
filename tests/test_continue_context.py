@@ -74,10 +74,10 @@ def test_happy_path_returns_ok_with_all_fields(state_dir, git_repo, branch):
     assert data["worktree"] == ".worktrees/test-feature"
 
 
-def test_all_complete_returns_ok_with_phase_7():
-    """Phase 7 maps to Cleanup with /flow:cleanup command."""
-    assert _mod.PHASE_NAMES[7] == "Cleanup"
-    assert _mod.COMMANDS[7] == "/flow:cleanup"
+def test_all_complete_returns_ok_with_phase_8():
+    """Phase 8 maps to Cleanup with /flow:cleanup command."""
+    assert _mod.PHASE_NAMES[8] == "Cleanup"
+    assert _mod.COMMANDS[8] == "/flow:cleanup"
 
 
 def test_missing_worktree_still_returns_ok(state_dir, git_repo, branch):
@@ -126,8 +126,8 @@ def test_panel_matches_format_status_output():
 # --- In-process unit tests ---
 
 
-def test_commands_dict_has_all_7():
-    for i in range(1, 8):
+def test_commands_dict_has_all_8():
+    for i in range(1, 9):
         assert i in _mod.COMMANDS
 
 

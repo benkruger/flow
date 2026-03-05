@@ -1,6 +1,6 @@
 ---
 name: reflect
-description: "Phase 6: Reflect — review what went wrong, capture learnings, route each to its correct permanent home. Runs before the PR is merged. The only commits are CLAUDE.md and .claude/ changes."
+description: "Phase 7: Reflect — review what went wrong, capture learnings, route each to its correct permanent home. Runs before the PR is merged. The only commits are CLAUDE.md and .claude/ changes."
 model: sonnet
 ---
 
@@ -15,8 +15,8 @@ stop immediately and show the error to the user.
    - `git branch --show-current` — this is the current branch.
 2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
 3. **Determine mode:**
-   - **State file exists + `phases.5.status` == `"complete"`** → **Phase 6** mode
-   - **State file exists + phase 5 incomplete** → STOP. "BLOCKED: Phase 5:
+   - **State file exists + `phases.6.status` == `"complete"`** → **Phase 7** mode
+   - **State file exists + phase 6 incomplete** → STOP. "BLOCKED: Phase 6:
      Security must be complete. Run /flow:security first."
    - **No state file** → Use Glob to check for `flow-phases.json` in the
      project root.
@@ -34,12 +34,12 @@ to the project root — `bin/flow` commands find paths internally.
 
 At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
 
-**Phase 6 mode:**
+**Phase 7 mode:**
 
 ````markdown
 ```text
 ============================================
-  FLOW v0.15.0 — Phase 6: Reflect — STARTING
+  FLOW v0.15.0 — Phase 7: Reflect — STARTING
 ============================================
 ```
 ````
@@ -56,12 +56,12 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 
 ## Update State
 
-**Phase 6 only.** Skip for Maintainer and Standalone.
+**Phase 7 only.** Skip for Maintainer and Standalone.
 
 Update state for phase entry:
 
 ```bash
-bin/flow phase-transition --phase 6 --action enter
+bin/flow phase-transition --phase 7 --action enter
 ```
 
 Parse the JSON output to confirm `"status": "ok"`.
@@ -93,7 +93,7 @@ Review the current conversation for:
 
 Note: context may have been compacted. Use what is available.
 
-### Source C — State file and plan file data (Phase 6 only)
+### Source C — State file and plan file data (Phase 7 only)
 
 Skip for Maintainer and Standalone.
 
@@ -112,7 +112,7 @@ Read `state["notes"]` in full. These are corrections and learnings
 captured during the session via `/flow:note`. They are the most direct
 signal of what went wrong.
 
-### Source D — Worktree auto-memory (Phase 6 only)
+### Source D — Worktree auto-memory (Phase 7 only)
 
 Skip for Maintainer and Standalone.
 
@@ -155,11 +155,11 @@ existing rule covered it. These are gaps in CLAUDE.md.
 skills, workflows) should be improved. These are not CLAUDE.md rules —
 they are process changes.
 
-**Worth preserving** (Phase 6 only) — items from the worktree auto-memory
+**Worth preserving** (Phase 7 only) — items from the worktree auto-memory
 (Source D) that contain useful patterns, observations, or context that
 future sessions should know. Filter for durable value — not everything in
 auto-memory is worth keeping. Skip this category if Source D was empty or
-did not exist, or if not in Phase 6 mode.
+did not exist, or if not in Phase 7 mode.
 
 ---
 
@@ -226,7 +226,7 @@ For each repo destination with changes:
 1. Read the target file in the project
 2. Apply all additions and rewordings for that destination
 
-### Worktree memory rescue (Phase 6 only)
+### Worktree memory rescue (Phase 7 only)
 
 Skip for Maintainer and Standalone.
 
@@ -246,7 +246,7 @@ leading `-`.
 
 ## Step 4 — Audit settings.local.json (Maintainer only)
 
-**Skip for Phase 6 and Standalone.**
+**Skip for Phase 7 and Standalone.**
 
 Check whether `.claude/settings.local.json` exists using the Read tool.
 If it does not exist, skip this step.
@@ -286,7 +286,7 @@ If no repo-destination changes were made, skip this step regardless of mode.
 
 ---
 
-## Step 6 — File GitHub issues (Phase 6 only)
+## Step 6 — File GitHub issues (Phase 7 only)
 
 Skip for Maintainer and Standalone.
 
@@ -361,10 +361,10 @@ Present the full report to the user:
 ```
 ````
 
-Omit the "Worth preserving" section if not in Phase 6 mode, or if Source D
+Omit the "Worth preserving" section if not in Phase 7 mode, or if Source D
 was empty or had nothing worth keeping. Omit "Changes applied" if no
 changes were made. Omit "Issues filed" if no issues were filed or not in
-Phase 6 mode.
+Phase 7 mode.
 
 In the "Changes applied" section, show "(committed)" or "(uncommitted)"
 next to each repo-destination file to indicate whether Step 4 committed it.
@@ -373,12 +373,12 @@ next to each repo-destination file to indicate whether Step 4 committed it.
 
 ## Done
 
-### Phase 6 mode
+### Phase 7 mode
 
 Complete the phase:
 
 ```bash
-bin/flow phase-transition --phase 6 --action complete
+bin/flow phase-transition --phase 7 --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -390,7 +390,7 @@ Print inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW v0.15.0 — Phase 6: Reflect — COMPLETE (<formatted_time>)
+  FLOW v0.15.0 — Phase 7: Reflect — COMPLETE (<formatted_time>)
   Merge the PR, then run /flow:cleanup.
 ============================================
 ```
@@ -398,16 +398,16 @@ Print inside a fenced code block:
 
 Invoke `flow:status`, then use AskUserQuestion:
 
-> "Phase 6: Reflect is complete. The PR now includes CLAUDE.md improvements. Ready to begin Phase 7: Cleanup?"
+> "Phase 7: Reflect is complete. The PR now includes CLAUDE.md improvements. Ready to begin Phase 8: Cleanup?"
 >
-> - **Yes, start Phase 7 now** — invoke `flow:cleanup`
+> - **Yes, start Phase 8 now** — invoke `flow:cleanup`
 > - **Not yet** — print paused banner
 > - **I have a correction or learning to capture**
 
 **If "I have a correction or learning to capture":**
 1. Ask the user what they want to capture
 2. Invoke `/flow:note` with their message
-3. Re-ask with only "Yes, start Phase 7 now" and "Not yet"
+3. Re-ask with only "Yes, start Phase 8 now" and "Not yet"
 
 **If Yes** — invoke `flow:cleanup` using the Skill tool.
 

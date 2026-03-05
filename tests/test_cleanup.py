@@ -42,7 +42,7 @@ def _setup_feature(git_repo, branch="test-feature"):
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(exist_ok=True)
     state = make_state(current_phase=8, phase_statuses={
-        i: "complete" for i in range(1, 8)
+        i: "complete" for i in range(1, 9)
     })
     state["branch"] = branch
     state["worktree"] = wt_rel

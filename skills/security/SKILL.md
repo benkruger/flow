@@ -1,10 +1,10 @@
 ---
 name: security
-description: "Phase 5: Security — scan for security issues in the feature diff. In-flow: diff-only after Review. Standalone: full repo, report-only, no state file required."
+description: "Phase 6: Security — scan for security issues in the feature diff. In-flow: diff-only after Review. Standalone: full repo, report-only, no state file required."
 model: opus
 ---
 
-# FLOW Security — Phase 5: Security
+# FLOW Security — Phase 6: Security
 
 <HARD-GATE>
 Run this phase entry check as your very first action. If any check fails,
@@ -16,8 +16,8 @@ stop immediately and show the error to the user.
 2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
      Run /flow:start first."
-3. Check `phases.4.status` in the JSON.
-   - If not `"complete"`: STOP. "BLOCKED: Phase 4: Review must be
+3. Check `phases.5.status` in the JSON.
+   - If not `"complete"`: STOP. "BLOCKED: Phase 5: Review must be
      complete. Run /flow:review first."
 </HARD-GATE>
 
@@ -34,7 +34,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````markdown
 ```text
 ============================================
-  FLOW v0.15.0 — Phase 5: Security — STARTING
+  FLOW v0.15.0 — Phase 6: Security — STARTING
 ============================================
 ```
 ````
@@ -44,7 +44,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 Update state for phase entry:
 
 ```bash
-bin/flow phase-transition --phase 5 --action enter
+bin/flow phase-transition --phase 6 --action enter
 ```
 
 Parse the JSON output to confirm `"status": "ok"`.
@@ -64,7 +64,7 @@ Then Read `.flow-states/<branch>.log` (empty string if it does not
 exist yet) and Write it back with this line appended:
 
 ```text
-YYYY-MM-DDTHH:MM:SSZ [Phase 5] Step X — desc (exit EC)
+YYYY-MM-DDTHH:MM:SSZ [Phase 6] Step X — desc (exit EC)
 ```
 
 Get `<branch>` from the state file.
@@ -386,7 +386,7 @@ Show a summary of what was found and fixed inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW — Phase 5: Security — SUMMARY
+  FLOW — Phase 6: Security — SUMMARY
 ============================================
 
   Checks run       : 10
@@ -416,7 +416,7 @@ Show a summary of what was found and fixed inside a fenced code block:
 Complete the phase:
 
 ```bash
-bin/flow phase-transition --phase 5 --action complete
+bin/flow phase-transition --phase 6 --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -428,23 +428,23 @@ Print inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW v0.15.0 — Phase 5: Security — COMPLETE (<formatted_time>)
+  FLOW v0.15.0 — Phase 6: Security — COMPLETE (<formatted_time>)
 ============================================
 ```
 ````
 
 Invoke `flow:status`, then use AskUserQuestion:
 
-> "Phase 5: Security is complete. Ready to begin Phase 6: Reflect?"
+> "Phase 6: Security is complete. Ready to begin Phase 7: Reflect?"
 >
-> - **Yes, start Phase 6 now** — invoke `flow:reflect`
+> - **Yes, start Phase 7 now** — invoke `flow:reflect`
 > - **Not yet** — print paused banner
 > - **I have a correction or learning to capture**
 
 **If "I have a correction or learning to capture":**
 1. Ask the user what they want to capture
 2. Invoke `/flow:note` with their message
-3. Re-ask with only "Yes, start Phase 6 now" and "Not yet"
+3. Re-ask with only "Yes, start Phase 7 now" and "Not yet"
 
 **If Yes** — invoke `flow:reflect` using the Skill tool.
 

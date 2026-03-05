@@ -425,9 +425,9 @@ Print inside a fenced code block:
 
 Invoke `flow:status`, then use AskUserQuestion:
 
-> "Phase 3: Code is complete. Ready to begin Phase 4: Review?"
+> "Phase 3: Code is complete. Ready to begin Phase 4: Simplify?"
 >
-> - **Yes, start Phase 4 now** — invoke `flow:review`
+> - **Yes, start Phase 4 now** — invoke `flow:simplify`
 > - **Not yet** — print paused banner
 > - **I have a correction or learning to capture**
 
@@ -436,7 +436,7 @@ Invoke `flow:status`, then use AskUserQuestion:
 2. Invoke `/flow:note` with their message
 3. Re-ask with only "Yes, start Phase 4 now" and "Not yet"
 
-**If Yes** — invoke `flow:review` using the Skill tool.
+**If Yes** — invoke `flow:simplify` using the Skill tool.
 
 **If Not yet**, print inside a fenced code block:
 

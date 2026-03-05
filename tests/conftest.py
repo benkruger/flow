@@ -101,7 +101,7 @@ def make_state(current_phase=1, phase_statuses=None, framework="rails"):
     """
     phase_statuses = phase_statuses or {}
     phases = {}
-    for i in range(1, 8):
+    for i in range(1, 9):
         status = phase_statuses.get(i, "pending")
         phases[str(i)] = {
             "name": PHASE_NAMES[i],
