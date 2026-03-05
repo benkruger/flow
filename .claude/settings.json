@@ -45,7 +45,8 @@
       "Bash(.venv/bin/pip install *)",
       "Bash(gh pr list *)",
       "Bash(gh pr view *)",
-      "Bash(rm .flow-states/*)"
+      "Bash(rm .flow-states/*)",
+      "Bash(gh issue create *)"
     ],
     "deny": [
       "Bash(git rebase *)",
