@@ -61,4 +61,4 @@ By the end of Phase 3:
 
 ## What Comes Next
 
-Phase 4: Review (`/flow:review`) — code review before merging.
+Phase 4: Simplify (`/flow:simplify`) — refactor for clarity before review.

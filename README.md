@@ -1,8 +1,8 @@
 # FLOW — Software Development Lifecycle for Claude Code
 
-An opinionated 7-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces plan-first, TDD discipline on every feature. Supports Rails and Python.
+An opinionated 8-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces plan-first, TDD discipline on every feature. Supports Rails and Python.
 
-**Every feature. Same 7 phases. Same order. No shortcuts.**
+**Every feature. Same 8 phases. Same order. No shortcuts.**
 
 **Documentation:** [benkruger.github.io/flow](https://benkruger.github.io/flow)
 
@@ -19,8 +19,8 @@ FLOW imposes structure. Not bureaucracy — discipline.
 ## The Workflow
 
 ```text
-Start → Plan → Code → Review → Security → Reflect → Cleanup
-  1       2      3       4          5          6         7
+Start → Plan → Code → Simplify → Review → Security → Reflect → Cleanup
+  1       2      3       4          5          6          7         8
 ```
 
 | Phase | Command | Model | What happens |
@@ -28,10 +28,11 @@ Start → Plan → Code → Review → Security → Reflect → Cleanup
 | **1: Start** | `/flow:start <name>` | Haiku | New worktree, push branch, open PR, `bin/ci` baseline, upgrade dependencies, `bin/ci` green — Sonnet sub-agent fixes CI failures |
 | **2: Plan** | `/flow:plan` | **Opus** | Native plan mode — explore codebase, design approach, produce ordered tasks with risks |
 | **3: Code** | `/flow:code` | **Opus** | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
-| **4: Review** | `/flow:review` | Sonnet | Sub-agent checks plan alignment, risk coverage, framework anti-patterns |
-| **5: Security** | `/flow:security` | **Opus** | Sub-agent scans diff for vulnerabilities, auth gaps, data exposure, injection risks |
-| **6: Reflect** | `/flow:reflect` | Sonnet | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
-| **7: Cleanup** | `/flow:cleanup` | Haiku | Worktree removed, state file deleted, feature done |
+| **4: Simplify** | `/flow:simplify` | Sonnet | Invoke `/simplify` on committed code, refactor for clarity, auto-commit |
+| **5: Review** | `/flow:review` | Sonnet | Sub-agent checks plan alignment, risk coverage, framework anti-patterns |
+| **6: Security** | `/flow:security` | **Opus** | Sub-agent scans diff for vulnerabilities, auth gaps, data exposure, injection risks |
+| **7: Reflect** | `/flow:reflect` | Sonnet | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
+| **8: Cleanup** | `/flow:cleanup` | Haiku | Worktree removed, state file deleted, feature done |
 
 ---
 
@@ -117,10 +118,11 @@ FLOW automatically selects the right model for each phase — Opus for hard thin
 | 1: Start | Haiku | Mechanical setup; CI failures delegated to Sonnet sub-agent |
 | 2: Plan | **Opus** | Codebase exploration, architectural judgment, and task planning — bad plans cascade through all later phases |
 | 3: Code | **Opus** | Writing correct code against complex codebase |
-| 4: Review | Sonnet | Sub-agent analyzes diff, fixes are targeted and small |
-| 5: Security | **Opus** | Security analysis requires architectural reasoning about attack vectors and data flows |
-| 6: Reflect | Sonnet | Synthesizing learnings into reusable patterns |
-| 7: Cleanup | Haiku | Delete worktree and state file |
+| 4: Simplify | Sonnet | Invoke `/simplify` for clarity refactoring, auto-commit |
+| 5: Review | Sonnet | Sub-agent analyzes diff, fixes are targeted and small |
+| 6: Security | **Opus** | Security analysis requires architectural reasoning about attack vectors and data flows |
+| 7: Reflect | Sonnet | Synthesizing learnings into reusable patterns |
+| 8: Cleanup | Haiku | Delete worktree and state file |
 | Commit | Sonnet | Writing clear, well-structured commit messages |
 
 ### State File Persistence
@@ -175,6 +177,7 @@ Phases that allow it offer back-navigation when something was missed:
 | Phase | Can return to |
 |-------|--------------|
 | Code | Plan |
+| Simplify | Code |
 | Review | Code, Plan |
 
 When returning, state is reset appropriately. Later phases are invalidated. Prior findings are preserved and extended — never discarded.
@@ -187,7 +190,7 @@ When returning, state is reset appropriately. Later phases are invalidated. Prio
 - **Plan before code** — codebase explored, risks identified, approach approved before any implementation
 - **TDD always** — test must fail before implementation is written; test must pass before commit
 - **`bin/ci` gate** — must be green before every commit and every phase transition
-- **100% test coverage** — Code phase cannot transition to Review without it
+- **100% test coverage** — Code phase cannot transition to Simplify without it
 - **No disabling linters** — fix the code, not the linter; no lint suppression comments
 - **Commit discipline** — imperative verb + tl;dr + per-file breakdown, every commit
 

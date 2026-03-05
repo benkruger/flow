@@ -6,7 +6,7 @@ parent: Skills
 
 # /flow:reflect
 
-**Phase:** 6 — Reflect
+**Phase:** 7 — Reflect
 
 **Usage:** `/flow:reflect`
 
@@ -62,7 +62,7 @@ Reflect auto-detects its context:
 
 | Mode | When | Sources | Commits | Settings audit |
 |------|------|---------|---------|----------------|
-| Phase 6 | State file with Security complete | All 4 | `/flow:commit --auto` | No |
+| Phase 7 | State file with Security complete | All 4 | `/flow:commit --auto` | No |
 | Maintainer | No state file, `flow-phases.json` exists | A + B | `/flow:commit --auto` | Yes |
 | Standalone | No state file, no `flow-phases.json` | A + B | None | No |
 
@@ -74,6 +74,6 @@ learnings.
 
 ## Gates
 
-- **Phase 6**: Phase 5: Security must be complete
+- **Phase 7**: Phase 6: Security must be complete
 - **Maintainer/Standalone**: No gate — runs immediately
 - Only CLAUDE.md and `.claude/` files are committed — never application code

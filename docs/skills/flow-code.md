@@ -6,7 +6,7 @@ parent: Skills
 
 # /flow:code
 
-**Phase:** 5 — Code
+**Phase:** 3 — Code
 
 **Usage:** `/flow:code`
 

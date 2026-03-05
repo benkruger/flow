@@ -6,7 +6,7 @@ parent: Skills
 
 # /flow:review
 
-**Phase:** 6 — Review
+**Phase:** 5 — Review
 
 **Usage:** `/flow:review`
 
@@ -40,4 +40,4 @@ transitions to Security.
 - `bin/flow ci` must be green after every fix
 - `bin/flow ci` must be green before transitioning to Security
 - Full diff must be read before review begins
-- Can return to Code, Plan, Design, or Research
+- Can return to Code or Plan

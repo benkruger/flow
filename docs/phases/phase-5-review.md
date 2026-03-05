@@ -1,9 +1,9 @@
 ---
-title: "Phase 4: Review"
-nav_order: 5
+title: "Phase 5: Review"
+nav_order: 6
 ---
 
-# Phase 4: Review
+# Phase 5: Review
 
 **Command:** `/flow:review`
 
@@ -48,5 +48,5 @@ Review does not transition to Security until `bin/flow ci` is green.
 
 ## What Comes Next
 
-Phase 5: Security (`/flow:security`) — scan for security issues in the
+Phase 6: Security (`/flow:security`) — scan for security issues in the
 feature diff before the PR is merged.

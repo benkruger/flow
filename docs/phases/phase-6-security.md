@@ -1,9 +1,9 @@
 ---
-title: "Phase 5: Security"
-nav_order: 6
+title: "Phase 6: Security"
+nav_order: 7
 ---
 
-# Phase 5: Security
+# Phase 6: Security
 
 **Command:** `/flow:security`
 
@@ -36,5 +36,5 @@ Security does not transition to Reflect until `bin/flow ci` is green.
 
 ## What Comes Next
 
-Phase 6: Reflect (`/flow:reflect`) — extract learnings and update
+Phase 7: Reflect (`/flow:reflect`) — extract learnings and update
 CLAUDE.md before the PR is merged.
