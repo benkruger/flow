@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-A Claude Code plugin (`flow:` namespace) implementing an opinionated 7-phase development lifecycle. Supports Rails and Python via framework-specific skill fragments. Skills live in `skills/<name>/SKILL.md` with framework content in `skills/<phase>/rails.md` and `skills/<phase>/python.md`. State lives in `.flow-states/<branch>.json` in the target project.
+A Claude Code plugin (`flow:` namespace) implementing an opinionated 8-phase development lifecycle. Supports Rails and Python via framework-specific skill fragments. Skills live in `skills/<name>/SKILL.md` with framework content in `skills/<phase>/rails.md` and `skills/<phase>/python.md`. State lives in `.flow-states/<branch>.json` in the target project.
 
 ## Key Files
 
@@ -49,11 +49,11 @@ Three phase skills launch mandatory sub-agents: Review and Security (general-pur
 
 ### Memory
 
-During feature work, Claude writes auto-memory scoped to the worktree path (`~/.claude/projects/<worktree-path>/memory/MEMORY.md`). When Cleanup removes the worktree, this memory becomes orphaned. In Phase 6 mode, Reflect rescues worktree memory by reading it as a fourth source and routing useful items to permanent destinations.
+During feature work, Claude writes auto-memory scoped to the worktree path (`~/.claude/projects/<worktree-path>/memory/MEMORY.md`). When Cleanup removes the worktree, this memory becomes orphaned. In Phase 7 mode, Reflect rescues worktree memory by reading it as a fourth source and routing useful items to permanent destinations.
 
-Reflect is a unified tri-modal skill. It auto-detects Phase 6 (state file with Security complete), Maintainer (no state file, `flow-phases.json` exists), or Standalone (no state file, no `flow-phases.json`). All three modes edit the same 5 destinations on disk. Phase 6 adds worktree memory rescue, GitHub issues, and phase transitions. Maintainer commits via `/flow:commit --auto`. Standalone never commits.
+Reflect is a unified tri-modal skill. It auto-detects Phase 7 (state file with Security complete), Maintainer (no state file, `flow-phases.json` exists), or Standalone (no state file, no `flow-phases.json`). All three modes edit the same 5 destinations on disk. Phase 7 adds worktree memory rescue, GitHub issues, and phase transitions. Maintainer commits via `/flow:commit --auto`. Standalone never commits.
 
-The 5 destinations: global CLAUDE.md (`~/.claude/CLAUDE.md`), project CLAUDE.md (`CLAUDE.md` in project), global rules (`~/.claude/rules/`), project rules (`.claude/rules/` in project), project memory (`~/.claude/projects/<repo-root>/memory/MEMORY.md`). Private destinations (1, 3, 5) are written directly outside the repo. Repo destinations (2, 4) are committed via PR (Phase 6) or `/flow:commit --auto` (Maintainer). Notes captured by `/flow:note` feed into the same routing mechanism.
+The 5 destinations: global CLAUDE.md (`~/.claude/CLAUDE.md`), project CLAUDE.md (`CLAUDE.md` in project), global rules (`~/.claude/rules/`), project rules (`.claude/rules/` in project), project memory (`~/.claude/projects/<repo-root>/memory/MEMORY.md`). Private destinations (1, 3, 5) are written directly outside the repo. Repo destinations (2, 4) are committed via PR (Phase 7) or `/flow:commit --auto` (Maintainer). Notes captured by `/flow:note` feed into the same routing mechanism.
 
 Commit is also tri-modal. It auto-detects FLOW (state file exists), Maintainer (no state file, `flow-phases.json` exists), or Standalone (neither). FLOW mode adds version banners and Python auto-approval. All three modes share the same diff/message/approval/push process.
 
@@ -79,7 +79,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 
 | Test File | What It Enforces |
 |-----------|------------------|
-| `test_structural.py` | Config invariants: phases 1-7 exist, versions match across 4 files, commands unique, hooks reference existing files |
+| `test_structural.py` | Config invariants: phases 1-8 exist, versions match across 4 files, commands unique, hooks reference existing files |
 | `test_skill_contracts.py` | SKILL.md content: HARD-GATE presence, announce banners, state updates, sub-agent types, model frontmatter, logging sections, note-capture options. Uses glob-based discovery — new skills are automatically covered |
 | `test_check_phase.py` | Phase guard: blocks on incomplete prerequisites, allows on complete, handles worktrees, re-entry notes |
 | `test_session_start.py` | Session hook: feature detection, timing reset, awareness injection, multi-feature handling |
