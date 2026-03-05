@@ -1,5 +1,41 @@
 # Release Notes
 
+## v0.14.0 — Collapse phases, unify Reflect, speed up tests
+
+### New Features
+
+- Collapse Research, Design, and Plan into a single Plan phase using Claude Code's native plan mode
+- Unify Reflect into one tri-modal skill (Phase 6, Maintainer, Standalone)
+- Add `/reset` maintainer skill to wipe all FLOW artifacts
+- Add `--if-dirty` flag to `bin/ci` to skip redundant runs between phase transitions
+- Auto-approve commits for Python projects
+
+### Improvements
+
+- Make Reflect phase fully autonomous (no approval prompts)
+- Make `flow:cleanup` skip confirmation by default
+- Session hook is now awareness-only — stops auto-invoking `flow:continue`
+- Split QA skill into `--start`/`--stop` with dev mode tracking
+- Eliminate computational instructions from skills, switch to Pacific Time
+- Skip redundant CI runs between phase transitions
+
+### Performance
+
+- Speed up test suite from 18s to ~6s across two optimization PRs
+- Eliminate subprocess overhead in multiple test files (in-process calls)
+- Template-copy pattern for git repo fixtures
+- Enable parallel test execution with pytest-xdist
+
+### Fixes
+
+- Fix state file lookup after `/clear` resets branch to main
+- Fix off-by-one in status panel "Next" command
+- Fix sub-agent permissions, framework narration, and QA issues across 3 rounds
+- Fix `.flow-commit-msg` being tracked in commits
+- Fix `.gitignore` to suppress `.venv` symlinks
+
+---
+
 ## v0.13.1 — Permission prompt fixes and simulation tests
 
 **Fixes**
