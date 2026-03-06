@@ -191,19 +191,13 @@ Stage the settings and version marker:
 git add .claude/settings.json .flow.json
 ```
 
-Check if anything is staged:
-
-```bash
-git diff --cached --quiet
-```
-
-If exit code is 0, nothing is staged — skip the commit and push, go straight to Done.
-
-If exit code is 1, changes are staged — commit and push:
+Commit (if nothing changed, this exits non-zero with "nothing to commit" — that is fine, skip to Done):
 
 ```bash
 git commit -m "Configure FLOW workspace permissions and version marker"
 ```
+
+If the commit succeeded, push:
 
 ```bash
 git push
@@ -228,5 +222,23 @@ Report:
 - Version marker written to `.flow.json`
 - Git excludes configured for `.flow-states/` and `.worktrees/`
 - Changes committed
+
+Display the skills configuration as a markdown table:
+
+```text
+| Skill     | Mode   |
+|-----------|--------|
+| start     | manual |
+| code      | manual |
+| simplify  | auto   |
+| review    | auto   |
+| security  | auto   |
+| reflect   | auto   |
+| commit    | auto   |
+| abort     | auto   |
+| cleanup   | auto   |
+```
+
+Use the actual values from `skills_dict` (Step 2). The table above is just an example.
 
 Tell the user to start a new Claude Code session so the permissions take effect, then run `/flow:start <feature name>`.
