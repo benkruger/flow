@@ -945,11 +945,11 @@ def test_reflect_has_no_worktree_memory_rescue():
         "Worth preserving",
         "worktree memory rescue",
     ]
-    for term in obsolete_terms:
-        assert term not in content, (
-            f"skills/reflect/SKILL.md still contains '{term}' — "
-            f"worktree memory rescue is obsolete since Claude Code 2.1.63"
-        )
+    found = [term for term in obsolete_terms if term in content]
+    assert not found, (
+        f"skills/reflect/SKILL.md still contains obsolete terms: {found} — "
+        f"worktree memory rescue is obsolete since Claude Code 2.1.63"
+    )
 
 
 def test_multi_framework_skills_have_both_sections():
