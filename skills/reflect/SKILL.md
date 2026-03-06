@@ -117,25 +117,6 @@ Read `state["notes"]` in full. These are corrections and learnings
 captured during the session via `/flow:note`. They are the most direct
 signal of what went wrong.
 
-### Source D — Worktree auto-memory (Phase 7 only)
-
-Skip for Maintainer and Standalone.
-
-Claude writes auto-memory during feature work to a path scoped to the
-worktree. This memory will be lost when Cleanup removes the worktree.
-
-1. Read `state["worktree"]` to get the worktree absolute path
-2. Escape the path: replace `/` with `-`, drop the leading `-`
-   (e.g. `/Users/ben/code/hh/.worktrees/my-feature` becomes
-   `Users-ben-code-hh-.worktrees-my-feature`)
-3. Read `~/.claude/projects/<escaped-path>/memory/MEMORY.md`
-   Use the Read tool for this — the path is outside the project directory
-   and Bash cat would trigger a permission prompt. The Read tool may also
-   prompt for `~/.claude/` paths — this is a known limitation. Approve the
-   prompt to continue.
-4. If it exists, include its contents as evidence alongside Sources A-C
-5. If it does not exist (no auto-memory was written), skip silently
-
 ---
 
 ## Step 2 — Synthesize findings
@@ -161,12 +142,6 @@ existing rule covered it. These are gaps in CLAUDE.md.
 **Process gaps** — places where the development process itself (tools,
 skills, workflows) should be improved. These are not CLAUDE.md rules —
 they are process changes.
-
-**Worth preserving** (Phase 7 only) — items from the worktree auto-memory
-(Source D) that contain useful patterns, observations, or context that
-future sessions should know. Filter for durable value — not everything in
-auto-memory is worth keeping. Skip this category if Source D was empty or
-did not exist, or if not in Phase 7 mode.
 
 ---
 
@@ -209,7 +184,7 @@ Destinations 2, 4 are on disk — committed in Step 4 if applicable.
 
 ### Apply changes
 
-For each item in "Missing rules" and "Worth preserving":
+For each item in "Missing rules":
 1. Select a destination using the routing heuristics table
 2. Compose a learning entry following the writing rules above
 3. Read the target file, apply the addition. Do not duplicate existing content.
@@ -232,22 +207,6 @@ For each private destination with changes:
 For each repo destination with changes:
 1. Read the target file in the project
 2. Apply all additions and rewordings for that destination
-
-### Worktree memory rescue (Phase 7 only)
-
-Skip for Maintainer and Standalone.
-
-If Source D contained items that were routed to a destination above, they
-are already handled. For any remaining useful items in the worktree
-auto-memory that were not surfaced as findings, merge them into project
-memory (destination 5: `~/.claude/projects/<repo-root>/memory/MEMORY.md`)
-so they survive cleanup.
-
-To determine `<repo-root>`: read `state["worktree"]`. The worktree is
-inside the project (e.g., `/Users/ben/code/hh/.worktrees/my-feature`).
-The repo root is the worktree's parent's parent — strip `.worktrees/<name>`
-(e.g., `/Users/ben/code/hh`). Escape: replace `/` with `-`, drop the
-leading `-`.
 
 ---
 
@@ -347,16 +306,10 @@ Present the full report to the user:
   - /flow:commit should warn when branch is behind
   - ...
 
-  Worth preserving (from worktree memory)
-  ----------------------------------------
-  - Tests with Time.zone.now fail near midnight
-  - ...
-
   Changes applied
   ---------------
   Global CLAUDE.md: 2 additions
   Project rules (.claude/rules/testing.md): 1 addition
-  Project memory: 3 items rescued from worktree
   Project CLAUDE.md: 1 addition (committed / uncommitted)
 
   Issues filed
@@ -368,10 +321,8 @@ Present the full report to the user:
 ```
 ````
 
-Omit the "Worth preserving" section if not in Phase 7 mode, or if Source D
-was empty or had nothing worth keeping. Omit "Changes applied" if no
-changes were made. Omit "Issues filed" if no issues were filed or not in
-Phase 7 mode.
+Omit "Changes applied" if no changes were made. Omit "Issues filed" if
+no issues were filed or not in Phase 7 mode.
 
 In the "Changes applied" section, show "(committed)" or "(uncommitted)"
 next to each repo-destination file to indicate whether Step 4 committed it.
@@ -449,7 +400,7 @@ No phase transition, no transition question.
 
 - Never commit application code in Reflect — only CLAUDE.md and .claude/
 - Always read CLAUDE.md and conversation context before synthesizing findings
-- In Phase 6, read all four sources before synthesizing findings
+- In Phase 7, read all three sources before synthesizing findings
 - Follow the reflection process (Steps 1 through 7) exactly — do not skip or reorder steps
 - Decisions on destinations and wording are autonomous — do not ask the user for approval mid-process
 - The report in Step 7 is the user's review point — make it comprehensive

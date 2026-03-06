@@ -169,3 +169,16 @@ def test_n_auto_in_pytest_ini():
     config.read(REPO_ROOT / "pytest.ini")
     addopts = config.get("pytest", "addopts")
     assert "-n auto" in addopts, "-n auto not found in pytest.ini addopts"
+
+
+def test_claude_md_has_no_lessons_learned_section():
+    """CLAUDE.md must not have a Lessons Learned section.
+
+    Learnings belong in rules files (.claude/rules/ or ~/.claude/rules/),
+    not in CLAUDE.md. CLAUDE.md is for architecture, conventions, and
+    project description."""
+    content = (REPO_ROOT / "CLAUDE.md").read_text()
+    assert "## Lessons Learned" not in content, (
+        "CLAUDE.md still has a '## Lessons Learned' section — "
+        "learnings belong in rules files, not CLAUDE.md"
+    )

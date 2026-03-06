@@ -932,6 +932,26 @@ def test_no_framework_fragment_files():
         )
 
 
+def test_reflect_has_no_worktree_memory_rescue():
+    """Reflect skill must not contain worktree memory rescue logic.
+
+    Since Claude Code 2.1.63, auto-memory is shared across git worktrees
+    of the same repository. Worktree-specific memory paths no longer exist,
+    so Source D rescue is obsolete."""
+    content = _read_skill("reflect")
+    obsolete_terms = [
+        "Source D",
+        "worktree auto-memory",
+        "Worth preserving",
+        "worktree memory rescue",
+    ]
+    for term in obsolete_terms:
+        assert term not in content, (
+            f"skills/reflect/SKILL.md still contains '{term}' — "
+            f"worktree memory rescue is obsolete since Claude Code 2.1.63"
+        )
+
+
 def test_multi_framework_skills_have_both_sections():
     """Skills that had framework fragments must have both Rails and Python
     content inline in SKILL.md."""
