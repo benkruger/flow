@@ -29,25 +29,32 @@ One-time project setup. Configures workspace permissions in `.claude/settings.js
 
 ## Autonomy Configuration
 
-Each of the 9 configurable skills can run in **auto** or **manual** mode. The chosen configuration is stored in `.flow.json` under a `skills` key:
+FLOW has two independent axes for skills that support them:
+
+- **Commit** — how `/flow:commit` is invoked during phase work (auto = skip diff approval, manual = require approval). Also controls per-task approval in Code and refactoring approval in Simplify.
+- **Continue** — whether to auto-advance to the next phase or prompt first.
+
+The chosen configuration is stored in `.flow.json` under a `skills` key:
 
 ```json
 {
   "flow_version": "0.16.4",
   "framework": "python",
   "skills": {
-    "start": "manual",
-    "code": "manual",
-    "simplify": "manual",
-    "review": "manual",
-    "security": "auto",
-    "reflect": "auto",
-    "commit": "auto",
+    "start": {"continue": "manual"},
+    "code": {"commit": "manual", "continue": "manual"},
+    "simplify": {"commit": "auto", "continue": "auto"},
+    "review": {"commit": "auto", "continue": "auto"},
+    "security": {"continue": "auto"},
+    "reflect": {"commit": "auto", "continue": "auto"},
+    "commit": "manual",
     "abort": "auto",
     "cleanup": "auto"
   }
 }
 ```
+
+Phase skills that commit (Code, Simplify, Review, Reflect) have both axes as a nested object. Phase skills that don't commit (Start, Security) have only the continue axis. Utility skills (Commit, Abort, Cleanup) have a single string value.
 
 Individual skills can always be overridden at invocation time with `--auto` or `--manual` flags, regardless of the `.flow.json` configuration.
 

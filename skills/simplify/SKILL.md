@@ -41,10 +41,10 @@ to the project root — `bin/flow` commands find paths internally.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → mode is **auto**
-2. If `--manual` was passed → mode is **manual**
-3. Otherwise, read `.flow.json` from the project root. Use `skills.simplify` value.
-4. If `.flow.json` has no `skills` key → use built-in default: **manual**
+1. If `--auto` was passed → commit=auto, continue=auto
+2. If `--manual` was passed → commit=manual, continue=manual
+3. Otherwise, read `.flow.json` from the project root. Use `skills.simplify.commit` and `skills.simplify.continue`.
+4. If `.flow.json` has no `skills` key → use built-in defaults: commit=manual, continue=manual
 
 ## Announce
 
@@ -124,10 +124,10 @@ git diff HEAD
 
 Render the diff inline in your response.
 
-**If mode is auto**, skip the AskUserQuestion and proceed directly to Step 3
+**If commit=auto**, skip the AskUserQuestion and proceed directly to Step 3
 (auto-commit). The diff is still shown for visibility.
 
-**If mode is manual**, use AskUserQuestion:
+**If commit=manual**, use AskUserQuestion:
 
 > "Accept /simplify refactoring?"
 >
@@ -156,7 +156,7 @@ update Phase 4 to `pending`, Phase 3 to `in_progress`, then invoke
 Automatically commit the `/simplify` changes without additional approval
 (the user already approved in Step 2):
 
-Use `/flow:commit --auto` to review and commit.
+If commit=auto, use `/flow:commit --auto`. Otherwise, use `/flow:commit`.
 
 ---
 
@@ -184,9 +184,9 @@ Print inside a fenced code block:
 
 Invoke `flow:status`.
 
-**If mode is auto**, skip the transition question and invoke `flow:review` directly.
+**If continue=auto**, skip the transition question and invoke `flow:review` directly.
 
-**If mode is manual**, use AskUserQuestion:
+**If continue=manual**, use AskUserQuestion:
 
 > "Phase 4: Simplify is complete. Ready to begin Phase 5: Review?"
 >

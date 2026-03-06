@@ -41,10 +41,10 @@ to the project root — `bin/flow` commands find paths internally.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → mode is **auto**
-2. If `--manual` was passed → mode is **manual**
-3. Otherwise, read `.flow.json` from the project root. Use `skills.security` value.
-4. If `.flow.json` has no `skills` key → use built-in default: **auto**
+1. If `--auto` was passed → continue=auto
+2. If `--manual` was passed → continue=manual
+3. Otherwise, read `.flow.json` from the project root. Use `skills.security.continue`.
+4. If `.flow.json` has no `skills` key → use built-in default: continue=auto
 
 ## Announce
 
@@ -458,9 +458,9 @@ Print inside a fenced code block:
 
 Invoke `flow:status`.
 
-**If mode is auto**, skip the transition question and invoke `flow:reflect` directly.
+**If continue=auto**, skip the transition question and invoke `flow:reflect` directly.
 
-**If mode is manual**, use AskUserQuestion:
+**If continue=manual**, use AskUserQuestion:
 
 > "Phase 6: Security is complete. Ready to begin Phase 7: Reflect?"
 >

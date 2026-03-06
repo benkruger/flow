@@ -44,10 +44,10 @@ to the project root — `bin/flow` commands find paths internally.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → mode is **auto**
-2. If `--manual` was passed → mode is **manual**
-3. Otherwise, read `.flow.json` from the project root. Use `skills.reflect` value.
-4. If `.flow.json` has no `skills` key → use built-in default: **auto**
+1. If `--auto` was passed → commit=auto, continue=auto
+2. If `--manual` was passed → commit=manual, continue=manual
+3. Otherwise, read `.flow.json` from the project root. Use `skills.reflect.commit` and `skills.reflect.continue`.
+4. If `.flow.json` has no `skills` key → use built-in defaults: commit=auto, continue=auto
 
 ## Announce
 
@@ -247,8 +247,8 @@ If it exists:
 3. Compare the `permissions.allow` lists
 4. For each entry in the local file's allow list that is not in
    `settings.json`:
-   - If mode is **auto**, promote it automatically (add to settings.json).
-   - If mode is **manual**, use AskUserQuestion to ask whether to promote it.
+   - If commit=auto, promote it automatically (add to settings.json).
+   - If commit=manual, use AskUserQuestion to ask whether to promote it.
      Options: **Yes** (add to settings.json) or **No** (skip it).
 5. Apply any approved additions to `.claude/settings.json` using the
    Edit tool
@@ -381,9 +381,9 @@ Print inside a fenced code block:
 
 Invoke `flow:status`.
 
-**If mode is auto**, skip the transition question and invoke `flow:cleanup` directly.
+**If continue=auto**, skip the transition question and invoke `flow:cleanup` directly.
 
-**If mode is manual**, use AskUserQuestion:
+**If continue=manual**, use AskUserQuestion:
 
 > "Phase 7: Reflect is complete. The PR now includes CLAUDE.md improvements. Ready to begin Phase 8: Cleanup?"
 >

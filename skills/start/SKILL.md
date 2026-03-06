@@ -29,10 +29,10 @@ Do NOT proceed if the feature name is missing. Ask the user:
 
 ## Mode Resolution
 
-1. If `--auto` was passed → mode is **auto**
-2. If `--manual` was passed → mode is **manual**
-3. Otherwise, read `.flow.json` from the project root. Use `skills.start` value.
-4. If `.flow.json` has no `skills` key → use built-in default: **manual**
+1. If `--auto` was passed → continue=auto
+2. If `--manual` was passed → continue=manual
+3. Otherwise, read `.flow.json` from the project root. Use `skills.start.continue`.
+4. If `.flow.json` has no `skills` key → use built-in default: continue=manual
 
 ## Announce
 
@@ -89,9 +89,9 @@ Use the Glob tool to check for existing state files matching `.flow-states/*.jso
 
 If any files are found, list their names (the branch names from the filenames).
 
-If any files are found and mode is **auto**, print a warning and proceed automatically.
+If any files are found and continue=auto, print a warning and proceed automatically.
 
-If any files are found and mode is **manual**, use AskUserQuestion:
+If any files are found and continue=manual, use AskUserQuestion:
 
 > "An active FLOW feature already exists. What would you like to do?"
 >
@@ -278,9 +278,9 @@ Print inside a fenced code block (triple backticks) so it renders as plain monos
 
 Invoke the `flow:status` skill to show the current state.
 
-**If mode is auto**, skip the transition question and invoke `flow:plan` directly.
+**If continue=auto**, skip the transition question and invoke `flow:plan` directly.
 
-**If mode is manual**, use AskUserQuestion:
+**If continue=manual**, use AskUserQuestion:
 
 > "Phase 1: Start is complete. Ready to begin Phase 2: Plan?"
 >

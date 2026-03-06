@@ -40,3 +40,4 @@ These skills are available at any point in the workflow, regardless of phase.
 | [`/flow:continue`](flow-continue.md) | Resume current feature — re-asks last transition question or rebuilds from state |
 | [`/flow:note`](flow-note.md) | Capture a correction or learning — invoked automatically on corrections |
 | [`/flow:abort`](flow-abort.md) | Abandon the current feature — close PR, delete branch, remove worktree |
+| [`/flow:config`](flow-config.md) | Display current configuration — version, framework, per-skill autonomy |

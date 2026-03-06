@@ -941,13 +941,15 @@ def test_commit_mode_resolution():
 
 
 def test_no_skill_invokes_commit_with_auto():
-    """No skill other than commit, reflect, and simplify may reference /flow:commit --auto.
+    """Skills that use /flow:commit --auto must be in the allow list.
 
-    Reflect uses --auto because the phase is fully autonomous — Claude
-    gathers, routes, applies, and commits without mid-process user approval.
-    Simplify uses --auto because the user already approved changes in Step 2."""
+    Reflect uses --auto because the phase is fully autonomous. Simplify
+    uses --auto because the user already approved changes in Step 2. Code
+    and review conditionally use --auto based on the commit axis setting."""
     for d in sorted(SKILLS_DIR.iterdir()):
-        if not d.is_dir() or d.name in ("commit", "reflect", "simplify"):
+        if not d.is_dir() or d.name in (
+            "commit", "reflect", "simplify", "code", "review",
+        ):
             continue
         content = (d / "SKILL.md").read_text()
         assert "/flow:commit --auto" not in content, (
@@ -1052,6 +1054,11 @@ def test_configurable_skills_have_mode_resolution():
         )
 
 
+TWO_AXIS_SKILLS = ["code", "simplify", "review", "reflect"]
+CONTINUE_ONLY_SKILLS = ["start", "security"]
+UTILITY_SKILLS = ["commit", "abort", "cleanup"]
+
+
 def test_mode_resolution_references_flow_json():
     """All 9 configurable skills Mode Resolution must reference .flow.json."""
     for name in CONFIGURABLE_SKILLS:
@@ -1071,3 +1078,17 @@ def test_mode_resolution_references_flow_json():
             f"skills/{name}/SKILL.md Mode Resolution does not reference "
             f"'skills.{name}' key"
         )
+        if name in TWO_AXIS_SKILLS:
+            assert f"skills.{name}.commit" in resolution_text, (
+                f"skills/{name}/SKILL.md Mode Resolution does not reference "
+                f"'skills.{name}.commit' key"
+            )
+            assert f"skills.{name}.continue" in resolution_text, (
+                f"skills/{name}/SKILL.md Mode Resolution does not reference "
+                f"'skills.{name}.continue' key"
+            )
+        elif name in CONTINUE_ONLY_SKILLS:
+            assert f"skills.{name}.continue" in resolution_text, (
+                f"skills/{name}/SKILL.md Mode Resolution does not reference "
+                f"'skills.{name}.continue' key"
+            )

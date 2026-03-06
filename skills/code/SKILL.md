@@ -41,10 +41,10 @@ to the project root — `bin/flow` commands find paths internally.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → mode is **auto**
-2. If `--manual` was passed → mode is **manual**
-3. Otherwise, read `.flow.json` from the project root. Use `skills.code` value.
-4. If `.flow.json` has no `skills` key → use built-in default: **manual**
+1. If `--auto` was passed → commit=auto, continue=auto
+2. If `--manual` was passed → commit=manual, continue=manual
+3. Otherwise, read `.flow.json` from the project root. Use `skills.code.commit` and `skills.code.continue`.
+4. If `.flow.json` has no `skills` key → use built-in defaults: commit=manual, continue=manual
 
 ## Announce
 
@@ -317,7 +317,7 @@ new file:   <path/to/test_file>
 - removed lines
 ```
 
-**If mode is auto**, streamline is active from task 1 — skip the
+**If commit=auto**, streamline is active from task 1 — skip the
 AskUserQuestion and proceed directly to `bin/flow ci`.
 
 **If streamline mode is active** (opted in during a previous task),
@@ -360,7 +360,7 @@ Do NOT commit and do NOT move to the next task until `bin/flow ci` is green.
 
 ### Commit
 
-Use `/flow:commit` to review and commit this task's changes.
+If commit=auto, use `/flow:commit --auto`. Otherwise, use `/flow:commit`.
 
 The commit message subject should reference the task:
 
@@ -447,9 +447,9 @@ Print inside a fenced code block:
 
 Invoke `flow:status`.
 
-**If mode is auto**, skip the transition question and invoke `flow:simplify` directly.
+**If continue=auto**, skip the transition question and invoke `flow:simplify` directly.
 
-**If mode is manual**, use AskUserQuestion:
+**If continue=manual**, use AskUserQuestion:
 
 > "Phase 3: Code is complete. Ready to begin Phase 4: Simplify?"
 >
@@ -480,7 +480,7 @@ Invoke `flow:status`.
 ## Hard Rules
 
 - **Never skip the TDD cycle** — test must fail before code is written
-- **Always show the diff for every task** — in manual mode, the first task requires explicit approval; in auto mode, streamline is active from task 1
+- **Always show the diff for every task** — when commit=manual, the first task requires explicit approval; when commit=auto, streamline is active from task 1
 - **Never skip `bin/flow ci`** — must be green before every commit
 - **Never move to the next task** until the current task is committed
 - **Never rebase** — always merge

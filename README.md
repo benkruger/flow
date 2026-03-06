@@ -83,6 +83,7 @@ Available at any point in the workflow:
 | `/flow:continue` | Re-asks last transition question; rebuilds full context on new session |
 | `/flow:note` | Captures corrections to state file — auto-invoked when Claude is wrong |
 | `/flow:abort` | Abandon feature — close PR, delete remote branch, remove worktree, delete state |
+| `/flow:config` | Display current configuration — version, framework, per-skill autonomy |
 
 ---
 

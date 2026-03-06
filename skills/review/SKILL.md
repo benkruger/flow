@@ -35,10 +35,10 @@ stop immediately and show the error to the user.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → mode is **auto**
-2. If `--manual` was passed → mode is **manual**
-3. Otherwise, read `.flow.json` from the project root. Use `skills.review` value.
-4. If `.flow.json` has no `skills` key → use built-in default: **manual**
+1. If `--auto` was passed → commit=auto, continue=auto
+2. If `--manual` was passed → commit=manual, continue=manual
+3. Otherwise, read `.flow.json` from the project root. Use `skills.review.commit` and `skills.review.continue`.
+4. If `.flow.json` has no `skills` key → use built-in defaults: commit=manual, continue=manual
 
 ## Announce
 
@@ -266,16 +266,16 @@ For each finding:
 
 **Significant finding** (logic error, missing risk coverage, plan mismatch):
 
-If mode is **auto**, fix it directly here in Review without asking.
+If commit=auto, fix it directly here in Review without asking.
 
-If mode is **manual**, use AskUserQuestion:
+If commit=manual, use AskUserQuestion:
   > "Found a significant issue: <description>. How would you like to proceed?"
   >
   > - **Fix it here in Review**
   > - **Go back to Code**
   > - **Go back to Plan**
 
-After fixing any findings, run `/flow:commit` for the Review fixes.
+After fixing any findings, if commit=auto use `/flow:commit --auto`, otherwise use `/flow:commit` for the Review fixes.
 
 Then run `bin/flow ci --if-dirty` — required before any state transition.
 
@@ -352,9 +352,9 @@ Print inside a fenced code block:
 
 Invoke `flow:status`.
 
-**If mode is auto**, skip the transition question and invoke `flow:security` directly.
+**If continue=auto**, skip the transition question and invoke `flow:security` directly.
 
-**If mode is manual**, use AskUserQuestion:
+**If continue=manual**, use AskUserQuestion:
 
 > "Phase 5: Review is complete. Ready to begin Phase 6: Security?"
 >
