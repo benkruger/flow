@@ -1,5 +1,14 @@
 # Release Notes
 
+## v0.16.1 — Fix Start phase step ordering to prevent parallelization
+
+### Fixes
+
+- Reorder Start Steps 1-2: version gate now runs first (cheapest check),
+  existing feature check second
+- Wrap both early steps in `<HARD-GATE>` tags to prevent Claude from
+  launching `bin/flow ci` before gates resolve
+
 ## v0.16.0 — Add Simplify phase
 
 ### New Features
