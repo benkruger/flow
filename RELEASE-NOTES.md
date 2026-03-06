@@ -1,5 +1,23 @@
 # Release Notes
 
+## v0.16.2 — QA bug fixes
+
+### Fixes
+
+- Fix stale COMMANDS dict in format-status.py — phase 4+ showed wrong
+  commands since Simplify was added (7 entries instead of 8)
+- Switch format-status output from JSON to plain text with exit codes —
+  eliminates noisy `\n`-literal JSON in Bash tool collapsed output
+- Replace `Bash(cd .worktrees/* && *)` permission with `Bash(git -C *)`
+  — Claude Code's "bare repository attacks" heuristic fires on any
+  `cd <path> && git` compound command regardless of the allow list
+- Add "Provide exactly these options" constraint to Plan skill
+  AskUserQuestion — prevents Claude adding unauthorized options
+- Document Read tool permission prompts for `~/.claude/` paths in
+  Reflect skill as a known limitation
+- Add `.claude/rules/worktree-commands.md` — instructs Claude to use
+  `git -C` and dedicated tools instead of bash workarounds
+
 ## v0.16.1 — Fix Start phase step ordering to prevent parallelization
 
 ### Fixes
