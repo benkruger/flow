@@ -246,6 +246,38 @@ def test_multiple_features_includes_note_instruction(git_repo):
     assert "corrects you" in ctx
 
 
+def test_phase_2_plan_approved_instructs_auto_continue(git_repo):
+    """Phase 2 with plan_file set → tells Claude to invoke flow:continue
+    because ExitPlanMode's 'clear context and proceed' wiped the skill context."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    state["feature"] = "My Feature"
+    state["plan_file"] = "/Users/test/.claude/plans/test-plan.md"
+    write_state(state_dir, "my-feature", state)
+
+    result = _run(git_repo)
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "flow:continue" in ctx
+    assert "Do NOT invoke flow:continue" not in ctx
+
+
+def test_phase_2_no_plan_file_does_not_auto_continue(git_repo):
+    """Phase 2 with plan_file null → normal behavior, no auto-continue."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    state["feature"] = "My Feature"
+    state["plan_file"] = None
+    write_state(state_dir, "my-feature", state)
+
+    result = _run(git_repo)
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "Do NOT invoke flow:continue" in ctx
+
+
 def test_output_has_both_context_fields(git_repo):
     """Output must have both additional_context and hookSpecificOutput.additionalContext."""
     state_dir = git_repo / ".flow-states"
