@@ -47,7 +47,10 @@
       "Bash(rm .flow-states/*)",
       "Bash(rm .claude/settings.local.json)",
       "Bash(gh issue create *)",
-      "Bash(git restore *)"
+      "Bash(git restore *)",
+      "Read(~/Desktop/*.png)",
+      "Read(~/Desktop/*.jpg)",
+      "Read(~/Desktop/*.jpeg)"
     ],
     "deny": [
       "Bash(git rebase *)",
