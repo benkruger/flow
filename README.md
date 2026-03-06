@@ -36,6 +36,54 @@ Start → Plan → Code → Simplify → Review → Security → Learning → Cl
 
 ---
 
+## You Control the Autonomy
+
+Every skill has two independent axes you can tune:
+
+- **Commit** — whether Claude shows diffs for approval or commits autonomously
+- **Continue** — whether Claude prompts before advancing to the next phase or auto-advances
+
+Start fully manual. As your comfort grows, dial up autonomy per skill. Go fully autonomous when you trust the workflow.
+
+### Four preset levels via `/flow:init`
+
+| Level | What it means |
+|-------|--------------|
+| **Fully autonomous** | All skills auto for both axes — zero prompts |
+| **Fully manual** | Every diff reviewed, every phase transition confirmed |
+| **Recommended** | Auto where safe (Simplify, Security), manual where judgment matters (Code, Plan) |
+| **Customize** | Choose per skill and per axis |
+
+### Runtime overrides
+
+Any skill invocation accepts `--auto` or `--manual` to override the configured setting for that run:
+
+```text
+/flow:code --auto        # skip per-task approval for this session
+/flow:security --manual  # prompt before advancing, just this once
+```
+
+### Configuration lives in `.flow.json`
+
+```json
+{
+  "skills": {
+    "start": {"continue": "manual"},
+    "code": {"commit": "manual", "continue": "manual"},
+    "simplify": {"commit": "auto", "continue": "auto"},
+    "review": {"commit": "auto", "continue": "auto"},
+    "security": {"continue": "auto"},
+    "learning": {"commit": "auto", "continue": "auto"},
+    "abort": "auto",
+    "cleanup": "auto"
+  }
+}
+```
+
+View your current settings anytime with `/flow:config`.
+
+---
+
 ## Installation
 
 In any Claude Code session:
