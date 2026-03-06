@@ -68,7 +68,7 @@ if len(states) == 1:
     phase_name = s.get("phases", {}).get(cp, {}).get("name", "")
     feature = s.get("feature", "")
     plan_file = s.get("plan_file")
-    plan_approved = cp == "2" and plan_file is not None  # Phase 2: Plan
+    plan_approved = cp == "2" and plan_file is not None
 
     if plan_approved:
         resume_instruction = (
