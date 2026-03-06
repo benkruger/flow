@@ -191,9 +191,15 @@ Stage the settings and version marker:
 git add .claude/settings.json .flow.json
 ```
 
-If `git diff --cached --quiet` shows nothing staged, skip the commit and push — go straight to Done.
+Check if anything is staged:
 
-Otherwise, commit and push:
+```bash
+git diff --cached --quiet
+```
+
+If exit code is 0, nothing is staged — skip the commit and push, go straight to Done.
+
+If exit code is 1, changes are staged — commit and push:
 
 ```bash
 git commit -m "Configure FLOW workspace permissions and version marker"
