@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import current_branch, find_state_files, project_root, PHASE_NAMES
+from flow_utils import current_branch, find_state_files, project_root, COMMANDS, PHASE_NAMES
 
 # Import format_panel from format-status.py (same pattern as tests)
 _spec = importlib.util.spec_from_file_location(
@@ -30,12 +30,6 @@ _fs_mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_fs_mod)
 
 format_panel = _fs_mod.format_panel
-
-COMMANDS = {
-    1: "/flow:start", 2: "/flow:plan", 3: "/flow:code",
-    4: "/flow:simplify", 5: "/flow:review", 6: "/flow:security",
-    7: "/flow:learning", 8: "/flow:cleanup",
-}
 
 
 def main():

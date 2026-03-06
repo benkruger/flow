@@ -21,13 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import current_branch, project_root, PHASE_NAMES
-
-COMMANDS = {
-    "1": "/flow:start",     "2": "/flow:plan",      "3": "/flow:code",
-    "4": "/flow:simplify",  "5": "/flow:review",    "6": "/flow:security",
-    "7": "/flow:learning",  "8": "/flow:cleanup",
-}
+from flow_utils import current_branch, project_root, COMMANDS, PHASE_NAMES
 
 
 def check_phase(state, phase):
@@ -41,7 +35,7 @@ def check_phase(state, phase):
     prev_data = state.get("phases", {}).get(prev_str, {})
     prev_status = prev_data.get("status", "pending")
     prev_name = PHASE_NAMES.get(prev, f"Phase {prev}")
-    prev_cmd = COMMANDS.get(prev_str, f"/flow:phase{prev}")
+    prev_cmd = COMMANDS.get(prev, f"/flow:phase{prev}")
 
     if prev_status != "complete":
         lines = [
