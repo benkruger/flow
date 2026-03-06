@@ -1,1 +1,1 @@
-{"flow_version": "0.16.4", "framework": "python"}
+{"flow_version": "0.16.4", "framework": "python", "skills": {"start": "manual", "code": "manual", "simplify": "auto", "review": "auto", "security": "auto", "reflect": "auto", "commit": "auto", "abort": "auto", "cleanup": "auto"}}
