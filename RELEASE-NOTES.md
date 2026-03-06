@@ -1,5 +1,18 @@
 # Release Notes
 
+## v0.16.3 — Reflect learning system overhaul
+
+### Improvements
+
+- Reorganize learnings into rules files for better routing
+- Update Reflect routing heuristics and remove obsolete worktree memory rescue
+- Report all obsolete terms at once instead of failing on first match
+
+### Fixes
+
+- Fix release skill false "nothing to release" short-circuit
+- Fix review findings: update missed docs page and add trailing newline
+
 ## v0.16.2 — QA bug fixes
 
 ### Fixes
