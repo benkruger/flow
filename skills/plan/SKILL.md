@@ -84,16 +84,15 @@ Skip to "Done — Update state and complete phase" to finish the phase.
 
 ## Step 1 — Ask what we're building
 
-Use AskUserQuestion:
+Print this prompt and then stop — wait for the user to respond before
+continuing:
 
-> "What are we building? Describe the feature and what success looks like."
->
-> - **I'll describe it now** — user types in Other
-> - **It's in the PR description** — read the PR description for context
->
-> Provide exactly these options — do not add, remove, or modify them.
+> What are we building? Describe the feature and what success looks like.
 
-Wait for the user's response. This is the input for the planning phase.
+If the user says the description is in the PR, read the PR description
+using `gh pr view` and use that as input instead.
+
+The user's response is the input for the planning phase.
 
 ---
 
@@ -213,7 +212,6 @@ Invoke `flow:status`, then use AskUserQuestion:
 ## Hard Rules
 
 - Never write implementation code during Plan — task descriptions only
-- Always ask the user what they're building before entering plan mode
 - The plan file lives in `~/.claude/plans/` — Claude Code's native location
 - Store the plan file path in state before completing the phase
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
