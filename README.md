@@ -154,18 +154,18 @@ Every correction and observation has a path to becoming a permanent, reusable pa
 
 ```text
 User corrects Claude → /flow:note captures it in state["notes"]
-Claude writes observations → worktree auto-memory
+Claude writes observations → auto-memory (shared across worktrees)
        ↓
-Reflect reads all four sources (state, notes, context, worktree memory)
+Reflect reads three sources (CLAUDE.md rules, conversation context, state/plan data)
        ↓
 Each learning is routed to the right destination:
-  → Global CLAUDE.md    (process rules for all projects)
-  → Project CLAUDE.md   (project architecture — committed via PR)
-  → Global rules        (universal coding standards)
-  → Project rules       (project-specific gotchas — committed via PR)
-  → Project memory      (patterns and observations)
-       ↓
-Worktree is destroyed — nothing is lost
+  Instructions (rules Claude must follow):
+    → Global CLAUDE.md    (process rules for all projects)
+    → Project CLAUDE.md   (project architecture — committed via PR)
+    → Global rules        (universal coding standards)
+    → Project rules       (project-specific gotchas — committed via PR)
+  Context (knowledge Claude should know):
+    → Project memory      (patterns, preferences, working knowledge)
 ```
 
 The learnings don't evaporate at session end. They compound.

@@ -541,7 +541,7 @@
       <div class="pipeline-step">
         <div class="step-num">7</div>
         <span class="step-label">Reflect</span>
-        <span class="step-detail">Learnings routed to 5 destinations &middot; worktree memory rescued &middot; plugin gaps noted</span>
+        <span class="step-detail">Learnings routed to 5 destinations &middot; plugin gaps filed as issues</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">8</div>
@@ -572,7 +572,7 @@
       </div>
       <div class="feature">
         <h4>The Learning System</h4>
-        <p>User corrects Claude &rarr; <code>/flow:note</code> captures it &rarr; Claude writes observations to worktree memory &rarr; Reflect reads all four sources &rarr; each learning routed to the right destination (global CLAUDE.md, project CLAUDE.md, global rules, project rules, or project memory). Nothing is lost when the worktree is destroyed.</p>
+        <p>User corrects Claude &rarr; <code>/flow:note</code> captures it &rarr; Reflect reads three sources (CLAUDE.md rules, conversation context, state/plan data) &rarr; each learning routed to the right destination: instructions (global CLAUDE.md, project CLAUDE.md, global rules, project rules) or context (project memory). Auto-memory is shared across worktrees &mdash; nothing is lost.</p>
       </div>
       <div class="feature">
         <h4>Phase Back-Navigation</h4>
@@ -647,12 +647,12 @@
       <div class="pipeline-step">
         <div class="step-num">2</div>
         <span class="step-label">Observe</span>
-        <span class="step-detail">Claude writes patterns and observations to worktree memory during feature work</span>
+        <span class="step-detail">Claude writes patterns and observations to auto-memory during feature work</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">3</div>
         <span class="step-label">Synthesize</span>
-        <span class="step-detail">Reflect reads all four sources: state file &middot; notes &middot; conversation &middot; worktree memory</span>
+        <span class="step-detail">Reflect reads three sources: CLAUDE.md rules &middot; conversation context &middot; state/plan data</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">4</div>

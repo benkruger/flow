@@ -15,16 +15,15 @@ never touched.
 
 ---
 
-## Four Sources
+## Three Sources
 
-Reflect synthesises from all four before taking any action:
+Reflect synthesises from all three before taking any action:
 
-1. **State file data** — visit counts, timing, captured `/flow:note` entries, plan file risks
-2. **Captured notes** — corrections logged automatically by `/flow:note` throughout the session
-3. **Conversation context** — what Claude can still see of the session's back-and-forth
-4. **Worktree auto-memory** — patterns and observations Claude wrote to auto-memory during feature work, which will be lost when Cleanup removes the worktree
+1. **CLAUDE.md rules** — the project's rules and conventions that should have been followed
+2. **Conversation context** — what Claude can still see of the session's back-and-forth
+3. **State file and plan data** — visit counts, timing, captured `/flow:note` entries, plan file risks (Phase 7 only)
 
-Sources 1, 2, and 4 survive compaction. Context is a bonus if available.
+Sources 1 and 3 survive compaction. Context is a bonus if available.
 
 ---
 
@@ -62,13 +61,15 @@ Reflect auto-detects its context and adjusts behavior:
 
 | Mode | Trigger | Sources | Commits | Settings audit | GitHub issues |
 |------|---------|---------|---------|----------------|---------------|
-| Phase 7 | State file with Security complete | 4 (state, notes, context, worktree memory) | `/flow:commit --auto` | No | Yes |
+| Phase 7 | State file with Security complete | 3 (CLAUDE.md, context, state/plan) | `/flow:commit --auto` | No | Yes |
 | Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow:commit --auto` | Yes | No |
 | Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | No | No |
 
-All three modes edit the same 5 destinations on disk. Stealth users
-(who exclude `.claude/` from git) are safe — git's own exclusion
-mechanism prevents excluded files from being staged.
+All three modes route learnings to the same 5 destinations, split into
+**instructions** (destinations 1-4, always loaded) and **context**
+(destination 5, informational). Stealth users (who exclude `.claude/`
+from git) are safe — git's own exclusion mechanism prevents excluded
+files from being staged.
 
 ---
 

@@ -81,7 +81,7 @@ Read and synthesise before doing anything else.
 ### Source A — CLAUDE.md rules (all modes)
 
 Read the project's `CLAUDE.md`. These are the rules that should have been
-followed. Note every rule, convention, and lesson learned entry.
+followed. Note every rule and convention entry.
 
 **Note:** Reading `~/.claude/CLAUDE.md` may trigger a Read permission
 prompt. This is a known limitation — Claude Code prompts for Read access
@@ -165,13 +165,17 @@ Destinations 2, 4 are on disk — committed in Step 4 if applicable.
 
 ### Routing heuristics
 
-| Learning type | Recommended destination |
-|---|---|
-| Process/behavior rule ("always X before Y") | 1 — Global CLAUDE.md |
-| Project architecture discovery | 2 — Project CLAUDE.md |
-| Universal coding style or anti-pattern | 3 — Global rules |
-| Project-specific coding gotcha | 4 — Project rules |
-| Informal pattern, observation, ephemeral note | 5 — Project memory |
+Destinations 1-4 are **instructions** — rules Claude must follow.
+Destination 5 is **context** — knowledge Claude should know.
+Never write to memory (5) what should be an instruction (1-4).
+
+| Learning type | Destination | Example |
+|---|---|---|
+| Universal process rule | 1 — Global CLAUDE.md | "Always run CI before committing" |
+| Project architecture or scope | 2 — Project CLAUDE.md | "Skills are markdown, not code" |
+| Universal coding anti-pattern | 3 — Global rules | "Never use update_column in tests" |
+| Project-specific coding gotcha | 4 — Project rules | "Use git -C not cd && git" |
+| Working knowledge, preferences, TODOs | 5 — Project memory | "User prefers no TaskCreate" |
 
 ### Writing rules for CLAUDE.md and rules files
 
