@@ -53,7 +53,7 @@ At the very start, print inside a fenced code block (triple backticks) so it ren
 ````markdown
 ```text
 ============================================
-  FLOW v0.16.3 — Abort — STARTING
+  FLOW v0.16.4 — Abort — STARTING
 ============================================
 ```
 ````
@@ -96,7 +96,7 @@ Then print inside a fenced code block (triple backticks) so it renders as plain 
 ````markdown
 ```text
 ============================================
-  FLOW v0.16.3 — Abort — COMPLETE
+  FLOW v0.16.4 — Abort — COMPLETE
   Feature '<feature>' has been abandoned.
   PR closed, remote branch deleted,
   worktree removed, state file and log deleted.

@@ -1,5 +1,18 @@
 # Release Notes
 
+## v0.16.4 — Enforce tool restrictions in phase skills
+
+### Fixes
+
+- Add tool restriction Hard Rules to all 8 phase skills — Claude was ignoring passive rules in `.claude/rules/` and using `ls`, `cd && git`, and piped `git show | sed` during QA. Co-locating the restriction in each skill's Hard Rules puts it where Claude actively reads
+- Allow `git show` in Review/Security sub-agent prompts — sub-agents need it to compare files against `origin/main`
+- Ban piping git output through `sed`/`grep`/`awk` in sub-agent prompts — piped commands triggered permission prompts
+- Three new contract tests enforce the above: `test_subagent_prompts_allow_git_show`, `test_subagent_prompts_ban_piping`, `test_phase_skills_have_tool_restriction_in_hard_rules`
+
+### Improvements
+
+- Configure FLOW workspace permissions and version marker via `/flow:init`
+
 ## v0.16.3 — Reflect learning system overhaul
 
 ### Improvements
