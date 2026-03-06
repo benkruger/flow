@@ -242,7 +242,7 @@ These skills and scripts live in the FLOW repo itself (`.claude/skills/` and `li
 |---------|-------------|
 | `/reflect` | Review session mistakes against CLAUDE.md rules, propose targeted improvements |
 | `/release` | Bump version in plugin.json and marketplace.json, tag, push, create GitHub Release |
-| `/qa` | `--start`/`--stop` dev mode — nukes plugin cache, swaps marketplace source, tracks via `.dev-mode` marker |
+| `/qa` | `--start`/`--stop`/`--restart` dev mode — nukes plugin cache, swaps marketplace source, tracks via `.dev-mode` marker |
 | `/reset` | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files |
 
 ### Local QA Workflow

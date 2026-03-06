@@ -99,7 +99,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 
 ## Maintainer Skills (private to this repo)
 
-- `/qa` — `.claude/skills/qa/SKILL.md` — `--start`/`--stop` dev mode with cache nuke, swap marketplace source
+- `/qa` — `.claude/skills/qa/SKILL.md` — `--start`/`--stop`/`--restart` dev mode with cache nuke, swap marketplace source
 - `/release` — `.claude/skills/release/SKILL.md` — bump version, tag, push, create GitHub Release
 - `/reset` — `.claude/skills/reset/SKILL.md` — remove all FLOW artifacts (worktrees, branches, PRs, state files)
 
