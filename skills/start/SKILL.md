@@ -36,7 +36,7 @@ Do NOT proceed if the feature name is missing. Ask the user:
 
 ## Announce
 
-At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+At the very start, output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````text
 ```
@@ -266,7 +266,7 @@ Parse the JSON output. If `"status": "error"`, report the error and stop.
 Use the `formatted_time` field in the COMPLETE banner below. Do not print
 the timing calculation.
 
-Print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+Output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````text
 ```
@@ -295,7 +295,7 @@ Invoke the `flow:status` skill to show the current state.
 
 **If Yes** — invoke the `flow:plan` skill using the Skill tool.
 
-**If Not yet** — print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+**If Not yet** — output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````text
 ```
@@ -314,5 +314,6 @@ Then report:
 ## Hard Rules
 
 - Do not narrate internal operations to the user — no "The framework is Python", no "Proceeding to phase completion", no "No additional setup steps are needed". Just do the work silently and show results
+- Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories

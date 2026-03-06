@@ -56,7 +56,7 @@ Resolve the mode using the Mode Resolution rules above.
 
 ## Announce
 
-At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+At the very start, output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
@@ -99,7 +99,7 @@ The script outputs JSON with a `steps` dict showing what happened to each resour
 
 Tell the user what was cleaned, what was already gone, and what failed.
 
-Then print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+Then output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text

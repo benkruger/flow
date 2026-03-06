@@ -29,7 +29,7 @@ to the project root — `bin/flow` commands find paths internally.
 
 ## Announce
 
-At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+At the very start, output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````text
 ```
@@ -66,7 +66,7 @@ there are no Bash commands to log beyond the entry gate.
 ## Resuming
 
 If `plan_file` in the state file is already set (not null), the plan was
-previously written and approved. Print inside a fenced code block:
+previously written and approved. Output in your response (not via Bash) inside a fenced code block:
 
 ````text
 ```
@@ -171,7 +171,7 @@ Parse the JSON output. If `"status": "error"`, report the error and stop.
 Use the `formatted_time` field in the COMPLETE banner below. Do not print
 the timing calculation.
 
-Print inside a fenced code block:
+Output in your response (not via Bash) inside a fenced code block:
 
 ````text
 ```
@@ -196,7 +196,7 @@ Invoke `flow:status`, then use AskUserQuestion:
 
 **If Yes** — invoke `flow:code` using the Skill tool.
 
-**If Not yet**, print inside a fenced code block:
+**If Not yet**, output in your response (not via Bash) inside a fenced code block:
 
 ````text
 ```
@@ -214,5 +214,6 @@ Invoke `flow:status`, then use AskUserQuestion:
 - Never write implementation code during Plan — task descriptions only
 - The plan file lives in `~/.claude/plans/` — Claude Code's native location
 - Store the plan file path in state before completing the phase
+- Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories

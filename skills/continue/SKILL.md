@@ -81,7 +81,7 @@ Step 1:
 
 ## Paused Banner
 
-When the user selects "Not yet", always print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+When the user selects "Not yet", always output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text

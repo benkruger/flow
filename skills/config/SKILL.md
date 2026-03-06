@@ -30,7 +30,7 @@ If `.flow.json` exists, read it with the Read tool.
 
 ### Step 2 — Display config
 
-Print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+Output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````text
 ```
@@ -74,4 +74,5 @@ Tell the user they can override any setting at invocation time with `--auto` or 
 ## Hard Rules
 
 - Display only — never modify `.flow.json`
+- Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep

@@ -25,7 +25,7 @@ Keep the project root, branch, and detected mode in context for the rest of this
 
 ## Announce
 
-At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+At the very start, output the following banner in your response (not via Bash) inside a fenced code block:
 
 **FLOW mode:**
 

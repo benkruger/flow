@@ -49,7 +49,7 @@ Resolve the mode using the Mode Resolution rules above.
 
 ## Announce
 
-At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+At the very start, output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
@@ -162,7 +162,7 @@ If the pull fails, warn the user but do not block — cleanup succeeded.
 
 For the banner below, compute `<formatted_time>` from the integer `cumulative_seconds` read in Step 1: `Xh Ym` if ≥ 3600, `Xm` if ≥ 60, `<1m` if < 60. Do not write the formatted string back to the state file.
 
-Print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+Output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
@@ -180,5 +180,6 @@ Print inside a fenced code block (triple backticks) so it renders as plain monos
 - Confirm with the user only when mode is **manual**
 - State file deletion is what resets the session hook — do not skip it
 - Every step after confirmation is best-effort — if one fails, continue to the next
+- Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories

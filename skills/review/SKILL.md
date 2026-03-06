@@ -42,7 +42,7 @@ stop immediately and show the error to the user.
 
 ## Announce
 
-At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+At the very start, output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
@@ -340,7 +340,7 @@ Parse the JSON output. If `"status": "error"`, report the error and stop.
 Use the `formatted_time` field in the COMPLETE banner below. Do not print
 the timing calculation.
 
-Print inside a fenced code block:
+Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
@@ -369,7 +369,7 @@ Invoke `flow:status`.
 
 **If Yes** — invoke `flow:security` using the Skill tool.
 
-**If Not yet**, print inside a fenced code block:
+**If Not yet**, output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
@@ -390,5 +390,6 @@ Invoke `flow:status`.
 - Never skip the risk coverage check
 - Read the full diff before starting — no partial reviews
 - Plus the **Framework-Specific Hard Rules** from the framework section above
+- Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories

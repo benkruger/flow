@@ -51,7 +51,7 @@ to the project root — `bin/flow` commands find paths internally.
 
 ## Announce
 
-At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+At the very start, output the following banner in your response (not via Bash) inside a fenced code block:
 
 **Phase 7 mode:**
 
@@ -368,7 +368,7 @@ Parse the JSON output. If `"status": "error"`, report the error and stop.
 Use the `formatted_time` field in the COMPLETE banner below. Do not print
 the timing calculation.
 
-Print inside a fenced code block:
+Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
@@ -398,7 +398,7 @@ Invoke `flow:status`.
 
 **If Yes** — invoke `flow:cleanup` using the Skill tool.
 
-**If Not yet**, print inside a fenced code block:
+**If Not yet**, output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
@@ -411,7 +411,7 @@ Invoke `flow:status`.
 
 ### Maintainer and Standalone mode
 
-Print inside a fenced code block:
+Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
@@ -437,5 +437,6 @@ No phase transition, no transition question.
 - Repo writes (`CLAUDE.md`, `.claude/rules/`) go through `/flow:commit --auto` (Phase 6 and Maintainer)
 - Plugin improvement notes are filed as GitHub issues on the plugin repo — never committed to the target project
 - Only CLAUDE.md and `.claude/` files are modified — never application code
+- Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories

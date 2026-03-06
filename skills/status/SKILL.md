@@ -10,7 +10,7 @@ prints a status panel. Read-only — never modifies anything.
 
 ## Announce
 
-At the very start, print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+At the very start, output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
@@ -34,7 +34,7 @@ Check the exit code:
   features). Print it inside a fenced code block (triple backticks with
   `text` language tag) so it renders as plain monospace text.
 
-- **Exit 1** — no state file exists. Print inside a fenced code block (triple backticks) so it renders as plain monospace text and not as a markdown heading:
+- **Exit 1** — no state file exists. Output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
