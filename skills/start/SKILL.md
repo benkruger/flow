@@ -60,7 +60,21 @@ Use the feature name as `<branch>` — it matches the branch name.
 
 ## Steps
 
-### Step 1 — Check for existing feature
+### Step 1 — Version gate
+
+Run the version check before anything else:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow init-check
+```
+
+Parse the JSON output. If `"status": "error"`, tell the user to run `/flow:init` and stop. Do not proceed to any further steps.
+
+<HARD-GATE>
+Do NOT proceed if version check fails. Tell the user to run `/flow:init` and stop.
+</HARD-GATE>
+
+### Step 2 — Check for existing feature
 
 Use the Glob tool to check for existing state files matching `.flow-states/*.json`.
 
@@ -73,15 +87,9 @@ If any files are found, use AskUserQuestion:
 > - **Start a new feature anyway** — proceed
 > - **Cancel** — stop here
 
-### Step 2 — Version gate
-
-Run the version check before any slow operations:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow init-check
-```
-
-Parse the JSON output. If `"status": "error"`, tell the user to run `/flow:init` and stop. Do not proceed to any further steps.
+<HARD-GATE>
+Do NOT proceed past Step 2 until the existing feature check is complete. If existing features are found and the user chooses Cancel, stop here.
+</HARD-GATE>
 
 ### Step 3 — Verify main is green
 

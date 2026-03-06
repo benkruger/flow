@@ -15,13 +15,13 @@ This is always the first phase, for every feature without exception. It establis
 
 ## Steps
 
-### 1. Check for existing features
+### 1. Version gate
+
+Run `bin/flow init-check` to verify `/flow:init` has been run with the current plugin version. Cheapest check — runs first so a missing init doesn't waste time on slower steps.
+
+### 2. Check for existing features
 
 Scans for active `.flow-states/*.json` files. If any exist, asks whether to proceed or cancel.
-
-### 2. Version gate
-
-Run `bin/flow init-check` to verify `/flow:init` has been run with the current plugin version. Fast feedback before any slow operations.
 
 ### 3. Verify main is green
 
