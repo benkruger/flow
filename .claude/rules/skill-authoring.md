@@ -47,3 +47,11 @@ propose making it faster, not removing it.
 When bin/ci reveals an unexpected conflicting test, report before
 fixing. Name the conflicting test, explain why it conflicts, and
 describe the fix. Do not silently expand the scope.
+
+## Codebase-Wide Renames
+
+When planning a rename of phase names, skill names, or commands:
+always audit CLAUDE.md explicitly — it is hand-maintained and
+frequently contains command references, phase name prose, and
+convention entries that don't surface in automated grep-based scope
+analysis. Missed CLAUDE.md references cause user-visible doc drift.

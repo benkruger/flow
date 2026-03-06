@@ -30,10 +30,11 @@ The Skill to invoke maps directly to the current phase:
 | 1 — Start | `flow:start` |
 | 2 — Plan | `flow:plan` |
 | 3 — Code | `flow:code` |
-| 4 — Review | `flow:review` |
-| 5 — Security | `flow:security` |
-| 6 — Reflect | `flow:reflect` |
-| 7 — Cleanup | `flow:cleanup` |
+| 4 — Simplify | `flow:simplify` |
+| 5 — Review | `flow:review` |
+| 6 — Security | `flow:security` |
+| 7 — Learning | `flow:learning` |
+| 8 — Cleanup | `flow:cleanup` |
 
 ---
 

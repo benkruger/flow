@@ -46,14 +46,14 @@ The chosen configuration is stored in `.flow.json` under a `skills` key:
     "simplify": {"commit": "auto", "continue": "auto"},
     "review": {"commit": "auto", "continue": "auto"},
     "security": {"continue": "auto"},
-    "reflect": {"commit": "auto", "continue": "auto"},
+    "learning": {"commit": "auto", "continue": "auto"},
     "abort": "auto",
     "cleanup": "auto"
   }
 }
 ```
 
-Phase skills that commit (Code, Simplify, Review, Reflect) have both axes as a nested object. Phase skills that don't commit (Start, Security) have only the continue axis. Utility skills (Abort, Cleanup) have a single string value. The `/flow:commit` skill is not configurable — it defaults to auto and can be overridden with `--manual`.
+Phase skills that commit (Code, Simplify, Review, Learning) have both axes as a nested object. Phase skills that don't commit (Start, Security) have only the continue axis. Utility skills (Abort, Cleanup) have a single string value. The `/flow:commit` skill is not configurable — it defaults to auto and can be overridden with `--manual`.
 
 Individual skills can always be overridden at invocation time with `--auto` or `--manual` flags, regardless of the `.flow.json` configuration.
 

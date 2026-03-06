@@ -20,14 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
     current_branch, find_state_files, format_time, PACIFIC,
-    project_root, PHASE_NAMES,
+    project_root, COMMANDS, PHASE_NAMES,
 )
-
-COMMANDS = {
-    1: "/flow:start", 2: "/flow:plan", 3: "/flow:code",
-    4: "/flow:simplify", 5: "/flow:review", 6: "/flow:security",
-    7: "/flow:reflect", 8: "/flow:cleanup",
-}
 
 # Column width for phase name alignment
 NAME_WIDTH = 12

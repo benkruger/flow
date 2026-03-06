@@ -369,7 +369,7 @@ def test_version_marker_with_skills_dict(tmp_path):
         "simplify": "manual",
         "review": "manual",
         "security": "auto",
-        "reflect": "auto",
+        "learning": "auto",
         "commit": "manual",
         "abort": "auto",
         "cleanup": "auto",

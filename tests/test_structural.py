@@ -85,19 +85,19 @@ def test_phase_names_in_flow_utils_match_flow_phases():
 
 
 def test_check_phase_commands_match_flow_phases():
-    """COMMANDS in check-phase.py must match flow-phases.json."""
+    """COMMANDS in flow_utils.py must match flow-phases.json."""
     data = _load_phases()
-    script = (LIB_DIR / "check-phase.py").read_text()
+    script = (LIB_DIR / "flow_utils.py").read_text()
 
     commands_match = re.search(
         r"^COMMANDS\s*=\s*\{(.+?)\}", script, re.DOTALL | re.MULTILINE
     )
-    assert commands_match, "Could not find COMMANDS dict in check-phase.py"
+    assert commands_match, "Could not find COMMANDS dict in flow_utils.py"
 
     for num, phase in data["phases"].items():
-        pattern = rf'"{num}":\s*"{re.escape(phase["command"])}"'
+        pattern = rf'{num}:\s*"{re.escape(phase["command"])}"'
         assert re.search(pattern, commands_match.group(0)), (
-            f"Phase {num} command '{phase['command']}' not found in check-phase.py COMMANDS"
+            f"Phase {num} command '{phase['command']}' not found in flow_utils.py COMMANDS"
         )
 
 

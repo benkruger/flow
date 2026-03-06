@@ -540,7 +540,7 @@
       </div>
       <div class="pipeline-step">
         <div class="step-num">7</div>
-        <span class="step-label">Reflect</span>
+        <span class="step-label">Learning</span>
         <span class="step-detail">Learnings routed to 5 destinations &middot; plugin gaps filed as issues</span>
       </div>
       <div class="pipeline-step">
@@ -572,7 +572,7 @@
       </div>
       <div class="feature">
         <h4>The Learning System</h4>
-        <p>User corrects Claude &rarr; <code>/flow:note</code> captures it &rarr; Reflect reads three sources (CLAUDE.md rules, conversation context, state/plan data) &rarr; each learning routed to the right destination: instructions (global CLAUDE.md, project CLAUDE.md, global rules, project rules) or context (project memory). Auto-memory is shared across worktrees &mdash; nothing is lost.</p>
+        <p>User corrects Claude &rarr; <code>/flow:note</code> captures it &rarr; Learning reads three sources (CLAUDE.md rules, conversation context, state/plan data) &rarr; each learning routed to the right destination: instructions (global CLAUDE.md, project CLAUDE.md, global rules, project rules) or context (project memory). Auto-memory is shared across worktrees &mdash; nothing is lost.</p>
       </div>
       <div class="feature">
         <h4>Phase Back-Navigation</h4>
@@ -653,7 +653,7 @@
       <div class="pipeline-step">
         <div class="step-num">3</div>
         <span class="step-label">Synthesize</span>
-        <span class="step-detail">Reflect reads three sources: CLAUDE.md rules &middot; conversation context &middot; state/plan data</span>
+        <span class="step-detail">Learning reads three sources: CLAUDE.md rules &middot; conversation context &middot; state/plan data</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">4</div>
@@ -767,7 +767,21 @@
           <div class="cool-card-back">
             <span class="cool-icon">🎯</span>
             <div class="cool-headline">Corrections capture themselves</div>
-            <p class="cool-desc">Correct Claude and <code>/flow:note</code> captures it automatically. Survives compaction, then Reflect routes it to the right permanent home &mdash; CLAUDE.md, rules, or project memory.</p>
+            <p class="cool-desc">Correct Claude and <code>/flow:note</code> captures it automatically. Survives compaction, then Learning routes it to the right permanent home &mdash; CLAUDE.md, rules, or project memory.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cool-card">
+        <div class="cool-card-inner">
+          <div class="cool-card-front">
+            <span class="cool-icon">🎛️</span>
+            <div class="cool-headline">You control the autonomy</div>
+          </div>
+          <div class="cool-card-back">
+            <span class="cool-icon">🎛️</span>
+            <div class="cool-headline">You control the autonomy</div>
+            <p class="cool-desc">Two axes per skill &mdash; Commit (diff approval) and Continue (phase advancement). Four preset levels from fully manual to fully autonomous. Override any skill at runtime with <code>--auto</code> or <code>--manual</code>. Start cautious, dial up as trust grows.</p>
           </div>
         </div>
       </div>

@@ -44,7 +44,7 @@ Shows where you are in the FLOW workflow at any moment. Reads `.flow-states/<bra
   [>] Phase 5:  Code           <-- YOU ARE HERE
   [ ] Phase 6:  Review
   [ ] Phase 7:  Security
-  [ ] Phase 8:  Reflect
+  [ ] Phase 8:  Learning
   [ ] Phase 9:  Cleanup
 
   Time in current phase : 32m

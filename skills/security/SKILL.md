@@ -15,8 +15,8 @@ model: opus
 ```
 
 - `/flow:security` — uses configured mode from `.flow.json` (default: auto)
-- `/flow:security --auto` — auto-advance to Reflect on completion
-- `/flow:security --manual` — prompt before advancing to Reflect
+- `/flow:security --auto` — auto-advance to Learning on completion
+- `/flow:security --manual` — prompt before advancing to Learning
 
 <HARD-GATE>
 Run this phase entry check as your very first action. If any check fails,
@@ -458,13 +458,13 @@ Output in your response (not via Bash) inside a fenced code block:
 
 Invoke `flow:status`.
 
-**If continue=auto**, skip the transition question and invoke `flow:reflect` directly.
+**If continue=auto**, skip the transition question and invoke `flow:learning` directly.
 
 **If continue=manual**, use AskUserQuestion:
 
-> "Phase 6: Security is complete. Ready to begin Phase 7: Reflect?"
+> "Phase 6: Security is complete. Ready to begin Phase 7: Learning?"
 >
-> - **Yes, start Phase 7 now** — invoke `flow:reflect`
+> - **Yes, start Phase 7 now** — invoke `flow:learning`
 > - **Not yet** — print paused banner
 > - **I have a correction or learning to capture**
 
@@ -473,7 +473,7 @@ Invoke `flow:status`.
 2. Invoke `/flow:note` with their message
 3. Re-ask with only "Yes, start Phase 7 now" and "Not yet"
 
-**If Yes** — invoke `flow:reflect` using the Skill tool.
+**If Yes** — invoke `flow:learning` using the Skill tool.
 
 **If Not yet**, output in your response (not via Bash) inside a fenced code block:
 
@@ -491,7 +491,7 @@ Invoke `flow:status`.
 ## Hard Rules
 
 - Always run `bin/flow ci` after any fix made during Security
-- Never transition to Reflect unless `bin/flow ci` is green
+- Never transition to Learning unless `bin/flow ci` is green
 - Read the full diff before starting — no partial reviews
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep

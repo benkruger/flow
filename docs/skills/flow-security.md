@@ -36,7 +36,7 @@ Every confirmed finding gets fixed directly:
 
 ## Mode
 
-Mode is configurable via `.flow.json` (default: auto). In auto mode, the phase transition advances to Reflect without asking. Security analysis and fixing behavior is the same in both modes.
+Mode is configurable via `.flow.json` (default: auto). In auto mode, the phase transition advances to Learning without asking. Security analysis and fixing behavior is the same in both modes.
 
 ---
 
@@ -44,5 +44,5 @@ Mode is configurable via `.flow.json` (default: auto). In auto mode, the phase t
 
 - Phase 5: Review must be complete
 - `bin/flow ci` must be green after every fix
-- `bin/flow ci` must be green before transitioning to Reflect
+- `bin/flow ci` must be green before transitioning to Learning
 - Full diff must be read before analysis begins

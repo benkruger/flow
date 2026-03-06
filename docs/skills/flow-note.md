@@ -48,7 +48,7 @@ The note is captured before Claude replies.
 ```
 
 Notes are stored in `state["notes"]` — they survive compaction and
-session restarts. Reflect reads them as one of its primary sources.
+session restarts. Learning reads them as one of its primary sources.
 
 ---
 
@@ -56,4 +56,4 @@ session restarts. Reflect reads them as one of its primary sources.
 
 - Written as reusable patterns, not specific complaints
 - Silent if no feature is in progress — never blocks a session
-- Used by Reflect as a guaranteed record that survives compaction
+- Used by Learning as a guaranteed record that survives compaction
