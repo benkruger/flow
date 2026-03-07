@@ -61,6 +61,8 @@ FLOW_DENY = [
     "Bash(git stash *)",
     "Bash(git checkout *)",
     "Bash(git clean *)",
+    "Bash(* && *)",
+    "Bash(* ; *)",
 ]
 
 EXCLUDE_ENTRIES = [".flow-states/", ".worktrees/"]

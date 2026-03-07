@@ -63,7 +63,8 @@
       "Bash(rg *)",
       "Bash(find *)",
       "Bash(ls *)",
-      "Bash(* && *)"
+      "Bash(* && *)",
+      "Bash(* ; *)"
     ]
   },
   "attribution": {

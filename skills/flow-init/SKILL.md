@@ -198,7 +198,9 @@ All permissions (universal + both framework sets) for reference:
       "Bash(git reset --hard *)",
       "Bash(git stash *)",
       "Bash(git checkout *)",
-      "Bash(git clean *)"
+      "Bash(git clean *)",
+      "Bash(* && *)",
+      "Bash(* ; *)"
     ]
   },
   "defaultMode": "acceptEdits"
@@ -272,4 +274,4 @@ Display the skills configuration as a pipe-delimited markdown table with exactly
 
 Use the actual values from `skills_dict` (Step 2). The table above is just an example. Show `—` for axes that don't apply to a skill. The table must use pipe `|` delimiters — never render as a bullet list.
 
-Tell the user to start a new Claude Code session so the permissions take effect, then run `/flow:flow-start <feature name>`.
+Tell the user to start a new Claude Code session so the permissions take effect, then run `/flow-start <feature name>`.
