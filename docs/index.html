@@ -212,29 +212,6 @@
       margin-left: auto;
     }
 
-    .sub-agent-badge {
-      background: var(--sub-agent-bg);
-      color: var(--sub-agent-text);
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      white-space: nowrap;
-    }
-
-    .plan-mode-badge {
-      background: var(--sub-agent-bg);
-      color: var(--sub-agent-text);
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      white-space: nowrap;
-    }
 
     .features {
       display: grid;
@@ -377,25 +354,7 @@
       .cool-grid { grid-template-columns: 1fr; }
     }
 
-    .cool-card {
-      perspective: 800px;
-      cursor: pointer;
-    }
-
-    .cool-card-inner {
-      position: relative;
-      transform-style: preserve-3d;
-      transition: transform 0.55s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .cool-card:hover .cool-card-inner,
-    .cool-card.flipped .cool-card-inner {
-      transform: rotateY(180deg);
-    }
-
     .cool-card-front {
-      backface-visibility: hidden;
-      -webkit-backface-visibility: hidden;
       position: relative;
       border-radius: 12px;
       overflow: hidden;
@@ -411,37 +370,6 @@
     }
 
     .cool-card-front::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 3px;
-      background: var(--accent);
-      border-radius: 12px 12px 0 0;
-    }
-
-    .cool-card-back {
-      backface-visibility: hidden;
-      -webkit-backface-visibility: hidden;
-      position: absolute;
-      inset: 0;
-      transform: rotateY(180deg);
-      border-radius: 12px;
-      overflow: hidden;
-      background: var(--accent-subtle);
-      border: 1px solid var(--accent);
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-start;
-      gap: 6px;
-    }
-
-    .cool-card-back .cool-icon {
-      font-size: 24px;
-      margin-bottom: 0;
-    }
-
-    .cool-card-back::before {
       content: '';
       position: absolute;
       top: 0; left: 0; right: 0;
@@ -545,7 +473,6 @@
       </div>
     </div>
 
-    <p>Zero dependencies &mdash; pure Markdown skills with a thin Python dispatcher. Opus for planning, code, and security. Sonnet for review. Haiku for setup. Plan mode for codebase exploration. <code>.flow-states/&lt;branch&gt;.json</code> tracks everything &mdash; state survives session breaks and compaction.</p>
   </section>
 
   <!-- THE LEARNING SYSTEM -->
@@ -606,108 +533,51 @@
     </div>
   </section>
 
-  <!-- COOL STUFF -->
+  <!-- WHY FLOW IS DIFFERENT -->
   <section>
-    <h2>Cool Stuff</h2>
-    <p>Implementation details that are quietly delightful &mdash; things you only notice once you start using it.</p>
+    <h2>Why FLOW Is Different</h2>
     <div class="cool-grid">
 
-      <div class="cool-card">
-        <div class="cool-card-inner">
-          <div class="cool-card-front">
-            <span class="cool-icon">💾</span>
-            <div class="cool-headline">Close your laptop mid-feature</div>
-          </div>
-          <div class="cool-card-back">
-            <span class="cool-icon">💾</span>
-            <div class="cool-headline">Close your laptop mid-feature</div>
-            <p class="cool-desc">State file plus session hook means full context is rebuilt on next open. <code>/compact</code>, a week away, new terminal &mdash; doesn&rsquo;t matter. Claude opens knowing exactly where it is.</p>
-          </div>
-        </div>
+      <div class="cool-card-front">
+        <span class="cool-icon">🎛️</span>
+        <div class="cool-headline">Zero to YOLO</div>
+        <p class="cool-desc">Fully manual, fully autonomous, or anywhere in between &mdash; configured per skill. Perfect for engineers still finding their comfort level with AI automation.</p>
       </div>
 
-      <div class="cool-card">
-        <div class="cool-card-inner">
-          <div class="cool-card-front">
-            <span class="cool-icon">⛔</span>
-            <div class="cool-headline">&ldquo;BLOCKED&rdquo; means blocked</div>
-          </div>
-          <div class="cool-card-back">
-            <span class="cool-icon">⛔</span>
-            <div class="cool-headline">&ldquo;BLOCKED&rdquo; means blocked</div>
-            <p class="cool-desc">Phase gates are Python scripts that execute before the skill loads. Not instructions. Not suggestions. The phase didn&rsquo;t start &mdash; there&rsquo;s nothing for Claude to interpret or override.</p>
-          </div>
-        </div>
+      <div class="cool-card-front">
+        <span class="cool-icon">🧠</span>
+        <div class="cool-headline">Mistakes become patterns</div>
+        <p class="cool-desc">Correct Claude once and the learning system routes it to CLAUDE.md, rules, or memory. It never makes the same mistake twice.</p>
       </div>
 
-      <div class="cool-card">
-        <div class="cool-card-inner">
-          <div class="cool-card-front">
-            <span class="cool-icon">🔀</span>
-            <div class="cool-headline">Go back when you need to</div>
-          </div>
-          <div class="cool-card-back">
-            <span class="cool-icon">🔀</span>
-            <div class="cool-headline">Go back when you need to</div>
-            <p class="cool-desc">A real state machine with valid back-transitions. Code &rarr; Plan if the approach needs rethinking. Review &rarr; Code or Plan. Prior findings are preserved and extended, never discarded.</p>
-          </div>
-        </div>
+      <div class="cool-card-front">
+        <span class="cool-icon">⚡</span>
+        <div class="cool-headline">Latest Claude Code features</div>
+        <p class="cool-desc">Plan mode for exploration, <code>/simplify</code> for refactoring, Opus 4.6 for reasoning, model frontmatter for automatic selection. Built on the platform, not around it.</p>
       </div>
 
-      <div class="cool-card">
-        <div class="cool-card-inner">
-          <div class="cool-card-front">
-            <span class="cool-icon">📋</span>
-            <div class="cool-headline">Release notes write themselves</div>
-          </div>
-          <div class="cool-card-back">
-            <span class="cool-icon">📋</span>
-            <div class="cool-headline">Release notes write themselves</div>
-            <p class="cool-desc">The release skill reads your structured commit log and assembles release notes automatically. Commit well, get release notes free.</p>
-          </div>
-        </div>
+      <div class="cool-card-front">
+        <span class="cool-icon">💾</span>
+        <div class="cool-headline">Survives everything</div>
+        <p class="cool-desc">Compaction, <code>/clear</code>, new terminal, a week away. State file plus session hook means Claude picks up exactly where it left off.</p>
       </div>
 
-      <div class="cool-card">
-        <div class="cool-card-inner">
-          <div class="cool-card-front">
-            <span class="cool-icon">🎯</span>
-            <div class="cool-headline">Corrections capture themselves</div>
-          </div>
-          <div class="cool-card-back">
-            <span class="cool-icon">🎯</span>
-            <div class="cool-headline">Corrections capture themselves</div>
-            <p class="cool-desc">Correct Claude and <code>/flow-note</code> captures it automatically. Survives compaction, then Learning routes it to the right permanent home &mdash; CLAUDE.md, rules, or project memory.</p>
-          </div>
-        </div>
+      <div class="cool-card-front">
+        <span class="cool-icon">🪶</span>
+        <div class="cool-headline">Zero footprint</div>
+        <p class="cool-desc">Zero dependencies. Zero permanent artifacts in your repo. One <code>.flow-states</code> file while you work &mdash; deleted at cleanup.</p>
       </div>
 
-      <div class="cool-card">
-        <div class="cool-card-inner">
-          <div class="cool-card-front">
-            <span class="cool-icon">🎛️</span>
-            <div class="cool-headline">You control the autonomy</div>
-          </div>
-          <div class="cool-card-back">
-            <span class="cool-icon">🎛️</span>
-            <div class="cool-headline">You control the autonomy</div>
-            <p class="cool-desc">Two axes per skill &mdash; Commit (diff approval) and Continue (phase advancement). Four preset levels from fully manual to fully autonomous. Override any skill at runtime with <code>--auto</code> or <code>--manual</code>. Start cautious, dial up as trust grows.</p>
-          </div>
-        </div>
+      <div class="cool-card-front">
+        <span class="cool-icon">🔄</span>
+        <div class="cool-headline">Always current</div>
+        <p class="cool-desc">Marketplace plugin &mdash; updates ship automatically. No manual upgrades, no version chasing.</p>
       </div>
 
-      <div class="cool-card">
-        <div class="cool-card-inner">
-          <div class="cool-card-front">
-            <span class="cool-icon">🌿</span>
-            <div class="cool-headline">Three features, three tabs</div>
-          </div>
-          <div class="cool-card-back">
-            <span class="cool-icon">🌿</span>
-            <div class="cool-headline">Three features, three tabs</div>
-            <p class="cool-desc">State files are branch-named. Open three terminal tabs, run three features in parallel &mdash; FLOW sessions never interfere with each other.</p>
-          </div>
-        </div>
+      <div class="cool-card-front">
+        <span class="cool-icon">🌐</span>
+        <div class="cool-headline">Rails and Python</div>
+        <p class="cool-desc">Framework-specific guidance for Rails and Python today. More frameworks ahead.</p>
       </div>
 
     </div>
@@ -795,15 +665,6 @@
     if (saved) { document.documentElement.setAttribute('data-theme', saved); setIcon(saved); }
   })();
 
-  (function() {
-    if (window.matchMedia('(hover: none)').matches) {
-      document.querySelectorAll('.cool-card').forEach(function(card) {
-        card.addEventListener('click', function() {
-          card.classList.toggle('flipped');
-        });
-      });
-    }
-  })();
 </script>
 
 </body>
