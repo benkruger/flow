@@ -406,11 +406,7 @@ Once every task from the plan file is complete:
 bin/flow ci --if-dirty
 ```
 
-Then check coverage:
-
-```bash
-cat coverage/uncovered.txt
-```
+Then check coverage — Read `coverage/uncovered.txt`.
 
 If there are uncovered lines:
 - Write tests for each uncovered line

@@ -122,7 +122,7 @@ def _permission_to_regex(perm):
 
 
 # Auto-allowed commands that Claude Code never prompts for (read-only)
-AUTO_ALLOWED = {"cd", "cat", "git status", "git diff", "git log", "git branch",
+AUTO_ALLOWED = {"cd", "git status", "git diff", "git log", "git branch",
                 "git show", "git blame", "git worktree list",
                 "git rev-parse"}
 
@@ -691,6 +691,19 @@ REQUIRED_DENY_ENTRIES = [
     "Bash(git clean *)",
 ]
 
+# Commands that have dedicated tool alternatives (Read, Grep, Glob).
+# Must be denied in both global (~/.claude/settings.json) and project settings.
+REQUIRED_TOOL_ALTERNATIVE_DENIES = [
+    "Bash(cat *)",
+    "Bash(head *)",
+    "Bash(tail *)",
+    "Bash(grep *)",
+    "Bash(rg *)",
+    "Bash(find *)",
+    "Bash(ls *)",
+    "Bash(* && *)",
+]
+
 
 def test_plugin_permissions_deny_destructive_git():
     """Plugin permissions in init/SKILL.md must deny destructive git operations.
@@ -932,6 +945,58 @@ def test_no_allow_deny_overlap_in_maintainer_settings():
 
     assert not errors, (
         f"Found {len(errors)} allow/deny overlap(s) in .claude/settings.json:\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
+def test_tool_alternative_denies_in_project_settings():
+    """Project settings.json must deny commands that have dedicated tool alternatives.
+
+    cat/head/tail -> Read tool, grep/rg -> Grep tool, find/ls -> Glob tool,
+    && compounds -> separate tool calls. Denying these forces Claude to use
+    the dedicated tools, which never trigger permission prompts."""
+    data = json.loads(SETTINGS_JSON.read_text())
+    deny = data["permissions"]["deny"]
+    for entry in REQUIRED_TOOL_ALTERNATIVE_DENIES:
+        assert entry in deny, (
+            f"Missing deny entry in .claude/settings.json: {entry}. "
+            f"This command has a dedicated tool alternative and must be denied."
+        )
+
+
+def test_no_dedicated_tool_commands_in_bash_blocks():
+    """No ```bash``` block in any skill or docs file should use commands that
+    have dedicated tool alternatives.
+
+    cat/head/tail -> Read tool, grep/rg -> Grep tool, find/ls -> Glob tool.
+    These commands are denied in settings and must not appear in skills."""
+    denied_prefixes = {"cat", "head", "tail", "grep", "rg", "find", "ls"}
+    errors = []
+
+    files_to_check = _all_plugin_skill_files()
+    for rel, content in _all_docs_files():
+        files_to_check.append((rel, content))
+    for filepath, content in _maintainer_files():
+        files_to_check.append((filepath, content))
+
+    for filepath, content in files_to_check:
+        bash_blocks = re.findall(r"```bash\s*\n(.*?)```", content, re.DOTALL)
+        for block in bash_blocks:
+            cmd = _extract_primary_command(block)
+            if cmd is None:
+                continue
+            first_word = cmd.split()[0] if cmd.split() else ""
+            if first_word in denied_prefixes:
+                errors.append(
+                    f"{filepath}: bash block starts with '{first_word}': "
+                    f"'{cmd}'. Use the dedicated tool instead "
+                    f"(Read for cat/head/tail, Grep for grep/rg, "
+                    f"Glob for find/ls)."
+                )
+
+    assert not errors, (
+        f"Found {len(errors)} bash block(s) using commands that have "
+        f"dedicated tool alternatives:\n"
         + "\n".join(f"  - {e}" for e in errors)
     )
 

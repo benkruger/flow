@@ -25,14 +25,9 @@
       "Bash(bin/ci)",
       "Bash(claude plugin marketplace add *)",
       "Bash(claude plugin marketplace update *)",
-      "Bash(head *)",
-      "Bash(tail *)",
-      "Bash(grep *)",
       "Bash(cut *)",
-      "Bash(find *)",
       "Bash(wc *)",
       "Bash(sort *)",
-      "Bash(cat *)",
       "Bash(diff *)",
       "Bash(bin/test *)",
       "Bash(make *)",
@@ -59,7 +54,15 @@
       "Bash(git reset --hard *)",
       "Bash(git stash *)",
       "Bash(git checkout *)",
-      "Bash(git clean *)"
+      "Bash(git clean *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(find *)",
+      "Bash(ls *)",
+      "Bash(* && *)"
     ]
   },
   "attribution": {
