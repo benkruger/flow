@@ -53,7 +53,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````text
 ```
 ============================================
-  FLOW v0.19.0 — Phase 4: Simplify — STARTING
+  FLOW v0.19.1 — Phase 4: Simplify — STARTING
 ============================================
 ```
 ````
@@ -177,7 +177,7 @@ Output in your response (not via Bash) inside a fenced code block:
 ````text
 ```
 ============================================
-  FLOW v0.19.0 — Phase 4: Simplify — COMPLETE (<formatted_time>)
+  FLOW v0.19.1 — Phase 4: Simplify — COMPLETE (<formatted_time>)
 ============================================
 ```
 ````

@@ -1,5 +1,16 @@
 # Release Notes
 
+## v0.19.1 — Block compound shell commands and fix init instruction
+
+### Fixes
+
+- **Permission prompts** — Claude was appending `; echo EXIT:$?` to clean
+  bash commands in skills, triggering permission prompts. Added `Bash(* ; *)`
+  to the deny list alongside the existing `Bash(* && *)` pattern. Both are
+  now propagated to target projects via `init-setup`.
+- **flow-init Done instruction** — The Done section told users to run
+  `/flow:flow-start` (full namespace prefix) instead of `/flow-start`.
+
 ## v0.19.0 — Namespace cleanup and landing page overhaul
 
 ### Breaking Changes
