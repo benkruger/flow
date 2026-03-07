@@ -95,6 +95,8 @@ On completion (whether approved or denied), print the same way:
 
 ### Step 0 — Run tests
 
+**FLOW and Maintainer mode only.** Skip for Standalone.
+
 Run `bin/flow ci --if-dirty`. This skips the run if no files changed since the
 last green run. If any test fails, stop and report the failure.
 Do not proceed to diff review until tests pass.

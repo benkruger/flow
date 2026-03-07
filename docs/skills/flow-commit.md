@@ -60,6 +60,7 @@ All three modes share the same diff/message/approval/push process.
 - Never commits without showing the diff first
 - Never skips the approval step — unless mode is **auto** (via `--auto` flag or `.flow.json` config)
 - Never uses `--no-verify`
+- FLOW and Maintainer mode: Runs `bin/flow ci --if-dirty` before the diff — skipped in Standalone mode
 - FLOW mode: Warns if `bin/flow ci` has not been run since the last code change
 
 ---
@@ -73,6 +74,6 @@ Mode is resolved in this order:
 3. `.flow.json` `skills.commit` value
 4. Built-in default: **manual**
 
-Everything else stays identical: `bin/flow ci` runs first, the full diff is displayed, the commit message is generated and shown, and pull-before-push happens. The only difference is whether Step 3 (approval prompt) is shown.
+Everything else stays identical: `bin/flow ci` runs first (FLOW and Maintainer mode only), the full diff is displayed, the commit message is generated and shown, and pull-before-push happens. The only difference is whether Step 3 (approval prompt) is shown.
 
 `--auto` is user-invoked only. Claude must never call `/flow:commit --auto` programmatically.
