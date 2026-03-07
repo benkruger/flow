@@ -72,7 +72,7 @@ Any skill invocation accepts `--auto` or `--manual` to override the configured s
     "code": {"commit": "manual", "continue": "manual"},
     "simplify": {"commit": "auto", "continue": "auto"},
     "review": {"commit": "auto", "continue": "auto"},
-    "security": {"continue": "auto"},
+    "security": {"commit": "auto", "continue": "auto"},
     "learning": {"commit": "auto", "continue": "auto"},
     "abort": "auto",
     "cleanup": "auto"

@@ -41,10 +41,10 @@ to the project root — `bin/flow` commands find paths internally.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → continue=auto
-2. If `--manual` was passed → continue=manual
-3. Otherwise, read `.flow.json` from the project root. Use `skills.security.continue`.
-4. If `.flow.json` has no `skills` key → use built-in default: continue=auto
+1. If `--auto` was passed → commit=auto, continue=auto
+2. If `--manual` was passed → commit=manual, continue=manual
+3. Otherwise, read `.flow.json` from the project root. Use `skills.security.commit` and `skills.security.continue`.
+4. If `.flow.json` has no `skills` key → use built-in defaults: commit=auto, continue=auto
 
 ## Announce
 
@@ -386,7 +386,7 @@ Fix each confirmed finding one at a time, in order:
 
 1. Fix the issue in code
 2. Run `bin/flow ci --if-dirty`
-3. Invoke `/flow:commit` for the fix
+3. If commit=auto, invoke `/flow:commit --auto` for the fix. Otherwise invoke `/flow:commit`.
 4. Update the finding's `status` to `"fixed"` in the state file
 5. Move to the next finding
 

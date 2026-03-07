@@ -36,7 +36,7 @@ Every confirmed finding gets fixed directly:
 
 ## Mode
 
-Mode is configurable via `.flow.json` (default: auto). In auto mode, the phase transition advances to Learning without asking. Security analysis and fixing behavior is the same in both modes.
+Both commit and continue are configurable via `.flow.json` (defaults: both auto). Commit mode controls whether security fix commits require diff approval. Continue mode controls whether the phase transition advances to Learning automatically or prompts first.
 
 ---
 

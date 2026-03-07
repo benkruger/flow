@@ -944,11 +944,12 @@ def test_no_skill_invokes_commit_with_auto():
     """Skills that use /flow:commit --auto must be in the allow list.
 
     Learning uses --auto because the phase is fully autonomous. Simplify
-    uses --auto because the user already approved changes in Step 2. Code
-    and review conditionally use --auto based on the commit axis setting."""
+    uses --auto because the user already approved changes in Step 2. Code,
+    review, and security conditionally use --auto based on the commit axis
+    setting."""
     for d in sorted(SKILLS_DIR.iterdir()):
         if not d.is_dir() or d.name in (
-            "commit", "learning", "simplify", "code", "review",
+            "commit", "learning", "simplify", "code", "review", "security",
         ):
             continue
         content = (d / "SKILL.md").read_text()
@@ -1054,8 +1055,8 @@ def test_configurable_skills_have_mode_resolution():
         )
 
 
-TWO_AXIS_SKILLS = ["code", "simplify", "review", "learning"]
-CONTINUE_ONLY_SKILLS = ["start", "security"]
+TWO_AXIS_SKILLS = ["code", "simplify", "review", "security", "learning"]
+CONTINUE_ONLY_SKILLS = ["start"]
 UTILITY_SKILLS = ["abort", "cleanup"]
 
 
