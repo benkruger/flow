@@ -1,7 +1,7 @@
 {
   "name": "flow",
   "description": "Opinionated development lifecycle for Claude Code — supports Rails and Python",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "author": {
     "name": "Ben Kruger"
   },

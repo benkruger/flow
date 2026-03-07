@@ -1,5 +1,28 @@
 # Release Notes
 
+## v0.18.0 — Rename Phase 7 from Reflect to Learning
+
+### Breaking Changes
+
+- **Phase 7 renamed:** `flow:reflect` is now `flow:learning` across all skills, docs, state files, and phase definitions. Existing state files referencing "reflect" will need manual update.
+
+### New Features
+
+- **Centralized constants:** COMMANDS and PHASE_NAMES moved to `flow_utils.py` as the single source of truth for all scripts
+
+### Fixes
+
+- **Block cd && compound commands:** Added "never cd before bin/flow" guardrail to all 10 phase skill Hard Rules, and "never cd && git" prohibition to Review, Security, and Start sub-agent Tool rules. Prevents Claude Code's "bare repository attacks" permission prompts
+- **QA --restart fallback:** `/qa --restart` now falls back to `--start` when not in dev mode instead of refusing
+- **Commit default-auto:** Made `--auto` default impossible to miss at the decision point in commit skill
+- **Heredoc elimination:** All banner instructions now say "output in response" instead of using Bash print/heredoc
+
+### Improvements
+
+- New `test_no_cd_compound_in_bash_blocks` catches cd && patterns in bash blocks before they ship
+- Document autonomy configuration as a headline feature in README
+- Document CLAUDE.md audit requirement for codebase-wide renames in skill-authoring rules
+
 ## v0.17.0 — Two-axis autonomy and /flow:config
 
 ### New Features
