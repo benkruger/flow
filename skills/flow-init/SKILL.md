@@ -20,7 +20,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````text
 ```
 ============================================
-  FLOW v0.18.0 — Init — STARTING
+  FLOW v0.19.0 — Init — STARTING
 ============================================
 ```
 ````
@@ -242,7 +242,7 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ````text
 ```
 ============================================
-  FLOW v0.18.0 — Init — COMPLETE
+  FLOW v0.19.0 — Init — COMPLETE
 ============================================
 ```
 ````

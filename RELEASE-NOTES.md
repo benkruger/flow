@@ -1,5 +1,29 @@
 # Release Notes
 
+## v0.19.0 — Namespace cleanup and landing page overhaul
+
+### Breaking Changes
+
+- **Skill names prefixed with `flow-`**: All skill directories, phase keys, state file keys, and commands now use `flow-` prefix (`/flow:flow-start`, `/flow:flow-plan`, etc.) to eliminate autocomplete collisions with Claude Code built-ins. Existing state files with bare phase keys need manual update.
+- **Phase identifiers use name-based keys**: State file phase keys changed from numeric (`"1"`, `"2"`) to name-based (`"flow-start"`, `"flow-plan"`). Existing state files need manual update.
+
+### New Features
+
+- **Upgrade check in Start phase**: `/flow:flow-start` now notifies users when a newer FLOW version is available
+- **Standalone commit skips CI**: Commit skill in Standalone mode skips `bin/flow ci` since it's not available outside the plugin repo
+
+### Fixes
+
+- **Plan file ordering**: `plan_file` is now stored in state before `ExitPlanMode`, not after — fixes null `plan_file` when user chooses "clear context and proceed"
+- **Security commit axis**: Security phase was missing its `commit` axis configuration
+- **Bash file commands denied**: `cat`, `head`, `tail`, `find`, `grep` via Bash now trigger deny prompts — enforces dedicated tool usage
+
+### Improvements
+
+- **Landing page overhaul**: Replaced dense technical documentation with clear selling-point messaging. Flip cards replaced with static "Why FLOW Is Different" cards. Pipeline descriptions rewritten in plain English.
+- **Key feature coverage tests**: New tests enforce that README and landing page mention all key selling points (autonomy, learning system, plan mode, zero dependencies, etc.)
+- **README selling points**: Added "Why FLOW" section with concise bullet-point differentiators
+
 ## v0.18.0 — Rename Phase 7 from Reflect to Learning
 
 ### Breaking Changes
