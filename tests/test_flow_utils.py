@@ -109,7 +109,7 @@ def test_find_state_files_exact_match(tmp_path):
     """Exact branch match returns single-item list."""
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
-    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    state = make_state(current_phase="plan", phase_statuses={"start": "complete", "plan": "in_progress"})
     (state_dir / "my-feature.json").write_text(json.dumps(state))
 
     results = _mod.find_state_files(tmp_path, "my-feature")
@@ -137,7 +137,7 @@ def test_find_state_files_fallback_single(tmp_path):
     """Single non-matching file found via fallback scan."""
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
-    state = make_state(current_phase=3)
+    state = make_state(current_phase="code")
     (state_dir / "feature-xyz.json").write_text(json.dumps(state))
 
     results = _mod.find_state_files(tmp_path, "main")
@@ -151,7 +151,7 @@ def test_find_state_files_fallback_multiple(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     for name in ["feature-a", "feature-b", "feature-c"]:
-        state = make_state(current_phase=2)
+        state = make_state(current_phase="plan")
         state["feature"] = name
         (state_dir / f"{name}.json").write_text(json.dumps(state))
 
@@ -168,7 +168,7 @@ def test_find_state_files_corrupt_skipped_in_scan(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     (state_dir / "bad.json").write_text("{corrupt")
-    state = make_state(current_phase=2)
+    state = make_state(current_phase="plan")
     (state_dir / "good.json").write_text(json.dumps(state))
 
     results = _mod.find_state_files(tmp_path, "main")
@@ -181,7 +181,7 @@ def test_find_state_files_corrupt_exact_match_no_fallthrough(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     (state_dir / "main.json").write_text("{corrupt")
-    state = make_state(current_phase=2)
+    state = make_state(current_phase="plan")
     (state_dir / "other-feature.json").write_text(json.dumps(state))
 
     results = _mod.find_state_files(tmp_path, "main")
@@ -192,10 +192,10 @@ def test_find_state_files_exact_match_priority(tmp_path):
     """Exact match takes priority — other files are not returned."""
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
-    state_exact = make_state(current_phase=2)
+    state_exact = make_state(current_phase="plan")
     state_exact["feature"] = "Exact"
     (state_dir / "my-branch.json").write_text(json.dumps(state_exact))
-    state_other = make_state(current_phase=3)
+    state_other = make_state(current_phase="code")
     state_other["feature"] = "Other"
     (state_dir / "other-branch.json").write_text(json.dumps(state_other))
 

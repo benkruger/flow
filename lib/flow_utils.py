@@ -20,16 +20,13 @@ def now():
     """Return current Pacific Time timestamp in ISO 8601 format."""
     return datetime.now(PACIFIC).isoformat(timespec="seconds")
 
-PHASE_NAMES = {
-    1: "Start", 2: "Plan", 3: "Code", 4: "Simplify",
-    5: "Review", 6: "Security", 7: "Learning", 8: "Cleanup",
-}
+_phases_json = Path(__file__).resolve().parent.parent / "flow-phases.json"
+_config = json.loads(_phases_json.read_text())
 
-COMMANDS = {
-    1: "/flow:start", 2: "/flow:plan", 3: "/flow:code",
-    4: "/flow:simplify", 5: "/flow:review", 6: "/flow:security",
-    7: "/flow:learning", 8: "/flow:cleanup",
-}
+PHASE_ORDER = _config["order"]
+PHASE_NAMES = {key: _config["phases"][key]["name"] for key in PHASE_ORDER}
+COMMANDS = {key: _config["phases"][key]["command"] for key in PHASE_ORDER}
+PHASE_NUMBER = {key: i + 1 for i, key in enumerate(PHASE_ORDER)}
 
 
 def format_time(seconds):

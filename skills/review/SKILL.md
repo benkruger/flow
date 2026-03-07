@@ -28,7 +28,7 @@ stop immediately and show the error to the user.
 3. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
      Run /flow:start first."
-4. Check `phases.4.status` in the JSON.
+4. Check `phases.simplify.status` in the JSON.
    - If not `"complete"`: STOP. "BLOCKED: Phase 4: Simplify must be
      complete. Run /flow:simplify first."
 </HARD-GATE>
@@ -57,7 +57,7 @@ At the very start, output the following banner in your response (not via Bash) i
 Update state for phase entry:
 
 ```bash
-bin/flow phase-transition --phase 5 --action enter
+bin/flow phase-transition --phase review --action enter
 ```
 
 Parse the JSON output to confirm `"status": "ok"`.
@@ -335,7 +335,7 @@ Use AskUserQuestion if a finding is too significant to fix in Review:
 Complete the phase:
 
 ```bash
-bin/flow phase-transition --phase 5 --action complete
+bin/flow phase-transition --phase review --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.

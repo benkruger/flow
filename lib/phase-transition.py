@@ -4,12 +4,12 @@ Handles the two standard mutations every phase skill performs:
 entering a phase and completing a phase.
 
 Usage:
-  bin/flow phase-transition --phase <N> --action enter
-  bin/flow phase-transition --phase <N> --action complete [--next-phase <M>]
+  bin/flow phase-transition --phase <name> --action enter
+  bin/flow phase-transition --phase <name> --action complete [--next-phase <name>]
 
 Output (JSON to stdout):
-  Enter:    {"status": "ok", "phase": 2, "action": "enter", "visit_count": 1, "first_visit": true}
-  Complete: {"status": "ok", "phase": 2, "action": "complete", "cumulative_seconds": 300, "formatted_time": "5m", "next_phase": 3}
+  Enter:    {"status": "ok", "phase": "plan", "action": "enter", "visit_count": 1, "first_visit": true}
+  Complete: {"status": "ok", "phase": "plan", "action": "complete", "cumulative_seconds": 300, "formatted_time": "5m", "next_phase": "code"}
   Error:    {"status": "error", "message": "..."}
 """
 
@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import PACIFIC, current_branch, format_time, now, project_root
+from flow_utils import PACIFIC, current_branch, format_time, now, project_root, PHASE_ORDER
 
 
 def _parse_timestamp(ts):
@@ -31,8 +31,7 @@ def _parse_timestamp(ts):
 
 def phase_enter(state, phase):
     """Apply phase entry mutations. Returns (state, result_dict)."""
-    phase_str = str(phase)
-    phase_data = state["phases"][phase_str]
+    phase_data = state["phases"][phase]
 
     phase_data["status"] = "in_progress"
     if phase_data["started_at"] is None:
@@ -54,11 +53,11 @@ def phase_enter(state, phase):
 
 def phase_complete(state, phase, next_phase=None):
     """Apply phase completion mutations. Returns (state, result_dict)."""
-    phase_str = str(phase)
-    phase_data = state["phases"][phase_str]
+    phase_data = state["phases"][phase]
 
     if next_phase is None:
-        next_phase = phase + 1
+        phase_idx = PHASE_ORDER.index(phase)
+        next_phase = PHASE_ORDER[phase_idx + 1]
 
     session_started = phase_data.get("session_started_at")
     if session_started:
@@ -89,20 +88,24 @@ def phase_complete(state, phase, next_phase=None):
     }
 
 
+# Phases that support entry/completion via this script (all except cleanup)
+_VALID_PHASES = PHASE_ORDER[:-1]
+
+
 def main():
     parser = argparse.ArgumentParser(description="Phase entry/completion transitions")
-    parser.add_argument("--phase", type=int, required=True,
-                        help="Phase number (1-7)")
+    parser.add_argument("--phase", type=str, required=True,
+                        help="Phase name (e.g. start, plan, code)")
     parser.add_argument("--action", required=True, choices=["enter", "complete"],
                         help="Action: enter or complete")
-    parser.add_argument("--next-phase", type=int, default=None,
-                        help="Override next phase number (default: phase + 1)")
+    parser.add_argument("--next-phase", type=str, default=None,
+                        help="Override next phase name (default: next in order)")
     args = parser.parse_args()
 
-    if args.phase < 1 or args.phase > 7:
+    if args.phase not in _VALID_PHASES:
         print(json.dumps({
             "status": "error",
-            "message": f"Invalid phase number: {args.phase}. Must be 1-7.",
+            "message": f"Invalid phase: {args.phase}. Must be one of: {', '.join(_VALID_PHASES)}",
         }))
         sys.exit(1)
 
@@ -134,8 +137,7 @@ def main():
         }))
         sys.exit(1)
 
-    phase_str = str(args.phase)
-    if "phases" not in state or phase_str not in state["phases"]:
+    if "phases" not in state or args.phase not in state["phases"]:
         print(json.dumps({
             "status": "error",
             "message": f"Phase {args.phase} not found in state file",

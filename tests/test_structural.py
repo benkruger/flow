@@ -15,29 +15,34 @@ def _load_phases():
 def test_phases_has_1_through_8():
     data = _load_phases()
     phases = data["phases"]
-    for i in range(1, 9):
-        assert str(i) in phases, f"Phase {i} missing from flow-phases.json"
+    order = data["order"]
+    assert len(order) == 8, f"Expected 8 phases in order, got {len(order)}"
+    for key in order:
+        assert key in phases, f"Phase '{key}' in order but missing from phases"
     assert len(phases) == 8
 
 
 def test_commands_match_flow_pattern():
     data = _load_phases()
-    for num, phase in data["phases"].items():
+    for key, phase in data["phases"].items():
         cmd = phase["command"]
         assert re.match(r"^/flow:\w+$", cmd), (
-            f"Phase {num} command '{cmd}' doesn't match /flow:<name> pattern"
+            f"Phase '{key}' command '{cmd}' doesn't match /flow:<name> pattern"
         )
 
 
 def test_can_return_to_references_valid_lower_phases():
     data = _load_phases()
-    for num, phase in data["phases"].items():
+    order = data["order"]
+    for key, phase in data["phases"].items():
+        key_index = order.index(key)
         for target in phase["can_return_to"]:
             assert target in data["phases"], (
-                f"Phase {num} can_return_to references non-existent phase '{target}'"
+                f"Phase '{key}' can_return_to references non-existent phase '{target}'"
             )
-            assert int(target) < int(num), (
-                f"Phase {num} can_return_to references same or higher phase '{target}'"
+            target_index = order.index(target)
+            assert target_index < key_index, (
+                f"Phase '{key}' can_return_to references same or higher phase '{target}'"
             )
 
 
@@ -68,36 +73,29 @@ def test_every_skill_dir_has_skill_md():
 
 def test_phase_names_in_flow_utils_match_flow_phases():
     """PHASE_NAMES in flow_utils.py must match flow-phases.json."""
+    from flow_utils import PHASE_NAMES
     data = _load_phases()
-    script = (LIB_DIR / "flow_utils.py").read_text()
-
-    # Extract PHASE_NAMES dict from script
-    phases_match = re.search(
-        r"^PHASE_NAMES\s*=\s*\{(.+?)\}", script, re.DOTALL | re.MULTILINE
-    )
-    assert phases_match, "Could not find PHASE_NAMES dict in flow_utils.py"
-
-    for num, phase in data["phases"].items():
-        pattern = rf'{num}:\s*"{re.escape(phase["name"])}"'
-        assert re.search(pattern, phases_match.group(0)), (
-            f"Phase {num} name '{phase['name']}' not found in flow_utils.py PHASE_NAMES"
+    for key, phase in data["phases"].items():
+        assert key in PHASE_NAMES, (
+            f"Phase '{key}' not found in flow_utils.py PHASE_NAMES"
+        )
+        assert PHASE_NAMES[key] == phase["name"], (
+            f"Phase '{key}': flow_utils.py has '{PHASE_NAMES[key]}' "
+            f"but flow-phases.json has '{phase['name']}'"
         )
 
 
 def test_check_phase_commands_match_flow_phases():
     """COMMANDS in flow_utils.py must match flow-phases.json."""
+    from flow_utils import COMMANDS
     data = _load_phases()
-    script = (LIB_DIR / "flow_utils.py").read_text()
-
-    commands_match = re.search(
-        r"^COMMANDS\s*=\s*\{(.+?)\}", script, re.DOTALL | re.MULTILINE
-    )
-    assert commands_match, "Could not find COMMANDS dict in flow_utils.py"
-
-    for num, phase in data["phases"].items():
-        pattern = rf'{num}:\s*"{re.escape(phase["command"])}"'
-        assert re.search(pattern, commands_match.group(0)), (
-            f"Phase {num} command '{phase['command']}' not found in flow_utils.py COMMANDS"
+    for key, phase in data["phases"].items():
+        assert key in COMMANDS, (
+            f"Phase '{key}' not found in flow_utils.py COMMANDS"
+        )
+        assert COMMANDS[key] == phase["command"], (
+            f"Phase '{key}': flow_utils.py has '{COMMANDS[key]}' "
+            f"but flow-phases.json has '{phase['command']}'"
         )
 
 
@@ -132,11 +130,11 @@ def test_conftest_phase_names_match_flow_phases():
     Catches drift between test fixtures and canonical phase definitions."""
     data = _load_phases()
     state = make_state()
-    for num_str, phase in data["phases"].items():
-        fixture_name = state["phases"][num_str]["name"]
+    for key, phase in data["phases"].items():
+        fixture_name = state["phases"][key]["name"]
         canonical_name = phase["name"]
         assert fixture_name == canonical_name, (
-            f"Phase {num_str}: conftest.make_state() uses '{fixture_name}' "
+            f"Phase '{key}': conftest.make_state() uses '{fixture_name}' "
             f"but flow-phases.json uses '{canonical_name}'"
         )
 

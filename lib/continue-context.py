@@ -7,7 +7,7 @@ into a single call — replacing three separate tool calls in Path B.
 
 Output (JSON to stdout):
   Success: {"status": "ok", "panel": "...", "worktree": "...",
-            "current_phase": N, "phase_name": "...",
+            "current_phase": "plan", "phase_name": "...",
             "phase_command": "/flow:..."}
   No state: {"status": "no_state", "branch": "..."}
   Error:   {"status": "error", "message": "..."}
@@ -55,9 +55,9 @@ def main():
             features.append({
                 "feature": state.get("feature", matched_branch),
                 "branch": matched_branch,
-                "current_phase": state.get("current_phase", 1),
+                "current_phase": state.get("current_phase", "start"),
                 "phase_name": PHASE_NAMES.get(
-                    state.get("current_phase", 1), "?"
+                    state.get("current_phase", "start"), "?"
                 ),
                 "worktree": state.get("worktree", ""),
             })
@@ -72,15 +72,15 @@ def main():
     version = _fs_mod._read_version()
     panel = format_panel(state, version)
 
-    current_phase = state.get("current_phase", 1)
+    current_phase = state.get("current_phase", "start")
     print(json.dumps({
         "status": "ok",
         "panel": panel,
         "branch": matched_branch,
         "worktree": state.get("worktree", ""),
         "current_phase": current_phase,
-        "phase_name": PHASE_NAMES.get(current_phase, f"Phase {current_phase}"),
-        "phase_command": COMMANDS.get(current_phase, f"/flow:phase{current_phase}"),
+        "phase_name": PHASE_NAMES.get(current_phase, current_phase),
+        "phase_command": COMMANDS.get(current_phase, f"/flow:{current_phase}"),
     }))
 
 

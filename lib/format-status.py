@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
     current_branch, find_state_files, format_time, PACIFIC,
-    project_root, COMMANDS, PHASE_NAMES,
+    project_root, COMMANDS, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER,
 )
 
 # Column width for phase name alignment
@@ -52,8 +52,8 @@ def format_panel(state, version, now=None, dev_mode=False):
 
     # Check if all phases are complete
     all_complete = all(
-        phases.get(str(i), {}).get("status") == "complete"
-        for i in range(1, 9)
+        phases.get(key, {}).get("status") == "complete"
+        for key in PHASE_ORDER
     )
 
     if all_complete:
@@ -84,25 +84,26 @@ def format_panel(state, version, now=None, dev_mode=False):
 
     current_phase_data = None
 
-    for i in range(1, 9):
-        phase = phases.get(str(i), {})
+    for key in PHASE_ORDER:
+        phase = phases.get(key, {})
         status = phase.get("status", "pending")
-        name = PHASE_NAMES[i]
+        name = PHASE_NAMES[key]
+        num = PHASE_NUMBER[key]
 
         if status == "complete":
             marker = "[x]"
             seconds = phase.get("cumulative_seconds", 0)
             time_str = format_time(seconds)
             padded_name = name.ljust(NAME_WIDTH)
-            lines.append(f"  {marker} Phase {i}:  {padded_name} ({time_str})")
+            lines.append(f"  {marker} Phase {num}:  {padded_name} ({time_str})")
         elif status == "in_progress":
             marker = "[>]"
             padded_name = name.ljust(NAME_WIDTH)
-            lines.append(f"  {marker} Phase {i}:  {padded_name} <-- YOU ARE HERE")
+            lines.append(f"  {marker} Phase {num}:  {padded_name} <-- YOU ARE HERE")
             current_phase_data = phase
         else:
             marker = "[ ]"
-            lines.append(f"  {marker} Phase {i}:  {name}")
+            lines.append(f"  {marker} Phase {num}:  {name}")
 
     lines.append("")
 
@@ -116,10 +117,10 @@ def format_panel(state, version, now=None, dev_mode=False):
     # Continue (in_progress) vs Next (pending)
     # current_phase already points to the next phase after phase-transition
     # --action complete, so COMMANDS[current] is always the right command.
-    current = state.get("current_phase", 1)
-    current_status = phases.get(str(current), {}).get("status", "pending")
+    current = state.get("current_phase", "start")
+    current_status = phases.get(current, {}).get("status", "pending")
     if current_status == "in_progress":
-        cmd = COMMANDS.get(current, f"/flow:phase{current}")
+        cmd = COMMANDS.get(current, f"/flow:{current}")
         lines.append(f"  Continue: {cmd}")
     else:
         cmd = COMMANDS.get(current, "")
@@ -143,8 +144,8 @@ def _format_all_complete(state, version, phases, dev_mode=False):
 
     # Total elapsed from phase timings
     total = sum(
-        phases.get(str(i), {}).get("cumulative_seconds", 0)
-        for i in range(1, 9)
+        phases.get(key, {}).get("cumulative_seconds", 0)
+        for key in PHASE_ORDER
     )
     lines.append(f"  Elapsed : {format_time(total)}")
 
@@ -152,12 +153,13 @@ def _format_all_complete(state, version, phases, dev_mode=False):
     lines.append("  Phases")
     lines.append("  ------")
 
-    for i in range(1, 9):
-        phase = phases.get(str(i), {})
-        padded_name = PHASE_NAMES[i].ljust(NAME_WIDTH)
+    for key in PHASE_ORDER:
+        phase = phases.get(key, {})
+        padded_name = PHASE_NAMES[key].ljust(NAME_WIDTH)
         seconds = phase.get("cumulative_seconds", 0)
         time_str = format_time(seconds)
-        lines.append(f"  [x] Phase {i}:  {padded_name} ({time_str})")
+        num = PHASE_NUMBER[key]
+        lines.append(f"  [x] Phase {num}:  {padded_name} ({time_str})")
 
     lines.append("")
     lines.append("============================================")
@@ -175,15 +177,16 @@ def format_multi_panel(results, version, dev_mode=False):
     lines.append("")
 
     for i, (path, state, matched_branch) in enumerate(results, 1):
-        phase = state.get("current_phase", 1)
-        phase_name = PHASE_NAMES.get(phase, f"Phase {phase}")
+        phase_key = state.get("current_phase", "start")
+        phase_name = PHASE_NAMES.get(phase_key, phase_key)
+        phase_num = PHASE_NUMBER.get(phase_key, "?")
         phase_status = state.get("phases", {}).get(
-            str(phase), {},
+            phase_key, {},
         ).get("status", "pending")
-        cmd = COMMANDS.get(phase, f"/flow:phase{phase}")
+        cmd = COMMANDS.get(phase_key, f"/flow:{phase_key}")
         lines.append(f"  {i}. {state.get('feature', matched_branch)}")
         lines.append(f"     Branch : {matched_branch}")
-        lines.append(f"     Phase  : {phase} — {phase_name} ({phase_status})")
+        lines.append(f"     Phase  : {phase_num} — {phase_name} ({phase_status})")
         lines.append(f"     Next   : {cmd}")
         lines.append("")
 

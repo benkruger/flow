@@ -10,6 +10,8 @@ import re
 
 from conftest import DOCS_DIR, REPO_ROOT, SKILLS_DIR
 
+from flow_utils import PHASE_NUMBER
+
 
 def _load_phases():
     return json.loads((REPO_ROOT / "flow-phases.json").read_text())
@@ -64,7 +66,8 @@ def test_every_docs_skill_page_has_a_skill_dir():
 def test_every_phase_has_a_docs_page():
     """Every phase in flow-phases.json must have a docs/phases/phase-<N>-<name>.md."""
     data = _load_phases()
-    for num, phase in data["phases"].items():
+    for key, phase in data["phases"].items():
+        num = PHASE_NUMBER[key]
         name = phase["name"].lower()
         doc = DOCS_DIR / "phases" / f"phase-{num}-{name}.md"
         assert doc.exists(), (
@@ -75,7 +78,8 @@ def test_every_phase_has_a_docs_page():
 def test_phase_docs_contain_correct_command():
     """Each phase doc must contain the command from flow-phases.json."""
     data = _load_phases()
-    for num, phase in data["phases"].items():
+    for key, phase in data["phases"].items():
+        num = PHASE_NUMBER[key]
         name = phase["name"].lower()
         doc = DOCS_DIR / "phases" / f"phase-{num}-{name}.md"
         content = doc.read_text()
@@ -88,7 +92,8 @@ def test_phase_docs_contain_correct_command():
 def test_phase_docs_have_correct_title():
     """Each phase doc title must contain 'Phase N: Name'."""
     data = _load_phases()
-    for num, phase in data["phases"].items():
+    for key, phase in data["phases"].items():
+        num = PHASE_NUMBER[key]
         name_lower = phase["name"].lower()
         doc = DOCS_DIR / "phases" / f"phase-{num}-{name_lower}.md"
         content = doc.read_text()
@@ -116,7 +121,8 @@ def test_index_phase_table_shows_all_phases():
     """docs/skills/index.md phase table must show 'N — Name' for all 8 phases."""
     data = _load_phases()
     index = (DOCS_DIR / "skills" / "index.md").read_text()
-    for num, phase in data["phases"].items():
+    for key, phase in data["phases"].items():
+        num = PHASE_NUMBER[key]
         pattern = rf"{num}\s*—\s*{re.escape(phase['name'])}"
         assert re.search(pattern, index), (
             f"docs/skills/index.md missing '{num} — {phase['name']}' "
@@ -131,7 +137,8 @@ def test_readme_mentions_all_phase_commands():
     """README.md must mention all 8 phase commands and 'N: Name' strings."""
     readme = (REPO_ROOT / "README.md").read_text()
     data = _load_phases()
-    for num, phase in data["phases"].items():
+    for key, phase in data["phases"].items():
+        num = PHASE_NUMBER[key]
         assert phase["command"] in readme, (
             f"README.md does not mention phase command '{phase['command']}'"
         )
@@ -170,7 +177,7 @@ def test_landing_page_mentions_all_phase_names():
     """docs/index.html must mention all 8 phase names."""
     html = (DOCS_DIR / "index.html").read_text()
     data = _load_phases()
-    for num, phase in data["phases"].items():
+    for key, phase in data["phases"].items():
         assert phase["name"] in html, (
             f"docs/index.html does not mention phase name '{phase['name']}'"
         )

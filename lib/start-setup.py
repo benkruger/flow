@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import now, PHASE_NAMES
+from flow_utils import now, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER
 
 
 def _branch_name(feature_words):
@@ -118,10 +118,11 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
     """Create the FLOW state file."""
     current_time = now()
     phases = {}
-    for i in range(1, 9):
-        if i == 1:
-            phases[str(i)] = {
-                "name": PHASE_NAMES[i],
+    first_phase = PHASE_ORDER[0]
+    for key in PHASE_ORDER:
+        if key == first_phase:
+            phases[key] = {
+                "name": PHASE_NAMES[key],
                 "status": "in_progress",
                 "started_at": current_time,
                 "completed_at": None,
@@ -130,8 +131,8 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
                 "visit_count": 1,
             }
         else:
-            phases[str(i)] = {
-                "name": PHASE_NAMES[i],
+            phases[key] = {
+                "name": PHASE_NAMES[key],
                 "status": "pending",
                 "started_at": None,
                 "completed_at": None,
@@ -147,7 +148,7 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
         "pr_number": pr_number,
         "pr_url": pr_url,
         "started_at": current_time,
-        "current_phase": 1,
+        "current_phase": "start",
         "framework": framework,
         "plan_file": None,
         "notes": [],

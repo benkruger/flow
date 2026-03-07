@@ -5,7 +5,7 @@ import json
 import subprocess
 import sys
 
-from conftest import LIB_DIR, make_state, write_state
+from conftest import LIB_DIR, PHASE_ORDER, make_state, write_state
 
 SCRIPT = str(LIB_DIR / "continue-context.py")
 
@@ -58,17 +58,17 @@ def test_corrupt_json_returns_no_state(state_dir, git_repo, branch):
 
 def test_happy_path_returns_ok_with_all_fields(state_dir, git_repo, branch):
     state = make_state(
-        current_phase=2,
-        phase_statuses={1: "complete", 2: "in_progress"},
+        current_phase="plan",
+        phase_statuses={"start": "complete", "plan": "in_progress"},
     )
-    state["phases"]["1"]["cumulative_seconds"] = 300
+    state["phases"]["start"]["cumulative_seconds"] = 300
     write_state(state_dir, branch, state)
     result = _run(git_repo)
     assert result.returncode == 0
     data = json.loads(result.stdout)
     assert data["status"] == "ok"
     assert "panel" in data
-    assert data["current_phase"] == 2
+    assert data["current_phase"] == "plan"
     assert data["phase_name"] == "Plan"
     assert data["phase_command"] == "/flow:plan"
     assert data["worktree"] == ".worktrees/test-feature"
@@ -76,15 +76,15 @@ def test_happy_path_returns_ok_with_all_fields(state_dir, git_repo, branch):
 
 def test_all_complete_returns_ok_with_phase_8():
     """Phase 8 maps to Cleanup with /flow:cleanup command."""
-    assert _mod.PHASE_NAMES[8] == "Cleanup"
-    assert _mod.COMMANDS[8] == "/flow:cleanup"
+    assert _mod.PHASE_NAMES["cleanup"] == "Cleanup"
+    assert _mod.COMMANDS["cleanup"] == "/flow:cleanup"
 
 
 def test_missing_worktree_still_returns_ok(state_dir, git_repo, branch):
     """Worktree field from state is passed through even if dir doesn't exist."""
     state = make_state(
-        current_phase=3,
-        phase_statuses={1: "complete", 2: "complete", 3: "in_progress"},
+        current_phase="code",
+        phase_statuses={"start": "complete", "plan": "complete", "code": "in_progress"},
     )
     state["worktree"] = "/nonexistent/worktree/path"
     write_state(state_dir, branch, state)
@@ -104,16 +104,16 @@ def test_panel_matches_format_status_output():
     assert _mod.format_panel is _mod._fs_mod.format_panel
 
     state = make_state(
-        current_phase=5,
+        current_phase="review",
         phase_statuses={
-            1: "complete", 2: "complete", 3: "complete",
-            4: "complete", 5: "in_progress",
+            "start": "complete", "plan": "complete", "code": "complete",
+            "simplify": "complete", "review": "in_progress",
         },
     )
-    state["phases"]["1"]["cumulative_seconds"] = 60
-    state["phases"]["2"]["cumulative_seconds"] = 300
-    state["phases"]["3"]["cumulative_seconds"] = 600
-    state["phases"]["4"]["cumulative_seconds"] = 900
+    state["phases"]["start"]["cumulative_seconds"] = 60
+    state["phases"]["plan"]["cumulative_seconds"] = 300
+    state["phases"]["code"]["cumulative_seconds"] = 600
+    state["phases"]["simplify"]["cumulative_seconds"] = 900
     state["notes"] = [{"text": "note 1"}, {"text": "note 2"}]
 
     version = _mod._fs_mod._read_version()
@@ -127,16 +127,15 @@ def test_panel_matches_format_status_output():
 
 
 def test_commands_dict_has_all_8():
-    for i in range(1, 9):
-        assert i in _mod.COMMANDS
+    for key in PHASE_ORDER:
+        assert key in _mod.COMMANDS
 
 
 def test_phase_command_matches_flow_phases_json():
     phases_json = LIB_DIR.parent / "flow-phases.json"
     phases = json.loads(phases_json.read_text())["phases"]
-    for num_str, phase_data in phases.items():
-        num = int(num_str)
-        assert _mod.COMMANDS[num] == phase_data["command"]
+    for key, phase_data in phases.items():
+        assert _mod.COMMANDS[key] == phase_data["command"]
 
 
 # --- Fallback behavior (wrong branch) ---
@@ -147,8 +146,8 @@ def test_wrong_branch_single_feature_returns_ok(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     state = make_state(
-        current_phase=3,
-        phase_statuses={1: "complete", 2: "complete", 3: "in_progress"},
+        current_phase="code",
+        phase_statuses={"start": "complete", "plan": "complete", "code": "in_progress"},
     )
     state["branch"] = "feature-xyz"
     (state_dir / "feature-xyz.json").write_text(json.dumps(state))
@@ -158,13 +157,13 @@ def test_wrong_branch_single_feature_returns_ok(tmp_path):
     assert len(results) == 1
     _, matched_state, matched_branch = results[0]
     assert matched_branch == "feature-xyz"
-    assert matched_state["current_phase"] == 3
+    assert matched_state["current_phase"] == "code"
 
 
 def test_wrong_branch_multiple_features_returns_multiple(state_dir, git_repo, branch):
     """When on wrong branch with multiple state files, returns multiple_features."""
     for name in ["feature-a", "feature-b"]:
-        state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+        state = make_state(current_phase="plan", phase_statuses={"start": "complete", "plan": "in_progress"})
         state["feature"] = name
         state["branch"] = name
         write_state(state_dir, name, state)
@@ -179,7 +178,7 @@ def test_ok_response_includes_branch_field(tmp_path):
     """find_state_files() returns the matched branch name in the result tuple."""
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
-    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    state = make_state(current_phase="plan", phase_statuses={"start": "complete", "plan": "in_progress"})
     (state_dir / "test-feature.json").write_text(json.dumps(state))
 
     results = _mod.find_state_files(tmp_path, "test-feature")

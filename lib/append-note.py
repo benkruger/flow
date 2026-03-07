@@ -31,7 +31,7 @@ def append_note(state_path, phase, note_type, note_text):
 
     state["notes"].append({
         "phase": phase,
-        "phase_name": PHASE_NAMES.get(phase, f"Phase {phase}"),
+        "phase_name": PHASE_NAMES.get(phase, phase),
         "timestamp": now(),
         "type": note_type,
         "note": note_text,
@@ -68,7 +68,7 @@ def main():
 
     try:
         state_data = json.loads(state_path.read_text())
-        phase = state_data.get("current_phase", 1)
+        phase = state_data.get("current_phase", "start")
     except Exception as e:
         print(json.dumps({
             "status": "error",

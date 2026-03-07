@@ -35,7 +35,7 @@ def _run(git_repo, *set_args):
 
 def test_simple_path_with_now():
     """design.approved_at=NOW writes a timestamp."""
-    state = make_state(current_phase=3, phase_statuses={1: "complete", 2: "complete", 3: "in_progress"})
+    state = make_state(current_phase="code", phase_statuses={"start": "complete", "plan": "complete", "code": "in_progress"})
     state["design"] = {"approved_at": None}
 
     updated, updates = _mod.apply_updates(state, ["design.approved_at=NOW"])
@@ -48,7 +48,7 @@ def test_simple_path_with_now():
 
 def test_simple_path_with_string_value():
     """Non-NOW values are written as plain strings."""
-    state = make_state(current_phase=3, phase_statuses={1: "complete", 2: "complete", 3: "in_progress"})
+    state = make_state(current_phase="code", phase_statuses={"start": "complete", "plan": "complete", "code": "in_progress"})
     state["design"] = {"status": "pending"}
 
     updated, updates = _mod.apply_updates(state, ["design.status=approved"])
@@ -61,8 +61,8 @@ def test_simple_path_with_string_value():
 
 def test_nested_path_with_array_index():
     """plan.tasks.0.started_at=NOW navigates into an array."""
-    state = make_state(current_phase=5, phase_statuses={
-        1: "complete", 2: "complete", 3: "complete", 4: "complete", 5: "in_progress",
+    state = make_state(current_phase="review", phase_statuses={
+        "start": "complete", "plan": "complete", "code": "complete", "simplify": "complete", "review": "in_progress",
     })
     state["plan"] = {
         "tasks": [
@@ -79,8 +79,8 @@ def test_nested_path_with_array_index():
 
 def test_task_status_update():
     """plan.tasks.0.status=in_progress sets a string value on a task."""
-    state = make_state(current_phase=5, phase_statuses={
-        1: "complete", 2: "complete", 3: "complete", 4: "complete", 5: "in_progress",
+    state = make_state(current_phase="review", phase_statuses={
+        "start": "complete", "plan": "complete", "code": "complete", "simplify": "complete", "review": "in_progress",
     })
     state["plan"] = {
         "tasks": [
@@ -98,8 +98,8 @@ def test_task_status_update():
 
 def test_multiple_set_args():
     """Two --set args are applied atomically in one write."""
-    state = make_state(current_phase=5, phase_statuses={
-        1: "complete", 2: "complete", 3: "complete", 4: "complete", 5: "in_progress",
+    state = make_state(current_phase="review", phase_statuses={
+        "start": "complete", "plan": "complete", "code": "complete", "simplify": "complete", "review": "in_progress",
     })
     state["plan"] = {
         "tasks": [
@@ -122,9 +122,9 @@ def test_multiple_set_args():
 
 def test_security_scanned_at():
     """security.scanned_at=NOW sets the scan timestamp."""
-    state = make_state(current_phase=5, phase_statuses={
-        1: "complete", 2: "complete", 3: "complete", 4: "complete",
-        5: "in_progress",
+    state = make_state(current_phase="review", phase_statuses={
+        "start": "complete", "plan": "complete", "code": "complete", "simplify": "complete",
+        "review": "in_progress",
     })
     state["security"] = {"findings": [], "clean_checks": [], "scanned_at": None}
 
@@ -138,7 +138,7 @@ def test_security_scanned_at():
 
 def test_cli_happy_path(git_repo, state_dir, branch):
     """CLI happy path: write value and confirm state file updated via subprocess."""
-    state = make_state(current_phase=3, phase_statuses={1: "complete", 2: "complete", 3: "in_progress"})
+    state = make_state(current_phase="code", phase_statuses={"start": "complete", "plan": "complete", "code": "in_progress"})
     state["design"] = {"status": "pending"}
     write_state(state_dir, branch, state)
 
@@ -164,7 +164,7 @@ def test_error_no_state_file(git_repo):
 
 def test_error_invalid_path(git_repo, state_dir, branch):
     """Nonexistent path key returns error."""
-    state = make_state(current_phase=3)
+    state = make_state(current_phase="code")
     write_state(state_dir, branch, state)
 
     result = _run(git_repo, "nonexistent.field=NOW")
@@ -177,8 +177,8 @@ def test_error_invalid_path(git_repo, state_dir, branch):
 
 def test_error_array_index_out_of_range(git_repo, state_dir, branch):
     """Array index out of range returns error."""
-    state = make_state(current_phase=5, phase_statuses={
-        1: "complete", 2: "complete", 3: "complete", 4: "complete", 5: "in_progress",
+    state = make_state(current_phase="review", phase_statuses={
+        "start": "complete", "plan": "complete", "code": "complete", "simplify": "complete", "review": "in_progress",
     })
     state["plan"] = {"tasks": [{"id": 1, "status": "pending"}]}
     write_state(state_dir, branch, state)
@@ -193,7 +193,7 @@ def test_error_array_index_out_of_range(git_repo, state_dir, branch):
 
 def test_error_invalid_format(git_repo, state_dir, branch):
     """Missing = in --set arg returns error."""
-    state = make_state(current_phase=3)
+    state = make_state(current_phase="code")
     write_state(state_dir, branch, state)
 
     result = _run(git_repo, "design.approved_at")
@@ -219,7 +219,7 @@ def test_error_corrupt_json(git_repo, state_dir, branch):
 
 def test_error_detached_head(git_repo, state_dir, branch):
     """Detached HEAD returns error."""
-    state = make_state(current_phase=3)
+    state = make_state(current_phase="code")
     write_state(state_dir, branch, state)
 
     subprocess.run(

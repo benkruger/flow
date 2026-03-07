@@ -3,7 +3,7 @@
 FLOW Phase Entry Guard
 
 Usage:
-  bin/flow check-phase --required <phase_number>
+  bin/flow check-phase --required <phase_name>
 
 Checks that the previous phase is complete before allowing entry into
 the requested phase. Reads .flow-states/<branch>.json from the
@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import current_branch, project_root, COMMANDS, PHASE_NAMES
+from flow_utils import current_branch, project_root, COMMANDS, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER
 
 
 def check_phase(state, phase):
@@ -30,28 +30,31 @@ def check_phase(state, phase):
     Returns (allowed: bool, output: str) where output is the message to print.
     output is empty string if allowed with no note.
     """
-    prev = phase - 1
-    prev_str = str(prev)
-    prev_data = state.get("phases", {}).get(prev_str, {})
+    phase_idx = PHASE_ORDER.index(phase)
+    prev = PHASE_ORDER[phase_idx - 1]
+    prev_data = state.get("phases", {}).get(prev, {})
     prev_status = prev_data.get("status", "pending")
-    prev_name = PHASE_NAMES.get(prev, f"Phase {prev}")
-    prev_cmd = COMMANDS.get(prev, f"/flow:phase{prev}")
+    prev_name = PHASE_NAMES.get(prev, prev)
+    prev_num = PHASE_NUMBER.get(prev, "?")
+    prev_cmd = COMMANDS.get(prev, f"/flow:{prev}")
+
+    phase_name = PHASE_NAMES.get(phase, phase)
+    phase_num = PHASE_NUMBER.get(phase, "?")
 
     if prev_status != "complete":
         lines = [
-            f"BLOCKED: Phase {prev}: {prev_name} must be complete before "
-            f"entering Phase {phase}: {PHASE_NAMES.get(phase, '')}.",
-            f"Phase {prev} current status: {prev_status}",
+            f"BLOCKED: Phase {prev_num}: {prev_name} must be complete before "
+            f"entering Phase {phase_num}: {phase_name}.",
+            f"Phase {prev_num} current status: {prev_status}",
             f"Complete it first with: {prev_cmd}",
         ]
         return (False, "\n".join(lines))
 
     # Allowed — note if revisiting
-    this_data = state.get("phases", {}).get(str(phase), {})
+    this_data = state.get("phases", {}).get(phase, {})
     if this_data.get("status") == "complete":
         visits = this_data.get("visit_count", 0)
-        name = PHASE_NAMES.get(phase, f"Phase {phase}")
-        return (True, f"NOTE: Phase {phase}: {name} was previously completed "
+        return (True, f"NOTE: Phase {phase_num}: {phase_name} was previously completed "
                       f"({visits} visit(s)). Re-entering.")
 
     return (True, "")
@@ -59,13 +62,13 @@ def check_phase(state, phase):
 
 def main():
     parser = argparse.ArgumentParser(description="SDLC phase entry guard")
-    parser.add_argument("--required", type=int, required=True,
-                        help="Phase number being entered")
+    parser.add_argument("--required", type=str, required=True,
+                        help="Phase name being entered")
     args = parser.parse_args()
     phase = args.required
 
-    # Phase 1 has no prerequisites
-    if phase == 1:
+    # First phase has no prerequisites
+    if phase == PHASE_ORDER[0]:
         sys.exit(0)
 
     branch = current_branch()

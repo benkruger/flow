@@ -6,7 +6,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
-from conftest import LIB_DIR, make_state, write_state
+from conftest import LIB_DIR, PHASE_ORDER, make_state, write_state
 
 SCRIPT = str(LIB_DIR / "format-status.py")
 
@@ -59,10 +59,10 @@ def test_corrupt_json_returns_exit_1(state_dir, git_repo, branch):
 def test_happy_path_returns_panel_text(state_dir, git_repo, branch):
     """Valid state file returns exit 0 with panel text on stdout."""
     state = make_state(
-        current_phase=2,
-        phase_statuses={1: "complete", 2: "in_progress"},
+        current_phase="plan",
+        phase_statuses={"start": "complete", "plan": "in_progress"},
     )
-    state["phases"]["1"]["cumulative_seconds"] = 300
+    state["phases"]["start"]["cumulative_seconds"] = 300
     write_state(state_dir, branch, state)
     result = _run(git_repo)
     assert result.returncode == 0
@@ -74,30 +74,30 @@ def test_happy_path_returns_panel_text(state_dir, git_repo, branch):
 
 
 def test_panel_includes_header_with_version():
-    state = make_state(current_phase=1, phase_statuses={1: "in_progress"})
+    state = make_state(current_phase="start", phase_statuses={"start": "in_progress"})
     panel = _mod.format_panel(state, VERSION)
     assert f"FLOW v{VERSION} — Current Status" in panel
 
 
 def test_panel_includes_feature_and_branch():
-    state = make_state(current_phase=1, phase_statuses={1: "in_progress"})
+    state = make_state(current_phase="start", phase_statuses={"start": "in_progress"})
     panel = _mod.format_panel(state, VERSION)
     assert "Feature : Test Feature" in panel
     assert "Branch  : test-feature" in panel
 
 
 def test_panel_includes_pr_url():
-    state = make_state(current_phase=1, phase_statuses={1: "in_progress"})
+    state = make_state(current_phase="start", phase_statuses={"start": "in_progress"})
     panel = _mod.format_panel(state, VERSION)
     assert "PR      : https://github.com/test/test/pull/1" in panel
 
 
 def test_panel_shows_completed_phase_with_timing():
     state = make_state(
-        current_phase=2,
-        phase_statuses={1: "complete", 2: "in_progress"},
+        current_phase="plan",
+        phase_statuses={"start": "complete", "plan": "in_progress"},
     )
-    state["phases"]["1"]["cumulative_seconds"] = 300
+    state["phases"]["start"]["cumulative_seconds"] = 300
     panel = _mod.format_panel(state, VERSION)
     assert "[x] Phase 1:" in panel
     assert "(5m)" in panel
@@ -105,8 +105,8 @@ def test_panel_shows_completed_phase_with_timing():
 
 def test_panel_shows_in_progress_marker():
     state = make_state(
-        current_phase=2,
-        phase_statuses={1: "complete", 2: "in_progress"},
+        current_phase="plan",
+        phase_statuses={"start": "complete", "plan": "in_progress"},
     )
     panel = _mod.format_panel(state, VERSION)
     assert "[>] Phase 2:" in panel
@@ -115,8 +115,8 @@ def test_panel_shows_in_progress_marker():
 
 def test_panel_shows_pending_phases():
     state = make_state(
-        current_phase=2,
-        phase_statuses={1: "complete", 2: "in_progress"},
+        current_phase="plan",
+        phase_statuses={"start": "complete", "plan": "in_progress"},
     )
     panel = _mod.format_panel(state, VERSION)
     assert "[ ] Phase 3:" in panel
@@ -124,18 +124,18 @@ def test_panel_shows_pending_phases():
 
 def test_panel_shows_current_phase_timing():
     state = make_state(
-        current_phase=2,
-        phase_statuses={1: "complete", 2: "in_progress"},
+        current_phase="plan",
+        phase_statuses={"start": "complete", "plan": "in_progress"},
     )
-    state["phases"]["2"]["cumulative_seconds"] = 120
-    state["phases"]["2"]["visit_count"] = 2
+    state["phases"]["plan"]["cumulative_seconds"] = 120
+    state["phases"]["plan"]["visit_count"] = 2
     panel = _mod.format_panel(state, VERSION)
     assert "Time in current phase : 2m" in panel
     assert "Times visited         : 2" in panel
 
 
 def test_panel_shows_elapsed_time():
-    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    state = make_state(current_phase="plan", phase_statuses={"start": "complete", "plan": "in_progress"})
     state["started_at"] = "2026-01-01T00:00:00Z"
     now = datetime(2026, 1, 1, 2, 0, 0, tzinfo=timezone.utc)
     panel = _mod.format_panel(state, VERSION, now=now)
@@ -143,7 +143,7 @@ def test_panel_shows_elapsed_time():
 
 
 def test_panel_shows_notes_count():
-    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    state = make_state(current_phase="plan", phase_statuses={"start": "complete", "plan": "in_progress"})
     state["notes"] = [
         {"text": "note 1"},
         {"text": "note 2"},
@@ -154,22 +154,22 @@ def test_panel_shows_notes_count():
 
 
 def test_panel_hides_notes_when_zero():
-    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    state = make_state(current_phase="plan", phase_statuses={"start": "complete", "plan": "in_progress"})
     state["notes"] = []
     panel = _mod.format_panel(state, VERSION)
     assert "Notes" not in panel
 
 
 def test_panel_hides_tasks_when_no_plan():
-    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    state = make_state(current_phase="plan", phase_statuses={"start": "complete", "plan": "in_progress"})
     panel = _mod.format_panel(state, VERSION)
     assert "Tasks" not in panel
 
 
 def test_panel_continue_label_when_in_progress():
     state = make_state(
-        current_phase=2,
-        phase_statuses={1: "complete", 2: "in_progress"},
+        current_phase="plan",
+        phase_statuses={"start": "complete", "plan": "in_progress"},
     )
     panel = _mod.format_panel(state, VERSION)
     assert "Continue: /flow:plan" in panel
@@ -179,8 +179,8 @@ def test_panel_continue_label_when_in_progress():
 def test_panel_next_label_when_phase_complete():
     """After phase 2 completes, current_phase=3, so Next shows /flow:code."""
     state = make_state(
-        current_phase=3,
-        phase_statuses={1: "complete", 2: "complete"},
+        current_phase="code",
+        phase_statuses={"start": "complete", "plan": "complete"},
     )
     panel = _mod.format_panel(state, VERSION)
     assert "Next: /flow:code" in panel
@@ -190,8 +190,8 @@ def test_panel_next_label_when_phase_complete():
 def test_panel_next_label_when_phase_pending():
     """After phase 1 completes, current_phase=2 (pending), Next shows /flow:plan."""
     state = make_state(
-        current_phase=2,
-        phase_statuses={1: "complete"},
+        current_phase="plan",
+        phase_statuses={"start": "complete"},
     )
     panel = _mod.format_panel(state, VERSION)
     assert "Next: /flow:plan" in panel
@@ -200,17 +200,17 @@ def test_panel_next_label_when_phase_pending():
 
 def test_panel_all_complete_shows_timing():
     state = make_state(
-        current_phase=8,
-        phase_statuses={i: "complete" for i in range(1, 9)},
+        current_phase="cleanup",
+        phase_statuses={k: "complete" for k in PHASE_ORDER},
     )
-    state["phases"]["1"]["cumulative_seconds"] = 30
-    state["phases"]["2"]["cumulative_seconds"] = 900
-    state["phases"]["3"]["cumulative_seconds"] = 3600
-    state["phases"]["4"]["cumulative_seconds"] = 120
-    state["phases"]["5"]["cumulative_seconds"] = 450
-    state["phases"]["6"]["cumulative_seconds"] = 300
-    state["phases"]["7"]["cumulative_seconds"] = 300
-    state["phases"]["8"]["cumulative_seconds"] = 20
+    state["phases"]["start"]["cumulative_seconds"] = 30
+    state["phases"]["plan"]["cumulative_seconds"] = 900
+    state["phases"]["code"]["cumulative_seconds"] = 3600
+    state["phases"]["simplify"]["cumulative_seconds"] = 120
+    state["phases"]["review"]["cumulative_seconds"] = 450
+    state["phases"]["security"]["cumulative_seconds"] = 300
+    state["phases"]["learning"]["cumulative_seconds"] = 300
+    state["phases"]["cleanup"]["cumulative_seconds"] = 20
     panel = _mod.format_panel(state, VERSION)
     assert f"FLOW v{VERSION} — All Phases Complete!" in panel
     assert "Feature : Test Feature" in panel
@@ -222,12 +222,12 @@ def test_panel_all_complete_shows_timing():
 
 def test_panel_timing_formats():
     state = make_state(
-        current_phase=4,
-        phase_statuses={1: "complete", 2: "complete", 3: "complete", 4: "in_progress"},
+        current_phase="simplify",
+        phase_statuses={"start": "complete", "plan": "complete", "code": "complete", "simplify": "in_progress"},
     )
-    state["phases"]["1"]["cumulative_seconds"] = 30
-    state["phases"]["2"]["cumulative_seconds"] = 3660
-    state["phases"]["3"]["cumulative_seconds"] = 120
+    state["phases"]["start"]["cumulative_seconds"] = 30
+    state["phases"]["plan"]["cumulative_seconds"] = 3660
+    state["phases"]["code"]["cumulative_seconds"] = 120
     panel = _mod.format_panel(state, VERSION)
     assert "(<1m)" in panel
     assert "(1h 1m)" in panel
@@ -235,7 +235,7 @@ def test_panel_timing_formats():
 
 
 def test_panel_has_all_8_phases():
-    state = make_state(current_phase=1, phase_statuses={1: "in_progress"})
+    state = make_state(current_phase="start", phase_statuses={"start": "in_progress"})
     panel = _mod.format_panel(state, VERSION)
     for i in range(1, 9):
         assert f"Phase {i}:" in panel
@@ -258,8 +258,8 @@ def test_wrong_branch_single_feature_returns_ok(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     state = make_state(
-        current_phase=3,
-        phase_statuses={1: "complete", 2: "complete", 3: "in_progress"},
+        current_phase="code",
+        phase_statuses={"start": "complete", "plan": "complete", "code": "in_progress"},
     )
     state["branch"] = "feature-xyz"
     (state_dir / "feature-xyz.json").write_text(json.dumps(state))
@@ -276,7 +276,7 @@ def test_wrong_branch_single_feature_returns_ok(tmp_path):
 def test_wrong_branch_multiple_features_returns_panel(state_dir, git_repo, branch):
     """When on wrong branch with multiple state files, returns panel text."""
     for name in ["feature-a", "feature-b"]:
-        state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+        state = make_state(current_phase="plan", phase_statuses={"start": "complete", "plan": "in_progress"})
         state["feature"] = name
         state["branch"] = name
         write_state(state_dir, name, state)

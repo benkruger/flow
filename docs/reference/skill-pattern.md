@@ -67,13 +67,13 @@ when building new phase skills.
 **On phase entry:**
 
 ```bash
-bin/flow phase-transition --phase <N> --action enter
+bin/flow phase-transition --phase <name> --action enter
 ```
 
 **On phase exit:**
 
 ```bash
-bin/flow phase-transition --phase <N> --action complete
+bin/flow phase-transition --phase <name> --action complete
 ```
 
 The `phase-transition` script handles all timing, counters, and status

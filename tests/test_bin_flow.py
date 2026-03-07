@@ -60,8 +60,8 @@ def test_passes_arguments_through():
 
 def test_exit_code_passes_through():
     """Exit code from the Python script is preserved."""
-    # check-phase with --required 2 and no state file exits non-zero
-    result = _run("check-phase", "--required", "2", cwd="/tmp")
+    # check-phase with --required plan and no state file exits non-zero
+    result = _run("check-phase", "--required", "plan", cwd="/tmp")
     assert result.returncode != 0
 
 

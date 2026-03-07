@@ -1,12 +1,13 @@
 {
+  "order": ["start", "plan", "code", "simplify", "review", "security", "learning", "cleanup"],
   "phases": {
-    "1": { "name": "Start",     "command": "/flow:start",     "can_return_to": [] },
-    "2": { "name": "Plan",      "command": "/flow:plan",      "can_return_to": [] },
-    "3": { "name": "Code",      "command": "/flow:code",      "can_return_to": ["2"] },
-    "4": { "name": "Simplify",  "command": "/flow:simplify",  "can_return_to": ["3"] },
-    "5": { "name": "Review",    "command": "/flow:review",    "can_return_to": ["3", "2"] },
-    "6": { "name": "Security",  "command": "/flow:security",  "can_return_to": [] },
-    "7": { "name": "Learning",  "command": "/flow:learning",  "can_return_to": [] },
-    "8": { "name": "Cleanup",   "command": "/flow:cleanup",   "can_return_to": [] }
+    "start":    { "name": "Start",    "command": "/flow:start",    "can_return_to": [] },
+    "plan":     { "name": "Plan",     "command": "/flow:plan",     "can_return_to": [] },
+    "code":     { "name": "Code",     "command": "/flow:code",     "can_return_to": ["plan"] },
+    "simplify": { "name": "Simplify", "command": "/flow:simplify", "can_return_to": ["code"] },
+    "review":   { "name": "Review",   "command": "/flow:review",   "can_return_to": ["code", "plan"] },
+    "security": { "name": "Security", "command": "/flow:security", "can_return_to": [] },
+    "learning": { "name": "Learning", "command": "/flow:learning", "can_return_to": [] },
+    "cleanup":  { "name": "Cleanup",  "command": "/flow:cleanup",  "can_return_to": [] }
   }
 }

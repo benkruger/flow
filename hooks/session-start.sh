@@ -32,7 +32,7 @@ if not files:
 
 
 def reset_interrupted(path, state):
-    cp = str(state.get("current_phase", "1"))
+    cp = state.get("current_phase", "start")
     phase = state.get("phases", {}).get(cp, {})
     if phase.get("session_started_at") is not None:
         state["phases"][cp]["session_started_at"] = None
@@ -64,11 +64,11 @@ if dev_mode:
 
 if len(states) == 1:
     s = states[0]
-    cp = str(s.get("current_phase", "1"))
+    cp = s.get("current_phase", "start")
     phase_name = s.get("phases", {}).get(cp, {}).get("name", "")
     feature = s.get("feature", "")
     plan_file = s.get("plan_file")
-    plan_approved = cp == "2" and plan_file is not None
+    plan_approved = cp == "plan" and plan_file is not None
 
     if plan_approved:
         resume_instruction = (
@@ -85,7 +85,7 @@ if len(states) == 1:
     context = (
         "<flow-session-context>\n"
         f"{dev_preamble}"
-        f'FLOW feature in progress: "{feature}" — Phase {cp}: {phase_name}\n'
+        f'FLOW feature in progress: "{feature}" — {phase_name}\n'
         "\n"
         f"{resume_instruction}"
         "\n"
@@ -98,9 +98,9 @@ if len(states) == 1:
 else:
     features = []
     for s in states:
-        cp = str(s.get("current_phase", "1"))
+        cp = s.get("current_phase", "start")
         phase_name = s.get("phases", {}).get(cp, {}).get("name", "")
-        features.append(f"{s.get('feature')} — Phase {cp}: {phase_name}")
+        features.append(f"{s.get('feature')} — {phase_name}")
 
     feature_list = "\n".join(f"  - {f}" for f in features)
 

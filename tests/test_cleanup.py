@@ -5,7 +5,7 @@ import json
 import subprocess
 import sys
 
-from conftest import LIB_DIR, make_state, write_state
+from conftest import LIB_DIR, PHASE_ORDER, make_state, write_state
 
 SCRIPT = str(LIB_DIR / "cleanup.py")
 
@@ -41,8 +41,8 @@ def _setup_feature(git_repo, branch="test-feature"):
     # Create state file
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(exist_ok=True)
-    state = make_state(current_phase=8, phase_statuses={
-        i: "complete" for i in range(1, 9)
+    state = make_state(current_phase="cleanup", phase_statuses={
+        k: "complete" for k in PHASE_ORDER
     })
     state["branch"] = branch
     state["worktree"] = wt_rel

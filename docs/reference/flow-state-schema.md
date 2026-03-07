@@ -27,11 +27,11 @@ One file per active feature. Multiple features can run simultaneously with no co
   "pr_number": 42,
   "pr_url": "https://github.com/org/repo/pull/42",
   "started_at": "2026-02-20T10:00:00-08:00",
-  "current_phase": 2,
+  "current_phase": "plan",
   "framework": "rails",
   "plan_file": null,
   "phases": {
-    "1": {
+    "start": {
       "name": "Start",
       "status": "complete",
       "started_at": "2026-02-20T10:00:00-08:00",
@@ -40,7 +40,7 @@ One file per active feature. Multiple features can run simultaneously with no co
       "cumulative_seconds": 300,
       "visit_count": 1
     },
-    "2": {
+    "plan": {
       "name": "Plan",
       "status": "in_progress",
       "started_at": "2026-02-20T10:05:00-08:00",
@@ -49,7 +49,7 @@ One file per active feature. Multiple features can run simultaneously with no co
       "cumulative_seconds": 1800,
       "visit_count": 2
     },
-    "3": {
+    "code": {
       "name": "Code",
       "status": "pending",
       "started_at": null,
@@ -74,7 +74,7 @@ One file per active feature. Multiple features can run simultaneously with no co
 | `pr_number` | integer | GitHub PR number |
 | `pr_url` | string | Full GitHub PR URL |
 | `started_at` | ISO 8601 | When the feature was started (Phase 1 entry) |
-| `current_phase` | integer | The currently active phase number |
+| `current_phase` | string | The currently active phase key (e.g. `"code"`) |
 | `framework` | string | `"rails"` or `"python"` — set during `/flow:init`, copied to state by `/flow:start` |
 | `plan_file` | string / null | Absolute path to the plan file at `~/.claude/plans/<name>.md` — set by Phase 2: Plan |
 | `notes` | array | Corrections captured via `/flow:note` — see [Notes Array](#notes-array) |
@@ -115,7 +115,7 @@ and session restarts. Read by Learning as a primary source.
 ```json
 "notes": [
   {
-    "phase": 3,
+    "phase": "code",
     "phase_name": "Code",
     "timestamp": "2026-02-20T14:23:00-08:00",
     "type": "correction",

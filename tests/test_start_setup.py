@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import LIB_DIR
+from conftest import LIB_DIR, PHASE_ORDER
 
 SCRIPT = str(LIB_DIR / "start-setup.py")
 
@@ -241,7 +241,7 @@ def test_state_file_created(_default_run):
     assert state["feature"] == "Test Feature"
     assert state["branch"] == "test-feature"
     assert state["worktree"] == ".worktrees/test-feature"
-    assert state["current_phase"] == 1
+    assert state["current_phase"] == "start"
     assert state["notes"] == []
 
 
@@ -250,12 +250,12 @@ def test_state_file_has_all_8_phases(_default_run):
     data, state, log, repo = _default_run
 
     expected_names = {
-        "1": "Start", "2": "Plan", "3": "Code", "4": "Simplify",
-        "5": "Review", "6": "Security", "7": "Learning", "8": "Cleanup",
+        "start": "Start", "plan": "Plan", "code": "Code", "simplify": "Simplify",
+        "review": "Review", "security": "Security", "learning": "Learning", "cleanup": "Cleanup",
     }
     assert len(state["phases"]) == 8
-    for num, name in expected_names.items():
-        assert state["phases"][num]["name"] == name
+    for key, name in expected_names.items():
+        assert state["phases"][key]["name"] == name
 
 
 def test_state_file_phase_fields(_default_run):
@@ -266,29 +266,31 @@ def test_state_file_phase_fields(_default_run):
         "name", "status", "started_at", "completed_at",
         "session_started_at", "cumulative_seconds", "visit_count",
     ]
-    for num in range(1, 9):
-        phase = state["phases"][str(num)]
+    for key in PHASE_ORDER:
+        phase = state["phases"][key]
         for field in required_fields:
-            assert field in phase, f"Phase {num} missing field '{field}'"
+            assert field in phase, f"Phase '{key}' missing field '{field}'"
 
 
 def test_state_file_phase_1_in_progress(_default_run):
     """Phase 1 should be in_progress with timestamps set."""
     data, state, log, repo = _default_run
 
-    phase1 = state["phases"]["1"]
-    assert phase1["status"] == "in_progress"
-    assert phase1["started_at"] is not None
-    assert phase1["session_started_at"] is not None
-    assert phase1["visit_count"] == 1
+    start_phase = state["phases"]["start"]
+    assert start_phase["status"] == "in_progress"
+    assert start_phase["started_at"] is not None
+    assert start_phase["session_started_at"] is not None
+    assert start_phase["visit_count"] == 1
 
 
 def test_state_file_other_phases_pending(_default_run):
-    """Phases 2-7 should be pending with null timestamps."""
+    """Non-start phases should be pending with null timestamps."""
     data, state, log, repo = _default_run
 
-    for num in range(2, 8):
-        phase = state["phases"][str(num)]
+    for key in PHASE_ORDER:
+        if key == "start":
+            continue
+        phase = state["phases"][key]
         assert phase["status"] == "pending"
         assert phase["started_at"] is None
         assert phase["session_started_at"] is None

@@ -8,7 +8,8 @@ and back navigation rules. All parseable with regex.
 import json
 import re
 
-from conftest import DOCS_DIR, LIB_DIR, REPO_ROOT, SKILLS_DIR
+from conftest import DOCS_DIR, LIB_DIR, REPO_ROOT, SKILLS_DIR, PHASE_ORDER
+from flow_utils import PHASE_NUMBER
 
 
 def _load_phases():
@@ -24,13 +25,14 @@ def _plugin_version():
 
 
 def _phase_skills():
-    """Return {phase_number: skill_name} for phases 1-8."""
+    """Return {phase_key: skill_name} for all phases."""
     data = _load_phases()
     result = {}
-    for num, phase in data["phases"].items():
+    for key in data["order"]:
+        phase = data["phases"][key]
         # /flow:start -> start, /flow:research -> research, etc.
         skill_name = phase["command"].split(":")[1]
-        result[int(num)] = skill_name
+        result[key] = skill_name
     return result
 
 
@@ -51,20 +53,21 @@ def _utility_skills():
 
 
 def test_phase_skills_2_through_7_have_hard_gate_checking_previous_phase():
-    """Phases 2-7 must have a HARD-GATE that checks phases.<N-1>.status."""
+    """Phases 2-7 must have a HARD-GATE that checks phases.<prev>.status."""
     phase_skills = _phase_skills()
-    for phase_num in range(2, 8):
-        skill_name = phase_skills[phase_num]
+    for key in PHASE_ORDER[1:7]:
+        skill_name = phase_skills[key]
         content = _read_skill(skill_name)
-        prev = phase_num - 1
+        prev_idx = PHASE_ORDER.index(key) - 1
+        prev_key = PHASE_ORDER[prev_idx]
 
         assert "<HARD-GATE>" in content, (
-            f"Phase {phase_num} ({skill_name}) has no <HARD-GATE>"
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) has no <HARD-GATE>"
         )
-        pattern = rf"phases\.{prev}\.status"
+        pattern = rf"phases\.{prev_key}\.status"
         assert re.search(pattern, content), (
-            f"Phase {phase_num} ({skill_name}) HARD-GATE doesn't check "
-            f"phases.{prev}.status"
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) HARD-GATE doesn't check "
+            f"phases.{prev_key}.status"
         )
 
 
@@ -73,8 +76,8 @@ def test_utility_skills_have_no_phase_gate():
     for name in _utility_skills():
         content = _read_skill(name)
         # They should not have the structured phase entry HARD-GATE
-        # (checking phases.N.status)
-        assert not re.search(r"phases\.\d+\.status", content), (
+        # (checking phases.<key>.status)
+        assert not re.search(r"phases\.\w+\.status", content), (
             f"Utility skill '{name}' has a phase status check — "
             f"utility skills should not gate on phase status"
         )
@@ -84,7 +87,7 @@ def test_phase_1_has_no_previous_phase_gate():
     """Phase 1 (Start) should not check a previous phase's status."""
     content = _read_skill("start")
     # Start has HARD-GATE but for feature name, not for previous phase
-    assert not re.search(r"phases\.\d+\.status", content), (
+    assert not re.search(r"phases\.\w+\.status", content), (
         "Phase 1 (start) should not gate on any phase status"
     )
 
@@ -159,12 +162,14 @@ def test_initial_state_template_has_all_8_phases():
         "name", "status", "started_at", "completed_at",
         "session_started_at", "cumulative_seconds", "visit_count",
     ]
-    for i in range(1, 9):
-        key = str(i)
-        assert key in phases, f"Phase {i} missing from initial state template"
+    for key in PHASE_ORDER:
+        assert key in phases, (
+            f"Phase {PHASE_NUMBER[key]} ({key}) missing from initial state template"
+        )
         for field in required_fields:
             assert field in phases[key], (
-                f"Phase {i} missing field '{field}' in initial state template"
+                f"Phase {PHASE_NUMBER[key]} ({key}) missing field '{field}' "
+                f"in initial state template"
             )
 
 
@@ -187,10 +192,10 @@ def test_phase_names_in_state_match_flow_phases():
         mod._create_state_file(root, "test", "Test", "http://x/pull/1", 1)
         state = json.loads((root / ".flow-states" / "test.json").read_text())
 
-    for num, phase in data["phases"].items():
-        assert state["phases"][num]["name"] == phase["name"], (
-            f"Phase {num}: start-setup.py has "
-            f"'{state['phases'][num]['name']}' but flow-phases.json "
+    for key, phase in data["phases"].items():
+        assert state["phases"][key]["name"] == phase["name"], (
+            f"Phase {PHASE_NUMBER[key]} ({key}): start-setup.py has "
+            f"'{state['phases'][key]['name']}' but flow-phases.json "
             f"has '{phase['name']}'"
         )
 
@@ -219,45 +224,19 @@ def test_phase_transitions_follow_sequence():
     phase_skills = _phase_skills()
     data = _load_phases()
 
-    for phase_num in range(1, 8):  # 1-7 transition to next
-        skill_name = phase_skills[phase_num]
+    for idx, key in enumerate(PHASE_ORDER[:-1]):  # all but last transition to next
+        skill_name = phase_skills[key]
         content = _read_skill(skill_name)
-        next_num = phase_num + 1
-        next_name = data["phases"][str(next_num)]["name"]
+        next_key = PHASE_ORDER[idx + 1]
+        next_num = PHASE_NUMBER[next_key]
+        next_name = data["phases"][next_key]["name"]
 
         # Look for "Phase N+1: Name" in a transition question
         pattern = rf"Phase {next_num}:\s*{re.escape(next_name)}"
         assert re.search(pattern, content), (
-            f"Phase {phase_num} ({skill_name}) does not reference "
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) does not reference "
             f"Phase {next_num}: {next_name} in its transition"
         )
-
-
-def test_back_navigation_matches_can_return_to():
-    """Back navigation options in each skill should only reference phases
-    listed in that phase's can_return_to from flow-phases.json."""
-    data = _load_phases()
-    phase_skills = _phase_skills()
-
-    for num_str, phase in data["phases"].items():
-        phase_num = int(num_str)
-        if not phase["can_return_to"]:
-            continue
-
-        skill_name = phase_skills[phase_num]
-        content = _read_skill(skill_name)
-
-        # Find "Return to Phase N" or "Go back to Phase N" patterns
-        back_refs = re.findall(
-            r"(?:Return|Go back|Back) to (?:Phase )?(\d+)", content, re.IGNORECASE
-        )
-
-        for ref in back_refs:
-            assert ref in phase["can_return_to"], (
-                f"Phase {phase_num} ({skill_name}) has back navigation to "
-                f"Phase {ref} but can_return_to only allows "
-                f"{phase['can_return_to']}"
-            )
 
 
 # --- Sub-agent contracts ---
@@ -318,17 +297,17 @@ def test_phase_skills_have_tool_restriction_in_hard_rules():
     task pressure. Putting tool restrictions in the skill's Hard Rules
     makes them co-located with the active instructions Claude follows."""
     phase_skills = _phase_skills()
-    for phase_num, skill_name in phase_skills.items():
+    for key, skill_name in phase_skills.items():
         content = _read_skill(skill_name)
         hard_rules_match = re.search(
             r"## (?:Hard )?Rules\n(.*?)(?:\n## |\Z)", content, re.DOTALL
         )
         assert hard_rules_match, (
-            f"Phase {phase_num} ({skill_name}) has no Hard Rules section"
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) has no Hard Rules section"
         )
         rules_text = hard_rules_match.group(1)
         assert "Bash" in rules_text and ("Glob" in rules_text or "Read" in rules_text), (
-            f"Phase {phase_num} ({skill_name}) Hard Rules missing tool "
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) Hard Rules missing tool "
             f"restriction — must restrict Bash and reference Glob/Read"
         )
 
@@ -359,17 +338,18 @@ def test_phase_skills_have_announce_banner():
     data = _load_phases()
     version = _plugin_version()
 
-    for phase_num, skill_name in phase_skills.items():
+    for key, skill_name in phase_skills.items():
         content = _read_skill(skill_name)
-        name = data["phases"][str(phase_num)]["name"]
+        name = data["phases"][key]["name"]
+        num = PHASE_NUMBER[key]
 
         pattern = (
             rf"FLOW v{re.escape(version)}\s*—\s*"
-            rf"Phase {phase_num}:\s*{re.escape(name)}\s*—\s*STARTING"
+            rf"Phase {num}:\s*{re.escape(name)}\s*—\s*STARTING"
         )
         assert re.search(pattern, content), (
-            f"Phase {phase_num} ({skill_name}) missing announce banner "
-            f"'FLOW v{version} — Phase {phase_num}: {name} — STARTING'"
+            f"Phase {num} ({skill_name}) missing announce banner "
+            f"'FLOW v{version} — Phase {num}: {name} — STARTING'"
         )
 
 
@@ -378,8 +358,8 @@ def test_phase_skills_have_update_state_section():
     Phase 8 (cleanup) deletes the state file instead of updating it."""
     phase_skills = _phase_skills()
 
-    for phase_num, skill_name in phase_skills.items():
-        if phase_num == 8:
+    for key, skill_name in phase_skills.items():
+        if key == "cleanup":
             continue  # Cleanup deletes state, doesn't update it
         content = _read_skill(skill_name)
 
@@ -389,7 +369,7 @@ def test_phase_skills_have_update_state_section():
             or "update state" in content
         )
         assert has_update, (
-            f"Phase {phase_num} ({skill_name}) has no 'Update State' section"
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) has no 'Update State' section"
         )
 
 
@@ -403,12 +383,12 @@ def test_phase_skills_with_content_writes_have_state_write_instruction():
     Skills that only use bin/flow commands for state mutations (start, code,
     review, learning) do not need this instruction."""
     phase_skills = _phase_skills()
-    content_write_phases = {6}  # security
-    for phase_num in content_write_phases:
-        skill_name = phase_skills[phase_num]
+    content_write_phases = {"security"}
+    for key in content_write_phases:
+        skill_name = phase_skills[key]
         content = _read_skill(skill_name)
         assert "Never use the Edit tool for state file" in content, (
-            f"Phase {phase_num} ({skill_name}) missing "
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing "
             f"'Never use the Edit tool for state file' instruction"
         )
 
@@ -421,15 +401,15 @@ def test_phase_skills_use_phase_transition_for_entry():
     Phase 1 uses start-setup.py which creates the state file directly.
     Phase 8 (cleanup) uses bin/flow cleanup instead."""
     phase_skills = _phase_skills()
-    for phase_num in range(2, 8):
-        skill_name = phase_skills[phase_num]
+    for key in PHASE_ORDER[1:7]:
+        skill_name = phase_skills[key]
         content = _read_skill(skill_name)
         assert "phase-transition" in content, (
-            f"Phase {phase_num} ({skill_name}) missing "
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing "
             f"'phase-transition' command for entry"
         )
         assert "--action enter" in content, (
-            f"Phase {phase_num} ({skill_name}) missing "
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing "
             f"'--action enter' for phase entry"
         )
 
@@ -437,11 +417,11 @@ def test_phase_skills_use_phase_transition_for_entry():
 def test_phase_skills_use_phase_transition_for_completion():
     """Phases 1-7 must use bin/flow phase-transition for state completion."""
     phase_skills = _phase_skills()
-    for phase_num in range(1, 8):
-        skill_name = phase_skills[phase_num]
+    for key in PHASE_ORDER[:-1]:
+        skill_name = phase_skills[key]
         content = _read_skill(skill_name)
         assert "--action complete" in content, (
-            f"Phase {phase_num} ({skill_name}) missing "
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing "
             f"'--action complete' for phase completion"
         )
 
@@ -452,10 +432,10 @@ def test_phase_skills_no_inline_time_computation():
     pattern 'current_time - session_started_at' causes Claude to
     improvise python3 heredocs that trigger permission prompts."""
     phase_skills = _phase_skills()
-    for phase_num, skill_name in phase_skills.items():
+    for key, skill_name in phase_skills.items():
         content = _read_skill(skill_name)
         assert "current_time - session_started_at" not in content, (
-            f"Phase {phase_num} ({skill_name}) contains inline time "
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) contains inline time "
             f"computation 'current_time - session_started_at' — "
             f"use bin/flow phase-transition instead"
         )
@@ -537,15 +517,16 @@ def test_phase_transition_names_current_phase():
     phase_skills = _phase_skills()
     data = _load_phases()
 
-    for phase_num in range(1, 8):  # 1-7 have transitions
-        skill_name = phase_skills[phase_num]
+    for key in PHASE_ORDER[:-1]:  # all but last have transitions
+        skill_name = phase_skills[key]
         content = _read_skill(skill_name)
-        name = data["phases"][str(phase_num)]["name"]
+        name = data["phases"][key]["name"]
+        num = PHASE_NUMBER[key]
 
-        pattern = rf"Phase\s+{phase_num}:\s*{re.escape(name)}\s+is complete"
+        pattern = rf"Phase\s+{num}:\s*{re.escape(name)}\s+is complete"
         assert re.search(pattern, content), (
-            f"Phase {phase_num} ({skill_name}) does not contain "
-            f"'Phase {phase_num}: {name} is complete' in its transition"
+            f"Phase {num} ({skill_name}) does not contain "
+            f"'Phase {num}: {name} is complete' in its transition"
         )
 
 
@@ -565,11 +546,11 @@ def test_phase_transitions_have_note_capture_option():
     """Phases 1-7 transition questions must offer a note-capture option.
     This is the third AskUserQuestion option at every phase boundary."""
     phase_skills = _phase_skills()
-    for phase_num in range(1, 8):
-        skill_name = phase_skills[phase_num]
+    for key in PHASE_ORDER[:-1]:
+        skill_name = phase_skills[key]
         content = _read_skill(skill_name)
         assert "correction or learning to capture" in content, (
-            f"Phase {phase_num} ({skill_name}) transition question missing "
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) transition question missing "
             f"'correction or learning to capture' option"
         )
 
@@ -593,10 +574,10 @@ def test_phase_1_hard_gate_checks_feature_name():
 def test_phase_skills_have_logging_section():
     """All 7 phase skills must have a ## Logging section."""
     phase_skills = _phase_skills()
-    for phase_num, skill_name in phase_skills.items():
+    for key, skill_name in phase_skills.items():
         content = _read_skill(skill_name)
         assert "## Logging" in content, (
-            f"Phase {phase_num} ({skill_name}) has no '## Logging' section"
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) has no '## Logging' section"
         )
 
 
@@ -622,18 +603,17 @@ def test_phase_8_has_delete_state_instructions():
 
 def test_back_navigation_names_match_can_return_to():
     """Back navigation options in each skill (using phase names like
-    'Go back to Research') must only reference phases listed in can_return_to."""
+    'Go back to Code') must only reference phases listed in can_return_to."""
     data = _load_phases()
     phase_skills = _phase_skills()
 
-    # Build name -> phase number mapping
-    name_to_num = {}
-    for num_str, phase in data["phases"].items():
-        name_to_num[phase["name"]] = num_str
+    # Build name -> phase key mapping
+    name_to_key = {}
+    for key, phase in data["phases"].items():
+        name_to_key[phase["name"]] = key
 
-    for num_str, phase in data["phases"].items():
-        phase_num = int(num_str)
-        skill_name = phase_skills[phase_num]
+    for key, phase in data["phases"].items():
+        skill_name = phase_skills[key]
         content = _read_skill(skill_name)
 
         # Match "Go back to <Name>" patterns (names, not numbers)
@@ -642,12 +622,12 @@ def test_back_navigation_names_match_can_return_to():
         )
 
         for ref_name in back_refs:
-            ref_num = name_to_num.get(ref_name)
-            if ref_num is None:
+            ref_key = name_to_key.get(ref_name)
+            if ref_key is None:
                 continue  # Not a phase name (e.g., "Go back to an approved section")
-            assert ref_num in phase["can_return_to"], (
-                f"Phase {phase_num} ({skill_name}) has 'Go back to {ref_name}' "
-                f"(Phase {ref_num}) but can_return_to only allows "
+            assert ref_key in phase["can_return_to"], (
+                f"Phase {PHASE_NUMBER[key]} ({skill_name}) has 'Go back to {ref_name}' "
+                f"({ref_key}) but can_return_to only allows "
                 f"{phase['can_return_to']}"
             )
 
@@ -658,20 +638,19 @@ def test_can_return_to_targets_are_reachable():
     data = _load_phases()
     phase_skills = _phase_skills()
 
-    for num_str, phase in data["phases"].items():
-        phase_num = int(num_str)
+    for key, phase in data["phases"].items():
         if not phase["can_return_to"]:
             continue
 
-        skill_name = phase_skills[phase_num]
+        skill_name = phase_skills[key]
         content = _read_skill(skill_name)
 
         for target in phase["can_return_to"]:
             target_name = data["phases"][target]["name"]
             pattern = rf"(?:Go back|Return|Back) to {re.escape(target_name)}"
             assert re.search(pattern, content, re.IGNORECASE), (
-                f"Phase {phase_num} ({skill_name}) has can_return_to "
-                f"target Phase {target} ({target_name}) but no matching "
+                f"Phase {PHASE_NUMBER[key]} ({skill_name}) has can_return_to "
+                f"target {target} ({target_name}) but no matching "
                 f"back navigation text found"
             )
 
@@ -688,14 +667,15 @@ def test_status_formatter_phase_names_match_flow_phases():
 
     from conftest import make_state
     data = _load_phases()
-    state = make_state(current_phase=1, phase_statuses={1: "in_progress"})
+    state = make_state(current_phase="start", phase_statuses={"start": "in_progress"})
     panel = mod.format_panel(state, _plugin_version())
 
-    for num_str, phase in data["phases"].items():
-        pattern = rf"Phase\s+{num_str}:\s+{re.escape(phase['name'])}"
+    for key, phase in data["phases"].items():
+        num = PHASE_NUMBER[key]
+        pattern = rf"Phase\s+{num}:\s+{re.escape(phase['name'])}"
         assert re.search(pattern, panel), (
             f"format-status.py panel does not contain "
-            f"'Phase {num_str}: {phase['name']}' — "
+            f"'Phase {num}: {phase['name']}' — "
             f"phase name may be out of sync with flow-phases.json"
         )
 
@@ -707,19 +687,20 @@ def test_phase_skills_complete_banner_includes_timing():
     data = _load_phases()
     version = _plugin_version()
 
-    for phase_num, skill_name in phase_skills.items():
+    for key, skill_name in phase_skills.items():
         content = _read_skill(skill_name)
-        name = data["phases"][str(phase_num)]["name"]
+        name = data["phases"][key]["name"]
+        num = PHASE_NUMBER[key]
 
         pattern = (
             rf"FLOW v{re.escape(version)}\s*—\s*"
-            rf"Phase {phase_num}:\s*{re.escape(name)}\s*—\s*"
+            rf"Phase {num}:\s*{re.escape(name)}\s*—\s*"
             rf"COMPLETE\s*\(<formatted_time>\)"
         )
         assert re.search(pattern, content), (
-            f"Phase {phase_num} ({skill_name}) COMPLETE banner missing "
+            f"Phase {num} ({skill_name}) COMPLETE banner missing "
             f"version or formatted_time — expected "
-            f"'FLOW v{version} — Phase {phase_num}: {name} — "
+            f"'FLOW v{version} — Phase {num}: {name} — "
             f"COMPLETE (<formatted_time>)'"
         )
 
@@ -736,10 +717,10 @@ def test_status_formatter_shows_timing_for_completed_phases():
 
     from conftest import make_state
     state = make_state(
-        current_phase=2,
-        phase_statuses={1: "complete", 2: "in_progress"},
+        current_phase="plan",
+        phase_statuses={"start": "complete", "plan": "in_progress"},
     )
-    state["phases"]["1"]["cumulative_seconds"] = 300
+    state["phases"]["start"]["cumulative_seconds"] = 300
     panel = mod.format_panel(state, _plugin_version())
     match = re.search(r"\[x\].*Phase.*\(", panel)
     assert match, (
@@ -820,12 +801,12 @@ def test_phase_state_updates_suppress_output():
     'Phase 1 started at X, now Y = Z seconds.' before the banner."""
     phase_skills = _phase_skills()
 
-    for phase_num in range(1, 8):
-        skill_name = phase_skills[phase_num]
+    for key in PHASE_ORDER[:-1]:
+        skill_name = phase_skills[key]
         content = _read_skill(skill_name)
 
         assert re.search(r"[Dd]o not print", content), (
-            f"Phase {phase_num} ({skill_name}) state update section missing "
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) state update section missing "
             f"'Do not print' instruction — Claude will show timing "
             f"calculation as visible output"
         )
@@ -836,10 +817,10 @@ def test_phase_complete_banners_use_formatted_time():
     <cumulative_seconds>."""
     phase_skills = _phase_skills()
 
-    for phase_num, skill_name in phase_skills.items():
+    for key, skill_name in phase_skills.items():
         content = _read_skill(skill_name)
         assert "<cumulative_seconds>" not in content or "<formatted_time>" in content, (
-            f"Phase {phase_num} ({skill_name}) uses <cumulative_seconds> "
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) uses <cumulative_seconds> "
             f"in banner — use <formatted_time> instead"
         )
 
@@ -849,14 +830,14 @@ def test_phase_skills_have_time_format_instruction():
     completion banner so Claude formats the time correctly."""
     phase_skills = _phase_skills()
 
-    for phase_num, skill_name in phase_skills.items():
+    for key, skill_name in phase_skills.items():
         content = _read_skill(skill_name)
         has_format = (
             "Xh Ym" in content
             or "formatted_time" in content
         )
         assert has_format, (
-            f"Phase {phase_num} ({skill_name}) missing time format "
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing time format "
             f"instruction — must specify format (Xh Ym / Xm / <1m)"
         )
 

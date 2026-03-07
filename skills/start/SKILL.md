@@ -286,7 +286,7 @@ do not announce the framework or explain why steps were skipped.
 Complete the phase:
 
 ```bash
-bin/flow phase-transition --phase 1 --action complete
+bin/flow phase-transition --phase start --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.

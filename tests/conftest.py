@@ -18,7 +18,7 @@ DOCS_DIR = REPO_ROOT / "docs"
 BIN_DIR = REPO_ROOT / "bin"
 
 sys.path.insert(0, str(LIB_DIR))
-from flow_utils import PHASE_NAMES
+from flow_utils import PHASE_NAMES, PHASE_ORDER
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -92,19 +92,19 @@ def state_dir(git_repo):
     return d
 
 
-def make_state(current_phase=1, phase_statuses=None, framework="rails"):
+def make_state(current_phase="start", phase_statuses=None, framework="rails"):
     """Build a minimal state dict.
 
-    phase_statuses is a dict like {1: "complete", 2: "in_progress"}.
+    phase_statuses is a dict like {"start": "complete", "plan": "in_progress"}.
     Unspecified phases default to "pending".
     framework is "rails" or "python" (default "rails").
     """
     phase_statuses = phase_statuses or {}
     phases = {}
-    for i in range(1, 9):
-        status = phase_statuses.get(i, "pending")
-        phases[str(i)] = {
-            "name": PHASE_NAMES[i],
+    for key in PHASE_ORDER:
+        status = phase_statuses.get(key, "pending")
+        phases[key] = {
+            "name": PHASE_NAMES[key],
             "status": status,
             "started_at": None,
             "completed_at": None,

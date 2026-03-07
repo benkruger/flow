@@ -58,27 +58,27 @@ def test_no_state_file_returns_no_state(git_repo):
 
 def test_happy_path_returns_ok(tmp_path):
     """append_note returns updated state with one note."""
-    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    state = make_state(current_phase="plan", phase_statuses={"start": "complete", "plan": "in_progress"})
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
 
-    updated = _mod.append_note(state_path, 2, "correction", "Always merge, never rebase")
+    updated = _mod.append_note(state_path, "plan", "correction", "Always merge, never rebase")
 
     assert len(updated["notes"]) == 1
 
 
 def test_note_written_to_state_file(tmp_path):
     """append_note persists note to disk with all expected fields."""
-    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    state = make_state(current_phase="plan", phase_statuses={"start": "complete", "plan": "in_progress"})
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
 
-    _mod.append_note(state_path, 2, "correction", "Always merge, never rebase")
+    _mod.append_note(state_path, "plan", "correction", "Always merge, never rebase")
 
     updated = json.loads(state_path.read_text())
     assert len(updated["notes"]) == 1
     note = updated["notes"][0]
-    assert note["phase"] == 2
+    assert note["phase"] == "plan"
     assert note["phase_name"] == "Plan"
     assert note["type"] == "correction"
     assert note["note"] == "Always merge, never rebase"
@@ -87,20 +87,20 @@ def test_note_written_to_state_file(tmp_path):
 
 def test_multiple_notes_append(tmp_path):
     """Three sequential append_note calls accumulate all three notes."""
-    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    state = make_state(current_phase="plan", phase_statuses={"start": "complete", "plan": "in_progress"})
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
 
-    _mod.append_note(state_path, 2, "correction", "First note")
-    _mod.append_note(state_path, 2, "learning", "Second note")
-    updated = _mod.append_note(state_path, 2, "correction", "Third note")
+    _mod.append_note(state_path, "plan", "correction", "First note")
+    _mod.append_note(state_path, "plan", "learning", "Second note")
+    updated = _mod.append_note(state_path, "plan", "correction", "Third note")
 
     assert len(updated["notes"]) == 3
 
 
 def test_type_defaults_to_correction(state_dir, git_repo):
     branch = _get_branch(git_repo)
-    state = make_state(current_phase=3, phase_statuses={1: "complete", 2: "complete", 3: "in_progress"})
+    state = make_state(current_phase="code", phase_statuses={"start": "complete", "plan": "complete", "code": "in_progress"})
     path = write_state(state_dir, branch, state)
     result = _run("Default type note", cwd=git_repo)
     assert result.returncode == 0
@@ -130,7 +130,7 @@ def test_corrupt_state_file_returns_error(state_dir, git_repo):
 
 def test_write_failure_returns_error(state_dir, git_repo):
     branch = _get_branch(git_repo)
-    state = make_state(current_phase=2, phase_statuses={1: "complete", 2: "in_progress"})
+    state = make_state(current_phase="plan", phase_statuses={"start": "complete", "plan": "in_progress"})
     path = write_state(state_dir, branch, state)
     path.chmod(0o444)
     result = _run("test note", cwd=git_repo)
@@ -146,20 +146,20 @@ def test_write_failure_returns_error(state_dir, git_repo):
 
 def test_append_note_creates_notes_array_if_missing(tmp_path):
     state_path = tmp_path / "state.json"
-    state = {"feature": "Test", "branch": "test", "current_phase": 1}
+    state = {"feature": "Test", "branch": "test", "current_phase": "start"}
     state_path.write_text(json.dumps(state))
 
-    result = _mod.append_note(state_path, 1, "correction", "test note")
+    result = _mod.append_note(state_path, "start", "correction", "test note")
     assert len(result["notes"]) == 1
 
 
 def test_append_note_preserves_existing_notes(tmp_path):
     state_path = tmp_path / "state.json"
-    state = make_state(current_phase=1, phase_statuses={1: "in_progress"})
-    state["notes"] = [{"phase": 1, "note": "existing"}]
+    state = make_state(current_phase="start", phase_statuses={"start": "in_progress"})
+    state["notes"] = [{"phase": "start", "note": "existing"}]
     state_path.write_text(json.dumps(state))
 
-    result = _mod.append_note(state_path, 1, "learning", "new note")
+    result = _mod.append_note(state_path, "start", "learning", "new note")
     assert len(result["notes"]) == 2
     assert result["notes"][0]["note"] == "existing"
     assert result["notes"][1]["note"] == "new note"

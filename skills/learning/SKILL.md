@@ -27,7 +27,7 @@ stop immediately and show the error to the user.
    - `git branch --show-current` — this is the current branch.
 2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
 3. **Determine mode:**
-   - **State file exists + `phases.6.status` == `"complete"`** → **Phase 7** mode
+   - **State file exists + `phases.security.status` == `"complete"`** → **Phase 7** mode
    - **State file exists + phase 6 incomplete** → STOP. "BLOCKED: Phase 6:
      Security must be complete. Run /flow:security first."
    - **No state file** → Use Glob to check for `flow-phases.json` in the
@@ -80,7 +80,7 @@ At the very start, output the following banner in your response (not via Bash) i
 Update state for phase entry:
 
 ```bash
-bin/flow phase-transition --phase 7 --action enter
+bin/flow phase-transition --phase learning --action enter
 ```
 
 Parse the JSON output to confirm `"status": "ok"`.
@@ -361,7 +361,7 @@ next to each repo-destination file to indicate whether Step 4 committed it.
 Complete the phase:
 
 ```bash
-bin/flow phase-transition --phase 7 --action complete
+bin/flow phase-transition --phase learning --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.

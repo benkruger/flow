@@ -28,7 +28,7 @@ stop immediately and show the error to the user.
 2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
      Run /flow:start first."
-3. Check `phases.2.status` in the JSON.
+3. Check `phases.plan.status` in the JSON.
    - If not `"complete"`: STOP. "BLOCKED: Phase 2: Plan must be
      complete. Run /flow:plan first."
 </HARD-GATE>
@@ -63,7 +63,7 @@ At the very start, output the following banner in your response (not via Bash) i
 Update state for phase entry:
 
 ```bash
-bin/flow phase-transition --phase 3 --action enter
+bin/flow phase-transition --phase code --action enter
 ```
 
 Parse the JSON output to confirm `"status": "ok"`.
@@ -423,7 +423,7 @@ is empty. 100% coverage is mandatory.
 Complete the phase:
 
 ```bash
-bin/flow phase-transition --phase 3 --action complete
+bin/flow phase-transition --phase code --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
