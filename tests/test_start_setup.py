@@ -251,7 +251,7 @@ def test_state_file_has_all_8_phases(_default_run):
 
     expected_names = {
         "1": "Start", "2": "Plan", "3": "Code", "4": "Simplify",
-        "5": "Review", "6": "Security", "7": "Reflect", "8": "Cleanup",
+        "5": "Review", "6": "Security", "7": "Learning", "8": "Cleanup",
     }
     assert len(state["phases"]) == 8
     for num, name in expected_names.items():

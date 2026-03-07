@@ -19,7 +19,7 @@ FLOW imposes structure. Not bureaucracy — discipline.
 ## The Workflow
 
 ```text
-Start → Plan → Code → Simplify → Review → Security → Reflect → Cleanup
+Start → Plan → Code → Simplify → Review → Security → Learning → Cleanup
   1       2      3       4          5          6          7         8
 ```
 
@@ -31,8 +31,56 @@ Start → Plan → Code → Simplify → Review → Security → Reflect → Cle
 | **4: Simplify** | `/flow:simplify` | Sonnet | Invoke `/simplify` on committed code, refactor for clarity, auto-commit |
 | **5: Review** | `/flow:review` | Sonnet | Sub-agent checks plan alignment, risk coverage, framework anti-patterns |
 | **6: Security** | `/flow:security` | **Opus** | Sub-agent scans diff for vulnerabilities, auth gaps, data exposure, injection risks |
-| **7: Reflect** | `/flow:reflect` | Sonnet | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
+| **7: Learning** | `/flow:learning` | Sonnet | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
 | **8: Cleanup** | `/flow:cleanup` | Haiku | Worktree removed, state file deleted, feature done |
+
+---
+
+## You Control the Autonomy
+
+Every skill has two independent axes you can tune:
+
+- **Commit** — whether Claude shows diffs for approval or commits autonomously
+- **Continue** — whether Claude prompts before advancing to the next phase or auto-advances
+
+Start fully manual. As your comfort grows, dial up autonomy per skill. Go fully autonomous when you trust the workflow.
+
+### Four preset levels via `/flow:init`
+
+| Level | What it means |
+|-------|--------------|
+| **Fully autonomous** | All skills auto for both axes — zero prompts |
+| **Fully manual** | Every diff reviewed, every phase transition confirmed |
+| **Recommended** | Auto where safe (Simplify, Security), manual where judgment matters (Code, Plan) |
+| **Customize** | Choose per skill and per axis |
+
+### Runtime overrides
+
+Any skill invocation accepts `--auto` or `--manual` to override the configured setting for that run:
+
+```text
+/flow:code --auto        # skip per-task approval for this session
+/flow:security --manual  # prompt before advancing, just this once
+```
+
+### Configuration lives in `.flow.json`
+
+```json
+{
+  "skills": {
+    "start": {"continue": "manual"},
+    "code": {"commit": "manual", "continue": "manual"},
+    "simplify": {"commit": "auto", "continue": "auto"},
+    "review": {"commit": "auto", "continue": "auto"},
+    "security": {"continue": "auto"},
+    "learning": {"commit": "auto", "continue": "auto"},
+    "abort": "auto",
+    "cleanup": "auto"
+  }
+}
+```
+
+View your current settings anytime with `/flow:config`.
 
 ---
 
@@ -122,7 +170,7 @@ FLOW automatically selects the right model for each phase — Opus for hard thin
 | 4: Simplify | Sonnet | Invoke `/simplify` for clarity refactoring, auto-commit |
 | 5: Review | Sonnet | Sub-agent analyzes diff, fixes are targeted and small |
 | 6: Security | **Opus** | Security analysis requires architectural reasoning about attack vectors and data flows |
-| 7: Reflect | Sonnet | Synthesizing learnings into reusable patterns |
+| 7: Learning | Sonnet | Synthesizing learnings into reusable patterns |
 | 8: Cleanup | Haiku | Delete worktree and state file |
 | Commit | Sonnet | Writing clear, well-structured commit messages |
 
@@ -157,7 +205,7 @@ Every correction and observation has a path to becoming a permanent, reusable pa
 User corrects Claude → /flow:note captures it in state["notes"]
 Claude writes observations → auto-memory (shared across worktrees)
        ↓
-Reflect reads three sources (CLAUDE.md rules, conversation context, state/plan data)
+Learning reads three sources (CLAUDE.md rules, conversation context, state/plan data)
        ↓
 Each learning is routed to the right destination:
   Instructions (rules Claude must follow):
@@ -240,7 +288,6 @@ These skills and scripts live in the FLOW repo itself (`.claude/skills/` and `li
 
 | Command | What it does |
 |---------|-------------|
-| `/reflect` | Review session mistakes against CLAUDE.md rules, propose targeted improvements |
 | `/release` | Bump version in plugin.json and marketplace.json, tag, push, create GitHub Release |
 | `/qa` | `--start`/`--stop`/`--restart` dev mode — nukes plugin cache, swaps marketplace source, tracks via `.dev-mode` marker |
 | `/reset` | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files |

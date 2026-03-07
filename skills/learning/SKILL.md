@@ -1,22 +1,22 @@
 ---
-name: reflect
-description: "Phase 7: Reflect — review what went wrong, capture learnings, route each to its correct permanent home. Runs before the PR is merged. The only commits are CLAUDE.md and .claude/ changes."
+name: learning
+description: "Phase 7: Learning — review what went wrong, capture learnings, route each to its correct permanent home. Runs before the PR is merged. The only commits are CLAUDE.md and .claude/ changes."
 model: sonnet
 ---
 
-# Reflect
+# Learning
 
 ## Usage
 
 ```text
-/flow:reflect
-/flow:reflect --auto
-/flow:reflect --manual
+/flow:learning
+/flow:learning --auto
+/flow:learning --manual
 ```
 
-- `/flow:reflect` — uses configured mode from `.flow.json` (default: auto)
-- `/flow:reflect --auto` — skip permission promotion prompts, auto-advance to Cleanup
-- `/flow:reflect --manual` — prompt for permission promotion and phase transition
+- `/flow:learning` — uses configured mode from `.flow.json` (default: auto)
+- `/flow:learning --auto` — skip permission promotion prompts, auto-advance to Cleanup
+- `/flow:learning --manual` — prompt for permission promotion and phase transition
 
 <HARD-GATE>
 Run this entry check as your very first action. If any check fails,
@@ -46,7 +46,7 @@ to the project root — `bin/flow` commands find paths internally.
 
 1. If `--auto` was passed → commit=auto, continue=auto
 2. If `--manual` was passed → commit=manual, continue=manual
-3. Otherwise, read `.flow.json` from the project root. Use `skills.reflect.commit` and `skills.reflect.continue`.
+3. Otherwise, read `.flow.json` from the project root. Use `skills.learning.commit` and `skills.learning.continue`.
 4. If `.flow.json` has no `skills` key → use built-in defaults: commit=auto, continue=auto
 
 ## Announce
@@ -58,7 +58,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ============================================
-  FLOW v0.17.0 — Phase 7: Reflect — STARTING
+  FLOW v0.17.0 — Phase 7: Learning — STARTING
 ============================================
 ```
 ````
@@ -68,7 +68,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ============================================
-  Reflect — STARTING
+  Learning — STARTING
 ============================================
 ```
 ````
@@ -88,7 +88,7 @@ If `"status": "error"`, report the error and stop.
 
 ## Logging
 
-No logging for this phase. Reflect runs no Bash commands beyond the entry
+No logging for this phase. Learning runs no Bash commands beyond the entry
 gate — there is nothing to log.
 
 ---
@@ -284,7 +284,7 @@ Skip for Maintainer and Standalone.
 For each item in "Process gaps", file a GitHub issue on the plugin repo:
 
 ```bash
-gh issue create --repo benkruger/flow --label reflect --title "<issue_title>" --body "<issue_body>"
+gh issue create --repo benkruger/flow --label learning --title "<issue_title>" --body "<issue_body>"
 ```
 
 The issue title should be a concise description of the process gap. The
@@ -303,7 +303,7 @@ Present the full report to the user:
 ````markdown
 ```text
 ============================================
-  Reflect — Report
+  Learning — Report
 ============================================
 
   Findings
@@ -373,7 +373,7 @@ Output in your response (not via Bash) inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW v0.17.0 — Phase 7: Reflect — COMPLETE (<formatted_time>)
+  FLOW v0.17.0 — Phase 7: Learning — COMPLETE (<formatted_time>)
   Merge the PR, then run /flow:cleanup.
 ============================================
 ```
@@ -385,7 +385,7 @@ Invoke `flow:status`.
 
 **If continue=manual**, use AskUserQuestion:
 
-> "Phase 7: Reflect is complete. The PR now includes CLAUDE.md improvements. Ready to begin Phase 8: Cleanup?"
+> "Phase 7: Learning is complete. The PR now includes CLAUDE.md improvements. Ready to begin Phase 8: Cleanup?"
 >
 > - **Yes, start Phase 8 now** — invoke `flow:cleanup`
 > - **Not yet** — print paused banner
@@ -416,7 +416,7 @@ Output in your response (not via Bash) inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  Reflect — COMPLETE
+  Learning — COMPLETE
 ============================================
 ```
 ````
@@ -427,10 +427,10 @@ No phase transition, no transition question.
 
 ## Hard Rules
 
-- Never commit application code in Reflect — only CLAUDE.md and .claude/
+- Never commit application code in Learning — only CLAUDE.md and .claude/
 - Always read CLAUDE.md and conversation context before synthesizing findings
 - In Phase 7, read all three sources before synthesizing findings
-- Follow the reflection process (Steps 1 through 7) exactly — do not skip or reorder steps
+- Follow the learning process (Steps 1 through 7) exactly — do not skip or reorder steps
 - Decisions on destinations and wording are autonomous — do not ask the user for approval mid-process
 - The report in Step 7 is the user's review point — make it comprehensive
 - Global writes (`~/.claude/CLAUDE.md`, `~/.claude/rules/`, `~/.claude/projects/`) are direct edits — never committed

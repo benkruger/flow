@@ -6,7 +6,7 @@
     "4": { "name": "Simplify",  "command": "/flow:simplify",  "can_return_to": ["3"] },
     "5": { "name": "Review",    "command": "/flow:review",    "can_return_to": ["3", "2"] },
     "6": { "name": "Security",  "command": "/flow:security",  "can_return_to": [] },
-    "7": { "name": "Reflect",   "command": "/flow:reflect",   "can_return_to": [] },
+    "7": { "name": "Learning",  "command": "/flow:learning",  "can_return_to": [] },
     "8": { "name": "Cleanup",   "command": "/flow:cleanup",   "can_return_to": [] }
   }
 }

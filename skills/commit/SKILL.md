@@ -87,7 +87,7 @@ On completion (whether approved or denied), print the same way:
 2. If `--manual` was passed → mode is **manual**
 3. Otherwise → mode is **auto**
 
-`--auto` is user-invoked only. Claude must never call `/flow:commit --auto` programmatically — except in `/flow:reflect`, which is fully autonomous and commits without mid-process approval.
+`--auto` is user-invoked only. Claude must never call `/flow:commit --auto` programmatically — except in `/flow:learning`, which is fully autonomous and commits without mid-process approval.
 
 ---
 
@@ -272,7 +272,7 @@ will make fixes and re-invoke the commit skill when ready.
 
 - Never commit without showing the diff first
 - The default commit mode is auto — never prompt for approval unless `--manual` was explicitly passed
-- `--auto` is user-invoked only. Claude must never call `/flow:commit --auto` programmatically — except in `/flow:reflect`, which is fully autonomous and commits without mid-process approval.
+- `--auto` is user-invoked only. Claude must never call `/flow:commit --auto` programmatically — except in `/flow:learning`, which is fully autonomous and commits without mid-process approval.
 - Never use `--no-verify`
 - Never add Co-Authored-By trailers or attribution lines — commits are authored by the user alone
 - Always pull before pushing — other sessions may have merged changes

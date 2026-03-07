@@ -109,7 +109,7 @@ Replace `PREV` with the previous phase number and `PREV_NAME` with its name:
 Phases with sub-agents: Review, Security.
 Start uses a Sonnet sub-agent for CI failures.
 Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`).
-Phases without sub-agents: Code, Reflect, Cleanup.
+Phases without sub-agents: Code, Learning, Cleanup.
 
 The pattern for Review and Security:
 

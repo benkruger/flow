@@ -1,14 +1,14 @@
 ---
-title: /flow:reflect
+title: /flow:learning
 nav_order: 9
 parent: Skills
 ---
 
-# /flow:reflect
+# /flow:learning
 
-**Phase:** 7 — Reflect
+**Phase:** 7 — Learning
 
-**Usage:** `/flow:reflect`, `/flow:reflect --auto`, or `/flow:reflect --manual`
+**Usage:** `/flow:learning`, `/flow:learning --auto`, or `/flow:learning --manual`
 
 Autonomously synthesises what went wrong from three sources, routes each
 learning to its correct permanent home, files GitHub issues for plugin
@@ -44,7 +44,7 @@ Destinations 2, 4 are committed to the feature branch via `/flow:commit --auto`.
 
 **Plugin improvement notes** — filed as GitHub issues:
 
-- One issue per process gap on the plugin repo, labeled `reflect`
+- One issue per process gap on the plugin repo, labeled `learning`
 - Issue body describes the gap generically (no user project details)
 
 **Report** — presented after all changes are applied:
@@ -57,7 +57,7 @@ Destinations 2, 4 are committed to the feature branch via `/flow:commit --auto`.
 
 ## Modes
 
-Reflect auto-detects its context:
+Learning auto-detects its context:
 
 | Mode | When | Sources | Commits | Settings audit |
 |------|------|---------|---------|----------------|
@@ -65,8 +65,8 @@ Reflect auto-detects its context:
 | Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow:commit --auto` | Yes |
 | Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | No |
 
-Standalone mode lets any project use `/flow:reflect` without a FLOW
-feature in progress — just reflect on the current session and apply
+Standalone mode lets any project use `/flow:learning` without a FLOW
+feature in progress — just review the current session and apply
 learnings.
 
 ---

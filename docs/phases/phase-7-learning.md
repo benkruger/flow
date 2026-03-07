@@ -1,11 +1,11 @@
 ---
-title: "Phase 7: Reflect"
+title: "Phase 7: Learning"
 nav_order: 8
 ---
 
-# Phase 7: Reflect
+# Phase 7: Learning
 
-**Command:** `/flow:reflect`
+**Command:** `/flow:learning`
 
 Runs before the PR is merged. Autonomously reviews what went wrong across
 all phases, routes learnings to their correct permanent homes, files GitHub
@@ -17,7 +17,7 @@ never touched.
 
 ## Three Sources
 
-Reflect synthesises from all three before taking any action:
+Learning synthesises from all three before taking any action:
 
 1. **CLAUDE.md rules** — the project's rules and conventions that should have been followed
 2. **Conversation context** — what Claude can still see of the session's back-and-forth
@@ -41,7 +41,7 @@ Claude decides destinations autonomously using content-type heuristics:
 
 **Plugin improvement notes** — filed as GitHub issues on the plugin repo:
 - Places where the FLOW process itself should improve
-- One issue per process gap, labeled `reflect`
+- One issue per process gap, labeled `learning`
 
 ---
 
@@ -57,7 +57,7 @@ Claude decides destinations autonomously using content-type heuristics:
 
 ## Three Modes
 
-Reflect auto-detects its context and adjusts behavior:
+Learning auto-detects its context and adjusts behavior:
 
 | Mode | Trigger | Sources | Commits | Settings audit | GitHub issues |
 |------|---------|---------|---------|----------------|---------------|

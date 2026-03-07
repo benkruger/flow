@@ -1,6 +1,6 @@
 ---
 name: cleanup
-description: "Phase 8: Cleanup — remove the worktree and delete the state file. Final phase. Requires Phase 7: Reflect to be complete."
+description: "Phase 8: Cleanup — remove the worktree and delete the state file. Final phase. Requires Phase 7: Learning to be complete."
 model: haiku
 ---
 

@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import now
+from flow_utils import now, PHASE_NAMES
 
 
 def _branch_name(feature_words):
@@ -117,15 +117,11 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
                        framework="rails"):
     """Create the FLOW state file."""
     current_time = now()
-    phase_names = {
-        1: "Start", 2: "Plan", 3: "Code", 4: "Simplify",
-        5: "Review", 6: "Security", 7: "Reflect", 8: "Cleanup",
-    }
     phases = {}
     for i in range(1, 9):
         if i == 1:
             phases[str(i)] = {
-                "name": phase_names[i],
+                "name": PHASE_NAMES[i],
                 "status": "in_progress",
                 "started_at": current_time,
                 "completed_at": None,
@@ -135,7 +131,7 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
             }
         else:
             phases[str(i)] = {
-                "name": phase_names[i],
+                "name": PHASE_NAMES[i],
                 "status": "pending",
                 "started_at": None,
                 "completed_at": None,

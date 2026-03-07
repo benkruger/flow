@@ -22,7 +22,13 @@ def now():
 
 PHASE_NAMES = {
     1: "Start", 2: "Plan", 3: "Code", 4: "Simplify",
-    5: "Review", 6: "Security", 7: "Reflect", 8: "Cleanup",
+    5: "Review", 6: "Security", 7: "Learning", 8: "Cleanup",
+}
+
+COMMANDS = {
+    1: "/flow:start", 2: "/flow:plan", 3: "/flow:code",
+    4: "/flow:simplify", 5: "/flow:review", 6: "/flow:security",
+    7: "/flow:learning", 8: "/flow:cleanup",
 }
 
 

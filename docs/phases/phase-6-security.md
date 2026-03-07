@@ -30,11 +30,11 @@ commit, then move to the next.
 ## bin/flow ci Rule
 
 `bin/flow ci` runs after every fix made during Security.
-Security does not transition to Reflect until `bin/flow ci` is green.
+Security does not transition to Learning until `bin/flow ci` is green.
 
 ---
 
 ## What Comes Next
 
-Phase 7: Reflect (`/flow:reflect`) — extract learnings and update
+Phase 7: Learning (`/flow:learning`) — extract learnings and update
 CLAUDE.md before the PR is merged.

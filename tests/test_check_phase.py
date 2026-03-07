@@ -149,7 +149,7 @@ def test_phase_6_requires_phase_5_complete():
 
 
 def test_phase_7_requires_phase_6_complete():
-    """Phase 7 (Reflect) requires phase 6 (Security) to be complete."""
+    """Phase 7 (Learning) requires phase 6 (Security) to be complete."""
     state = make_state(
         current_phase=7,
         phase_statuses={
@@ -163,7 +163,7 @@ def test_phase_7_requires_phase_6_complete():
 
 
 def test_phase_8_requires_phase_7_complete():
-    """Phase 8 (Cleanup) requires phase 7 (Reflect) to be complete."""
+    """Phase 8 (Cleanup) requires phase 7 (Learning) to be complete."""
     state = make_state(
         current_phase=8,
         phase_statuses={

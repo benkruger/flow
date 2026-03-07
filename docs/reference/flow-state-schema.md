@@ -110,7 +110,7 @@ Each phase entry has identical fields regardless of status.
 ## Notes Array
 
 Populated throughout the session by `/flow:note`. Survives compaction
-and session restarts. Read by Reflect as a primary source.
+and session restarts. Read by Learning as a primary source.
 
 ```json
 "notes": [

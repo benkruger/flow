@@ -401,7 +401,7 @@ def test_phase_skills_with_content_writes_have_state_write_instruction():
 
     Plan uses Claude Code's native plan mode (plan file, not state).
     Skills that only use bin/flow commands for state mutations (start, code,
-    review, reflect) do not need this instruction."""
+    review, learning) do not need this instruction."""
     phase_skills = _phase_skills()
     content_write_phases = {6}  # security
     for phase_num in content_write_phases:
@@ -482,14 +482,14 @@ def test_model_frontmatter_is_valid():
 
 def test_model_frontmatter_matches_documented_table():
     """Model frontmatter must match: opus for Plan/Code/Security, sonnet for
-    Review/Reflect/Commit, haiku for Start/Cleanup."""
+    Review/Learning/Commit, haiku for Start/Cleanup."""
     expected = {
         "start": "haiku",
         "plan": "opus",
         "code": "opus",
         "review": "sonnet",
         "security": "opus",
-        "reflect": "sonnet",
+        "learning": "sonnet",
         "cleanup": "haiku",
         "commit": "sonnet",
     }
@@ -943,12 +943,12 @@ def test_commit_mode_resolution():
 def test_no_skill_invokes_commit_with_auto():
     """Skills that use /flow:commit --auto must be in the allow list.
 
-    Reflect uses --auto because the phase is fully autonomous. Simplify
+    Learning uses --auto because the phase is fully autonomous. Simplify
     uses --auto because the user already approved changes in Step 2. Code
     and review conditionally use --auto based on the commit axis setting."""
     for d in sorted(SKILLS_DIR.iterdir()):
         if not d.is_dir() or d.name in (
-            "commit", "reflect", "simplify", "code", "review",
+            "commit", "learning", "simplify", "code", "review",
         ):
             continue
         content = (d / "SKILL.md").read_text()
@@ -989,13 +989,13 @@ def test_no_framework_fragment_files():
         )
 
 
-def test_reflect_has_no_worktree_memory_rescue():
-    """Reflect skill must not contain worktree memory rescue logic.
+def test_learning_has_no_worktree_memory_rescue():
+    """Learning skill must not contain worktree memory rescue logic.
 
     Since Claude Code 2.1.63, auto-memory is shared across git worktrees
     of the same repository. Worktree-specific memory paths no longer exist,
     so Source D rescue is obsolete."""
-    content = _read_skill("reflect")
+    content = _read_skill("learning")
     obsolete_terms = [
         "Source D",
         "worktree auto-memory",
@@ -1004,7 +1004,7 @@ def test_reflect_has_no_worktree_memory_rescue():
     ]
     found = [term for term in obsolete_terms if term in content]
     assert not found, (
-        f"skills/reflect/SKILL.md still contains obsolete terms: {found} — "
+        f"skills/learning/SKILL.md still contains obsolete terms: {found} — "
         f"worktree memory rescue is obsolete since Claude Code 2.1.63"
     )
 
@@ -1029,7 +1029,7 @@ def test_multi_framework_skills_have_both_sections():
 
 CONFIGURABLE_SKILLS = [
     "start", "code", "simplify", "review", "security",
-    "reflect", "abort", "cleanup",
+    "learning", "abort", "cleanup",
 ]
 
 
@@ -1054,7 +1054,7 @@ def test_configurable_skills_have_mode_resolution():
         )
 
 
-TWO_AXIS_SKILLS = ["code", "simplify", "review", "reflect"]
+TWO_AXIS_SKILLS = ["code", "simplify", "review", "learning"]
 CONTINUE_ONLY_SKILLS = ["start", "security"]
 UTILITY_SKILLS = ["abort", "cleanup"]
 
