@@ -13,6 +13,18 @@ from conftest import DOCS_DIR, REPO_ROOT, SKILLS_DIR
 from flow_utils import PHASE_NUMBER
 
 
+REQUIRED_FEATURES = {
+    "Autonomy config": ["autonomy"],
+    "Learning system": ["learning system"],
+    "Native Claude features": ["plan mode"],
+    "Model selection": ["opus"],
+    "Zero dependencies": ["zero dependencies"],
+    "Minimal repo artifacts": [".flow-states"],
+    "Plugin updates": ["marketplace update", "plugin marketplace"],
+    "Multi-language": ["rails"],
+}
+
+
 def _load_phases():
     return json.loads((REPO_ROOT / "flow-phases.json").read_text())
 
@@ -221,4 +233,40 @@ def test_schema_doc_covers_top_level_fields():
         assert re.search(pattern, schema), (
             f"docs/reference/flow-state-schema.md does not document "
             f"top-level field '{field}'"
+        )
+
+
+# --- Key feature coverage ---
+
+
+def test_readme_covers_key_features():
+    """README.md must mention all key features by keyword."""
+    readme = (REPO_ROOT / "README.md").read_text().lower()
+    for feature, keywords in REQUIRED_FEATURES.items():
+        found = any(kw.lower() in readme for kw in keywords)
+        assert found, (
+            f"README.md does not mention feature '{feature}' "
+            f"(looked for: {keywords})"
+        )
+
+
+def test_landing_page_covers_key_features():
+    """docs/index.html must mention all key features by keyword."""
+    html = (DOCS_DIR / "index.html").read_text().lower()
+    for feature, keywords in REQUIRED_FEATURES.items():
+        found = any(kw.lower() in html for kw in keywords)
+        assert found, (
+            f"docs/index.html does not mention feature '{feature}' "
+            f"(looked for: {keywords})"
+        )
+
+
+def test_landing_page_mentions_all_phase_commands():
+    """docs/index.html must mention all 8 phase commands."""
+    html = (DOCS_DIR / "index.html").read_text()
+    data = _load_phases()
+    for key, phase in data["phases"].items():
+        assert phase["command"] in html, (
+            f"docs/index.html does not mention phase command "
+            f"'{phase['command']}'"
         )
