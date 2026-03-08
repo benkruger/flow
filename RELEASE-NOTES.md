@@ -1,5 +1,24 @@
 # Release Notes
 
+## v0.20.0 — Init versioning and collapsed phases
+
+### New
+
+- **Init versioning** — `flow-init` now writes a version marker to the target
+  project, enabling version-aware upgrade detection.
+- **Collapsed phases** — Phase status display collapses completed phases for a
+  cleaner overview.
+
+### Improvements
+
+- Banner fence pattern standardized to `` ````markdown `` + `` ```text `` across
+  all skills for consistent rendering.
+- Removed `flow:` namespace prefix from user-facing docs; maintainer skills
+  renamed for clarity.
+- `/flow-qa` rewritten to use plugin uninstall/install for reliable dev-mode
+  toggling; bare invocation now shows status instead of starting.
+- Commit subjects now require full sentences (imperative verb + period).
+
 ## v0.19.1 — Block compound shell commands and fix init instruction
 
 ### Fixes
