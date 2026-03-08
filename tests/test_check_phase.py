@@ -190,6 +190,54 @@ def test_invalid_phase_name_raises():
 # --- Worktree resolution (subprocess) ---
 
 
+def test_check_phase_uses_frozen_config():
+    """check_phase uses phase_config tuple when provided."""
+    custom_order = ["flow-start", "flow-plan", "flow-code-review"]
+    custom_names = {"flow-start": "Start", "flow-plan": "Plan", "flow-code-review": "Review"}
+    custom_numbers = {"flow-start": 1, "flow-plan": 2, "flow-code-review": 3}
+    custom_commands = {"flow-start": "/t:a", "flow-plan": "/t:b", "flow-code-review": "/t:c"}
+    config = (custom_order, custom_names, custom_numbers, custom_commands)
+
+    state = make_state(current_phase="flow-code-review", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete",
+    })
+    allowed, output = _mod.check_phase(state, "flow-code-review", phase_config=config)
+    assert allowed
+
+
+def test_check_phase_frozen_config_uses_correct_predecessor():
+    """check_phase with phase_config uses the config's predecessor, not the default."""
+    custom_order = ["flow-start", "flow-code", "flow-plan"]
+    custom_names = {"flow-start": "Start", "flow-code": "Code", "flow-plan": "Plan"}
+    custom_numbers = {"flow-start": 1, "flow-code": 2, "flow-plan": 3}
+    custom_commands = {"flow-start": "/t:a", "flow-code": "/t:b", "flow-plan": "/t:c"}
+    config = (custom_order, custom_names, custom_numbers, custom_commands)
+
+    state = make_state(current_phase="flow-plan", phase_statuses={
+        "flow-start": "complete", "flow-code": "pending",
+    })
+    # In default PHASE_ORDER, flow-plan's predecessor is flow-start (complete).
+    # In custom order, flow-plan's predecessor is flow-code (pending) → blocked.
+    allowed, output = _mod.check_phase(state, "flow-plan", phase_config=config)
+    assert not allowed
+    assert "BLOCKED" in output
+
+
+def test_cli_uses_frozen_phases_file(git_repo, state_dir, branch):
+    """CLI loads frozen phases file when it exists."""
+    import shutil
+    source = LIB_DIR.parent / "flow-phases.json"
+    frozen = state_dir / f"{branch}-phases.json"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(source), str(frozen))
+
+    state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete"})
+    write_state(state_dir, branch, state)
+
+    result = _run(git_repo, "flow-plan")
+    assert result.returncode == 0
+
+
 def test_worktree_finds_state_in_main_repo(git_repo, state_dir):
     """Running from a worktree should find state files in the main repo."""
     # Create a branch for the worktree

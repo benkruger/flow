@@ -21,25 +21,35 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import current_branch, project_root, COMMANDS, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER
+from flow_utils import (
+    current_branch, load_phase_config, project_root,
+    COMMANDS, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER,
+)
 
 
-def check_phase(state, phase):
+def check_phase(state, phase, phase_config=None):
     """Check if entry into `phase` is allowed given the state dict.
 
     Returns (allowed: bool, output: str) where output is the message to print.
     output is empty string if allowed with no note.
+    phase_config is an optional (order, names, numbers, commands) tuple from
+    load_phase_config. Falls back to module-level constants when None.
     """
-    phase_idx = PHASE_ORDER.index(phase)
-    prev = PHASE_ORDER[phase_idx - 1]
+    if phase_config:
+        order, names, numbers, commands = phase_config
+    else:
+        order, names, numbers, commands = PHASE_ORDER, PHASE_NAMES, PHASE_NUMBER, COMMANDS
+
+    phase_idx = order.index(phase)
+    prev = order[phase_idx - 1]
     prev_data = state.get("phases", {}).get(prev, {})
     prev_status = prev_data.get("status", "pending")
-    prev_name = PHASE_NAMES.get(prev, prev)
-    prev_num = PHASE_NUMBER.get(prev, "?")
-    prev_cmd = COMMANDS.get(prev, f"/flow:{prev}")
+    prev_name = names.get(prev, prev)
+    prev_num = numbers.get(prev, "?")
+    prev_cmd = commands.get(prev, f"/flow:{prev}")
 
-    phase_name = PHASE_NAMES.get(phase, phase)
-    phase_num = PHASE_NUMBER.get(phase, "?")
+    phase_name = names.get(phase, phase)
+    phase_num = numbers.get(phase, "?")
 
     if prev_status != "complete":
         lines = [
@@ -90,7 +100,13 @@ def main():
         print(f"BLOCKED: Could not read state file: {e}")
         sys.exit(1)
 
-    allowed, output = check_phase(state, phase)
+    # Load frozen phase config if available
+    frozen_path = root / ".flow-states" / f"{branch}-phases.json"
+    phase_config = None
+    if frozen_path.exists():
+        phase_config = load_phase_config(frozen_path)
+
+    allowed, output = check_phase(state, phase, phase_config=phase_config)
     if output:
         print(output)
     sys.exit(0 if allowed else 1)
