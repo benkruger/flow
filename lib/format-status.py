@@ -46,7 +46,7 @@ def _read_version():
         return "?"
 
 
-def format_panel(state, version, now=None):
+def format_panel(state, version, now=None, dev_mode=False):
     """Build the status panel string from state dict and version."""
     phases = state.get("phases", {})
 
@@ -57,11 +57,12 @@ def format_panel(state, version, now=None):
     )
 
     if all_complete:
-        return _format_all_complete(state, version, phases)
+        return _format_all_complete(state, version, phases, dev_mode=dev_mode)
 
+    dev_label = " [DEV MODE]" if dev_mode else ""
     lines = []
     lines.append("============================================")
-    lines.append(f"  FLOW v{version} — Current Status")
+    lines.append(f"  FLOW v{version} — Current Status{dev_label}")
     lines.append("============================================")
     lines.append("")
     lines.append(f"  Feature : {state['feature']}")
@@ -130,11 +131,12 @@ def format_panel(state, version, now=None):
     return "\n".join(lines)
 
 
-def _format_all_complete(state, version, phases):
+def _format_all_complete(state, version, phases, dev_mode=False):
     """Build the enriched all-complete panel."""
+    dev_label = " [DEV MODE]" if dev_mode else ""
     lines = []
     lines.append("============================================")
-    lines.append(f"  FLOW v{version} — All Phases Complete!")
+    lines.append(f"  FLOW v{version} — All Phases Complete!{dev_label}")
     lines.append("============================================")
     lines.append("")
     lines.append(f"  Feature : {state['feature']}")
@@ -165,11 +167,12 @@ def _format_all_complete(state, version, phases):
     return "\n".join(lines)
 
 
-def format_multi_panel(results, version):
+def format_multi_panel(results, version, dev_mode=False):
     """Build a summary panel listing multiple active features."""
+    dev_label = " [DEV MODE]" if dev_mode else ""
     lines = []
     lines.append("============================================")
-    lines.append(f"  FLOW v{version} — Multiple Features Active")
+    lines.append(f"  FLOW v{version} — Multiple Features Active{dev_label}")
     lines.append("============================================")
     lines.append("")
 
@@ -205,14 +208,15 @@ def main():
         sys.exit(1)
 
     version = _read_version()
+    dev_mode = (root / ".flow-states" / ".dev-mode").exists()
 
     if len(results) > 1:
-        panel = format_multi_panel(results, version)
+        panel = format_multi_panel(results, version, dev_mode=dev_mode)
         print(panel)
         sys.exit(0)
 
     state_path, state, matched_branch = results[0]
-    panel = format_panel(state, version)
+    panel = format_panel(state, version, dev_mode=dev_mode)
     print(panel)
 
 

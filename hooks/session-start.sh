@@ -53,6 +53,15 @@ for path in files:
 if not states:
     sys.exit(0)
 
+dev_mode = (state_dir / ".dev-mode").exists()
+dev_preamble = ""
+if dev_mode:
+    dev_preamble = (
+        "[DEV MODE] FLOW plugin is running from local source.\n"
+        "When printing any FLOW banner, add [DEV MODE] after the version number.\n"
+        "\n"
+    )
+
 if len(states) == 1:
     s = states[0]
     cp = s.get("current_phase", "flow-start")
@@ -75,6 +84,7 @@ if len(states) == 1:
 
     context = (
         "<flow-session-context>\n"
+        f"{dev_preamble}"
         f'FLOW feature in progress: "{feature}" — {phase_name}\n'
         "\n"
         f"{resume_instruction}"
@@ -96,6 +106,7 @@ else:
 
     context = (
         "<flow-session-context>\n"
+        f"{dev_preamble}"
         "Multiple FLOW features are in progress:\n"
         f"{feature_list}\n"
         "\n"

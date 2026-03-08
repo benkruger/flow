@@ -302,17 +302,32 @@ These skills and scripts live in the FLOW repo itself (`.claude/skills/` and `li
 | Command | What it does |
 |---------|-------------|
 | `/release` | Bump version in plugin.json and marketplace.json, tag, push, create GitHub Release |
+| `/flow-qa` | `--start`/`--stop` dev mode — nukes plugin cache, swaps marketplace source, tracks via `.dev-mode` marker |
 | `/reset` | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files |
 
 ### Local QA Workflow
 
-Test plugin changes locally before releasing:
+Every plugin change can be tested locally before releasing:
 
 ```bash
-claude --plugin-dir=$HOME/code/flow
+/flow-qa --start
 ```
 
-This loads the plugin directly from the local source directory. No cache manipulation needed — changes are picked up immediately. Open a new session each time you want to test updated skill files.
+This nukes the plugin cache directory, re-registers the marketplace to point at the local source, and updates the cache. Open a new Claude Code session in a target project to test. When done:
+
+```bash
+/flow-qa --stop
+```
+
+This nukes the cache again, restores the marketplace to the GitHub source, and updates. A `.flow-states/.dev-mode` marker tracks whether dev mode is active.
+
+The underlying commands can also be run directly:
+
+```bash
+rm -rf ~/.claude/plugins/cache/flow-marketplace
+claude plugin marketplace add /path/to/flow    # point cache at local source
+claude plugin marketplace update flow-marketplace
+```
 
 ---
 

@@ -35,7 +35,7 @@ List any worktrees besides the main working tree.
 
 ### State files
 
-Use Glob to find all files in `.flow-states/` — JSON state files and logs.
+Use Glob to find all files in `.flow-states/` — JSON state files, logs, and the dev mode marker.
 
 ### Local branches
 
@@ -67,6 +67,10 @@ gh pr list --state open --json number,headRefName
 
 List any open PRs.
 
+### Dev mode
+
+Check if `.flow-states/.dev-mode` exists using the Read tool.
+
 ### Display inventory
 
 Print the full inventory inside a fenced code block:
@@ -81,6 +85,7 @@ State files: <count>
 Local branches: <count>
 Remote branches: <count>
 Open PRs: <count>
+Dev mode: active / inactive
 ============================================
 ````
 
@@ -125,7 +130,27 @@ For each local branch (besides `main`), run `git branch -D <name>`.
 
 ### Delete state files and logs
 
-For each file in `.flow-states/`, run `rm .flow-states/<filename>`.
+For each file in `.flow-states/` (JSON, log, and any other files except `.dev-mode` which is handled below), run `rm .flow-states/<filename>`.
+
+### Restore production marketplace (if dev mode was active)
+
+If `.flow-states/.dev-mode` existed, run:
+
+```bash
+claude plugin marketplace add benkruger/flow
+```
+
+Then:
+
+```bash
+claude plugin marketplace update flow-marketplace
+```
+
+Then remove the marker:
+
+```bash
+rm .flow-states/.dev-mode
+```
 
 ## Step 4 — Report
 
@@ -141,6 +166,7 @@ Worktrees removed: <count>
 Remote branches deleted: <count>
 Local branches deleted: <count>
 State files deleted: <count>
+Dev mode: restored / was inactive
 Errors: <count or "none">
 ============================================
 ````
