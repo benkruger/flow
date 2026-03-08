@@ -8,5 +8,9 @@
   "homepage": "https://benkruger.github.io/flow",
   "repository": "https://github.com/benkruger/flow",
   "license": "MIT",
-  "keywords": ["rails", "python", "tdd", "workflow", "sdlc"]
+  "keywords": ["rails", "python", "tdd", "workflow", "sdlc"],
+  "config_hash": {
+    "rails": "590700f5bd9a",
+    "python": "2c54c5cd6972"
+  }
 }

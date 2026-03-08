@@ -21,7 +21,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import PACIFIC, current_branch, format_time, now, project_root, PHASE_ORDER
+from flow_utils import (
+    PACIFIC, current_branch, format_time, load_phase_config, now, project_root,
+    PHASE_ORDER,
+)
 
 
 def _parse_timestamp(ts):
@@ -51,13 +54,14 @@ def phase_enter(state, phase):
     }
 
 
-def phase_complete(state, phase, next_phase=None):
+def phase_complete(state, phase, next_phase=None, phase_order=None):
     """Apply phase completion mutations. Returns (state, result_dict)."""
     phase_data = state["phases"][phase]
 
     if next_phase is None:
-        phase_idx = PHASE_ORDER.index(phase)
-        next_phase = PHASE_ORDER[phase_idx + 1]
+        order = phase_order or PHASE_ORDER
+        phase_idx = order.index(phase)
+        next_phase = order[phase_idx + 1]
 
     session_started = phase_data.get("session_started_at")
     if session_started:
@@ -144,10 +148,18 @@ def main():
         }))
         sys.exit(1)
 
+    # Load frozen phase config if available, fall back to module-level constants
+    frozen_path = root / ".flow-states" / f"{branch}-phases.json"
+    frozen_order = None
+    if frozen_path.exists():
+        frozen_order, _, _, _ = load_phase_config(frozen_path)
+
     if args.action == "enter":
         state, result = phase_enter(state, args.phase)
     else:
-        state, result = phase_complete(state, args.phase, args.next_phase)
+        state, result = phase_complete(
+            state, args.phase, args.next_phase, phase_order=frozen_order,
+        )
 
     state_path.write_text(json.dumps(state, indent=2))
     print(json.dumps(result))

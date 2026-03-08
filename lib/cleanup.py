@@ -101,6 +101,17 @@ def cleanup(project_root, branch, worktree, pr_number=None, delete_remote=False)
     else:
         steps["log_file"] = "skipped"
 
+    # Delete frozen phases file
+    frozen_file = root / ".flow-states" / f"{branch}-phases.json"
+    if frozen_file.exists():
+        try:
+            frozen_file.unlink()
+            steps["frozen_phases"] = "deleted"
+        except Exception as e:
+            steps["frozen_phases"] = f"failed: {e}"
+    else:
+        steps["frozen_phases"] = "skipped"
+
     return steps
 
 

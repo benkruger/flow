@@ -101,6 +101,24 @@ def test_cleanup_deletes_log_file(git_repo):
     assert not (git_repo / ".flow-states" / "test-feature.log").exists()
 
 
+def test_cleanup_deletes_frozen_phases_file(git_repo):
+    wt_rel = _setup_feature(git_repo)
+    # Create frozen phases file
+    frozen = git_repo / ".flow-states" / "test-feature-phases.json"
+    frozen.write_text('{"phases": {}, "order": []}')
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["frozen_phases"] == "deleted"
+    assert not frozen.exists()
+
+
+def test_cleanup_skips_missing_frozen_phases(git_repo):
+    wt_rel = _setup_feature(git_repo)
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["frozen_phases"] == "skipped"
+
+
 def test_cleanup_skips_pr_and_remote_by_default(git_repo):
     wt_rel = _setup_feature(git_repo)
     result = _run(git_repo, "test-feature", wt_rel)
@@ -246,3 +264,24 @@ def test_log_file_unlink_failure(git_repo, monkeypatch):
     monkeypatch.setattr(PosixPath, "unlink", _fail_second_unlink)
     steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
     assert steps["log_file"].startswith("failed:")
+
+
+def test_frozen_phases_unlink_failure(git_repo, monkeypatch):
+    wt_rel = _setup_feature(git_repo)
+    frozen = git_repo / ".flow-states" / "test-feature-phases.json"
+    frozen.write_text('{"phases": {}, "order": []}')
+    original_unlink = frozen.unlink.__func__
+
+    call_count = 0
+
+    def _fail_third_unlink(self, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 3:
+            raise PermissionError("no permission")
+        return original_unlink(self, *args, **kwargs)
+
+    from pathlib import PosixPath
+    monkeypatch.setattr(PosixPath, "unlink", _fail_third_unlink)
+    steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
+    assert steps["frozen_phases"].startswith("failed:")

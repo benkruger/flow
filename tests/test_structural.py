@@ -261,3 +261,34 @@ def test_framework_dependencies_is_executable_script():
         assert content.startswith("#!/"), (
             f"frameworks/{name}/dependencies must start with a shebang (#!/...)"
         )
+
+
+def test_config_hash_in_plugin_json_matches_computed():
+    """plugin.json config_hash must match the dynamically computed hash.
+
+    Catches stale hashes when permission lists change without updating
+    plugin.json. The hash is pre-computed at release time.
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "init_setup", LIB_DIR / "init-setup.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    plugin = json.loads(
+        (REPO_ROOT / ".claude-plugin" / "plugin.json").read_text()
+    )
+    assert "config_hash" in plugin, "plugin.json missing config_hash"
+    stored = plugin["config_hash"]
+
+    for name, _ in _load_frameworks():
+        assert name in stored, (
+            f"plugin.json config_hash missing framework '{name}'"
+        )
+        computed = mod.compute_config_hash(name)
+        assert stored[name] == computed, (
+            f"plugin.json config_hash[{name}] is '{stored[name]}' "
+            f"but compute_config_hash returns '{computed}' — "
+            f"run /flow-release to update"
+        )

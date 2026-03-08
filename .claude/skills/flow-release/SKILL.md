@@ -124,7 +124,7 @@ Present the recommendation and the draft release notes in your response.
 
 **Default (no flags):** proceed directly to Step 6.
 
-## Step 6 — Bump version in all files
+## Step 6 — Bump version and verify config hashes
 
 Run:
 
@@ -134,6 +134,13 @@ make bump NEW=<new_version>
 
 This updates `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
 and all skill banners in one step.
+
+The `config_hash` values in `plugin.json` are pre-computed digests of
+the permission configuration. They are **not** updated by `make bump` —
+they only change when permission lists in `lib/init-setup.py` or
+`frameworks/*/permissions.json` are modified. If they are stale, CI
+will fail via `test_config_hash_in_plugin_json_matches_computed`
+before Step 3 allows the release to proceed.
 
 ## Step 7 — Update RELEASE-NOTES.md
 

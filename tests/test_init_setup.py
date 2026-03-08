@@ -279,7 +279,7 @@ def test_update_git_exclude_creates_file_when_missing(git_repo):
 
 def test_main_exception_returns_error(git_repo, monkeypatch):
     monkeypatch.setattr(
-        _mod, "_plugin_version",
+        _mod, "_plugin_json",
         lambda: (_ for _ in ()).throw(RuntimeError("test error")),
     )
     import io
@@ -402,3 +402,48 @@ def test_permissions_loaded_from_framework_directory(tmp_path):
 def test_load_framework_permissions_returns_empty_for_unknown():
     result = _mod._load_framework_permissions("nonexistent")
     assert result == []
+
+
+# --- Config hash ---
+
+
+def test_compute_config_hash_returns_12_hex_chars():
+    result = _mod.compute_config_hash("rails")
+    assert isinstance(result, str)
+    assert len(result) == 12
+    assert all(c in "0123456789abcdef" for c in result)
+
+
+def test_compute_config_hash_is_deterministic():
+    hash1 = _mod.compute_config_hash("rails")
+    hash2 = _mod.compute_config_hash("rails")
+    assert hash1 == hash2
+
+
+def test_compute_config_hash_differs_by_framework():
+    rails_hash = _mod.compute_config_hash("rails")
+    python_hash = _mod.compute_config_hash("python")
+    assert rails_hash != python_hash
+
+
+def test_version_marker_with_config_hash(tmp_path):
+    _mod.write_version_marker(
+        tmp_path, _mod._plugin_version(), "rails", config_hash="abc123def456",
+    )
+    data = json.loads((tmp_path / ".flow.json").read_text())
+    assert data["config_hash"] == "abc123def456"
+
+
+def test_version_marker_without_config_hash_has_no_key(tmp_path):
+    _mod.write_version_marker(tmp_path, _mod._plugin_version(), "rails")
+    data = json.loads((tmp_path / ".flow.json").read_text())
+    assert "config_hash" not in data
+
+
+def test_happy_path_stores_config_hash_from_plugin_json(git_repo):
+    """main() reads config_hash from plugin.json and stores it in .flow.json."""
+    result = _run(git_repo)
+    assert result.returncode == 0
+    data = json.loads((git_repo / ".flow.json").read_text())
+    assert "config_hash" in data
+    assert len(data["config_hash"]) == 12

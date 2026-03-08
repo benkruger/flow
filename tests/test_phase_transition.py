@@ -252,6 +252,53 @@ def test_error_detached_head(git_repo, state_dir, branch):
 # --- Unit test for edge case ---
 
 
+def test_complete_uses_custom_phase_order():
+    """phase_complete with a custom phase_order uses that order for next phase."""
+    state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
+    custom_order = ["flow-start", "flow-plan", "flow-code-review"]
+
+    updated, result = _mod.phase_complete(state, "flow-plan", phase_order=custom_order)
+
+    assert result["next_phase"] == "flow-code-review"
+    assert updated["current_phase"] == "flow-code-review"
+
+
+def test_cli_uses_frozen_phases_file(git_repo, state_dir, branch):
+    """CLI uses frozen phases file when it exists."""
+    import shutil
+    source = LIB_DIR.parent / "flow-phases.json"
+    frozen = state_dir / f"{branch}-phases.json"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(source), str(frozen))
+
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
+    write_state(state_dir, branch, state)
+
+    enter_result = _run(git_repo, "flow-plan", "enter")
+    assert enter_result.returncode == 0
+
+    complete_result = _run(git_repo, "flow-plan", "complete")
+    assert complete_result.returncode == 0
+    data = json.loads(complete_result.stdout)
+    assert data["status"] == "ok"
+    assert data["next_phase"] == "flow-code"
+
+
+def test_cli_falls_back_without_frozen_phases(git_repo, state_dir, branch):
+    """CLI works without frozen phases file (backward compat)."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
+    write_state(state_dir, branch, state)
+
+    # No frozen phases file — should still work using module-level constants
+    enter_result = _run(git_repo, "flow-plan", "enter")
+    assert enter_result.returncode == 0
+
+    complete_result = _run(git_repo, "flow-plan", "complete")
+    assert complete_result.returncode == 0
+    data = json.loads(complete_result.stdout)
+    assert data["next_phase"] == "flow-code"
+
+
 def test_complete_future_session_started_clamps_to_zero():
     """If session_started_at is in the future, elapsed clamps to 0."""
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})

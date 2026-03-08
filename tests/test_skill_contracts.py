@@ -528,6 +528,15 @@ def test_phase_1_hard_gate_checks_feature_name():
     )
 
 
+def test_flow_start_surfaces_auto_upgrade():
+    """flow-start Step 1 must handle auto_upgraded from init-check output."""
+    content = _read_skill("flow-start")
+    assert "auto_upgraded" in content, (
+        "flow-start/SKILL.md must mention auto_upgraded to surface "
+        "auto-upgrade notices from init-check"
+    )
+
+
 def test_phase_skills_have_logging_section():
     """All phase skills must have a ## Logging section."""
     phase_skills = _phase_skills()

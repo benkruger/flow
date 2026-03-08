@@ -77,7 +77,18 @@ Run the version check before anything else:
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow init-check
 ```
 
-Parse the JSON output. If `"status": "error"`, tell the user to run `/flow:flow-init` and stop. Do not proceed to any further steps.
+Parse the JSON output:
+
+- If `"status": "error"` — tell the user to run `/flow:flow-init` and stop. Do not proceed to any further steps.
+- If `"status": "ok"` and `"auto_upgraded": true` — show this notice, then continue:
+
+````markdown
+```text
+FLOW auto-upgraded from v{old} to v{new} (config unchanged).
+```
+````
+
+- If `"status": "ok"` without `auto_upgraded` — proceed silently.
 
 <HARD-GATE>
 Do NOT proceed if version check fails. Tell the user to run `/flow:flow-init` and stop.

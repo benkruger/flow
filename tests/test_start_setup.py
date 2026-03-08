@@ -406,3 +406,23 @@ def test_state_file_includes_python_framework(git_repo_with_remote):
     state_path = git_repo_with_remote / ".flow-states" / "test-feature.json"
     data = json.loads(state_path.read_text())
     assert data["framework"] == "python"
+
+
+# --- Frozen phases file ---
+
+
+def test_frozen_phases_file_created(_default_run):
+    """Start creates .flow-states/<branch>-phases.json from flow-phases.json."""
+    data, state, log, repo = _default_run
+    frozen = repo / ".flow-states" / "test-feature-phases.json"
+    assert frozen.exists(), "Frozen phases file not created"
+
+
+def test_frozen_phases_file_matches_source(_default_run):
+    """Frozen phases file must match flow-phases.json content."""
+    data, state, log, repo = _default_run
+    frozen = repo / ".flow-states" / "test-feature-phases.json"
+    frozen_data = json.loads(frozen.read_text())
+    source_path = Path(__file__).resolve().parent.parent / "flow-phases.json"
+    source_data = json.loads(source_path.read_text())
+    assert frozen_data == source_data

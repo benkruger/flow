@@ -13,10 +13,15 @@ from conftest import LIB_DIR
 SCRIPT = str(LIB_DIR / "init-check.py")
 
 
+def _current_plugin_data():
+    """Read the full plugin.json."""
+    plugin_path = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
+    return json.loads(plugin_path.read_text())
+
+
 def _current_plugin_version():
     """Read the current version from plugin.json."""
-    plugin_path = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
-    return json.loads(plugin_path.read_text())["version"]
+    return _current_plugin_data()["version"]
 
 
 def _run(cwd):
@@ -86,3 +91,82 @@ def test_happy_path_python_framework(tmp_path):
     data = json.loads(result.stdout)
     assert data["status"] == "ok"
     assert data["framework"] == "python"
+
+
+# --- Auto-upgrade on version mismatch with matching config_hash ---
+
+
+def test_auto_upgrades_when_config_hash_matches(tmp_path):
+    """Version mismatch + matching hash → ok + auto_upgraded."""
+    plugin = _current_plugin_data()
+    config_hash = plugin["config_hash"]["rails"]
+    (tmp_path / ".flow.json").write_text(json.dumps({
+        "flow_version": "0.0.1",
+        "framework": "rails",
+        "config_hash": config_hash,
+    }))
+    result = _run(tmp_path)
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+    assert data["auto_upgraded"] is True
+    assert data["framework"] == "rails"
+
+
+def test_auto_upgrade_updates_version_in_file(tmp_path):
+    """Auto-upgrade rewrites flow_version in .flow.json."""
+    plugin = _current_plugin_data()
+    config_hash = plugin["config_hash"]["python"]
+    (tmp_path / ".flow.json").write_text(json.dumps({
+        "flow_version": "0.0.1",
+        "framework": "python",
+        "config_hash": config_hash,
+    }))
+    _run(tmp_path)
+    updated = json.loads((tmp_path / ".flow.json").read_text())
+    assert updated["flow_version"] == plugin["version"]
+
+
+def test_auto_upgrade_preserves_existing_fields(tmp_path):
+    """Auto-upgrade preserves framework, skills, and config_hash."""
+    plugin = _current_plugin_data()
+    config_hash = plugin["config_hash"]["rails"]
+    skills = {"flow-start": {"continue": "auto"}}
+    (tmp_path / ".flow.json").write_text(json.dumps({
+        "flow_version": "0.0.1",
+        "framework": "rails",
+        "config_hash": config_hash,
+        "skills": skills,
+    }))
+    _run(tmp_path)
+    updated = json.loads((tmp_path / ".flow.json").read_text())
+    assert updated["framework"] == "rails"
+    assert updated["config_hash"] == config_hash
+    assert updated["skills"] == skills
+
+
+def test_requires_reinit_when_config_hash_missing(tmp_path):
+    """Version mismatch + no config_hash → error (backward compat)."""
+    (tmp_path / ".flow.json").write_text(json.dumps({
+        "flow_version": "0.0.1",
+        "framework": "rails",
+    }))
+    result = _run(tmp_path)
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "error"
+    assert "mismatch" in data["message"]
+
+
+def test_requires_reinit_when_config_hash_mismatches(tmp_path):
+    """Version mismatch + different hash → error (config changed)."""
+    (tmp_path / ".flow.json").write_text(json.dumps({
+        "flow_version": "0.0.1",
+        "framework": "rails",
+        "config_hash": "000000000000",
+    }))
+    result = _run(tmp_path)
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "error"
+    assert "/flow:flow-init" in data["message"]

@@ -12,6 +12,7 @@ Output (JSON to stdout):
 """
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import now, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER
+
+PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _branch_name(feature_words):
@@ -162,6 +165,15 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
     return state
 
 
+def _freeze_phases(project_root, branch):
+    """Copy flow-phases.json to .flow-states/<branch>-phases.json."""
+    source = PLUGIN_ROOT / "flow-phases.json"
+    dest_dir = project_root / ".flow-states"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{branch}-phases.json"
+    shutil.copy2(source, dest)
+
+
 def _log(project_root, branch, message):
     """Append a log entry to .flow-states/<branch>.log."""
     log_dir = project_root / ".flow-states"
@@ -208,6 +220,10 @@ def main():
         _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
                            framework=framework)
         _log(project_root, branch, f"create .flow-states/{branch}.json (exit 0)")
+
+        # Freeze phase config for this feature
+        _freeze_phases(project_root, branch)
+        _log(project_root, branch, f"freeze .flow-states/{branch}-phases.json (exit 0)")
 
         output = {
             "status": "ok",

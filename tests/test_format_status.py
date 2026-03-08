@@ -271,6 +271,58 @@ def test_wrong_branch_single_feature_returns_ok(tmp_path):
     assert isinstance(panel, str) and len(panel) > 0
 
 
+def test_format_panel_uses_frozen_phase_config():
+    """format_panel uses phase_config when provided."""
+    custom_order = ["flow-start", "flow-plan"]
+    custom_names = {"flow-start": "Begin", "flow-plan": "Design"}
+    custom_numbers = {"flow-start": 1, "flow-plan": 2}
+    custom_commands = {"flow-start": "/t:begin", "flow-plan": "/t:design"}
+    config = (custom_order, custom_names, custom_numbers, custom_commands)
+
+    state = make_state(current_phase="flow-plan", phase_statuses={
+        "flow-start": "complete", "flow-plan": "in_progress",
+    })
+    panel = _mod.format_panel(state, VERSION, phase_config=config)
+    assert "Begin" in panel
+    assert "Design" in panel
+    # Should NOT contain the default phase names
+    assert "Code" not in panel
+
+
+def test_format_panel_all_complete_uses_frozen_phase_config():
+    """format_panel with phase_config works when all phases are complete."""
+    custom_order = ["flow-start", "flow-plan"]
+    custom_names = {"flow-start": "Begin", "flow-plan": "Design"}
+    custom_numbers = {"flow-start": 1, "flow-plan": 2}
+    custom_commands = {"flow-start": "/t:begin", "flow-plan": "/t:design"}
+    config = (custom_order, custom_names, custom_numbers, custom_commands)
+
+    state = make_state(current_phase="flow-plan", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete",
+    })
+    panel = _mod.format_panel(state, VERSION, phase_config=config)
+    assert "All Phases Complete" in panel
+    assert "Begin" in panel
+    assert "Design" in panel
+
+
+def test_cli_uses_frozen_phases_file(state_dir, git_repo, branch):
+    """CLI loads frozen phases file when it exists."""
+    import shutil
+    source = LIB_DIR.parent / "flow-phases.json"
+    frozen = state_dir / f"{branch}-phases.json"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(source), str(frozen))
+
+    state = make_state(current_phase="flow-plan", phase_statuses={
+        "flow-start": "complete", "flow-plan": "in_progress",
+    })
+    write_state(state_dir, branch, state)
+    result = _run(git_repo)
+    assert result.returncode == 0
+    assert "Plan" in result.stdout
+
+
 def test_wrong_branch_multiple_features_returns_panel(state_dir, git_repo, branch):
     """When on wrong branch with multiple state files, returns panel text."""
     for name in ["feature-a", "feature-b"]:

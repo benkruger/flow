@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    current_branch, find_state_files, format_time, PACIFIC,
+    current_branch, find_state_files, format_time, load_phase_config, PACIFIC,
     project_root, COMMANDS, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER,
 )
 
@@ -46,18 +46,25 @@ def _read_version():
         return "?"
 
 
-def format_panel(state, version, now=None, dev_mode=False):
+def format_panel(state, version, now=None, dev_mode=False, phase_config=None):
     """Build the status panel string from state dict and version."""
+    if phase_config:
+        order, names, numbers, commands = phase_config
+    else:
+        order, names, numbers, commands = PHASE_ORDER, PHASE_NAMES, PHASE_NUMBER, COMMANDS
+
     phases = state.get("phases", {})
 
     # Check if all phases are complete
     all_complete = all(
         phases.get(key, {}).get("status") == "complete"
-        for key in PHASE_ORDER
+        for key in order
     )
 
     if all_complete:
-        return _format_all_complete(state, version, phases, dev_mode=dev_mode)
+        return _format_all_complete(
+            state, version, phases, dev_mode=dev_mode, phase_config=phase_config,
+        )
 
     dev_label = " [DEV MODE]" if dev_mode else ""
     lines = []
@@ -84,11 +91,11 @@ def format_panel(state, version, now=None, dev_mode=False):
 
     current_phase_data = None
 
-    for key in PHASE_ORDER:
+    for key in order:
         phase = phases.get(key, {})
         status = phase.get("status", "pending")
-        name = PHASE_NAMES[key]
-        num = PHASE_NUMBER[key]
+        name = names[key]
+        num = numbers[key]
 
         if status == "complete":
             marker = "[x]"
@@ -120,10 +127,10 @@ def format_panel(state, version, now=None, dev_mode=False):
     current = state.get("current_phase", "flow-start")
     current_status = phases.get(current, {}).get("status", "pending")
     if current_status == "in_progress":
-        cmd = COMMANDS.get(current, f"/flow:{current}")
+        cmd = commands.get(current, f"/flow:{current}")
         lines.append(f"  Continue: {cmd}")
     else:
-        cmd = COMMANDS.get(current, "")
+        cmd = commands.get(current, "")
         lines.append(f"  Next: {cmd}")
     lines.append("")
     lines.append("============================================")
@@ -131,8 +138,13 @@ def format_panel(state, version, now=None, dev_mode=False):
     return "\n".join(lines)
 
 
-def _format_all_complete(state, version, phases, dev_mode=False):
+def _format_all_complete(state, version, phases, dev_mode=False, phase_config=None):
     """Build the enriched all-complete panel."""
+    if phase_config:
+        order, names, numbers, _ = phase_config
+    else:
+        order, names, numbers = PHASE_ORDER, PHASE_NAMES, PHASE_NUMBER
+
     dev_label = " [DEV MODE]" if dev_mode else ""
     lines = []
     lines.append("============================================")
@@ -145,7 +157,7 @@ def _format_all_complete(state, version, phases, dev_mode=False):
     # Total elapsed from phase timings
     total = sum(
         phases.get(key, {}).get("cumulative_seconds", 0)
-        for key in PHASE_ORDER
+        for key in order
     )
     lines.append(f"  Elapsed : {format_time(total)}")
 
@@ -153,12 +165,12 @@ def _format_all_complete(state, version, phases, dev_mode=False):
     lines.append("  Phases")
     lines.append("  ------")
 
-    for key in PHASE_ORDER:
+    for key in order:
         phase = phases.get(key, {})
-        padded_name = PHASE_NAMES[key].ljust(NAME_WIDTH)
+        padded_name = names[key].ljust(NAME_WIDTH)
         seconds = phase.get("cumulative_seconds", 0)
         time_str = format_time(seconds)
-        num = PHASE_NUMBER[key]
+        num = numbers[key]
         lines.append(f"  [x] Phase {num}:  {padded_name} ({time_str})")
 
     lines.append("")
@@ -216,7 +228,14 @@ def main():
         sys.exit(0)
 
     state_path, state, matched_branch = results[0]
-    panel = format_panel(state, version, dev_mode=dev_mode)
+
+    # Load frozen phase config if available
+    frozen_path = root / ".flow-states" / f"{matched_branch}-phases.json"
+    phase_config = None
+    if frozen_path.exists():
+        phase_config = load_phase_config(frozen_path)
+
+    panel = format_panel(state, version, dev_mode=dev_mode, phase_config=phase_config)
     print(panel)
 
 
