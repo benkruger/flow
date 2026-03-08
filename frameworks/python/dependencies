@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# FLOW dependency updater for Python
+# Created by /flow:flow-init — edit to match your project
+set -euo pipefail
+
+if [ -f "requirements.txt" ]; then
+    pip install -r requirements.txt --upgrade
+elif [ -f "pyproject.toml" ]; then
+    pip install -e ".[dev]" --upgrade
+fi

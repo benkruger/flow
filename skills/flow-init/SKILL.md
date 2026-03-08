@@ -29,28 +29,27 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ### Step 1 — Detect framework
 
-Auto-detect the framework from project files:
+Auto-detect the framework using the data-driven detector:
 
-1. Use the Glob tool to check for `Gemfile` at the project root — Rails indicator
-2. Use the Glob tool to check for `pyproject.toml`, `setup.py`, or `requirements.txt` at the project root — Python indicator
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow detect-framework <project_root>
+```
+
+Parse the JSON output. The `detected` array contains frameworks matched
+by file presence, and `available` lists all supported frameworks.
 
 If exactly one framework is detected, confirm with AskUserQuestion:
 
-- If Rails detected: "Detected **Rails** project (found Gemfile). Is this correct?"
-  - Option 1: **Yes, Rails** — "Proceed with Rails setup"
-  - Option 2: **No, it's Python** — "Use Python setup instead"
+> "Detected **<display_name>** project. Is this correct?"
+>
+> - **Yes, <display_name>** — "Proceed with <display_name> setup"
+> - One option per other available framework — "<display_name>"
 
-- If Python detected: "Detected **Python** project (found pyproject.toml/setup.py/requirements.txt). Is this correct?"
-  - Option 1: **Yes, Python** — "Proceed with Python setup"
-  - Option 2: **No, it's Rails** — "Use Rails setup instead"
+If no frameworks detected, or multiple detected, ask the user to choose
+from the available list using AskUserQuestion with one option per
+available framework.
 
-If no framework files detected, or both detected, fall back to asking:
-
-- Question: "What framework does this project use?"
-- Option 1: **Rails** — "Ruby on Rails project"
-- Option 2: **Python** — "Python project"
-
-Store the answer as `framework` (lowercase: `rails` or `python`).
+Store the answer as `framework` (lowercase name from the JSON).
 
 ### Step 2 — Choose autonomy level
 
@@ -82,15 +81,7 @@ Ask the user how much autonomy FLOW should have using AskUserQuestion:
 {"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-simplify": {"commit": "manual", "continue": "manual"}, "flow-review": {"commit": "manual", "continue": "manual"}, "flow-security": {"commit": "manual", "continue": "manual"}, "flow-learning": {"commit": "manual", "continue": "manual"}, "flow-abort": "manual", "flow-cleanup": "manual"}
 ```
 
-**Recommended** — framework-aware defaults:
-
-For Rails:
-
-```json
-{"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-simplify": {"commit": "auto", "continue": "auto"}, "flow-review": {"commit": "manual", "continue": "auto"}, "flow-security": {"commit": "auto", "continue": "auto"}, "flow-learning": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-cleanup": "auto"}
-```
-
-For Python:
+**Recommended** — safe defaults for all frameworks:
 
 ```json
 {"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-simplify": {"commit": "auto", "continue": "auto"}, "flow-review": {"commit": "auto", "continue": "auto"}, "flow-security": {"commit": "auto", "continue": "auto"}, "flow-learning": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-cleanup": "auto"}
@@ -148,15 +139,11 @@ Output JSON: `{"status": "ok", "settings_merged": true, "exclude_updated": true,
 
 If the script returns an error, show the message and stop.
 
-The permissions merged depend on the framework. Universal permissions are always merged. Framework-specific permissions are added based on the chosen framework.
+The permissions merged depend on the framework. Universal permissions are
+always merged. Framework-specific permissions are loaded from
+`frameworks/<name>/permissions.json` and added based on the chosen framework.
 
-**Universal** (always merged): git operations, worktree management, PR lifecycle, bin/ci, bin/flow
-
-**Rails** (when framework is rails): bin/rails test, rubocop, bundle, psql
-
-**Python** (when framework is python): bin/test
-
-All permissions (universal + both framework sets) for reference:
+All permissions (universal + all framework sets) for reference:
 
 ```json
 {
@@ -176,6 +163,7 @@ All permissions (universal + both framework sets) for reference:
       "Bash(git push origin --delete *)",
       "Bash(git branch -D *)",
       "Bash(bin/ci)",
+      "Bash(bin/dependencies)",
       "Bash(rm .flow-commit-*)",
       "Bash(rm .claude/settings.local.json)",
       "Bash(*bin/flow *)",
@@ -217,7 +205,33 @@ the Write tool. The result should look like:
 {"flow_version": "0.16.4", "framework": "python", "skills": {"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-simplify": {"commit": "auto", "continue": "auto"}, "flow-review": {"commit": "auto", "continue": "auto"}, "flow-security": {"commit": "auto", "continue": "auto"}, "flow-learning": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-cleanup": "auto"}}
 ```
 
-### Step 5 — Commit and push
+### Step 5 — Prime project CLAUDE.md
+
+If the project has a `CLAUDE.md`, prime it with framework conventions:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-project <project_root> --framework <framework>
+```
+
+Parse the JSON output. If `"status": "ok"`, the project CLAUDE.md now
+contains framework conventions between `<!-- FLOW:BEGIN -->` and
+`<!-- FLOW:END -->` markers. If `"status": "error"`, skip priming
+silently — the user can prime later by running init again after
+creating a CLAUDE.md.
+
+### Step 6 — Create bin/dependencies
+
+Create the dependency updater script from the framework template:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow create-dependencies <project_root> --framework <framework>
+```
+
+Parse the JSON output. If `"status": "ok"`, `bin/dependencies` was
+created. If `"status": "skipped"`, the file already exists (user may
+have customized it). If `"status": "error"`, report to the user.
+
+### Step 7 — Commit and push
 
 Stage the settings and version marker:
 

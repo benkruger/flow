@@ -1,0 +1,6 @@
+{
+  "allow": [
+    "Bash(bin/test *)",
+    "Bash(.venv/bin/pip install *)"
+  ]
+}

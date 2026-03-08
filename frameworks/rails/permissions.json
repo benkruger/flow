@@ -1,0 +1,10 @@
+{
+  "allow": [
+    "Bash(bin/rails test *)",
+    "Bash(rubocop *)",
+    "Bash(rubocop -A)",
+    "Bash(bundle update --all)",
+    "Bash(bundle exec *)",
+    "Bash(psql *)"
+  ]
+}

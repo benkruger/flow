@@ -1,0 +1,5 @@
+{
+  "name": "rails",
+  "display_name": "Rails",
+  "detect_globs": ["Gemfile"]
+}

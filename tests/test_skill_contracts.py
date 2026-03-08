@@ -259,36 +259,20 @@ def test_subagent_prompts_include_tool_restriction():
         )
 
 
-def test_subagent_prompts_allow_git_show():
-    """Review/Security sub-agent prompts must allow git show.
-
-    Sub-agents need git show to compare files against origin/main.
-    Without it, sub-agents improvise with git show piped through sed,
-    which triggers permission prompts."""
-    subagent_skills = ["flow-review", "flow-security"]
-    for name in subagent_skills:
-        content = _read_skill(name)
-        assert "git show" in content, (
-            f"skills/{name}/SKILL.md sub-agent prompt missing 'git show' "
-            f"in allowed git commands — sub-agents need it to compare "
-            f"against origin/main"
-        )
+def test_review_delegates_to_builtin_review():
+    """Review skill must delegate to Claude's built-in /review command."""
+    content = _read_skill("flow-review")
+    assert "/review" in content, (
+        "skills/flow-review/SKILL.md must delegate to /review"
+    )
 
 
-def test_subagent_prompts_ban_piping():
-    """Review/Security sub-agent prompts must ban piping git output
-    through sed, grep, or awk.
-
-    Sub-agents pipe git show through sed to extract line ranges, which
-    triggers permission prompts. The prompt must explicitly ban this."""
-    subagent_skills = ["flow-review", "flow-security"]
-    for name in subagent_skills:
-        content = _read_skill(name)
-        assert re.search(r"[Nn]ever pipe", content), (
-            f"skills/{name}/SKILL.md sub-agent prompt missing pipe "
-            f"restriction — sub-agents pipe git output through sed/grep "
-            f"which triggers permission prompts"
-        )
+def test_security_delegates_to_builtin_security_review():
+    """Security skill must delegate to Claude's built-in /security-review."""
+    content = _read_skill("flow-security")
+    assert "/security-review" in content, (
+        "skills/flow-security/SKILL.md must delegate to /security-review"
+    )
 
 
 def test_phase_skills_have_tool_restriction_in_hard_rules():
@@ -315,15 +299,7 @@ def test_phase_skills_have_tool_restriction_in_hard_rules():
 
 
 def test_subagent_types_match_requirements():
-    """Review/Security and Start use general-purpose."""
-    subagent_skills = ["flow-review", "flow-security"]
-    for name in subagent_skills:
-        content = _read_skill(name)
-        assert '"general-purpose"' in content, (
-            f"skills/{name}/SKILL.md should use general-purpose subagent_type"
-        )
-
-    # Start's general-purpose sub-agent is in SKILL.md (framework sections merged)
+    """Start uses general-purpose sub-agent for CI fix."""
     start_content = _read_skill("flow-start")
     assert '"general-purpose"' in start_content, (
         "skills/flow-start/SKILL.md should use general-purpose subagent_type"
@@ -372,26 +348,6 @@ def test_phase_skills_have_update_state_section():
         )
         assert has_update, (
             f"Phase {PHASE_NUMBER[key]} ({skill_name}) has no 'Update State' section"
-        )
-
-
-def test_phase_skills_with_content_writes_have_state_write_instruction():
-    """Phase skills that write complex content objects (security) must
-    instruct Claude to use Read+Write (not Edit) for state file updates.
-    Without this, Claude uses the Edit tool, which fails on non-unique
-    field names across phases.
-
-    Plan uses Claude Code's native plan mode (plan file, not state).
-    Skills that only use bin/flow commands for state mutations (start, code,
-    review, learning) do not need this instruction."""
-    phase_skills = _phase_skills()
-    content_write_phases = {"flow-security"}
-    for key in content_write_phases:
-        skill_name = phase_skills[key]
-        content = _read_skill(skill_name)
-        assert "Never use the Edit tool for state file" in content, (
-            f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing "
-            f"'Never use the Edit tool for state file' instruction"
         )
 
 
@@ -994,19 +950,27 @@ def test_learning_has_no_worktree_memory_rescue():
     )
 
 
-def test_multi_framework_skills_have_both_sections():
-    """Skills that had framework fragments must have both Rails and Python
-    content inline in SKILL.md."""
-    multi_framework_skills = [
-        "flow-start", "flow-plan", "flow-code", "flow-review", "flow-security",
+def test_generic_skills_have_no_framework_conditionals():
+    """Skills that were made generic must not contain framework conditionals.
+
+    Framework knowledge lives in frameworks/<name>/priming.md and the
+    project CLAUDE.md — skills reference CLAUDE.md generically."""
+    generic_skills = [
+        "flow-plan", "flow-code", "flow-review", "flow-security",
     ]
-    for name in multi_framework_skills:
+    for name in generic_skills:
         content = _read_skill(name)
-        assert re.search(r"(?i)rails", content), (
-            f"skills/{name}/SKILL.md missing Rails framework section"
+        assert "### If Rails" not in content, (
+            f"skills/{name}/SKILL.md still has '### If Rails' conditional"
         )
-        assert re.search(r"(?i)python", content), (
-            f"skills/{name}/SKILL.md missing Python framework section"
+        assert "### If Python" not in content, (
+            f"skills/{name}/SKILL.md still has '### If Python' conditional"
+        )
+        assert "#### If Rails" not in content, (
+            f"skills/{name}/SKILL.md still has '#### If Rails' conditional"
+        )
+        assert "#### If Python" not in content, (
+            f"skills/{name}/SKILL.md still has '#### If Python' conditional"
         )
 
 

@@ -16,14 +16,16 @@ One-time project setup. Configures workspace permissions in `.claude/settings.js
 
 ## What It Does
 
-1. Auto-detects framework from project files (Gemfile → Rails, pyproject.toml/setup.py/requirements.txt → Python) and confirms with the user
+1. Auto-detects framework using data-driven detection (`frameworks/*/detect.json`) and confirms with the user
 2. Asks the user to choose an autonomy level (fully autonomous, fully manual, recommended, or customize per skill)
 3. Reads `.claude/settings.json` (or starts with `{}`)
-4. Merges FLOW allow/deny permission entries (universal + framework-specific), preserving existing entries
+4. Merges FLOW allow/deny permission entries (universal + framework-specific from `frameworks/<name>/permissions.json`), preserving existing entries
 5. Writes the merged `.claude/settings.json`
 6. Writes `.flow.json` with the current FLOW version, framework, and skills configuration
 7. Adds `.flow-states/` and `.worktrees/` to `.git/info/exclude`
-8. Commits `.claude/settings.json` and `.flow.json`
+8. Primes the project CLAUDE.md with framework conventions from `frameworks/<name>/priming.md`
+9. Creates `bin/dependencies` from the framework template
+10. Commits `.claude/settings.json` and `.flow.json`
 
 ---
 

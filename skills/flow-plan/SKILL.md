@@ -103,32 +103,14 @@ codebase, design the approach, and write the implementation plan to a
 plan file. Use the full power of plan mode: read files, search code,
 explore patterns, and design the solution.
 
-### Framework Instructions
+### Framework Conventions
 
-Read the `framework` field from the state file and incorporate the
-matching framework guidance below into the plan. Do not announce the
-framework — just follow the matching section silently.
+Read the project's CLAUDE.md for framework-specific conventions (architecture
+patterns, test conventions, CI fix order). The CLAUDE.md is primed with
+framework knowledge during `/flow:flow-init`. Follow those conventions when
+writing the Tasks section of the plan.
 
-#### If Rails
-
-When writing the Tasks section of the plan, follow Rails conventions:
-
-- **TDD order** — test task before every implementation task
-- **Test helpers** — check `test/support/` for existing `create_*!` helpers; if missing, add a task to create them
-- **Model hierarchy** — note Base/Create split, read full class hierarchy before modifying
-- **Worker structure** — `pre_perform!`/`perform!`/`post_perform!`, queue from `config/sidekiq.yml`
-- **Controller patterns** — `options` OpenStruct params, `render_ok`/`render_error` responses
-- **Route patterns** — `scope` with `module:`, `as:`, `controller:`, `action:` explicitly
-- **Schema** — `data/release.sql` for table changes
-
-#### If Python
-
-When writing the Tasks section of the plan, follow Python conventions:
-
-- **TDD order** — test task before every implementation task
-- **Test fixtures** — check `conftest.py` for existing fixtures; if missing, add a task to create them
-- **Module structure** — check for circular import risks, module-level state
-- **Script patterns** — argparse, exit codes, error handling
+Always include TDD order — test task before every implementation task.
 
 ### Plan file structure
 

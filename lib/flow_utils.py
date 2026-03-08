@@ -20,13 +20,19 @@ def now():
     """Return current Pacific Time timestamp in ISO 8601 format."""
     return datetime.now(PACIFIC).isoformat(timespec="seconds")
 
-_phases_json = Path(__file__).resolve().parent.parent / "flow-phases.json"
+_plugin_root = Path(__file__).resolve().parent.parent
+_phases_json = _plugin_root / "flow-phases.json"
 _config = json.loads(_phases_json.read_text())
 
 PHASE_ORDER = _config["order"]
 PHASE_NAMES = {key: _config["phases"][key]["name"] for key in PHASE_ORDER}
 COMMANDS = {key: _config["phases"][key]["command"] for key in PHASE_ORDER}
 PHASE_NUMBER = {key: i + 1 for i, key in enumerate(PHASE_ORDER)}
+
+
+def frameworks_dir():
+    """Return the frameworks/ directory inside the plugin."""
+    return _plugin_root / "frameworks"
 
 
 def format_time(seconds):

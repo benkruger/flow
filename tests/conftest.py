@@ -16,6 +16,7 @@ LIB_DIR = REPO_ROOT / "lib"
 SKILLS_DIR = REPO_ROOT / "skills"
 DOCS_DIR = REPO_ROOT / "docs"
 BIN_DIR = REPO_ROOT / "bin"
+FRAMEWORKS_DIR = REPO_ROOT / "frameworks"
 
 sys.path.insert(0, str(LIB_DIR))
 from flow_utils import PHASE_NAMES, PHASE_ORDER

@@ -69,124 +69,17 @@ bin/flow phase-transition --phase flow-code --action enter
 Parse the JSON output to confirm `"status": "ok"`.
 If `"status": "error"`, report the error and stop.
 
-## Framework Instructions
+## Framework Conventions
 
-Read the `framework` field from the state file and follow only the matching
-section below for architecture checks, targeted test command, CI failure fix
-order, and framework-specific hard rules. Do not announce the framework —
-just follow the matching section silently.
+Read the project's CLAUDE.md for framework-specific conventions. The CLAUDE.md
+is primed with architecture patterns, test conventions, CI failure fix order,
+and hard rules during `/flow:flow-init`. Follow those conventions for:
 
-### If Rails
-
-#### Architecture Check
-
-Before writing a single line, check based on task type:
-
-**Model task:**
-
-- Read the full class hierarchy: the model file, its parent class, and ApplicationRecord
-- Look for `before_save`, `after_create`, `before_destroy` and all other callbacks
-- Check for `default_scope` (soft deletes — use `.unscoped` where needed)
-- Note the Base/Create split — never skip reading both
-- If `update!` or `save` will be called, check if callbacks will overwrite your values — set `Current` attributes instead of passing directly
-
-**Test task:**
-
-- Search `test/support/` for existing `create_*!` helpers for affected models
-- If a helper exists → use it. Never `Model::Create.create!` directly.
-- If a helper is missing and multiple tests need it → create it in `test/support/`
-- Never `update_column` — always `update!`
-- Read the mailer template if testing a mailer — all fields it references must be populated
-
-**Worker task:**
-
-- Check `config/sidekiq.yml` for the correct queue name before writing the worker
-- Structure: `pre_perform!` (load/validate, call `halt!` to stop), `perform!` (main work), `post_perform!` (cleanup/notifications)
-- Test via `worker.perform(...)`, check `worker.halted?`
-
-**Controller task:**
-
-- Params via `options` (OpenStruct): `options.record_id`
-- Responses: `render_ok`, `render_error`, `render_unauthorized`, `render_not_found`
-- Check which subdomain's BaseController to inherit from
-
-**Route task:**
-
-- Always use `scope` with `module:`, `as:`, `controller:`, `action:` explicitly
-- Never raw paths — always named route helpers
-- Check `config/routes/` for the correct file for this subdomain
-
-#### Targeted Test Command
-
-Run the specific test file to confirm it fails/passes:
-
-```bash
-bin/rails test <test/path/to/file_test.rb>
-```
-
-#### CI Failure Fix Order
-
-If `bin/flow ci` fails:
-
-- RuboCop violations → `rubocop -A` first, then manual fixes
-- Test failures → understand the root cause, fix the code not the test
-- Coverage gaps → write the missing test
-
-#### Rails-Specific Hard Rules
-
-- **Never use `Model::Create.create!`** in tests — always `create_*!` helpers
-- **Never use `update_column`** — always `update!`
-- **Always read full class hierarchy** before touching any model
-- **Never disable a RuboCop cop** — fix the code, not the cop. No `# rubocop:disable` without direct user approval. Stop and ask if you believe it is genuinely necessary.
-- **Never modify `.rubocop.yml`** — fix the code, not the configuration. Ask the user explicitly before touching this file.
-
-### If Python
-
-#### Architecture Check
-
-Before writing a single line, check based on task type:
-
-**Module task:**
-
-- Read the full module and its imports
-- Check for circular import risks
-- Note any module-level state or initialization
-- If modifying a function signature, grep for all callers
-
-**Test task:**
-
-- Check `conftest.py` for existing fixtures for affected modules
-- If a fixture exists → use it. Never duplicate fixture logic.
-- If a fixture is missing and multiple tests need it → create it in `conftest.py`
-- Follow existing test patterns in the project
-
-**Script task:**
-
-- Read the argument parsing and main flow
-- Check for error handling and exit codes
-- Verify the script is registered in any entry points or bin/ wrappers
-
-#### Targeted Test Command
-
-Run the specific test file to confirm it fails/passes:
-
-```bash
-bin/test <tests/path/to/test_file.py>
-```
-
-#### CI Failure Fix Order
-
-If `bin/flow ci` fails:
-
-- Lint violations → read the lint output carefully, fix the code
-- Test failures → understand the root cause, fix the code not the test
-- Coverage gaps → write the missing test
-
-#### Python-Specific Hard Rules
-
-- **Always read module imports** before modifying any module
-- **Always check `conftest.py`** for existing fixtures before creating new ones
-- **Never add lint exclusions** — fix the code, not the linter configuration
+- **Architecture checks** — what to read before writing code
+- **Test patterns** — existing fixtures, helpers, and test conventions
+- **Targeted test command** — how to run a single test file
+- **CI failure fix order** — how to diagnose and fix CI failures
+- **Hard rules** — framework-specific constraints
 
 ## Logging
 
@@ -262,7 +155,7 @@ Output in your response (not via Bash) inside a fenced code block:
 
 ### Architecture Check
 
-Follow the **Architecture Check** from the framework section above. Check based
+Follow the **Architecture Check** from the project CLAUDE.md. Check based
 on task type as described there before writing any code.
 
 ---
@@ -275,7 +168,7 @@ on task type as described there before writing any code.
 
 Write the test file. Follow the test task description exactly.
 
-Run the **Targeted Test Command** from the framework section above to confirm
+Run the **Targeted Test Command** from the project CLAUDE.md to confirm
 it fails.
 
 The test MUST fail before proceeding. If it passes immediately, the test
@@ -347,7 +240,7 @@ Run `bin/flow ci`. This must be green before committing.
 **If `bin/flow ci` fails:**
 
 - Read the output carefully
-- Fix each failure following the **CI Failure Fix Order** from the framework section above
+- Fix each failure following the **CI Failure Fix Order** from the project CLAUDE.md
 - Re-run `bin/flow ci` after each fix
 - Max 3 attempts — if still failing after 3, stop and report exactly what is failing
 
@@ -479,7 +372,7 @@ Invoke `flow:flow-status`.
 - **Never skip `bin/flow ci`** — must be green before every commit
 - **Never move to the next task** until the current task is committed
 - **Never rebase** — always merge
-- Plus the **Framework-Specific Hard Rules** from the framework section above
+- Plus the **Framework-Specific Hard Rules** from the project CLAUDE.md
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories

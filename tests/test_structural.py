@@ -5,7 +5,10 @@ import json
 import os
 import re
 
-from conftest import BIN_DIR, HOOKS_DIR, LIB_DIR, REPO_ROOT, SKILLS_DIR, make_state
+from conftest import (
+    BIN_DIR, FRAMEWORKS_DIR, HOOKS_DIR, LIB_DIR, REPO_ROOT, SKILLS_DIR,
+    make_state,
+)
 
 
 def _load_phases():
@@ -180,3 +183,81 @@ def test_claude_md_has_no_lessons_learned_section():
         "CLAUDE.md still has a '## Lessons Learned' section — "
         "learnings belong in rules files, not CLAUDE.md"
     )
+
+
+# --- Framework definition directory ---
+
+FRAMEWORK_REQUIRED_FILES = ["detect.json", "permissions.json", "dependencies", "priming.md"]
+
+
+def _load_frameworks():
+    """Return list of (name, path) for every framework directory."""
+    assert FRAMEWORKS_DIR.is_dir(), (
+        f"frameworks/ directory does not exist at {FRAMEWORKS_DIR}"
+    )
+    frameworks = [
+        (d.name, d) for d in sorted(FRAMEWORKS_DIR.iterdir()) if d.is_dir()
+    ]
+    assert len(frameworks) >= 1, "frameworks/ directory has no framework subdirectories"
+    return frameworks
+
+
+def test_frameworks_directory_has_required_files():
+    """Every frameworks/<name>/ must have detect.json, permissions.json,
+    dependencies, and priming.md."""
+    for name, path in _load_frameworks():
+        for filename in FRAMEWORK_REQUIRED_FILES:
+            assert (path / filename).exists(), (
+                f"frameworks/{name}/ missing required file: {filename}"
+            )
+
+
+def test_framework_detect_json_schema():
+    """Each detect.json must have name, display_name, and detect_globs fields."""
+    for name, path in _load_frameworks():
+        data = json.loads((path / "detect.json").read_text())
+        assert "name" in data, f"frameworks/{name}/detect.json missing 'name'"
+        assert "display_name" in data, (
+            f"frameworks/{name}/detect.json missing 'display_name'"
+        )
+        assert "detect_globs" in data, (
+            f"frameworks/{name}/detect.json missing 'detect_globs'"
+        )
+        assert isinstance(data["detect_globs"], list), (
+            f"frameworks/{name}/detect.json 'detect_globs' must be a list"
+        )
+        assert len(data["detect_globs"]) >= 1, (
+            f"frameworks/{name}/detect.json 'detect_globs' must have at least one entry"
+        )
+        assert data["name"] == name, (
+            f"frameworks/{name}/detect.json 'name' is '{data['name']}' but directory is '{name}'"
+        )
+
+
+def test_framework_permissions_json_schema():
+    """Each permissions.json must have an 'allow' array of strings."""
+    for name, path in _load_frameworks():
+        data = json.loads((path / "permissions.json").read_text())
+        assert "allow" in data, (
+            f"frameworks/{name}/permissions.json missing 'allow'"
+        )
+        assert isinstance(data["allow"], list), (
+            f"frameworks/{name}/permissions.json 'allow' must be a list"
+        )
+        for entry in data["allow"]:
+            assert isinstance(entry, str), (
+                f"frameworks/{name}/permissions.json 'allow' entries must be strings"
+            )
+            assert entry.startswith("Bash("), (
+                f"frameworks/{name}/permissions.json entry '{entry}' "
+                f"must start with 'Bash('"
+            )
+
+
+def test_framework_dependencies_is_executable_script():
+    """Each dependencies file must start with a shebang line."""
+    for name, path in _load_frameworks():
+        content = (path / "dependencies").read_text()
+        assert content.startswith("#!/"), (
+            f"frameworks/{name}/dependencies must start with a shebang (#!/...)"
+        )

@@ -16,6 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from flow_utils import frameworks_dir as _frameworks_dir
+
 UNIVERSAL_ALLOW = [
     "Bash(git -C *)",
     "Bash(git add *)",
@@ -31,26 +33,13 @@ UNIVERSAL_ALLOW = [
     "Bash(git push origin --delete *)",
     "Bash(git branch -D *)",
     "Bash(bin/ci)",
+    "Bash(bin/dependencies)",
     "Bash(rm .flow-commit-*)",
     "Bash(rm .claude/settings.local.json)",
     "Bash(*bin/flow *)",
     "Bash(gh pr view *)",
     "Bash(gh issue create *)",
     "Bash(git restore *)",
-]
-
-RAILS_ALLOW = [
-    "Bash(bin/rails test *)",
-    "Bash(rubocop *)",
-    "Bash(rubocop -A)",
-    "Bash(bundle update --all)",
-    "Bash(bundle exec *)",
-    "Bash(psql *)",
-]
-
-PYTHON_ALLOW = [
-    "Bash(bin/test *)",
-    "Bash(.venv/bin/pip install *)",
 ]
 
 FLOW_DENY = [
@@ -68,11 +57,17 @@ FLOW_DENY = [
 EXCLUDE_ENTRIES = [".flow-states/", ".worktrees/"]
 
 
+def _load_framework_permissions(framework):
+    """Load permissions from frameworks/<name>/permissions.json."""
+    permissions_path = _frameworks_dir() / framework / "permissions.json"
+    if not permissions_path.exists():
+        return []
+    return json.loads(permissions_path.read_text())["allow"]
+
+
 def _allow_list(framework):
     """Build the merged allow list for the given framework."""
-    if framework == "rails":
-        return UNIVERSAL_ALLOW + RAILS_ALLOW
-    return UNIVERSAL_ALLOW + PYTHON_ALLOW
+    return UNIVERSAL_ALLOW + _load_framework_permissions(framework)
 
 
 def merge_settings(project_root, framework):
@@ -206,10 +201,10 @@ def main():
             framework = sys.argv[i + 1]
             break
 
-    if framework not in ("rails", "python"):
+    if not framework or not (_frameworks_dir() / framework).is_dir():
         print(json.dumps({
             "status": "error",
-            "message": "Missing or invalid --framework argument. Must be 'rails' or 'python'.",
+            "message": f"Missing or invalid --framework argument: {framework}",
         }))
         sys.exit(1)
 
