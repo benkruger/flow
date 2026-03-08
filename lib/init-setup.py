@@ -134,14 +134,18 @@ def merge_settings(project_root, framework):
     return settings
 
 
-def write_version_marker(project_root, version, framework, skills=None):
-    """Write .flow.json with the plugin version, framework, and optional skills.
+def write_version_marker(project_root, version, framework, skills=None,
+                         config_hash=None):
+    """Write .flow.json with the plugin version, framework, and optional fields.
 
     If skills is provided, it is included as a top-level key mapping skill
-    names to "auto" or "manual".
+    names to "auto" or "manual". If config_hash is provided, it is stored
+    for version upgrade comparisons.
     """
     flow_json = project_root / ".flow.json"
     data = {"flow_version": version, "framework": framework}
+    if config_hash is not None:
+        data["config_hash"] = config_hash
     if skills is not None:
         data["skills"] = skills
     flow_json.write_text(json.dumps(data) + "\n")
@@ -187,12 +191,17 @@ def update_git_exclude(project_root):
     return updated
 
 
-def _plugin_version():
-    """Read the current plugin version from plugin.json."""
+def _plugin_json():
+    """Read the full plugin.json as a dict."""
     plugin_path = (
         Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
     )
-    return json.loads(plugin_path.read_text())["version"]
+    return json.loads(plugin_path.read_text())
+
+
+def _plugin_version():
+    """Read the current plugin version from plugin.json."""
+    return _plugin_json()["version"]
 
 
 def main():
@@ -226,9 +235,12 @@ def main():
         sys.exit(1)
 
     try:
-        version = _plugin_version()
+        plugin_data = _plugin_json()
+        version = plugin_data["version"]
+        config_hash = plugin_data.get("config_hash", {}).get(framework)
         merge_settings(project_root, framework)
-        write_version_marker(project_root, version, framework)
+        write_version_marker(project_root, version, framework,
+                             config_hash=config_hash)
         exclude_updated = update_git_exclude(project_root)
 
         print(json.dumps({

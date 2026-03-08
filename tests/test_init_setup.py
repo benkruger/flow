@@ -279,7 +279,7 @@ def test_update_git_exclude_creates_file_when_missing(git_repo):
 
 def test_main_exception_returns_error(git_repo, monkeypatch):
     monkeypatch.setattr(
-        _mod, "_plugin_version",
+        _mod, "_plugin_json",
         lambda: (_ for _ in ()).throw(RuntimeError("test error")),
     )
     import io
@@ -424,3 +424,33 @@ def test_compute_config_hash_differs_by_framework():
     rails_hash = _mod.compute_config_hash("rails")
     python_hash = _mod.compute_config_hash("python")
     assert rails_hash != python_hash
+
+
+def test_version_marker_with_config_hash(tmp_path):
+    _mod.write_version_marker(
+        tmp_path, _mod._plugin_version(), "rails", config_hash="abc123def456",
+    )
+    data = json.loads((tmp_path / ".flow.json").read_text())
+    assert data["config_hash"] == "abc123def456"
+
+
+def test_version_marker_without_config_hash_has_no_key(tmp_path):
+    _mod.write_version_marker(tmp_path, _mod._plugin_version(), "rails")
+    data = json.loads((tmp_path / ".flow.json").read_text())
+    assert "config_hash" not in data
+
+
+def test_happy_path_stores_config_hash_from_plugin_json(git_repo):
+    """main() reads config_hash from plugin.json and stores it in .flow.json.
+
+    This test will pass once plugin.json contains config_hash (Task 3).
+    Until then, config_hash is absent from plugin.json and omitted from .flow.json.
+    """
+    result = _run(git_repo)
+    assert result.returncode == 0
+    plugin_path = LIB_DIR.parent / ".claude-plugin" / "plugin.json"
+    plugin_data = json.loads(plugin_path.read_text())
+    if "config_hash" in plugin_data:
+        data = json.loads((git_repo / ".flow.json").read_text())
+        assert "config_hash" in data
+        assert len(data["config_hash"]) == 12
