@@ -245,15 +245,15 @@ def test_state_file_created(_default_run):
     assert state["notes"] == []
 
 
-def test_state_file_has_all_8_phases(_default_run):
-    """State file must have all 8 phases with correct names."""
+def test_state_file_has_all_6_phases(_default_run):
+    """State file must have all 6 phases with correct names."""
     data, state, log, repo = _default_run
 
     expected_names = {
-        "flow-start": "Start", "flow-plan": "Plan", "flow-code": "Code", "flow-simplify": "Simplify",
-        "flow-review": "Review", "flow-security": "Security", "flow-learning": "Learning", "flow-cleanup": "Cleanup",
+        "flow-start": "Start", "flow-plan": "Plan", "flow-code": "Code",
+        "flow-code-review": "Code Review", "flow-learning": "Learning", "flow-cleanup": "Cleanup",
     }
-    assert len(state["phases"]) == 8
+    assert len(state["phases"]) == 6
     for key, name in expected_names.items():
         assert state["phases"][key]["name"] == name
 

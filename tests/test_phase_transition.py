@@ -120,10 +120,10 @@ def test_complete_next_phase_override():
     """next_phase parameter overrides the default phase+1."""
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
 
-    updated, result = _mod.phase_complete(state, "flow-plan", next_phase="flow-simplify")
+    updated, result = _mod.phase_complete(state, "flow-plan", next_phase="flow-code-review")
 
-    assert result["next_phase"] == "flow-simplify"
-    assert updated["current_phase"] == "flow-simplify"
+    assert result["next_phase"] == "flow-code-review"
+    assert updated["current_phase"] == "flow-code-review"
 
 
 def test_complete_null_session_started_at():

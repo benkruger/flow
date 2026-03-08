@@ -206,9 +206,7 @@ def test_panel_all_complete_shows_timing():
     state["phases"]["flow-start"]["cumulative_seconds"] = 30
     state["phases"]["flow-plan"]["cumulative_seconds"] = 900
     state["phases"]["flow-code"]["cumulative_seconds"] = 3600
-    state["phases"]["flow-simplify"]["cumulative_seconds"] = 120
-    state["phases"]["flow-review"]["cumulative_seconds"] = 450
-    state["phases"]["flow-security"]["cumulative_seconds"] = 300
+    state["phases"]["flow-code-review"]["cumulative_seconds"] = 870
     state["phases"]["flow-learning"]["cumulative_seconds"] = 300
     state["phases"]["flow-cleanup"]["cumulative_seconds"] = 20
     panel = _mod.format_panel(state, VERSION)
@@ -216,14 +214,14 @@ def test_panel_all_complete_shows_timing():
     assert "Feature : Test Feature" in panel
     assert "PR      : https://github.com/test/test/pull/1" in panel
     assert "Elapsed : 1h 35m" in panel
-    for i in range(1, 9):
+    for i in range(1, 7):
         assert f"[x] Phase {i}:" in panel
 
 
 def test_panel_timing_formats():
     state = make_state(
-        current_phase="flow-simplify",
-        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-simplify": "in_progress"},
+        current_phase="flow-code-review",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-code-review": "in_progress"},
     )
     state["phases"]["flow-start"]["cumulative_seconds"] = 30
     state["phases"]["flow-plan"]["cumulative_seconds"] = 3660
@@ -234,10 +232,10 @@ def test_panel_timing_formats():
     assert "(2m)" in panel
 
 
-def test_panel_has_all_8_phases():
+def test_panel_has_all_6_phases():
     state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
     panel = _mod.format_panel(state, VERSION)
-    for i in range(1, 9):
+    for i in range(1, 7):
         assert f"Phase {i}:" in panel
 
 

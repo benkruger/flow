@@ -15,7 +15,7 @@ model: opus
 ```
 
 - `/flow:flow-code` — uses configured mode from `.flow.json` (default: manual)
-- `/flow:flow-code --auto` — streamline mode active from task 1 (skip per-task approval, still show diffs), auto-advance to Simplify
+- `/flow:flow-code --auto` — streamline mode active from task 1 (skip per-task approval, still show diffs), auto-advance to Code Review
 - `/flow:flow-code --manual` — requires explicit approval for each task
 
 <HARD-GATE>
@@ -307,7 +307,7 @@ If there are uncovered lines:
 - Repeat until `coverage/uncovered.txt` is empty
 
 <HARD-GATE>
-Do NOT transition to Review until `bin/flow ci` is green AND coverage/uncovered.txt
+Do NOT transition to Code Review until `bin/flow ci` is green AND coverage/uncovered.txt
 is empty. 100% coverage is mandatory.
 </HARD-GATE>
 
@@ -335,13 +335,13 @@ Output in your response (not via Bash) inside a fenced code block:
 
 Invoke `flow:flow-status`.
 
-**If continue=auto**, skip the transition question and invoke `flow:flow-simplify` directly.
+**If continue=auto**, skip the transition question and invoke `flow:flow-code-review` directly.
 
 **If continue=manual**, use AskUserQuestion:
 
-> "Phase 3: Code is complete. Ready to begin Phase 4: Simplify?"
+> "Phase 3: Code is complete. Ready to begin Phase 4: Code Review?"
 >
-> - **Yes, start Phase 4 now** — invoke `flow:flow-simplify`
+> - **Yes, start Phase 4 now** — invoke `flow:flow-code-review`
 > - **Not yet** — print paused banner
 > - **I have a correction or learning to capture**
 
@@ -350,7 +350,7 @@ Invoke `flow:flow-status`.
 2. Invoke `/flow:flow-note` with their message
 3. Re-ask with only "Yes, start Phase 4 now" and "Not yet"
 
-**If Yes** — invoke `flow:flow-simplify` using the Skill tool.
+**If Yes** — invoke `flow:flow-code-review` using the Skill tool.
 
 **If Not yet**, output in your response (not via Bash) inside a fenced code block:
 

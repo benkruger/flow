@@ -52,10 +52,10 @@ def _utility_skills():
 # --- Phase gate consistency ---
 
 
-def test_phase_skills_2_through_7_have_hard_gate_checking_previous_phase():
-    """Phases 2-7 must have a HARD-GATE that checks phases.<prev>.status."""
+def test_phase_skills_2_through_5_have_hard_gate_checking_previous_phase():
+    """Phases 2-5 must have a HARD-GATE that checks phases.<prev>.status."""
     phase_skills = _phase_skills()
-    for key in PHASE_ORDER[1:7]:
+    for key in PHASE_ORDER[1:-1]:
         skill_name = phase_skills[key]
         content = _read_skill(skill_name)
         prev_idx = PHASE_ORDER.index(key) - 1
@@ -138,8 +138,8 @@ def _clean_template_json(block):
     return cleaned
 
 
-def test_initial_state_template_has_all_8_phases():
-    """start-setup.py state template must have all 8 phases."""
+def test_initial_state_template_has_all_6_phases():
+    """start-setup.py state template must have all 6 phases."""
     import importlib.util
     spec = importlib.util.spec_from_file_location(
         "start_setup", LIB_DIR / "start-setup.py"
@@ -156,7 +156,7 @@ def test_initial_state_template_has_all_8_phases():
         state = json.loads((root / ".flow-states" / "test.json").read_text())
 
     phases = state["phases"]
-    assert len(phases) == 8, f"Expected 8 phases, got {len(phases)}"
+    assert len(phases) == 6, f"Expected 6 phases, got {len(phases)}"
 
     required_fields = [
         "name", "status", "started_at", "completed_at",
@@ -245,9 +245,9 @@ def test_phase_transitions_follow_sequence():
 
 
 def test_subagent_prompts_include_tool_restriction():
-    """Review, Security sub-agent prompts must include
+    """Skills with sub-agent prompts must include
     the tool restriction rule in SKILL.md."""
-    subagent_skills = ["flow-review", "flow-security"]
+    subagent_skills = ["flow-start"]
     for name in subagent_skills:
         skill_dir = SKILLS_DIR / name
         combined = ""
@@ -259,19 +259,19 @@ def test_subagent_prompts_include_tool_restriction():
         )
 
 
-def test_review_delegates_to_builtin_review():
-    """Review skill must delegate to Claude's built-in /review command."""
-    content = _read_skill("flow-review")
+def test_code_review_delegates_to_builtin_review():
+    """Code Review skill must delegate to Claude's built-in /review command."""
+    content = _read_skill("flow-code-review")
     assert "/review" in content, (
-        "skills/flow-review/SKILL.md must delegate to /review"
+        "skills/flow-code-review/SKILL.md must delegate to /review"
     )
 
 
-def test_security_delegates_to_builtin_security_review():
-    """Security skill must delegate to Claude's built-in /security-review."""
-    content = _read_skill("flow-security")
+def test_code_review_delegates_to_builtin_security_review():
+    """Code Review skill must delegate to Claude's built-in /security-review."""
+    content = _read_skill("flow-code-review")
     assert "/security-review" in content, (
-        "skills/flow-security/SKILL.md must delegate to /security-review"
+        "skills/flow-code-review/SKILL.md must delegate to /security-review"
     )
 
 
@@ -355,11 +355,11 @@ def test_phase_skills_have_update_state_section():
 
 
 def test_phase_skills_use_phase_transition_for_entry():
-    """Phases 2-7 must use bin/flow phase-transition for state entry.
+    """Phases 2-5 must use bin/flow phase-transition for state entry.
     Phase 1 uses start-setup.py which creates the state file directly.
-    Phase 8 (cleanup) uses bin/flow cleanup instead."""
+    Phase 6 (cleanup) uses bin/flow cleanup instead."""
     phase_skills = _phase_skills()
-    for key in PHASE_ORDER[1:7]:
+    for key in PHASE_ORDER[1:-1]:
         skill_name = phase_skills[key]
         content = _read_skill(skill_name)
         assert "phase-transition" in content, (
@@ -419,14 +419,13 @@ def test_model_frontmatter_is_valid():
 
 
 def test_model_frontmatter_matches_documented_table():
-    """Model frontmatter must match: opus for Plan/Code/Security, sonnet for
-    Review/Learning/Commit, haiku for Start/Cleanup."""
+    """Model frontmatter must match: opus for Plan/Code/Code Review, sonnet for
+    Learning/Commit, haiku for Start/Cleanup."""
     expected = {
         "flow-start": "haiku",
         "flow-plan": "opus",
         "flow-code": "opus",
-        "flow-review": "sonnet",
-        "flow-security": "opus",
+        "flow-code-review": "opus",
         "flow-learning": "sonnet",
         "flow-cleanup": "haiku",
         "flow-commit": "sonnet",
@@ -488,20 +487,20 @@ def test_phase_transition_names_current_phase():
         )
 
 
-def test_phase_8_has_soft_gate_not_hard_gate():
-    """Phase 8 (cleanup) should have a SOFT-GATE, not a HARD-GATE.
+def test_phase_6_has_soft_gate_not_hard_gate():
+    """Phase 6 (cleanup) should have a SOFT-GATE, not a HARD-GATE.
     Cleanup warns but never blocks — it's the final escape hatch."""
     content = _read_skill("flow-cleanup")
     assert "<SOFT-GATE>" in content, (
-        "Phase 8 (cleanup) should have <SOFT-GATE> — cleanup warns but never blocks"
+        "Phase 6 (cleanup) should have <SOFT-GATE> — cleanup warns but never blocks"
     )
     assert "<HARD-GATE>" not in content, (
-        "Phase 8 (cleanup) should NOT have <HARD-GATE> — cleanup must never block"
+        "Phase 6 (cleanup) should NOT have <HARD-GATE> — cleanup must never block"
     )
 
 
 def test_phase_transitions_have_note_capture_option():
-    """Phases 1-7 transition questions must offer a note-capture option.
+    """Phases 1-5 transition questions must offer a note-capture option.
     This is the third AskUserQuestion option at every phase boundary."""
     phase_skills = _phase_skills()
     for key in PHASE_ORDER[:-1]:
@@ -530,7 +529,7 @@ def test_phase_1_hard_gate_checks_feature_name():
 
 
 def test_phase_skills_have_logging_section():
-    """All 7 phase skills must have a ## Logging section."""
+    """All phase skills must have a ## Logging section."""
     phase_skills = _phase_skills()
     for key, skill_name in phase_skills.items():
         content = _read_skill(skill_name)
@@ -539,8 +538,8 @@ def test_phase_skills_have_logging_section():
         )
 
 
-def test_phase_8_has_delete_state_instructions():
-    """Phase 8 (cleanup) should have instructions to delete the state file,
+def test_phase_6_has_delete_state_instructions():
+    """Phase 6 (cleanup) should have instructions to delete the state file,
     not update it."""
     content = _read_skill("flow-cleanup")
     has_delete = (
@@ -945,13 +944,11 @@ def test_commit_mode_resolution():
 def test_no_skill_invokes_commit_with_auto():
     """Skills that use /flow:flow-commit --auto must be in the allow list.
 
-    Learning uses --auto because the phase is fully autonomous. Simplify
-    uses --auto because the user already approved changes in Step 2. Code,
-    review, and security conditionally use --auto based on the commit axis
-    setting."""
+    Learning uses --auto because the phase is fully autonomous. Code and
+    Code Review conditionally use --auto based on the commit axis setting."""
     for d in sorted(SKILLS_DIR.iterdir()):
         if not d.is_dir() or d.name in (
-            "flow-commit", "flow-learning", "flow-simplify", "flow-code", "flow-review", "flow-security",
+            "flow-commit", "flow-learning", "flow-code", "flow-code-review",
         ):
             continue
         content = (d / "SKILL.md").read_text()
@@ -1018,7 +1015,7 @@ def test_generic_skills_have_no_framework_conditionals():
     Framework knowledge lives in frameworks/<name>/priming.md and the
     project CLAUDE.md — skills reference CLAUDE.md generically."""
     generic_skills = [
-        "flow-plan", "flow-code", "flow-review", "flow-security",
+        "flow-plan", "flow-code", "flow-code-review",
     ]
     for name in generic_skills:
         content = _read_skill(name)
@@ -1039,13 +1036,13 @@ def test_generic_skills_have_no_framework_conditionals():
 # --- Configurable auto/manual mode ---
 
 CONFIGURABLE_SKILLS = [
-    "flow-start", "flow-code", "flow-simplify", "flow-review", "flow-security",
+    "flow-start", "flow-code", "flow-code-review",
     "flow-learning", "flow-abort", "flow-cleanup",
 ]
 
 
 def test_configurable_skills_support_both_flags():
-    """All 8 configurable skills must mention --auto and --manual in Usage."""
+    """All 6 configurable skills must mention --auto and --manual in Usage."""
     for name in CONFIGURABLE_SKILLS:
         content = _read_skill(name)
         assert "--auto" in content, (
@@ -1057,7 +1054,7 @@ def test_configurable_skills_support_both_flags():
 
 
 def test_configurable_skills_have_mode_resolution():
-    """All 8 configurable skills must contain a Mode Resolution section."""
+    """All 6 configurable skills must contain a Mode Resolution section."""
     for name in CONFIGURABLE_SKILLS:
         content = _read_skill(name)
         assert "## Mode Resolution" in content, (
@@ -1065,13 +1062,13 @@ def test_configurable_skills_have_mode_resolution():
         )
 
 
-TWO_AXIS_SKILLS = ["flow-code", "flow-simplify", "flow-review", "flow-security", "flow-learning"]
+TWO_AXIS_SKILLS = ["flow-code", "flow-code-review", "flow-learning"]
 CONTINUE_ONLY_SKILLS = ["flow-start"]
 UTILITY_SKILLS = ["flow-abort", "flow-cleanup"]
 
 
 def test_mode_resolution_references_flow_json():
-    """All 8 configurable skills Mode Resolution must reference .flow.json."""
+    """All 6 configurable skills Mode Resolution must reference .flow.json."""
     for name in CONFIGURABLE_SKILLS:
         content = _read_skill(name)
         resolution_match = re.search(

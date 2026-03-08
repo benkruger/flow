@@ -1,9 +1,9 @@
 ---
-title: "Phase 8: Cleanup"
-nav_order: 9
+title: "Phase 6: Cleanup"
+nav_order: 7
 ---
 
-# Phase 8: Cleanup
+# Phase 6: Cleanup
 
 **Command:** `/flow-cleanup` or `/flow-cleanup --manual`
 
@@ -13,7 +13,7 @@ environment for the next one.
 
 By default, skips confirmation and proceeds directly to cleanup.
 Use `--manual` to prompt for confirmation before any destructive action.
-Best-effort — warns if the state file is missing or Phase 7 is incomplete.
+Best-effort — warns if the state file is missing or Phase 5 is incomplete.
 
 ---
 
@@ -52,7 +52,7 @@ pull fails, a warning is shown but cleanup is still considered complete.
 
 ## What You Get
 
-By the end of Phase 8:
+By the end of Phase 6:
 
 - Worktree and all its contents removed
 - State file deleted — no more session hook injection for this feature
@@ -66,8 +66,8 @@ By the end of Phase 8:
 
 | Scenario | Behavior |
 |---|---|
-| State file exists, Phase 7 complete | Normal cleanup — no warnings |
-| State file exists, Phase 7 incomplete | Warns, proceeds (confirms if `--manual`) |
+| State file exists, Phase 5 complete | Normal cleanup — no warnings |
+| State file exists, Phase 5 incomplete | Warns, proceeds (confirms if `--manual`) |
 | State file missing | Warns, infers from git, proceeds (confirms if `--manual`) |
 | PR not merged | Hard block, does not proceed |
 
@@ -78,7 +78,7 @@ Every step after confirmation is best-effort — if one fails, continue to the n
 ## Gates
 
 - PR must be merged — hard block if not
-- Phase 7 complete is a warning, not a hard block
+- Phase 5 complete is a warning, not a hard block
 - Missing state file is a warning, not a hard block
 - Confirmation only when `--manual` is passed
 - Must run from project root

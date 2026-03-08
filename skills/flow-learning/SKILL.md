@@ -1,6 +1,6 @@
 ---
 name: flow-learning
-description: "Phase 7: Learning — review what went wrong, capture learnings, route each to its correct permanent home. Runs before the PR is merged. The only commits are CLAUDE.md and .claude/ changes."
+description: "Phase 5: Learning — review what went wrong, capture learnings, route each to its correct permanent home. Runs before the PR is merged. The only commits are CLAUDE.md and .claude/ changes."
 model: sonnet
 ---
 
@@ -27,9 +27,9 @@ stop immediately and show the error to the user.
    - `git branch --show-current` — this is the current branch.
 2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
 3. **Determine mode:**
-   - **State file exists + `phases.flow-security.status` == `"complete"`** → **Phase 7** mode
-   - **State file exists + phase 6 incomplete** → STOP. "BLOCKED: Phase 6:
-     Security must be complete. Run /flow:flow-security first."
+   - **State file exists + `phases.flow-code-review.status` == `"complete"`** → **Phase 5** mode
+   - **State file exists + phase 4 incomplete** → STOP. "BLOCKED: Phase 4:
+     Code Review must be complete. Run /flow:flow-code-review first."
    - **No state file** → Use Glob to check for `flow-phases.json` in the
      project root.
      - Exists → **Maintainer** mode (this is the plugin source repo)
@@ -53,12 +53,12 @@ to the project root — `bin/flow` commands find paths internally.
 
 At the very start, output the following banner in your response (not via Bash) inside a fenced code block:
 
-**Phase 7 mode:**
+**Phase 5 mode:**
 
 ````markdown
 ```text
 ============================================
-  FLOW v0.19.1 — Phase 7: Learning — STARTING
+  FLOW v0.19.1 — Phase 5: Learning — STARTING
 ============================================
 ```
 ````
@@ -75,7 +75,7 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ## Update State
 
-**Phase 7 only.** Skip for Maintainer and Standalone.
+**Phase 5 only.** Skip for Maintainer and Standalone.
 
 Update state for phase entry:
 
@@ -117,7 +117,7 @@ Review the current conversation for:
 
 Note: context may have been compacted. Use what is available.
 
-### Source C — State file and plan file data (Phase 7 only)
+### Source C — State file and plan file data (Phase 5 only)
 
 Skip for Maintainer and Standalone.
 
@@ -235,7 +235,7 @@ For each repo destination with changes:
 
 ## Step 4 — Promote local permissions (Maintainer only)
 
-**Skip for Phase 7 and Standalone.**
+**Skip for Phase 5 and Standalone.**
 
 Invoke `/flow:flow-local-permission`.
 
@@ -246,7 +246,7 @@ repo-destination change for Step 5's commit decision.
 
 ## Step 5 — Commit (conditional)
 
-**Phase 6:** If any repo-destination changes were made (destinations 2 or
+**Phase 5:** If any repo-destination changes were made (destinations 2 or
 4), commit once via `/flow:flow-commit --auto`. Only CLAUDE.md and `.claude/`
 files are committed — never application code. If `git add -A` results in
 nothing staged (stealth user with excluded files), skip the commit
@@ -261,7 +261,7 @@ If no repo-destination changes were made, skip this step regardless of mode.
 
 ---
 
-## Step 6 — File GitHub issues (Phase 7 only)
+## Step 6 — File GitHub issues (Phase 5 only)
 
 Skip for Maintainer and Standalone.
 
@@ -331,7 +331,7 @@ Present the full report to the user:
 ````
 
 Omit "Changes applied" if no changes were made. Omit "Issues filed" if
-no issues were filed or not in Phase 7 mode.
+no issues were filed or not in Phase 5 mode.
 
 In the "Changes applied" section, show "(committed)" or "(uncommitted)"
 next to each repo-destination file to indicate whether Step 4 committed it.
@@ -340,7 +340,7 @@ next to each repo-destination file to indicate whether Step 4 committed it.
 
 ## Done
 
-### Phase 7 mode
+### Phase 5 mode
 
 Complete the phase:
 
@@ -357,7 +357,7 @@ Output in your response (not via Bash) inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW v0.19.1 — Phase 7: Learning — COMPLETE (<formatted_time>)
+  FLOW v0.19.1 — Phase 5: Learning — COMPLETE (<formatted_time>)
   Merge the PR, then run /flow:flow-cleanup.
 ============================================
 ```
@@ -369,16 +369,16 @@ Invoke `flow:flow-status`.
 
 **If continue=manual**, use AskUserQuestion:
 
-> "Phase 7: Learning is complete. The PR now includes CLAUDE.md improvements. Ready to begin Phase 8: Cleanup?"
+> "Phase 5: Learning is complete. The PR now includes CLAUDE.md improvements. Ready to begin Phase 6: Cleanup?"
 >
-> - **Yes, start Phase 8 now** — invoke `flow:flow-cleanup`
+> - **Yes, start Phase 6 now** — invoke `flow:flow-cleanup`
 > - **Not yet** — print paused banner
 > - **I have a correction or learning to capture**
 
 **If "I have a correction or learning to capture":**
 1. Ask the user what they want to capture
 2. Invoke `/flow:flow-note` with their message
-3. Re-ask with only "Yes, start Phase 8 now" and "Not yet"
+3. Re-ask with only "Yes, start Phase 6 now" and "Not yet"
 
 **If Yes** — invoke `flow:flow-cleanup` using the Skill tool.
 
@@ -413,12 +413,12 @@ No phase transition, no transition question.
 
 - Never commit application code in Learning — only CLAUDE.md and .claude/
 - Always read CLAUDE.md and conversation context before synthesizing findings
-- In Phase 7, read all three sources before synthesizing findings
+- In Phase 5, read all three sources before synthesizing findings
 - Follow the learning process (Steps 1 through 7) exactly — do not skip or reorder steps
 - Decisions on destinations and wording are autonomous — do not ask the user for approval mid-process
 - The report in Step 7 is the user's review point — make it comprehensive
 - Global writes (`~/.claude/CLAUDE.md`, `~/.claude/rules/`, `~/.claude/projects/`) are direct edits — never committed
-- Repo writes (`CLAUDE.md`, `.claude/rules/`) go through `/flow:flow-commit --auto` (Phase 6 and Maintainer)
+- Repo writes (`CLAUDE.md`, `.claude/rules/`) go through `/flow:flow-commit --auto` (Phase 5 and Maintainer)
 - Plugin improvement notes are filed as GitHub issues on the plugin repo — never committed to the target project
 - Only CLAUDE.md and `.claude/` files are modified — never application code
 - Never use Bash to print banners — output them as text in your response
