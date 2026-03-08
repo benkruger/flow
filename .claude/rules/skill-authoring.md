@@ -37,6 +37,14 @@ lists exist to prevent destructive operations. Always use the
 default mode. If a sub-agent needs a denied permission, surface it
 to the user.
 
+Sub-agents ignore tool restriction rules in their prompts — they
+use `cd <path> && git` compound commands despite explicit
+instructions not to. The deny list catches this but causes
+permission prompts that interrupt the user. When the deny list
+would block a sub-agent's likely commands (e.g., `Bash(* && *)`),
+do the analysis directly in the main context instead of delegating
+to a sub-agent.
+
 ## Safety Checks
 
 Never suggest removing safety checks. If performance is a concern,
@@ -47,6 +55,12 @@ propose making it faster, not removing it.
 When bin/ci reveals an unexpected conflicting test, report before
 fixing. Name the conflicting test, explain why it conflicts, and
 describe the fix. Do not silently expand the scope.
+
+## Plan Task Ordering
+
+Every plan must include test tasks — even for pure-markdown skills,
+add contract tests in `test_skill_contracts.py`. TDD means the test
+task comes before the implementation task it validates.
 
 ## Codebase-Wide Renames
 

@@ -233,30 +233,14 @@ For each repo destination with changes:
 
 ---
 
-## Step 4 — Audit settings.local.json (Maintainer only)
+## Step 4 — Promote local permissions (Maintainer only)
 
 **Skip for Phase 7 and Standalone.**
 
-Check whether `.claude/settings.local.json` exists using the Read tool.
-If it does not exist, skip this step.
+Invoke `/flow:flow-local-permission`.
 
-If it exists:
-
-1. Read `.claude/settings.local.json`
-2. Read `.claude/settings.json`
-3. Compare the `permissions.allow` lists
-4. For each entry in the local file's allow list that is not in
-   `settings.json`:
-   - If commit=auto, promote it automatically (add to settings.json).
-   - If commit=manual, use AskUserQuestion to ask whether to promote it.
-     Options: **Yes** (add to settings.json) or **No** (skip it).
-5. Apply any approved additions to `.claude/settings.json` using the
-   Edit tool
-6. Delete the file:
-
-```bash
-rm .claude/settings.local.json
-```
+If it reports promoted entries, count `.claude/settings.json` as a
+repo-destination change for Step 5's commit decision.
 
 ---
 

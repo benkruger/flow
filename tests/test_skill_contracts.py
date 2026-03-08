@@ -1077,3 +1077,44 @@ def test_mode_resolution_references_flow_json():
                 f"skills/{name}/SKILL.md Mode Resolution does not reference "
                 f"'skills.{name}.continue' key"
             )
+
+
+# --- Local permission skill contracts ---
+
+
+def test_local_permission_skill_has_delete_command():
+    """flow-local-permission SKILL.md must contain the rm command
+    for deleting .claude/settings.local.json."""
+    content = _read_skill("flow-local-permission")
+    assert "rm .claude/settings.local.json" in content, (
+        "skills/flow-local-permission/SKILL.md missing "
+        "'rm .claude/settings.local.json' delete command"
+    )
+
+
+def test_local_permission_skill_uses_read_and_edit_tools():
+    """flow-local-permission SKILL.md must reference Read and Edit tools
+    for the permission merge workflow."""
+    content = _read_skill("flow-local-permission")
+    assert "Read" in content, (
+        "skills/flow-local-permission/SKILL.md missing 'Read' tool reference"
+    )
+    assert "Edit" in content, (
+        "skills/flow-local-permission/SKILL.md missing 'Edit' tool reference"
+    )
+
+
+def test_learning_step_4_invokes_local_permission():
+    """Learning SKILL.md Step 4 must invoke /flow:flow-local-permission."""
+    content = _read_skill("flow-learning")
+    step4_match = re.search(
+        r"## Step 4.*?\n(.*?)(?:\n## Step 5|\n---)", content, re.DOTALL
+    )
+    assert step4_match, (
+        "skills/flow-learning/SKILL.md has no Step 4 section"
+    )
+    step4_text = step4_match.group(1)
+    assert "/flow:flow-local-permission" in step4_text, (
+        "skills/flow-learning/SKILL.md Step 4 does not invoke "
+        "/flow:flow-local-permission"
+    )
