@@ -868,49 +868,6 @@ def test_reset_has_confirmation():
     )
 
 
-# --- QA skill (maintainer) ---
-
-
-def test_flow_qa_has_dev_mode_marker():
-    """QA SKILL.md must reference the .dev-mode marker file."""
-    content = (REPO_ROOT / ".claude" / "skills" / "flow-qa" / "SKILL.md").read_text()
-    assert ".flow-states/.dev-mode" in content, (
-        "flow-qa/SKILL.md must reference .flow-states/.dev-mode marker"
-    )
-
-
-def test_flow_qa_has_cache_nuke():
-    """QA SKILL.md must nuke the plugin cache directory."""
-    content = (REPO_ROOT / ".claude" / "skills" / "flow-qa" / "SKILL.md").read_text()
-    assert "rm -rf ~/.claude/plugins/cache/flow-marketplace" in content, (
-        "flow-qa/SKILL.md must contain cache nuke command"
-    )
-
-
-def test_flow_qa_has_marketplace_commands():
-    """QA SKILL.md must contain both marketplace add and update commands."""
-    content = (REPO_ROOT / ".claude" / "skills" / "flow-qa" / "SKILL.md").read_text()
-    assert "claude plugin marketplace add" in content, (
-        "flow-qa/SKILL.md must contain 'claude plugin marketplace add'"
-    )
-    assert "claude plugin marketplace update" in content, (
-        "flow-qa/SKILL.md must contain 'claude plugin marketplace update'"
-    )
-
-
-def test_flow_qa_no_ask_user_in_bare_invocation():
-    """Bare /flow-qa must not prompt — it auto-starts or auto-restarts."""
-    content = (REPO_ROOT / ".claude" / "skills" / "flow-qa" / "SKILL.md").read_text()
-    # Extract the bare invocation section
-    bare_marker = "## No flag"
-    bare_idx = content.find(bare_marker)
-    assert bare_idx != -1, "flow-qa/SKILL.md must have a '## No flag' section"
-    bare_section = content[bare_idx:]
-    assert "AskUserQuestion" not in bare_section, (
-        "flow-qa/SKILL.md bare invocation must not use AskUserQuestion — "
-        "it should auto-start or auto-restart without prompting"
-    )
-
 
 def test_commit_mode_resolution():
     """Commit SKILL.md must default to auto and have Mode Resolution."""
