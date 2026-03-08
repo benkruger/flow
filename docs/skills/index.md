@@ -21,8 +21,8 @@ These skills correspond directly to a workflow phase. Each one starts and ends w
 | [`/flow:flow-plan`](flow-plan.md) | 2 — Plan | Explore codebase, design approach, produce ordered tasks via plan mode |
 | [`/flow:flow-code`](flow-code.md) | 3 — Code | TDD task by task, diff review, `bin/flow ci` gate before each commit |
 | [`/flow:flow-simplify`](flow-simplify.md) | 4 — Simplify | Refactor for clarity via `/simplify`, auto-commit accepted changes |
-| [`/flow:flow-review`](flow-review.md) | 5 — Review | Plan alignment, risk coverage, framework anti-pattern check |
-| [`/flow:flow-security`](flow-security.md) | 6 — Security | Scan for security issues in the feature diff |
+| [`/flow:flow-review`](flow-review.md) | 5 — Review | Delegate to `/review`, fix every finding |
+| [`/flow:flow-security`](flow-security.md) | 6 — Security | Delegate to `/security-review`, fix every finding |
 | [`/flow:flow-learning`](flow-learning.md) | 7 — Learning | Extract learnings, update CLAUDE.md, note plugin gaps |
 | [`/flow:flow-cleanup`](flow-cleanup.md) | 8 — Cleanup | Remove worktree and delete state file — final phase |
 

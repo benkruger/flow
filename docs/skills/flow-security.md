@@ -10,15 +10,9 @@ parent: Skills
 
 **Usage:** `/flow:flow-security`, `/flow:flow-security --auto`, or `/flow:flow-security --manual`
 
-Security analysis of the feature diff. Uses an Explore sub-agent
-to run 10 security checks, then fixes every confirmed finding
-one at a time with a commit per fix.
-
----
-
-## What It Checks
-
-The 10 security checks are defined by the framework instructions in the skill. Each framework has its own checklist tailored to common vulnerability patterns (e.g., authorization gaps and CSRF bypass for Rails; command injection and path traversal for Python).
+Delegates to Claude's built-in `/security-review` command for
+language-aware security analysis of the branch diff. Fixes every
+finding, runs `bin/flow ci` after every fix.
 
 ---
 
