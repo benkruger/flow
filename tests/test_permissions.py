@@ -1016,8 +1016,12 @@ def test_init_setup_lists_match_skill_md_reference():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
-    # Build complete sets from init-setup.py
-    code_allow = set(mod.UNIVERSAL_ALLOW + mod.RAILS_ALLOW + mod.PYTHON_ALLOW)
+    # Build complete sets from init-setup.py (universal + all frameworks)
+    all_framework_perms = []
+    for framework_dir in sorted(mod._frameworks_dir().iterdir()):
+        if framework_dir.is_dir():
+            all_framework_perms.extend(mod._load_framework_permissions(framework_dir.name))
+    code_allow = set(mod.UNIVERSAL_ALLOW + all_framework_perms)
     code_deny = set(mod.FLOW_DENY)
 
     # Get reference JSON from init/SKILL.md

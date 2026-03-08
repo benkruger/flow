@@ -5,7 +5,7 @@ import json
 import subprocess
 import sys
 
-from conftest import LIB_DIR
+from conftest import FRAMEWORKS_DIR, LIB_DIR
 
 SCRIPT = str(LIB_DIR / "init-setup.py")
 
@@ -68,10 +68,16 @@ def test_creates_settings_from_scratch(tmp_path):
     assert "deny" in settings["permissions"]
 
 
+def _load_framework_permissions(framework):
+    """Load expected permissions from frameworks/<name>/permissions.json."""
+    permissions_path = FRAMEWORKS_DIR / framework / "permissions.json"
+    return json.loads(permissions_path.read_text())["allow"]
+
+
 def test_settings_has_all_allow_entries_rails(tmp_path):
     _mod.merge_settings(tmp_path, "rails")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-    expected = _mod.UNIVERSAL_ALLOW + _mod.RAILS_ALLOW
+    expected = _mod.UNIVERSAL_ALLOW + _load_framework_permissions("rails")
     for entry in expected:
         assert entry in settings["permissions"]["allow"]
 
@@ -79,7 +85,7 @@ def test_settings_has_all_allow_entries_rails(tmp_path):
 def test_settings_has_all_allow_entries_python(tmp_path):
     _mod.merge_settings(tmp_path, "python")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-    expected = _mod.UNIVERSAL_ALLOW + _mod.PYTHON_ALLOW
+    expected = _mod.UNIVERSAL_ALLOW + _load_framework_permissions("python")
     for entry in expected:
         assert entry in settings["permissions"]["allow"]
 
@@ -228,7 +234,7 @@ def test_git_exclude_not_updated_when_already_present(git_repo):
 def test_merge_settings_empty_project_rails(tmp_path):
     _mod.merge_settings(tmp_path, "rails")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-    expected = _mod.UNIVERSAL_ALLOW + _mod.RAILS_ALLOW
+    expected = _mod.UNIVERSAL_ALLOW + _load_framework_permissions("rails")
     assert len(settings["permissions"]["allow"]) == len(expected)
     assert len(settings["permissions"]["deny"]) == len(_mod.FLOW_DENY)
 
@@ -236,7 +242,7 @@ def test_merge_settings_empty_project_rails(tmp_path):
 def test_merge_settings_empty_project_python(tmp_path):
     _mod.merge_settings(tmp_path, "python")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-    expected = _mod.UNIVERSAL_ALLOW + _mod.PYTHON_ALLOW
+    expected = _mod.UNIVERSAL_ALLOW + _load_framework_permissions("python")
     assert len(settings["permissions"]["allow"]) == len(expected)
     assert len(settings["permissions"]["deny"]) == len(_mod.FLOW_DENY)
 
@@ -322,14 +328,14 @@ def test_flow_json_includes_framework_python(tmp_path):
 def test_rails_framework_excludes_python_permissions(tmp_path):
     _mod.merge_settings(tmp_path, "rails")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-    for entry in _mod.PYTHON_ALLOW:
+    for entry in _load_framework_permissions("python"):
         assert entry not in settings["permissions"]["allow"]
 
 
 def test_python_framework_excludes_rails_permissions(tmp_path):
     _mod.merge_settings(tmp_path, "python")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-    for entry in _mod.RAILS_ALLOW:
+    for entry in _load_framework_permissions("rails"):
         assert entry not in settings["permissions"]["allow"]
 
 
@@ -383,3 +389,18 @@ def test_version_marker_with_empty_skills_dict(tmp_path):
     _mod.write_version_marker(tmp_path, _mod._plugin_version(), "rails", skills={})
     data = json.loads((tmp_path / ".flow.json").read_text())
     assert data["skills"] == {}
+
+
+def test_universal_allow_includes_bin_dependencies():
+    assert "Bash(bin/dependencies)" in _mod.UNIVERSAL_ALLOW
+
+
+def test_permissions_loaded_from_framework_directory(tmp_path):
+    _mod.merge_settings(tmp_path, "rails")
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+    assert "Bash(bin/rails test *)" in settings["permissions"]["allow"]
+
+
+def test_load_framework_permissions_returns_empty_for_unknown():
+    result = _mod._load_framework_permissions("nonexistent")
+    assert result == []

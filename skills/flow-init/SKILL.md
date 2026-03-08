@@ -176,6 +176,7 @@ All permissions (universal + both framework sets) for reference:
       "Bash(git push origin --delete *)",
       "Bash(git branch -D *)",
       "Bash(bin/ci)",
+      "Bash(bin/dependencies)",
       "Bash(rm .flow-commit-*)",
       "Bash(rm .claude/settings.local.json)",
       "Bash(*bin/flow *)",
