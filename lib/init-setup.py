@@ -16,6 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from flow_utils import frameworks_dir as _frameworks_dir
+
 UNIVERSAL_ALLOW = [
     "Bash(git -C *)",
     "Bash(git add *)",
@@ -53,11 +55,6 @@ FLOW_DENY = [
 ]
 
 EXCLUDE_ENTRIES = [".flow-states/", ".worktrees/"]
-
-
-def _frameworks_dir():
-    """Return the frameworks/ directory relative to this script."""
-    return Path(__file__).resolve().parent.parent / "frameworks"
 
 
 def _load_framework_permissions(framework):

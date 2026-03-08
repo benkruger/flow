@@ -12,15 +12,10 @@ Output (JSON to stdout):
 """
 
 import json
-import os
-import stat
 import sys
 from pathlib import Path
 
-
-def _frameworks_dir():
-    """Return the frameworks/ directory relative to this script."""
-    return Path(__file__).resolve().parent.parent / "frameworks"
+from flow_utils import frameworks_dir as _frameworks_dir
 
 
 def create(project_root, framework, frameworks_dir=None):
@@ -48,7 +43,7 @@ def create(project_root, framework, frameworks_dir=None):
     bin_dir.mkdir(parents=True, exist_ok=True)
     content = template_path.read_text()
     dependencies.write_text(content)
-    dependencies.chmod(dependencies.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    dependencies.chmod(0o755)
 
     return {
         "status": "ok",

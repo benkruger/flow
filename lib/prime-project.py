@@ -15,14 +15,11 @@ import json
 import sys
 from pathlib import Path
 
+from flow_utils import frameworks_dir as _frameworks_dir
+
 
 MARKER_BEGIN = "<!-- FLOW:BEGIN -->"
 MARKER_END = "<!-- FLOW:END -->"
-
-
-def _frameworks_dir():
-    """Return the frameworks/ directory relative to this script."""
-    return Path(__file__).resolve().parent.parent / "frameworks"
 
 
 def prime(project_root, framework, frameworks_dir=None):
@@ -51,9 +48,10 @@ def prime(project_root, framework, frameworks_dir=None):
 
     block = f"{MARKER_BEGIN}\n{priming_content}\n{MARKER_END}\n"
 
-    if MARKER_BEGIN in existing_content and MARKER_END in existing_content:
-        begin_index = existing_content.index(MARKER_BEGIN)
-        end_index = existing_content.index(MARKER_END) + len(MARKER_END)
+    begin_index = existing_content.find(MARKER_BEGIN)
+    end_index = existing_content.find(MARKER_END)
+    if begin_index >= 0 and end_index >= 0:
+        end_index += len(MARKER_END)
         if end_index < len(existing_content) and existing_content[end_index] == "\n":
             end_index += 1
         new_content = existing_content[:begin_index] + block + existing_content[end_index:]

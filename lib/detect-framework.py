@@ -13,10 +13,7 @@ import json
 import sys
 from pathlib import Path
 
-
-def _frameworks_dir():
-    """Return the frameworks/ directory relative to this script."""
-    return Path(__file__).resolve().parent.parent / "frameworks"
+from flow_utils import frameworks_dir as _frameworks_dir
 
 
 def _load_detect_configs(frameworks_dir):
@@ -72,8 +69,20 @@ def main():
         sys.exit(1)
 
     frameworks_dir = str(_frameworks_dir())
-    detected = detect(str(project_root), frameworks_dir)
-    available = available_frameworks(frameworks_dir)
+    configs = _load_detect_configs(frameworks_dir)
+
+    project = Path(project_root)
+    detected = []
+    for config in configs:
+        for glob_pattern in config["detect_globs"]:
+            if (project / glob_pattern).exists():
+                detected.append({
+                    "name": config["name"],
+                    "display_name": config["display_name"],
+                })
+                break
+
+    available = [{"name": c["name"], "display_name": c["display_name"]} for c in configs]
 
     print(json.dumps({
         "status": "ok",
