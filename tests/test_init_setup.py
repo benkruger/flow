@@ -441,16 +441,9 @@ def test_version_marker_without_config_hash_has_no_key(tmp_path):
 
 
 def test_happy_path_stores_config_hash_from_plugin_json(git_repo):
-    """main() reads config_hash from plugin.json and stores it in .flow.json.
-
-    This test will pass once plugin.json contains config_hash (Task 3).
-    Until then, config_hash is absent from plugin.json and omitted from .flow.json.
-    """
+    """main() reads config_hash from plugin.json and stores it in .flow.json."""
     result = _run(git_repo)
     assert result.returncode == 0
-    plugin_path = LIB_DIR.parent / ".claude-plugin" / "plugin.json"
-    plugin_data = json.loads(plugin_path.read_text())
-    if "config_hash" in plugin_data:
-        data = json.loads((git_repo / ".flow.json").read_text())
-        assert "config_hash" in data
-        assert len(data["config_hash"]) == 12
+    data = json.loads((git_repo / ".flow.json").read_text())
+    assert "config_hash" in data
+    assert len(data["config_hash"]) == 12

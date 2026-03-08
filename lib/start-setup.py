@@ -171,7 +171,7 @@ def _freeze_phases(project_root, branch):
     dest_dir = project_root / ".flow-states"
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"{branch}-phases.json"
-    shutil.copy2(str(source), str(dest))
+    shutil.copy2(source, dest)
 
 
 def _log(project_root, branch, message):
