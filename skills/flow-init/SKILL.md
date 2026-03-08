@@ -55,10 +55,10 @@ Store the answer as `framework` (lowercase name from the JSON).
 
 FLOW has two independent axes for skills that support them:
 
-- **Commit** — how `/flow:flow-commit` is invoked during phase work (auto = skip diff approval, manual = require approval). Also controls per-task approval in Code and refactoring approval in Simplify.
+- **Commit** — how `/flow:flow-commit` is invoked during phase work (auto = skip diff approval, manual = require approval). Also controls per-task approval in Code.
 - **Continue** — whether to auto-advance to the next phase or prompt first.
 
-Phase skills that commit (code, simplify, review, security, learning) have both axes. Phase skills that don't commit (start) only have continue. Utility skills (abort, cleanup) have a single mode value. The `/flow:flow-commit` skill is not configurable — it defaults to auto and can be overridden with `--manual`.
+Phase skills that commit (code, code-review, learning) have both axes. Phase skills that don't commit (start) only have continue. Utility skills (abort, cleanup) have a single mode value. The `/flow:flow-commit` skill is not configurable — it defaults to auto and can be overridden with `--manual`.
 
 Ask the user how much autonomy FLOW should have using AskUserQuestion:
 
@@ -72,24 +72,24 @@ Ask the user how much autonomy FLOW should have using AskUserQuestion:
 **Fully autonomous** — all auto:
 
 ```json
-{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-simplify": {"commit": "auto", "continue": "auto"}, "flow-review": {"commit": "auto", "continue": "auto"}, "flow-security": {"commit": "auto", "continue": "auto"}, "flow-learning": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-cleanup": "auto"}
+{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learning": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-cleanup": "auto"}
 ```
 
 **Fully manual** — all manual:
 
 ```json
-{"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-simplify": {"commit": "manual", "continue": "manual"}, "flow-review": {"commit": "manual", "continue": "manual"}, "flow-security": {"commit": "manual", "continue": "manual"}, "flow-learning": {"commit": "manual", "continue": "manual"}, "flow-abort": "manual", "flow-cleanup": "manual"}
+{"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "manual", "continue": "manual"}, "flow-learning": {"commit": "manual", "continue": "manual"}, "flow-abort": "manual", "flow-cleanup": "manual"}
 ```
 
 **Recommended** — safe defaults for all frameworks:
 
 ```json
-{"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-simplify": {"commit": "auto", "continue": "auto"}, "flow-review": {"commit": "auto", "continue": "auto"}, "flow-security": {"commit": "auto", "continue": "auto"}, "flow-learning": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-cleanup": "auto"}
+{"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learning": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-cleanup": "auto"}
 ```
 
-**Customize** — ask per skill, in this order: start, code, simplify, review, security, learning, abort, cleanup. For each skill, ask about only the applicable axes:
+**Customize** — ask per skill, in this order: start, code, code-review, learning, abort, cleanup. For each skill, ask about only the applicable axes:
 
-For skills with both axes (code, simplify, review, security, learning), ask two AskUserQuestions:
+For skills with both axes (code, code-review, learning), ask two AskUserQuestions:
 
 First question:
 
@@ -202,7 +202,7 @@ add the `skills` key from `skills_dict` (Step 2), and write the file back with
 the Write tool. The result should look like:
 
 ```json
-{"flow_version": "0.16.4", "framework": "python", "skills": {"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-simplify": {"commit": "auto", "continue": "auto"}, "flow-review": {"commit": "auto", "continue": "auto"}, "flow-security": {"commit": "auto", "continue": "auto"}, "flow-learning": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-cleanup": "auto"}}
+{"flow_version": "0.16.4", "framework": "python", "skills": {"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learning": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-cleanup": "auto"}}
 ```
 
 ### Step 5 — Prime project CLAUDE.md
@@ -276,14 +276,12 @@ Display the skills configuration as a pipe-delimited markdown table with exactly
 ```text
 | Skill     | Commit | Continue |
 |-----------|--------|----------|
-| start     | —      | manual   |
-| code      | manual | manual   |
-| simplify  | auto   | auto     |
-| review    | auto   | auto     |
-| security  | auto   | auto     |
-| learning  | auto   | auto     |
-| abort     | auto   | —        |
-| cleanup   | auto   | —        |
+| start       | —      | manual   |
+| code        | manual | manual   |
+| code-review | auto   | auto     |
+| learning    | auto   | auto     |
+| abort       | auto   | —        |
+| cleanup     | auto   | —        |
 ```
 
 Use the actual values from `skills_dict` (Step 2). The table above is just an example. Show `—` for axes that don't apply to a skill. The table must use pipe `|` delimiters — never render as a bullet list.

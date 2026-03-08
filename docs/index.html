@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FLOW — Software Development Lifecycle for Claude Code</title>
-  <meta name="description" content="An opinionated 8-phase software development lifecycle plugin for Claude Code. Plan-first, TDD. Every feature, same phases, no shortcuts. Data-driven framework support.">
+  <meta name="description" content="An opinionated 6-phase software development lifecycle plugin for Claude Code. Plan-first, TDD. Every feature, same phases, no shortcuts. Data-driven framework support.">
   <style>
     :root {
       --bg: #ffffff;
@@ -415,7 +415,7 @@
 
   <header>
     <h1><a href="https://github.com/benkruger/flow" style="color: inherit; text-decoration: none;"><span>FLOW</span></a></h1>
-    <p class="tagline">An opinionated 8-phase software development lifecycle for Claude Code. Every feature follows the same phases in the same order. No shortcuts. Supports <span class="highlight-phrase">Rails</span> and <span class="highlight-phrase">Python</span>.</p>
+    <p class="tagline">An opinionated 6-phase software development lifecycle for Claude Code. Every feature follows the same phases in the same order. No shortcuts. Supports <span class="highlight-phrase">Rails</span> and <span class="highlight-phrase">Python</span>.</p>
   </header>
 
   <!-- WHY -->
@@ -428,7 +428,7 @@
   <!-- HOW -->
   <section>
     <h2>How</h2>
-    <p>Every feature goes through <span class="highlight-phrase">8 phases</span>. Each phase must complete before the next one starts. If something was missed, go back.</p>
+    <p>Every feature goes through <span class="highlight-phrase">6 phases</span>. Each phase must complete before the next one starts. If something was missed, go back.</p>
 
     <div class="pipeline">
       <div class="pipeline-step">
@@ -448,26 +448,16 @@
       </div>
       <div class="pipeline-step">
         <div class="step-num">4</div>
-        <span class="step-label">Simplify</span>
-        <span class="step-detail">Refactor for clarity, auto-commit</span>
+        <span class="step-label">Code Review</span>
+        <span class="step-detail">Three lenses on the same diff &mdash; clarity, correctness, and safety</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">5</div>
-        <span class="step-label">Review</span>
-        <span class="step-detail">Check plan alignment, verify risk coverage, catch bad patterns</span>
-      </div>
-      <div class="pipeline-step">
-        <div class="step-num">6</div>
-        <span class="step-label">Security</span>
-        <span class="step-detail">Scan for vulnerabilities, auth gaps, data exposure, injection</span>
-      </div>
-      <div class="pipeline-step">
-        <div class="step-num">7</div>
         <span class="step-label">Learning</span>
         <span class="step-detail">Capture what went wrong, route corrections to permanent homes</span>
       </div>
       <div class="pipeline-step">
-        <div class="step-num">8</div>
+        <div class="step-num">6</div>
         <span class="step-label">Cleanup</span>
         <span class="step-detail">Clean up, delete state, done</span>
       </div>
@@ -586,7 +576,7 @@
   <!-- CTA -->
   <section style="padding: 64px 0;">
     <h2>Get Started</h2>
-    <p>All 8 phase skills, state file infrastructure, session hooks, and reference documentation in one plugin.</p>
+    <p>All 6 phase skills, state file infrastructure, session hooks, and reference documentation in one plugin.</p>
 
     <p style="color: var(--text-muted); font-size: 15px; margin-bottom: 12px;">Step 1: Install in Claude Code</p>
     <div style="position: relative;">

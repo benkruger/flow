@@ -1,6 +1,6 @@
 """Cleanup orchestrator for FLOW features.
 
-Shared by /flow:flow-cleanup (Phase 8) and /flow:flow-abort. Performs best-effort
+Shared by /flow:flow-cleanup (Phase 6) and /flow:flow-abort. Performs best-effort
 cleanup steps, continuing on failure.
 
 Usage:

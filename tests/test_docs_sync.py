@@ -77,7 +77,7 @@ def test_every_phase_has_a_docs_page():
     data = _load_phases()
     for key, phase in data["phases"].items():
         num = PHASE_NUMBER[key]
-        name = phase["name"].lower()
+        name = phase["name"].lower().replace(" ", "-")
         doc = DOCS_DIR / "phases" / f"phase-{num}-{name}.md"
         assert doc.exists(), (
             f"Phase {num} ({phase['name']}) has no docs/phases/phase-{num}-{name}.md"
@@ -89,7 +89,7 @@ def test_phase_docs_contain_correct_command():
     data = _load_phases()
     for key, phase in data["phases"].items():
         num = PHASE_NUMBER[key]
-        name = phase["name"].lower()
+        name = phase["name"].lower().replace(" ", "-")
         doc = DOCS_DIR / "phases" / f"phase-{num}-{name}.md"
         content = doc.read_text()
         # Docs use /flow-start, not /flow:flow-start
@@ -105,7 +105,7 @@ def test_phase_docs_have_correct_title():
     data = _load_phases()
     for key, phase in data["phases"].items():
         num = PHASE_NUMBER[key]
-        name_lower = phase["name"].lower()
+        name_lower = phase["name"].lower().replace(" ", "-")
         doc = DOCS_DIR / "phases" / f"phase-{num}-{name_lower}.md"
         content = doc.read_text()
         pattern = rf"Phase {num}:\s*{re.escape(phase['name'])}"
@@ -129,7 +129,7 @@ def test_index_mentions_every_skill_command():
 
 
 def test_index_phase_table_shows_all_phases():
-    """docs/skills/index.md phase table must show 'N — Name' for all 8 phases."""
+    """docs/skills/index.md phase table must show 'N — Name' for all 6 phases."""
     data = _load_phases()
     index = (DOCS_DIR / "skills" / "index.md").read_text()
     for key, phase in data["phases"].items():
@@ -145,7 +145,7 @@ def test_index_phase_table_shows_all_phases():
 
 
 def test_readme_mentions_all_phase_commands():
-    """README.md must mention all 8 phase commands and 'N: Name' strings."""
+    """README.md must mention all 6 phase commands and 'N: Name' strings."""
     readme = (REPO_ROOT / "README.md").read_text()
     data = _load_phases()
     for key, phase in data["phases"].items():
@@ -187,7 +187,7 @@ def test_readme_mentions_all_utility_commands():
 
 
 def test_landing_page_mentions_all_phase_names():
-    """docs/index.html must mention all 8 phase names."""
+    """docs/index.html must mention all 6 phase names."""
     html = (DOCS_DIR / "index.html").read_text()
     data = _load_phases()
     for key, phase in data["phases"].items():

@@ -38,14 +38,11 @@ Shows where you are in the FLOW workflow at any moment. Reads `.flow-states/<bra
   Phases
   ------
   [x] Phase 1:  Start          (<1m)
-  [x] Phase 2:  Research       (15m)
-  [x] Phase 3:  Design         (22m)
-  [x] Phase 4:  Plan           (8m)
-  [>] Phase 5:  Code           <-- YOU ARE HERE
-  [ ] Phase 6:  Review
-  [ ] Phase 7:  Security
-  [ ] Phase 8:  Learning
-  [ ] Phase 9:  Cleanup
+  [x] Phase 2:  Plan           (15m)
+  [>] Phase 3:  Code           <-- YOU ARE HERE
+  [ ] Phase 4:  Code Review
+  [ ] Phase 5:  Learning
+  [ ] Phase 6:  Cleanup
 
   Time in current phase : 32m
   Times visited         : 1

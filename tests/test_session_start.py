@@ -84,8 +84,8 @@ def test_multiple_features_mentions_both(git_repo):
     s1["feature"] = "Feature Alpha"
     write_state(state_dir, "feature-alpha", s1)
 
-    s2 = make_state(current_phase="flow-simplify", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-simplify": "in_progress",
+    s2 = make_state(current_phase="flow-code-review", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-code-review": "in_progress",
     })
     s2["feature"] = "Feature Beta"
     write_state(state_dir, "feature-beta", s2)

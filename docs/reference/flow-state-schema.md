@@ -140,7 +140,7 @@ The plan lives outside the state file at `~/.claude/plans/<name>.md` (Claude Cod
 
 ## Security Object
 
-Added to the state file when Phase 5: Security completes its scan.
+Added to the state file when the Security step of Phase 4: Code Review completes its scan.
 
 ```json
 "security": {

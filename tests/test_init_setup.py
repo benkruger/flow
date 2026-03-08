@@ -372,9 +372,7 @@ def test_version_marker_with_skills_dict(tmp_path):
     skills = {
         "flow-start": "manual",
         "flow-code": "manual",
-        "flow-simplify": "manual",
-        "flow-review": "manual",
-        "flow-security": "auto",
+        "flow-code-review": "manual",
         "flow-learning": "auto",
         "flow-commit": "manual",
         "flow-abort": "auto",

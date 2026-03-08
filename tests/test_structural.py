@@ -15,14 +15,14 @@ def _load_phases():
     return json.loads((REPO_ROOT / "flow-phases.json").read_text())
 
 
-def test_phases_has_1_through_8():
+def test_phases_has_1_through_6():
     data = _load_phases()
     phases = data["phases"]
     order = data["order"]
-    assert len(order) == 8, f"Expected 8 phases in order, got {len(order)}"
+    assert len(order) == 6, f"Expected 6 phases in order, got {len(order)}"
     for key in order:
         assert key in phases, f"Phase '{key}' in order but missing from phases"
-    assert len(phases) == 8
+    assert len(phases) == 6
 
 
 def test_commands_match_flow_pattern():

@@ -6,7 +6,7 @@ parent: Skills
 
 # /flow-learning
 
-**Phase:** 7 — Learning
+**Phase:** 5 — Learning
 
 **Usage:** `/flow-learning`, `/flow-learning --auto`, or `/flow-learning --manual`
 
@@ -23,7 +23,7 @@ merges.
 |--------|------|---------------------|
 | CLAUDE.md rules | Project rules and conventions that should have been followed | Yes |
 | Conversation context | Session back-and-forth | Only if not compacted |
-| State file and plan data | Visit counts, timing, notes, plan risks (Phase 7 only) | Yes |
+| State file and plan data | Visit counts, timing, notes, plan risks (Phase 5 only) | Yes |
 
 ---
 
@@ -61,7 +61,7 @@ Learning auto-detects its context:
 
 | Mode | When | Sources | Commits | Settings audit |
 |------|------|---------|---------|----------------|
-| Phase 7 | State file with Security complete | All 3 (CLAUDE.md, context, state/plan) | `/flow-commit --auto` | No |
+| Phase 5 | State file with Code Review complete | All 3 (CLAUDE.md, context, state/plan) | `/flow-commit --auto` | No |
 | Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow-commit --auto` | Yes |
 | Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | No |
 
@@ -79,6 +79,6 @@ Mode is configurable via `.flow.json` (default: auto). In auto mode, permission 
 
 ## Gates
 
-- **Phase 7**: Phase 6: Security must be complete
+- **Phase 5**: Phase 4: Code Review must be complete
 - **Maintainer/Standalone**: No gate — runs immediately
 - Only CLAUDE.md and `.claude/` files are committed — never application code

@@ -53,7 +53,7 @@ already closed, worktree already removed), it continues to the next.
 
 | | `/flow-cleanup` | `/flow-abort` |
 |---|---|---|
-| **When** | After Learning (Phase 8) | Any phase |
+| **When** | After Learning (Phase 6) | Any phase |
 | **PR** | Left open (merge it yourself) | Closed |
 | **Remote branch** | Left intact | Deleted |
 | **Worktree** | Removed | Removed |

@@ -103,10 +103,10 @@ def test_previous_phase_complete_allows():
 
 def test_sequential_chain_phase_4_with_1_to_3_complete():
     state = make_state(
-        current_phase="flow-simplify",
+        current_phase="flow-code-review",
         phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "complete"},
     )
-    allowed, output = _mod.check_phase(state, "flow-simplify")
+    allowed, output = _mod.check_phase(state, "flow-code-review")
     assert allowed
 
 
@@ -134,47 +134,32 @@ def test_first_visit_no_previously_completed_message():
     assert "previously completed" not in output
 
 
-def test_phase_6_requires_phase_5_complete():
-    """Phase 6 (Security) requires phase 5 (Review) to be complete."""
-    state = make_state(
-        current_phase="flow-security",
-        phase_statuses={
-            "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
-            "flow-simplify": "complete", "flow-review": "pending",
-        },
-    )
-    allowed, output = _mod.check_phase(state, "flow-security")
-    assert not allowed
-    assert "Phase 5" in output
-
-
-def test_phase_7_requires_phase_6_complete():
-    """Phase 7 (Learning) requires phase 6 (Security) to be complete."""
+def test_phase_5_requires_phase_4_complete():
+    """Phase 5 (Learning) requires phase 4 (Code Review) to be complete."""
     state = make_state(
         current_phase="flow-learning",
         phase_statuses={
             "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
-            "flow-simplify": "complete", "flow-review": "complete", "flow-security": "pending",
+            "flow-code-review": "pending",
         },
     )
     allowed, output = _mod.check_phase(state, "flow-learning")
     assert not allowed
-    assert "Phase 6" in output
+    assert "Phase 4" in output
 
 
-def test_phase_8_requires_phase_7_complete():
-    """Phase 8 (Cleanup) requires phase 7 (Learning) to be complete."""
+def test_phase_6_requires_phase_5_complete():
+    """Phase 6 (Cleanup) requires phase 5 (Learning) to be complete."""
     state = make_state(
         current_phase="flow-cleanup",
         phase_statuses={
             "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
-            "flow-simplify": "complete", "flow-review": "complete", "flow-security": "complete",
-            "flow-learning": "pending",
+            "flow-code-review": "complete", "flow-learning": "pending",
         },
     )
     allowed, output = _mod.check_phase(state, "flow-cleanup")
     assert not allowed
-    assert "Phase 7" in output
+    assert "Phase 5" in output
 
 
 def test_missing_phases_key_blocks():
@@ -187,10 +172,10 @@ def test_missing_phases_key_blocks():
 
 def test_blocked_message_includes_correct_command():
     """Blocked message should include the correct /flow:X command."""
-    state = make_state(current_phase="flow-simplify", phase_statuses={
+    state = make_state(current_phase="flow-code-review", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "pending",
     })
-    allowed, output = _mod.check_phase(state, "flow-simplify")
+    allowed, output = _mod.check_phase(state, "flow-code-review")
     assert not allowed
     assert "/flow:flow-code" in output
 

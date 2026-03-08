@@ -1,8 +1,8 @@
 # FLOW — Software Development Lifecycle for Claude Code
 
-An opinionated 8-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces plan-first, TDD discipline on every feature. Supports Rails and Python.
+An opinionated 6-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces plan-first, TDD discipline on every feature. Supports Rails and Python.
 
-**Every feature. Same 8 phases. Same order. No shortcuts.**
+**Every feature. Same 6 phases. Same order. No shortcuts.**
 
 **Documentation:** [benkruger.github.io/flow](https://benkruger.github.io/flow)
 
@@ -22,7 +22,7 @@ FLOW imposes structure. Not bureaucracy — discipline.
 - **Zero dependencies** — pure Markdown skills with a thin Python dispatcher
 - **Learning system** that routes corrections to CLAUDE.md, rules, and memory
 - **Autonomy** on your terms — fully manual to fully autonomous, per skill
-- **Opus** for planning and security, Sonnet for review and simplify, Haiku for setup
+- **Opus** for planning, code, and code review, Haiku for setup
 - **Rails** and Python today, more frameworks ahead
 - **Minimal footprint** — `.flow-states` is the only artifact while you work, and Cleanup deletes even that
 
@@ -31,8 +31,8 @@ FLOW imposes structure. Not bureaucracy — discipline.
 ## The Workflow
 
 ```text
-Start → Plan → Code → Simplify → Review → Security → Learning → Cleanup
-  1       2      3       4          5          6          7         8
+Start → Plan → Code → Code Review → Learning → Cleanup
+  1       2      3         4            5          6
 ```
 
 | Phase | Command | Model | What happens |
@@ -40,11 +40,9 @@ Start → Plan → Code → Simplify → Review → Security → Learning → Cl
 | **1: Start** | `/flow-start <name>` | Haiku | New worktree, push branch, open PR, `bin/ci` baseline, upgrade dependencies, `bin/ci` green — Sonnet sub-agent fixes CI failures |
 | **2: Plan** | `/flow-plan` | **Opus** | Native plan mode — explore codebase, design approach, produce ordered tasks with risks |
 | **3: Code** | `/flow-code` | **Opus** | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
-| **4: Simplify** | `/flow-simplify` | Sonnet | Invoke `/simplify` on committed code, refactor for clarity, auto-commit |
-| **5: Review** | `/flow-review` | Sonnet | Sub-agent checks plan alignment, risk coverage, framework anti-patterns |
-| **6: Security** | `/flow-security` | **Opus** | Sub-agent scans diff for vulnerabilities, auth gaps, data exposure, injection risks |
-| **7: Learning** | `/flow-learning` | Sonnet | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
-| **8: Cleanup** | `/flow-cleanup` | Haiku | Worktree removed, state file deleted, feature done |
+| **4: Code Review** | `/flow-code-review` | **Opus** | Three lenses — clarity (`/simplify`), correctness (`/review`), and safety (`/security-review`) |
+| **5: Learning** | `/flow-learning` | Sonnet | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
+| **6: Cleanup** | `/flow-cleanup` | Haiku | Worktree removed, state file deleted, feature done |
 
 ---
 
@@ -63,7 +61,7 @@ Start fully manual. As your comfort grows, dial up autonomy per skill. Go fully 
 |-------|--------------|
 | **Fully autonomous** | All skills auto for both axes — zero prompts |
 | **Fully manual** | Every diff reviewed, every phase transition confirmed |
-| **Recommended** | Auto where safe (Simplify, Security), manual where judgment matters (Code, Plan) |
+| **Recommended** | Auto where safe (Code Review), manual where judgment matters (Code, Plan) |
 | **Customize** | Choose per skill and per axis |
 
 ### Runtime overrides
@@ -72,7 +70,7 @@ Any skill invocation accepts `--auto` or `--manual` to override the configured s
 
 ```text
 /flow-code --auto        # skip per-task approval for this session
-/flow-security --manual  # prompt before advancing, just this once
+/flow-code-review --manual  # prompt before advancing, just this once
 ```
 
 ### Configuration lives in `.flow.json`
@@ -82,9 +80,7 @@ Any skill invocation accepts `--auto` or `--manual` to override the configured s
   "skills": {
     "flow-start": {"continue": "manual"},
     "flow-code": {"commit": "manual", "continue": "manual"},
-    "flow-simplify": {"commit": "auto", "continue": "auto"},
-    "flow-review": {"commit": "auto", "continue": "auto"},
-    "flow-security": {"commit": "auto", "continue": "auto"},
+    "flow-code-review": {"commit": "auto", "continue": "auto"},
     "flow-learning": {"commit": "auto", "continue": "auto"},
     "flow-abort": "auto",
     "flow-cleanup": "auto"
@@ -152,7 +148,7 @@ Available at any point in the workflow:
 
 ### Sub-Agent Architecture
 
-Three phase skills launch mandatory sub-agents: Review and Security (general-purpose). Start uses a Sonnet sub-agent for CI failures. Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`) instead of sub-agents. Code has no sub-agent.
+Start uses a Sonnet sub-agent for CI failures. Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`) instead of sub-agents. Code Review invokes Claude Code's built-in `/simplify`, `/review`, and `/security-review` commands directly. Code has no sub-agent.
 
 ```text
 Main conversation          Sub-agent (general-purpose)
@@ -180,11 +176,9 @@ FLOW automatically selects the right model for each phase — Opus for hard thin
 | 1: Start | Haiku | Mechanical setup; CI failures delegated to Sonnet sub-agent |
 | 2: Plan | **Opus** | Codebase exploration, architectural judgment, and task planning — bad plans cascade through all later phases |
 | 3: Code | **Opus** | Writing correct code against complex codebase |
-| 4: Simplify | Sonnet | Invoke `/simplify` for clarity refactoring, auto-commit |
-| 5: Review | Sonnet | Sub-agent analyzes diff, fixes are targeted and small |
-| 6: Security | **Opus** | Security analysis requires architectural reasoning about attack vectors and data flows |
-| 7: Learning | Sonnet | Synthesizing learnings into reusable patterns |
-| 8: Cleanup | Haiku | Delete worktree and state file |
+| 4: Code Review | **Opus** | Clarity (`/simplify`), correctness (`/review`), and safety (`/security-review`) — three review lenses |
+| 5: Learning | Sonnet | Synthesizing learnings into reusable patterns |
+| 6: Cleanup | Haiku | Delete worktree and state file |
 | Commit | Sonnet | Writing clear, well-structured commit messages |
 
 ### State File Persistence
@@ -239,8 +233,7 @@ Phases that allow it offer back-navigation when something was missed:
 | Phase | Can return to |
 |-------|--------------|
 | Code | Plan |
-| Simplify | Code |
-| Review | Code, Plan |
+| Code Review | Code, Plan |
 
 When returning, state is reset appropriately. Later phases are invalidated. Prior findings are preserved and extended — never discarded.
 
@@ -252,7 +245,7 @@ When returning, state is reset appropriately. Later phases are invalidated. Prio
 - **Plan before code** — codebase explored, risks identified, approach approved before any implementation
 - **TDD always** — test must fail before implementation is written; test must pass before commit
 - **`bin/ci` gate** — must be green before every commit and every phase transition
-- **100% test coverage** — Code phase cannot transition to Simplify without it
+- **100% test coverage** — Code phase cannot transition to Code Review without it
 - **No disabling linters** — fix the code, not the linter; no lint suppression comments
 - **Commit discipline** — imperative verb + tl;dr + per-file breakdown, every commit
 

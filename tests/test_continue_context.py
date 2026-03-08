@@ -74,8 +74,8 @@ def test_happy_path_returns_ok_with_all_fields(state_dir, git_repo, branch):
     assert data["worktree"] == ".worktrees/test-feature"
 
 
-def test_all_complete_returns_ok_with_phase_8():
-    """Phase 8 maps to Cleanup with /flow:flow-cleanup command."""
+def test_all_complete_returns_ok_with_phase_6():
+    """Phase 6 maps to Cleanup with /flow:flow-cleanup command."""
     assert _mod.PHASE_NAMES["flow-cleanup"] == "Cleanup"
     assert _mod.COMMANDS["flow-cleanup"] == "/flow:flow-cleanup"
 
@@ -104,29 +104,28 @@ def test_panel_matches_format_status_output():
     assert _mod.format_panel is _mod._fs_mod.format_panel
 
     state = make_state(
-        current_phase="flow-review",
+        current_phase="flow-code-review",
         phase_statuses={
             "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
-            "flow-simplify": "complete", "flow-review": "in_progress",
+            "flow-code-review": "in_progress",
         },
     )
     state["phases"]["flow-start"]["cumulative_seconds"] = 60
     state["phases"]["flow-plan"]["cumulative_seconds"] = 300
     state["phases"]["flow-code"]["cumulative_seconds"] = 600
-    state["phases"]["flow-simplify"]["cumulative_seconds"] = 900
     state["notes"] = [{"text": "note 1"}, {"text": "note 2"}]
 
     version = _mod._fs_mod._read_version()
     panel = _mod.format_panel(state, version)
     assert isinstance(panel, str) and len(panel) > 0
-    assert "Phase 5" in panel
+    assert "Phase 4" in panel
     assert "Notes   : 2" in panel
 
 
 # --- In-process unit tests ---
 
 
-def test_commands_dict_has_all_8():
+def test_commands_dict_has_all_6():
     for key in PHASE_ORDER:
         assert key in _mod.COMMANDS
 

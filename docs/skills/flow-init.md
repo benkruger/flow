@@ -33,7 +33,7 @@ One-time project setup. Configures workspace permissions in `.claude/settings.js
 
 FLOW has two independent axes for skills that support them:
 
-- **Commit** — how `/flow-commit` is invoked during phase work (auto = skip diff approval, manual = require approval). Also controls per-task approval in Code and refactoring approval in Simplify.
+- **Commit** — how `/flow-commit` is invoked during phase work (auto = skip diff approval, manual = require approval). Also controls per-task approval in Code.
 - **Continue** — whether to auto-advance to the next phase or prompt first.
 
 The chosen configuration is stored in `.flow.json` under a `skills` key:
@@ -45,9 +45,7 @@ The chosen configuration is stored in `.flow.json` under a `skills` key:
   "skills": {
     "flow-start": {"continue": "manual"},
     "flow-code": {"commit": "manual", "continue": "manual"},
-    "flow-simplify": {"commit": "auto", "continue": "auto"},
-    "flow-review": {"commit": "auto", "continue": "auto"},
-    "flow-security": {"commit": "auto", "continue": "auto"},
+    "flow-code-review": {"commit": "auto", "continue": "auto"},
     "flow-learning": {"commit": "auto", "continue": "auto"},
     "flow-abort": "auto",
     "flow-cleanup": "auto"
@@ -55,7 +53,7 @@ The chosen configuration is stored in `.flow.json` under a `skills` key:
 }
 ```
 
-Phase skills that commit (Code, Simplify, Review, Security, Learning) have both axes as a nested object. Phase skills that don't commit (Start) have only the continue axis. Utility skills (Abort, Cleanup) have a single string value. The `/flow-commit` skill is not configurable — it defaults to auto and can be overridden with `--manual`.
+Phase skills that commit (Code, Code Review, Learning) have both axes as a nested object. Phase skills that don't commit (Start) have only the continue axis. Utility skills (Abort, Cleanup) have a single string value. The `/flow-commit` skill is not configurable — it defaults to auto and can be overridden with `--manual`.
 
 Individual skills can always be overridden at invocation time with `--auto` or `--manual` flags, regardless of the `.flow.json` configuration.
 

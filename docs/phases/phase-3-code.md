@@ -61,4 +61,5 @@ By the end of Phase 3:
 
 ## What Comes Next
 
-Phase 4: Simplify (`/flow-simplify`) — refactor for clarity before review.
+Phase 4: Code Review (`/flow-code-review`) — three lenses on the same diff:
+clarity, correctness, and safety.

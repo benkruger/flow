@@ -61,8 +61,8 @@ def test_simple_path_with_string_value():
 
 def test_nested_path_with_array_index():
     """plan.tasks.0.started_at=NOW navigates into an array."""
-    state = make_state(current_phase="flow-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-simplify": "complete", "flow-review": "in_progress",
+    state = make_state(current_phase="flow-code-review", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-code-review": "in_progress",
     })
     state["plan"] = {
         "tasks": [
@@ -79,8 +79,8 @@ def test_nested_path_with_array_index():
 
 def test_task_status_update():
     """plan.tasks.0.status=in_progress sets a string value on a task."""
-    state = make_state(current_phase="flow-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-simplify": "complete", "flow-review": "in_progress",
+    state = make_state(current_phase="flow-code-review", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-code-review": "in_progress",
     })
     state["plan"] = {
         "tasks": [
@@ -98,8 +98,8 @@ def test_task_status_update():
 
 def test_multiple_set_args():
     """Two --set args are applied atomically in one write."""
-    state = make_state(current_phase="flow-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-simplify": "complete", "flow-review": "in_progress",
+    state = make_state(current_phase="flow-code-review", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-code-review": "in_progress",
     })
     state["plan"] = {
         "tasks": [
@@ -122,9 +122,9 @@ def test_multiple_set_args():
 
 def test_security_scanned_at():
     """security.scanned_at=NOW sets the scan timestamp."""
-    state = make_state(current_phase="flow-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-simplify": "complete",
-        "flow-review": "in_progress",
+    state = make_state(current_phase="flow-code-review", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+        "flow-code-review": "in_progress",
     })
     state["security"] = {"findings": [], "clean_checks": [], "scanned_at": None}
 
@@ -177,8 +177,8 @@ def test_error_invalid_path(git_repo, state_dir, branch):
 
 def test_error_array_index_out_of_range(git_repo, state_dir, branch):
     """Array index out of range returns error."""
-    state = make_state(current_phase="flow-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-simplify": "complete", "flow-review": "in_progress",
+    state = make_state(current_phase="flow-code-review", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-code-review": "in_progress",
     })
     state["plan"] = {"tasks": [{"id": 1, "status": "pending"}]}
     write_state(state_dir, branch, state)
