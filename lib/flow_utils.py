@@ -30,6 +30,19 @@ COMMANDS = {key: _config["phases"][key]["command"] for key in PHASE_ORDER}
 PHASE_NUMBER = {key: i + 1 for i, key in enumerate(PHASE_ORDER)}
 
 
+def load_phase_config(path):
+    """Load phase config from a JSON file, returning (order, names, numbers, commands).
+
+    Works with both the canonical flow-phases.json and frozen per-branch copies.
+    """
+    config = json.loads(Path(path).read_text())
+    order = config["order"]
+    names = {key: config["phases"][key]["name"] for key in order}
+    commands = {key: config["phases"][key]["command"] for key in order}
+    numbers = {key: i + 1 for i, key in enumerate(order)}
+    return order, names, numbers, commands
+
+
 def frameworks_dir():
     """Return the frameworks/ directory inside the plugin."""
     return _plugin_root / "frameworks"

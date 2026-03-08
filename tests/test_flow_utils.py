@@ -188,6 +188,59 @@ def test_find_state_files_corrupt_exact_match_no_fallthrough(tmp_path):
     assert results == []
 
 
+# --- load_phase_config ---
+
+
+def test_load_phase_config_returns_four_values(tmp_path):
+    """load_phase_config returns (order, names, numbers, commands) tuple."""
+    source = Path(__file__).resolve().parent.parent / "flow-phases.json"
+    result = _mod.load_phase_config(source)
+    assert len(result) == 4
+    order, names, numbers, commands = result
+    assert isinstance(order, list)
+    assert isinstance(names, dict)
+    assert isinstance(numbers, dict)
+    assert isinstance(commands, dict)
+
+
+def test_load_phase_config_matches_module_constants():
+    """load_phase_config from source must match module-level constants."""
+    source = Path(__file__).resolve().parent.parent / "flow-phases.json"
+    order, names, numbers, commands = _mod.load_phase_config(source)
+    assert order == _mod.PHASE_ORDER
+    assert names == _mod.PHASE_NAMES
+    assert numbers == _mod.PHASE_NUMBER
+    assert commands == _mod.COMMANDS
+
+
+def test_load_phase_config_from_frozen_file(tmp_path):
+    """load_phase_config works with a frozen copy of flow-phases.json."""
+    source = Path(__file__).resolve().parent.parent / "flow-phases.json"
+    frozen = tmp_path / "test-feature-phases.json"
+    frozen.write_text(source.read_text())
+    order, names, numbers, commands = _mod.load_phase_config(frozen)
+    assert order == _mod.PHASE_ORDER
+    assert names == _mod.PHASE_NAMES
+
+
+def test_load_phase_config_custom_content(tmp_path):
+    """load_phase_config correctly parses a minimal phases file."""
+    custom = {
+        "order": ["alpha", "beta"],
+        "phases": {
+            "alpha": {"name": "Alpha", "command": "/test:alpha", "can_return_to": []},
+            "beta": {"name": "Beta", "command": "/test:beta", "can_return_to": ["alpha"]},
+        },
+    }
+    path = tmp_path / "phases.json"
+    path.write_text(json.dumps(custom))
+    order, names, numbers, commands = _mod.load_phase_config(path)
+    assert order == ["alpha", "beta"]
+    assert names == {"alpha": "Alpha", "beta": "Beta"}
+    assert numbers == {"alpha": 1, "beta": 2}
+    assert commands == {"alpha": "/test:alpha", "beta": "/test:beta"}
+
+
 def test_find_state_files_exact_match_priority(tmp_path):
     """Exact match takes priority — other files are not returned."""
     state_dir = tmp_path / ".flow-states"
