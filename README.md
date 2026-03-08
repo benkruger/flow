@@ -37,14 +37,14 @@ Start → Plan → Code → Simplify → Review → Security → Learning → Cl
 
 | Phase | Command | Model | What happens |
 |-------|---------|-------|-------------|
-| **1: Start** | `/flow:flow-start <name>` | Haiku | New worktree, push branch, open PR, `bin/ci` baseline, upgrade dependencies, `bin/ci` green — Sonnet sub-agent fixes CI failures |
-| **2: Plan** | `/flow:flow-plan` | **Opus** | Native plan mode — explore codebase, design approach, produce ordered tasks with risks |
-| **3: Code** | `/flow:flow-code` | **Opus** | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
-| **4: Simplify** | `/flow:flow-simplify` | Sonnet | Invoke `/simplify` on committed code, refactor for clarity, auto-commit |
-| **5: Review** | `/flow:flow-review` | Sonnet | Sub-agent checks plan alignment, risk coverage, framework anti-patterns |
-| **6: Security** | `/flow:flow-security` | **Opus** | Sub-agent scans diff for vulnerabilities, auth gaps, data exposure, injection risks |
-| **7: Learning** | `/flow:flow-learning` | Sonnet | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
-| **8: Cleanup** | `/flow:flow-cleanup` | Haiku | Worktree removed, state file deleted, feature done |
+| **1: Start** | `/flow-start <name>` | Haiku | New worktree, push branch, open PR, `bin/ci` baseline, upgrade dependencies, `bin/ci` green — Sonnet sub-agent fixes CI failures |
+| **2: Plan** | `/flow-plan` | **Opus** | Native plan mode — explore codebase, design approach, produce ordered tasks with risks |
+| **3: Code** | `/flow-code` | **Opus** | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
+| **4: Simplify** | `/flow-simplify` | Sonnet | Invoke `/simplify` on committed code, refactor for clarity, auto-commit |
+| **5: Review** | `/flow-review` | Sonnet | Sub-agent checks plan alignment, risk coverage, framework anti-patterns |
+| **6: Security** | `/flow-security` | **Opus** | Sub-agent scans diff for vulnerabilities, auth gaps, data exposure, injection risks |
+| **7: Learning** | `/flow-learning` | Sonnet | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
+| **8: Cleanup** | `/flow-cleanup` | Haiku | Worktree removed, state file deleted, feature done |
 
 ---
 
@@ -57,7 +57,7 @@ Every skill has two independent axes you can tune:
 
 Start fully manual. As your comfort grows, dial up autonomy per skill. Go fully autonomous when you trust the workflow.
 
-### Four preset levels via `/flow:flow-init`
+### Four preset levels via `/flow-init`
 
 | Level | What it means |
 |-------|--------------|
@@ -71,8 +71,8 @@ Start fully manual. As your comfort grows, dial up autonomy per skill. Go fully 
 Any skill invocation accepts `--auto` or `--manual` to override the configured setting for that run:
 
 ```text
-/flow:flow-code --auto        # skip per-task approval for this session
-/flow:flow-security --manual  # prompt before advancing, just this once
+/flow-code --auto        # skip per-task approval for this session
+/flow-security --manual  # prompt before advancing, just this once
 ```
 
 ### Configuration lives in `.flow.json`
@@ -92,7 +92,7 @@ Any skill invocation accepts `--auto` or `--manual` to override the configured s
 }
 ```
 
-View your current settings anytime with `/flow:flow-config`.
+View your current settings anytime with `/flow-config`.
 
 ---
 
@@ -108,13 +108,13 @@ In any Claude Code session:
 Then initialize in your project (once per project, and again after each FLOW upgrade):
 
 ```bash
-/flow:flow-init
+/flow-init
 ```
 
 Start a new Claude Code session so permissions take effect, then start a feature:
 
 ```bash
-/flow:flow-start invoice pdf export
+/flow-start invoice pdf export
 ```
 
 This creates branch `invoice-pdf-export`, a worktree at `.worktrees/invoice-pdf-export`, opens a GitHub PR, runs `bin/ci` to establish a baseline, upgrades dependencies, runs `bin/ci` again to confirm green, and lands you in Phase 2: Plan.
@@ -125,7 +125,7 @@ This creates branch `invoice-pdf-export`, a worktree at `.worktrees/invoice-pdf-
 
 The plugin itself installs into Claude Code's managed plugin directory — one place, fully managed by Claude Code.
 
-FLOW configures workspace permissions in `.claude/settings.json` and a version marker in `.flow.json` (via `/flow:flow-init`, committed once). During active development, a single gitignored JSON state file per feature exists at `.flow-states/<branch>.json`. When the feature is done and Cleanup runs, that file is deleted too.
+FLOW configures workspace permissions in `.claude/settings.json` and a version marker in `.flow.json` (via `/flow-init`, committed once). During active development, a single gitignored JSON state file per feature exists at `.flow-states/<branch>.json`. When the feature is done and Cleanup runs, that file is deleted too.
 
 **Three commands to set up. One file while you work. Zero when you're done.**
 
@@ -137,14 +137,14 @@ Available at any point in the workflow:
 
 | Command | What it does |
 |---------|-------------|
-| `/flow:flow-init` | One-time project setup — configure permissions and git excludes |
-| `/flow:flow-commit` | Full diff review, approved commit message, pull before push |
-| `/flow:flow-status` | Current phase, PR link, cumulative time per phase, next step |
-| `/flow:flow-continue` | Re-asks last transition question; rebuilds full context on new session |
-| `/flow:flow-note` | Captures corrections to state file — auto-invoked when Claude is wrong |
-| `/flow:flow-abort` | Abandon feature — close PR, delete remote branch, remove worktree, delete state |
-| `/flow:flow-config` | Display current configuration — version, framework, per-skill autonomy |
-| `/flow:flow-local-permission` | Promote permissions from settings.local.json into settings.json |
+| `/flow-init` | One-time project setup — configure permissions and git excludes |
+| `/flow-commit` | Full diff review, approved commit message, pull before push |
+| `/flow-status` | Current phase, PR link, cumulative time per phase, next step |
+| `/flow-continue` | Re-asks last transition question; rebuilds full context on new session |
+| `/flow-note` | Captures corrections to state file — auto-invoked when Claude is wrong |
+| `/flow-abort` | Abandon feature — close PR, delete remote branch, remove worktree, delete state |
+| `/flow-config` | Display current configuration — version, framework, per-skill autonomy |
+| `/flow-local-permission` | Promote permissions from settings.local.json into settings.json |
 
 ---
 
@@ -202,11 +202,11 @@ State survives session breaks and compaction. Multiple features can run simultan
 
 Every Claude Code session start — new terminal, `/clear`, `/compact` — triggers a hook that scans `.flow-states/` for in-progress features.
 
-If a feature is found, Claude knows the feature name, current phase, and worktree — but does not act on it. No auto-prompting, no "Ready to continue?" interrupting your train of thought. When you want to resume, type `/flow:flow-continue` and pick up exactly where you left off.
+If a feature is found, Claude knows the feature name, current phase, and worktree — but does not act on it. No auto-prompting, no "Ready to continue?" interrupting your train of thought. When you want to resume, type `/flow-continue` and pick up exactly where you left off.
 
 The same hook injects the correction-capture instruction for the full session:
 
-> "Throughout this session: whenever the user corrects you, invoke `/flow:flow-note` immediately before replying."
+> "Throughout this session: whenever the user corrects you, invoke `/flow-note` immediately before replying."
 
 Both behaviors — feature awareness and correction capture — are wired in at session start, without any user action.
 
@@ -215,7 +215,7 @@ Both behaviors — feature awareness and correction capture — are wired in at 
 Every correction and observation has a path to becoming a permanent, reusable pattern — routed to the right home:
 
 ```text
-User corrects Claude → /flow:flow-note captures it in state["notes"]
+User corrects Claude → /flow-note captures it in state["notes"]
 Claude writes observations → auto-memory (shared across worktrees)
        ↓
 Learning reads three sources (CLAUDE.md rules, conversation context, state/plan data)
@@ -285,25 +285,15 @@ Three independent mechanisms enforce this:
 
 ---
 
-## Part of the Ecosystem
-
-FLOW is part of a growing community of disciplined Claude Code plugins. Two projects worth knowing that inspired and motivated me:
-
-- **[metaswarm](https://github.com/dsifry/metaswarm)** by Dave Sifry — a multi-agent orchestration framework with 18 specialized agents, cross-model adversarial review, and full pipeline orchestration from GitHub issue to merged PR. If FLOW is disciplined feature development, metaswarm is disciplined development at scale.
-
-- **[Superpowers](https://github.com/obra/superpowers)** by Jesse Vincent — foundational agentic skills for Claude Code including TDD, systematic debugging, and plan writing. Proved that disciplined agent workflows are not overhead — they're what make autonomous development reliable.
-
----
-
 ## Maintainer Tools
 
 These skills and scripts live in the FLOW repo itself (`.claude/skills/` and `lib/`). They are not part of the user-facing plugin — they exist to develop, test, and release FLOW.
 
 | Command | What it does |
 |---------|-------------|
-| `/release` | Bump version in plugin.json and marketplace.json, tag, push, create GitHub Release |
+| `/flow-release` | Bump version in plugin.json and marketplace.json, tag, push, create GitHub Release |
 | `/flow-qa` | QA mode — bare shows status, `--start` switches to local `--plugin-dir` testing, `--stop` reinstalls marketplace |
-| `/reset` | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files |
+| `/flow-reset` | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files |
 
 ### Local QA Workflow
 

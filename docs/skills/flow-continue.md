@@ -1,14 +1,14 @@
 ---
-title: /flow:flow-continue
+title: /flow-continue
 nav_order: 4
 parent: Skills
 ---
 
-# /flow:flow-continue
+# /flow-continue
 
 **Phase:** Any
 
-**Usage:** `/flow:flow-continue`
+**Usage:** `/flow-continue`
 
 Resumes the current FLOW feature. The session hook provides awareness of in-progress features, but this skill is the explicit action that resumes work. Behaves differently depending on context:
 

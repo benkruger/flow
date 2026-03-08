@@ -45,7 +45,7 @@ when building new phase skills.
 ```
 ============================================
   FLOW — Paused
-  Run /flow:flow-continue when ready to continue.
+  Run /flow-continue when ready to continue.
 ============================================
 ```
 ````
@@ -97,7 +97,7 @@ Replace `PREV` with the previous phase number and `PREV_NAME` with its name:
 2. Get the current branch: run `git branch --show-current`.
 3. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
-     Run /flow:flow-start first."
+     Run /flow-start first."
 4. Check `phases.PREV.status` in the JSON.
    - If not `"complete"`: STOP. "BLOCKED: Phase PREV: PREV_NAME must be
      complete first."
@@ -144,7 +144,7 @@ Every phase transition (Phases 1-6) includes a third option:
 
 If the user picks option 3:
 1. Ask what they want to capture (open text)
-2. Invoke `/flow:flow-note` with their message
+2. Invoke `/flow-note` with their message
 3. Re-ask the transition question with only "Yes" and "Not yet"
 
 This is separate from the automatic correction capture in the session hook.
@@ -158,7 +158,7 @@ prompt catches things the user thought of but didn't say.
 - Never skip the HARD-GATE
 - Always cd into the worktree before running any commands
 - Always invoke `flow:flow-status` before the transition question
-- Always use AskUserQuestion for the transition — never print "type /flow:flow-next"
+- Always use AskUserQuestion for the transition — never print "type /flow-next"
 - Yes → invoke next skill via Skill tool
 - Not yet → paused banner only
 - **Always run `bin/flow ci` before any state transition that touches code**

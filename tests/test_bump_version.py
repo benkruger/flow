@@ -57,7 +57,7 @@ def fake_repo(tmp_path):
             "```\n"
         )
 
-    release_dir = tmp_path / ".claude" / "skills" / "release"
+    release_dir = tmp_path / ".claude" / "skills" / "flow-release"
     release_dir.mkdir(parents=True)
     (release_dir / "SKILL.md").write_text(
         "# Release\n\n"
@@ -164,7 +164,7 @@ def test_cli_successful_bump(fake_repo, monkeypatch):
         assert "FLOW v1.0.0" not in text
 
     # Check release skill
-    text = (fake_repo / ".claude" / "skills" / "release" / "SKILL.md").read_text()
+    text = (fake_repo / ".claude" / "skills" / "flow-release" / "SKILL.md").read_text()
     assert "FLOW v2.0.0" in text
     assert "FLOW v1.0.0" not in text
 

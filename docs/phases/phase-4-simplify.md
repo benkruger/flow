@@ -5,7 +5,7 @@ nav_order: 5
 
 # Phase 4: Simplify
 
-**Command:** `/flow:flow-simplify`
+**Command:** `/flow-simplify`
 
 Runs Claude Code's built-in `/simplify` skill on the PR diff. Refactors
 code for clarity, reduces complexity, and improves naming while preserving
@@ -34,7 +34,7 @@ It never changes **what** the code does, only **how** it does it.
 1. **Invoke `/simplify`** on the committed code from the Code phase
 2. **Show the diff** — all proposed changes displayed inline
 3. **User decides** — accept, revert, edit manually, or go back to Code
-4. **Auto-commit** — accepted changes committed via `/flow:flow-commit --auto`
+4. **Auto-commit** — accepted changes committed via `/flow-commit --auto`
 
 ---
 
@@ -46,5 +46,5 @@ It never changes **what** the code does, only **how** it does it.
 
 ## What Comes Next
 
-Phase 5: Review (`/flow:flow-review`) — systematic code review against the
+Phase 5: Review (`/flow-review`) — systematic code review against the
 plan, risks, and framework anti-patterns.

@@ -1,14 +1,14 @@
 ---
-title: /flow:flow-abort
+title: /flow-abort
 nav_order: 17
 parent: Skills
 ---
 
-# /flow:flow-abort
+# /flow-abort
 
 **Phase:** Any (no phase gate)
 
-**Usage:** `/flow:flow-abort`, `/flow:flow-abort --auto`, or `/flow:flow-abort --manual`
+**Usage:** `/flow-abort`, `/flow-abort --auto`, or `/flow-abort --manual`
 
 The escape hatch. Abandons the current feature completely — closes the PR,
 deletes the remote branch, removes the worktree, and deletes the state file.
@@ -16,9 +16,9 @@ deletes the remote branch, removes the worktree, and deletes the state file.
 Available from any phase, no prerequisites. Best-effort — warns if the state
 file is missing.
 
-- `/flow:flow-abort` — uses configured mode from `.flow.json` (default: auto)
-- `/flow:flow-abort --auto` — skips confirmation and proceeds directly
-- `/flow:flow-abort --manual` — prompts for user confirmation before any destructive action
+- `/flow-abort` — uses configured mode from `.flow.json` (default: auto)
+- `/flow-abort --auto` — skips confirmation and proceeds directly
+- `/flow-abort --manual` — prompts for user confirmation before any destructive action
 
 ---
 
@@ -49,9 +49,9 @@ already closed, worktree already removed), it continues to the next.
 
 ---
 
-## vs /flow:flow-cleanup
+## vs /flow-cleanup
 
-| | `/flow:flow-cleanup` | `/flow:flow-abort` |
+| | `/flow-cleanup` | `/flow-abort` |
 |---|---|---|
 | **When** | After Learning (Phase 8) | Any phase |
 | **PR** | Left open (merge it yourself) | Closed |
@@ -60,8 +60,8 @@ already closed, worktree already removed), it continues to the next.
 | **State file** | Deleted | Deleted |
 | **Missing state** | Warns, proceeds | Warns, proceeds |
 
-Use `/flow:flow-cleanup` for the happy path after a completed feature.
-Use `/flow:flow-abort` to walk away from a feature entirely.
+Use `/flow-cleanup` for the happy path after a completed feature.
+Use `/flow-abort` to walk away from a feature entirely.
 
 ---
 

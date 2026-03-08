@@ -5,7 +5,7 @@ nav_order: 3
 
 # Phase 2: Plan
 
-**Command:** `/flow:flow-plan`
+**Command:** `/flow-plan`
 
 Explores the codebase, designs the approach, and produces an ordered
 implementation plan — all in one phase using Claude Code's native plan
@@ -53,5 +53,5 @@ By the end of Phase 2:
 
 ## What Comes Next
 
-Phase 3: Code (`/flow:flow-code`) — execute tasks one by one,
+Phase 3: Code (`/flow-code`) — execute tasks one by one,
 TDD enforced at each step.

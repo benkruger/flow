@@ -1,5 +1,5 @@
 ---
-name: reset
+name: flow-reset
 description: "Reset all FLOW artifacts. Closes PRs, removes worktrees, deletes branches, clears state files."
 ---
 

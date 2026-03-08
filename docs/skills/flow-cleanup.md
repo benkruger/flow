@@ -1,14 +1,14 @@
 ---
-title: /flow:flow-cleanup
+title: /flow-cleanup
 nav_order: 12
 parent: Skills
 ---
 
-# /flow:flow-cleanup
+# /flow-cleanup
 
 **Phase:** 8 — Cleanup
 
-**Usage:** `/flow:flow-cleanup`, `/flow:flow-cleanup --auto`, or `/flow:flow-cleanup --manual`
+**Usage:** `/flow-cleanup`, `/flow-cleanup --auto`, or `/flow-cleanup --manual`
 
 The final phase. Removes the git worktree and deletes the state file.
 Mode is configurable via `.flow.json` (default: auto, skips confirmation).

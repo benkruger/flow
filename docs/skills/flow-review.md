@@ -1,14 +1,14 @@
 ---
-title: /flow:flow-review
+title: /flow-review
 nav_order: 8
 parent: Skills
 ---
 
-# /flow:flow-review
+# /flow-review
 
 **Phase:** 5 — Review
 
-**Usage:** `/flow:flow-review`, `/flow:flow-review --auto`, or `/flow:flow-review --manual`
+**Usage:** `/flow-review`, `/flow-review --auto`, or `/flow-review --manual`
 
 Delegates to Claude's built-in `/review` command for code quality,
 correctness, security, and test coverage analysis. Fixes every finding,

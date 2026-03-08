@@ -1,14 +1,14 @@
 ---
-title: /flow:flow-note
+title: /flow-note
 nav_order: 13
 parent: Skills
 ---
 
-# /flow:flow-note
+# /flow-note
 
 **Phase:** Any (utility skill)
 
-**Usage:** `/flow:flow-note <message>` or invoked automatically
+**Usage:** `/flow-note <message>` or invoked automatically
 
 Captures a correction or learning to the state file immediately.
 Fast — one line of output, no interruption to flow.
@@ -30,7 +30,7 @@ The note is captured before Claude replies.
 ## Explicit Invocation
 
 ```text
-/flow:flow-note Never assume branch-behind is unlikely in a multi-session workflow
+/flow-note Never assume branch-behind is unlikely in a multi-session workflow
 ```
 
 ---

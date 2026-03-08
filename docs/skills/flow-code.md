@@ -1,14 +1,14 @@
 ---
-title: /flow:flow-code
+title: /flow-code
 nav_order: 7
 parent: Skills
 ---
 
-# /flow:flow-code
+# /flow-code
 
 **Phase:** 3 — Code
 
-**Usage:** `/flow:flow-code`, `/flow:flow-code --auto`, or `/flow:flow-code --manual`
+**Usage:** `/flow-code`, `/flow-code --auto`, or `/flow-code --manual`
 
 Executes the approved plan one task at a time. Each task goes through
 a full TDD cycle, user diff review, `bin/flow ci` gate, and commit before
@@ -25,7 +25,7 @@ For each task:
 3. Write code → confirm test passes → refactor
 4. Show diff → AskUserQuestion review (streamline available after first task)
 5. `bin/flow ci` green (required)
-6. `/flow:flow-commit` for this task
+6. `/flow-commit` for this task
 7. Next task
 
 ---

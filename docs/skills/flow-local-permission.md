@@ -1,14 +1,14 @@
 ---
-title: /flow:flow-local-permission
+title: /flow-local-permission
 nav_order: 14
 parent: Skills
 ---
 
-# /flow:flow-local-permission
+# /flow-local-permission
 
 **Phase:** Any (utility skill)
 
-**Usage:** `/flow:flow-local-permission`
+**Usage:** `/flow-local-permission`
 
 Promotes permissions from `.claude/settings.local.json` into
 `.claude/settings.json`, then deletes the local file.

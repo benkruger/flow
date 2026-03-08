@@ -83,8 +83,8 @@ def main():
             if bump_skill(skill_file, old_version, new_version):
                 changed.append(str(skill_file.relative_to(repo_root)))
 
-    # 4. .claude/skills/release/SKILL.md
-    release_skill = repo_root / ".claude" / "skills" / "release" / "SKILL.md"
+    # 4. .claude/skills/flow-release/SKILL.md
+    release_skill = repo_root / ".claude" / "skills" / "flow-release" / "SKILL.md"
     if release_skill.exists() and bump_skill(release_skill, old_version, new_version):
         changed.append(str(release_skill.relative_to(repo_root)))
 

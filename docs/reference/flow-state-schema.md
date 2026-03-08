@@ -13,7 +13,7 @@ State files live in `.flow-states/` at the project root, named after the branch:
 .flow-states/user-profile-redesign.json
 ```
 
-One file per active feature. Multiple features can run simultaneously with no conflicts. The directory is added to `.git/info/exclude` by `/flow:flow-start` (per-repo, not committed). Created by `/flow:flow-start`, deleted by `/flow:flow-cleanup`.
+One file per active feature. Multiple features can run simultaneously with no conflicts. The directory is added to `.git/info/exclude` by `/flow-start` (per-repo, not committed). Created by `/flow-start`, deleted by `/flow-cleanup`.
 
 ---
 
@@ -75,9 +75,9 @@ One file per active feature. Multiple features can run simultaneously with no co
 | `pr_url` | string | Full GitHub PR URL |
 | `started_at` | ISO 8601 | When the feature was started (Phase 1 entry) |
 | `current_phase` | string | The currently active phase key (e.g. `"flow-code"`) |
-| `framework` | string | `"rails"` or `"python"` — set during `/flow:flow-init`, copied to state by `/flow:flow-start` |
+| `framework` | string | `"rails"` or `"python"` — set during `/flow-init`, copied to state by `/flow-start` |
 | `plan_file` | string / null | Absolute path to the plan file at `~/.claude/plans/<name>.md` — set by Phase 2: Plan |
-| `notes` | array | Corrections captured via `/flow:flow-note` — see [Notes Array](#notes-array) |
+| `notes` | array | Corrections captured via `/flow-note` — see [Notes Array](#notes-array) |
 
 ---
 
@@ -109,7 +109,7 @@ Each phase entry has identical fields regardless of status.
 
 ## Notes Array
 
-Populated throughout the session by `/flow:flow-note`. Survives compaction
+Populated throughout the session by `/flow-note`. Survives compaction
 and session restarts. Read by Learning as a primary source.
 
 ```json

@@ -5,7 +5,7 @@ nav_order: 9
 
 # Phase 8: Cleanup
 
-**Command:** `/flow:flow-cleanup` or `/flow:flow-cleanup --manual`
+**Command:** `/flow-cleanup` or `/flow-cleanup --manual`
 
 The final phase. Removes the git worktree and deletes the state file
 and log file. This is what fully closes out a feature and resets the

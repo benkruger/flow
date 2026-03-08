@@ -1,14 +1,14 @@
 ---
-title: /flow:flow-simplify
+title: /flow-simplify
 nav_order: 8
 parent: Skills
 ---
 
-# /flow:flow-simplify
+# /flow-simplify
 
 **Phase:** 4 — Simplify
 
-**Usage:** `/flow:flow-simplify`, `/flow:flow-simplify --auto`, or `/flow:flow-simplify --manual`
+**Usage:** `/flow-simplify`, `/flow-simplify --auto`, or `/flow-simplify --manual`
 
 Invokes Claude Code's built-in `/simplify` skill on the feature diff.
 Refactors for clarity, reduces complexity, and improves naming while
@@ -22,7 +22,7 @@ transitioning to Review.
 1. Invoke `/simplify` on committed code
 2. Show the diff for user review
 3. User decides: accept, revert, edit, or go back to Code
-4. Auto-commit accepted changes via `/flow:flow-commit --auto`
+4. Auto-commit accepted changes via `/flow-commit --auto`
 
 ---
 

@@ -1,14 +1,14 @@
 ---
-title: /flow:flow-plan
+title: /flow-plan
 nav_order: 4
 parent: Skills
 ---
 
-# /flow:flow-plan
+# /flow-plan
 
 **Phase:** 2 — Plan
 
-**Usage:** `/flow:flow-plan`
+**Usage:** `/flow-plan`
 
 Explores the codebase, designs the approach, and produces an ordered
 implementation plan using Claude Code's native plan mode. Replaces the
@@ -42,7 +42,7 @@ The plan file lives at `~/.claude/plans/<name>.md` and includes:
 
 ## Resuming
 
-If the session breaks mid-plan, `/flow:flow-continue` checks whether
+If the session breaks mid-plan, `/flow-continue` checks whether
 `plan_file` is already set in the state file. If set, the plan was
 already approved — the phase completes and transitions to Code.
 If not set, the plan mode flow restarts.

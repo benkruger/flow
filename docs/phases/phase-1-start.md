@@ -5,9 +5,9 @@ nav_order: 2
 
 # Phase 1: Start
 
-**Command:** `/flow:flow-start <feature name words>`
+**Command:** `/flow-start <feature name words>`
 
-**Example:** `/flow:flow-start app payment webhooks`
+**Example:** `/flow-start app payment webhooks`
 
 This is always the first phase, for every feature without exception. It establishes an isolated workspace, verifies the health of the codebase, configures workspace permissions, and opens the PR before any feature work begins. Framework-specific setup (dependency upgrades, CI fixes) is handled by the framework instructions in the skill.
 
@@ -17,7 +17,7 @@ This is always the first phase, for every feature without exception. It establis
 
 ### 1. Version gate
 
-Run `bin/flow init-check` to verify `/flow:flow-init` has been run with the current plugin version. Cheapest check — runs first so a missing init doesn't waste time on slower steps.
+Run `bin/flow init-check` to verify `/flow-init` has been run with the current plugin version. Cheapest check — runs first so a missing init doesn't waste time on slower steps.
 
 Also checks GitHub for newer FLOW releases and displays upgrade instructions if one is available. This check is informational — it never blocks.
 
@@ -43,7 +43,7 @@ The script returns JSON with the worktree path, PR URL, and PR number. Claude th
 
 ### 5. Framework-specific setup
 
-**Rails:** Upgrade gems with `bundle update --all`, then run `bin/flow ci`. If it fails, a Sonnet sub-agent diagnoses and fixes (max 3 attempts). Commit changes via `/flow:flow-commit`.
+**Rails:** Upgrade gems with `bundle update --all`, then run `bin/flow ci`. If it fails, a Sonnet sub-agent diagnoses and fixes (max 3 attempts). Commit changes via `/flow-commit`.
 
 **Python:** No additional setup — Step 3 verified `bin/flow ci` on main.
 
@@ -64,4 +64,4 @@ By the end of Phase 1:
 
 ## What Comes Next
 
-Phase 2: Plan (`/flow:flow-plan`) — explore the codebase, design the approach, and produce an ordered implementation plan.
+Phase 2: Plan (`/flow-plan`) — explore the codebase, design the approach, and produce an ordered implementation plan.

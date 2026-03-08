@@ -1,14 +1,14 @@
 ---
-title: /flow:flow-security
+title: /flow-security
 nav_order: 9
 parent: Skills
 ---
 
-# /flow:flow-security
+# /flow-security
 
 **Phase:** 6 — Security
 
-**Usage:** `/flow:flow-security`, `/flow:flow-security --auto`, or `/flow:flow-security --manual`
+**Usage:** `/flow-security`, `/flow-security --auto`, or `/flow-security --manual`
 
 Delegates to Claude's built-in `/security-review` command for
 language-aware security analysis of the branch diff. Fixes every
@@ -22,7 +22,7 @@ Every confirmed finding gets fixed directly:
 
 1. Fix one finding
 2. Run `bin/flow ci`
-3. Commit via `/flow:flow-commit`
+3. Commit via `/flow-commit`
 4. Mark finding as fixed in state
 5. Next finding
 

@@ -5,7 +5,7 @@ nav_order: 4
 
 # Phase 3: Code
 
-**Command:** `/flow:flow-code`
+**Command:** `/flow-code`
 
 Execute the approved plan task by task. Every task follows the same
 cycle: architecture check, TDD, diff review, `bin/flow ci`, commit. Nothing
@@ -21,7 +21,7 @@ For each task in the plan, in order:
 2. **TDD cycle** — write failing test, confirm it fails, write code, confirm it passes, refactor
 3. **Diff review** — show the changes, AskUserQuestion approval before `bin/flow ci`. After the first task, the user can opt into streamline mode which auto-proceeds through remaining tasks
 4. **`bin/flow ci`** — must be green, 100% coverage
-5. **`/flow:flow-commit`** — commit this task
+5. **`/flow-commit`** — commit this task
 6. **Next task**
 
 ---
@@ -61,4 +61,4 @@ By the end of Phase 3:
 
 ## What Comes Next
 
-Phase 4: Simplify (`/flow:flow-simplify`) — refactor for clarity before review.
+Phase 4: Simplify (`/flow-simplify`) — refactor for clarity before review.

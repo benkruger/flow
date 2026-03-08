@@ -1,14 +1,14 @@
 ---
-title: /flow:flow-status
+title: /flow-status
 nav_order: 3
 parent: Skills
 ---
 
-# /flow:flow-status
+# /flow-status
 
 **Phase:** Any
 
-**Usage:** `/flow:flow-status`
+**Usage:** `/flow-status`
 
 Shows where you are in the FLOW workflow at any moment. Reads `.flow-states/<branch>.json` and prints a clear picture of what has been completed and what comes next. Read-only — never modifies any files.
 
@@ -50,7 +50,7 @@ Shows where you are in the FLOW workflow at any moment. Reads `.flow-states/<bra
   Time in current phase : 32m
   Times visited         : 1
 
-  Continue: /flow:flow-code
+  Continue: /flow-code
 
 ============================================
 ```

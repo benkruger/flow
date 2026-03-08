@@ -1,14 +1,14 @@
 ---
-title: /flow:flow-learning
+title: /flow-learning
 nav_order: 9
 parent: Skills
 ---
 
-# /flow:flow-learning
+# /flow-learning
 
 **Phase:** 7 — Learning
 
-**Usage:** `/flow:flow-learning`, `/flow:flow-learning --auto`, or `/flow:flow-learning --manual`
+**Usage:** `/flow-learning`, `/flow-learning --auto`, or `/flow-learning --manual`
 
 Autonomously synthesises what went wrong from three sources, routes each
 learning to its correct permanent home, files GitHub issues for plugin
@@ -40,7 +40,7 @@ Learnings are routed autonomously to one of 5 destinations:
 | 5 | Project memory | `~/.claude/projects/<repo-root>/memory/MEMORY.md` |
 
 Destinations 1, 3, 5 are user-private (direct edits, not committed).
-Destinations 2, 4 are committed to the feature branch via `/flow:flow-commit --auto`.
+Destinations 2, 4 are committed to the feature branch via `/flow-commit --auto`.
 
 **Plugin improvement notes** — filed as GitHub issues:
 
@@ -61,11 +61,11 @@ Learning auto-detects its context:
 
 | Mode | When | Sources | Commits | Settings audit |
 |------|------|---------|---------|----------------|
-| Phase 7 | State file with Security complete | All 3 (CLAUDE.md, context, state/plan) | `/flow:flow-commit --auto` | No |
-| Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow:flow-commit --auto` | Yes |
+| Phase 7 | State file with Security complete | All 3 (CLAUDE.md, context, state/plan) | `/flow-commit --auto` | No |
+| Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow-commit --auto` | Yes |
 | Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | No |
 
-Standalone mode lets any project use `/flow:flow-learning` without a FLOW
+Standalone mode lets any project use `/flow-learning` without a FLOW
 feature in progress — just review the current session and apply
 learnings.
 

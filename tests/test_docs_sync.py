@@ -92,9 +92,11 @@ def test_phase_docs_contain_correct_command():
         name = phase["name"].lower()
         doc = DOCS_DIR / "phases" / f"phase-{num}-{name}.md"
         content = doc.read_text()
-        assert phase["command"] in content, (
+        # Docs use /flow-start, not /flow:flow-start
+        user_command = phase["command"].replace("/flow:", "/")
+        assert user_command in content, (
             f"docs/phases/phase-{num}-{name}.md does not mention "
-            f"command '{phase['command']}'"
+            f"command '{user_command}'"
         )
 
 
@@ -117,10 +119,10 @@ def test_phase_docs_have_correct_title():
 
 
 def test_index_mentions_every_skill_command():
-    """docs/skills/index.md must mention every /flow:<name> command."""
+    """docs/skills/index.md must mention every /<name> command."""
     index = (DOCS_DIR / "skills" / "index.md").read_text()
     for name in _skill_names():
-        command = f"/flow:{name}"
+        command = f"/{name}"
         assert command in index, (
             f"docs/skills/index.md does not mention {command}"
         )
@@ -148,8 +150,10 @@ def test_readme_mentions_all_phase_commands():
     data = _load_phases()
     for key, phase in data["phases"].items():
         num = PHASE_NUMBER[key]
-        assert phase["command"] in readme, (
-            f"README.md does not mention phase command '{phase['command']}'"
+        # README uses /flow-start, not /flow:flow-start
+        user_command = phase["command"].replace("/flow:", "/")
+        assert user_command in readme, (
+            f"README.md does not mention phase command '{user_command}'"
         )
         pattern = rf"{num}:\s*{re.escape(phase['name'])}"
         assert re.search(pattern, readme), (
@@ -173,7 +177,7 @@ def test_readme_mentions_all_utility_commands():
     """README.md must mention all utility skill commands."""
     readme = (REPO_ROOT / "README.md").read_text()
     for name in _utility_skill_names():
-        command = f"/flow:{name}"
+        command = f"/{name}"
         assert command in readme, (
             f"README.md does not mention utility command '{command}'"
         )

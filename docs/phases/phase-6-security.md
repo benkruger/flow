@@ -5,7 +5,7 @@ nav_order: 7
 
 # Phase 6: Security
 
-**Command:** `/flow:flow-security`
+**Command:** `/flow-security`
 
 Security analysis of the feature diff. Scans for vulnerabilities,
 authentication gaps, data exposure, and injection risks. Review
@@ -36,5 +36,5 @@ Security does not transition to Learning until `bin/flow ci` is green.
 
 ## What Comes Next
 
-Phase 7: Learning (`/flow:flow-learning`) — extract learnings and update
+Phase 7: Learning (`/flow-learning`) — extract learnings and update
 CLAUDE.md before the PR is merged.

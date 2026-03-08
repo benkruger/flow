@@ -1,14 +1,14 @@
 ---
-title: /flow:flow-commit
+title: /flow-commit
 nav_order: 2
 parent: Skills
 ---
 
-# /flow:flow-commit
+# /flow-commit
 
 **Phase:** Any
 
-**Usage:** `/flow:flow-commit`, `/flow:flow-commit --auto`, or `/flow:flow-commit --manual`
+**Usage:** `/flow-commit`, `/flow-commit --auto`, or `/flow-commit --manual`
 
 Reviews all pending changes before committing. You see the full diff and proposed commit message, then approve or deny before anything is pushed. This is the only way commits are made in the FLOW workflow.
 
@@ -76,4 +76,4 @@ Mode is resolved in this order:
 
 Everything else stays identical: `bin/flow ci` runs first (FLOW and Maintainer mode only), the full diff is displayed, the commit message is generated and shown, and pull-before-push happens. The only difference is whether Step 3 (approval prompt) is shown.
 
-`--auto` is user-invoked only. Claude must never call `/flow:flow-commit --auto` programmatically.
+`--auto` is user-invoked only. Claude must never call `/flow-commit --auto` programmatically.

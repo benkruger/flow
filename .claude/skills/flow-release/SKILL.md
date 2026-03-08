@@ -1,5 +1,5 @@
 ---
-name: release
+name: flow-release
 description: "Release a new version of the FLOW plugin. Bumps version in plugin.json and marketplace.json, commits, tags, pushes, and creates a GitHub Release."
 ---
 

@@ -729,7 +729,7 @@ def test_start_references_setup_script():
 def test_release_complete_banner_confirms_marketplace_update():
     """Release COMPLETE banner must say 'Local plugin upgraded:' to confirm
     the marketplace update ran, not ask the user to run it manually."""
-    content = (REPO_ROOT / ".claude" / "skills" / "release" / "SKILL.md").read_text()
+    content = (REPO_ROOT / ".claude" / "skills" / "flow-release" / "SKILL.md").read_text()
     assert "Local plugin upgraded:" in content, (
         "Release COMPLETE banner must confirm the marketplace update ran — "
         "use 'Local plugin upgraded:' not 'Run manually'"
@@ -837,7 +837,7 @@ def test_commit_tri_modal_detection():
 
 def test_reset_guard_requires_main_branch():
     """Reset SKILL.md must guard against running outside main branch."""
-    content = (REPO_ROOT / ".claude" / "skills" / "reset" / "SKILL.md").read_text()
+    content = (REPO_ROOT / ".claude" / "skills" / "flow-reset" / "SKILL.md").read_text()
     assert "main" in content, (
         "Reset SKILL.md must reference the main branch"
     )
@@ -848,7 +848,7 @@ def test_reset_guard_requires_main_branch():
 
 def test_reset_has_inventory_step():
     """Reset SKILL.md must inventory artifacts before destroying them."""
-    content = (REPO_ROOT / ".claude" / "skills" / "reset" / "SKILL.md").read_text()
+    content = (REPO_ROOT / ".claude" / "skills" / "flow-reset" / "SKILL.md").read_text()
     assert "git worktree list" in content, (
         "Reset must inventory worktrees"
     )
@@ -862,7 +862,7 @@ def test_reset_has_inventory_step():
 
 def test_reset_has_confirmation():
     """Reset SKILL.md must confirm before destroying artifacts."""
-    content = (REPO_ROOT / ".claude" / "skills" / "reset" / "SKILL.md").read_text()
+    content = (REPO_ROOT / ".claude" / "skills" / "flow-reset" / "SKILL.md").read_text()
     assert "AskUserQuestion" in content, (
         "Reset SKILL.md must use AskUserQuestion to confirm before destroying"
     )
@@ -966,7 +966,7 @@ def test_no_skill_invokes_commit_with_auto():
 
 def test_release_default_skips_approval():
     """Release SKILL.md default (no flags) must proceed without approval."""
-    content = (REPO_ROOT / ".claude" / "skills" / "release" / "SKILL.md").read_text()
+    content = (REPO_ROOT / ".claude" / "skills" / "flow-release" / "SKILL.md").read_text()
     assert "proceed directly to Step 6" in content, (
         "Release SKILL.md must indicate that the default proceeds directly "
         "to Step 6 without approval"
