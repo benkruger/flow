@@ -197,7 +197,10 @@ All permissions (universal + all framework sets) for reference:
       "Bash(git fetch origin *)",
       "Bash(git merge *)",
       "Bash(gh pr checks *)",
-      "Bash(gh pr merge *)"
+      "Bash(gh pr merge *)",
+      "Bash(claude plugin list)",
+      "Bash(claude plugin marketplace add *)",
+      "Bash(claude plugin install *)"
     ],
     "deny": [
       "Bash(git rebase *)",
@@ -215,7 +218,29 @@ All permissions (universal + all framework sets) for reference:
 }
 ```
 
-### Step 4 — Write skills config to .flow.json
+### Step 4 — Install code-review plugin
+
+Check if the `code-review` plugin is already available:
+
+```bash
+claude plugin list
+```
+
+If the output does not contain `claude-code-plugins`, add the marketplace source:
+
+```bash
+claude plugin marketplace add anthropics/claude-code
+```
+
+If the output does not contain `code-review`, install it:
+
+```bash
+claude plugin install code-review@claude-code-plugins
+```
+
+If both are already present, skip silently.
+
+### Step 5 — Write skills config to .flow.json
 
 After the prime-setup script writes `.flow.json`, read it back with the Read tool,
 add the `skills` key from `skills_dict` (Step 2), and write the file back with
@@ -227,7 +252,7 @@ the Write tool. The result should look like:
 
 The `config_hash` field is a 12-character hex digest stored by `prime-setup`. When the plugin version changes, `/flow-start` recomputes the hash and compares against the stored value to decide whether re-prime is needed. If the config hasn't changed, the version is auto-upgraded without re-running `/flow-prime`.
 
-### Step 5 — Prime project CLAUDE.md
+### Step 6 — Prime project CLAUDE.md
 
 If the project has a `CLAUDE.md`, prime it with framework conventions:
 
@@ -241,7 +266,7 @@ contains framework conventions between `<!-- FLOW:BEGIN -->` and
 silently — the user can prime later by running init again after
 creating a CLAUDE.md.
 
-### Step 6 — Create bin/dependencies
+### Step 7 — Create bin/dependencies
 
 Create the dependency updater script from the framework template:
 
@@ -253,7 +278,7 @@ Parse the JSON output. If `"status": "ok"`, `bin/dependencies` was
 created. If `"status": "skipped"`, the file already exists (user may
 have customized it). If `"status": "error"`, report to the user.
 
-### Step 7 — Commit and push
+### Step 8 — Commit and push
 
 Stage the settings and version marker:
 

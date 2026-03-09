@@ -1360,20 +1360,34 @@ def test_start_step_6_enforces_flow_commit_exclusively():
             )
 
 
-def test_prime_step_7_enforces_flow_commit_exclusively():
-    """flow-prime Step 7 must use /flow:flow-commit and not suggest git commit."""
+def test_prime_step_8_enforces_flow_commit_exclusively():
+    """flow-prime Step 8 must use /flow:flow-commit and not suggest git commit."""
     content = _read_skill("flow-prime")
-    step7_match = re.search(
-        r"### Step 7.*?\n(.*?)(?=\n### Done)", content, re.DOTALL
+    step8_match = re.search(
+        r"### Step 8.*?\n(.*?)(?=\n### Done)", content, re.DOTALL
     )
-    assert step7_match, "Could not find Step 7 in flow-prime/SKILL.md"
-    step7_text = step7_match.group(1)
-    assert "/flow:flow-commit" in step7_text, (
-        "flow-prime Step 7 must reference /flow:flow-commit"
+    assert step8_match, "Could not find Step 8 in flow-prime/SKILL.md"
+    step8_text = step8_match.group(1)
+    assert "/flow:flow-commit" in step8_text, (
+        "flow-prime Step 8 must reference /flow:flow-commit"
     )
-    for line in step7_text.splitlines():
+    for line in step8_text.splitlines():
         if "git commit" in line:
             assert re.search(r"[Nn]ever", line), (
-                f"flow-prime Step 7 mentions 'git commit' outside a "
+                f"flow-prime Step 8 mentions 'git commit' outside a "
                 f"prohibition: {line.strip()}"
             )
+
+
+def test_prime_has_plugin_installation_step():
+    """flow-prime must have a step installing the code-review plugin."""
+    content = _read_skill("flow-prime")
+    assert "claude plugin list" in content, (
+        "flow-prime must include 'claude plugin list' command"
+    )
+    assert "claude plugin marketplace add" in content, (
+        "flow-prime must include 'claude plugin marketplace add' command"
+    )
+    assert "claude plugin install" in content, (
+        "flow-prime must include 'claude plugin install' command"
+    )

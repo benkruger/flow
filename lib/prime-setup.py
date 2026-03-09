@@ -45,6 +45,9 @@ UNIVERSAL_ALLOW = [
     "Bash(git merge *)",
     "Bash(gh pr checks *)",
     "Bash(gh pr merge *)",
+    "Bash(claude plugin list)",
+    "Bash(claude plugin marketplace add *)",
+    "Bash(claude plugin install *)",
 ]
 
 FLOW_DENY = [

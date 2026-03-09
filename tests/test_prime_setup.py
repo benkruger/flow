@@ -393,6 +393,12 @@ def test_universal_allow_includes_bin_dependencies():
     assert "Bash(bin/dependencies)" in _mod.UNIVERSAL_ALLOW
 
 
+def test_universal_allow_includes_claude_plugin_commands():
+    assert "Bash(claude plugin list)" in _mod.UNIVERSAL_ALLOW
+    assert "Bash(claude plugin marketplace add *)" in _mod.UNIVERSAL_ALLOW
+    assert "Bash(claude plugin install *)" in _mod.UNIVERSAL_ALLOW
+
+
 def test_permissions_loaded_from_framework_directory(tmp_path):
     _mod.merge_settings(tmp_path, "rails")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
