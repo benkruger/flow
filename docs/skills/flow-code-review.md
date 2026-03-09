@@ -43,7 +43,7 @@ If no findings, skips to the next step. Every finding is fixed,
 
 Mode is configurable via `.flow.json` (default: manual). Both commit and
 continue are configurable independently. In auto mode, findings are
-auto-fixed and the phase transition advances to Learning without asking.
+auto-fixed and the phase transition advances to Learn without asking.
 
 ---
 
@@ -51,5 +51,5 @@ auto-fixed and the phase transition advances to Learning without asking.
 
 - Code phase must be complete before Code Review can start
 - `bin/flow ci` must be green after every fix in every step
-- `bin/flow ci` must be green before transitioning to Learning
+- `bin/flow ci` must be green before transitioning to Learn
 - Can return to Code or Plan

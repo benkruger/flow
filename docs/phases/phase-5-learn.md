@@ -1,11 +1,11 @@
 ---
-title: "Phase 5: Learning"
+title: "Phase 5: Learn"
 nav_order: 6
 ---
 
-# Phase 5: Learning
+# Phase 5: Learn
 
-**Command:** `/flow-learning`
+**Command:** `/flow-learn`
 
 Runs before the PR is merged. Autonomously reviews what went wrong across
 all phases, routes learnings to their correct permanent homes, files GitHub
@@ -17,7 +17,7 @@ never touched.
 
 ## Three Sources
 
-Learning synthesises from all three before taking any action:
+Learn synthesises from all three before taking any action:
 
 1. **CLAUDE.md rules** — the project's rules and conventions that should have been followed
 2. **Conversation context** — what Claude can still see of the session's back-and-forth
@@ -57,7 +57,7 @@ Claude decides destinations autonomously using content-type heuristics:
 
 ## Three Modes
 
-Learning auto-detects its context and adjusts behavior:
+Learn auto-detects its context and adjusts behavior:
 
 | Mode | Trigger | Sources | Commits | Settings audit | GitHub issues |
 |------|---------|---------|---------|----------------|---------------|

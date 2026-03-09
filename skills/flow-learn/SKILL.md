@@ -1,22 +1,22 @@
 ---
-name: flow-learning
-description: "Phase 5: Learning — review what went wrong, capture learnings, route each to its correct permanent home. Runs before the PR is merged. The only commits are CLAUDE.md and .claude/ changes."
+name: flow-learn
+description: "Phase 5: Learn — review what went wrong, capture learnings, route each to its correct permanent home. Runs before the PR is merged. The only commits are CLAUDE.md and .claude/ changes."
 model: sonnet
 ---
 
-# Learning
+# Learn
 
 ## Usage
 
 ```text
-/flow:flow-learning
-/flow:flow-learning --auto
-/flow:flow-learning --manual
+/flow:flow-learn
+/flow:flow-learn --auto
+/flow:flow-learn --manual
 ```
 
-- `/flow:flow-learning` — uses configured mode from the state file (default: auto)
-- `/flow:flow-learning --auto` — skip permission promotion prompts, auto-advance to Cleanup
-- `/flow:flow-learning --manual` — prompt for permission promotion and phase transition
+- `/flow:flow-learn` — uses configured mode from the state file (default: auto)
+- `/flow:flow-learn --auto` — skip permission promotion prompts, auto-advance to Cleanup
+- `/flow:flow-learn --manual` — prompt for permission promotion and phase transition
 
 <HARD-GATE>
 Run this entry check as your very first action. If any check fails,
@@ -46,7 +46,7 @@ to the project root — `bin/flow` commands find paths internally.
 
 1. If `--auto` was passed → commit=auto, continue=auto
 2. If `--manual` was passed → commit=manual, continue=manual
-3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-learning.commit` and `skills.flow-learning.continue`.
+3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-learn.commit` and `skills.flow-learn.continue`.
 4. If the state file has no `skills` key → use built-in defaults: commit=auto, continue=auto
 
 ## Announce
@@ -58,7 +58,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ============================================
-  FLOW v0.21.4 — Phase 5: Learning — STARTING
+  FLOW v0.21.4 — Phase 5: Learn — STARTING
 ============================================
 ```
 ````
@@ -68,7 +68,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ============================================
-  Learning — STARTING
+  Learn — STARTING
 ============================================
 ```
 ````
@@ -80,7 +80,7 @@ At the very start, output the following banner in your response (not via Bash) i
 Update state for phase entry:
 
 ```bash
-bin/flow phase-transition --phase flow-learning --action enter
+bin/flow phase-transition --phase flow-learn --action enter
 ```
 
 Parse the JSON output to confirm `"status": "ok"`.
@@ -88,7 +88,7 @@ If `"status": "error"`, report the error and stop.
 
 ## Logging
 
-No logging for this phase. Learning runs no Bash commands beyond the entry
+No logging for this phase. Learn runs no Bash commands beyond the entry
 gate — there is nothing to log.
 
 ---
@@ -287,7 +287,7 @@ Present the full report to the user:
 ````markdown
 ```text
 ============================================
-  Learning — Report
+  Learn — Report
 ============================================
 
   Findings
@@ -345,7 +345,7 @@ next to each repo-destination file to indicate whether Step 4 committed it.
 Complete the phase:
 
 ```bash
-bin/flow phase-transition --phase flow-learning --action complete
+bin/flow phase-transition --phase flow-learn --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -357,7 +357,7 @@ Output in your response (not via Bash) inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW v0.21.4 — Phase 5: Learning — COMPLETE (<formatted_time>)
+  FLOW v0.21.4 — Phase 5: Learn — COMPLETE (<formatted_time>)
   Merge the PR, then run /flow:flow-cleanup.
 ============================================
 ```
@@ -369,7 +369,7 @@ Invoke `flow:flow-status`.
 
 **If continue=manual**, use AskUserQuestion:
 
-> "Phase 5: Learning is complete. The PR now includes CLAUDE.md improvements. Ready to begin Phase 6: Cleanup?"
+> "Phase 5: Learn is complete. The PR now includes CLAUDE.md improvements. Ready to begin Phase 6: Cleanup?"
 >
 > - **Yes, start Phase 6 now** — invoke `flow:flow-cleanup`
 > - **Not yet** — print paused banner
@@ -400,7 +400,7 @@ Output in your response (not via Bash) inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  Learning — COMPLETE
+  Learn — COMPLETE
 ============================================
 ```
 ````
@@ -411,7 +411,7 @@ No phase transition, no transition question.
 
 ## Hard Rules
 
-- Never commit application code in Learning — only CLAUDE.md and .claude/
+- Never commit application code in Learn — only CLAUDE.md and .claude/
 - Always read CLAUDE.md and conversation context before synthesizing findings
 - In Phase 5, read all three sources before synthesizing findings
 - Follow the learning process (Steps 1 through 7) exactly — do not skip or reorder steps

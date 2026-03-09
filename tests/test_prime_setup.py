@@ -373,7 +373,7 @@ def test_version_marker_with_skills_dict(tmp_path):
         "flow-start": "manual",
         "flow-code": "manual",
         "flow-code-review": "manual",
-        "flow-learning": "auto",
+        "flow-learn": "auto",
         "flow-commit": "manual",
         "flow-abort": "auto",
         "flow-cleanup": "auto",

@@ -21,7 +21,7 @@ These skills correspond directly to a workflow phase. Each one starts and ends w
 | [`/flow-plan`](flow-plan.md) | 2 — Plan | Explore codebase, design approach, produce ordered tasks via plan mode |
 | [`/flow-code`](flow-code.md) | 3 — Code | TDD task by task, diff review, `bin/flow ci` gate before each commit |
 | [`/flow-code-review`](flow-code-review.md) | 4 — Code Review | Three lenses — clarity, correctness, and safety |
-| [`/flow-learning`](flow-learning.md) | 5 — Learning | Extract learnings, update CLAUDE.md, note plugin gaps |
+| [`/flow-learn`](flow-learn.md) | 5 — Learn | Extract learnings, update CLAUDE.md, note plugin gaps |
 | [`/flow-cleanup`](flow-cleanup.md) | 6 — Cleanup | Remove worktree and delete state file — final phase |
 
 ---

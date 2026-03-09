@@ -31,7 +31,7 @@ FLOW imposes structure. Not bureaucracy — discipline.
 ## The Workflow
 
 ```text
-Start → Plan → Code → Code Review → Learning → Cleanup
+Start → Plan → Code → Code Review → Learn → Cleanup
   1       2      3         4            5          6
 ```
 
@@ -41,7 +41,7 @@ Start → Plan → Code → Code Review → Learning → Cleanup
 | **2: Plan** | `/flow-plan` | **Opus** | Native plan mode — explore codebase, design approach, produce ordered tasks with risks |
 | **3: Code** | `/flow-code` | **Opus** | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
 | **4: Code Review** | `/flow-code-review` | **Opus** | Three lenses — clarity (`/simplify`), correctness (`/review`), and safety (`/security-review`) |
-| **5: Learning** | `/flow-learning` | Sonnet | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
+| **5: Learn** | `/flow-learn` | Sonnet | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
 | **6: Cleanup** | `/flow-cleanup` | Haiku | Worktree removed, state file deleted, feature done |
 
 ---
@@ -81,7 +81,7 @@ Any skill invocation accepts `--auto` or `--manual` to override the configured s
     "flow-start": {"continue": "manual"},
     "flow-code": {"commit": "manual", "continue": "manual"},
     "flow-code-review": {"commit": "auto", "continue": "auto"},
-    "flow-learning": {"commit": "auto", "continue": "auto"},
+    "flow-learn": {"commit": "auto", "continue": "auto"},
     "flow-abort": "auto",
     "flow-cleanup": "auto"
   }
@@ -177,7 +177,7 @@ FLOW automatically selects the right model for each phase — Opus for hard thin
 | 2: Plan | **Opus** | Codebase exploration, architectural judgment, and task planning — bad plans cascade through all later phases |
 | 3: Code | **Opus** | Writing correct code against complex codebase |
 | 4: Code Review | **Opus** | Clarity (`/simplify`), correctness (`/review`), and safety (`/security-review`) — three review lenses |
-| 5: Learning | Sonnet | Synthesizing learnings into reusable patterns |
+| 5: Learn | Sonnet | Synthesizing learnings into reusable patterns |
 | 6: Cleanup | Haiku | Delete worktree and state file |
 | Commit | Sonnet | Writing clear, well-structured commit messages |
 
@@ -212,7 +212,7 @@ Every correction and observation has a path to becoming a permanent, reusable pa
 User corrects Claude → /flow-note captures it in state["notes"]
 Claude writes observations → auto-memory (shared across worktrees)
        ↓
-Learning reads three sources (CLAUDE.md rules, conversation context, state/plan data)
+Learn reads three sources (CLAUDE.md rules, conversation context, state/plan data)
        ↓
 Each learning is routed to the right destination:
   Instructions (rules Claude must follow):

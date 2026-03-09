@@ -252,7 +252,7 @@ def test_state_file_has_all_6_phases(_default_run):
 
     expected_names = {
         "flow-start": "Start", "flow-plan": "Plan", "flow-code": "Code",
-        "flow-code-review": "Code Review", "flow-learning": "Learning", "flow-cleanup": "Cleanup",
+        "flow-code-review": "Code Review", "flow-learn": "Learn", "flow-cleanup": "Cleanup",
     }
     assert len(state["phases"]) == 6
     for key, name in expected_names.items():
