@@ -1218,3 +1218,70 @@ def test_learning_step_4_invokes_local_permission():
         "skills/flow-learning/SKILL.md Step 4 does not invoke "
         "/flow:flow-local-permission"
     )
+
+
+# --- flow-start bug fixes ---
+
+
+def test_phase_1_hard_gate_uses_ask_user_question():
+    """Phase 1 first HARD-GATE must use AskUserQuestion tool."""
+    content = _read_skill("flow-start")
+    gate_match = re.search(
+        r"<HARD-GATE>(.*?)</HARD-GATE>", content, re.DOTALL
+    )
+    assert gate_match, "Could not extract first HARD-GATE from flow-start"
+    gate_text = gate_match.group(1)
+    assert "AskUserQuestion" in gate_text, (
+        "flow-start first HARD-GATE must explicitly name the "
+        "AskUserQuestion tool to ensure consistent prompting"
+    )
+
+
+def test_start_step_3_has_ci_fix_subagent():
+    """Step 3 must launch a sub-agent to fix CI failures on main."""
+    content = _read_skill("flow-start")
+    step3_match = re.search(
+        r"### Step 3.*?\n(.*?)(?=\n### Step 4)", content, re.DOTALL
+    )
+    assert step3_match, "Could not find Step 3 in flow-start/SKILL.md"
+    step3_text = step3_match.group(1)
+    assert "general-purpose" in step3_text, (
+        "flow-start Step 3 must reference a general-purpose sub-agent "
+        "for automatic CI fix"
+    )
+    assert "sub-agent" in step3_text.lower() or "Agent" in step3_text, (
+        "flow-start Step 3 must reference launching a sub-agent"
+    )
+
+
+def test_start_step_3_commits_via_flow_commit():
+    """Step 3 CI fixes on main must be committed via /flow:flow-commit."""
+    content = _read_skill("flow-start")
+    step3_match = re.search(
+        r"### Step 3.*?\n(.*?)(?=\n### Step 4)", content, re.DOTALL
+    )
+    assert step3_match, "Could not find Step 3 in flow-start/SKILL.md"
+    step3_text = step3_match.group(1)
+    assert "/flow:flow-commit" in step3_text, (
+        "flow-start Step 3 must commit CI fixes via /flow:flow-commit"
+    )
+
+
+def test_start_step_7_enforces_flow_commit_exclusively():
+    """Step 7 must use /flow:flow-commit and not suggest git commit."""
+    content = _read_skill("flow-start")
+    step7_match = re.search(
+        r"### Step 7.*?\n(.*?)(?=\n### Done)", content, re.DOTALL
+    )
+    assert step7_match, "Could not find Step 7 in flow-start/SKILL.md"
+    step7_text = step7_match.group(1)
+    assert "/flow:flow-commit" in step7_text, (
+        "flow-start Step 7 must reference /flow:flow-commit"
+    )
+    # Step 7 may mention "git commit" only in a prohibition (e.g. "Never use")
+    for line in step7_text.splitlines():
+        if "git commit" in line:
+            assert re.search(r"[Nn]ever", line), (
+                f"flow-start Step 7 mentions 'git commit' outside a "
+                f"prohibition: {line.strip()}"
+            )

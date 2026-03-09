@@ -23,8 +23,13 @@ Arguments become the feature name (flags are not included in the name). Words ar
 Branch names are capped at **32 characters**. If the hyphenated name exceeds 32 characters, truncate at the last whole word (hyphen boundary) that fits. Strip any trailing hyphen.
 
 <HARD-GATE>
-Do NOT proceed if the feature name is missing. Ask the user:
-"What is the feature name? e.g. /flow:flow-start invoice pdf export"
+Do NOT proceed if the feature name is missing. Use the AskUserQuestion tool
+to prompt the user. The feature name goes in the "Other" free-text option
+(always available). Example prompt:
+
+> "What is the feature name? Type it as space-separated words (e.g. invoice pdf export)."
+
+If the user cancels, stop. Otherwise use their response as the feature name.
 </HARD-GATE>
 
 ## Mode Resolution
@@ -146,11 +151,45 @@ Run `bin/flow ci` on main before creating any resources:
 bin/flow ci
 ```
 
-If it fails, stop immediately:
+If it passes, continue to Step 4.
 
-> "`bin/flow ci` is failing on main. Please fix CI before starting a new feature."
+If it fails, launch a sub-agent to diagnose and fix. Use the Agent tool:
 
-Do not create a worktree, PR, or state file. Exit the skill entirely.
+- `subagent_type`: `"general-purpose"`
+- `description`: `"Fix bin/flow ci failures on main"`
+
+Provide these instructions (fill in the `bin/flow ci` output):
+
+> You are fixing CI failures on main before a new feature branch is created.
+>
+> The `bin/flow ci` output:
+> \<paste the full bin/flow ci output\>
+>
+> **Tool rules:** Use Glob and Read tools for all file and directory
+> operations. Use Grep for searching code. Only use Bash for commands
+> explicitly listed in these instructions (`bin/flow ci`). Never use
+> `cd <path> && git` — if you need git info, use `git -C <path>`.
+> Never use Bash for any other purpose — no find, ls, cat, wc, test -f,
+> stat, or running project tooling not listed here.
+>
+> Read the project CLAUDE.md for framework conventions, test commands,
+> and CI failure fix order. Follow those instructions to diagnose and
+> fix the failures.
+>
+> Max 3 attempts. After each fix, run `bin/flow ci`. If green, report what
+> was fixed and stop. If still failing after 3 attempts, report exactly
+> what is failing and what was tried.
+>
+> Return:
+>
+> 1. Status: fixed / not_fixed
+> 2. What was wrong
+> 3. What was changed (files modified)
+
+Wait for the sub-agent to return.
+
+- **Fixed** — commit the fixes via `/flow:flow-commit`, then continue to Step 4
+- **Not fixed** — stop and report to the user. Do not create a worktree, PR, or state file
 
 ### Step 4 — Set up workspace
 
@@ -264,7 +303,7 @@ Do NOT proceed past Step 5 until `bin/flow ci` is green.
 
 ### Step 7 — Commit and push
 
-Use `/flow:flow-commit` to review and commit any dependency changes.
+Use `/flow:flow-commit` to review and commit any dependency changes. No exceptions. Never use `git commit` directly.
 
 ### Done — Update state and complete phase
 
