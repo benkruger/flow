@@ -1,5 +1,18 @@
 # Release Notes
 
+## v0.21.1 — Bug fixes for session-start hook and flow-start
+
+### Fixes
+
+- Session-start hook: filter out ghost `-phases.json` files that created phantom
+  "None — Start" features in multi-feature contexts
+- Session-start hook: add plan-aware logic to multi-feature branch so approved
+  plans trigger auto-continue instead of "do not invoke"
+- Session-start hook: add implementation guardrail to all branches preventing
+  direct implementation after context compaction
+- Flow-start: restore missing feature name prompt, fix CI failure dead-end, and
+  strengthen commit enforcement
+
 ## v0.21.0 — Rename flow-init → flow-prime
 
 - **Renamed /flow-init → /flow-prime** — Skill directory, lib scripts, test
