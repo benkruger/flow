@@ -1,5 +1,28 @@
 # Release Notes
 
+## v0.22.0 — Rename Phase 5: Learning → Learn
+
+Rename Phase 5 from "Learning" to "Learn" to match the verb pattern
+of the other phases (Start, Plan, Code, Code Review, Learn, Cleanup).
+
+### Breaking changes
+
+- Skill renamed: `flow-learning` → `flow-learn` (directory, command, state keys)
+- Active features created before this version will have `flow-learning` keys in
+  their state files. Complete or abort them before upgrading, or manually update
+  the state file keys.
+
+### Changes
+
+- Display name "Learning" → "Learn" across all skills, docs, and config
+- Phase key `flow-learning` → `flow-learn` in `flow-phases.json`
+- Skill directory `skills/flow-learning/` → `skills/flow-learn/`
+- Command `/flow:flow-learning` → `/flow:flow-learn`
+- Doc files renamed: `phase-5-learning.md` → `phase-5-learn.md`,
+  `flow-learning.md` → `flow-learn.md`
+- Feature-level names preserved: "The Learning System", "Memory and Learning System"
+- 28 files changed, pure mechanical rename with no logic changes
+
 ## v0.21.4 — Fix auto-upgrade display and Start phase halt on empty commit
 
 ### Fixes
