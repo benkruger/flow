@@ -1,5 +1,20 @@
 # Release Notes
 
+## v0.21.0 — Rename flow-init → flow-prime
+
+- **Renamed /flow-init → /flow-prime** — Skill directory, lib scripts, test
+  files, docs, and all cross-references. "Prime the project" reads better than
+  "init" alongside the existing prime-project priming step.
+- **Bug fix: autonomy config now works in worktrees** — `/flow-start` copies
+  the `skills` config from `.flow.json` into the state file. Phase skills read
+  autonomy settings from the state file instead of `.flow.json`, which isn't
+  accessible from worktrees. Previously, Customize settings were silently
+  ignored.
+- **.flow.json excluded from git** — Added to `.git/info/exclude` during
+  `/flow-prime`. Per-user autonomy preferences no longer need to be committed.
+- **Recommended labels in Customize prompts** — Each per-skill autonomy prompt
+  now shows "(Recommended)" on the suggested default.
+
 ## v0.20.1 — Fix plugin loading
 
 ### Fixes
