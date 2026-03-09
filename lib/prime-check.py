@@ -1,6 +1,6 @@
-"""Version gate — verify /flow:flow-init has been run with matching version.
+"""Version gate — verify /flow:flow-prime has been run with matching version.
 
-Usage: bin/flow init-check
+Usage: bin/flow prime-check
 
 Output (JSON to stdout):
   Success: {"status": "ok", "framework": "rails|python"}
@@ -15,10 +15,10 @@ from pathlib import Path
 
 
 def _compute_config_hash(framework):
-    """Compute config hash via init-setup module."""
+    """Compute config hash via prime-setup module."""
     spec = importlib.util.spec_from_file_location(
-        "init_setup",
-        Path(__file__).resolve().parent / "init-setup.py",
+        "prime_setup",
+        Path(__file__).resolve().parent / "prime-setup.py",
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -40,7 +40,7 @@ def main():
     if not flow_json.exists():
         print(json.dumps({
             "status": "error",
-            "message": "FLOW not initialized. Run /flow:flow-init first.",
+            "message": "FLOW not initialized. Run /flow:flow-prime first.",
         }))
         return
 
@@ -69,7 +69,7 @@ def main():
             "message": (
                 f"FLOW version mismatch: initialized for "
                 f"v{init_data.get('flow_version')}, plugin is "
-                f"v{plugin_version}. Run /flow:flow-init to upgrade."
+                f"v{plugin_version}. Run /flow:flow-prime to upgrade."
             ),
         }))
         return
@@ -78,7 +78,7 @@ def main():
     if framework not in ("rails", "python"):
         print(json.dumps({
             "status": "error",
-            "message": "Missing framework in .flow.json. Run /flow:flow-init to configure.",
+            "message": "Missing framework in .flow.json. Run /flow:flow-prime to configure.",
         }))
         return
 

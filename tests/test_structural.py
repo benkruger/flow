@@ -266,7 +266,7 @@ def test_framework_dependencies_is_executable_script():
 def test_plugin_json_has_no_config_hash():
     """plugin.json must not contain config_hash — it breaks the validator.
 
-    The hash is computed dynamically by init-setup.py and init-check.py.
+    The hash is computed dynamically by prime-setup.py and prime-check.py.
     """
     plugin = json.loads(
         (REPO_ROOT / ".claude-plugin" / "plugin.json").read_text()

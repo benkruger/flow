@@ -36,6 +36,14 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
   "current_phase": "flow-plan",
   "framework": "rails",
   "plan_file": null,
+  "skills": {
+    "flow-start": {"continue": "manual"},
+    "flow-code": {"commit": "manual", "continue": "manual"},
+    "flow-code-review": {"commit": "auto", "continue": "auto"},
+    "flow-learning": {"commit": "auto", "continue": "auto"},
+    "flow-abort": "auto",
+    "flow-cleanup": "auto"
+  },
   "phases": {
     "flow-start": {
       "name": "Start",
@@ -81,8 +89,9 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `pr_url` | string | Full GitHub PR URL |
 | `started_at` | ISO 8601 | When the feature was started (Phase 1 entry) |
 | `current_phase` | string | The currently active phase key (e.g. `"flow-code"`) |
-| `framework` | string | `"rails"` or `"python"` — set during `/flow-init`, copied to state by `/flow-start` |
+| `framework` | string | `"rails"` or `"python"` — set during `/flow-prime`, copied to state by `/flow-start` |
 | `plan_file` | string / null | Absolute path to the plan file at `~/.claude/plans/<name>.md` — set by Phase 2: Plan |
+| `skills` | object / absent | Per-skill autonomy settings copied from `.flow.json` by `/flow-start` — see [Skills Object](#skills-object) |
 | `notes` | array | Corrections captured via `/flow-note` — see [Notes Array](#notes-array) |
 
 ---
@@ -110,6 +119,25 @@ Each phase entry has identical fields regardless of status.
 - `session_started_at` is set on entry and cleared to `null` on exit
 - On session resume, if `session_started_at` is not null, it is reset to null — the interrupted visit's time is not counted
 - `cumulative_seconds` increments by `(exit_time - session_started_at)` on each clean exit
+
+---
+
+## Skills Object
+
+Copied from `.flow.json` into the state file by `/flow-start`. Phase skills read autonomy config from the state file rather than `.flow.json`, because `.flow.json` lives at the project root and is not accessible from worktrees.
+
+Present only when `.flow.json` contains a `skills` key (i.e., after running `/flow-prime` with Customize or a preset). Phase skills that don't find a `skills` key in the state file fall back to built-in defaults.
+
+```json
+"skills": {
+  "flow-start": {"continue": "manual"},
+  "flow-code": {"commit": "manual", "continue": "manual"},
+  "flow-code-review": {"commit": "auto", "continue": "auto"},
+  "flow-learning": {"commit": "auto", "continue": "auto"},
+  "flow-abort": "auto",
+  "flow-cleanup": "auto"
+}
+```
 
 ---
 

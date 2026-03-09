@@ -14,7 +14,7 @@ model: opus
 /flow:flow-code --manual
 ```
 
-- `/flow:flow-code` — uses configured mode from `.flow.json` (default: manual)
+- `/flow:flow-code` — uses configured mode from the state file (default: manual)
 - `/flow:flow-code --auto` — streamline mode active from task 1 (skip per-task approval, still show diffs), auto-advance to Code Review
 - `/flow:flow-code --manual` — requires explicit approval for each task
 
@@ -43,8 +43,8 @@ to the project root — `bin/flow` commands find paths internally.
 
 1. If `--auto` was passed → commit=auto, continue=auto
 2. If `--manual` was passed → commit=manual, continue=manual
-3. Otherwise, read `.flow.json` from the project root. Use `skills.flow-code.commit` and `skills.flow-code.continue`.
-4. If `.flow.json` has no `skills` key → use built-in defaults: commit=manual, continue=manual
+3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-code.commit` and `skills.flow-code.continue`.
+4. If the state file has no `skills` key → use built-in defaults: commit=manual, continue=manual
 
 ## Announce
 
@@ -73,7 +73,7 @@ If `"status": "error"`, report the error and stop.
 
 Read the project's CLAUDE.md for framework-specific conventions. The CLAUDE.md
 is primed with architecture patterns, test conventions, CI failure fix order,
-and hard rules during `/flow:flow-init`. Follow those conventions for:
+and hard rules during `/flow:flow-prime`. Follow those conventions for:
 
 - **Architecture checks** — what to read before writing code
 - **Test patterns** — existing fixtures, helpers, and test conventions

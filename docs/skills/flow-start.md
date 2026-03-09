@@ -16,7 +16,7 @@ parent: Skills
 
 Begins a new feature. This is always the first command run for any piece of work. It sets up an isolated environment, ensures dependencies are current, and establishes the PR before any feature code is written.
 
-**Prerequisite:** `/flow-init` must be run once per project (and again after each FLOW upgrade) before `/flow-start` will work. The setup script checks for a matching version marker at `.flow.json`.
+**Prerequisite:** `/flow-prime` must be run once per project (and again after each FLOW upgrade) before `/flow-start` will work. The setup script checks for a matching version marker at `.flow.json`.
 
 ---
 
@@ -25,8 +25,8 @@ Begins a new feature. This is always the first command run for any piece of work
 1. Checks the version gate and notifies if a newer FLOW release is available on GitHub
 2. Checks for existing active FLOW features
 3. Runs `bin/flow ci` on main to verify the codebase is healthy
-4. Runs `lib/start-setup.py` — verifies `/flow-init` version gate, git pull, worktree creation, empty commit + push + PR, and state file creation
-5. Runs `bin/dependencies` if it exists (created by `/flow-init`), then `bin/flow ci`, with sub-agent CI fix if needed
+4. Runs `lib/start-setup.py` — verifies `/flow-prime` version gate, git pull, worktree creation, empty commit + push + PR, and state file creation
+5. Runs `bin/dependencies` if it exists (created by `/flow-prime`), then `bin/flow ci`, with sub-agent CI fix if needed
 6. Marks Phase 1 complete and transitions to Phase 2: Research
 
 ---
@@ -47,7 +47,7 @@ Branch names are capped at 32 characters, truncated at word boundaries.
 
 ## Mode
 
-Mode is configurable via `.flow.json` (default: manual). In auto mode, the existing-feature warning auto-proceeds and the phase transition advances to Plan without asking.
+Mode is configurable via `.flow.json` (default: manual) and copied into the state file at start. In auto mode, the existing-feature warning auto-proceeds and the phase transition advances to Plan without asking.
 
 ---
 

@@ -16,7 +16,7 @@ from any phase, no prerequisites.
 /flow:flow-abort --manual
 ```
 
-- `/flow:flow-abort` — uses configured mode from `.flow.json` (default: auto)
+- `/flow:flow-abort` — uses configured mode from the state file (default: auto)
 - `/flow:flow-abort --auto` — skips confirmation and proceeds directly to cleanup
 - `/flow:flow-abort --manual` — prompts for user confirmation before any destructive action
 
@@ -24,8 +24,8 @@ from any phase, no prerequisites.
 
 1. If `--auto` was passed → mode is **auto**
 2. If `--manual` was passed → mode is **manual**
-3. Otherwise, read `.flow.json` from the project root. Use `skills.flow-abort` value.
-4. If `.flow.json` has no `skills` key → use built-in default: **auto**
+3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-abort` value.
+4. If the state file has no `skills` key → use built-in default: **auto**
 
 ## Entry Check
 

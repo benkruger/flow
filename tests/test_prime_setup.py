@@ -1,4 +1,4 @@
-"""Tests for lib/init-setup.py — the init phase setup script."""
+"""Tests for lib/prime-setup.py — the prime phase setup script."""
 
 import importlib.util
 import json
@@ -7,18 +7,18 @@ import sys
 
 from conftest import FRAMEWORKS_DIR, LIB_DIR
 
-SCRIPT = str(LIB_DIR / "init-setup.py")
+SCRIPT = str(LIB_DIR / "prime-setup.py")
 
-# Import init-setup.py for in-process unit tests
+# Import prime-setup.py for in-process unit tests
 _spec = importlib.util.spec_from_file_location(
-    "init_setup", LIB_DIR / "init-setup.py"
+    "prime_setup", LIB_DIR / "prime-setup.py"
 )
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
 def _run(project_root, framework="rails"):
-    """Run init-setup.py via subprocess."""
+    """Run prime-setup.py via subprocess."""
     cmd = [sys.executable, SCRIPT, str(project_root)]
     if framework:
         cmd.extend(["--framework", framework])
@@ -222,7 +222,7 @@ def test_git_exclude_preserves_existing_content(git_repo):
 def test_git_exclude_not_updated_when_already_present(git_repo):
     info_dir = git_repo / ".git" / "info"
     info_dir.mkdir(parents=True, exist_ok=True)
-    (info_dir / "exclude").write_text(".flow-states/\n.worktrees/\n")
+    (info_dir / "exclude").write_text(".flow-states/\n.worktrees/\n.flow.json\n")
 
     updated = _mod.update_git_exclude(git_repo)
     assert updated is False

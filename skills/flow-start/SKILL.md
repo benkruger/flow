@@ -74,12 +74,12 @@ Use the feature name as `<branch>` — it matches the branch name.
 Run the version check before anything else:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow init-check
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-check
 ```
 
 Parse the JSON output:
 
-- If `"status": "error"` — tell the user to run `/flow:flow-init` and stop. Do not proceed to any further steps.
+- If `"status": "error"` — tell the user to run `/flow:flow-prime` and stop. Do not proceed to any further steps.
 - If `"status": "ok"` and `"auto_upgraded": true` — show this notice, then continue:
 
 ````markdown
@@ -91,10 +91,10 @@ FLOW auto-upgraded from v{old} to v{new} (config unchanged).
 - If `"status": "ok"` without `auto_upgraded` — proceed silently.
 
 <HARD-GATE>
-Do NOT proceed if version check fails. Tell the user to run `/flow:flow-init` and stop.
+Do NOT proceed if version check fails. Tell the user to run `/flow:flow-prime` and stop.
 </HARD-GATE>
 
-After init-check passes, check for a newer release:
+After prime-check passes, check for a newer release:
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow upgrade-check
@@ -114,7 +114,7 @@ Parse the JSON output:
 ║    1. claude plugin marketplace update
 ║         flow-marketplace
 ║    2. Start a new Claude Code session
-║    3. Run /flow:flow-init
+║    3. Run /flow:flow-prime
 ╚══════════════════════════════════════════════╝
 ```
 ````

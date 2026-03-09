@@ -17,7 +17,7 @@ This is always the first phase, for every feature without exception. It establis
 
 ### 1. Version gate
 
-Run `bin/flow init-check` to verify `/flow-init` has been run with the current plugin version. Cheapest check — runs first so a missing init doesn't waste time on slower steps.
+Run `bin/flow prime-check` to verify `/flow-prime` has been run with the current plugin version. Cheapest check — runs first so a missing prime doesn't waste time on slower steps.
 
 Also checks GitHub for newer FLOW releases and displays upgrade instructions if one is available. This check is informational — it never blocks.
 

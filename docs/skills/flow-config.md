@@ -29,4 +29,4 @@ Any setting can be overridden at invocation time with `--auto` or `--manual` fla
 
 ## See Also
 
-- [/flow-init](flow-init.md) — sets up the configuration during project initialization
+- [/flow-prime](flow-prime.md) — sets up the configuration during project initialization

@@ -529,11 +529,11 @@ def test_phase_1_hard_gate_checks_feature_name():
 
 
 def test_flow_start_surfaces_auto_upgrade():
-    """flow-start Step 1 must handle auto_upgraded from init-check output."""
+    """flow-start Step 1 must handle auto_upgraded from prime-check output."""
     content = _read_skill("flow-start")
     assert "auto_upgraded" in content, (
         "flow-start/SKILL.md must mention auto_upgraded to surface "
-        "auto-upgrade notices from init-check"
+        "auto-upgrade notices from prime-check"
     )
 
 
@@ -1076,8 +1076,8 @@ CONTINUE_ONLY_SKILLS = ["flow-start"]
 UTILITY_SKILLS = ["flow-abort", "flow-cleanup"]
 
 
-def test_mode_resolution_references_flow_json():
-    """All 6 configurable skills Mode Resolution must reference .flow.json."""
+def test_mode_resolution_references_config_source():
+    """All 6 configurable skills Mode Resolution must reference config source."""
     for name in CONFIGURABLE_SKILLS:
         content = _read_skill(name)
         resolution_match = re.search(
@@ -1087,10 +1087,16 @@ def test_mode_resolution_references_flow_json():
             f"skills/{name}/SKILL.md has no Mode Resolution section"
         )
         resolution_text = resolution_match.group(1)
-        assert ".flow.json" in resolution_text, (
-            f"skills/{name}/SKILL.md Mode Resolution does not reference "
-            f".flow.json for config lookup"
-        )
+        if name == "flow-start":
+            assert ".flow.json" in resolution_text, (
+                f"skills/{name}/SKILL.md Mode Resolution does not reference "
+                f".flow.json for config lookup"
+            )
+        else:
+            assert ".flow-states/" in resolution_text, (
+                f"skills/{name}/SKILL.md Mode Resolution does not reference "
+                f"state file for config lookup"
+            )
         assert f"skills.{name}" in resolution_text, (
             f"skills/{name}/SKILL.md Mode Resolution does not reference "
             f"'skills.{name}' key"

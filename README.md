@@ -55,7 +55,7 @@ Every skill has two independent axes you can tune:
 
 Start fully manual. As your comfort grows, dial up autonomy per skill. Go fully autonomous when you trust the workflow.
 
-### Four preset levels via `/flow-init`
+### Four preset levels via `/flow-prime`
 
 | Level | What it means |
 |-------|--------------|
@@ -104,7 +104,7 @@ In any Claude Code session:
 Then initialize in your project (once per project, and again after each FLOW upgrade):
 
 ```bash
-/flow-init
+/flow-prime
 ```
 
 Start a new Claude Code session so permissions take effect, then start a feature:
@@ -121,7 +121,7 @@ This creates branch `invoice-pdf-export`, a worktree at `.worktrees/invoice-pdf-
 
 The plugin itself installs into Claude Code's managed plugin directory — one place, fully managed by Claude Code.
 
-FLOW configures workspace permissions in `.claude/settings.json` and a version marker in `.flow.json` (via `/flow-init`, committed once). During active development, a single gitignored JSON state file per feature exists at `.flow-states/<branch>.json`. When the feature is done and Cleanup runs, that file is deleted too.
+FLOW configures workspace permissions in `.claude/settings.json` and a version marker in `.flow.json` (via `/flow-prime`, committed once). During active development, a single gitignored JSON state file per feature exists at `.flow-states/<branch>.json`. When the feature is done and Cleanup runs, that file is deleted too.
 
 **Three commands to set up. One file while you work. Zero when you're done.**
 
@@ -133,7 +133,7 @@ Available at any point in the workflow:
 
 | Command | What it does |
 |---------|-------------|
-| `/flow-init` | One-time project setup — configure permissions and git excludes |
+| `/flow-prime` | One-time project setup — configure permissions and git excludes |
 | `/flow-commit` | Full diff review, approved commit message, pull before push |
 | `/flow-status` | Current phase, PR link, cumulative time per phase, next step |
 | `/flow-continue` | Re-asks last transition question; rebuilds full context on new session |

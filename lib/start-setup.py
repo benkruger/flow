@@ -2,7 +2,7 @@
 
 Runs git pull, creates worktree, makes initial commit + push + PR,
 creates state file, and logs all operations. The version gate
-(init-check) runs as a separate step before this script.
+(prime-check) runs as a separate step before this script.
 
 Usage: bin/flow start-setup "<feature name>"
 
@@ -117,7 +117,7 @@ def _extract_pr_number(pr_url):
 
 
 def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                       framework="rails"):
+                       framework="rails", skills=None):
     """Create the FLOW state file."""
     current_time = now()
     phases = {}
@@ -157,6 +157,8 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
         "notes": [],
         "phases": phases,
     }
+    if skills is not None:
+        state["skills"] = skills
 
     state_dir = project_root / ".flow-states"
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -203,6 +205,7 @@ def main():
         flow_json = project_root / ".flow.json"
         init_data = json.loads(flow_json.read_text())
         framework = init_data.get("framework", "rails")
+        skills = init_data.get("skills")
 
         # Git pull
         _git_pull(project_root)
@@ -218,7 +221,7 @@ def main():
 
         # Create state file
         _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                           framework=framework)
+                           framework=framework, skills=skills)
         _log(project_root, branch, f"create .flow-states/{branch}.json (exit 0)")
 
         # Freeze phase config for this feature

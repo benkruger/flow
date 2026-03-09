@@ -93,7 +93,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 | `test_check_phase.py` | Phase guard: blocks on incomplete prerequisites, allows on complete, handles worktrees, re-entry notes |
 | `test_session_start.py` | Session hook: feature detection, timing reset, awareness injection, multi-feature handling |
 | `test_docs_sync.py` | Docs completeness: every skill has a docs page, every phase has a docs page, index and README mention all commands |
-| `test_permissions.py` | Permission simulation: allow/deny coverage, placeholder validation, source-of-truth sync between init-setup.py and flow-init/SKILL.md, regex unit tests. Unrecognized placeholders fail loudly |
+| `test_permissions.py` | Permission simulation: allow/deny coverage, placeholder validation, source-of-truth sync between prime-setup.py and flow-prime/SKILL.md, regex unit tests. Unrecognized placeholders fail loudly |
 | `test_bin_ci.py` | CI runner: venv detection, pass/fail behavior |
 | `test_bin_test.py` | Test runner: venv detection, pass/fail, argument passthrough |
 | `test_start_setup.py` | Start setup script: branch naming, settings merge, worktree, state file, logging, error paths |
@@ -103,7 +103,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 | `test_detect_framework.py` | Framework auto-detection: file patterns, multiple matches, defaults, CLI |
 | `test_prime_project.py` | CLAUDE.md priming: marker insertion, idempotent replacement, framework switching |
 | `test_create_dependencies.py` | Dependency template: file creation, skip-if-exists, chmod, CLI |
-| `test_init_setup.py` | Init setup: data-driven permissions, settings merge, version marker, git exclude |
+| `test_prime_setup.py` | Prime setup: data-driven permissions, settings merge, version marker, git exclude |
 
 ## Maintainer Skills (private to this repo)
 

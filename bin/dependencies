@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # FLOW dependency updater for Python
-# Created by /flow:flow-init — edit to match your project
+# Created by /flow:flow-prime — edit to match your project
 set -euo pipefail
 
 if [ -f "requirements.txt" ]; then

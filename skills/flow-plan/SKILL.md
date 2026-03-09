@@ -107,7 +107,7 @@ explore patterns, and design the solution.
 
 Read the project's CLAUDE.md for framework-specific conventions (architecture
 patterns, test conventions, CI fix order). The CLAUDE.md is primed with
-framework knowledge during `/flow:flow-init`. Follow those conventions when
+framework knowledge during `/flow:flow-prime`. Follow those conventions when
 writing the Tasks section of the plan.
 
 Always include TDD order — test task before every implementation task.

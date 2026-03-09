@@ -1,7 +1,7 @@
 """Tests for Bash permission coverage.
 
 Every Bash command in every skill must have a matching permission entry in
-init/SKILL.md (for plugin skills) or .claude/settings.json (for maintainer
+prime/SKILL.md (for plugin skills) or .claude/settings.json (for maintainer
 skills). Prohibition tests enforce that bash blocks never contain patterns
 that break permission matching or shell behavior.
 """
@@ -67,9 +67,9 @@ def _logging_skills():
     return result
 
 
-def _extract_init_permissions_block():
-    """Extract the full permissions dict from init/SKILL.md reference JSON."""
-    content = _read_skill("flow-init")
+def _extract_prime_permissions_block():
+    """Extract the full permissions dict from prime/SKILL.md reference JSON."""
+    content = _read_skill("flow-prime")
     blocks = re.findall(r"```json\s*\n(.*?)```", content, re.DOTALL)
     for block in blocks:
         if '"permissions"' in block and '"allow"' in block:
@@ -79,17 +79,17 @@ def _extract_init_permissions_block():
                 return parsed["permissions"]
             except (json.JSONDecodeError, KeyError):
                 continue
-    raise AssertionError("Could not find permissions JSON in init/SKILL.md")
+    raise AssertionError("Could not find permissions JSON in prime/SKILL.md")
 
 
-def _extract_init_permissions():
-    """Extract the allow list from init/SKILL.md reference JSON."""
-    return _extract_init_permissions_block()["allow"]
+def _extract_prime_permissions():
+    """Extract the allow list from prime/SKILL.md reference JSON."""
+    return _extract_prime_permissions_block()["allow"]
 
 
-def _extract_init_deny():
-    """Extract the deny list from init/SKILL.md reference JSON."""
-    return _extract_init_permissions_block()["deny"]
+def _extract_prime_deny():
+    """Extract the deny list from prime/SKILL.md reference JSON."""
+    return _extract_prime_permissions_block()["deny"]
 
 
 def _concrete_example(perm):
@@ -480,8 +480,8 @@ def test_no_cd_compound_in_bash_blocks():
 
 def test_all_bash_commands_have_permission_coverage():
     """Every ```bash``` block in all SKILL.md and docs/*.md files must match
-    at least one permission from init/SKILL.md or be in the auto-allowed set."""
-    permissions = _extract_init_permissions()
+    at least one permission from prime/SKILL.md or be in the auto-allowed set."""
+    permissions = _extract_prime_permissions()
     regexes = [_permission_to_regex(p) for p in permissions]
     regexes = [r for r in regexes if r is not None]
 
@@ -519,7 +519,7 @@ def test_all_bash_commands_have_permission_coverage():
             if not matched:
                 errors.append(
                     f"{filepath}: command '{cmd}' has no matching permission "
-                    f"in init/SKILL.md. Add a Bash({cmd} *) or Bash({cmd}) "
+                    f"in prime/SKILL.md. Add a Bash({cmd} *) or Bash({cmd}) "
                     f"entry to the permissions block."
                 )
 
@@ -533,7 +533,7 @@ def test_cd_prefixed_commands_have_full_permission_coverage():
     """Bash blocks with a cd prefix must match a permission pattern as-is,
     without stripping the cd. This prevents Claude from dropping the cd
     to match a simpler pattern and running from the wrong directory."""
-    permissions = _extract_init_permissions()
+    permissions = _extract_prime_permissions()
     regexes = [_permission_to_regex(p) for p in permissions]
     regexes = [r for r in regexes if r is not None]
 
@@ -623,7 +623,7 @@ def _maintainer_files():
     """Collect maintainer skill files.
 
     These run in this repo (not the target Rails project), so their bash
-    commands must be covered by .claude/settings.json, not init/SKILL.md.
+    commands must be covered by .claude/settings.json, not prime/SKILL.md.
     """
     files = []
     for d in sorted(MAINTAINER_SKILLS_DIR.iterdir()):
@@ -639,7 +639,7 @@ def test_maintainer_bash_commands_have_settings_coverage():
     in .claude/settings.json or be auto-allowed.
 
     Maintainer skills (.claude/skills/) run in this repo, not the target
-    Rails project, so they need coverage in settings.json — not init/SKILL.md."""
+    Rails project, so they need coverage in settings.json — not prime/SKILL.md."""
     permissions = _load_settings_permissions()
     regexes = [_permission_to_regex(p) for p in permissions]
     regexes = [r for r in regexes if r is not None]
@@ -707,13 +707,13 @@ REQUIRED_TOOL_ALTERNATIVE_DENIES = [
 
 
 def test_plugin_permissions_deny_destructive_git():
-    """Plugin permissions in init/SKILL.md must deny destructive git operations.
+    """Plugin permissions in prime/SKILL.md must deny destructive git operations.
 
     The maintainer settings.json denies these, and the plugin permissions
     written to the target project must do the same."""
-    permissions = _extract_init_permissions_block()
+    permissions = _extract_prime_permissions_block()
     assert "deny" in permissions, (
-        "init/SKILL.md permissions JSON has no 'deny' list. "
+        "prime/SKILL.md permissions JSON has no 'deny' list. "
         "Add deny entries for destructive git operations."
     )
     deny = permissions["deny"]
@@ -827,7 +827,7 @@ def test_no_skill_command_matches_deny():
     """No bash command in any plugin skill or docs file should match a deny pattern.
 
     Deny always wins over allow. A command matching both is always blocked."""
-    deny = _extract_init_deny()
+    deny = _extract_prime_deny()
     deny_regexes = [_permission_to_regex(d) for d in deny]
     deny_regexes = [r for r in deny_regexes if r is not None]
 
@@ -891,11 +891,11 @@ def test_no_maintainer_command_matches_deny():
 
 
 def test_no_allow_deny_overlap_in_plugin_permissions():
-    """No allow entry in init/SKILL.md should produce a command that matches deny.
+    """No allow entry in prime/SKILL.md should produce a command that matches deny.
 
     If an allow pattern generates commands that also match a deny pattern,
     the allow entry is dead — deny always wins."""
-    perms = _extract_init_permissions_block()
+    perms = _extract_prime_permissions_block()
     allow = perms["allow"]
     deny = perms["deny"]
     deny_regexes = [_permission_to_regex(d) for d in deny]
@@ -916,7 +916,7 @@ def test_no_allow_deny_overlap_in_plugin_permissions():
                 break
 
     assert not errors, (
-        f"Found {len(errors)} allow/deny overlap(s) in init/SKILL.md "
+        f"Found {len(errors)} allow/deny overlap(s) in prime/SKILL.md "
         f"permissions:\n"
         + "\n".join(f"  - {e}" for e in errors)
     )
@@ -1002,21 +1002,21 @@ def test_no_dedicated_tool_commands_in_bash_blocks():
     )
 
 
-def test_init_setup_lists_match_skill_md_reference():
-    """Permission lists in lib/init-setup.py must match init/SKILL.md JSON.
+def test_prime_setup_lists_match_skill_md_reference():
+    """Permission lists in lib/prime-setup.py must match prime/SKILL.md JSON.
 
-    init-setup.py is the code that writes permissions at runtime.
-    init/SKILL.md contains the reference JSON for documentation.
+    prime-setup.py is the code that writes permissions at runtime.
+    prime/SKILL.md contains the reference JSON for documentation.
     If they drift, the docs lie about what gets installed."""
     import importlib.util
 
     spec = importlib.util.spec_from_file_location(
-        "init_setup", LIB_DIR / "init-setup.py"
+        "prime_setup", LIB_DIR / "prime-setup.py"
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
-    # Build complete sets from init-setup.py (universal + all frameworks)
+    # Build complete sets from prime-setup.py (universal + all frameworks)
     all_framework_perms = []
     for framework_dir in sorted(mod._frameworks_dir().iterdir()):
         if framework_dir.is_dir():
@@ -1024,8 +1024,8 @@ def test_init_setup_lists_match_skill_md_reference():
     code_allow = set(mod.UNIVERSAL_ALLOW + all_framework_perms)
     code_deny = set(mod.FLOW_DENY)
 
-    # Get reference JSON from init/SKILL.md
-    perms = _extract_init_permissions_block()
+    # Get reference JSON from prime/SKILL.md
+    perms = _extract_prime_permissions_block()
     skill_allow = set(perms["allow"])
     skill_deny = set(perms["deny"])
 
@@ -1034,33 +1034,33 @@ def test_init_setup_lists_match_skill_md_reference():
     only_in_code_allow = code_allow - skill_allow
     if only_in_code_allow:
         errors.append(
-            f"In init-setup.py allow but not init/SKILL.md: "
+            f"In prime-setup.py allow but not prime/SKILL.md: "
             f"{sorted(only_in_code_allow)}"
         )
 
     only_in_skill_allow = skill_allow - code_allow
     if only_in_skill_allow:
         errors.append(
-            f"In init/SKILL.md allow but not init-setup.py: "
+            f"In prime/SKILL.md allow but not prime-setup.py: "
             f"{sorted(only_in_skill_allow)}"
         )
 
     only_in_code_deny = code_deny - skill_deny
     if only_in_code_deny:
         errors.append(
-            f"In init-setup.py deny but not init/SKILL.md: "
+            f"In prime-setup.py deny but not prime/SKILL.md: "
             f"{sorted(only_in_code_deny)}"
         )
 
     only_in_skill_deny = skill_deny - code_deny
     if only_in_skill_deny:
         errors.append(
-            f"In init/SKILL.md deny but not init-setup.py: "
+            f"In prime/SKILL.md deny but not prime-setup.py: "
             f"{sorted(only_in_skill_deny)}"
         )
 
     assert not errors, (
-        f"Permission lists out of sync between lib/init-setup.py (runtime "
-        f"source) and skills/init/SKILL.md (reference docs):\n"
+        f"Permission lists out of sync between lib/prime-setup.py (runtime "
+        f"source) and skills/prime/SKILL.md (reference docs):\n"
         + "\n".join(f"  - {e}" for e in errors)
     )

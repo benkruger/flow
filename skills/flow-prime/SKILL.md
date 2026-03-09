@@ -1,14 +1,14 @@
 ---
-name: flow-init
-description: "One-time project setup — configure workspace permissions, git excludes, and version marker. Run once after installing or upgrading FLOW. Usage: /flow:flow-init"
+name: flow-prime
+description: "One-time project setup — configure workspace permissions, git excludes, and version marker. Run once after installing or upgrading FLOW. Usage: /flow:flow-prime"
 ---
 
-# FLOW Init — One-Time Project Setup
+# FLOW Prime — One-Time Project Setup
 
 ## Usage
 
 ```text
-/flow:flow-init
+/flow:flow-prime
 ```
 
 Run once after installing FLOW, and again after each FLOW upgrade. Configures workspace permissions, git excludes, and writes a version marker so `/flow:flow-start` knows the project is initialized.
@@ -20,7 +20,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ============================================
-  FLOW v0.20.1 — Init — STARTING
+  FLOW v0.20.1 — Prime — STARTING
 ============================================
 ```
 ````
@@ -87,44 +87,60 @@ Ask the user how much autonomy FLOW should have using AskUserQuestion:
 {"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learning": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-cleanup": "auto"}
 ```
 
-**Customize** — ask per skill, in this order: start, code, code-review, learning, abort, cleanup. For each skill, ask about only the applicable axes:
+**Customize** — ask per skill, in this order: start, code, code-review, learning, abort, cleanup. For each skill, ask about only the applicable axes. List the recommended option first with "(Recommended)" in the label:
 
-For skills with both axes (code, code-review, learning), ask two AskUserQuestions:
+For **code** (commit and continue), ask two AskUserQuestions:
+
+First question:
+
+> "Commit mode for /flow:flow-code? (controls diff approval and per-task approval)"
+>
+> - **Manual (Recommended)** — "Require explicit approval"
+> - **Auto** — "Skip approval prompts"
+
+Second question:
+
+> "Continue mode for /flow:flow-code? (controls phase advancement)"
+>
+> - **Manual (Recommended)** — "Prompt before advancing"
+> - **Auto** — "Auto-advance to next phase"
+
+For **code-review** and **learning** (commit and continue), ask two AskUserQuestions each:
 
 First question:
 
 > "Commit mode for /flow:flow-<skill>? (controls diff approval and per-task approval)"
 >
-> - **Auto** — "Skip approval prompts"
+> - **Auto (Recommended)** — "Skip approval prompts"
 > - **Manual** — "Require explicit approval"
 
 Second question:
 
 > "Continue mode for /flow:flow-<skill>? (controls phase advancement)"
 >
-> - **Auto** — "Auto-advance to next phase"
+> - **Auto (Recommended)** — "Auto-advance to next phase"
 > - **Manual** — "Prompt before advancing"
 
-For skills with continue only (start), ask one AskUserQuestion:
+For **start** (continue only), ask one AskUserQuestion:
 
-> "Continue mode for /flow:flow-<skill>?"
+> "Continue mode for /flow:flow-start?"
 >
+> - **Manual (Recommended)** — "Prompt before advancing"
 > - **Auto** — "Auto-advance to next phase"
-> - **Manual** — "Prompt before advancing"
 
-For utility skills (abort, cleanup), ask one AskUserQuestion:
+For **abort** and **cleanup** (single mode), ask one AskUserQuestion each:
 
 > "Mode for /flow:flow-<skill>?"
 >
-> - **Auto** — "Skip confirmation prompt"
+> - **Auto (Recommended)** — "Skip confirmation prompt"
 > - **Manual** — "Require confirmation prompt"
 
 Store the result as `skills_dict` for Step 3.
 
-### Step 3 — Run init setup script
+### Step 3 — Run prime setup script
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow init-setup <project_root> --framework <framework>
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --framework <framework>
 ```
 
 The script handles:
@@ -133,7 +149,7 @@ The script handles:
 - Merging FLOW permissions (additive only — preserves existing entries)
 - Setting `defaultMode` to `acceptEdits` (overrides existing values — FLOW requires this for state file writes without prompts)
 - Writing `.flow.json` with version marker and framework
-- Adding `.flow-states/` and `.worktrees/` to `.git/info/exclude`
+- Adding `.flow-states/`, `.worktrees/`, and `.flow.json` to `.git/info/exclude`
 
 Output JSON: `{"status": "ok", "settings_merged": true, "exclude_updated": true, "version_marker": true, "framework": "rails|python"}`
 
@@ -197,7 +213,7 @@ All permissions (universal + all framework sets) for reference:
 
 ### Step 4 — Write skills config to .flow.json
 
-After the init-setup script writes `.flow.json`, read it back with the Read tool,
+After the prime-setup script writes `.flow.json`, read it back with the Read tool,
 add the `skills` key from `skills_dict` (Step 2), and write the file back with
 the Write tool. The result should look like:
 
@@ -205,7 +221,7 @@ the Write tool. The result should look like:
 {"flow_version": "0.16.4", "framework": "python", "config_hash": "2c54c5cd6972", "skills": {"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learning": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-cleanup": "auto"}}
 ```
 
-The `config_hash` field is a 12-character hex digest stored by `init-setup`. When the plugin version changes, `/flow-start` recomputes the hash and compares against the stored value to decide whether re-init is needed. If the config hasn't changed, the version is auto-upgraded without re-running `/flow-init`.
+The `config_hash` field is a 12-character hex digest stored by `prime-setup`. When the plugin version changes, `/flow-start` recomputes the hash and compares against the stored value to decide whether re-prime is needed. If the config hasn't changed, the version is auto-upgraded without re-running `/flow-prime`.
 
 ### Step 5 — Prime project CLAUDE.md
 
@@ -237,8 +253,10 @@ have customized it). If `"status": "error"`, report to the user.
 
 Stage the settings and version marker:
 
+Stage the settings file:
+
 ```bash
-git add .claude/settings.json .flow.json
+git add .claude/settings.json
 ```
 
 Check if anything is staged by running `git status`. If the output contains "nothing to commit", skip the commit and push — go straight to Done.
@@ -246,7 +264,7 @@ Check if anything is staged by running `git status`. If the output contains "not
 Otherwise, commit and push:
 
 ```bash
-git commit -m "Configure FLOW workspace permissions and version marker"
+git commit -m "Configure FLOW workspace permissions"
 ```
 
 ```bash
@@ -260,7 +278,7 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ````markdown
 ```text
 ============================================
-  FLOW v0.20.1 — Init — COMPLETE
+  FLOW v0.20.1 — Prime — COMPLETE
 ============================================
 ```
 ````
@@ -269,8 +287,8 @@ Report:
 
 - Framework: `<framework>`
 - Settings written to `.claude/settings.json`
-- Version marker written to `.flow.json`
-- Git excludes configured for `.flow-states/` and `.worktrees/`
+- Version marker written to `.flow.json` (git-excluded)
+- Git excludes configured for `.flow-states/`, `.worktrees/`, and `.flow.json`
 - Changes committed
 
 Display the skills configuration as a pipe-delimited markdown table with exactly this format (not a bullet list):

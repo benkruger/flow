@@ -22,7 +22,7 @@ Use the Glob tool to check for `.flow.json` at the project root.
 
 If `.flow.json` does not exist, tell the user:
 
-> "No `.flow.json` found. Run `/flow:flow-init` to configure this project."
+> "No `.flow.json` found. Run `/flow:flow-prime` to configure this project."
 
 Stop here.
 

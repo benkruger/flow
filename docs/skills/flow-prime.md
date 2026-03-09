@@ -1,14 +1,14 @@
 ---
-title: /flow-init
+title: /flow-prime
 nav_order: 7
 parent: Skills
 ---
 
-# /flow-init
+# /flow-prime
 
 **Phase:** Any (run once per install/upgrade)
 
-**Usage:** `/flow-init`
+**Usage:** `/flow-prime`
 
 One-time project setup. Configures workspace permissions in `.claude/settings.json`, sets up git excludes, and writes a version marker. Run once after installing FLOW and again after each upgrade.
 
@@ -68,4 +68,4 @@ Individual skills can always be overridden at invocation time with `--auto` or `
 
 ## See Also
 
-- [/flow-start](flow-start.md) — requires `/flow-init` to have been run for the current FLOW version
+- [/flow-start](flow-start.md) — requires `/flow-prime` to have been run for the current FLOW version

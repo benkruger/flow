@@ -136,8 +136,8 @@ This updates `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
 and all skill banners in one step.
 
 Config hashes are not stored in `plugin.json` — they are computed
-dynamically by `compute_config_hash()` in `lib/init-setup.py` at init
-time and compared at start time by `lib/init-check.py`. No manual hash
+dynamically by `compute_config_hash()` in `lib/prime-setup.py` at prime
+time and compared at start time by `lib/prime-check.py`. No manual hash
 updates are needed during releases.
 
 ## Step 7 — Update RELEASE-NOTES.md

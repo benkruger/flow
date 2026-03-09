@@ -1,10 +1,10 @@
-"""Consolidated setup for FLOW Init.
+"""Consolidated setup for FLOW Prime.
 
 Merges permissions into .claude/settings.json, writes .flow.json version
 marker, and updates .git/info/exclude. Does NOT commit — the skill handles
 git add + commit after this script runs.
 
-Usage: bin/flow init-setup <project_root>
+Usage: bin/flow prime-setup <project_root>
 
 Output (JSON to stdout):
   Success: {"status": "ok", "settings_merged": true, "exclude_updated": true, "version_marker": true}
@@ -55,7 +55,7 @@ FLOW_DENY = [
     "Bash(* ; *)",
 ]
 
-EXCLUDE_ENTRIES = [".flow-states/", ".worktrees/"]
+EXCLUDE_ENTRIES = [".flow-states/", ".worktrees/", ".flow.json"]
 
 
 def _load_framework_permissions(framework):
@@ -208,7 +208,7 @@ def main():
     if len(sys.argv) < 2:
         print(json.dumps({
             "status": "error",
-            "message": "Usage: python3 init-setup.py <project_root> --framework rails|python",
+            "message": "Usage: python3 prime-setup.py <project_root> --framework rails|python",
         }))
         sys.exit(1)
 

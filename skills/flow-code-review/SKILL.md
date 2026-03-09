@@ -14,7 +14,7 @@ model: opus
 /flow:flow-code-review --manual
 ```
 
-- `/flow:flow-code-review` — uses configured mode from `.flow.json` (default: manual)
+- `/flow:flow-code-review` — uses configured mode from the state file (default: manual)
 - `/flow:flow-code-review --auto` — auto-fix and auto-commit all findings, auto-advance to Learning
 - `/flow:flow-code-review --manual` — requires explicit approval of changes and routing decisions
 
@@ -43,8 +43,8 @@ to the project root — `bin/flow` commands find paths internally.
 
 1. If `--auto` was passed → commit=auto, continue=auto
 2. If `--manual` was passed → commit=manual, continue=manual
-3. Otherwise, read `.flow.json` from the project root. Use `skills.flow-code-review.commit` and `skills.flow-code-review.continue`.
-4. If `.flow.json` has no `skills` key → use built-in defaults: commit=manual, continue=manual
+3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-code-review.commit` and `skills.flow-code-review.continue`.
+4. If the state file has no `skills` key → use built-in defaults: commit=manual, continue=manual
 
 ## Announce
 

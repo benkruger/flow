@@ -14,7 +14,7 @@ model: sonnet
 /flow:flow-learning --manual
 ```
 
-- `/flow:flow-learning` — uses configured mode from `.flow.json` (default: auto)
+- `/flow:flow-learning` — uses configured mode from the state file (default: auto)
 - `/flow:flow-learning --auto` — skip permission promotion prompts, auto-advance to Cleanup
 - `/flow:flow-learning --manual` — prompt for permission promotion and phase transition
 
@@ -46,8 +46,8 @@ to the project root — `bin/flow` commands find paths internally.
 
 1. If `--auto` was passed → commit=auto, continue=auto
 2. If `--manual` was passed → commit=manual, continue=manual
-3. Otherwise, read `.flow.json` from the project root. Use `skills.flow-learning.commit` and `skills.flow-learning.continue`.
-4. If `.flow.json` has no `skills` key → use built-in defaults: commit=auto, continue=auto
+3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-learning.commit` and `skills.flow-learning.continue`.
+4. If the state file has no `skills` key → use built-in defaults: commit=auto, continue=auto
 
 ## Announce
 

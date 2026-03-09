@@ -88,11 +88,12 @@ def _current_plugin_version():
     return json.loads(plugin_path.read_text())["version"]
 
 
-def _write_flow_json(repo, version, framework="rails"):
-    """Write .flow.json with a version marker and framework."""
-    (repo / ".flow.json").write_text(
-        json.dumps({"flow_version": version, "framework": framework})
-    )
+def _write_flow_json(repo, version, framework="rails", skills=None):
+    """Write .flow.json with a version marker, framework, and optional skills."""
+    data = {"flow_version": version, "framework": framework}
+    if skills is not None:
+        data["skills"] = skills
+    (repo / ".flow.json").write_text(json.dumps(data))
 
 
 def _run_no_gh(cwd, feature_name, framework="rails"):
@@ -219,7 +220,7 @@ def test_git_pull_failure_returns_error(tmp_path):
     assert data["step"] == "git_pull"
 
 
-# --- Version gate now handled by init-check.py (see test_init_check.py) ---
+# --- Version gate now handled by prime-check.py (see test_prime_check.py) ---
 
 
 # --- Worktree creation (shared run) ---
@@ -426,3 +427,43 @@ def test_frozen_phases_file_matches_source(_default_run):
     source_path = Path(__file__).resolve().parent.parent / "flow-phases.json"
     source_data = json.loads(source_path.read_text())
     assert frozen_data == source_data
+
+
+# --- Skills config propagation ---
+
+
+def test_state_file_includes_skills_from_flow_json(git_repo_with_remote):
+    """State file must include skills config when .flow.json has a skills key."""
+    skills_config = {
+        "flow-start": {"continue": "auto"},
+        "flow-code": {"commit": "manual", "continue": "manual"},
+    }
+    version = _current_plugin_version()
+    _write_flow_json(git_repo_with_remote, version, skills=skills_config)
+
+    env = os.environ.copy()
+    stub_dir = git_repo_with_remote / ".stub-bin"
+    stub_dir.mkdir(exist_ok=True)
+    gh_stub = stub_dir / "gh"
+    gh_stub.write_text(
+        '#!/bin/bash\n'
+        'echo "https://github.com/test/repo/pull/42"\n'
+    )
+    gh_stub.chmod(0o755)
+    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [sys.executable, SCRIPT, "skills test"],
+        capture_output=True, text=True, cwd=str(git_repo_with_remote), env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    state_path = git_repo_with_remote / ".flow-states" / "skills-test.json"
+    state = json.loads(state_path.read_text())
+    assert "skills" in state
+    assert state["skills"] == skills_config
+
+
+def test_state_file_omits_skills_when_not_in_flow_json(_default_run):
+    """State file should not have a skills key when .flow.json has no skills."""
+    data, state, log, repo = _default_run
+    assert "skills" not in state
