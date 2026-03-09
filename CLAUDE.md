@@ -67,6 +67,8 @@ CI will fail if these are missing:
 - `lib/detect-framework.py` — data-driven framework auto-detection from `frameworks/*/detect.json`
 - `lib/prime-project.py` — inserts framework conventions into target CLAUDE.md between markers
 - `lib/create-dependencies.py` — copies framework dependency template to `bin/dependencies`
+- `agents/ci-fixer.md` — custom plugin sub-agent for CI failure diagnosis and fix
+- `lib/validate-ci-bash.py` — PreToolUse hook validator for ci-fixer (blocks compound commands and file-read commands)
 - `bin/flow` — dispatcher script routing subcommands to `lib/*.py`
 - `docs/reference/flow-state-schema.md` — state file schema reference
 - `docs/reference/skill-pattern.md` — template pattern for building new phase skills
@@ -96,7 +98,9 @@ The state file (`.flow-states/<branch>.json`) is the backbone. Schema reference:
 
 ### Sub-Agents
 
-Start uses a sub-agent for CI failures. Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`) instead of sub-agents. Review delegates to Claude's built-in `/review` command. Security delegates to Claude's built-in `/security-review` command. Code has no sub-agent.
+FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`) for Start phase CI failures (Steps 3 and 5). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The ci-fixer uses a `PreToolUse` hook (`lib/validate-ci-bash.py`) to enforce tool restrictions at the system level, blocking compound commands and file-read commands with helpful error messages.
+
+Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`). Code Review delegates to built-in `/simplify`, `/review`, and `/security-review`. Code has no sub-agent.
 
 ### Memory and Learning System
 
@@ -136,7 +140,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 | Test File | What It Enforces |
 |-----------|------------------|
 | `test_structural.py` | Config invariants: phases 1-6 exist, versions match across 3 locations, commands unique, hooks reference existing files |
-| `test_skill_contracts.py` | SKILL.md content: HARD-GATE presence, announce banners, state updates, sub-agent types, model frontmatter, logging sections, note-capture options. Uses glob-based discovery — new skills are automatically covered |
+| `test_skill_contracts.py` | SKILL.md content: HARD-GATE presence, announce banners, state updates, ci-fixer agent, model frontmatter, logging sections, note-capture options. Uses glob-based discovery — new skills are automatically covered |
 | `test_check_phase.py` | Phase guard: blocks on incomplete prerequisites, allows on complete, handles worktrees, re-entry notes |
 | `test_session_start.py` | Session hook: feature detection, timing reset, awareness injection, multi-feature handling |
 | `test_docs_sync.py` | Docs completeness: every skill has a docs page, every phase has a docs page, index and README mention all commands |

@@ -177,7 +177,7 @@ def _extract_primary_command(bash_block):
     """
     line = bash_block.strip()
 
-    # Strip leading blockquote markers (> ) from sub-agent prompts
+    # Strip leading blockquote markers (> ) from blockquoted examples
     lines = line.split("\n")
     lines = [re.sub(r'^>\s*', '', l) for l in lines]
     line = "\n".join(lines).strip()
@@ -749,7 +749,7 @@ def test_no_unrecognized_placeholders_in_bash_blocks():
         for block in bash_blocks:
             line = block.strip()
 
-            # Strip leading blockquote markers from sub-agent prompts
+            # Strip leading blockquote markers from blockquoted examples
             lines = line.split("\n")
             lines = [re.sub(r'^>\s*', '', l) for l in lines]
             line = "\n".join(lines).strip()

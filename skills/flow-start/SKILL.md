@@ -53,7 +53,7 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ## Logging
 
-After every Bash command in Steps 5–8, log it to `.flow-states/<branch>.log`. Step 4 handles its own logging internally.
+After every Bash command in Steps 5–6, log it to `.flow-states/<branch>.log`. Step 4 handles its own logging internally.
 
 Run the command directly — do not append any suffix:
 
@@ -153,38 +153,13 @@ bin/flow ci
 
 If it passes, continue to Step 4.
 
-If it fails, launch a sub-agent to diagnose and fix. Use the Agent tool:
+If it fails, launch the `ci-fixer` sub-agent to diagnose and fix. Use the Agent tool:
 
-- `subagent_type`: `"general-purpose"`
+- `subagent_type`: `"ci-fixer"`
 - `description`: `"Fix bin/flow ci failures on main"`
 
-Provide these instructions (fill in the `bin/flow ci` output):
-
-> You are fixing CI failures on main before a new feature branch is created.
->
-> The `bin/flow ci` output:
-> \<paste the full bin/flow ci output\>
->
-> **Tool rules:** Use Glob and Read tools for all file and directory
-> operations. Use Grep for searching code. Only use Bash for commands
-> explicitly listed in these instructions (`bin/flow ci`). Never use
-> `cd <path> && git` — if you need git info, use `git -C <path>`.
-> Never use Bash for any other purpose — no find, ls, cat, wc, test -f,
-> stat, or running project tooling not listed here.
->
-> Read the project CLAUDE.md for framework conventions, test commands,
-> and CI failure fix order. Follow those instructions to diagnose and
-> fix the failures.
->
-> Max 3 attempts. After each fix, run `bin/flow ci`. If green, report what
-> was fixed and stop. If still failing after 3 attempts, report exactly
-> what is failing and what was tried.
->
-> Return:
->
-> 1. Status: fixed / not_fixed
-> 2. What was wrong
-> 3. What was changed (files modified)
+Provide the full `bin/flow ci` output in the prompt so the sub-agent
+knows what failed.
 
 Wait for the sub-agent to return.
 
@@ -250,59 +225,23 @@ Then run CI to verify:
 bin/flow ci
 ```
 
-- **Passes** — continue to Step 7
-- **Fails** — launch the CI fix sub-agent (see Step 6). Pass the full
-  `bin/flow ci` output. After the sub-agent returns:
-  - **Fixed** — continue to Step 7 (dependency changes + fixes committed together)
-  - **Not fixed** — stop and report to the user what is failing
-
-If `bin/dependencies` does not exist, skip to Done silently.
-
-### Step 6 — CI fix sub-agent
-
-When `bin/flow ci` fails in Step 5, launch a sub-agent to diagnose
-and fix the failures. Use the Agent tool:
-
-- `subagent_type`: `"general-purpose"`
-- `description`: `"Fix bin/flow ci failures"`
-
-Provide these instructions (fill in the worktree path and bin/flow ci output):
-
-> You are fixing CI failures in a worktree.
-> Worktree: `<worktree path>`
-> cd into the worktree before running any commands.
->
-> The `bin/flow ci` output:
-> <paste the full bin/flow ci output>
->
-> **Tool rules:** Use Glob and Read tools for all file and directory
-> operations. Use Grep for searching code. Only use Bash for commands
-> explicitly listed in these instructions (bin/flow ci). Never use
-> `cd <path> && git` — if you need git info, use `git -C <worktree_path>`.
-> Never use Bash for any other purpose — no find, ls, cat, wc, test -f,
-> stat, or running project tooling not listed here.
->
-> Read the project CLAUDE.md for framework conventions, test commands,
-> and CI failure fix order. Follow those instructions to diagnose and
-> fix the failures.
->
-> Max 3 attempts. After each fix, run `bin/flow ci`. If green, report what
-> was fixed and stop. If still failing after 3 attempts, report exactly
-> what is failing and what was tried.
->
-> Return:
->
-> 1. Status: fixed / not_fixed
-> 2. What was wrong
-> 3. What was changed (files modified)
-
-Wait for the sub-agent to return.
+- **Passes** — continue to Step 6
+- **Fails** — launch the `ci-fixer` sub-agent to diagnose and fix.
+  Use the Agent tool:
+  - `subagent_type`: `"ci-fixer"`
+  - `description`: `"Fix bin/flow ci failures"`
+  - Provide the full `bin/flow ci` output in the prompt.
+  - After the sub-agent returns:
+    - **Fixed** — continue to Step 6 (dependency changes + fixes committed together)
+    - **Not fixed** — stop and report to the user what is failing
 
 <HARD-GATE>
 Do NOT proceed past Step 5 until `bin/flow ci` is green.
 </HARD-GATE>
 
-### Step 7 — Commit and push
+If `bin/dependencies` does not exist, skip to Done silently.
+
+### Step 6 — Commit and push
 
 Use `/flow:flow-commit` to review and commit any dependency changes. No exceptions. Never use `git commit` directly.
 

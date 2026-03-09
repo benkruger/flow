@@ -244,19 +244,35 @@ def test_phase_transitions_follow_sequence():
 # --- Sub-agent contracts ---
 
 
-def test_subagent_prompts_include_tool_restriction():
-    """Skills with sub-agent prompts must include
-    the tool restriction rule in SKILL.md."""
-    subagent_skills = ["flow-start"]
-    for name in subagent_skills:
-        skill_dir = SKILLS_DIR / name
-        combined = ""
-        for md_file in sorted(skill_dir.glob("*.md")):
-            combined += md_file.read_text()
-        assert "Glob" in combined and "Read" in combined, (
-            f"skills/{name}/ sub-agent prompt missing "
-            f"Glob/Read tool restriction"
-        )
+def test_start_uses_ci_fixer_subagent():
+    """Start skill must reference the ci-fixer sub-agent for CI failures."""
+    content = _read_skill("flow-start")
+    assert '"ci-fixer"' in content, (
+        "skills/flow-start/SKILL.md must reference ci-fixer sub-agent"
+    )
+    assert '"general-purpose"' not in content, (
+        "skills/flow-start/SKILL.md must not reference general-purpose "
+        "sub-agent — use ci-fixer instead"
+    )
+
+
+def test_ci_fixer_agent_exists():
+    """agents/ci-fixer.md must exist with required frontmatter fields."""
+    agent_file = REPO_ROOT / "agents" / "ci-fixer.md"
+    assert agent_file.exists(), "agents/ci-fixer.md does not exist"
+    content = agent_file.read_text()
+    assert "name: ci-fixer" in content, (
+        "agents/ci-fixer.md missing 'name: ci-fixer' in frontmatter"
+    )
+    assert "model: sonnet" in content, (
+        "agents/ci-fixer.md missing 'model: sonnet' in frontmatter"
+    )
+    assert "PreToolUse" in content, (
+        "agents/ci-fixer.md missing PreToolUse hook"
+    )
+    assert "validate-ci-bash" in content, (
+        "agents/ci-fixer.md missing reference to validate-ci-bash"
+    )
 
 
 def test_code_review_delegates_to_builtin_review():
@@ -296,14 +312,6 @@ def test_phase_skills_have_tool_restriction_in_hard_rules():
             f"Phase {PHASE_NUMBER[key]} ({skill_name}) Hard Rules missing tool "
             f"restriction — must restrict Bash and reference Glob/Read"
         )
-
-
-def test_subagent_types_match_requirements():
-    """Start uses general-purpose sub-agent for CI fix."""
-    start_content = _read_skill("flow-start")
-    assert '"general-purpose"' in start_content, (
-        "skills/flow-start/SKILL.md should use general-purpose subagent_type"
-    )
 
 
 # --- Structural format ---
@@ -1238,15 +1246,15 @@ def test_phase_1_hard_gate_uses_ask_user_question():
 
 
 def test_start_step_3_has_ci_fix_subagent():
-    """Step 3 must launch a sub-agent to fix CI failures on main."""
+    """Step 3 must launch the ci-fixer sub-agent to fix CI failures on main."""
     content = _read_skill("flow-start")
     step3_match = re.search(
         r"### Step 3.*?\n(.*?)(?=\n### Step 4)", content, re.DOTALL
     )
     assert step3_match, "Could not find Step 3 in flow-start/SKILL.md"
     step3_text = step3_match.group(1)
-    assert "general-purpose" in step3_text, (
-        "flow-start Step 3 must reference a general-purpose sub-agent "
+    assert "ci-fixer" in step3_text, (
+        "flow-start Step 3 must reference the ci-fixer sub-agent "
         "for automatic CI fix"
     )
     assert "sub-agent" in step3_text.lower() or "Agent" in step3_text, (
@@ -1327,21 +1335,21 @@ def test_code_review_step_2_handles_no_findings():
     )
 
 
-def test_start_step_7_enforces_flow_commit_exclusively():
-    """Step 7 must use /flow:flow-commit and not suggest git commit."""
+def test_start_step_6_enforces_flow_commit_exclusively():
+    """Step 6 must use /flow:flow-commit and not suggest git commit."""
     content = _read_skill("flow-start")
-    step7_match = re.search(
-        r"### Step 7.*?\n(.*?)(?=\n### Done)", content, re.DOTALL
+    step6_match = re.search(
+        r"### Step 6.*?\n(.*?)(?=\n### Done)", content, re.DOTALL
     )
-    assert step7_match, "Could not find Step 7 in flow-start/SKILL.md"
-    step7_text = step7_match.group(1)
-    assert "/flow:flow-commit" in step7_text, (
-        "flow-start Step 7 must reference /flow:flow-commit"
+    assert step6_match, "Could not find Step 6 in flow-start/SKILL.md"
+    step6_text = step6_match.group(1)
+    assert "/flow:flow-commit" in step6_text, (
+        "flow-start Step 6 must reference /flow:flow-commit"
     )
-    # Step 7 may mention "git commit" only in a prohibition (e.g. "Never use")
-    for line in step7_text.splitlines():
+    # Step 6 may mention "git commit" only in a prohibition (e.g. "Never use")
+    for line in step6_text.splitlines():
         if "git commit" in line:
             assert re.search(r"[Nn]ever", line), (
-                f"flow-start Step 7 mentions 'git commit' outside a "
+                f"flow-start Step 6 mentions 'git commit' outside a "
                 f"prohibition: {line.strip()}"
             )

@@ -43,7 +43,7 @@ The script returns JSON with the worktree path, PR URL, and PR number. Claude th
 
 ### 5. Framework-specific setup
 
-**Rails:** Upgrade gems with `bundle update --all`, then run `bin/flow ci`. If it fails, a Sonnet sub-agent diagnoses and fixes (max 3 attempts). Commit changes via `/flow-commit`.
+**Rails:** Upgrade gems with `bundle update --all`, then run `bin/flow ci`. If it fails, the ci-fixer sub-agent diagnoses and fixes (max 3 attempts). Commit changes via `/flow-commit`.
 
 **Python:** No additional setup — Step 3 verified `bin/flow ci` on main.
 

@@ -106,23 +106,15 @@ Replace `PREV` with the previous phase number and `PREV_NAME` with its name:
 
 ## Sub-Agent Pattern
 
-Phases with sub-agents: Review, Security.
-Start uses a Sonnet sub-agent for CI failures.
+FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`)
+for CI failure diagnosis and fix in Start (Steps 3 and 5). It uses a
+`PreToolUse` hook (`lib/validate-ci-bash.py`) to enforce tool restrictions
+at the system level — prompt-level restrictions are unreliable because
+sub-agents ignore them.
+
 Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`).
-Phases without sub-agents: Code, Learning, Cleanup.
-
-The pattern for Review and Security:
-
-```text
-1. Main conversation determines WHAT to check (from plan file + state file)
-2. Launch sub-agent via Task tool with subagent_type: "general-purpose"
-3. Sub-agent reads files, returns structured findings
-4. Main conversation uses findings to do the phase work
-5. Main conversation persists relevant findings to state file
-```
-
-Sub-agents do NOT: make decisions, write code, modify state, interact with users.
-They read and report. The main conversation decides.
+Code Review delegates to built-in `/simplify`, `/review`, and
+`/security-review`. Code, Learning, and Cleanup have no sub-agents.
 
 **Code phase rationale:** By the time Code starts, the plan file contains
 thorough exploration, a validated approach, identified risks, and ordered
