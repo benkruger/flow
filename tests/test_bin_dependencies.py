@@ -16,6 +16,10 @@ def dep_project(tmp_path):
     bin/dependencies computes REPO_ROOT from $(dirname "$0")/.., so placing it at
     <tmp>/bin/dependencies makes it look for .venv at <tmp>/.venv/.
     Includes a .venv/bin/pip wrapper that echoes a marker and exits.
+
+    IMPORTANT: Uses a wrapper script, NOT a symlink. write_text() on a
+    symlink follows it and overwrites the target — which would corrupt
+    the real pip binary.
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -32,7 +36,7 @@ def dep_project(tmp_path):
 
 def _run_dep(project_dir, extra_env=None):
     """Run bin/dependencies inside the given project directory."""
-    env = {k: v for k, v in os.environ.items()}
+    env = {k: v for k, v in os.environ.items() if k != "COVERAGE_PROCESS_START"}
     if extra_env:
         env.update(extra_env)
     return subprocess.run(
