@@ -235,7 +235,8 @@ the failure to the user, and stop.
 
 ### Step 5 — Update dependencies
 
-Use the Glob tool to check if `bin/dependencies` exists in the worktree.
+Use the Read tool to check if `bin/dependencies` exists in the worktree.
+If Read returns an error (file not found), skip to Done silently.
 
 If `bin/dependencies` exists, run it:
 

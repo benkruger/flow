@@ -3,8 +3,16 @@
 # Created by /flow:flow-prime — edit to match your project
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+if [ -x "$REPO_ROOT/.venv/bin/pip" ]; then
+  PIP="$REPO_ROOT/.venv/bin/pip"
+else
+  PIP="pip"
+fi
+
 if [ -f "requirements.txt" ]; then
-    pip install -r requirements.txt --upgrade
+    "$PIP" install -r requirements.txt --upgrade
 elif [ -f "pyproject.toml" ]; then
-    pip install -e ".[dev]" --upgrade
+    "$PIP" install -e ".[dev]" --upgrade
 fi

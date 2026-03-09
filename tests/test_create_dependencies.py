@@ -56,7 +56,7 @@ def test_error_when_invalid_framework(tmp_path):
 def test_python_template_content(tmp_path):
     _mod.create(str(tmp_path), "python", str(FRAMEWORKS_DIR))
     content = (tmp_path / "bin" / "dependencies").read_text()
-    assert "pip install" in content
+    assert ".venv/bin/pip" in content
 
 
 def test_main_success(tmp_path, capsys, monkeypatch):
