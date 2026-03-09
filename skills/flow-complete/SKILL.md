@@ -99,7 +99,7 @@ If the state file had no `pr_number` (or no state file was found), try the branc
 gh pr view <branch> --json state --jq .state
 ```
 
-**If `MERGED`** — the PR is already merged. Skip directly to Step 7 (cleanup).
+**If `MERGED`** — the PR is already merged. Skip directly to Step 8 (cleanup).
 
 **If `OPEN`** — continue to Step 3 to merge.
 
@@ -193,7 +193,30 @@ If no warnings:
 - **Yes, merge and clean up** — proceed
 - **No, not yet** — stop here
 
-### Step 6 — Merge PR
+### Step 6 — Archive artifacts to PR
+
+Archive the state file and session log to the PR body before merging.
+These files are deleted during cleanup, so this is the last chance to
+preserve them.
+
+Use the Read tool to read `<project_root>/.flow-states/<branch>.json` and
+`<project_root>/.flow-states/<branch>.log`.
+
+Append the state file to the PR body:
+
+```bash
+bin/flow update-pr-body --pr <pr_number> --append-section --heading "State File" --summary ".flow-states/<branch>.json" --content-file <project_root>/.flow-states/<branch>.json --format json
+```
+
+Append the session log to the PR body:
+
+```bash
+bin/flow update-pr-body --pr <pr_number> --append-section --heading "Session Log" --summary ".flow-states/<branch>.log" --content-file <project_root>/.flow-states/<branch>.log --format text
+```
+
+If either file does not exist, skip that append — do not fail.
+
+### Step 7 — Merge PR
 
 Merge the PR via squash merge:
 
@@ -206,7 +229,7 @@ If the merge succeeds, report to the user:
 
 If the merge fails, stop and report the error.
 
-### Step 7 — Run cleanup script
+### Step 8 — Run cleanup script
 
 Run the cleanup script from the project root:
 
@@ -221,7 +244,7 @@ resource (worktree, state\_file, log\_file, ci\_sentinel). Each step reports
 Report the results to the user: what was cleaned, what was already gone,
 and what failed.
 
-### Step 8 — Pull merged changes
+### Step 9 — Pull merged changes
 
 The worktree is removed and you are on main. Pull to get the merged
 feature code:
@@ -256,7 +279,7 @@ Output the following banner in your response (not via Bash) inside a fenced code
 - Never run from inside the worktree — always navigate to project root first
 - Confirm with the user only when mode is **manual**
 - State file deletion is what resets the session hook — do not skip it
-- Every step after the merge (Steps 7-8) is best-effort — if one fails, continue to the next
+- Every step after the merge (Steps 8-9) is best-effort — if one fails, continue to the next
 - The skill is idempotent: safe to re-invoke via `/loop` after a "pending CI" stop
 - Never use `general-purpose` sub-agents — use `"ci-fixer"` for CI failures
 - Never use Bash to print banners — output them as text in your response

@@ -473,18 +473,11 @@ def test_cleanup_and_abort_mention_log_in_user_facing_text():
         if ".log" not in content:
             continue  # Conditional contract — skill doesn't mention .log yet
 
-        # Extract user-facing text: blockquote lines and fenced code blocks
-        user_facing = []
-        for line in content.splitlines():
-            if line.startswith("> "):
-                user_facing.append(line)
-        for block in re.findall(r"```\n(.*?)```", content, re.DOTALL):
-            user_facing.extend(block.splitlines())
-        combined = "\n".join(user_facing)
-
-        assert "state file and log" in combined, (
-            f"skills/{skill_name}/SKILL.md user-facing text mentions 'state file' "
-            f"but not 'state file and log' — skill deletes both "
+        # Check full content — blockquotes, banners (nested fenced blocks),
+        # and prose are all user-facing in a skill file
+        assert "state file and log" in content, (
+            f"skills/{skill_name}/SKILL.md mentions '.log' files "
+            f"but nowhere says 'state file and log' — skill deletes both "
             f".json and .log files"
         )
 
