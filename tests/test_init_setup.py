@@ -440,8 +440,8 @@ def test_version_marker_without_config_hash_has_no_key(tmp_path):
     assert "config_hash" not in data
 
 
-def test_happy_path_stores_config_hash_from_plugin_json(git_repo):
-    """main() reads config_hash from plugin.json and stores it in .flow.json."""
+def test_happy_path_stores_config_hash(git_repo):
+    """main() computes and stores config_hash in .flow.json."""
     result = _run(git_repo)
     assert result.returncode == 0
     data = json.loads((git_repo / ".flow.json").read_text())

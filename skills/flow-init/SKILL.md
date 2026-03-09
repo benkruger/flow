@@ -205,7 +205,7 @@ the Write tool. The result should look like:
 {"flow_version": "0.16.4", "framework": "python", "config_hash": "2c54c5cd6972", "skills": {"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learning": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-cleanup": "auto"}}
 ```
 
-The `config_hash` field is a 12-character hex digest stored by `init-setup`. When the plugin version changes, `/flow-start` compares this hash against `plugin.json` to decide whether re-init is needed. If the config hasn't changed, the version is auto-upgraded without re-running `/flow-init`.
+The `config_hash` field is a 12-character hex digest stored by `init-setup`. When the plugin version changes, `/flow-start` recomputes the hash and compares against the stored value to decide whether re-init is needed. If the config hasn't changed, the version is auto-upgraded without re-running `/flow-init`.
 
 ### Step 5 — Prime project CLAUDE.md
 

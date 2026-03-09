@@ -13,6 +13,18 @@ from conftest import LIB_DIR
 SCRIPT = str(LIB_DIR / "init-check.py")
 
 
+def _computed_config_hash(framework):
+    """Compute config hash for test fixtures."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "init_setup",
+        Path(__file__).resolve().parent.parent / "lib" / "init-setup.py",
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.compute_config_hash(framework)
+
+
 def _current_plugin_data():
     """Read the full plugin.json."""
     plugin_path = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
@@ -98,8 +110,7 @@ def test_happy_path_python_framework(tmp_path):
 
 def test_auto_upgrades_when_config_hash_matches(tmp_path):
     """Version mismatch + matching hash → ok + auto_upgraded."""
-    plugin = _current_plugin_data()
-    config_hash = plugin["config_hash"]["rails"]
+    config_hash = _computed_config_hash("rails")
     (tmp_path / ".flow.json").write_text(json.dumps({
         "flow_version": "0.0.1",
         "framework": "rails",
@@ -115,8 +126,7 @@ def test_auto_upgrades_when_config_hash_matches(tmp_path):
 
 def test_auto_upgrade_updates_version_in_file(tmp_path):
     """Auto-upgrade rewrites flow_version in .flow.json."""
-    plugin = _current_plugin_data()
-    config_hash = plugin["config_hash"]["python"]
+    config_hash = _computed_config_hash("python")
     (tmp_path / ".flow.json").write_text(json.dumps({
         "flow_version": "0.0.1",
         "framework": "python",
@@ -124,13 +134,12 @@ def test_auto_upgrade_updates_version_in_file(tmp_path):
     }))
     _run(tmp_path)
     updated = json.loads((tmp_path / ".flow.json").read_text())
-    assert updated["flow_version"] == plugin["version"]
+    assert updated["flow_version"] == _current_plugin_version()
 
 
 def test_auto_upgrade_preserves_existing_fields(tmp_path):
     """Auto-upgrade preserves framework, skills, and config_hash."""
-    plugin = _current_plugin_data()
-    config_hash = plugin["config_hash"]["rails"]
+    config_hash = _computed_config_hash("rails")
     skills = {"flow-start": {"continue": "auto"}}
     (tmp_path / ".flow.json").write_text(json.dumps({
         "flow_version": "0.0.1",

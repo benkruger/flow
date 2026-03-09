@@ -8,9 +8,21 @@ Output (JSON to stdout):
   Failure: {"status": "error", "message": "..."}
 """
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
+
+
+def _compute_config_hash(framework):
+    """Compute config hash via init-setup module."""
+    spec = importlib.util.spec_from_file_location(
+        "init_setup",
+        Path(__file__).resolve().parent / "init-setup.py",
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.compute_config_hash(framework)
 
 
 def _read_plugin_json():
@@ -39,7 +51,7 @@ def main():
     if init_data.get("flow_version") != plugin_version:
         stored_hash = init_data.get("config_hash")
         framework = init_data.get("framework", "")
-        plugin_hash = plugin_data.get("config_hash", {}).get(framework)
+        plugin_hash = _compute_config_hash(framework)
 
         if stored_hash and plugin_hash and stored_hash == plugin_hash:
             init_data["flow_version"] = plugin_version

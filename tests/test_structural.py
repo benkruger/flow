@@ -263,32 +263,15 @@ def test_framework_dependencies_is_executable_script():
         )
 
 
-def test_config_hash_in_plugin_json_matches_computed():
-    """plugin.json config_hash must match the dynamically computed hash.
+def test_plugin_json_has_no_config_hash():
+    """plugin.json must not contain config_hash — it breaks the validator.
 
-    Catches stale hashes when permission lists change without updating
-    plugin.json. The hash is pre-computed at release time.
+    The hash is computed dynamically by init-setup.py and init-check.py.
     """
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "init_setup", LIB_DIR / "init-setup.py"
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-
     plugin = json.loads(
         (REPO_ROOT / ".claude-plugin" / "plugin.json").read_text()
     )
-    assert "config_hash" in plugin, "plugin.json missing config_hash"
-    stored = plugin["config_hash"]
-
-    for name, _ in _load_frameworks():
-        assert name in stored, (
-            f"plugin.json config_hash missing framework '{name}'"
-        )
-        computed = mod.compute_config_hash(name)
-        assert stored[name] == computed, (
-            f"plugin.json config_hash[{name}] is '{stored[name]}' "
-            f"but compute_config_hash returns '{computed}' — "
-            f"run /flow-release to update"
-        )
+    assert "config_hash" not in plugin, (
+        "plugin.json must not contain config_hash — "
+        "Claude Code's plugin validator rejects unrecognized keys"
+    )

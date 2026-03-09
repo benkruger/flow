@@ -237,7 +237,7 @@ def main():
     try:
         plugin_data = _plugin_json()
         version = plugin_data["version"]
-        config_hash = plugin_data.get("config_hash", {}).get(framework)
+        config_hash = compute_config_hash(framework)
         merge_settings(project_root, framework)
         write_version_marker(project_root, version, framework,
                              config_hash=config_hash)

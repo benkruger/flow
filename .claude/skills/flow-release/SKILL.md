@@ -135,12 +135,10 @@ make bump NEW=<new_version>
 This updates `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
 and all skill banners in one step.
 
-The `config_hash` values in `plugin.json` are pre-computed digests of
-the permission configuration. They are **not** updated by `make bump` —
-they only change when permission lists in `lib/init-setup.py` or
-`frameworks/*/permissions.json` are modified. If they are stale, CI
-will fail via `test_config_hash_in_plugin_json_matches_computed`
-before Step 3 allows the release to proceed.
+Config hashes are not stored in `plugin.json` — they are computed
+dynamically by `compute_config_hash()` in `lib/init-setup.py` at init
+time and compared at start time by `lib/init-check.py`. No manual hash
+updates are needed during releases.
 
 ## Step 7 — Update RELEASE-NOTES.md
 
