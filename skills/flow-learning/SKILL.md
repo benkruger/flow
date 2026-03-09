@@ -58,7 +58,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ============================================
-  FLOW v0.21.1 — Phase 5: Learning — STARTING
+  FLOW v0.21.2 — Phase 5: Learning — STARTING
 ============================================
 ```
 ````
@@ -357,7 +357,7 @@ Output in your response (not via Bash) inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW v0.21.1 — Phase 5: Learning — COMPLETE (<formatted_time>)
+  FLOW v0.21.2 — Phase 5: Learning — COMPLETE (<formatted_time>)
   Merge the PR, then run /flow:flow-cleanup.
 ============================================
 ```

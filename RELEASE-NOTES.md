@@ -1,5 +1,16 @@
 # Release Notes
 
+## v0.21.2 — Fix bin/dependencies venv detection and worktree file visibility
+
+### Fixes
+
+- Fix bin/dependencies to detect and use .venv/bin/pip instead of bare pip,
+  matching the pattern already used in bin/ci and bin/test
+- Fix flow-start Step 5 to use Read tool instead of Glob for checking
+  bin/dependencies existence — Glob cannot see files inside worktrees
+- Update frameworks/python/dependencies template with the same venv fix
+- Remove accidentally tracked .flow.json from the repo
+
 ## v0.21.1 — Bug fixes for session-start hook and flow-start
 
 ### Fixes

@@ -32,7 +32,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ============================================
-  FLOW v0.21.1 — flow:flow-commit — STARTING
+  FLOW v0.21.2 — flow:flow-commit — STARTING
 ============================================
 ```
 ````
@@ -54,7 +54,7 @@ On completion (whether approved or denied), print the same way:
 ````markdown
 ```text
 ============================================
-  FLOW v0.21.1 — flow:flow-commit — COMPLETE
+  FLOW v0.21.2 — flow:flow-commit — COMPLETE
 ============================================
 ```
 ````
