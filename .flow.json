@@ -1,1 +1,0 @@
-{"flow_version": "0.21.1", "framework": "python", "config_hash": "a5f0fdcf643d", "skills": {"flow-start": {"continue": "manual"}, "flow-code": {"commit": "auto", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learning": {"commit": "manual", "continue": "manual"}, "flow-abort": "auto", "flow-cleanup": "auto"}}
