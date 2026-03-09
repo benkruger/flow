@@ -12,6 +12,7 @@ Output (JSON to stdout):
 """
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -79,7 +80,7 @@ def _create_worktree(project_root, branch):
     return wt_path
 
 
-def _initial_commit_push_pr(wt_path, branch, feature_title):
+def _initial_commit_push_pr(wt_path, branch, feature_title, session_log=None):
     """Make empty commit, push, and create PR. Returns (pr_url, pr_number)."""
     _run_cmd(
         ["git", "commit", "--allow-empty", "-m", f"Start {branch} branch"],
@@ -90,7 +91,14 @@ def _initial_commit_push_pr(wt_path, branch, feature_title):
         wt_path, "push",
     )
 
-    pr_body = f"## What\\n\\n{feature_title}."
+    if session_log:
+        pr_body = (
+            f"## What\\n\\n{feature_title}."
+            f"\\n\\n## Artifacts\\n\\n"
+            f"- **Session log**: `{session_log}`"
+        )
+    else:
+        pr_body = f"## What\\n\\n{feature_title}."
     stdout, _ = _run_cmd(
         ["gh", "pr", "create",
          "--title", feature_title,
@@ -114,6 +122,19 @@ def _extract_pr_number(pr_url):
             except ValueError:
                 pass
     return 0
+
+
+def _session_log_path(project_root):
+    """Compute session log path from CLAUDE_SESSION_ID env var.
+
+    Returns the path as a string, or None if CLAUDE_SESSION_ID is not set.
+    """
+    session_id = os.environ.get("CLAUDE_SESSION_ID")
+    if not session_id:
+        return None
+    slug = str(project_root).replace("/", "-").lstrip("-")
+    home = Path.home()
+    return str(home / ".claude" / "projects" / slug / f"{session_id}.jsonl")
 
 
 def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
@@ -216,7 +237,8 @@ def main():
         _log(project_root, branch, f"git worktree add .worktrees/{branch} (exit 0)")
 
         # Commit, push, PR
-        pr_url, pr_number = _initial_commit_push_pr(wt_path, branch, feature_title)
+        session_log = _session_log_path(project_root)
+        pr_url, pr_number = _initial_commit_push_pr(wt_path, branch, feature_title, session_log)
         _log(project_root, branch, f"git commit + push + gh pr create (exit 0)")
 
         # Create state file

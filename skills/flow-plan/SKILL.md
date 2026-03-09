@@ -19,10 +19,11 @@ stop immediately and show the error to the user.
 3. Check `phases.flow-start.status` in the JSON.
    - If not `"complete"`: STOP. "BLOCKED: Phase 1: Start must be
      complete. Run /flow:flow-start first."
+4. Note `pr_number` from the state file — you will need it in Step 3.
 </HARD-GATE>
 
-Keep the project root, branch, and state data from the gate in context —
-use the project root to build Read tool paths (e.g.
+Keep the project root, branch, state data, and `pr_number` from the gate
+in context — use the project root to build Read tool paths (e.g.
 `<project_root>/.flow-states/<branch>.json`). Do not re-read the state
 file or re-run git commands to gather the same information. Do not `cd`
 to the project root — `bin/flow` commands find paths internally.
@@ -139,6 +140,12 @@ bin/flow set-timestamp --set plan_file=<plan_file_path>
 
 Replace `<plan_file_path>` with the actual path to the plan file that
 was written during plan mode.
+
+Then update the PR body with the plan file artifact:
+
+```bash
+bin/flow update-pr-body --pr <pr_number> --add-artifact --label "Plan file" --value <plan_file_path>
+```
 
 After the plan file path is stored, call `ExitPlanMode`.
 

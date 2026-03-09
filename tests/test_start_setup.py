@@ -467,3 +467,87 @@ def test_state_file_omits_skills_when_not_in_flow_json(_default_run):
     """State file should not have a skills key when .flow.json has no skills."""
     data, state, log, repo = _default_run
     assert "skills" not in state
+
+
+# --- Session log path (in-process) ---
+
+
+def test_session_log_path_with_env(tmp_path):
+    """Computes correct session log path when CLAUDE_SESSION_ID is set."""
+    project_root = tmp_path / "Users" / "ben" / "code" / "myproject"
+    project_root.mkdir(parents=True)
+    env_backup = os.environ.get("CLAUDE_SESSION_ID")
+    try:
+        os.environ["CLAUDE_SESSION_ID"] = "abc123"
+        result = _mod._session_log_path(project_root)
+        assert result is not None
+        assert "abc123.jsonl" in str(result)
+        assert ".claude/projects/" in str(result)
+    finally:
+        if env_backup is None:
+            os.environ.pop("CLAUDE_SESSION_ID", None)
+        else:
+            os.environ["CLAUDE_SESSION_ID"] = env_backup
+
+
+def test_session_log_path_without_env(tmp_path):
+    """Returns None when CLAUDE_SESSION_ID is not set."""
+    env_backup = os.environ.get("CLAUDE_SESSION_ID")
+    try:
+        os.environ.pop("CLAUDE_SESSION_ID", None)
+        result = _mod._session_log_path(tmp_path)
+        assert result is None
+    finally:
+        if env_backup is not None:
+            os.environ["CLAUDE_SESSION_ID"] = env_backup
+
+
+# --- PR body with artifacts (subprocess) ---
+
+
+def test_pr_body_includes_artifacts_section(git_repo_with_remote):
+    """PR body includes ## Artifacts section when session ID is set."""
+    version = _current_plugin_version()
+    _write_flow_json(git_repo_with_remote, version)
+
+    env = os.environ.copy()
+    env["CLAUDE_SESSION_ID"] = "test-session-123"
+    stub_dir = git_repo_with_remote / ".stub-bin"
+    stub_dir.mkdir(exist_ok=True)
+    gh_stub = stub_dir / "gh"
+    # Capture the --body arg to verify artifacts section
+    gh_stub.write_text(
+        '#!/bin/bash\n'
+        'if [[ "$1" == "pr" && "$2" == "create" ]]; then\n'
+        '    for arg in "$@"; do\n'
+        '        if [[ "$prev" == "--body" ]]; then\n'
+        '            echo "$arg" > "$GH_BODY_FILE"\n'
+        '        fi\n'
+        '        prev="$arg"\n'
+        '    done\n'
+        '    echo "https://github.com/test/repo/pull/42"\n'
+        'fi\n'
+    )
+    gh_stub.chmod(0o755)
+    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+
+    body_file = git_repo_with_remote / ".gh-body-capture"
+    env["GH_BODY_FILE"] = str(body_file)
+
+    result = subprocess.run(
+        [sys.executable, SCRIPT, "test feature"],
+        capture_output=True, text=True, cwd=str(git_repo_with_remote), env=env,
+    )
+    assert result.returncode == 0, result.stderr
+
+    assert body_file.exists(), "gh stub did not capture --body arg"
+    captured_body = body_file.read_text()
+    assert "Artifacts" in captured_body
+    assert "Session log" in captured_body
+
+
+def test_pr_body_omits_artifacts_without_session_id(_default_run):
+    """PR body uses original format when no session ID is set."""
+    data, state, log, repo = _default_run
+    # The default run does not set CLAUDE_SESSION_ID, so no artifacts section
+    assert data["status"] == "ok"
