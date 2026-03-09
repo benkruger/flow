@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PreToolUse hook validator for the ci-fixer sub-agent.
+Global PreToolUse hook validator for all Bash commands.
 
 Reads the Claude Code hook input JSON from stdin, checks the Bash
 command against blocked patterns, and exits with the appropriate code.

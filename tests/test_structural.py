@@ -119,6 +119,24 @@ def test_hooks_json_references_existing_files():
                 )
 
 
+def test_hooks_json_has_pretooluse_bash_validator():
+    """hooks.json must register validate-ci-bash.py as a global PreToolUse hook."""
+    hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
+    assert "PreToolUse" in hooks["hooks"], (
+        "hooks.json missing PreToolUse key — "
+        "the global Bash validator must be registered"
+    )
+    matchers = hooks["hooks"]["PreToolUse"]
+    bash_matchers = [m for m in matchers if m["matcher"] == "Bash"]
+    assert len(bash_matchers) == 1, (
+        f"Expected exactly 1 Bash matcher in PreToolUse, got {len(bash_matchers)}"
+    )
+    commands = [h["command"] for h in bash_matchers[0]["hooks"]]
+    assert any("validate-ci-bash.py" in cmd for cmd in commands), (
+        "PreToolUse Bash hook must reference validate-ci-bash.py"
+    )
+
+
 def test_commands_are_unique():
     """All phase commands must be unique — no two phases share a command."""
     data = _load_phases()

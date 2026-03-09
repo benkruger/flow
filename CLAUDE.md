@@ -53,7 +53,7 @@ CI will fail if these are missing:
 
 - `flow-phases.json` — state machine: phase names, commands, valid back-transitions
 - `skills/<name>/SKILL.md` — each skill's instructions
-- `hooks/hooks.json` — SessionStart hook registration
+- `hooks/hooks.json` — hook registration (SessionStart, PreToolUse)
 - `hooks/session-start.sh` — detects in-progress features, injects awareness context
 - `lib/check-phase.py` — reusable phase entry guard
 - `.claude/settings.json` — project permissions (git rebase denied)
@@ -68,7 +68,7 @@ CI will fail if these are missing:
 - `lib/prime-project.py` — inserts framework conventions into target CLAUDE.md between markers
 - `lib/create-dependencies.py` — copies framework dependency template to `bin/dependencies`
 - `agents/ci-fixer.md` — custom plugin sub-agent for CI failure diagnosis and fix
-- `lib/validate-ci-bash.py` — PreToolUse hook validator for ci-fixer (blocks compound commands and file-read commands)
+- `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands and file-read commands in all Bash calls)
 - `bin/flow` — dispatcher script routing subcommands to `lib/*.py`
 - `docs/reference/flow-state-schema.md` — state file schema reference
 - `docs/reference/skill-pattern.md` — template pattern for building new phase skills
@@ -98,7 +98,7 @@ The state file (`.flow-states/<branch>.json`) is the backbone. Schema reference:
 
 ### Sub-Agents
 
-FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Steps 3 and 5) and Complete (Step 4). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The ci-fixer uses a `PreToolUse` hook (`lib/validate-ci-bash.py`) to enforce tool restrictions at the system level, blocking compound commands and file-read commands with helpful error messages.
+FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Steps 3 and 5) and Complete (Step 4). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands and file-read commands in all Bash calls — including those from built-in skills' sub-agents. The ci-fixer also retains its own hook declaration for defense in depth.
 
 Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`). Code Review delegates to built-in `/simplify`, `/review`, and `/security-review`. Code and Learn have no sub-agents. Complete uses ci-fixer for CI failures.
 

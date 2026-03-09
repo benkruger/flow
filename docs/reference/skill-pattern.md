@@ -107,10 +107,11 @@ Replace `PREV` with the previous phase number and `PREV_NAME` with its name:
 ## Sub-Agent Pattern
 
 FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`)
-for CI failure diagnosis and fix in Start (Steps 3 and 5). It uses a
-`PreToolUse` hook (`lib/validate-ci-bash.py`) to enforce tool restrictions
-at the system level — prompt-level restrictions are unreliable because
-sub-agents ignore them.
+for CI failure diagnosis and fix in Start (Steps 3 and 5). The `PreToolUse`
+hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`,
+enforcing tool restrictions on all Bash calls — including those from
+built-in skills' sub-agents. The ci-fixer also retains its own hook
+declaration for defense in depth.
 
 Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`).
 Code Review delegates to built-in `/simplify`, `/review`, and
