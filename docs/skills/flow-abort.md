@@ -33,7 +33,7 @@ file is missing.
 5. Removes the worktree with `git worktree remove --force`
 6. Deletes the remote branch with `git push origin --delete`
 7. Deletes the local branch with `git branch -D`
-8. Deletes `.flow-states/<branch>.json`
+8. Deletes `.flow-states/<branch>.json` and CI sentinel
 
 Steps 3–8 follow a mix of abort-specific actions and cleanup operations.
 Every step after confirmation is best-effort — if one fails (e.g., PR

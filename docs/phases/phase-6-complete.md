@@ -56,9 +56,9 @@ remote branch is deleted as part of the merge.
 
 ### 7. Run cleanup
 
-`bin/flow cleanup` handles all three resources from the project root:
-worktree removal, state file deletion, and log file deletion. Each step
-is best-effort — if one fails, the rest still run.
+`bin/flow cleanup` handles all four resources from the project root:
+worktree removal, state file deletion, log file deletion, and CI sentinel
+deletion. Each step is best-effort — if one fails, the rest still run.
 
 This resets the SessionStart hook — the next session starts clean.
 

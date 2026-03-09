@@ -112,6 +112,17 @@ def cleanup(project_root, branch, worktree, pr_number=None, delete_remote=False)
     else:
         steps["frozen_phases"] = "skipped"
 
+    # Delete CI sentinel
+    ci_sentinel = root / ".flow-states" / f"{branch}-ci-passed"
+    if ci_sentinel.exists():
+        try:
+            ci_sentinel.unlink()
+            steps["ci_sentinel"] = "deleted"
+        except Exception as e:
+            steps["ci_sentinel"] = f"failed: {e}"
+    else:
+        steps["ci_sentinel"] = "skipped"
+
     return steps
 
 

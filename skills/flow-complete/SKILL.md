@@ -215,7 +215,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup <project_root> --branch <branch> --w
 ```
 
 The script outputs JSON with a `steps` dict showing what happened to each
-resource (worktree, state\_file, log\_file). Each step reports
+resource (worktree, state\_file, log\_file, ci\_sentinel). Each step reports
 "removed"/"deleted", "skipped", or "failed: reason".
 
 Report the results to the user: what was cleaned, what was already gone,

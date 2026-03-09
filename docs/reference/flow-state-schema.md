@@ -12,12 +12,14 @@ State files live in `.flow-states/` at the project root, named after the branch:
 .flow-states/app-payment-webhooks.json
 .flow-states/app-payment-webhooks.log
 .flow-states/app-payment-webhooks-phases.json
+.flow-states/app-payment-webhooks-ci-passed
 .flow-states/user-profile-redesign.json
 .flow-states/user-profile-redesign.log
 .flow-states/user-profile-redesign-phases.json
+.flow-states/user-profile-redesign-ci-passed
 ```
 
-Each feature has up to three files: the state file (`.json`), the log file (`.log`), and a frozen copy of `flow-phases.json` (`-phases.json`). Multiple features can run simultaneously with no conflicts. The directory is added to `.git/info/exclude` by `/flow-start` (per-repo, not committed). Created by `/flow-start`, deleted by `/flow-complete`.
+Each feature has up to four files: the state file (`.json`), the log file (`.log`), a frozen copy of `flow-phases.json` (`-phases.json`), and a CI sentinel (`-ci-passed`). The CI sentinel caches the last passing `bin/flow ci` snapshot to skip redundant runs with `--if-dirty`. Multiple features can run simultaneously with no conflicts. The directory is added to `.git/info/exclude` by `/flow-start` (per-repo, not committed). Created by `/flow-start`, deleted by `/flow-complete`.
 
 The frozen phases file is a snapshot of `flow-phases.json` taken at start time. Scripts use it instead of the live plugin source so that phase config changes during FLOW development don't break in-progress features.
 

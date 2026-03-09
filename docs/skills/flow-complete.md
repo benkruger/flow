@@ -26,7 +26,7 @@ confirmation before the irreversible merge.
 4. Checks CI status — waits for checks to pass (suggests `/loop` for pending)
 5. Confirms with the user (only when `--manual` is passed)
 6. Squash-merges the PR via `gh pr merge --squash --delete-branch`
-7. Runs the cleanup process: remove worktree, delete state file and log
+7. Runs the cleanup process: remove worktree, delete state file, log, and CI sentinel
 8. Pulls `origin main` so local main has the merged feature code
 
 ---

@@ -93,7 +93,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup <project_root> --branch <branch> --w
 
 If `pr_number` is unknown, omit `--pr`. The `--delete-remote` flag tells the script to also delete the remote branch and local branch.
 
-The script outputs JSON with a `steps` dict showing what happened to each resource (pr\_close, worktree, remote\_branch, local\_branch, state\_file, log\_file). Each step reports "closed"/"removed"/"deleted", "skipped", or "failed: reason".
+The script outputs JSON with a `steps` dict showing what happened to each resource (pr\_close, worktree, remote\_branch, local\_branch, state\_file, log\_file, ci\_sentinel). Each step reports "closed"/"removed"/"deleted", "skipped", or "failed: reason".
 
 ### Done
 

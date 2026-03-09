@@ -128,8 +128,25 @@ def test_cleanup_skips_pr_and_remote_by_default(git_repo):
     assert data["steps"]["local_branch"] == "skipped"
 
 
+def test_cleanup_deletes_ci_sentinel(git_repo):
+    wt_rel = _setup_feature(git_repo)
+    sentinel = git_repo / ".flow-states" / "test-feature-ci-passed"
+    sentinel.write_text("snapshot\n")
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["ci_sentinel"] == "deleted"
+    assert not sentinel.exists()
+
+
+def test_cleanup_skips_missing_ci_sentinel(git_repo):
+    wt_rel = _setup_feature(git_repo)
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["ci_sentinel"] == "skipped"
+
+
 def test_cleanup_full_happy_path(git_repo):
-    """Single invocation asserts all 6 step results, return code, status,
+    """Single invocation asserts all 7 step results, return code, status,
     and all 3 filesystem effects (worktree, state file, log file)."""
     wt_rel = _setup_feature(git_repo)
     result = _run(git_repo, "test-feature", wt_rel)
@@ -138,13 +155,14 @@ def test_cleanup_full_happy_path(git_repo):
     data = json.loads(result.stdout)
     assert data["status"] == "ok"
 
-    # All 6 step results
+    # All 7 step results
     assert data["steps"]["pr_close"] == "skipped"
     assert data["steps"]["worktree"] == "removed"
     assert data["steps"]["remote_branch"] == "skipped"
     assert data["steps"]["local_branch"] == "skipped"
     assert data["steps"]["state_file"] == "deleted"
     assert data["steps"]["log_file"] == "deleted"
+    assert data["steps"]["ci_sentinel"] == "skipped"
 
     # All 3 filesystem effects
     assert not (git_repo / wt_rel).exists()
@@ -285,3 +303,25 @@ def test_frozen_phases_unlink_failure(git_repo, monkeypatch):
     monkeypatch.setattr(PosixPath, "unlink", _fail_third_unlink)
     steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
     assert steps["frozen_phases"].startswith("failed:")
+
+
+def test_ci_sentinel_unlink_failure(git_repo, monkeypatch):
+    wt_rel = _setup_feature(git_repo)
+    sentinel = git_repo / ".flow-states" / "test-feature-ci-passed"
+    sentinel.write_text("snapshot\n")
+    original_unlink = sentinel.unlink.__func__
+
+    call_count = 0
+
+    # state_file=1, log_file=2, ci_sentinel=3 (frozen_phases skipped — no file)
+    def _fail_third_unlink(self, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 3:
+            raise PermissionError("no permission")
+        return original_unlink(self, *args, **kwargs)
+
+    from pathlib import PosixPath
+    monkeypatch.setattr(PosixPath, "unlink", _fail_third_unlink)
+    steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
+    assert steps["ci_sentinel"].startswith("failed:")
