@@ -1,5 +1,14 @@
 # Release Notes
 
+## v0.23.1 — Global Bash validator and CI sentinel fixes
+
+- **Global PreToolUse hook** — `validate-ci-bash.py` is now registered
+  globally in `hooks/hooks.json` for all Bash calls, not just ci-fixer.
+  This prevents user-facing permission prompts when `/simplify` sub-agents
+  use compound commands during Code Review.
+- **CI sentinel fix** — The dirty-check sentinel now survives commits and
+  is scoped per branch, fixing false "already green" skips after a commit.
+
 ## v0.23.0 — Rename Phase 6: Cleanup → Complete with PR merge automation
 
 Phase 6 renamed from "Cleanup" to "Complete" everywhere: phase key
