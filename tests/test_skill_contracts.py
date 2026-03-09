@@ -1267,6 +1267,66 @@ def test_start_step_3_commits_via_flow_commit():
     )
 
 
+def test_code_review_steps_have_continuation_directives():
+    """Each Code Review step must have a continuation directive to the next."""
+    content = _read_skill("flow-code-review")
+
+    # Step 1 must continue to Step 2
+    step1_match = re.search(
+        r"## Step 1.*?\n(.*?)(?=\n## Step 2)", content, re.DOTALL
+    )
+    assert step1_match, "Could not find Step 1 in flow-code-review/SKILL.md"
+    assert "continue to Step 2" in step1_match.group(1), (
+        "flow-code-review Step 1 must contain 'continue to Step 2' directive"
+    )
+
+    # Step 2 must continue to Step 3
+    step2_match = re.search(
+        r"## Step 2.*?\n(.*?)(?=\n## Step 3)", content, re.DOTALL
+    )
+    assert step2_match, "Could not find Step 2 in flow-code-review/SKILL.md"
+    assert "continue to Step 3" in step2_match.group(1), (
+        "flow-code-review Step 2 must contain 'continue to Step 3' directive"
+    )
+
+    # Step 3 must continue to Done
+    step3_match = re.search(
+        r"## Step 3.*?\n(.*?)(?=\n## Back Navigation|\n## Done)", content,
+        re.DOTALL,
+    )
+    assert step3_match, "Could not find Step 3 in flow-code-review/SKILL.md"
+    assert "continue to Done" in step3_match.group(1), (
+        "flow-code-review Step 3 must contain 'continue to Done' directive"
+    )
+
+
+def test_code_review_hard_rules_require_step_continuation():
+    """Hard Rules must require immediate continuation between steps."""
+    content = _read_skill("flow-code-review")
+    hard_rules_match = re.search(
+        r"## Hard Rules\n(.*)", content, re.DOTALL
+    )
+    assert hard_rules_match, (
+        "Could not find Hard Rules in flow-code-review/SKILL.md"
+    )
+    hard_rules = hard_rules_match.group(1)
+    assert re.search(r"never pause", hard_rules, re.IGNORECASE), (
+        "flow-code-review Hard Rules must contain 'never pause' language"
+    )
+
+
+def test_code_review_step_2_handles_no_findings():
+    """Step 2 must explicitly handle the no-findings path."""
+    content = _read_skill("flow-code-review")
+    step2_match = re.search(
+        r"## Step 2.*?\n(.*?)(?=\n## Step 3)", content, re.DOTALL
+    )
+    assert step2_match, "Could not find Step 2 in flow-code-review/SKILL.md"
+    assert "no findings" in step2_match.group(1).lower(), (
+        "flow-code-review Step 2 must handle the no-findings path"
+    )
+
+
 def test_start_step_7_enforces_flow_commit_exclusively():
     """Step 7 must use /flow:flow-commit and not suggest git commit."""
     content = _read_skill("flow-start")

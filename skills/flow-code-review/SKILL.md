@@ -142,6 +142,8 @@ follow the back-navigation instructions below.
 **Commit**: Run `bin/flow ci` first. If green: if commit=auto, use
 `/flow:flow-commit --auto`; otherwise use `/flow:flow-commit`.
 
+Without pausing or asking for confirmation, continue to Step 2.
+
 ---
 
 ## Step 2 — Review
@@ -157,6 +159,9 @@ Invoke Claude's built-in review command on the PR:
 
 This analyzes the full diff for code quality, correctness, and test
 coverage using Claude's language-aware analysis.
+
+If `/review` reports no findings, show the Review summary with zero
+findings listed, then without pausing continue to Step 3.
 
 ### Fix every finding
 
@@ -214,6 +219,8 @@ Show a summary of what was found and fixed inside a fenced code block:
 ```
 ````
 
+Without pausing or asking for confirmation, continue to Step 3.
+
 ---
 
 ## Step 3 — Security
@@ -243,7 +250,8 @@ finding until the current fix passes `bin/flow ci` and is committed.
 
 Repeat until all findings are fixed.
 
-If no findings, skip the commit.
+If no findings, skip the commit. Show the Security summary with zero
+findings, then without pausing continue to Done.
 
 ### Security summary
 
@@ -268,6 +276,8 @@ Show a summary of what was found and fixed inside a fenced code block:
 ============================================
 ```
 ````
+
+Without pausing or asking for confirmation, continue to Done.
 
 ---
 
@@ -351,3 +361,4 @@ Invoke `flow:flow-status`.
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories
 - Never cd before running `bin/flow` — it detects the project root internally
+- After each step (Simplify, Review, Security) completes, immediately continue to the next step — never pause or wait for user input between steps

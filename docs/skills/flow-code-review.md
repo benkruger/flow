@@ -27,14 +27,15 @@ skips to Step 2.
 ### Step 2 — Review (correctness)
 
 Invokes Claude Code's built-in `/review` against the PR. Checks plan
-alignment, risk coverage, and framework anti-patterns. Every finding is
-fixed, `bin/flow ci` is run, and changes are committed via `/flow-commit`.
+alignment, risk coverage, and framework anti-patterns. If no findings,
+skips to the next step. Every finding is fixed, `bin/flow ci` is run,
+and changes are committed via `/flow-commit`.
 
 ### Step 3 — Security (safety)
 
 Invokes Claude Code's built-in `/security-review` against the PR diff.
-Every finding is fixed, `bin/flow ci` is run, and changes are committed
-via `/flow-commit`.
+If no findings, skips to the next step. Every finding is fixed,
+`bin/flow ci` is run, and changes are committed via `/flow-commit`.
 
 ---
 
