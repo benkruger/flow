@@ -1,6 +1,53 @@
 # CLAUDE.md
 
-A Claude Code plugin (`flow:` namespace) implementing an opinionated 8-phase development lifecycle. Framework support is data-driven via `frameworks/<name>/` directories — adding a new language means adding a directory, not editing skills. Skills live in `skills/<name>/SKILL.md` and are language-agnostic. State lives in `.flow-states/<branch>.json` in the target project.
+FLOW is a Claude Code plugin (`flow:` namespace) that enforces an opinionated 6-phase development lifecycle: Start, Plan, Code, Code Review, Learning, Cleanup. Each phase is a skill that Claude reads and follows. Phase gates prevent skipping ahead — you must complete each phase before entering the next.
+
+This repo is the plugin source code. When installed in a target project, skills and hooks run in the target project's working directory, not here. State files, worktrees, and logs all live in the target project. If you are developing FLOW itself, you are modifying the plugin — not using it.
+
+## Design Philosophy
+
+FLOW is unobtrusive by design. In the target project:
+
+- Only `.claude/settings.json` and `.flow.json` are committed (permissions and config)
+- `.flow-states/` is gitignored and deleted at Cleanup
+- After Cleanup, the only permanent artifacts are the merged PR and any CLAUDE.md learnings
+- Skills are pure Markdown instructions, not executable code
+- Framework support is data-driven via `frameworks/<name>/` directories — adding a language means adding a directory, not editing skills
+
+## The 6 Phases
+
+| Phase | Name | Command | Model | Purpose |
+|-------|------|---------|-------|---------|
+| 1 | Start | `/flow:flow-start` | haiku | Create worktree, PR, state file, configure workspace |
+| 2 | Plan | `/flow:flow-plan` | opus | Explore codebase, design approach, create implementation plan |
+| 3 | Code | `/flow:flow-code` | opus | Execute plan tasks one at a time with TDD |
+| 4 | Code Review | `/flow:flow-code-review` | opus | Three lenses: clarity, correctness, safety |
+| 5 | Learning | `/flow:flow-learning` | sonnet | Review mistakes, capture learnings, route to permanent homes |
+| 6 | Cleanup | `/flow:flow-cleanup` | haiku | Remove worktree, delete state file |
+
+Phase gates are enforced by `lib/check-phase.py` — there is no instruction path to skip a phase. Back-transitions (e.g., Code Review can return to Code or Plan) are defined in `flow-phases.json`.
+
+## When You Must Update Docs and Tests
+
+### Structural sync (CI-enforced by `test_docs_sync.py`)
+
+CI will fail if these are missing:
+
+- New/renamed skill — `docs/skills/<name>.md`, `docs/skills/index.md`, `README.md`
+- New/renamed phase — `docs/phases/phase-<N>-<name>.md`, `docs/skills/index.md`, `README.md`, `docs/index.html`
+- New feature/capability — `README.md` and `docs/index.html` must mention required keywords (see `REQUIRED_FEATURES` in `test_docs_sync.py`)
+
+### Content sync (convention-enforced — no test catches this)
+
+- Changed skill behavior (new flag, changed steps, different workflow) — update `docs/skills/<name>.md` to match
+- Changed phase behavior — update `docs/phases/phase-<N>-<name>.md` to match
+- Changed architecture or capabilities — update `README.md` and `docs/index.html` if the change affects how FLOW is described to users
+
+### Test requirements
+
+- New `lib/*.py` script — corresponding `tests/test_*.py` with 100% coverage
+- New skills auto-covered by `test_skill_contracts.py` (glob-based discovery)
+- Any new executable code needs tests — skills are Markdown and don't need tests beyond contracts
 
 ## Key Files
 
@@ -23,7 +70,7 @@ A Claude Code plugin (`flow:` namespace) implementing an opinionated 8-phase dev
 - `bin/flow` — dispatcher script routing subcommands to `lib/*.py`
 - `docs/reference/flow-state-schema.md` — state file schema reference
 - `docs/reference/skill-pattern.md` — template pattern for building new phase skills
-- `marketplace.json` — marketplace registry (version must match plugin.json)
+- `.claude-plugin/marketplace.json` — marketplace registry (version must match plugin.json)
 - `.github/workflows/ci.yml` — GitHub Actions CI (Python 3.12, pytest)
 
 ## Development Environment
@@ -55,14 +102,14 @@ Start uses a sub-agent for CI failures. Plan uses Claude Code's native plan mode
 
 Since Claude Code 2.1.63, auto-memory is shared across git worktrees of the same repository. Memory written during feature work persists at the repo-root path and survives worktree cleanup — no rescue needed.
 
-Learning is a unified tri-modal skill. It auto-detects Phase 7 (state file with Security complete), Maintainer (no state file, `flow-phases.json` exists), or Standalone (no state file, no `flow-phases.json`). All three modes route learnings to 5 destinations. Phase 7 adds GitHub issues and phase transitions. Maintainer commits via `/flow:flow-commit --auto`. Standalone never commits.
+Learning is a unified tri-modal skill. It auto-detects Phase 5 (state file with Code Review complete), Maintainer (no state file, `flow-phases.json` exists), or Standalone (no state file, no `flow-phases.json`). All three modes route learnings to 5 destinations. Phase 5 adds GitHub issues and phase transitions. Maintainer commits via `/flow:flow-commit --auto`. Standalone never commits.
 
 The 5 destinations split into two types — **instructions** (always loaded, authoritative) and **context** (informational):
 
 - **Instructions (destinations 1-4):** global CLAUDE.md (`~/.claude/CLAUDE.md`), project CLAUDE.md (`CLAUDE.md` in project), global rules (`~/.claude/rules/`), project rules (`.claude/rules/` in project). These tell Claude what to do and not do.
 - **Context (destination 5):** project memory (`~/.claude/projects/<repo-root>/memory/MEMORY.md`). This tells Claude what exists, what was decided, and what the user prefers.
 
-Private destinations (1, 3, 5) are written directly outside the repo. Repo destinations (2, 4) are committed via PR (Phase 7) or `/flow:flow-commit --auto` (Maintainer). Notes captured by `/flow:flow-note` feed into the same routing mechanism.
+Private destinations (1, 3, 5) are written directly outside the repo. Repo destinations (2, 4) are committed via PR (Phase 5) or `/flow:flow-commit --auto` (Maintainer). Notes captured by `/flow:flow-note` feed into the same routing mechanism.
 
 Commit is also tri-modal. It auto-detects FLOW (state file exists), Maintainer (no state file, `flow-phases.json` exists), or Standalone (neither). FLOW mode adds version banners and Python auto-approval. All three modes share the same diff/message/approval/push process.
 
@@ -72,7 +119,7 @@ Phase skills log completion events to `.flow-states/<branch>.log` using a comman
 
 ### Version Locations
 
-The version lives in 4 places, all must match: `plugin.json`, `marketplace.json` (top-level metadata), `marketplace.json` (plugins array entry). `test_structural.py` enforces consistency.
+The version lives in 3 places (across 2 files), all must match: `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (top-level metadata), `.claude-plugin/marketplace.json` (plugins array entry). `test_structural.py` enforces consistency.
 
 ### State Mutations
 
@@ -88,7 +135,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 
 | Test File | What It Enforces |
 |-----------|------------------|
-| `test_structural.py` | Config invariants: phases 1-8 exist, versions match across 4 files, commands unique, hooks reference existing files |
+| `test_structural.py` | Config invariants: phases 1-6 exist, versions match across 3 locations, commands unique, hooks reference existing files |
 | `test_skill_contracts.py` | SKILL.md content: HARD-GATE presence, announce banners, state updates, sub-agent types, model frontmatter, logging sections, note-capture options. Uses glob-based discovery — new skills are automatically covered |
 | `test_check_phase.py` | Phase guard: blocks on incomplete prerequisites, allows on complete, handles worktrees, re-entry notes |
 | `test_session_start.py` | Session hook: feature detection, timing reset, awareness injection, multi-feature handling |
