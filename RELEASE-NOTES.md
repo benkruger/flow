@@ -1,5 +1,35 @@
 # Release Notes
 
+## v0.23.0 — Rename Phase 6: Cleanup → Complete with PR merge automation
+
+Phase 6 renamed from "Cleanup" to "Complete" everywhere: phase key
+`flow-cleanup` → `flow-complete`, skill directory, command, and display
+name. The phase now handles the full PR merge lifecycle instead of
+requiring manual merge.
+
+### Breaking changes
+
+- Skill renamed: `flow-cleanup` → `flow-complete` (directory, command, state keys)
+- Config key renamed: `skills.flow-cleanup` → `skills.flow-complete` in `.flow.json`
+- Re-run `/flow:flow-prime` after upgrading to update permissions and config
+
+### New behavior
+
+- **PR merge automation** — Phase 6 now fetches main, resolves merge conflicts
+  inline, checks CI status, and squash-merges the PR via `gh pr merge --squash
+  --delete-branch`
+- **Idempotent design** — safe to re-invoke via `/loop 15s /flow:flow-complete`
+  for unattended merge-when-ready
+- **CI failure handling** — launches ci-fixer sub-agent for failed checks,
+  suggests `/loop` for pending checks
+- **Conflict resolution** — Claude resolves merge conflicts inline using the
+  Edit tool with full feature context, commits via `/flow:flow-commit`
+
+### New permissions (4)
+
+- `Bash(git fetch origin *)`, `Bash(git merge *)`, `Bash(gh pr checks *)`,
+  `Bash(gh pr merge *)`
+
 ## v0.22.0 — Rename Phase 5: Learning → Learn
 
 Rename Phase 5 from "Learning" to "Learn" to match the verb pattern

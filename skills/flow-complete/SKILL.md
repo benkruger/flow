@@ -54,7 +54,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ============================================
-  FLOW v0.22.0 — Phase 6: Complete — STARTING
+  FLOW v0.23.0 — Phase 6: Complete — STARTING
 ============================================
 ```
 ````
@@ -244,7 +244,7 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ````markdown
 ```text
 ============================================
-  FLOW v0.22.0 — Phase 6: Complete — COMPLETE (<formatted_time>)
+  FLOW v0.23.0 — Phase 6: Complete — COMPLETE (<formatted_time>)
   Feature '<feature>' is fully done.
   Worktree removed, state file and log deleted.
 ============================================
