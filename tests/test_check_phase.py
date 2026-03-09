@@ -135,26 +135,26 @@ def test_first_visit_no_previously_completed_message():
 
 
 def test_phase_5_requires_phase_4_complete():
-    """Phase 5 (Learning) requires phase 4 (Code Review) to be complete."""
+    """Phase 5 (Learn) requires phase 4 (Code Review) to be complete."""
     state = make_state(
-        current_phase="flow-learning",
+        current_phase="flow-learn",
         phase_statuses={
             "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
             "flow-code-review": "pending",
         },
     )
-    allowed, output = _mod.check_phase(state, "flow-learning")
+    allowed, output = _mod.check_phase(state, "flow-learn")
     assert not allowed
     assert "Phase 4" in output
 
 
 def test_phase_6_requires_phase_5_complete():
-    """Phase 6 (Cleanup) requires phase 5 (Learning) to be complete."""
+    """Phase 6 (Cleanup) requires phase 5 (Learn) to be complete."""
     state = make_state(
         current_phase="flow-cleanup",
         phase_statuses={
             "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
-            "flow-code-review": "complete", "flow-learning": "pending",
+            "flow-code-review": "complete", "flow-learn": "pending",
         },
     )
     allowed, output = _mod.check_phase(state, "flow-cleanup")

@@ -428,13 +428,13 @@ def test_model_frontmatter_is_valid():
 
 def test_model_frontmatter_matches_documented_table():
     """Model frontmatter must match: opus for Plan/Code/Code Review, sonnet for
-    Learning/Commit, haiku for Start/Cleanup."""
+    Learn/Commit, haiku for Start/Cleanup."""
     expected = {
         "flow-start": "haiku",
         "flow-plan": "opus",
         "flow-code": "opus",
         "flow-code-review": "opus",
-        "flow-learning": "sonnet",
+        "flow-learn": "sonnet",
         "flow-cleanup": "haiku",
         "flow-commit": "sonnet",
     }
@@ -961,11 +961,11 @@ def test_commit_mode_resolution():
 def test_no_skill_invokes_commit_with_auto():
     """Skills that use /flow:flow-commit --auto must be in the allow list.
 
-    Learning uses --auto because the phase is fully autonomous. Code and
+    Learn uses --auto because the phase is fully autonomous. Code and
     Code Review conditionally use --auto based on the commit axis setting."""
     for d in sorted(SKILLS_DIR.iterdir()):
         if not d.is_dir() or d.name in (
-            "flow-commit", "flow-learning", "flow-code", "flow-code-review",
+            "flow-commit", "flow-learn", "flow-code", "flow-code-review",
         ):
             continue
         content = (d / "SKILL.md").read_text()
@@ -1007,12 +1007,12 @@ def test_no_framework_fragment_files():
 
 
 def test_learning_has_no_worktree_memory_rescue():
-    """Learning skill must not contain worktree memory rescue logic.
+    """Learn skill must not contain worktree memory rescue logic.
 
     Since Claude Code 2.1.63, auto-memory is shared across git worktrees
     of the same repository. Worktree-specific memory paths no longer exist,
     so Source D rescue is obsolete."""
-    content = _read_skill("flow-learning")
+    content = _read_skill("flow-learn")
     obsolete_terms = [
         "Source D",
         "worktree auto-memory",
@@ -1021,7 +1021,7 @@ def test_learning_has_no_worktree_memory_rescue():
     ]
     found = [term for term in obsolete_terms if term in content]
     assert not found, (
-        f"skills/flow-learning/SKILL.md still contains obsolete terms: {found} — "
+        f"skills/flow-learn/SKILL.md still contains obsolete terms: {found} — "
         f"worktree memory rescue is obsolete since Claude Code 2.1.63"
     )
 
@@ -1054,7 +1054,7 @@ def test_generic_skills_have_no_framework_conditionals():
 
 CONFIGURABLE_SKILLS = [
     "flow-start", "flow-code", "flow-code-review",
-    "flow-learning", "flow-abort", "flow-cleanup",
+    "flow-learn", "flow-abort", "flow-cleanup",
 ]
 
 
@@ -1079,7 +1079,7 @@ def test_configurable_skills_have_mode_resolution():
         )
 
 
-TWO_AXIS_SKILLS = ["flow-code", "flow-code-review", "flow-learning"]
+TWO_AXIS_SKILLS = ["flow-code", "flow-code-review", "flow-learn"]
 CONTINUE_ONLY_SKILLS = ["flow-start"]
 UTILITY_SKILLS = ["flow-abort", "flow-cleanup"]
 
@@ -1213,17 +1213,17 @@ def test_quadruple_fenced_blocks_use_markdown_and_text():
 
 
 def test_learning_step_4_invokes_local_permission():
-    """Learning SKILL.md Step 4 must invoke /flow:flow-local-permission."""
-    content = _read_skill("flow-learning")
+    """Learn SKILL.md Step 4 must invoke /flow:flow-local-permission."""
+    content = _read_skill("flow-learn")
     step4_match = re.search(
         r"## Step 4.*?\n(.*?)(?:\n## Step 5|\n---)", content, re.DOTALL
     )
     assert step4_match, (
-        "skills/flow-learning/SKILL.md has no Step 4 section"
+        "skills/flow-learn/SKILL.md has no Step 4 section"
     )
     step4_text = step4_match.group(1)
     assert "/flow:flow-local-permission" in step4_text, (
-        "skills/flow-learning/SKILL.md Step 4 does not invoke "
+        "skills/flow-learn/SKILL.md Step 4 does not invoke "
         "/flow:flow-local-permission"
     )
 

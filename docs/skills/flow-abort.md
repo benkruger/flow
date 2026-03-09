@@ -45,7 +45,7 @@ already closed, worktree already removed), it continues to the next.
 
 - You started a feature and decided not to pursue it
 - The approach is fundamentally wrong and you want a clean slate
-- You want to abandon work without going through Review and Learning
+- You want to abandon work without going through Review and Learn
 
 ---
 
@@ -53,7 +53,7 @@ already closed, worktree already removed), it continues to the next.
 
 | | `/flow-cleanup` | `/flow-abort` |
 |---|---|---|
-| **When** | After Learning (Phase 6) | Any phase |
+| **When** | After Learn (Phase 5) | Any phase |
 | **PR** | Left open (merge it yourself) | Closed |
 | **Remote branch** | Left intact | Deleted |
 | **Worktree** | Removed | Removed |

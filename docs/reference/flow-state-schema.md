@@ -40,7 +40,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
     "flow-start": {"continue": "manual"},
     "flow-code": {"commit": "manual", "continue": "manual"},
     "flow-code-review": {"commit": "auto", "continue": "auto"},
-    "flow-learning": {"commit": "auto", "continue": "auto"},
+    "flow-learn": {"commit": "auto", "continue": "auto"},
     "flow-abort": "auto",
     "flow-cleanup": "auto"
   },
@@ -133,7 +133,7 @@ Present only when `.flow.json` contains a `skills` key (i.e., after running `/fl
   "flow-start": {"continue": "manual"},
   "flow-code": {"commit": "manual", "continue": "manual"},
   "flow-code-review": {"commit": "auto", "continue": "auto"},
-  "flow-learning": {"commit": "auto", "continue": "auto"},
+  "flow-learn": {"commit": "auto", "continue": "auto"},
   "flow-abort": "auto",
   "flow-cleanup": "auto"
 }
@@ -144,7 +144,7 @@ Present only when `.flow.json` contains a `skills` key (i.e., after running `/fl
 ## Notes Array
 
 Populated throughout the session by `/flow-note`. Survives compaction
-and session restarts. Read by Learning as a primary source.
+and session restarts. Read by Learn as a primary source.
 
 ```json
 "notes": [

@@ -1,11 +1,11 @@
 {
-  "order": ["flow-start", "flow-plan", "flow-code", "flow-code-review", "flow-learning", "flow-cleanup"],
+  "order": ["flow-start", "flow-plan", "flow-code", "flow-code-review", "flow-learn", "flow-cleanup"],
   "phases": {
     "flow-start":       { "name": "Start",       "command": "/flow:flow-start",       "can_return_to": [] },
     "flow-plan":        { "name": "Plan",        "command": "/flow:flow-plan",        "can_return_to": [] },
     "flow-code":        { "name": "Code",        "command": "/flow:flow-code",        "can_return_to": ["flow-plan"] },
     "flow-code-review": { "name": "Code Review", "command": "/flow:flow-code-review", "can_return_to": ["flow-code", "flow-plan"] },
-    "flow-learning":    { "name": "Learning",    "command": "/flow:flow-learning",    "can_return_to": [] },
+    "flow-learn":    { "name": "Learn",    "command": "/flow:flow-learn",    "can_return_to": [] },
     "flow-cleanup":     { "name": "Cleanup",     "command": "/flow:flow-cleanup",     "can_return_to": [] }
   }
 }

@@ -207,7 +207,7 @@ def test_panel_all_complete_shows_timing():
     state["phases"]["flow-plan"]["cumulative_seconds"] = 900
     state["phases"]["flow-code"]["cumulative_seconds"] = 3600
     state["phases"]["flow-code-review"]["cumulative_seconds"] = 870
-    state["phases"]["flow-learning"]["cumulative_seconds"] = 300
+    state["phases"]["flow-learn"]["cumulative_seconds"] = 300
     state["phases"]["flow-cleanup"]["cumulative_seconds"] = 20
     panel = _mod.format_panel(state, VERSION)
     assert f"FLOW v{VERSION} — All Phases Complete!" in panel

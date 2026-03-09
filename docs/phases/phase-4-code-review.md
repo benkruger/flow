@@ -48,7 +48,7 @@ via `/flow-commit`.
 ## bin/flow ci Rule
 
 `bin/flow ci` runs after every fix in every step. Code Review does not
-transition to Learning until `bin/flow ci` is green.
+transition to Learn until `bin/flow ci` is green.
 
 ---
 
@@ -61,5 +61,5 @@ transition to Learning until `bin/flow ci` is green.
 
 ## What Comes Next
 
-Phase 5: Learning (`/flow-learning`) — extract learnings and update
+Phase 5: Learn (`/flow-learn`) — extract learnings and update
 CLAUDE.md before the PR is merged.

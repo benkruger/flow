@@ -15,7 +15,7 @@ model: opus
 ```
 
 - `/flow:flow-code-review` — uses configured mode from the state file (default: manual)
-- `/flow:flow-code-review --auto` — auto-fix and auto-commit all findings, auto-advance to Learning
+- `/flow:flow-code-review --auto` — auto-fix and auto-commit all findings, auto-advance to Learn
 - `/flow:flow-code-review --manual` — requires explicit approval of changes and routing decisions
 
 <HARD-GATE>
@@ -320,13 +320,13 @@ Output in your response (not via Bash) inside a fenced code block:
 
 Invoke `flow:flow-status`.
 
-**If continue=auto**, skip the transition question and invoke `flow:flow-learning` directly.
+**If continue=auto**, skip the transition question and invoke `flow:flow-learn` directly.
 
 **If continue=manual**, use AskUserQuestion:
 
-> "Phase 4: Code Review is complete. Ready to begin Phase 5: Learning?"
+> "Phase 4: Code Review is complete. Ready to begin Phase 5: Learn?"
 >
-> - **Yes, start Phase 5 now** — invoke `flow:flow-learning`
+> - **Yes, start Phase 5 now** — invoke `flow:flow-learn`
 > - **Not yet** — print paused banner
 > - **I have a correction or learning to capture**
 
@@ -335,7 +335,7 @@ Invoke `flow:flow-status`.
 2. Invoke `/flow:flow-note` with their message
 3. Re-ask with only "Yes, start Phase 5 now" and "Not yet"
 
-**If Yes** — invoke `flow:flow-learning` using the Skill tool.
+**If Yes** — invoke `flow:flow-learn` using the Skill tool.
 
 **If Not yet**, output in your response (not via Bash) inside a fenced code block:
 
@@ -353,7 +353,7 @@ Invoke `flow:flow-status`.
 ## Hard Rules
 
 - Always run `bin/flow ci` after any fix made during Code Review
-- Never transition to Learning unless `bin/flow ci` is green
+- Never transition to Learn unless `bin/flow ci` is green
 - Fix every finding from `/review` and `/security-review` — do not leave findings unaddressed
 - Follow the project CLAUDE.md conventions when fixing
 - Each step (Simplify, Review, Security) gets its own commit when changes are made

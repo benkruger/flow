@@ -1,14 +1,14 @@
 ---
-title: /flow-learning
+title: /flow-learn
 nav_order: 9
 parent: Skills
 ---
 
-# /flow-learning
+# /flow-learn
 
-**Phase:** 5 — Learning
+**Phase:** 5 — Learn
 
-**Usage:** `/flow-learning`, `/flow-learning --auto`, or `/flow-learning --manual`
+**Usage:** `/flow-learn`, `/flow-learn --auto`, or `/flow-learn --manual`
 
 Autonomously synthesises what went wrong from three sources, routes each
 learning to its correct permanent home, files GitHub issues for plugin
@@ -57,7 +57,7 @@ Destinations 2, 4 are committed to the feature branch via `/flow-commit --auto`.
 
 ## Modes
 
-Learning auto-detects its context:
+Learn auto-detects its context:
 
 | Mode | When | Sources | Commits | Settings audit |
 |------|------|---------|---------|----------------|
@@ -65,7 +65,7 @@ Learning auto-detects its context:
 | Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow-commit --auto` | Yes |
 | Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | No |
 
-Standalone mode lets any project use `/flow-learning` without a FLOW
+Standalone mode lets any project use `/flow-learn` without a FLOW
 feature in progress — just review the current session and apply
 learnings.
 

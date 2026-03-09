@@ -21,7 +21,7 @@ Use `.claude/settings.local.json` to test new permission entries
 during development. When they work, run this skill to promote them
 into the committed settings file.
 
-Called automatically by Learning (Phase 5) in Maintainer mode.
+Called automatically by Learn (Phase 5) in Maintainer mode.
 
 ---
 
