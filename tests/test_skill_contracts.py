@@ -1449,6 +1449,15 @@ def test_start_step_6_enforces_flow_commit_exclusively():
             )
 
 
+def test_start_truncation_proceeds_without_confirmation():
+    """Truncation instruction must tell Claude to proceed without confirming."""
+    content = _read_skill("flow-start")
+    assert "without" in content and "confirm" in content, (
+        "flow-start SKILL.md must instruct Claude to proceed without "
+        "asking for confirmation after branch name truncation"
+    )
+
+
 def test_prime_step_8_enforces_flow_commit_exclusively():
     """flow-prime Step 8 must use /flow:flow-commit and not raw git commands."""
     content = _read_skill("flow-prime")

@@ -20,7 +20,7 @@ Arguments become the feature name (flags are not included in the name). Words ar
 - Worktree: `.worktrees/invoice-pdf-export`
 - PR title: `Invoice Pdf Export`
 
-Branch names are capped at **32 characters**. If the hyphenated name exceeds 32 characters, truncate at the last whole word (hyphen boundary) that fits. Strip any trailing hyphen.
+Branch names are capped at **32 characters**. If the hyphenated name exceeds 32 characters, truncate at the last whole word (hyphen boundary) that fits. Strip any trailing hyphen. Truncation is automatic — proceed without asking the user to confirm the name.
 
 <HARD-GATE>
 Do NOT proceed if the feature name is missing. Use the AskUserQuestion tool
