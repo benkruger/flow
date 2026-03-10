@@ -1354,6 +1354,18 @@ def test_code_review_step_2_handles_no_findings():
     )
 
 
+def test_code_review_step_3_handles_no_findings():
+    """Step 3 must explicitly handle the no-findings path."""
+    content = _read_skill("flow-code-review")
+    step3_match = re.search(
+        r"## Step 3.*?\n(.*?)(?=\n## Step 4)", content, re.DOTALL
+    )
+    assert step3_match, "Could not find Step 3 in flow-code-review/SKILL.md"
+    assert "no findings" in step3_match.group(1).lower(), (
+        "flow-code-review Step 3 must handle the no-findings path"
+    )
+
+
 def test_code_review_delegates_to_code_review_plugin():
     """Code Review must invoke the code-review:code-review plugin."""
     content = _read_skill("flow-code-review")
