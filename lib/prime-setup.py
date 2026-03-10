@@ -39,7 +39,6 @@ UNIVERSAL_ALLOW = [
     "Bash(rm .claude/settings.local.json)",
     "Bash(*bin/flow *)",
     "Bash(gh pr view *)",
-    "Bash(gh issue create *)",
     "Bash(git restore *)",
     "Bash(git fetch origin *)",
     "Bash(git merge *)",

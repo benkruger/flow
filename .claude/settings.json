@@ -44,8 +44,6 @@
       "Bash(gh pr view *)",
       "Bash(rm .flow-states/*)",
       "Bash(rm .claude/settings.local.json)",
-      "Bash(gh issue create *)",
-      "Bash(gh issue:*)",
       "Bash(git restore *)",
       "Bash(git mv *)",
       "Read(~/Desktop/*.png)",

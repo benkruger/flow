@@ -184,7 +184,6 @@ All permissions (universal + all framework sets) for reference:
       "Bash(rm .claude/settings.local.json)",
       "Bash(*bin/flow *)",
       "Bash(gh pr view *)",
-      "Bash(gh issue create *)",
       "Bash(bin/rails test *)",
       "Bash(rubocop *)",
       "Bash(rubocop -A)",

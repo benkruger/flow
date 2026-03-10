@@ -268,7 +268,7 @@ Skip for Maintainer and Standalone.
 For each item in "Process gaps", file a GitHub issue on the plugin repo:
 
 ```bash
-gh issue create --repo benkruger/flow --label learning --title "<issue_title>" --body "<issue_body>"
+bin/flow issue --repo benkruger/flow --label learning --title "<issue_title>" --body "<issue_body>"
 ```
 
 The issue title should be a concise description of the process gap. The
