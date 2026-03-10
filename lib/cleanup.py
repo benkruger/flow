@@ -14,6 +14,7 @@ Each step reports one of: "removed"/"deleted"/"closed", "skipped", or "failed: <
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -47,6 +48,18 @@ def cleanup(project_root, branch, worktree, pr_number=None):
         steps["pr_close"] = "closed" if ok else f"failed: {output}"
     else:
         steps["pr_close"] = "skipped"
+
+    # Remove worktree tmp/ (FLOW repo only — before worktree removal)
+    is_flow_repo = (root / "flow-phases.json").exists()
+    wt_tmp = root / worktree / "tmp"
+    if is_flow_repo and wt_tmp.is_dir():
+        try:
+            shutil.rmtree(wt_tmp)
+            steps["worktree_tmp"] = "removed"
+        except Exception as e:
+            steps["worktree_tmp"] = f"failed: {e}"
+    else:
+        steps["worktree_tmp"] = "skipped"
 
     # Remove worktree
     wt_path = root / worktree
