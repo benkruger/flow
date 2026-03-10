@@ -1302,19 +1302,29 @@ def test_code_review_steps_have_continuation_directives():
         "flow-code-review Step 2 must contain 'continue to Step 3' directive"
     )
 
-    # Step 3 must continue to Done
+    # Step 3 must continue to Step 4
     step3_match = re.search(
-        r"## Step 3.*?\n(.*?)(?=\n## Back Navigation|\n## Done)", content,
+        r"## Step 3.*?\n(.*?)(?=\n## Step 4)", content,
         re.DOTALL,
     )
     assert step3_match, "Could not find Step 3 in flow-code-review/SKILL.md"
-    assert "continue to Done" in step3_match.group(1), (
-        "flow-code-review Step 3 must contain 'continue to Done' directive"
+    assert "continue to Step 4" in step3_match.group(1), (
+        "flow-code-review Step 3 must contain 'continue to Step 4' directive"
+    )
+
+    # Step 4 must continue to Done
+    step4_match = re.search(
+        r"## Step 4.*?\n(.*?)(?=\n## Back Navigation|\n## Done)", content,
+        re.DOTALL,
+    )
+    assert step4_match, "Could not find Step 4 in flow-code-review/SKILL.md"
+    assert "continue to Done" in step4_match.group(1), (
+        "flow-code-review Step 4 must contain 'continue to Done' directive"
     )
 
 
 def test_code_review_hard_rules_require_step_continuation():
-    """Hard Rules must require immediate continuation between steps."""
+    """Hard Rules must require immediate continuation between all 4 steps."""
     content = _read_skill("flow-code-review")
     hard_rules_match = re.search(
         r"## Hard Rules\n(.*)", content, re.DOTALL
@@ -1326,6 +1336,10 @@ def test_code_review_hard_rules_require_step_continuation():
     assert re.search(r"never pause", hard_rules, re.IGNORECASE), (
         "flow-code-review Hard Rules must contain 'never pause' language"
     )
+    for step_name in ["Simplify", "Review", "Security", "Code Review Plugin"]:
+        assert step_name in hard_rules, (
+            f"flow-code-review Hard Rules must mention '{step_name}' step"
+        )
 
 
 def test_code_review_step_2_handles_no_findings():
@@ -1337,6 +1351,35 @@ def test_code_review_step_2_handles_no_findings():
     assert step2_match, "Could not find Step 2 in flow-code-review/SKILL.md"
     assert "no findings" in step2_match.group(1).lower(), (
         "flow-code-review Step 2 must handle the no-findings path"
+    )
+
+
+def test_code_review_delegates_to_code_review_plugin():
+    """Code Review must invoke the code-review:code-review plugin."""
+    content = _read_skill("flow-code-review")
+    assert "code-review:code-review" in content, (
+        "flow-code-review must reference code-review:code-review plugin"
+    )
+
+
+def test_code_review_does_not_use_comment_flag():
+    """Code Review must not use --comment flag with the plugin."""
+    content = _read_skill("flow-code-review")
+    assert "--comment" not in content, (
+        "flow-code-review must not use --comment flag with code-review plugin"
+    )
+
+
+def test_code_review_step_4_handles_no_findings():
+    """Step 4 must explicitly handle the no-findings path."""
+    content = _read_skill("flow-code-review")
+    step4_match = re.search(
+        r"## Step 4.*?\n(.*?)(?=\n## Back Navigation|\n## Done)", content,
+        re.DOTALL,
+    )
+    assert step4_match, "Could not find Step 4 in flow-code-review/SKILL.md"
+    assert "no findings" in step4_match.group(1).lower(), (
+        "flow-code-review Step 4 must handle the no-findings path"
     )
 
 

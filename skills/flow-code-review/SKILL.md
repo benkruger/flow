@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — three lenses on the same diff: clarity, correctness, and safety. Invokes /simplify, /review, and /security-review with a commit after each step."
+description: "Phase 4: Code Review — four lenses on the same diff: clarity, correctness, safety, and CLAUDE.md compliance. Invokes /simplify, /review, /security-review, and code-review:code-review with a commit after each step."
 model: opus
 ---
 
@@ -91,9 +91,10 @@ Get `<branch>` from the state file.
 ## Framework Conventions
 
 Read the project's CLAUDE.md for framework-specific conventions. The
-three review steps use Claude's built-in commands which apply
-language-aware checks automatically. The CLAUDE.md conventions inform
-fix decisions.
+first three review steps use Claude's built-in commands which apply
+language-aware checks automatically. The fourth step uses the
+code-review plugin for multi-agent validation. The CLAUDE.md conventions
+inform fix decisions.
 
 ---
 
@@ -251,7 +252,7 @@ finding until the current fix passes `bin/flow ci` and is committed.
 Repeat until all findings are fixed.
 
 If no findings, skip the commit. Show the Security summary with zero
-findings, then without pausing continue to Done.
+findings, then without pausing continue to Step 4.
 
 ### Security summary
 
@@ -261,6 +262,66 @@ Show a summary of what was found and fixed inside a fenced code block:
 ```text
 ============================================
   FLOW — Code Review — Step 3: Security — SUMMARY
+============================================
+
+  Findings         : N
+  Fixed            : N
+
+  Findings
+  --------
+  - [FIXED] <description of finding>
+  - [FIXED] <description of finding>
+
+  bin/flow ci      : ✓ green
+
+============================================
+```
+````
+
+Without pausing or asking for confirmation, continue to Step 4.
+
+---
+
+## Step 4 — Code Review Plugin
+
+Invoke the `code-review:code-review` plugin using the Skill tool with no
+flags or arguments.
+
+This runs a multi-agent review: 4 parallel agents (2x CLAUDE.md
+compliance, 1x bug scan, 1x security/logic scan) with a validation layer
+that re-validates each finding at 80+ confidence. It produces high-signal
+findings only.
+
+If the plugin returns early (pre-flight skip, e.g. "no review needed" or
+"already reviewed"), treat this as no findings.
+
+If the plugin reports no findings, skip the commit. Show the Code Review
+Plugin summary with zero findings, then without pausing continue to Done.
+
+### Fix every finding
+
+For each finding from the code-review plugin:
+
+1. Fix the issue in code
+2. Run `bin/flow ci`
+3. If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise invoke `/flow:flow-commit`.
+4. Move to the next finding
+
+<HARD-GATE>
+`bin/flow ci` must be green after every fix. Do not move to the next
+finding until the current fix passes `bin/flow ci` and is committed.
+</HARD-GATE>
+
+Repeat until all findings are fixed.
+
+### Code Review Plugin summary
+
+Show a summary of what was found and fixed inside a fenced code block:
+
+````markdown
+```text
+============================================
+  FLOW — Code Review — Step 4: Code Review Plugin — SUMMARY
 ============================================
 
   Findings         : N
@@ -354,11 +415,11 @@ Invoke `flow:flow-status`.
 
 - Always run `bin/flow ci` after any fix made during Code Review
 - Never transition to Learn unless `bin/flow ci` is green
-- Fix every finding from `/review` and `/security-review` — do not leave findings unaddressed
+- Fix every finding from `/review`, `/security-review`, and `code-review:code-review` — do not leave findings unaddressed
 - Follow the project CLAUDE.md conventions when fixing
-- Each step (Simplify, Review, Security) gets its own commit when changes are made
+- Each step (Simplify, Review, Security, Code Review Plugin) gets its own commit when changes are made
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories
 - Never cd before running `bin/flow` — it detects the project root internally
-- After each step (Simplify, Review, Security) completes, immediately continue to the next step — never pause or wait for user input between steps
+- After each step (Simplify, Review, Security, Code Review Plugin) completes, immediately continue to the next step — never pause or wait for user input between steps
