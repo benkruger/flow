@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import current_branch, now, project_root
+from flow_utils import now, project_root, resolve_branch
 
 
 def _set_nested(obj, path_parts, value):
@@ -92,16 +92,25 @@ def main():
     parser = argparse.ArgumentParser(description="Set state file fields")
     parser.add_argument("--set", dest="set_args", action="append", required=True,
                         help="path=value (use NOW for current timestamp)")
+    parser.add_argument("--branch", type=str, default=None,
+                        help="Override branch for state file lookup")
     args = parser.parse_args()
 
     root = project_root()
-    branch = current_branch()
+    branch, candidates = resolve_branch(args.branch)
 
-    if not branch:
-        print(json.dumps({
-            "status": "error",
-            "message": "Could not determine current branch",
-        }))
+    if branch is None:
+        if candidates:
+            print(json.dumps({
+                "status": "error",
+                "message": "Multiple active features. Pass --branch.",
+                "candidates": candidates,
+            }))
+        else:
+            print(json.dumps({
+                "status": "error",
+                "message": "Could not determine current branch",
+            }))
         sys.exit(1)
 
     state_path = root / ".flow-states" / f"{branch}.json"

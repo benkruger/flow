@@ -201,3 +201,13 @@ def test_recursion_guard(ci_project):
     output = _parse(result)
     assert output["skipped"] is True
     assert "recursion" in output["reason"]
+
+
+def test_branch_flag_uses_specified_sentinel(ci_project):
+    """--branch flag creates sentinel named after the specified branch."""
+    result = _run(ci_project, args=["--branch", "other-feature"])
+    assert result.returncode == 0
+    output = _parse(result)
+    assert output["status"] == "ok"
+    sentinel = ci_project / ".flow-states" / "other-feature-ci-passed"
+    assert sentinel.exists()

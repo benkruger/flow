@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import current_branch, find_state_files, project_root, COMMANDS, PHASE_NAMES
+from flow_utils import find_state_files, project_root, resolve_branch, COMMANDS, PHASE_NAMES
 
 # Import format_panel from format-status.py (same pattern as tests)
 _spec = importlib.util.spec_from_file_location(
@@ -33,17 +33,26 @@ format_panel = _fs_mod.format_panel
 
 
 def main():
-    root = project_root()
-    branch = current_branch()
+    import argparse
+    parser = argparse.ArgumentParser(description="Build continue-context")
+    parser.add_argument("--branch", type=str, default=None,
+                        help="Override branch for state file lookup")
+    args = parser.parse_args()
 
-    if not branch:
+    root = project_root()
+    branch, candidates = resolve_branch(args.branch)
+
+    if branch is None and candidates:
+        # Ambiguous — show all candidates via find_state_files
+        results = find_state_files(root, "")
+    elif not branch:
         print(json.dumps({
             "status": "error",
             "message": "Could not determine current branch",
         }))
         sys.exit(1)
-
-    results = find_state_files(root, branch)
+    else:
+        results = find_state_files(root, branch)
 
     if not results:
         print(json.dumps({"status": "no_state", "branch": branch}))

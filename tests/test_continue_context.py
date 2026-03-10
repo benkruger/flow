@@ -17,11 +17,13 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
-def _run(cwd):
-    """Run continue-context.py via subprocess with no args, from cwd."""
+def _run(cwd, branch=None):
+    """Run continue-context.py via subprocess with optional --branch, from cwd."""
+    cmd = [sys.executable, SCRIPT]
+    if branch is not None:
+        cmd += ["--branch", branch]
     result = subprocess.run(
-        [sys.executable, SCRIPT],
-        capture_output=True, text=True, cwd=str(cwd),
+        cmd, capture_output=True, text=True, cwd=str(cwd),
     )
     return result
 
@@ -185,3 +187,21 @@ def test_ok_response_includes_branch_field(tmp_path):
     assert len(results) == 1
     _, _, matched_branch = results[0]
     assert matched_branch == "test-feature"
+
+
+# --- --branch flag (subprocess) ---
+
+
+def test_cli_branch_flag_uses_specified_state_file(state_dir, git_repo):
+    """--branch flag finds the state file for a different branch."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    write_state(state_dir, "other-feature", state)
+    result = _run(git_repo, branch="other-feature")
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+    assert data["current_phase"] == "flow-code"
+    assert data["branch"] == "other-feature"

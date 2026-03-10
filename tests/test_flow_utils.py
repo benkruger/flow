@@ -271,3 +271,99 @@ def test_find_state_files_exact_match_priority(tmp_path):
     assert len(results) == 1
     assert results[0][1]["feature"] == "Exact"
     assert results[0][2] == "my-branch"
+
+
+# --- resolve_branch ---
+
+
+def test_resolve_branch_override_wins(monkeypatch):
+    """Override parameter is returned immediately regardless of git/state."""
+    monkeypatch.setattr(_mod, "current_branch", lambda: "main")
+    monkeypatch.setattr(_mod, "project_root", lambda: Path("/nonexistent"))
+    branch, candidates = _mod.resolve_branch("explicit-branch")
+    assert branch == "explicit-branch"
+    assert candidates == []
+
+
+def test_resolve_branch_exact_match(monkeypatch, tmp_path):
+    """Current branch matching a state file returns that branch."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "feat-x.json").write_text(json.dumps(make_state()))
+    monkeypatch.setattr(_mod, "current_branch", lambda: "feat-x")
+    monkeypatch.setattr(_mod, "project_root", lambda: tmp_path)
+    branch, candidates = _mod.resolve_branch()
+    assert branch == "feat-x"
+    assert candidates == []
+
+
+def test_resolve_branch_single_file_fallback(monkeypatch, tmp_path):
+    """On main with one state file, auto-resolves to that feature branch."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "feat-x.json").write_text(json.dumps(make_state()))
+    monkeypatch.setattr(_mod, "current_branch", lambda: "main")
+    monkeypatch.setattr(_mod, "project_root", lambda: tmp_path)
+    branch, candidates = _mod.resolve_branch()
+    assert branch == "feat-x"
+    assert candidates == []
+
+
+def test_resolve_branch_ambiguous_multiple_files(monkeypatch, tmp_path):
+    """Multiple state files with no exact match returns None with candidates."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "feat-a.json").write_text(json.dumps(make_state()))
+    (state_dir / "feat-b.json").write_text(json.dumps(make_state()))
+    monkeypatch.setattr(_mod, "current_branch", lambda: "main")
+    monkeypatch.setattr(_mod, "project_root", lambda: tmp_path)
+    branch, candidates = _mod.resolve_branch()
+    assert branch is None
+    assert sorted(candidates) == ["feat-a", "feat-b"]
+
+
+def test_resolve_branch_no_state_dir(monkeypatch, tmp_path):
+    """No .flow-states directory returns current_branch() result."""
+    monkeypatch.setattr(_mod, "current_branch", lambda: "main")
+    monkeypatch.setattr(_mod, "project_root", lambda: tmp_path)
+    branch, candidates = _mod.resolve_branch()
+    assert branch == "main"
+    assert candidates == []
+
+
+def test_resolve_branch_skips_phases_json(monkeypatch, tmp_path):
+    """Frozen phases files (*-phases.json) are ignored during scan."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "feat-x.json").write_text(json.dumps(make_state()))
+    (state_dir / "feat-x-phases.json").write_text(
+        json.dumps({"order": [], "phases": {}})
+    )
+    monkeypatch.setattr(_mod, "current_branch", lambda: "main")
+    monkeypatch.setattr(_mod, "project_root", lambda: tmp_path)
+    branch, candidates = _mod.resolve_branch()
+    assert branch == "feat-x"
+    assert candidates == []
+
+
+def test_resolve_branch_empty_state_dir(monkeypatch, tmp_path):
+    """Empty .flow-states directory returns current_branch() result."""
+    (tmp_path / ".flow-states").mkdir()
+    monkeypatch.setattr(_mod, "current_branch", lambda: "main")
+    monkeypatch.setattr(_mod, "project_root", lambda: tmp_path)
+    branch, candidates = _mod.resolve_branch()
+    assert branch == "main"
+    assert candidates == []
+
+
+def test_resolve_branch_skips_corrupt_files(monkeypatch, tmp_path):
+    """Corrupt JSON files are skipped, valid ones still found."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "bad.json").write_text("{corrupt")
+    (state_dir / "good.json").write_text(json.dumps(make_state()))
+    monkeypatch.setattr(_mod, "current_branch", lambda: "main")
+    monkeypatch.setattr(_mod, "project_root", lambda: tmp_path)
+    branch, candidates = _mod.resolve_branch()
+    assert branch == "good"
+    assert candidates == []

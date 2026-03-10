@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from flow_utils import current_branch, project_root
+from flow_utils import project_root, resolve_branch
 
 
 def _tree_snapshot(root):
@@ -55,7 +55,16 @@ def main():
     cwd = Path.cwd()
     bin_ci = cwd / "bin" / "ci"
     root = project_root()
-    branch = current_branch()
+
+    # Extract --branch override from args
+    branch_override = None
+    if "--branch" in args:
+        idx = args.index("--branch")
+        if idx + 1 < len(args):
+            branch_override = args[idx + 1]
+            args = args[:idx] + args[idx + 2:]
+
+    branch, _ = resolve_branch(branch_override)
     sentinel = (
         root / ".flow-states" / f"{branch}-ci-passed"
         if branch else None

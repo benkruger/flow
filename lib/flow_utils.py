@@ -103,6 +103,54 @@ def current_branch():
         return None
 
 
+def resolve_branch(override=None):
+    """Resolve which branch's state file to use.
+
+    Resolution order:
+    1. If override provided, return it immediately
+    2. If current_branch() matches a state file, return it
+    3. Scan .flow-states/*.json (skip *-phases.json):
+       - 1 file → return that branch (auto-resolve)
+       - 2+ files → return (None, candidates) (ambiguous)
+       - 0 files → return current_branch() (no features active)
+
+    Returns (branch, candidates) where candidates is empty on success
+    or a list of branch names when ambiguous.
+    """
+    if override:
+        return (override, [])
+
+    branch = current_branch()
+    root = project_root()
+    state_dir = root / ".flow-states"
+
+    # Exact match — current branch has a state file
+    if branch and (state_dir / f"{branch}.json").exists():
+        return (branch, [])
+
+    # Scan for state files
+    if not state_dir.is_dir():
+        return (branch, [])
+
+    candidates = []
+    for path in sorted(state_dir.glob("*.json")):
+        if path.name.endswith("-phases.json"):
+            continue
+        try:
+            json.loads(path.read_text())
+            candidates.append(path.stem)
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    if len(candidates) == 1:
+        return (candidates[0], [])
+    if len(candidates) > 1:
+        return (None, candidates)
+
+    # No state files found — return current branch (for new features)
+    return (branch, [])
+
+
 def find_state_files(root, branch):
     """Find state file(s), trying exact branch match first.
 

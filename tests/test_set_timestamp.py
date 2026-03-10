@@ -19,11 +19,13 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
-def _run(git_repo, *set_args):
+def _run(git_repo, *set_args, branch=None):
     """Run set-timestamp.py with --set arguments."""
     cmd = [sys.executable, SCRIPT]
     for arg in set_args:
         cmd += ["--set", arg]
+    if branch is not None:
+        cmd += ["--branch", branch]
     result = subprocess.run(
         cmd, capture_output=True, text=True, cwd=str(git_repo),
     )
@@ -217,11 +219,28 @@ def test_error_corrupt_json(git_repo, state_dir, branch):
     assert "Could not read" in output["message"]
 
 
-def test_error_detached_head(git_repo, state_dir, branch):
-    """Detached HEAD returns error."""
-    state = make_state(current_phase="flow-code")
+def test_detached_head_auto_resolves_single_state_file(git_repo, state_dir, branch):
+    """Detached HEAD with a single state file auto-resolves to that branch."""
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["design"] = {"status": "pending"}
     write_state(state_dir, branch, state)
 
+    subprocess.run(
+        ["git", "checkout", "--detach", "HEAD"],
+        cwd=str(git_repo), capture_output=True, check=True,
+    )
+
+    result = _run(git_repo, "design.status=approved")
+    assert result.returncode == 0
+
+    output = json.loads(result.stdout)
+    assert output["status"] == "ok"
+
+
+def test_error_detached_head_no_state_files(git_repo):
+    """Detached HEAD with no state files returns error."""
     subprocess.run(
         ["git", "checkout", "--detach", "HEAD"],
         cwd=str(git_repo), capture_output=True, check=True,
@@ -364,3 +383,37 @@ def test_set_nested_dict_key_not_found_intermediate():
     obj = {"a": {"b": 1}}
     with pytest.raises(KeyError, match="not found"):
         mod._set_nested(obj, ["a", "missing", "x"], "val")
+
+
+# --- --branch flag (subprocess) ---
+
+
+def test_cli_branch_flag_uses_specified_state_file(git_repo, state_dir):
+    """--branch flag finds the state file for a different branch."""
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["design"] = {"status": "pending"}
+    write_state(state_dir, "other-feature", state)
+
+    result = _run(git_repo, "design.status=approved", branch="other-feature")
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert output["status"] == "ok"
+    assert output["updates"][0]["value"] == "approved"
+
+
+def test_error_ambiguous_multiple_state_files(git_repo, state_dir):
+    """Multiple state files with no exact match returns ambiguity error."""
+    for name in ["feat-a", "feat-b"]:
+        state = make_state(current_phase="flow-code", phase_statuses={
+            "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+        })
+        write_state(state_dir, name, state)
+
+    result = _run(git_repo, "current_phase=flow-code")
+    assert result.returncode == 1
+    output = json.loads(result.stdout)
+    assert output["status"] == "error"
+    assert "Multiple" in output["message"]
+    assert sorted(output["candidates"]) == ["feat-a", "feat-b"]

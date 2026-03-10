@@ -20,11 +20,13 @@ _spec.loader.exec_module(_mod)
 VERSION = "0.8.2"
 
 
-def _run(cwd):
-    """Run format-status.py via subprocess with no args, from cwd."""
+def _run(cwd, branch=None):
+    """Run format-status.py via subprocess with optional --branch, from cwd."""
+    cmd = [sys.executable, SCRIPT]
+    if branch is not None:
+        cmd += ["--branch", branch]
     result = subprocess.run(
-        [sys.executable, SCRIPT],
-        capture_output=True, text=True, cwd=str(cwd),
+        cmd, capture_output=True, text=True, cwd=str(cwd),
     )
     return result
 
@@ -333,3 +335,19 @@ def test_wrong_branch_multiple_features_returns_panel(state_dir, git_repo, branc
     result = _run(git_repo)
     assert result.returncode == 0
     assert "Multiple Features Active" in result.stdout
+
+
+# --- --branch flag (subprocess) ---
+
+
+def test_cli_branch_flag_uses_specified_state_file(state_dir, git_repo):
+    """--branch flag finds the state file for a different branch."""
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
+    )
+    write_state(state_dir, "other-feature", state)
+    result = _run(git_repo, branch="other-feature")
+    assert result.returncode == 0
+    assert "FLOW v" in result.stdout
+    assert "Phase 1:" in result.stdout

@@ -22,8 +22,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    PACIFIC, current_branch, format_time, load_phase_config, now, project_root,
-    PHASE_ORDER,
+    PACIFIC, format_time, load_phase_config, now, project_root,
+    resolve_branch, PHASE_ORDER,
 )
 
 
@@ -107,6 +107,8 @@ def main():
                         help="Action: enter or complete")
     parser.add_argument("--next-phase", type=str, default=None,
                         help="Override next phase name (default: next in order)")
+    parser.add_argument("--branch", type=str, default=None,
+                        help="Override branch for state file lookup")
     args = parser.parse_args()
 
     if args.phase not in _VALID_PHASES:
@@ -117,13 +119,20 @@ def main():
         sys.exit(1)
 
     root = project_root()
-    branch = current_branch()
+    branch, candidates = resolve_branch(args.branch)
 
-    if not branch:
-        print(json.dumps({
-            "status": "error",
-            "message": "Could not determine current branch",
-        }))
+    if branch is None:
+        if candidates:
+            print(json.dumps({
+                "status": "error",
+                "message": "Multiple active features. Pass --branch.",
+                "candidates": candidates,
+            }))
+        else:
+            print(json.dumps({
+                "status": "error",
+                "message": "Could not determine current branch",
+            }))
         sys.exit(1)
 
     state_path = root / ".flow-states" / f"{branch}.json"

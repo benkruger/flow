@@ -19,8 +19,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    current_branch, find_state_files, format_time, load_phase_config, PACIFIC,
-    project_root, COMMANDS, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER,
+    find_state_files, format_time, load_phase_config, PACIFIC,
+    project_root, resolve_branch, COMMANDS, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER,
 )
 
 # Column width for phase name alignment
@@ -207,14 +207,23 @@ def format_multi_panel(results, version, dev_mode=False):
 
 
 def main():
-    root = project_root()
-    branch = current_branch()
+    import argparse
+    parser = argparse.ArgumentParser(description="Format FLOW status panel")
+    parser.add_argument("--branch", type=str, default=None,
+                        help="Override branch for state file lookup")
+    args = parser.parse_args()
 
-    if not branch:
+    root = project_root()
+    branch, candidates = resolve_branch(args.branch)
+
+    if branch is None and candidates:
+        # Ambiguous — show all candidates via find_state_files
+        results = find_state_files(root, "")
+    elif not branch:
         print("Could not determine current branch", file=sys.stderr)
         sys.exit(2)
-
-    results = find_state_files(root, branch)
+    else:
+        results = find_state_files(root, branch)
 
     if not results:
         sys.exit(1)

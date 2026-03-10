@@ -19,11 +19,13 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
-def _run(git_repo, phase, state_dir=None):
+def _run(git_repo, phase, state_dir=None, branch=None):
     """Run check-phase.py --required <phase> inside the given git repo."""
+    cmd = [sys.executable, SCRIPT, "--required", phase]
+    if branch is not None:
+        cmd += ["--branch", branch]
     result = subprocess.run(
-        [sys.executable, SCRIPT, "--required", phase],
-        capture_output=True, text=True, cwd=str(git_repo),
+        cmd, capture_output=True, text=True, cwd=str(git_repo),
     )
     return result
 
@@ -38,7 +40,7 @@ def test_phase_1_always_exits_0(git_repo):
 
 
 def test_detached_head_exits_1(git_repo):
-    """Detached HEAD (no branch) should block with a clear message."""
+    """Detached HEAD with no state files should block with a clear message."""
     # Detach HEAD by checking out a specific commit
     subprocess.run(
         ["git", "checkout", "--detach", "HEAD"],
@@ -63,7 +65,7 @@ def test_corrupt_json_exits_1(tmp_path, monkeypatch):
     (state_dir / "test-branch.json").write_text("{bad json")
 
     captured = io.StringIO()
-    monkeypatch.setattr(_mod, "current_branch", lambda: "test-branch")
+    monkeypatch.setattr(_mod, "resolve_branch", lambda override=None: ("test-branch", []))
     monkeypatch.setattr(_mod, "project_root", lambda: tmp_path)
     monkeypatch.setattr(sys, "argv", [SCRIPT, "--required", "flow-plan"])
     monkeypatch.setattr(sys, "stdout", captured)
@@ -257,3 +259,28 @@ def test_worktree_finds_state_in_main_repo(git_repo, state_dir):
 
     result = _run(wt_path, "flow-plan")
     assert result.returncode == 0
+
+
+# --- --branch flag (subprocess) ---
+
+
+def test_cli_branch_flag_uses_specified_state_file(git_repo, state_dir):
+    """--branch flag finds the state file for a different branch."""
+    state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete"})
+    write_state(state_dir, "other-feature", state)
+
+    result = _run(git_repo, "flow-plan", branch="other-feature")
+    assert result.returncode == 0
+
+
+def test_error_ambiguous_multiple_state_files(git_repo, state_dir):
+    """Multiple state files with no exact match returns ambiguity error."""
+    for name in ["feat-a", "feat-b"]:
+        state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete"})
+        write_state(state_dir, name, state)
+
+    result = _run(git_repo, "flow-plan")
+    assert result.returncode == 1
+    assert "Multiple active features" in result.stdout
+    assert "feat-a" in result.stdout
+    assert "feat-b" in result.stdout

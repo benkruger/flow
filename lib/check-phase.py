@@ -22,7 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    current_branch, load_phase_config, project_root,
+    load_phase_config, project_root, resolve_branch,
     COMMANDS, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER,
 )
 
@@ -74,6 +74,8 @@ def main():
     parser = argparse.ArgumentParser(description="SDLC phase entry guard")
     parser.add_argument("--required", type=str, required=True,
                         help="Phase name being entered")
+    parser.add_argument("--branch", type=str, default=None,
+                        help="Override branch for state file lookup")
     args = parser.parse_args()
     phase = args.required
 
@@ -81,7 +83,12 @@ def main():
     if phase == PHASE_ORDER[0]:
         sys.exit(0)
 
-    branch = current_branch()
+    branch, candidates = resolve_branch(args.branch)
+    if branch is None and candidates:
+        print("BLOCKED: Multiple active features. Pass --branch.")
+        for candidate in candidates:
+            print(f"  - {candidate}")
+        sys.exit(1)
     if not branch:
         print("BLOCKED: Could not determine current git branch.")
         sys.exit(1)

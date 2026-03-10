@@ -17,11 +17,13 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
-def _run(note_text, note_type=None, cwd=None):
+def _run(note_text, note_type=None, cwd=None, branch=None):
     """Run append-note.py via subprocess with --note and optional --type."""
     cmd = [sys.executable, SCRIPT, "--note", note_text]
     if note_type:
         cmd.extend(["--type", note_type])
+    if branch is not None:
+        cmd.extend(["--branch", branch])
     result = subprocess.run(
         cmd, capture_output=True, text=True, cwd=str(cwd) if cwd else None,
     )
@@ -163,3 +165,34 @@ def test_append_note_preserves_existing_notes(tmp_path):
     assert len(result["notes"]) == 2
     assert result["notes"][0]["note"] == "existing"
     assert result["notes"][1]["note"] == "new note"
+
+
+# --- --branch flag (subprocess) ---
+
+
+def test_cli_branch_flag_uses_specified_state_file(state_dir, git_repo):
+    """--branch flag finds the state file for a different branch."""
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    write_state(state_dir, "other-feature", state)
+    result = _run("Branch test note", cwd=git_repo, branch="other-feature")
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+    assert data["note_count"] == 1
+
+
+def test_error_ambiguous_multiple_state_files(state_dir, git_repo):
+    """Multiple state files with no exact match returns ambiguity error."""
+    for name in ["feat-a", "feat-b"]:
+        state = make_state(current_phase="flow-code", phase_statuses={
+            "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+        })
+        write_state(state_dir, name, state)
+    result = _run("test note", cwd=git_repo)
+    assert result.returncode == 1
+    data = json.loads(result.stdout)
+    assert data["status"] == "error"
+    assert "Multiple" in data["message"]
+    assert sorted(data["candidates"]) == ["feat-a", "feat-b"]
