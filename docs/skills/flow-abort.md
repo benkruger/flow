@@ -55,7 +55,7 @@ already closed, worktree already removed), it continues to the next.
 |---|---|---|
 | **When** | After Learn (Phase 5) | Any phase |
 | **PR** | Squash-merged into main | Closed |
-| **Remote branch** | Deleted (via merge) | Deleted |
+| **Remote branch** | Deleted (via cleanup) | Deleted (via cleanup) |
 | **Worktree** | Removed | Removed |
 | **State file** | Deleted | Deleted |
 | **Missing state** | Warns, proceeds | Warns, proceeds |
