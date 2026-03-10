@@ -9,7 +9,7 @@ Exit 0 — allow (command passes through to normal permission system)
 Exit 2 — block (error message on stderr is fed back to the sub-agent)
 
 Blocked patterns:
-1. Compound commands (&&, ;) — "Use separate Bash calls instead"
+1. Compound commands (&&, ;, |) — "Use separate Bash calls instead"
 2. File-read commands (cat, head, tail, grep, rg, find, ls) —
    "Use Read/Glob/Grep tools instead"
 """
@@ -28,10 +28,10 @@ def validate(command):
     Returns (allowed: bool, message: str).
     message is empty if allowed, otherwise explains why blocked.
     """
-    # Block compound commands (&&, ;)
-    if "&&" in command or re.search(r"(?<!\\);", command):
+    # Block compound commands (&&, ;, |)
+    if "&&" in command or re.search(r"(?<!\\);", command) or "|" in command:
         return (False,
-                "BLOCKED: Compound commands (&&, ;) are not allowed. "
+                "BLOCKED: Compound commands (&&, ;, |) are not allowed. "
                 "Use separate Bash calls for each command.")
 
     # Block file-read commands

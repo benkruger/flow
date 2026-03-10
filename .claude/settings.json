@@ -72,7 +72,8 @@
       "Bash(find *)",
       "Bash(ls *)",
       "Bash(* && *)",
-      "Bash(* ; *)"
+      "Bash(* ; *)",
+      "Bash(* | *)"
     ]
   },
   "attribution": {

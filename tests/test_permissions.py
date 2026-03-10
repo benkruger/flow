@@ -703,6 +703,7 @@ REQUIRED_TOOL_ALTERNATIVE_DENIES = [
     "Bash(find *)",
     "Bash(ls *)",
     "Bash(* && *)",
+    "Bash(* | *)",
 ]
 
 
@@ -817,6 +818,12 @@ def test_permission_to_regex_known_conversions():
     r = _permission_to_regex("Bash(rm .flow-commit-*)")
     assert r is not None
     assert r.match("rm .flow-commit-abc123")
+
+    # Pipe deny pattern
+    r = _permission_to_regex("Bash(* | *)")
+    assert r is not None
+    assert r.match("git show HEAD:file.py | sed 's/foo/bar/'")
+    assert not r.match("git status")
 
     # Non-Bash entries return None
     assert _permission_to_regex("Write(*)") is None

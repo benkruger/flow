@@ -210,7 +210,8 @@ All permissions (universal + all framework sets) for reference:
       "Bash(git checkout *)",
       "Bash(git clean *)",
       "Bash(* && *)",
-      "Bash(* ; *)"
+      "Bash(* ; *)",
+      "Bash(* | *)"
     ]
   },
   "defaultMode": "acceptEdits"

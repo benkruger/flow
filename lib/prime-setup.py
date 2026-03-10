@@ -59,6 +59,7 @@ FLOW_DENY = [
     "Bash(git clean *)",
     "Bash(* && *)",
     "Bash(* ; *)",
+    "Bash(* | *)",
 ]
 
 EXCLUDE_ENTRIES = [".flow-states/", ".worktrees/", ".flow.json", "bin/dependencies"]

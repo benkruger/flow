@@ -81,6 +81,21 @@ def test_validate_blocks_compound_semicolon():
     assert "Compound commands" in message
 
 
+def test_validate_blocks_pipe():
+    mod = _load_module()
+    allowed, message = mod.validate("git show HEAD:file.py | sed 's/foo/bar/'")
+    assert allowed is False
+    assert "Compound commands" in message
+    assert "separate Bash calls" in message
+
+
+def test_validate_blocks_or_operator():
+    mod = _load_module()
+    allowed, message = mod.validate("bin/ci || echo failed")
+    assert allowed is False
+    assert "Compound commands" in message
+
+
 def test_validate_blocks_cat():
     mod = _load_module()
     allowed, message = mod.validate("cat lib/foo.py")
@@ -153,6 +168,12 @@ def test_hook_exit_2_for_blocked_compound():
 
 def test_hook_exit_2_for_blocked_file_read():
     code, stderr = _run_hook("cat README.md")
+    assert code == 2
+    assert "BLOCKED" in stderr
+
+
+def test_hook_exit_2_for_blocked_pipe():
+    code, stderr = _run_hook("git show HEAD:file.py | sed 's/foo/bar/'")
     assert code == 2
     assert "BLOCKED" in stderr
 
