@@ -93,12 +93,12 @@ def _initial_commit_push_pr(wt_path, branch, feature_title, session_log=None):
 
     if session_log:
         pr_body = (
-            f"## What\\n\\n{feature_title}."
-            f"\\n\\n## Artifacts\\n\\n"
+            f"## What\n\n{feature_title}."
+            f"\n\n## Artifacts\n\n"
             f"- **Session log**: `{session_log}`"
         )
     else:
-        pr_body = f"## What\\n\\n{feature_title}."
+        pr_body = f"## What\n\n{feature_title}."
     stdout, _ = _run_cmd(
         ["gh", "pr", "create",
          "--title", feature_title,

@@ -158,7 +158,9 @@ Record step completion:
 bin/flow set-timestamp --set code_review_step=1
 ```
 
-Without pausing or asking for confirmation, continue to Step 2.
+<HARD-GATE>
+Do not stop, pause, or wait for user input — continue to Step 2 immediately.
+</HARD-GATE>
 
 ---
 
@@ -241,7 +243,9 @@ Record step completion:
 bin/flow set-timestamp --set code_review_step=2
 ```
 
-Without pausing or asking for confirmation, continue to Step 3.
+<HARD-GATE>
+Do not stop, pause, or wait for user input — continue to Step 3 immediately.
+</HARD-GATE>
 
 ---
 
@@ -305,7 +309,9 @@ Record step completion:
 bin/flow set-timestamp --set code_review_step=3
 ```
 
-Without pausing or asking for confirmation, continue to Step 4.
+<HARD-GATE>
+Do not stop, pause, or wait for user input — continue to Step 4 immediately.
+</HARD-GATE>
 
 ---
 
@@ -371,7 +377,9 @@ Record step completion:
 bin/flow set-timestamp --set code_review_step=4
 ```
 
-Without pausing or asking for confirmation, continue to Done.
+<HARD-GATE>
+Do not stop, pause, or wait for user input — continue to Done immediately.
+</HARD-GATE>
 
 ---
 

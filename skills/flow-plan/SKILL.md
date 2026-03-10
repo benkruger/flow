@@ -85,8 +85,8 @@ Skip to "Done — Update state and complete phase" to finish the phase.
 
 ## Step 1 — Ask what we're building
 
-Print this prompt and then stop — wait for the user to respond before
-continuing:
+Print this question as text in your response — do not use AskUserQuestion.
+Then stop and wait for the user to respond before continuing:
 
 > What are we building? Describe the feature and what success looks like.
 
@@ -207,6 +207,7 @@ Invoke `flow:flow-status`, then use AskUserQuestion:
 - The plan file lives in `~/.claude/plans/` — Claude Code's native location
 - Store the plan file path in state before completing the phase
 - Never use Bash to print banners — output them as text in your response
+- Never use AskUserQuestion in Step 1 — print the question as text
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories
 - Never cd before running `bin/flow` — it detects the project root internally
