@@ -62,6 +62,16 @@ Every plan must include test tasks — even for pure-markdown skills,
 add contract tests in `test_skill_contracts.py`. TDD means the test
 task comes before the implementation task it validates.
 
+## Negative-Assertion Test Compatibility
+
+When writing a SKILL.md instruction that prohibits a specific string
+(e.g. "do not use --comment"), phrase the prohibition without including
+the literal prohibited string. Contract tests like
+`test_code_review_does_not_use_comment_flag` scan the entire SKILL.md
+content — the prohibition text itself will trigger the assertion failure.
+Use paraphrased instructions such as "invoke with no flags or arguments"
+instead of "do not pass the --comment flag."
+
 ## Codebase-Wide Renames
 
 When planning a rename of phase names, skill names, or commands:
