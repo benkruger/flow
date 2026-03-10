@@ -231,6 +231,13 @@ For each repo destination with changes:
 1. Read the target file in the project
 2. Apply all additions and rewordings for that destination
 
+### Handling denied edits
+
+If the user denies an Edit tool call, treat it as "skip this learning"
+— not "stop everything." Record which destination was skipped and
+continue with the remaining learnings. A denied edit does not block
+subsequent destinations, steps, or the phase completion.
+
 ---
 
 ## Step 4 — Promote local permissions (Maintainer only)
@@ -319,6 +326,7 @@ Present the full report to the user:
   ---------------
   Global CLAUDE.md: 2 additions
   Project rules (.claude/rules/testing.md): 1 addition
+  Global rules (~/.claude/rules/testing.md): 1 addition (skipped — user denied)
   Project CLAUDE.md: 1 addition (committed / uncommitted)
 
   Issues filed
@@ -335,6 +343,8 @@ no issues were filed or not in Phase 5 mode.
 
 In the "Changes applied" section, show "(committed)" or "(uncommitted)"
 next to each repo-destination file to indicate whether Step 4 committed it.
+Show "(skipped — user denied)" next to any destination where the user
+denied the Edit tool call during Step 3.
 
 ---
 
@@ -416,6 +426,7 @@ No phase transition, no transition question.
 - In Phase 5, read all three sources before synthesizing findings
 - Follow the learning process (Steps 1 through 7) exactly — do not skip or reorder steps
 - Decisions on destinations and wording are autonomous — do not ask the user for approval mid-process
+- If the user denies an Edit tool call during Step 3, skip that learning and continue — a denied edit means "skip this one," not "stop the phase"
 - The report in Step 7 is the user's review point — make it comprehensive
 - Global writes (`~/.claude/CLAUDE.md`, `~/.claude/rules/`, `~/.claude/projects/`) are direct edits — never committed
 - Repo writes (`CLAUDE.md`, `.claude/rules/`) go through `/flow:flow-commit --auto` (Phase 5 and Maintainer)
