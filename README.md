@@ -287,6 +287,7 @@ These skills and scripts live in the FLOW repo itself (`.claude/skills/` and `li
 | `/flow-release` | Bump version in plugin.json and marketplace.json, tag, push, create GitHub Release |
 | `/flow-qa` | QA mode — bare shows status, `--start` switches to local `--plugin-dir` testing, `--stop` reinstalls marketplace |
 | `/flow-reset` | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files |
+| `/flow-issues` | Fetch open issues, categorize, prioritize, display dashboard |
 
 ### Local QA Workflow
 

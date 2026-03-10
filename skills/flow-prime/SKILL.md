@@ -149,7 +149,7 @@ The script handles:
 - Merging FLOW permissions (additive only — preserves existing entries)
 - Setting `defaultMode` to `acceptEdits` (overrides existing values — FLOW requires this for state file writes without prompts)
 - Writing `.flow.json` with version marker and framework
-- Adding `.flow-states/`, `.worktrees/`, and `.flow.json` to `.git/info/exclude`
+- Adding `.flow-states/`, `.worktrees/`, `.flow.json`, and `bin/dependencies` to `.git/info/exclude`
 
 Output JSON: `{"status": "ok", "settings_merged": true, "exclude_updated": true, "version_marker": true, "framework": "rails|python"}`
 
@@ -279,14 +279,6 @@ have customized it). If `"status": "error"`, report to the user.
 
 ### Step 8 — Commit and push
 
-Stage the settings and version marker:
-
-Stage the settings file:
-
-```bash
-git add .claude/settings.json
-```
-
 Check if anything is staged by running `git status`. If the output contains "nothing to commit", skip the commit and push — go straight to Done.
 
 Otherwise, commit via `/flow:flow-commit`.
@@ -308,7 +300,7 @@ Report:
 - Framework: `<framework>`
 - Settings written to `.claude/settings.json`
 - Version marker written to `.flow.json` (git-excluded)
-- Git excludes configured for `.flow-states/`, `.worktrees/`, and `.flow.json`
+- Git excludes configured for `.flow-states/`, `.worktrees/`, `.flow.json`, and `bin/dependencies`
 - Changes committed
 
 Display the skills configuration as a pipe-delimited markdown table with exactly this format (not a bullet list):

@@ -1416,7 +1416,7 @@ def test_start_step_6_enforces_flow_commit_exclusively():
 
 
 def test_prime_step_8_enforces_flow_commit_exclusively():
-    """flow-prime Step 8 must use /flow:flow-commit and not suggest git commit."""
+    """flow-prime Step 8 must use /flow:flow-commit and not raw git commands."""
     content = _read_skill("flow-prime")
     step8_match = re.search(
         r"### Step 8.*?\n(.*?)(?=\n### Done)", content, re.DOTALL
@@ -1430,6 +1430,11 @@ def test_prime_step_8_enforces_flow_commit_exclusively():
         if "git commit" in line:
             assert re.search(r"[Nn]ever", line), (
                 f"flow-prime Step 8 mentions 'git commit' outside a "
+                f"prohibition: {line.strip()}"
+            )
+        if "git add" in line:
+            assert re.search(r"[Nn]ever", line), (
+                f"flow-prime Step 8 mentions 'git add' outside a "
                 f"prohibition: {line.strip()}"
             )
 

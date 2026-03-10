@@ -222,7 +222,9 @@ def test_git_exclude_preserves_existing_content(git_repo):
 def test_git_exclude_not_updated_when_already_present(git_repo):
     info_dir = git_repo / ".git" / "info"
     info_dir.mkdir(parents=True, exist_ok=True)
-    (info_dir / "exclude").write_text(".flow-states/\n.worktrees/\n.flow.json\n")
+    (info_dir / "exclude").write_text(
+        ".flow-states/\n.worktrees/\n.flow.json\nbin/dependencies\n"
+    )
 
     updated = _mod.update_git_exclude(git_repo)
     assert updated is False
