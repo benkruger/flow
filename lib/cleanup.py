@@ -4,7 +4,7 @@ Shared by /flow:flow-complete (Phase 6) and /flow:flow-abort. Performs best-effo
 cleanup steps, continuing on failure.
 
 Usage:
-  bin/flow cleanup <project_root> --branch <name> --worktree <path> [--pr <number>] [--delete-remote]
+  bin/flow cleanup <project_root> --branch <name> --worktree <path> [--pr <number>]
 
 Output (JSON to stdout):
   {"status": "ok", "steps": {"worktree": "removed", "state_file": "deleted", ...}}
@@ -33,7 +33,7 @@ def _run_cmd(args, cwd):
         return False, str(e)
 
 
-def cleanup(project_root, branch, worktree, pr_number=None, delete_remote=False):
+def cleanup(project_root, branch, worktree, pr_number=None):
     """Perform cleanup steps. Returns a dict of step results."""
     root = Path(project_root)
     steps = {}
@@ -59,25 +59,19 @@ def cleanup(project_root, branch, worktree, pr_number=None, delete_remote=False)
     else:
         steps["worktree"] = "skipped"
 
-    # Delete remote branch (abort only)
-    if delete_remote:
-        ok, output = _run_cmd(
-            ["git", "push", "origin", "--delete", branch],
-            root,
-        )
-        steps["remote_branch"] = "deleted" if ok else f"failed: {output}"
-    else:
-        steps["remote_branch"] = "skipped"
+    # Delete remote branch
+    ok, output = _run_cmd(
+        ["git", "push", "origin", "--delete", branch],
+        root,
+    )
+    steps["remote_branch"] = "deleted" if ok else f"failed: {output}"
 
-    # Delete local branch (abort only)
-    if delete_remote:
-        ok, output = _run_cmd(
-            ["git", "branch", "-D", branch],
-            root,
-        )
-        steps["local_branch"] = "deleted" if ok else f"failed: {output}"
-    else:
-        steps["local_branch"] = "skipped"
+    # Delete local branch
+    ok, output = _run_cmd(
+        ["git", "branch", "-D", branch],
+        root,
+    )
+    steps["local_branch"] = "deleted" if ok else f"failed: {output}"
 
     # Delete state file
     state_file = root / ".flow-states" / f"{branch}.json"
@@ -132,8 +126,6 @@ def main():
     parser.add_argument("--branch", required=True, help="Branch name")
     parser.add_argument("--worktree", required=True, help="Worktree path (relative)")
     parser.add_argument("--pr", type=int, default=None, help="PR number to close")
-    parser.add_argument("--delete-remote", action="store_true",
-                        help="Delete remote and local branch (abort mode)")
     args = parser.parse_args()
 
     root = Path(args.project_root)
@@ -144,7 +136,7 @@ def main():
         }))
         sys.exit(1)
 
-    steps = cleanup(root, args.branch, args.worktree, args.pr, args.delete_remote)
+    steps = cleanup(root, args.branch, args.worktree, args.pr)
     print(json.dumps({"status": "ok", "steps": steps}))
 
 
