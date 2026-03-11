@@ -483,6 +483,9 @@ def test_session_log_path_with_env(tmp_path):
         assert result is not None
         assert "abc123.jsonl" in str(result)
         assert ".claude/projects/" in str(result)
+        # Slug must preserve leading dash to match Claude Code's directory naming
+        slug = str(project_root).replace("/", "-")
+        assert slug in result, f"Slug '{slug}' not found in path '{result}'"
     finally:
         if env_backup is None:
             os.environ.pop("CLAUDE_SESSION_ID", None)
@@ -551,3 +554,43 @@ def test_pr_body_omits_artifacts_without_session_id(_default_run):
     data, state, log, repo = _default_run
     # The default run does not set CLAUDE_SESSION_ID, so no artifacts section
     assert data["status"] == "ok"
+
+
+# --- session_id in state file ---
+
+
+def test_state_file_has_session_id_null(_default_run):
+    """State file has session_id: null when CLAUDE_SESSION_ID is not set."""
+    data, state, log, repo = _default_run
+    assert "session_id" in state
+    assert state["session_id"] is None
+
+
+def test_state_file_has_session_id_from_env(git_repo_with_remote):
+    """State file stores session_id when CLAUDE_SESSION_ID is set."""
+    version = _current_plugin_version()
+    _write_flow_json(git_repo_with_remote, version)
+
+    env = os.environ.copy()
+    env["CLAUDE_SESSION_ID"] = "test-session-456"
+    stub_dir = git_repo_with_remote / ".stub-bin"
+    stub_dir.mkdir(exist_ok=True)
+    gh_stub = stub_dir / "gh"
+    gh_stub.write_text(
+        '#!/bin/bash\n'
+        'echo "https://github.com/test/repo/pull/99"\n'
+    )
+    gh_stub.chmod(0o755)
+    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [sys.executable, SCRIPT, "session test"],
+        capture_output=True, text=True, cwd=str(git_repo_with_remote), env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+
+    state_path = git_repo_with_remote / ".flow-states" / f"{data['branch']}.json"
+    state = json.loads(state_path.read_text())
+    assert state["session_id"] == "test-session-456"

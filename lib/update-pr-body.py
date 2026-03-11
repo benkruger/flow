@@ -59,6 +59,25 @@ def _add_artifact_to_body(body, label, value):
     return body_before + "\n\n" + new_line + body_after
 
 
+def _build_plain_section(heading, content):
+    """Build a plain markdown section with heading and end sentinel."""
+    return f"## {heading}\n\n{content}\n\n<!-- end:{heading} -->"
+
+
+def _append_plain_section_to_body(body, heading, content):
+    """Append or replace a plain (non-collapsible) section in the body."""
+    block = _build_plain_section(heading, content)
+
+    pattern = re.compile(
+        rf"## {re.escape(heading)}\n\n.*?<!-- end:{re.escape(heading)} -->",
+        re.DOTALL,
+    )
+    if pattern.search(body):
+        return pattern.sub(block, body)
+
+    return body.rstrip("\n") + "\n\n" + block
+
+
 def _build_details_block(heading, summary, content, fmt):
     """Build a collapsible details block with heading and fenced code."""
     return (
@@ -123,6 +142,8 @@ def main():
     parser.add_argument("--summary", help="Details summary (for --append-section)")
     parser.add_argument("--content-file", help="Path to content file (for --append-section)")
     parser.add_argument("--format", default="text", help="Code block format (for --append-section)")
+    parser.add_argument("--no-collapse", action="store_true",
+                        help="Render plain section instead of collapsible details (for --append-section)")
 
     args = parser.parse_args()
 
@@ -145,7 +166,10 @@ def main():
 
             content = path.read_text()
             body = _gh_get_body(args.pr)
-            new_body = _append_section_to_body(body, args.heading, args.summary, content, args.format)
+            if args.no_collapse:
+                new_body = _append_plain_section_to_body(body, args.heading, content)
+            else:
+                new_body = _append_section_to_body(body, args.heading, args.summary, content, args.format)
             _gh_set_body(args.pr, new_body)
             print(json.dumps({"status": "ok", "action": "append_section"}))
 
