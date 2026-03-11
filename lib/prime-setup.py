@@ -202,6 +202,31 @@ def update_git_exclude(project_root):
     return updated
 
 
+PRE_COMMIT_HOOK = """\
+#!/usr/bin/env bash
+# .git/hooks/pre-commit — installed by /flow:flow-prime
+if [ ! -f .flow-commit-msg ]; then
+  echo "BLOCKED: Commits must go through /flow:flow-commit."
+  echo "The file .flow-commit-msg was not found — this looks like a direct git commit."
+  exit 1
+fi
+"""
+
+
+def install_pre_commit_hook(project_root):
+    """Install a pre-commit hook that blocks direct git commits.
+
+    The hook checks for .flow-commit-msg — the fingerprint file created by
+    /flow:flow-commit. If the file is missing, the commit is blocked.
+    Idempotent: overwrites any existing pre-commit hook.
+    """
+    hooks_dir = project_root / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook_path = hooks_dir / "pre-commit"
+    hook_path.write_text(PRE_COMMIT_HOOK)
+    hook_path.chmod(0o755)
+
+
 def _plugin_json():
     """Read the full plugin.json as a dict."""
     plugin_path = (
@@ -253,12 +278,14 @@ def main():
         write_version_marker(project_root, version, framework,
                              config_hash=config_hash)
         exclude_updated = update_git_exclude(project_root)
+        install_pre_commit_hook(project_root)
 
         print(json.dumps({
             "status": "ok",
             "settings_merged": True,
             "exclude_updated": exclude_updated,
             "version_marker": True,
+            "hook_installed": True,
             "framework": framework,
         }))
     except Exception as e:
