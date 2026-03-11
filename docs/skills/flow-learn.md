@@ -29,18 +29,14 @@ merges.
 
 ## Outputs
 
-Learnings are routed autonomously to one of 5 destinations:
+Learnings are routed autonomously to one of 2 repo-local destinations:
 
 | # | Destination | Path |
 |---|-------------|------|
-| 1 | Global CLAUDE.md | `~/.claude/CLAUDE.md` |
-| 2 | Project CLAUDE.md | `CLAUDE.md` in worktree |
-| 3 | Global rules | `~/.claude/rules/<topic>.md` |
-| 4 | Project rules | `.claude/rules/<topic>.md` in worktree |
-| 5 | Project memory | `~/.claude/projects/<repo-root>/memory/MEMORY.md` |
+| 1 | Project CLAUDE.md | `CLAUDE.md` in worktree |
+| 2 | Project rules | `.claude/rules/<topic>.md` in worktree |
 
-Destinations 1, 3, 5 are user-private (direct edits, not committed).
-Destinations 2, 4 are committed to the feature branch via `/flow-commit --auto`.
+Both destinations are committed to the feature branch via `/flow-commit --auto`.
 
 **Plugin improvement notes** — filed as GitHub issues:
 
@@ -64,6 +60,9 @@ Learn auto-detects its context:
 | Phase 5 | State file with Code Review complete | All 3 (CLAUDE.md, context, state/plan) | `/flow-commit --auto` | Yes |
 | Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow-commit --auto` | Yes |
 | Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | Yes |
+
+All three modes route learnings to 2 repo-local destinations: Project
+CLAUDE.md and project rules. Both are committed to the repo.
 
 Standalone mode lets any project use `/flow-learn` without a FLOW
 feature in progress — just review the current session and apply

@@ -109,14 +109,14 @@ Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`). Code 
 
 Since Claude Code 2.1.63, auto-memory is shared across git worktrees of the same repository. Memory written during feature work persists at the repo-root path and survives worktree cleanup — no rescue needed.
 
-Learn is a unified tri-modal skill. It auto-detects Phase 5 (state file with Code Review complete), Maintainer (no state file, `flow-phases.json` exists), or Standalone (no state file, no `flow-phases.json`). All three modes route learnings to 5 destinations. Phase 5 adds GitHub issues and phase transitions. Maintainer commits via `/flow:flow-commit --auto`. Standalone never commits.
+Learn is a unified tri-modal skill. It auto-detects Phase 5 (state file with Code Review complete), Maintainer (no state file, `flow-phases.json` exists), or Standalone (no state file, no `flow-phases.json`). All three modes route learnings to 2 repo-local destinations. Phase 5 adds GitHub issues and phase transitions. Maintainer commits via `/flow:flow-commit --auto`. Standalone never commits.
 
-The 5 destinations split into two types — **instructions** (always loaded, authoritative) and **context** (informational):
+The 2 destinations are both committed to the repo:
 
-- **Instructions (destinations 1-4):** global CLAUDE.md (`~/.claude/CLAUDE.md`), project CLAUDE.md (`CLAUDE.md` in project), global rules (`~/.claude/rules/`), project rules (`.claude/rules/` in project). These tell Claude what to do and not do.
-- **Context (destination 5):** project memory (`~/.claude/projects/<repo-root>/memory/MEMORY.md`). This tells Claude what exists, what was decided, and what the user prefers.
+- **Project CLAUDE.md** (`CLAUDE.md` in project) — process rules, architecture, and conventions
+- **Project rules** (`.claude/rules/<topic>.md` in project) — coding anti-patterns and gotchas
 
-Private destinations (1, 3, 5) are written directly outside the repo. Repo destinations (2, 4) are committed via PR (Phase 5) or `/flow:flow-commit --auto` (Maintainer). Notes captured by `/flow:flow-note` feed into the same routing mechanism.
+Both destinations are committed via PR (Phase 5) or `/flow:flow-commit --auto` (Maintainer). Notes captured by `/flow:flow-note` feed into the same routing mechanism.
 
 Commit is also tri-modal. It auto-detects FLOW (state file exists), Maintainer (no state file, `flow-phases.json` exists), or Standalone (neither). FLOW mode adds version banners and Python auto-approval. All three modes share the same diff/message/approval/push process.
 

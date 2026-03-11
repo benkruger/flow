@@ -215,14 +215,9 @@ Claude writes observations → auto-memory (shared across worktrees)
        ↓
 Learn reads three sources (CLAUDE.md rules, conversation context, state/plan data)
        ↓
-Each learning is routed to the right destination:
-  Instructions (rules Claude must follow):
-    → Global CLAUDE.md    (process rules for all projects)
-    → Project CLAUDE.md   (project architecture — committed via PR)
-    → Global rules        (universal coding standards)
-    → Project rules       (project-specific gotchas — committed via PR)
-  Context (knowledge Claude should know):
-    → Project memory      (patterns, preferences, working knowledge)
+Each learning is routed to the right repo-local destination:
+    → Project CLAUDE.md   (process rules and architecture — committed via PR)
+    → Project rules       (coding anti-patterns and gotchas — committed via PR)
 ```
 
 The learnings don't evaporate at session end. They compound.

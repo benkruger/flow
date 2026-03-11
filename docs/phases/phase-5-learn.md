@@ -33,11 +33,8 @@ Claude decides destinations autonomously using content-type heuristics:
 
 | Destination | What goes here | Write method |
 |---|---|---|
-| Global CLAUDE.md | Process rules for all projects | Direct edit (private) |
-| Project CLAUDE.md | Project-specific architecture | Committed via PR |
-| Global rules | Universal coding standards | Direct edit (private) |
-| Project rules | Project-specific coding gotchas | Committed via PR |
-| Project memory | Patterns and observations | Direct edit (private) |
+| Project CLAUDE.md | Process rules and project architecture | Committed via PR |
+| Project rules | Coding anti-patterns and gotchas | Committed via PR |
 
 **Plugin improvement notes** — filed as GitHub issues on the plugin repo:
 - Places where the FLOW process itself should improve
@@ -65,11 +62,10 @@ Learn auto-detects its context and adjusts behavior:
 | Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow-commit --auto` | Yes | No |
 | Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | No | No |
 
-All three modes route learnings to the same 5 destinations, split into
-**instructions** (destinations 1-4, always loaded) and **context**
-(destination 5, informational). Stealth users (who exclude `.claude/`
-from git) are safe — git's own exclusion mechanism prevents excluded
-files from being staged.
+All three modes route learnings to 2 repo-local destinations: Project
+CLAUDE.md and project rules. Both are committed to the repo. Stealth
+users (who exclude `.claude/` from git) are safe — git's own exclusion
+mechanism prevents excluded files from being staged.
 
 ---
 

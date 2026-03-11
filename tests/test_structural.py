@@ -193,9 +193,8 @@ def test_n_auto_in_pytest_ini():
 def test_claude_md_has_no_lessons_learned_section():
     """CLAUDE.md must not have a Lessons Learned section.
 
-    Learnings belong in rules files (.claude/rules/ or ~/.claude/rules/),
-    not in CLAUDE.md. CLAUDE.md is for architecture, conventions, and
-    project description."""
+    Learnings belong in rules files (.claude/rules/), not in CLAUDE.md.
+    CLAUDE.md is for architecture, conventions, and project description."""
     content = (REPO_ROOT / "CLAUDE.md").read_text()
     assert "## Lessons Learned" not in content, (
         "CLAUDE.md still has a '## Lessons Learned' section — "
