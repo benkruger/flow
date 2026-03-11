@@ -1,5 +1,12 @@
 # Release Notes
 
+## v0.28.1 — Bug fixes
+
+### Fixes
+
+- Fix session log artifact missing from PRs by combining both artifact commands into one
+- Replace sleep+retry CI polling in release skill with /loop suggestion to avoid blocking the session
+
 ## v0.28.0 — Close issues in the Complete phase
 
 ### New
