@@ -95,3 +95,15 @@ When a bash block ends immediately before a closing XML-like tag
 closing ` ``` ` and the tag. pymarkdown MD031 requires a blank line
 after every fenced code block, including when the next line is a
 closing tag rather than prose.
+
+## Mid-Phase Self-Invocation
+
+When a phase skill invokes built-in skills (Skill tool) mid-phase and
+must continue after the built-in skill returns, use self-invocation —
+not HARD-GATEs. HARD-GATEs are instructional Markdown that the model
+ignores at Skill tool turn boundaries. The correct pattern: after each
+sub-step completes, invoke the skill itself as the FINAL action with
+a `--continue-step` flag. The skill's Resume Check reads a step counter
+from the state file and dispatches to the next sub-step on re-entry.
+This mirrors how phase-to-phase transitions work — the Skill invocation
+is the last action, never a mid-response call.
