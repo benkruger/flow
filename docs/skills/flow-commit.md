@@ -26,12 +26,25 @@ Reviews all pending changes before committing. You see the full diff and propose
 
 ## Commit Message Format
 
+The format is determined by the `commit_format` setting in `.flow.json`, chosen during `/flow-prime`.
+
+**Full format** (`"full"`):
+
 ```text
 Full-sentence subject line (imperative verb + what + why, ends with a period.)
 
 tl;dr
 
 One or two sentences explaining the WHY.
+
+- path/to/file.rb: What changed and why
+- path/to/other.rb: What changed and why
+```
+
+**Title-only format** (`"title-only"`):
+
+```text
+Full-sentence subject line (imperative verb + what + why, ends with a period.)
 
 - path/to/file.rb: What changed and why
 - path/to/other.rb: What changed and why
