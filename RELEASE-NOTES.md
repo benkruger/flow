@@ -1,5 +1,19 @@
 # Release Notes
 
+## v0.28.2 — Bug fixes for prompt storage, permissions, and plan autonomy
+
+### Fixes
+
+- Preserve raw start prompt in state file via `--prompt` flag, so `#N` issue
+  references survive branch-name sanitization and issues close correctly at
+  completion.
+- Add `Read(~/.claude/rules/*)` permission so code-review plugin sub-agents
+  can read user rules without prompting.
+- Add Mode Resolution to flow-plan skill so `continue=auto` in `.flow.json`
+  auto-advances Plan→Code without prompting.
+- Fix pre-commit hook blocking commits when `.flow-commit-msg` is missing
+  (#106).
+
 ## v0.28.1 — Bug fixes
 
 ### Fixes
