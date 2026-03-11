@@ -150,8 +150,9 @@ The script handles:
 - Setting `defaultMode` to `acceptEdits` (overrides existing values — FLOW requires this for state file writes without prompts)
 - Writing `.flow.json` with version marker and framework
 - Adding `.flow-states/`, `.worktrees/`, `.flow.json`, and `bin/dependencies` to `.git/info/exclude`
+- Installing a pre-commit hook at `.git/hooks/pre-commit` that blocks direct `git commit` and requires all commits to go through `/flow:flow-commit`
 
-Output JSON: `{"status": "ok", "settings_merged": true, "exclude_updated": true, "version_marker": true, "framework": "rails|python"}`
+Output JSON: `{"status": "ok", "settings_merged": true, "exclude_updated": true, "version_marker": true, "hook_installed": true, "framework": "rails|python"}`
 
 If the script returns an error, show the message and stop.
 
@@ -303,6 +304,7 @@ Report:
 - Settings written to `.claude/settings.json`
 - Version marker written to `.flow.json` (git-excluded)
 - Git excludes configured for `.flow-states/`, `.worktrees/`, `.flow.json`, and `bin/dependencies`
+- Pre-commit hook installed — blocks direct `git commit`, requires `/flow:flow-commit`
 - Changes committed
 
 Display the skills configuration as a pipe-delimited markdown table with exactly this format (not a bullet list):

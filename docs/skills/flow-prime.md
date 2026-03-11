@@ -23,10 +23,11 @@ One-time project setup. Configures workspace permissions in `.claude/settings.js
 5. Writes the merged `.claude/settings.json`
 6. Writes `.flow.json` with the current FLOW version, framework, and skills configuration
 7. Adds `.flow-states/` and `.worktrees/` to `.git/info/exclude`
-8. Installs the `code-review` plugin from the `anthropics/claude-code` marketplace
-9. Primes the project CLAUDE.md with framework conventions from `frameworks/<name>/priming.md`
-10. Creates `bin/dependencies` from the framework template
-11. Commits `.claude/settings.json` and `.flow.json`
+8. Installs a pre-commit hook at `.git/hooks/pre-commit` that blocks direct `git commit` and requires `/flow:flow-commit`
+9. Installs the `code-review` plugin from the `anthropics/claude-code` marketplace
+10. Primes the project CLAUDE.md with framework conventions from `frameworks/<name>/priming.md`
+11. Creates `bin/dependencies` from the framework template
+12. Commits `.claude/settings.json` and `.flow.json`
 
 ---
 

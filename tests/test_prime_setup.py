@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 
@@ -448,6 +449,20 @@ def test_version_marker_without_config_hash_has_no_key(tmp_path):
     assert "config_hash" not in data
 
 
+def test_config_hash_includes_setup_epoch():
+    """Changing SETUP_EPOCH changes the config hash."""
+    original_epoch = _mod.SETUP_EPOCH
+    hash_before = _mod.compute_config_hash("rails")
+
+    _mod.SETUP_EPOCH = original_epoch + 1
+    try:
+        hash_after = _mod.compute_config_hash("rails")
+    finally:
+        _mod.SETUP_EPOCH = original_epoch
+
+    assert hash_before != hash_after
+
+
 def test_happy_path_stores_config_hash(git_repo):
     """main() computes and stores config_hash in .flow.json."""
     result = _run(git_repo)
@@ -455,3 +470,58 @@ def test_happy_path_stores_config_hash(git_repo):
     data = json.loads((git_repo / ".flow.json").read_text())
     assert "config_hash" in data
     assert len(data["config_hash"]) == 12
+
+
+# --- Pre-commit hook installation ---
+
+
+def test_pre_commit_hook_created(git_repo):
+    _mod.install_pre_commit_hook(git_repo)
+    hook_path = git_repo / ".git" / "hooks" / "pre-commit"
+    assert hook_path.exists()
+
+
+def test_pre_commit_hook_executable(git_repo):
+    _mod.install_pre_commit_hook(git_repo)
+    hook_path = git_repo / ".git" / "hooks" / "pre-commit"
+    assert os.access(hook_path, os.X_OK)
+
+
+def test_pre_commit_hook_content(git_repo):
+    _mod.install_pre_commit_hook(git_repo)
+    hook_path = git_repo / ".git" / "hooks" / "pre-commit"
+    content = hook_path.read_text()
+    assert ".flow-commit-msg" in content
+    assert "exit 1" in content
+
+
+def test_pre_commit_hook_idempotent(git_repo):
+    _mod.install_pre_commit_hook(git_repo)
+    content_first = (git_repo / ".git" / "hooks" / "pre-commit").read_text()
+    _mod.install_pre_commit_hook(git_repo)
+    content_second = (git_repo / ".git" / "hooks" / "pre-commit").read_text()
+    assert content_first == content_second
+
+
+def test_pre_commit_hook_blocks_direct_commit(git_repo):
+    _mod.install_pre_commit_hook(git_repo)
+    (git_repo / "test.txt").write_text("hello")
+    subprocess.run(["git", "add", "test.txt"], cwd=git_repo, check=True)
+    result = subprocess.run(
+        ["git", "commit", "-m", "direct commit"],
+        cwd=git_repo, capture_output=True, text=True,
+    )
+    assert result.returncode != 0
+    assert "BLOCKED" in result.stderr or "BLOCKED" in result.stdout
+
+
+def test_pre_commit_hook_allows_flow_commit(git_repo):
+    _mod.install_pre_commit_hook(git_repo)
+    (git_repo / "test.txt").write_text("hello")
+    subprocess.run(["git", "add", "test.txt"], cwd=git_repo, check=True)
+    (git_repo / ".flow-commit-msg").write_text("test commit message")
+    result = subprocess.run(
+        ["git", "commit", "-F", ".flow-commit-msg"],
+        cwd=git_repo, capture_output=True, text=True,
+    )
+    assert result.returncode == 0
