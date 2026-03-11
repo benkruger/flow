@@ -55,6 +55,18 @@ via `/flow-commit`.
 
 ---
 
+## Step Advancement
+
+Steps advance via self-invocation rather than inline continuation
+directives. After each step completes, the skill invokes itself with
+`--continue-step` as its final action. This mirrors the phase-transition
+pattern (Phase 1 invoking Phase 2) and prevents context loss that occurs
+when the model treats a built-in skill return as a conversation turn
+boundary. The Resume Check section dispatches to the correct step on
+re-entry.
+
+---
+
 ## bin/flow ci Rule
 
 `bin/flow ci` runs after every fix in every step. Code Review does not

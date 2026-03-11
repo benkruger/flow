@@ -56,6 +56,17 @@ auto-fixed and the phase transition advances to Learn without asking.
 
 ---
 
+## Step Advancement
+
+Steps advance via self-invocation: after each step completes, the skill
+invokes itself with `--continue-step` as its final action. This prevents
+context loss that occurs when the model treats a built-in skill return as
+a conversation turn boundary. The `--continue-step` flag skips the
+Announce banner and phase entry update, proceeding directly to the Resume
+Check which dispatches to the next step.
+
+---
+
 ## Gates
 
 - Code phase must be complete before Code Review can start
