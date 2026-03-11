@@ -47,7 +47,7 @@ Compute `<worktree_path>` for repo-destination edits:
   state file's `worktree` field, e.g. `<project_root>/.worktrees/<branch>`)
 - **Maintainer / Standalone:** `<worktree_path>` = `<project_root>` (no worktree)
 
-Use `<worktree_path>` for all repo file edits (destinations 2 and 4).
+Use `<worktree_path>` for all repo file edits (destinations 1 and 2).
 Use `<project_root>` for `.flow-states/` paths only.
 
 ## Mode Resolution
