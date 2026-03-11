@@ -1,5 +1,19 @@
 # Release Notes
 
+## v0.24.7 — Fix Phase 4 Code Review halting bugs
+
+### Fixes
+
+- Phase 4 Code Review no longer halts between steps. Each step now
+  self-invokes via `--continue-step` instead of relying on HARD-GATEs
+  that the model ignores at Skill tool turn boundaries. Fixes #86,
+  #87, #88.
+
+### Improvements
+
+- New `Mid-Phase Self-Invocation` rule in `.claude/rules/skill-authoring.md`
+  documents the correct pattern for future skill authors.
+
 ## v0.24.6 — Auto-detect repo in bin/flow issue
 
 ### Improvements
