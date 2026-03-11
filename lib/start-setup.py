@@ -132,13 +132,13 @@ def _session_log_path(project_root):
     session_id = os.environ.get("CLAUDE_SESSION_ID")
     if not session_id:
         return None
-    slug = str(project_root).replace("/", "-").lstrip("-")
+    slug = str(project_root).replace("/", "-")
     home = Path.home()
     return str(home / ".claude" / "projects" / slug / f"{session_id}.jsonl")
 
 
 def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                       framework="rails", skills=None):
+                       framework="rails", skills=None, session_id=None):
     """Create the FLOW state file."""
     current_time = now()
     phases = {}
@@ -175,6 +175,7 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
         "current_phase": "flow-start",
         "framework": framework,
         "plan_file": None,
+        "session_id": session_id,
         "notes": [],
         "phases": phases,
     }
@@ -242,8 +243,9 @@ def main():
         _log(project_root, branch, f"git commit + push + gh pr create (exit 0)")
 
         # Create state file
+        session_id = os.environ.get("CLAUDE_SESSION_ID")
         _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                           framework=framework, skills=skills)
+                           framework=framework, skills=skills, session_id=session_id)
         _log(project_root, branch, f"create .flow-states/{branch}.json (exit 0)")
 
         # Freeze phase config for this feature
