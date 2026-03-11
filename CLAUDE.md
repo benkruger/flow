@@ -69,6 +69,8 @@ CI will fail if these are missing:
 - `lib/create-dependencies.py` — copies framework dependency template to `bin/dependencies`
 - `agents/ci-fixer.md` — custom plugin sub-agent for CI failure diagnosis and fix
 - `lib/issue.py` — creates GitHub issues via `gh` subprocess (wraps `gh issue create`; auto-detects repo from git remote when `--repo` is omitted)
+- `lib/format-pr-timings.py` — reads state file, formats phase durations as a markdown table for PR body
+- `lib/update-pr-body.py` — updates PR body: `--add-artifact` for list items, `--append-section` for collapsible/plain sections
 - `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands and file-read commands in all Bash calls)
 - `bin/flow` — dispatcher script routing subcommands to `lib/*.py`
 - `docs/reference/flow-state-schema.md` — state file schema reference
