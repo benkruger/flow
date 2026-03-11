@@ -1324,17 +1324,20 @@ def test_learning_step_4_invokes_local_permission():
 # --- flow-start bug fixes ---
 
 
-def test_phase_1_hard_gate_uses_ask_user_question():
-    """Phase 1 first HARD-GATE must use AskUserQuestion tool."""
+def test_phase_1_hard_gate_requires_rerun_with_arguments():
+    """Phase 1 first HARD-GATE must tell user to re-run with arguments."""
     content = _read_skill("flow-start")
     gate_match = re.search(
         r"<HARD-GATE>(.*?)</HARD-GATE>", content, re.DOTALL
     )
     assert gate_match, "Could not extract first HARD-GATE from flow-start"
     gate_text = gate_match.group(1)
-    assert "AskUserQuestion" in gate_text, (
-        "flow-start first HARD-GATE must explicitly name the "
-        "AskUserQuestion tool to ensure consistent prompting"
+    assert "feature name required" in gate_text.lower(), (
+        "flow-start first HARD-GATE must tell the user that a feature "
+        "name is required"
+    )
+    assert "/flow:flow-start" in gate_text, (
+        "flow-start first HARD-GATE must show the usage pattern"
     )
 
 

@@ -84,10 +84,15 @@ def _create_worktree(project_root, branch):
 
 def _initial_commit_push_pr(wt_path, branch, feature_title):
     """Make empty commit, push, and create PR. Returns (pr_url, pr_number)."""
-    _run_cmd(
-        ["git", "commit", "--allow-empty", "-m", f"Start {branch} branch"],
-        wt_path, "commit",
-    )
+    commit_msg_path = wt_path / ".flow-commit-msg"
+    try:
+        commit_msg_path.write_text(f"Start {branch} branch")
+        _run_cmd(
+            ["git", "commit", "--allow-empty", "-F", ".flow-commit-msg"],
+            wt_path, "commit",
+        )
+    finally:
+        commit_msg_path.unlink(missing_ok=True)
     _run_cmd(
         ["git", "push", "-u", "origin", branch],
         wt_path, "push",

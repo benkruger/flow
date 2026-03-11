@@ -14,7 +14,9 @@ model: haiku
 /flow:flow-start --manual invoice pdf export
 ```
 
-Arguments become the feature name (flags are not included in the name). Words are joined with hyphens:
+**Feature name resolution:** Strip flags (`--auto`, `--manual`) from the arguments. ALL remaining words are the feature name — pass them through verbatim. Do not filter, rephrase, summarize, or ask the user to confirm. The `start-setup` script handles sanitization (special characters, casing, truncation) automatically.
+
+Words are joined with hyphens:
 
 - Branch: `invoice-pdf-export`
 - Worktree: `.worktrees/invoice-pdf-export`
@@ -23,13 +25,12 @@ Arguments become the feature name (flags are not included in the name). Words ar
 Branch names are capped at **32 characters**. If the hyphenated name exceeds 32 characters, truncate at the last whole word (hyphen boundary) that fits. Strip any trailing hyphen. Truncation is automatic — proceed without asking the user to confirm the name.
 
 <HARD-GATE>
-Do NOT proceed if the feature name is missing. Use the AskUserQuestion tool
-to prompt the user. The feature name goes in the "Other" free-text option
-(always available). Example prompt:
+Do NOT proceed if no arguments were provided after the command (excluding flags).
+Output this error message and stop:
 
-> "What is the feature name? Type it as space-separated words (e.g. invoice pdf export)."
+> "Feature name required. Usage: `/flow:flow-start <feature name words>`"
 
-If the user cancels, stop. Otherwise use their response as the feature name.
+No interactive prompt. The user re-runs the command with arguments.
 </HARD-GATE>
 
 ## Mode Resolution

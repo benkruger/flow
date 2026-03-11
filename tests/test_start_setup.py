@@ -551,3 +551,27 @@ def test_prompt_flag_omitted_falls_back_to_feature_words(git_repo_with_remote):
     )
     state = json.loads(state_path.read_text())
     assert state["prompt"] == "some feature"
+
+
+# --- Pre-commit hook compatibility (#108) ---
+
+
+def _install_pre_commit_hook(repo):
+    """Install the FLOW pre-commit hook in a test repo."""
+    spec = importlib.util.spec_from_file_location(
+        "prime_setup", LIB_DIR / "prime-setup.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.install_pre_commit_hook(repo)
+
+
+def test_initial_commit_succeeds_with_pre_commit_hook(git_repo_with_remote):
+    """Start-setup succeeds when the pre-commit hook is installed (#108)."""
+    _install_pre_commit_hook(git_repo_with_remote)
+    result = _run_no_gh(git_repo_with_remote, "hook test")
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+    wt_path = git_repo_with_remote / ".worktrees" / "hook-test"
+    assert not (wt_path / ".flow-commit-msg").exists()
