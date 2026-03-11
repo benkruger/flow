@@ -151,6 +151,7 @@ PLACEHOLDER_SUBS = {
     "<plan_file_path>": ".claude/plans/test-plan.md",
     "<issue_title>": "Test issue title",
     "<issue_body>": "Test issue body",
+    "<session_log_path>": "~/.claude/projects/-tmp-test/abc123.jsonl",
 }
 
 

@@ -34,7 +34,7 @@ blocks — it records warnings for the confirmation step.
 2. Get the current branch: run `git branch --show-current`.
 3. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file exists: extract `feature`, `branch`, `worktree`, `pr_number`,
-     `pr_url`, and `cumulative_seconds`. Check `phases.flow-learn.status` — if
+     `pr_url`, `session_id`, and `cumulative_seconds`. Check `phases.flow-learn.status` — if
      not `"complete"`, record warning "Phase 5 not complete (status: <actual status>)."
    - If the file does not exist: record warning "No state file found for
      branch '<branch>'."
@@ -203,11 +203,33 @@ If no warnings:
 
 ### Step 6 — Archive artifacts to PR
 
-Archive the state file and session log to the PR body before merging.
-These files are deleted during cleanup, so this is the last chance to
-preserve them.
+Archive key artifacts to the PR body before merging. These files are
+deleted during cleanup, so this is the last chance to preserve them.
 
-Use the Read tool to read `<project_root>/.flow-states/<branch>.json` and
+**Phase Timings:** Generate the phase timings table and append it to
+the PR body as a non-collapsible section:
+
+```bash
+bin/flow format-pr-timings --state-file <project_root>/.flow-states/<branch>.json --output <project_root>/.flow-states/<branch>-timings.md
+```
+
+```bash
+bin/flow update-pr-body --pr <pr_number> --append-section --heading "Phase Timings" --content-file <project_root>/.flow-states/<branch>-timings.md --no-collapse
+```
+
+**Session link:** If `session_id` from the state file is not null,
+add the session log artifact. Construct the path:
+`~/.claude/projects/<slug>/<session_id>.jsonl` where `<slug>` is the
+project root path with `/` replaced by `-`.
+
+```bash
+bin/flow update-pr-body --pr <pr_number> --add-artifact --label "Session log" --value <session_log_path>
+```
+
+If `session_id` is null, skip this step.
+
+**State file and session log:** Use the Read tool to read
+`<project_root>/.flow-states/<branch>.json` and
 `<project_root>/.flow-states/<branch>.log`.
 
 Append the state file to the PR body:
@@ -222,7 +244,7 @@ Append the session log to the PR body:
 bin/flow update-pr-body --pr <pr_number> --append-section --heading "Session Log" --summary ".flow-states/<branch>.log" --content-file <project_root>/.flow-states/<branch>.log --format text
 ```
 
-If either file does not exist, skip that append — do not fail.
+If any file does not exist, skip that step — do not fail.
 
 ### Step 7 — Merge PR
 
