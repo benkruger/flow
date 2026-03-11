@@ -19,7 +19,7 @@ stop immediately and show the error to the user.
 3. Check `phases.flow-start.status` in the JSON.
    - If not `"complete"`: STOP. "BLOCKED: Phase 1: Start must be
      complete. Run /flow:flow-start first."
-4. Note `pr_number` from the state file — you will need it in Step 3.
+4. Note `pr_number` and `prompt` from the state file — you will need them in Steps 1 and 3.
 </HARD-GATE>
 
 Keep the project root, branch, state data, and `pr_number` from the gate
@@ -83,17 +83,13 @@ Skip to "Done — Update state and complete phase" to finish the phase.
 
 ---
 
-## Step 1 — Ask what we're building
+## Step 1 — Feature description
 
-Print this question as text in your response — do not use AskUserQuestion.
-Then stop and wait for the user to respond before continuing:
+Use the `prompt` from the state file as the feature description. This is the
+full text the user passed to `/flow:flow-start` — it describes what to build.
 
-> What are we building? Describe the feature and what success looks like.
-
-If the user says the description is in the PR, read the PR description
-using `gh pr view` and use that as input instead.
-
-The user's response is the input for the planning phase.
+Do not ask "What are we building?" — the prompt is the input for the planning
+phase. Proceed directly to Step 2.
 
 ---
 
