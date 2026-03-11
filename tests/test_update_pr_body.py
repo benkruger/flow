@@ -365,3 +365,97 @@ def test_cli_append_section_missing_content_file(tmp_path):
     assert result.returncode == 0
     data = json.loads(result.stdout)
     assert data["status"] == "error"
+
+
+# --- _build_plain_section ---
+
+
+def test_build_plain_section_returns_heading_and_content():
+    """Plain section has heading, content, and end sentinel comment."""
+    result = _mod._build_plain_section("Phase Timings", "| Phase | Duration |")
+    assert "## Phase Timings" in result
+    assert "| Phase | Duration |" in result
+    assert "<!-- end:Phase Timings -->" in result
+    assert "<details>" not in result
+
+
+# --- _append_plain_section_to_body ---
+
+
+def test_append_plain_section_appends_to_body():
+    """Appends a plain section to the end of the body."""
+    body = "## What\n\nFeature Title."
+    result = _mod._append_plain_section_to_body(
+        body, "Phase Timings", "| Phase | Duration |"
+    )
+    assert body in result
+    assert "## Phase Timings" in result
+    assert "<!-- end:Phase Timings -->" in result
+
+
+def test_append_plain_section_replaces_existing():
+    """Replaces an existing plain section with the same heading."""
+    body = (
+        "## What\n\nFeature Title.\n\n"
+        "## Phase Timings\n\nold content\n\n<!-- end:Phase Timings -->"
+    )
+    result = _mod._append_plain_section_to_body(
+        body, "Phase Timings", "new content"
+    )
+    assert "old content" not in result
+    assert "new content" in result
+    assert result.count("## Phase Timings") == 1
+
+
+def test_append_plain_section_idempotent():
+    """Calling twice with same content produces same result."""
+    body = "## What\n\nFeature Title."
+    first = _mod._append_plain_section_to_body(
+        body, "Phase Timings", "| Phase | Duration |"
+    )
+    second = _mod._append_plain_section_to_body(
+        first, "Phase Timings", "| Phase | Duration |"
+    )
+    assert first == second
+    assert second.count("## Phase Timings") == 1
+
+
+# --- CLI end-to-end: --no-collapse ---
+
+
+def test_cli_no_collapse_end_to_end(tmp_path):
+    """CLI --append-section --no-collapse renders plain markdown, not details."""
+    stub_dir = tmp_path / "bin"
+    stub_dir.mkdir()
+    gh_stub = stub_dir / "gh"
+    gh_stub.write_text(
+        '#!/bin/bash\n'
+        'if [[ "$1" == "pr" && "$2" == "view" ]]; then\n'
+        '    echo "## What"\n'
+        '    echo ""\n'
+        '    echo "Feature Title."\n'
+        'elif [[ "$1" == "pr" && "$2" == "edit" ]]; then\n'
+        '    echo "ok"\n'
+        'fi\n'
+    )
+    gh_stub.chmod(0o755)
+
+    content_file = tmp_path / "timings.md"
+    content_file.write_text("| Phase | Duration |\n|-------|----------|")
+
+    env = os.environ.copy()
+    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [sys.executable, SCRIPT,
+         "--pr", "42",
+         "--append-section",
+         "--heading", "Phase Timings",
+         "--content-file", str(content_file),
+         "--no-collapse"],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+    assert data["action"] == "append_section"
