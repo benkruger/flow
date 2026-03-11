@@ -51,14 +51,15 @@ included in the confirmation message. Skipped by default.
 
 ### 6. Merge PR
 
-Squash-merge the PR via `gh pr merge --squash --delete-branch`. The
-remote branch is deleted as part of the merge.
+Squash-merge the PR via `gh pr merge --squash`. Branch deletion is
+handled by the cleanup script in the next step.
 
 ### 7. Run cleanup
 
-`bin/flow cleanup` handles all four resources from the project root:
-worktree removal, state file deletion, log file deletion, and CI sentinel
-deletion. Each step is best-effort — if one fails, the rest still run.
+`bin/flow cleanup` handles all resources from the project root:
+remote and local branch deletion, worktree removal, state file deletion,
+log file deletion, and CI sentinel deletion. Each step is best-effort —
+if one fails, the rest still run.
 
 This resets the SessionStart hook — the next session starts clean.
 

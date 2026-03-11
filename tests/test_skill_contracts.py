@@ -268,6 +268,42 @@ def test_complete_uses_ci_fixer_subagent():
     )
 
 
+def test_complete_merge_command_no_delete_branch():
+    """Complete skill merge command must not include --delete-branch."""
+    content = _read_skill("flow-complete")
+    # Find the gh pr merge bash block
+    in_bash = False
+    for line in content.splitlines():
+        if line.strip() == "```bash":
+            in_bash = True
+            continue
+        if line.strip() == "```" and in_bash:
+            in_bash = False
+            continue
+        if in_bash and "gh pr merge" in line:
+            assert "--delete-branch" not in line, (
+                "Complete skill merge command must not use --delete-branch "
+                "— cleanup.py handles branch deletion"
+            )
+
+
+def test_complete_does_not_contain_admin_flag():
+    """Complete skill must never mention the --admin flag."""
+    content = _read_skill("flow-complete")
+    assert "--admin" not in content, (
+        "skills/flow-complete/SKILL.md must not contain --admin"
+    )
+
+
+def test_complete_navigates_to_project_root():
+    """Complete skill must navigate to project root before running commands."""
+    content = _read_skill("flow-complete")
+    assert "cd <project_root>" in content, (
+        "Complete skill must include cd <project_root> to enforce "
+        "running from the project root"
+    )
+
+
 def test_ci_fixer_agent_exists():
     """agents/ci-fixer.md must exist with required frontmatter fields."""
     agent_file = REPO_ROOT / "agents" / "ci-fixer.md"

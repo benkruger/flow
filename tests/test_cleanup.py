@@ -17,14 +17,12 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
-def _run(project_root, branch, worktree, pr=None, delete_remote=False):
+def _run(project_root, branch, worktree, pr=None):
     """Run cleanup.py via subprocess."""
     args = [sys.executable, SCRIPT, str(project_root),
             "--branch", branch, "--worktree", worktree]
     if pr:
         args.extend(["--pr", str(pr)])
-    if delete_remote:
-        args.append("--delete-remote")
     result = subprocess.run(args, capture_output=True, text=True)
     return result
 
@@ -119,13 +117,11 @@ def test_cleanup_skips_missing_frozen_phases(git_repo):
     assert data["steps"]["frozen_phases"] == "skipped"
 
 
-def test_cleanup_skips_pr_and_remote_by_default(git_repo):
+def test_cleanup_skips_pr_by_default(git_repo):
     wt_rel = _setup_feature(git_repo)
     result = _run(git_repo, "test-feature", wt_rel)
     data = json.loads(result.stdout)
     assert data["steps"]["pr_close"] == "skipped"
-    assert data["steps"]["remote_branch"] == "skipped"
-    assert data["steps"]["local_branch"] == "skipped"
 
 
 def test_cleanup_deletes_ci_sentinel(git_repo):
@@ -158,8 +154,8 @@ def test_cleanup_full_happy_path(git_repo):
     # All 7 step results
     assert data["steps"]["pr_close"] == "skipped"
     assert data["steps"]["worktree"] == "removed"
-    assert data["steps"]["remote_branch"] == "skipped"
-    assert data["steps"]["local_branch"] == "skipped"
+    assert data["steps"]["remote_branch"].startswith("failed:")  # no remote
+    assert data["steps"]["local_branch"] == "deleted"
     assert data["steps"]["state_file"] == "deleted"
     assert data["steps"]["log_file"] == "deleted"
     assert data["steps"]["ci_sentinel"] == "skipped"
@@ -204,6 +200,28 @@ def test_cleanup_skips_missing_log_file(git_repo):
 # --- Abort mode (--delete-remote --pr) ---
 
 
+def test_cleanup_always_deletes_local_branch(git_repo):
+    """Branch deletion happens without --delete-remote flag."""
+    wt_rel = _setup_feature(git_repo)
+    # Remove worktree first so branch can be deleted
+    subprocess.run(
+        ["git", "worktree", "remove", wt_rel, "--force"],
+        cwd=str(git_repo), capture_output=True, check=True,
+    )
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["local_branch"] == "deleted"
+
+
+def test_cleanup_always_attempts_remote_branch(git_repo):
+    """Remote branch deletion is attempted without --delete-remote flag."""
+    wt_rel = _setup_feature(git_repo)
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    # No remote configured, so push --delete will fail
+    assert data["steps"]["remote_branch"].startswith("failed:")
+
+
 def test_abort_deletes_local_branch(git_repo):
     wt_rel = _setup_feature(git_repo)
     # Remove worktree first so branch can be deleted
@@ -211,14 +229,14 @@ def test_abort_deletes_local_branch(git_repo):
         ["git", "worktree", "remove", wt_rel, "--force"],
         cwd=str(git_repo), capture_output=True, check=True,
     )
-    result = _run(git_repo, "test-feature", wt_rel, delete_remote=True)
+    result = _run(git_repo, "test-feature", wt_rel)
     data = json.loads(result.stdout)
     assert data["steps"]["local_branch"] == "deleted"
 
 
 def test_abort_remote_branch_fails_gracefully(git_repo):
     wt_rel = _setup_feature(git_repo)
-    result = _run(git_repo, "test-feature", wt_rel, delete_remote=True)
+    result = _run(git_repo, "test-feature", wt_rel)
     data = json.loads(result.stdout)
     # No remote configured, so push --delete will fail
     assert data["steps"]["remote_branch"].startswith("failed:")
@@ -325,3 +343,62 @@ def test_ci_sentinel_unlink_failure(git_repo, monkeypatch):
     monkeypatch.setattr(PosixPath, "unlink", _fail_third_unlink)
     steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
     assert steps["ci_sentinel"].startswith("failed:")
+
+
+# --- tmp/ directory cleanup ---
+
+
+def test_cleanup_removes_worktree_tmp_in_flow_repo(git_repo):
+    """tmp/ in worktree is removed when flow-phases.json exists."""
+    wt_rel = _setup_feature(git_repo)
+    # Mark as FLOW repo
+    (git_repo / "flow-phases.json").write_text("{}")
+    # Create tmp/ inside the worktree
+    wt_tmp = git_repo / wt_rel / "tmp"
+    wt_tmp.mkdir()
+    (wt_tmp / "release-notes-v1.0.md").write_text("notes")
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["worktree_tmp"] == "removed"
+
+
+def test_cleanup_skips_tmp_without_flow_phases(git_repo):
+    """tmp/ in worktree is skipped when flow-phases.json does not exist."""
+    wt_rel = _setup_feature(git_repo)
+    # No flow-phases.json — not a FLOW repo
+    wt_tmp = git_repo / wt_rel / "tmp"
+    wt_tmp.mkdir()
+    (wt_tmp / "some-file.txt").write_text("data")
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["worktree_tmp"] == "skipped"
+
+
+def test_cleanup_skips_missing_worktree_tmp(git_repo):
+    """No tmp/ in worktree reports skipped."""
+    wt_rel = _setup_feature(git_repo)
+    (git_repo / "flow-phases.json").write_text("{}")
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["worktree_tmp"] == "skipped"
+
+
+def test_cleanup_tmp_rmtree_failure(git_repo, monkeypatch):
+    """rmtree failure is reported gracefully."""
+    import shutil
+    wt_rel = _setup_feature(git_repo)
+    (git_repo / "flow-phases.json").write_text("{}")
+    wt_tmp = git_repo / wt_rel / "tmp"
+    wt_tmp.mkdir()
+    (wt_tmp / "file.txt").write_text("data")
+
+    original_rmtree = shutil.rmtree
+
+    def _fail_rmtree(path, *args, **kwargs):
+        if str(path).endswith("/tmp"):
+            raise PermissionError("no permission")
+        return original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", _fail_rmtree)
+    steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
+    assert steps["worktree_tmp"].startswith("failed:")

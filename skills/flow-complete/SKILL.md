@@ -45,6 +45,14 @@ or re-run git commands to gather the same information.
 Carry any warnings forward to the confirmation step in Step 5.
 
 Resolve the mode using the Mode Resolution rules above.
+
+Navigate to the project root now — all subsequent steps must run from
+the project root, not from inside the worktree:
+
+```bash
+cd <project_root>
+```
+
 </SOFT-GATE>
 
 ## Announce
@@ -221,13 +229,14 @@ If either file does not exist, skip that append — do not fail.
 Merge the PR via squash merge:
 
 ```bash
-gh pr merge <pr_number> --squash --delete-branch
+gh pr merge <pr_number> --squash
 ```
 
 If the merge succeeds, report to the user:
 > "PR #<pr_number> merged into main."
 
-If the merge fails, stop and report the error.
+If the merge fails, stop and report the error to the user. Do not retry
+the merge command with any additional flags or elevated privileges.
 
 ### Step 8 — Run cleanup script
 
@@ -276,7 +285,8 @@ Output the following banner in your response (not via Bash) inside a fenced code
 
 ## Rules
 
-- Never run from inside the worktree — always navigate to project root first
+- Never run from inside the worktree — the SOFT-GATE navigates to project root
+- If the merge fails, never retry with additional flags or elevated privileges — report to the user and stop
 - Confirm with the user only when mode is **manual**
 - State file deletion is what resets the session hook — do not skip it
 - Every step after the merge (Steps 8-9) is best-effort — if one fails, continue to the next

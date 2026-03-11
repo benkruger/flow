@@ -79,3 +79,19 @@ always audit CLAUDE.md explicitly — it is hand-maintained and
 frequently contains command references, phase name prose, and
 convention entries that don't surface in automated grep-based scope
 analysis. Missed CLAUDE.md references cause user-visible doc drift.
+
+## Cleanup Script Step Ordering
+
+When adding a new step to `lib/cleanup.py` that operates on files
+inside the worktree, place it BEFORE the worktree removal step.
+The `git worktree remove` call deletes the entire directory tree —
+any step that reads or removes worktree-internal files must precede
+it or the target path will not exist.
+
+## Fenced Code Blocks Before Closing Tags
+
+When a bash block ends immediately before a closing XML-like tag
+(`</SOFT-GATE>`, `</HARD-GATE>`), add a blank line between the
+closing ` ``` ` and the tag. pymarkdown MD031 requires a blank line
+after every fenced code block, including when the next line is a
+closing tag rather than prose.
