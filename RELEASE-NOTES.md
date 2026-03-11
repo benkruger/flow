@@ -6,8 +6,8 @@
 
 - Phase 4 Code Review no longer halts between steps. Each step now
   self-invokes via `--continue-step` instead of relying on HARD-GATEs
-  that the model ignores at Skill tool turn boundaries. Fixes #86,
-  #87, #88.
+  that the model ignores at Skill tool turn boundaries.
+  Fixes #86, #87, #88.
 
 ### Improvements
 
