@@ -1459,10 +1459,9 @@ def test_code_review_has_resume_check():
     )
 
 
-def test_code_review_steps_record_completion():
-    """Each Code Review step must record completion via set-timestamp --set code_review_step=N."""
+def _code_review_steps():
+    """Yield (step_num, step_text) for each Code Review step section."""
     content = _read_skill("flow-code-review")
-
     for step_num in range(1, 5):
         if step_num < 4:
             next_header = f"## Step {step_num + 1}"
@@ -1473,26 +1472,21 @@ def test_code_review_steps_record_completion():
             content, re.DOTALL,
         )
         assert step_match, f"Could not find Step {step_num} in flow-code-review/SKILL.md"
-        assert f"code_review_step={step_num}" in step_match.group(1), (
+        yield step_num, step_match.group(1)
+
+
+def test_code_review_steps_record_completion():
+    """Each Code Review step must record completion via set-timestamp --set code_review_step=N."""
+    for step_num, step_text in _code_review_steps():
+        assert f"code_review_step={step_num}" in step_text, (
             f"Step {step_num} must contain 'code_review_step={step_num}' marker"
         )
 
 
 def test_code_review_steps_self_invoke():
     """Each Code Review step must self-invoke flow:flow-code-review --continue-step."""
-    content = _read_skill("flow-code-review")
-
-    for step_num in range(1, 5):
-        if step_num < 4:
-            next_header = f"## Step {step_num + 1}"
-        else:
-            next_header = "## Back Navigation|## Done"
-        step_match = re.search(
-            rf"## Step {step_num}.*?\n(.*?)(?=\n(?:{next_header}))",
-            content, re.DOTALL,
-        )
-        assert step_match, f"Could not find Step {step_num} in flow-code-review/SKILL.md"
-        assert "flow:flow-code-review --continue-step" in step_match.group(1), (
+    for step_num, step_text in _code_review_steps():
+        assert "flow:flow-code-review --continue-step" in step_text, (
             f"Step {step_num} must self-invoke via 'flow:flow-code-review --continue-step'"
         )
 
