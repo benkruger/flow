@@ -1,5 +1,14 @@
 # Release Notes
 
+## v0.28.6 — Worktree path safety hook
+
+- Add PreToolUse hook (`validate-worktree-paths.py`) that blocks Edit, Write,
+  Read, Glob, and Grep calls targeting the main repo path when working inside a
+  FLOW worktree — prevents edits from accidentally landing on main instead of
+  the feature branch
+- Add `gh issue view` permission to settings.json so flow-plan can fetch
+  referenced GitHub issues during planning
+
 ## v0.28.5 — Plan phase fetches referenced GitHub issues
 
 - Plan Step 1 now scans the prompt for `#N` patterns and fetches each
