@@ -1,5 +1,26 @@
 # Release Notes
 
+## v0.28.0 — Close issues in the Complete phase
+
+### New
+
+- **Issue auto-close**: Complete phase now closes GitHub issues referenced
+  in the `/flow-start` prompt (`#N` patterns) after merge via `gh issue close`
+- **Prompt-driven planning**: Plan phase reads the start prompt directly from
+  the state file instead of asking "What are we building?" — seamless
+  Start→Plan transition
+- **New state field**: `prompt` stores the full `/flow-start` text for use by
+  Plan and Complete
+- **New script**: `lib/close-issues.py` extracts issue references and closes
+  them with best-effort error handling
+
+### Improvements
+
+- **Branch name sanitization**: Special characters (`#`, `@`, `$`) are stripped
+  from branch names derived from the start prompt
+- **Skill authoring rule**: Skip/jump targets must be audited for intent when
+  inserting new steps (not just mechanically incremented)
+
 ## v0.27.2 — Fix Stop hook permission denied
 
 ### Fixes
