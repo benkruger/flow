@@ -14,6 +14,7 @@ import json
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 
 def extract_issue_numbers(prompt):
@@ -50,7 +51,7 @@ def main():
     parser.add_argument("--state-file", required=True, help="Path to state JSON file")
     args = parser.parse_args()
 
-    state = json.loads(open(args.state_file).read())
+    state = json.loads(Path(args.state_file).read_text())
     prompt = state.get("prompt", "")
     issue_numbers = extract_issue_numbers(prompt)
     result = close_issues(issue_numbers)
