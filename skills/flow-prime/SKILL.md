@@ -135,9 +135,28 @@ For **abort** and **complete** (single mode), ask one AskUserQuestion each:
 > - **Auto (Recommended)** — "Skip confirmation prompt"
 > - **Manual** — "Require confirmation prompt"
 
-Store the result as `skills_dict` for Step 3.
+Store the result as `skills_dict` for Step 4.
 
-### Step 3 — Run prime setup script
+### Step 3 — Choose commit message format
+
+FLOW supports two commit message formats:
+
+- **Title only** — subject line + file list (minimal, no tl;dr section)
+- **Full** — subject + tl;dr + explanation + file list (detailed seven-element format)
+
+Ask the user which format to use with AskUserQuestion:
+
+> "What commit message format should FLOW use?"
+>
+> - **Title only** — "Subject line + file list, no tl;dr section"
+> - **Full format** — "Subject + tl;dr + explanation + file list (detailed)"
+
+Store the result as `commit_format`:
+
+- "Title only" → `"title-only"`
+- "Full format" → `"full"`
+
+### Step 4 — Run prime setup script
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --framework <framework>
@@ -222,7 +241,7 @@ All permissions (universal + all framework sets) for reference:
 }
 ```
 
-### Step 4 — Install code-review plugin
+### Step 5 — Install code-review plugin
 
 Check if the `code-review` plugin is already available:
 
@@ -244,19 +263,20 @@ claude plugin install code-review@claude-code-plugins
 
 If both are already present, skip silently.
 
-### Step 5 — Write skills config to .flow.json
+### Step 6 — Write skills config to .flow.json
 
 After the prime-setup script writes `.flow.json`, read it back with the Read tool,
-add the `skills` key from `skills_dict` (Step 2), and write the file back with
-the Write tool. The result should look like:
+add the `skills` key from `skills_dict` (Step 2) and the `commit_format` key
+from Step 3, and write the file back with the Write tool. The result should
+look like:
 
 ```json
-{"flow_version": "0.16.4", "framework": "python", "config_hash": "2c54c5cd6972", "skills": {"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}}
+{"flow_version": "0.16.4", "framework": "python", "config_hash": "2c54c5cd6972", "commit_format": "full", "skills": {"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}}
 ```
 
 The `config_hash` field is a 12-character hex digest stored by `prime-setup`. When the plugin version changes, `/flow-start` recomputes the hash and compares against the stored value to decide whether re-prime is needed. If the config hasn't changed, the version is auto-upgraded without re-running `/flow-prime`.
 
-### Step 6 — Prime project CLAUDE.md
+### Step 7 — Prime project CLAUDE.md
 
 If the project has a `CLAUDE.md`, prime it with framework conventions:
 
@@ -270,7 +290,7 @@ contains framework conventions between `<!-- FLOW:BEGIN -->` and
 silently — the user can prime later by running init again after
 creating a CLAUDE.md.
 
-### Step 7 — Create bin/dependencies
+### Step 8 — Create bin/dependencies
 
 Create the dependency updater script from the framework template:
 
@@ -282,7 +302,7 @@ Parse the JSON output. If `"status": "ok"`, `bin/dependencies` was
 created. If `"status": "skipped"`, the file already exists (user may
 have customized it). If `"status": "error"`, report to the user.
 
-### Step 8 — Commit and push
+### Step 9 — Commit and push
 
 Check if anything is staged by running `git status`. If the output contains "nothing to commit", skip the commit and push — go straight to Done.
 
