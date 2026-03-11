@@ -6,6 +6,7 @@ Two modes:
 
 Usage:
   bin/flow update-pr-body --pr <N> --add-artifact --label "Plan file" --value "<path>"
+  bin/flow update-pr-body --pr <N> --add-artifact --label "Plan file" --value "<path>" --label "Session log" --value "<path>"
   bin/flow update-pr-body --pr <N> --append-section --heading "State File" --summary "<name>" --content-file <path> --format json
 
 Output (JSON to stdout):
@@ -136,8 +137,10 @@ def main():
     mode.add_argument("--append-section", action="store_true",
                       help="Append collapsible details section")
 
-    parser.add_argument("--label", help="Artifact label (for --add-artifact)")
-    parser.add_argument("--value", help="Artifact value (for --add-artifact)")
+    parser.add_argument("--label", action="append", default=[],
+                        help="Artifact label (for --add-artifact, repeatable)")
+    parser.add_argument("--value", action="append", default=[],
+                        help="Artifact value (for --add-artifact, repeatable)")
     parser.add_argument("--heading", help="Section heading (for --append-section)")
     parser.add_argument("--summary", help="Details summary (for --append-section)")
     parser.add_argument("--content-file", help="Path to content file (for --append-section)")
@@ -149,9 +152,17 @@ def main():
 
     try:
         if args.add_artifact:
+            if len(args.label) != len(args.value):
+                print(json.dumps({
+                    "status": "error",
+                    "message": f"Mismatched --label/--value count: "
+                               f"{len(args.label)} labels, {len(args.value)} values",
+                }))
+                return
             body = _gh_get_body(args.pr)
-            new_body = _add_artifact_to_body(body, args.label, args.value)
-            _gh_set_body(args.pr, new_body)
+            for label, value in zip(args.label, args.value):
+                body = _add_artifact_to_body(body, label, value)
+            _gh_set_body(args.pr, body)
             print(json.dumps({"status": "ok", "action": "add_artifact"}))
         else:
             content_path = args.content_file

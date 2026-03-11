@@ -86,6 +86,18 @@ def test_add_artifact_to_body_creates_section_if_missing():
     assert "- **Session log**: `/path/log.jsonl`" in result
 
 
+# --- _add_artifact_to_body: multiple pairs ---
+
+
+def test_add_artifact_multiple_pairs():
+    """Calling _add_artifact_to_body twice adds both artifacts to the body."""
+    body = "## What\n\nFeature Title.\n\n## Artifacts\n"
+    body = _mod._add_artifact_to_body(body, "Plan file", "/plans/x.md")
+    body = _mod._add_artifact_to_body(body, "Session log", "/logs/y.jsonl")
+    assert "- **Plan file**: `/plans/x.md`" in body
+    assert "- **Session log**: `/logs/y.jsonl`" in body
+
+
 # --- _build_details_block ---
 
 
@@ -175,6 +187,66 @@ def test_cli_add_artifact_end_to_end(tmp_path):
     data = json.loads(result.stdout)
     assert data["status"] == "ok"
     assert data["action"] == "add_artifact"
+
+
+def test_cli_add_multiple_artifacts_end_to_end(tmp_path):
+    """CLI --add-artifact with repeated --label/--value adds both artifacts."""
+    stub_dir = tmp_path / "bin"
+    stub_dir.mkdir()
+    gh_stub = stub_dir / "gh"
+    # Capture the body passed to `gh pr edit` so we can verify both artifacts
+    body_file = tmp_path / "captured_body.txt"
+    gh_stub.write_text(
+        '#!/bin/bash\n'
+        'if [[ "$1" == "pr" && "$2" == "view" ]]; then\n'
+        '    echo "## What"\n'
+        '    echo ""\n'
+        '    echo "Feature Title."\n'
+        'elif [[ "$1" == "pr" && "$2" == "edit" ]]; then\n'
+        f'    echo "$5" > "{body_file}"\n'
+        '    echo "ok"\n'
+        'fi\n'
+    )
+    gh_stub.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [sys.executable, SCRIPT,
+         "--pr", "42",
+         "--add-artifact",
+         "--label", "Plan file",
+         "--value", "/plans/x.md",
+         "--label", "Session log",
+         "--value", "/logs/y.jsonl"],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+    assert data["action"] == "add_artifact"
+
+    captured = body_file.read_text()
+    assert "Plan file" in captured
+    assert "Session log" in captured
+
+
+def test_cli_add_artifact_mismatched_label_value_count(tmp_path):
+    """CLI returns error when --label count does not match --value count."""
+    result = subprocess.run(
+        [sys.executable, SCRIPT,
+         "--pr", "42",
+         "--add-artifact",
+         "--label", "Plan file",
+         "--value", "/plans/x.md",
+         "--label", "Session log"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "error"
+    assert "Mismatched" in data["message"]
 
 
 # --- CLI end-to-end: --append-section ---
