@@ -1,5 +1,16 @@
 # Release Notes
 
+## v0.26.0 — Repo-only Learn phase
+
+- Learn phase reduced from 5 destinations to 2 repo-local destinations
+  (Project CLAUDE.md and project rules). Eliminates all writes to
+  `~/.claude/` paths, removing unavoidable permission prompts that
+  fired every session.
+- New contract tests enforce repo-only routing — private paths are
+  permanently blocked.
+- New `skill-authoring.md` rule: grep for old numbers when renumbering
+  destinations.
+
 ## v0.25.0 — PR body archives phase timings and session link
 
 ### New features
