@@ -37,12 +37,12 @@ Start → Plan → Code → Code Review → Learn → Complete
 
 | Phase | Command | Model | What happens |
 |-------|---------|-------|-------------|
-| **1: Start** | `/flow-start <name>` | Haiku | New worktree, push branch, open PR, `bin/ci` baseline, upgrade dependencies, `bin/ci` green — Sonnet sub-agent fixes CI failures |
-| **2: Plan** | `/flow-plan` | **Opus** | Native plan mode — explore codebase, design approach, produce ordered tasks with risks |
+| **1: Start** | `/flow-start <prompt>` | Haiku | New worktree, push branch, open PR, `bin/ci` baseline, upgrade dependencies, `bin/ci` green — Sonnet sub-agent fixes CI failures |
+| **2: Plan** | `/flow-plan` | **Opus** | Reads the start prompt as feature description, enters native plan mode — explore codebase, design approach, produce ordered tasks with risks |
 | **3: Code** | `/flow-code` | **Opus** | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
 | **4: Code Review** | `/flow-code-review` | **Opus** | Four lenses — clarity (`/simplify`), correctness (`/review`), safety (`/security-review`), and CLAUDE.md compliance (`code-review:code-review` plugin) |
 | **5: Learn** | `/flow-learn` | Sonnet | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
-| **6: Complete** | `/flow-complete` | Haiku | PR merged, worktree removed, state file deleted, feature done |
+| **6: Complete** | `/flow-complete` | Haiku | Close issues referenced in prompt, PR merged, worktree removed, state file deleted, feature done |
 
 ---
 

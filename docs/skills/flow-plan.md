@@ -18,7 +18,8 @@ former Research, Design, and Plan phases with a single integrated phase.
 
 ## What It Does
 
-1. Asks what you're building and what success looks like
+1. Reads the feature description from the `prompt` field in the state file
+   (the full text passed to `/flow-start`)
 2. Enters Claude Code's native plan mode (`EnterPlanMode`)
 3. In plan mode: explores the codebase, identifies risks, designs the
    approach, and writes the plan to a plan file

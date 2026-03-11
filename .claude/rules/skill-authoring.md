@@ -104,6 +104,13 @@ Preamble summary lines (e.g. "Use `<worktree_path>` for destinations 2
 and 4") are easy to miss because they sit far from the destination table
 they reference. A grep for the old number catches these stale references.
 
+Also audit skip/jump targets — instructions like "Skip directly to
+Step 8 (cleanup)" that reference steps by number. When inserting a new
+step, these targets must be reconsidered for intent, not just
+mechanically incremented. A skip that pointed to cleanup before the
+insertion should now point to the new step if the new step should also
+run in that path.
+
 ## Mid-Phase Self-Invocation
 
 When a phase skill invokes built-in skills (Skill tool) mid-phase and

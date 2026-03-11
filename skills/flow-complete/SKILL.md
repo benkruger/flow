@@ -107,7 +107,7 @@ If the state file had no `pr_number` (or no state file was found), try the branc
 gh pr view <branch> --json state --jq .state
 ```
 
-**If `MERGED`** — the PR is already merged. Skip directly to Step 8 (cleanup).
+**If `MERGED`** — the PR is already merged. Skip directly to Step 8 (close issues).
 
 **If `OPEN`** — continue to Step 3 to merge.
 
@@ -249,7 +249,19 @@ If the merge succeeds, report to the user:
 If the merge fails, stop and report the error to the user. Do not retry
 the merge command with any additional flags or elevated privileges.
 
-### Step 8 — Run cleanup script
+### Step 8 — Close referenced issues
+
+Close any GitHub issues referenced in the start prompt. This is best-effort —
+continue to cleanup even if closing fails.
+
+```bash
+bin/flow close-issues --state-file <project_root>/.flow-states/<branch>.json
+```
+
+Parse the JSON output. Report which issues were closed and which failed.
+If no issues were referenced, proceed silently.
+
+### Step 9 — Run cleanup script
 
 Run the cleanup script from the project root:
 
@@ -264,7 +276,7 @@ resource (worktree, state\_file, log\_file, ci\_sentinel). Each step reports
 Report the results to the user: what was cleaned, what was already gone,
 and what failed.
 
-### Step 9 — Pull merged changes
+### Step 10 — Pull merged changes
 
 The worktree is removed and you are on main. Pull to get the merged
 feature code:
@@ -300,7 +312,7 @@ Output the following banner in your response (not via Bash) inside a fenced code
 - If the merge fails, never retry with additional flags or elevated privileges — report to the user and stop
 - Confirm with the user only when mode is **manual**
 - State file deletion is what resets the session hook — do not skip it
-- Every step after the merge (Steps 8-9) is best-effort — if one fails, continue to the next
+- Every step after the merge (Steps 8-10) is best-effort — if one fails, continue to the next
 - The skill is idempotent: safe to re-invoke via `/loop` after a "pending CI" stop
 - Never use `general-purpose` sub-agents — use `"ci-fixer"` for CI failures
 - Never use Bash to print banners — output them as text in your response

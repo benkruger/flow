@@ -37,6 +37,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
   "started_at": "2026-02-20T10:00:00-08:00",
   "current_phase": "flow-plan",
   "framework": "rails",
+  "prompt": "fix #83 and #89 — close issues at complete time",
   "plan_file": null,
   "session_id": null,
   "transcript_path": null,
@@ -100,6 +101,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `skills` | object / absent | Per-skill autonomy settings copied from `.flow.json` by `/flow-start` — see [Skills Object](#skills-object) |
 | `code_review_step` | integer | Last completed Code Review step (0-4). Set to 0 on phase entry, incremented after each step. Used for resume after context compaction. |
 | `_continue_pending` | string | Name of the child skill currently executing. Set before invoking a child skill, cleared by the Stop hook after forcing continuation. Empty string or absent means no continuation pending. |
+| `prompt` | string | The full text passed to `/flow-start` — used by Plan as feature description and by Complete to extract `#N` issue references for auto-closing |
 | `notes` | array | Corrections captured via `/flow-note` — see [Notes Array](#notes-array) |
 
 ---

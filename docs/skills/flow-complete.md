@@ -28,8 +28,9 @@ confirmation before the irreversible merge.
 6. Archives artifacts to the PR body: phase timings table (non-collapsible),
    state file, and session log
 7. Squash-merges the PR via `gh pr merge --squash`
-8. Runs the cleanup process: remove worktree, delete branches, delete state file, log, and CI sentinel
-9. Pulls `origin main` so local main has the merged feature code
+8. Closes any GitHub issues referenced in the start prompt (`#N` patterns)
+9. Runs the cleanup process: remove worktree, delete branches, delete state file, log, and CI sentinel
+10. Pulls `origin main` so local main has the merged feature code
 
 ---
 
@@ -61,7 +62,7 @@ file and exits cleanly.
 | State file missing | Warns, infers from git state, proceeds (confirms if `--manual`) |
 | PR closed but not merged | Hard block, does not proceed |
 
-Every step after the merge (Steps 8-9) is best-effort. If worktree removal
+Every step after the merge (Steps 8-10) is best-effort. If issue closing
 fails (already removed), it continues to state file deletion. If the
 state file doesn't exist, it notes that and finishes.
 

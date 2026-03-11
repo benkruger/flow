@@ -12,6 +12,7 @@ Output (JSON to stdout):
 """
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -26,7 +27,8 @@ PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 
 def _branch_name(feature_words):
     """Convert feature words to a hyphenated branch name, max 32 chars."""
-    name = "-".join(feature_words.lower().split())
+    sanitized = re.sub(r"[^a-zA-Z0-9\s-]", "", feature_words)
+    name = "-".join(sanitized.lower().split())
     if len(name) <= 32:
         return name
     # Truncate at last hyphen that fits within 32 chars
@@ -117,7 +119,7 @@ def _extract_pr_number(pr_url):
 
 
 def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                       framework="rails", skills=None):
+                       framework="rails", skills=None, prompt=""):
     """Create the FLOW state file."""
     current_time = now()
     phases = {}
@@ -157,6 +159,7 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
         "session_id": None,
         "transcript_path": None,
         "notes": [],
+        "prompt": prompt,
         "phases": phases,
     }
     if skills is not None:
@@ -223,7 +226,7 @@ def main():
 
         # Create state file
         _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                           framework=framework, skills=skills)
+                           framework=framework, skills=skills, prompt=feature_words)
         _log(project_root, branch, f"create .flow-states/{branch}.json (exit 0)")
 
         # Freeze phase config for this feature

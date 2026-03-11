@@ -490,3 +490,30 @@ def test_pr_body_is_simple_format(_default_run):
     """PR body uses simple format without artifacts section."""
     data, state, log, repo = _default_run
     assert data["status"] == "ok"
+
+
+# --- Prompt storage in state file ---
+
+
+def test_state_file_has_prompt(_default_run):
+    """State file stores the raw start prompt for Plan and Complete phases."""
+    data, state, log, repo = _default_run
+    assert state["prompt"] == "test feature"
+
+
+# --- Branch name sanitization (in-process) ---
+
+
+def test_branch_name_strips_hash():
+    """Hash symbols are stripped from branch names."""
+    assert _mod._branch_name("fix #83 and #89") == "fix-83-and-89"
+
+
+def test_branch_name_strips_at_sign():
+    """At signs are stripped from branch names."""
+    assert _mod._branch_name("notify @user on save") == "notify-user-on-save"
+
+
+def test_branch_name_strips_mixed_special_chars():
+    """Multiple special characters stripped, words still joined."""
+    assert _mod._branch_name("fix #83 @user $100") == "fix-83-user-100"
