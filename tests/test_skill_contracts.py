@@ -1601,6 +1601,37 @@ def test_prime_step_8_enforces_flow_commit_exclusively():
             )
 
 
+def test_prime_prompts_for_commit_type():
+    """flow-prime Step 2 must prompt for commit type after autonomy."""
+    content = _read_skill("flow-prime")
+    # Find Step 2
+    step2_match = re.search(
+        r"### Step 2 — Choose autonomy level(.*?)(?=\n### Step \d)",
+        content,
+        re.DOTALL,
+    )
+    assert step2_match, "Could not find Step 2 in flow-prime/SKILL.md"
+    step2_text = step2_match.group(1)
+
+    # Verify commit type prompt exists - looking for the specific question
+    assert (
+        "commit type" in step2_text.lower()
+        or "Title only" in step2_text
+        or "commit_type" in step2_text
+    ), (
+        "flow-prime Step 2 must include a prompt for commit type "
+        "(title-only vs full format)"
+    )
+
+    # Verify commit type options are clearly labeled
+    assert "Title only" in step2_text, (
+        "flow-prime must have 'Title only' option for commits"
+    )
+    assert "Full format" in step2_text or "Full commits" in step2_text, (
+        "flow-prime must have 'Full format' option for commits"
+    )
+
+
 def test_prime_has_plugin_installation_step():
     """flow-prime must have a step installing the code-review plugin."""
     content = _read_skill("flow-prime")
