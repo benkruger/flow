@@ -119,6 +119,24 @@ def test_hooks_json_references_existing_files():
                 )
 
 
+def test_hook_scripts_are_executable():
+    """Every script referenced in hooks.json must have execute permission."""
+    hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
+    non_executable = []
+    for matchers in hooks["hooks"].values():
+        for matcher in matchers:
+            for hook in matcher["hooks"]:
+                cmd = hook["command"]
+                resolved = cmd.replace("${CLAUDE_PLUGIN_ROOT}", str(REPO_ROOT))
+                script_path = resolved.split()[0]
+                path = REPO_ROOT / script_path.replace(str(REPO_ROOT) + "/", "")
+                if path.exists() and not os.access(path, os.X_OK):
+                    non_executable.append(str(path.relative_to(REPO_ROOT)))
+    assert not non_executable, (
+        f"Hook scripts missing execute permission: {', '.join(non_executable)}"
+    )
+
+
 def test_hooks_json_has_pretooluse_bash_validator():
     """hooks.json must register validate-ci-bash.py as a global PreToolUse hook."""
     hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
