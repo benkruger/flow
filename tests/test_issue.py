@@ -247,10 +247,46 @@ class TestMain:
         assert output["status"] == "error"
         assert output["message"] == "Auth required"
 
-    def test_main_missing_repo(self):
-        with patch("sys.argv", ["issue.py", "--title", "Test"]), \
-             pytest.raises(SystemExit, match="2"):
+    def test_main_auto_detect_repo(self, capsys):
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout="https://github.com/detected/repo/issues/99\n",
+            stderr="",
+        )
+        with patch.object(issue_mod, "detect_repo", return_value="detected/repo"), \
+             patch.object(issue_mod.subprocess, "run", return_value=fake_result), \
+             patch("sys.argv", ["issue.py", "--title", "Auto detected"]):
             issue_mod.main()
+
+        output = json.loads(capsys.readouterr().out)
+        assert output["status"] == "ok"
+        assert output["url"] == "https://github.com/detected/repo/issues/99"
+
+    def test_main_explicit_repo_overrides(self, capsys):
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout="https://github.com/explicit/repo/issues/1\n",
+            stderr="",
+        )
+        with patch.object(issue_mod, "detect_repo") as mock_detect, \
+             patch.object(issue_mod.subprocess, "run", return_value=fake_result), \
+             patch("sys.argv", ["issue.py", "--repo", "explicit/repo",
+                                "--title", "Explicit"]):
+            issue_mod.main()
+
+        mock_detect.assert_not_called()
+        output = json.loads(capsys.readouterr().out)
+        assert output["url"] == "https://github.com/explicit/repo/issues/1"
+
+    def test_main_auto_detect_fails(self, capsys):
+        with patch.object(issue_mod, "detect_repo", return_value=None), \
+             patch("sys.argv", ["issue.py", "--title", "No repo"]), \
+             pytest.raises(SystemExit, match="1"):
+            issue_mod.main()
+
+        output = json.loads(capsys.readouterr().out)
+        assert output["status"] == "error"
+        assert "--repo" in output["message"]
 
     def test_main_missing_title(self):
         with patch("sys.argv", ["issue.py", "--repo", "owner/repo"]), \

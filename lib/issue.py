@@ -1,7 +1,7 @@
 """Create a GitHub issue via gh CLI.
 
 Usage:
-  bin/flow issue --repo <repo> --title <title> [--label <label>] [--body <body>]
+  bin/flow issue --title <title> [--repo <repo>] [--label <label>] [--body <body>]
 
 Wraps `gh issue create` so Claude's Bash command is always a clean
 one-liner matching `Bash(bin/flow *)` — no heredocs, no long inline
@@ -62,13 +62,23 @@ def create_issue(repo, title, label=None, body=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Create a GitHub issue")
-    parser.add_argument("--repo", required=True, help="Repository (owner/name)")
+    parser.add_argument("--repo", default=None, help="Repository (owner/name)")
     parser.add_argument("--title", required=True, help="Issue title")
     parser.add_argument("--label", default=None, help="Issue label")
     parser.add_argument("--body", default=None, help="Issue body")
     args = parser.parse_args()
 
-    url, error = create_issue(args.repo, args.title, args.label, args.body)
+    repo = args.repo
+    if repo is None:
+        repo = detect_repo()
+        if repo is None:
+            print(json.dumps({
+                "status": "error",
+                "message": "Could not detect repo from git remote. Use --repo owner/name.",
+            }))
+            sys.exit(1)
+
+    url, error = create_issue(repo, args.title, args.label, args.body)
 
     if error:
         print(json.dumps({"status": "error", "message": error}))
