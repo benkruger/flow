@@ -1,5 +1,16 @@
 # Release Notes
 
+## v0.28.8 — Bug fixes for session log artifact, Plan autonomy, and issue closing
+
+### Fixes
+
+- Move session log artifact from Plan Step 3 to Complete Step 6 — the conditional
+  in Plan was unreliable (worked in #106, silently dropped in #113). Complete already
+  has the state file loaded and transcript_path is guaranteed populated by Phase 6.
+- Add flow-plan to autonomy presets so the Plan phase respects continue=auto from
+  .flow.json instead of always defaulting to manual.
+- Fix missing close-issues call in bin/flow dispatcher.
+
 ## v0.28.7 — Bug fixes for phase halting and ci-fixer agent name
 
 ### Fixes

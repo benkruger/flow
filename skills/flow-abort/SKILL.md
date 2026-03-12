@@ -61,7 +61,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ============================================
-  FLOW v0.28.7 — Abort — STARTING
+  FLOW v0.28.8 — Abort — STARTING
 ============================================
 ```
 ````
@@ -104,7 +104,7 @@ Then output the following banner in your response (not via Bash) inside a fenced
 ````markdown
 ```text
 ============================================
-  FLOW v0.28.7 — Abort — COMPLETE
+  FLOW v0.28.8 — Abort — COMPLETE
   Feature '<feature>' has been abandoned.
   PR closed, remote branch deleted,
   worktree removed, state file and log deleted.
