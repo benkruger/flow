@@ -1,5 +1,32 @@
 # Release Notes
 
+## v0.29.0 — Issue-driven autonomous workflow
+
+Replace direct `.claude/rules/` edits with GitHub issues to keep the autonomous cycle unbroken. Five issue types filed across three phases, all tracked in the state file and surfaced at Complete.
+
+### Issue types
+
+| Label | Filed during | What it captures |
+|-------|-------------|-----------------|
+| Rule | Learn | Rule additions/updates for `.claude/rules/` — deferred to a future session |
+| Flow | Learn | FLOW process gaps (previously labeled `learning`) |
+| Flaky Test | Code | Intermittent test failures with reproduction data |
+| Tech Debt | Code Review | Pre-existing, out-of-scope code quality issues |
+| Documentation Drift | Code Review, Learn | Docs out of sync with actual behavior |
+
+### Changes
+
+- Learn Step 3: `.claude/rules/` edits now filed as "Rule" issues instead of editing files directly
+- Learn Step 6: label changed from `learning` to `Flow`, added Documentation Drift issue filing
+- Code CI Gate: flaky test detection — files "Flaky Test" issue on retry-pass
+- Code Review: out-of-scope findings classified as Tech Debt or Documentation Drift and filed as issues
+- Complete Step 6: "Issues Filed" table added to PR body when issues exist
+- Complete Done banner: shows issues count breakdown when issues were filed
+- flow-issues skill: five label-based categories (Rule, Flow, Flaky Test, Tech Debt, Documentation Drift) with Bug/Enhancement/Other as content-based fallbacks
+- New `lib/add-issue.py`: records filed issues in state file `issues_filed` array
+- New `bin/flow add-issue` subcommand
+- State schema: added `issues_filed` array
+
 ## v0.28.9 — Runtime whitelist enforcement
 
 - PreToolUse hook now enforces .claude/settings.json allow list as a whitelist — commands not matching any Bash(...) pattern are blocked with exit 2

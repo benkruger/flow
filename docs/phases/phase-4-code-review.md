@@ -67,6 +67,18 @@ re-entry.
 
 ---
 
+## Out-of-Scope Findings
+
+Each finding is classified before fixing:
+
+- **In-scope** — related to the feature, fixed as normal
+- **Tech Debt** — pre-existing, unrelated to the feature. Filed as a "Tech Debt" issue via `bin/flow issue`, recorded via `bin/flow add-issue`, then skipped
+- **Documentation Drift** — stale docs unrelated to the feature. Filed as a "Documentation Drift" issue, recorded, then skipped
+
+This keeps reviews focused on the feature while ensuring nothing is lost.
+
+---
+
 ## bin/flow ci Rule
 
 `bin/flow ci` runs after every fix in every step. Code Review does not

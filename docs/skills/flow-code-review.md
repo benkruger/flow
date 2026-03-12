@@ -48,6 +48,16 @@ run, and changes are committed via `/flow-commit`.
 
 ---
 
+## Out-of-Scope Findings
+
+Each finding is classified before fixing:
+
+- **In-scope** — related to the feature, fixed as normal
+- **Tech Debt** — pre-existing, unrelated. Filed as a "Tech Debt" issue via `bin/flow issue`, recorded via `bin/flow add-issue`, then skipped
+- **Documentation Drift** — stale docs, unrelated. Filed as a "Documentation Drift" issue, recorded, then skipped
+
+---
+
 ## Mode
 
 Mode is configurable via `.flow.json` (default: manual). Both commit and

@@ -76,6 +76,7 @@ CI will fail if these are missing:
 - `agents/ci-fixer.md` — custom plugin sub-agent for CI failure diagnosis and fix
 - `lib/close-issues.py` — closes GitHub issues referenced in the start prompt (`#N` patterns) via `gh issue close`
 - `lib/issue.py` — creates GitHub issues via `gh` subprocess (wraps `gh issue create`; auto-detects repo from git remote when `--repo` is omitted)
+- `lib/add-issue.py` — records filed issues in the state file's `issues_filed` array (follows `append-note.py` pattern)
 - `lib/format-pr-timings.py` — reads state file, formats phase durations as a markdown table for PR body
 - `lib/update-pr-body.py` — updates PR body: `--add-artifact` for list items, `--append-section` for collapsible/plain sections
 - `lib/stop-continue.py` — Stop hook script that forces continuation when `_continue_pending` flag is set in the state file
@@ -117,14 +118,18 @@ Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`). Code 
 
 Since Claude Code 2.1.63, auto-memory is shared across git worktrees of the same repository. Memory written during feature work persists at the repo-root path and survives worktree cleanup — no rescue needed.
 
-Learn is a unified tri-modal skill. It auto-detects Phase 5 (state file with Code Review complete), Maintainer (no state file, `flow-phases.json` exists), or Standalone (no state file, no `flow-phases.json`). All three modes route learnings to 2 repo-local destinations. Phase 5 adds GitHub issues and phase transitions. Maintainer commits via `/flow:flow-commit --auto`. Standalone never commits.
+Learn is a unified tri-modal skill. It auto-detects Phase 5 (state file with Code Review complete), Maintainer (no state file, `flow-phases.json` exists), or Standalone (no state file, no `flow-phases.json`). All three modes route learnings to 2 destinations. Phase 5 adds GitHub issues and phase transitions. Maintainer commits via `/flow:flow-commit --auto`. Standalone never commits.
 
-The 2 destinations are both committed to the repo:
+The 2 destinations:
 
-- **Project CLAUDE.md** (`CLAUDE.md` in project) — process rules, architecture, and conventions
-- **Project rules** (`.claude/rules/<topic>.md` in project) — coding anti-patterns and gotchas
+- **Project CLAUDE.md** (`CLAUDE.md` in project) — process rules, architecture, and conventions. Edited on disk, committed via PR.
+- **Project rules** (`.claude/rules/<topic>.md` in project) — coding anti-patterns and gotchas. Filed as "Rule" GitHub issues (not edited directly) to avoid permission prompts that break autonomous flow.
 
-Both destinations are committed via PR (Phase 5) or `/flow:flow-commit --auto` (Maintainer). Notes captured by `/flow:flow-note` feed into the same routing mechanism.
+Learn also files GitHub issues for process gaps ("Flow" label on the plugin repo), documentation drift ("Documentation Drift" label), and rule additions ("Rule" label). All filed issues are recorded in the state file via `bin/flow add-issue` and surfaced in the Complete phase.
+
+Code files "Flaky Test" issues when tests fail intermittently during the CI gate. Code Review files "Tech Debt" and "Documentation Drift" issues for out-of-scope findings. All issue filing uses `bin/flow issue` and `bin/flow add-issue`.
+
+Notes captured by `/flow:flow-note` feed into the same routing mechanism.
 
 Commit is also tri-modal. It auto-detects FLOW (state file exists), Maintainer (no state file, `flow-phases.json` exists), or Standalone (neither). FLOW mode adds version banners and Python auto-approval. All three modes share the same diff/message/approval/push process.
 
@@ -155,6 +160,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 |-----------|------------------|
 | `test_structural.py` | Config invariants: phases 1-6 exist, versions match across 3 locations, commands unique, hooks reference existing files |
 | `test_skill_contracts.py` | SKILL.md content: HARD-GATE presence, announce banners, state updates, ci-fixer agent, model frontmatter, logging sections, note-capture options. Uses glob-based discovery — new skills are automatically covered |
+| `test_add_issue.py` | Issue recording: append to empty/existing array, missing state file, CLI integration |
 | `test_close_issues.py` | Issue closing: extraction of `#N` patterns from prompt, deduplication, partial failure, CLI integration |
 | `test_check_phase.py` | Phase guard: blocks on incomplete prerequisites, allows on complete, handles worktrees, re-entry notes |
 | `test_session_start.py` | Session hook: feature detection, timing reset, awareness injection, multi-feature handling |

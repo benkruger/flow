@@ -78,7 +78,8 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
       "cumulative_seconds": 0,
       "visit_count": 0
     }
-  }
+  },
+  "issues_filed": []
 }
 ```
 
@@ -104,6 +105,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `_continue_pending` | string | Name of the child skill currently executing. Set before invoking a child skill, cleared by the Stop hook after forcing continuation. Empty string or absent means no continuation pending. |
 | `prompt` | string | The full text passed to `/flow-start` — used by Plan as feature description and by Complete to extract `#N` issue references for auto-closing |
 | `notes` | array | Corrections captured via `/flow-note` — see [Notes Array](#notes-array) |
+| `issues_filed` | array | GitHub issues filed during the feature — see [Issues Filed Array](#issues-filed-array) |
 
 ---
 
@@ -168,6 +170,35 @@ and session restarts. Read by Learn as a primary source.
   }
 ]
 ```
+
+---
+
+## Issues Filed Array
+
+Populated by `bin/flow add-issue` whenever a skill files a GitHub issue
+via `bin/flow issue`. Surfaced in the Complete phase PR body and Done banner.
+
+```json
+"issues_filed": [
+  {
+    "label": "Rule",
+    "title": "Add rule: never use git checkout for file ops",
+    "url": "https://github.com/org/repo/issues/42",
+    "phase": "flow-learn",
+    "phase_name": "Learn",
+    "timestamp": "2026-03-12T10:00:00-07:00"
+  }
+]
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `label` | string | Issue category: Rule, Flow, Flaky Test, Tech Debt, or Documentation Drift |
+| `title` | string | Issue title as filed on GitHub |
+| `url` | string | Full GitHub issue URL |
+| `phase` | string | Phase key where the issue was filed (e.g. `"flow-learn"`) |
+| `phase_name` | string | Human-readable phase name |
+| `timestamp` | ISO 8601 | When the issue was filed |
 
 ---
 

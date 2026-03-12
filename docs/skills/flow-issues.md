@@ -17,7 +17,7 @@ Fetches all open issues for the current repository, categorizes them, prioritize
 ## What It Does
 
 1. Runs `gh issue list` to fetch all open issues (up to 100)
-2. Categorizes each issue: Bug, Enhancement, Learning, Process Gap, Documentation, or Other
+2. Categorizes each issue using label-based categories first (Rule, Flow, Flaky Test, Tech Debt, Documentation Drift), then content-based fallbacks (Bug, Enhancement, Other)
 3. Prioritizes within each category: High, Medium, or Low based on age and impact
 4. Displays a summary line with total and per-category counts
 5. Prints a markdown table per category sorted by priority then age

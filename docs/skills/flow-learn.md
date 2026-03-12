@@ -29,19 +29,25 @@ merges.
 
 ## Outputs
 
-Learnings are routed autonomously to one of 2 repo-local destinations:
+Learnings are routed autonomously based on destination:
 
-| # | Destination | Path |
-|---|-------------|------|
-| 1 | Project CLAUDE.md | `CLAUDE.md` in worktree |
-| 2 | Project rules | `.claude/rules/<topic>.md` in worktree |
+| # | Destination | Path | Method |
+|---|-------------|------|--------|
+| 1 | Project CLAUDE.md | `CLAUDE.md` in worktree | Edit on disk |
+| 2 | `.claude/rules/` | `.claude/rules/<topic>.md` in worktree | File "Rule" issue |
 
-Both destinations are committed to the feature branch via `/flow-commit --auto`.
+CLAUDE.md edits are committed to the feature branch via `/flow-commit --auto`.
+Rules that would previously be edited directly are now filed as GitHub issues
+with the "Rule" label — the issue body contains the full rule text and target
+file path, deferring the edit to a future session.
 
-**Plugin improvement notes** — filed as GitHub issues:
+**GitHub issues** — filed during Learn:
 
-- One issue per process gap on the plugin repo, labeled `learning`
-- Issue body describes the gap generically (no user project details)
+- **Rule** — rule additions/updates for `.claude/rules/`, on the target project repo
+- **Flow** — FLOW process gaps, on the plugin repo (`benkruger/flow`)
+- **Documentation Drift** — docs out of sync with actual behavior, on the target project repo
+
+All filed issues are recorded in the state file via `bin/flow add-issue`.
 
 **Report** — presented after all changes are applied:
 
@@ -55,14 +61,14 @@ Both destinations are committed to the feature branch via `/flow-commit --auto`.
 
 Learn auto-detects its context:
 
-| Mode | When | Sources | Commits | Settings audit |
-|------|------|---------|---------|----------------|
+| Mode | When | Sources | Commits | GitHub issues |
+|------|------|---------|---------|---------------|
 | Phase 5 | State file with Code Review complete | All 3 (CLAUDE.md, context, state/plan) | `/flow-commit --auto` | Yes |
-| Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow-commit --auto` | Yes |
-| Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | Yes |
+| Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow-commit --auto` | No |
+| Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | No |
 
-All three modes route learnings to 2 repo-local destinations: Project
-CLAUDE.md and project rules. Both are committed to the repo.
+All three modes route CLAUDE.md edits to the project. Rules are filed as
+GitHub issues (Phase 5 only) rather than edited directly.
 
 Standalone mode lets any project use `/flow-learn` without a FLOW
 feature in progress — just review the current session and apply
