@@ -12,11 +12,15 @@ model: sonnet
 /flow:flow-learn
 /flow:flow-learn --auto
 /flow:flow-learn --manual
+/flow:flow-learn --continue-step
+/flow:flow-learn --continue-step --auto
+/flow:flow-learn --continue-step --manual
 ```
 
 - `/flow:flow-learn` — uses configured mode from the state file (default: auto)
 - `/flow:flow-learn --auto` — skip permission promotion prompts, auto-advance to Complete
 - `/flow:flow-learn --manual` — prompt for permission promotion and phase transition
+- `/flow:flow-learn --continue-step` — self-invocation: skip Announce and Update State, dispatch to the next step via Resume Check
 
 <HARD-GATE>
 Run this entry check as your very first action. If any check fails,
@@ -56,6 +60,13 @@ Use `<project_root>` for `.flow-states/` paths only.
 2. If `--manual` was passed → commit=manual, continue=manual
 3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-learn.commit` and `skills.flow-learn.continue`.
 4. If the state file has no `skills` key → use built-in defaults: commit=auto, continue=auto
+
+## Self-Invocation Check
+
+If `--continue-step` was passed, this is a self-invocation from a
+previous step. Skip the Announce banner and the Update State section
+(do not call `phase-transition --action enter` again). Proceed directly
+to the Resume Check section.
 
 ## Announce
 
@@ -98,6 +109,13 @@ If `"status": "error"`, report the error and stop.
 
 No logging for this phase. Learn runs no Bash commands beyond the entry
 gate — there is nothing to log.
+
+## Resume Check
+
+Read `learn_step` from the state file (default `0` if absent).
+
+- If `4` → Step 4 is done. Skip to Step 5.
+- If `5` → Steps 4-5 are done. Skip to Step 6.
 
 ---
 
@@ -229,27 +247,79 @@ subsequent destinations, steps, or the phase completion.
 
 ## Step 4 — Promote local permissions (all modes)
 
+Set the continuation flag before invoking the child skill:
+
+```bash
+bin/flow set-timestamp --set _continue_pending=local-permission
+```
+
 Invoke `/flow:flow-local-permission`.
 
 If it reports promoted entries, count `.claude/settings.json` as a
 repo-destination change for Step 5's commit decision.
 
+Record step completion:
+
+```bash
+bin/flow set-timestamp --set learn_step=4
+```
+
+Clear the continuation flag:
+
+```bash
+bin/flow set-timestamp --set _continue_pending=
+```
+
+To continue to Step 5, invoke `flow:flow-learn --continue-step` using
+the Skill tool as your final action. If commit=auto was resolved, pass
+`--auto` as well. Do not output anything else after this invocation.
+
 ---
 
 ## Step 5 — Commit (conditional)
 
-**Phase 5:** If any changes were made (CLAUDE.md or `.claude/` files),
-commit once via `/flow:flow-commit --auto`. Only CLAUDE.md and `.claude/`
-files are committed — never application code. If `git add -A` results in
-nothing staged (stealth user with excluded files), skip the commit
-gracefully — do not error.
+If no changes were made in Steps 3-4, record step completion and
+self-invoke to skip the commit:
 
-**Maintainer:** If any changes were made, commit once via
-`/flow:flow-commit --auto`.
+```bash
+bin/flow set-timestamp --set learn_step=5
+```
+
+Then invoke `flow:flow-learn --continue-step` using the Skill tool as
+your final action. If commit=auto was resolved, pass `--auto` as well.
+
+**Phase 5:** If any changes were made (CLAUDE.md or `.claude/` files),
+commit once. Only CLAUDE.md and `.claude/` files are committed — never
+application code. If `git add -A` results in nothing staged (stealth
+user with excluded files), skip the commit gracefully — do not error.
+
+**Maintainer:** If any changes were made, commit once.
 
 **Standalone:** Skip entirely — no commit.
 
-If no changes were made, skip this step regardless of mode.
+Set the continuation flag before committing:
+
+```bash
+bin/flow set-timestamp --set _continue_pending=commit
+```
+
+If commit=auto, use `/flow:flow-commit --auto`. Otherwise, use
+`/flow:flow-commit`.
+
+After the commit completes, clear the continuation flag and record step
+completion:
+
+```bash
+bin/flow set-timestamp --set _continue_pending=
+```
+
+```bash
+bin/flow set-timestamp --set learn_step=5
+```
+
+To continue to Step 6, invoke `flow:flow-learn --continue-step` using
+the Skill tool as your final action. If commit=auto was resolved, pass
+`--auto` as well. Do not output anything else after this invocation.
 
 ---
 

@@ -1683,3 +1683,156 @@ def test_plan_step_1_fetches_referenced_issues():
     """Plan Step 1 must instruct fetching referenced GitHub issues."""
     content = _read_skill("flow-plan")
     assert "gh issue view" in content
+
+
+# --- Code phase self-invocation contracts ---
+
+
+def test_code_has_resume_check():
+    """Code SKILL.md must have a Resume Check section that reads code_task."""
+    content = _read_skill("flow-code")
+    resume_match = re.search(
+        r"## Resume Check\n(.*?)(?=\n## Task Loop)", content, re.DOTALL
+    )
+    assert resume_match, (
+        "flow-code must have a Resume Check section before Task Loop"
+    )
+    resume_text = resume_match.group(1)
+    assert "code_task" in resume_text, (
+        "Resume Check must reference code_task field"
+    )
+
+
+def test_code_has_self_invocation_check():
+    """Code must have a Self-Invocation Check section for --continue-step."""
+    content = _read_skill("flow-code")
+    assert "## Self-Invocation Check" in content, (
+        "flow-code must have a '## Self-Invocation Check' section"
+    )
+    si_match = re.search(
+        r"## Self-Invocation Check\n(.*?)(?=\n## )", content, re.DOTALL
+    )
+    assert si_match, "Could not find Self-Invocation Check section content"
+    assert "--continue-step" in si_match.group(1), (
+        "Self-Invocation Check must reference --continue-step flag"
+    )
+
+
+def test_code_commit_self_invokes():
+    """Code Commit section must self-invoke flow:flow-code --continue-step."""
+    content = _read_skill("flow-code")
+    commit_match = re.search(
+        r"### Commit\n(.*?)(?=\n## |\n---\n\n## )", content, re.DOTALL
+    )
+    assert commit_match, "Could not find Commit section in flow-code/SKILL.md"
+    assert "flow:flow-code --continue-step" in commit_match.group(1), (
+        "Commit section must self-invoke via 'flow:flow-code --continue-step'"
+    )
+
+
+def test_code_commit_records_task():
+    """Code Commit section must record code_task via set-timestamp."""
+    content = _read_skill("flow-code")
+    commit_match = re.search(
+        r"### Commit\n(.*?)(?=\n## |\n---\n\n## )", content, re.DOTALL
+    )
+    assert commit_match, "Could not find Commit section in flow-code/SKILL.md"
+    assert "code_task=" in commit_match.group(1), (
+        "Commit section must contain 'code_task=' marker"
+    )
+
+
+# --- Learn phase self-invocation contracts ---
+
+
+def test_learn_has_resume_check():
+    """Learn SKILL.md must have a Resume Check section that reads learn_step."""
+    content = _read_skill("flow-learn")
+    resume_match = re.search(
+        r"## Resume Check\n(.*?)(?=\n## Step 1)", content, re.DOTALL
+    )
+    assert resume_match, (
+        "flow-learn must have a Resume Check section before Step 1"
+    )
+    resume_text = resume_match.group(1)
+    assert "learn_step" in resume_text, (
+        "Resume Check must reference learn_step field"
+    )
+
+
+def test_learn_has_self_invocation_check():
+    """Learn must have a Self-Invocation Check section for --continue-step."""
+    content = _read_skill("flow-learn")
+    assert "## Self-Invocation Check" in content, (
+        "flow-learn must have a '## Self-Invocation Check' section"
+    )
+    si_match = re.search(
+        r"## Self-Invocation Check\n(.*?)(?=\n## )", content, re.DOTALL
+    )
+    assert si_match, "Could not find Self-Invocation Check section content"
+    assert "--continue-step" in si_match.group(1), (
+        "Self-Invocation Check must reference --continue-step flag"
+    )
+
+
+def _learn_step_text(step_num):
+    """Extract Learn step section text by number."""
+    content = _read_skill("flow-learn")
+    if step_num < 7:
+        next_header = f"## Step {step_num + 1}"
+    else:
+        next_header = "## Done"
+    step_match = re.search(
+        rf"## Step {step_num}.*?\n(.*?)(?=\n(?:{next_header}))",
+        content, re.DOTALL,
+    )
+    assert step_match, (
+        f"Could not find Step {step_num} in flow-learn/SKILL.md"
+    )
+    return step_match.group(1)
+
+
+def test_learn_step_4_self_invokes():
+    """Learn Step 4 must self-invoke flow:flow-learn --continue-step."""
+    step_text = _learn_step_text(4)
+    assert "flow:flow-learn --continue-step" in step_text, (
+        "Step 4 must self-invoke via 'flow:flow-learn --continue-step'"
+    )
+
+
+def test_learn_step_5_self_invokes():
+    """Learn Step 5 must self-invoke flow:flow-learn --continue-step."""
+    step_text = _learn_step_text(5)
+    assert "flow:flow-learn --continue-step" in step_text, (
+        "Step 5 must self-invoke via 'flow:flow-learn --continue-step'"
+    )
+
+
+def test_learn_sets_continue_pending_before_child_skills():
+    """Learn must set _continue_pending before each child skill invocation."""
+    content = _read_skill("flow-learn")
+    child_skills = [
+        ("local-permission", "/flow:flow-local-permission"),
+        ("commit", "/flow:flow-commit"),
+    ]
+    for flag_value, skill_ref in child_skills:
+        flag_pattern = f"_continue_pending={flag_value}"
+        assert flag_pattern in content, (
+            f"Learn must set _continue_pending={flag_value} "
+            f"before invoking {skill_ref}"
+        )
+        flag_pos = content.index(flag_pattern)
+        skill_pos = content.index(skill_ref, flag_pos)
+        assert flag_pos < skill_pos, (
+            f"_continue_pending={flag_value} must appear before "
+            f"{skill_ref} invocation"
+        )
+
+
+def test_learn_steps_record_completion():
+    """Learn Steps 4 and 5 must record completion via set-timestamp."""
+    for step_num in [4, 5]:
+        step_text = _learn_step_text(step_num)
+        assert f"learn_step={step_num}" in step_text, (
+            f"Step {step_num} must contain 'learn_step={step_num}' marker"
+        )

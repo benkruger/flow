@@ -12,11 +12,15 @@ model: opus
 /flow:flow-code
 /flow:flow-code --auto
 /flow:flow-code --manual
+/flow:flow-code --continue-step
+/flow:flow-code --continue-step --auto
+/flow:flow-code --continue-step --manual
 ```
 
 - `/flow:flow-code` — uses configured mode from the state file (default: manual)
 - `/flow:flow-code --auto` — streamline mode active from task 1 (skip per-task approval, still show diffs), auto-advance to Code Review
 - `/flow:flow-code --manual` — requires explicit approval for each task
+- `/flow:flow-code --continue-step` — self-invocation: skip Announce and Update State, dispatch to the next task via Resume Check
 
 <HARD-GATE>
 Run this phase entry check as your very first action. If any check fails,
@@ -45,6 +49,13 @@ to the project root — `bin/flow` commands find paths internally.
 2. If `--manual` was passed → commit=manual, continue=manual
 3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-code.commit` and `skills.flow-code.continue`.
 4. If the state file has no `skills` key → use built-in defaults: commit=manual, continue=manual
+
+## Self-Invocation Check
+
+If `--continue-step` was passed, this is a self-invocation from a
+previous task's commit. Skip the Announce banner and the Update State
+section (do not call `phase-transition --action enter` again). Proceed
+directly to the Resume Check section.
 
 ## Announce
 
@@ -102,25 +113,17 @@ Get `<branch>` from the state file.
 
 ---
 
-## Reading the Plan
+## Resume Check
 
 Read `plan_file` from the state file to get the plan file path. Use the
 Read tool to read the plan file. Identify the Tasks section — this is the
 ordered list of implementation tasks to execute.
 
----
+Read `code_task` from the state file (default `0` if absent).
 
-## Resuming Mid-Code
-
-If this is a resume (re-entering the phase), determine progress by
-comparing the plan to committed work:
-
-```bash
-git log --oneline origin/main..HEAD
-```
-
-Compare commit messages to the tasks in the plan file. Continue from the
-first task that doesn't have a matching commit. Output in your response (not via Bash) inside a fenced code block:
+- If `code_task` > 0 and `code_task` < total tasks: skip to task
+  `code_task + 1`. Output in your response (not via Bash) inside a
+  fenced code block:
 
 ````markdown
 ```text
@@ -128,10 +131,23 @@ first task that doesn't have a matching commit. Output in your response (not via
   FLOW — Resuming Code
 ============================================
   Resuming at: <task description>
-  Tasks complete: <n> of <total>
+  Tasks complete: <code_task> of <total>
 ============================================
 ```
 ````
+
+- If `code_task` >= total tasks: skip to All Tasks Complete.
+
+- If `code_task` is 0 and this is a resume (re-entering the phase after
+  a session restart), determine progress by comparing the plan to
+  committed work:
+
+```bash
+git log --oneline origin/main..HEAD
+```
+
+Compare commit messages to the tasks in the plan file. Continue from the
+first task that doesn't have a matching commit.
 
 ---
 
@@ -252,6 +268,12 @@ Do NOT commit and do NOT move to the next task until `bin/flow ci` is green.
 
 ### Commit
 
+Record the completed task number:
+
+```bash
+bin/flow set-timestamp --set code_task=<n>
+```
+
 Set the continuation flag before committing:
 
 ```bash
@@ -272,20 +294,10 @@ After the commit completes, clear the continuation flag:
 bin/flow set-timestamp --set _continue_pending=
 ```
 
----
-
-### Continue to Next Task
-
-Output in your response (not via Bash) inside a fenced code block:
-
-````markdown
-```text
-Task <n> complete. <completed> of <total> done.
-```
-````
-
-Without pausing or asking for confirmation, move to the next task
-from the plan file. Only stop looping when all tasks are complete.
+To continue to the next task, invoke `flow:flow-code --continue-step`
+using the Skill tool as your final action. If commit=auto was resolved,
+pass `--auto` as well. Do not output anything else after this
+invocation.
 
 ---
 

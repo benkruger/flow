@@ -8,7 +8,7 @@ parent: Skills
 
 **Phase:** 5 — Learn
 
-**Usage:** `/flow-learn`, `/flow-learn --auto`, or `/flow-learn --manual`
+**Usage:** `/flow-learn`, `/flow-learn --auto`, `/flow-learn --manual`, or `/flow-learn --continue-step`
 
 Autonomously synthesises what went wrong from three sources, routes each
 learning to its correct permanent home, files GitHub issues for plugin
