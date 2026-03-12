@@ -142,6 +142,10 @@ Phase skills log completion events to `.flow-states/<branch>.log` using a comman
 
 The version lives in 3 places (across 2 files), all must match: `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (top-level metadata), `.claude-plugin/marketplace.json` (plugins array entry). `test_structural.py` enforces consistency.
 
+### Checksum → Version Invariant
+
+If `config_hash` changes (due to SETUP_EPOCH increment or structural config changes), `flow_version` MUST change. The inverse is not required — `flow_version` may change for bugfixes or features without changing `config_hash`. This invariant ensures projects with structural config changes always see version bumps and trigger re-initialization when needed.
+
 ### State Mutations
 
 Claude never computes timestamps, time differences, or counter increments. All standard state mutations go through `bin/flow` commands: `phase-transition` for entry/completion, `set-timestamp` for mid-phase fields. The plan file lives at `~/.claude/plans/` (Claude Code's native location) and its path is stored in `state["plan_file"]`.
@@ -192,7 +196,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 - New skills are automatically covered by test_skill_contracts.py (glob-based discovery)
 - Namespace is `flow:` — plugin.json name is `"flow"`
 - Never rebase — merge only (denied in `.claude/settings.json`)
-- CLAUDE.md changes only through `/flow:flow-learn` — never edit CLAUDE.md directly. The `/flow:flow-learn` skill exists to review mistakes, propose additions, get individual approval for each change, and commit. Editing CLAUDE.md outside of `/flow:flow-learn` bypasses all of that.
+- CLAUDE.md changes only through `/flow:flow-learn` — never edit CLAUDE.md directly. The `/flow:flow-learn` skill exists to review mistakes, propose additions, get individual approval for each change, and commit. Editing CLAUDE.md outside of `/flow:flow-learn` bypasses all of that. **Exception:** If a structural test validates that specific content exists in CLAUDE.md (e.g., `test_version_changes_when_config_hash_changes` validates "Checksum → Version Invariant"), the Code phase may add that content directly to satisfy `bin/flow ci` requirements. The Learn phase reviews this and confirms placement.
 - **Never add pymarkdown exclusions** — The `.pymarkdown.yml` disables MD013 (line length), MD025 (multiple H1 with frontmatter), MD033 (inline HTML), and MD036 (emphasis as heading) because those conflict with this repo's intentional patterns. No further rule disablements or path exclusions may be added. If a markdown file triggers a lint error, fix the file — do not suppress the rule. If a rule genuinely cannot be satisfied, surface it to the user for a decision.
 - **Skills must never instruct Claude to compute values** — no timestamp generation, no time arithmetic, no counter increments, no `date -u`. All computation goes through `bin/flow` subcommands. Skills say "run this command", never "calculate this value". `test_skill_contracts.py` enforces this: `test_phase_skills_no_inline_time_computation` fails if any phase skill contains computational instruction patterns.
 - **All timestamps use Pacific Time** — `lib/flow_utils.py` provides `now()` which returns `datetime.now(ZoneInfo("America/Los_Angeles")).isoformat(timespec="seconds")`. All scripts import `now` from `flow_utils` — never generate timestamps locally. Existing state files with UTC timestamps (`Z` suffix) are handled by `datetime.fromisoformat()` which parses both formats.

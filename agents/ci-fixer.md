@@ -29,14 +29,14 @@ the fix.
 
 ## CI Failure Fix Order
 
-1. Lint violations — read the lint output carefully, fix the code
+1. Lint violations — read the lint output carefully. For RuboCop violations, run `rubocop -A` first to auto-fix, then address any remaining violations manually. For other linters, fix the code.
 2. Test failures — understand the root cause, fix the code not the test
 3. Coverage gaps — write the missing test
 
 ## Rules
 
 - Use Read, Glob, and Grep tools for all file reading and searching
-- Only use Bash for `bin/flow ci` and `git add`
+- Only use Bash for `bin/flow ci`, `git add`, and direct tool invocations (e.g. `rubocop -A`)
 - Never use `cd <path> && git` — use `git -C <path>` if needed
 - Never use piped commands (|) — use separate Bash calls
 - Never use cat, head, tail, grep, rg, find, or ls via Bash
