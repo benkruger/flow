@@ -1191,6 +1191,25 @@ def test_code_files_flaky_test_issues():
     )
 
 
+def test_code_review_files_tech_debt_issues():
+    """Code Review skill must file Tech Debt issues for out-of-scope findings."""
+    content = _read_skill("flow-code-review")
+    assert "Tech Debt" in content, (
+        "Code Review skill must mention 'Tech Debt' for out-of-scope findings"
+    )
+    assert "bin/flow issue" in content, (
+        "Code Review skill must use 'bin/flow issue' to file issues"
+    )
+
+
+def test_code_review_files_doc_drift_issues():
+    """Code Review skill must file Documentation Drift issues for stale docs."""
+    content = _read_skill("flow-code-review")
+    assert "Documentation Drift" in content, (
+        "Code Review skill must mention 'Documentation Drift' for stale docs"
+    )
+
+
 def test_generic_skills_have_no_framework_conditionals():
     """Skills that were made generic must not contain framework conditionals.
 

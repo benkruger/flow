@@ -223,7 +223,7 @@ findings listed, then without pausing continue to Step 3.
 
 ### Fix every finding
 
-For each finding from the review:
+For each finding from the review, classify it:
 
 **Minor finding** (style, missing option, small oversight):
 
@@ -242,7 +242,32 @@ If commit=manual, use AskUserQuestion:
 > - **Go back to Code**
 > - **Go back to Plan**
 
-After fixing findings, run:
+**Out-of-scope finding** (pre-existing, unrelated to the feature):
+
+Classify as one of:
+
+- **Tech Debt** — working but fragile, duplicated, or convention-violating code
+- **Documentation Drift** — docs out of sync with actual behavior
+
+File an issue and move on — do not fix out-of-scope findings:
+
+```bash
+bin/flow issue --label "Tech Debt" --title "<issue_title>" --body "<issue_body>"
+```
+
+Or for documentation:
+
+```bash
+bin/flow issue --label "Documentation Drift" --title "<issue_title>" --body "<issue_body>"
+```
+
+After filing, record it:
+
+```bash
+bin/flow add-issue --label "Tech Debt" --title "<issue_title>" --url "<issue_url>" --phase "flow-code-review"
+```
+
+After fixing in-scope findings, run:
 
 ```bash
 bin/flow ci
