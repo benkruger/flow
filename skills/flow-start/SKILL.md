@@ -156,7 +156,7 @@ If it passes, continue to Step 4.
 
 If it fails, launch the `ci-fixer` sub-agent to diagnose and fix. Use the Agent tool:
 
-- `subagent_type`: `"ci-fixer"`
+- `subagent_type`: `"flow:ci-fixer"`
 - `description`: `"Fix bin/flow ci failures on main"`
 
 Provide the full `bin/flow ci` output in the prompt so the sub-agent
@@ -231,7 +231,7 @@ bin/flow ci
 - **Passes** — continue to Step 6
 - **Fails** — launch the `ci-fixer` sub-agent to diagnose and fix.
   Use the Agent tool:
-  - `subagent_type`: `"ci-fixer"`
+  - `subagent_type`: `"flow:ci-fixer"`
   - `description`: `"Fix bin/flow ci failures"`
   - Provide the full `bin/flow ci` output in the prompt.
   - After the sub-agent returns:

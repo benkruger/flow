@@ -247,24 +247,24 @@ def test_phase_transitions_follow_sequence():
 def test_start_uses_ci_fixer_subagent():
     """Start skill must reference the ci-fixer sub-agent for CI failures."""
     content = _read_skill("flow-start")
-    assert '"ci-fixer"' in content, (
-        "skills/flow-start/SKILL.md must reference ci-fixer sub-agent"
+    assert '"flow:ci-fixer"' in content, (
+        "skills/flow-start/SKILL.md must reference flow:ci-fixer sub-agent"
     )
     assert '"general-purpose"' not in content, (
         "skills/flow-start/SKILL.md must not reference general-purpose "
-        "sub-agent — use ci-fixer instead"
+        "sub-agent — use flow:ci-fixer instead"
     )
 
 
 def test_complete_uses_ci_fixer_subagent():
     """Complete skill must reference the ci-fixer sub-agent for CI failures."""
     content = _read_skill("flow-complete")
-    assert '"ci-fixer"' in content, (
-        "skills/flow-complete/SKILL.md must reference ci-fixer sub-agent"
+    assert '"flow:ci-fixer"' in content, (
+        "skills/flow-complete/SKILL.md must reference flow:ci-fixer sub-agent"
     )
     assert '"general-purpose"' not in content, (
         "skills/flow-complete/SKILL.md must not reference general-purpose "
-        "sub-agent — use ci-fixer instead"
+        "sub-agent — use flow:ci-fixer instead"
     )
 
 

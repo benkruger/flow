@@ -168,7 +168,7 @@ Parse the output. Each check has a status: pass, fail, or pending.
 **If any check has failed** — launch the `ci-fixer` sub-agent to diagnose
 and fix. Use the Agent tool:
 
-- `subagent_type`: `"ci-fixer"`
+- `subagent_type`: `"flow:ci-fixer"`
 - `description`: `"Fix CI failures on PR branch"`
 
 Provide the full `gh pr checks` output in the prompt so the sub-agent
@@ -314,7 +314,7 @@ Output the following banner in your response (not via Bash) inside a fenced code
 - State file deletion is what resets the session hook — do not skip it
 - Every step after the merge (Steps 8-10) is best-effort — if one fails, continue to the next
 - The skill is idempotent: safe to re-invoke via `/loop` after a "pending CI" stop
-- Never use `general-purpose` sub-agents — use `"ci-fixer"` for CI failures
+- Never use `general-purpose` sub-agents — use `"flow:ci-fixer"` for CI failures
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories
