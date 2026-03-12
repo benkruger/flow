@@ -24,7 +24,7 @@ In the target project:
 
 | Phase | Name | Command | Model | Purpose |
 |-------|------|---------|-------|---------|
-| 1 | Start | `/flow:flow-start` | sonnet | Create worktree, PR, state file, configure workspace |
+| 1 | Start | `/flow:flow-start` | haiku | Create worktree, PR, state file, configure workspace |
 | 2 | Plan | `/flow:flow-plan` | opus | Explore codebase, design approach, create implementation plan |
 | 3 | Code | `/flow:flow-code` | opus | Execute plan tasks one at a time with TDD |
 | 4 | Code Review | `/flow:flow-code-review` | opus | Four lenses: clarity, correctness, safety, CLAUDE.md compliance |
@@ -82,6 +82,7 @@ CI will fail if these are missing:
 - `lib/update-pr-body.py` — updates PR body: `--add-artifact` for list items, `--append-section` for collapsible/plain sections
 - `lib/stop-continue.py` — Stop hook script that forces continuation when `_continue_pending` flag is set in the state file
 - `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands and file-read commands in all Bash calls)
+- `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (blocks prompts when `_auto_continue` is set in state file)
 - `bin/flow` — dispatcher script routing subcommands to `lib/*.py`
 - `docs/reference/flow-state-schema.md` — state file schema reference
 - `docs/reference/skill-pattern.md` — template pattern for building new phase skills
@@ -182,6 +183,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 | `test_prime_project.py` | CLAUDE.md priming: marker insertion, idempotent replacement, framework switching |
 | `test_create_dependencies.py` | Dependency template: file creation, skip-if-exists, chmod, CLI |
 | `test_prime_setup.py` | Prime setup: data-driven permissions, settings merge, version marker, git exclude, pre-commit hook |
+| `test_validate_ask_user.py` | AskUserQuestion hook: blocks prompts when `_auto_continue` set, allows when absent/empty, subprocess integration |
 
 ## Maintainer Skills (private to this repo)
 

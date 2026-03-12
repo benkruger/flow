@@ -1,7 +1,7 @@
 ---
 name: flow-start
 description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrades dependencies, opens a PR, creates .flow-states/<branch>.json, and configures the workspace. Usage: /flow:flow-start <feature name words>"
-model: sonnet
+model: haiku
 ---
 
 # FLOW Start — Phase 1: Start

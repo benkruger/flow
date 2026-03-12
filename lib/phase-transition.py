@@ -22,7 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    PACIFIC, format_time, load_phase_config, now, project_root,
+    COMMANDS, PACIFIC, format_time, load_phase_config, now, project_root,
     resolve_branch, PHASE_ORDER,
 )
 
@@ -46,6 +46,9 @@ def phase_enter(state, phase):
     if phase == "flow-code-review":
         state["code_review_step"] = 0
 
+    # Clear auto-continue flag from the previous phase
+    state.pop("_auto_continue", None)
+
     first_visit = phase_data["visit_count"] == 1
 
     return state, {
@@ -57,7 +60,8 @@ def phase_enter(state, phase):
     }
 
 
-def phase_complete(state, phase, next_phase=None, phase_order=None):
+def phase_complete(state, phase, next_phase=None, phase_order=None,
+                    phase_commands=None):
     """Apply phase completion mutations. Returns (state, result_dict)."""
     phase_data = state["phases"][phase]
 
@@ -84,6 +88,24 @@ def phase_complete(state, phase, next_phase=None, phase_order=None):
     phase_data["completed_at"] = now()
     phase_data["session_started_at"] = None
     state["current_phase"] = next_phase
+
+    # Set _auto_continue if the current phase has continue=auto
+    skills = state.get("skills", {})
+    skill_config = skills.get(phase, {})
+    if isinstance(skill_config, str):
+        continue_mode = skill_config
+    elif isinstance(skill_config, dict):
+        continue_mode = skill_config.get("continue")
+    else:
+        continue_mode = None
+
+    if continue_mode == "auto":
+        commands = phase_commands or COMMANDS
+        next_command = commands.get(next_phase)
+        if next_command:
+            state["_auto_continue"] = next_command
+    else:
+        state.pop("_auto_continue", None)
 
     return state, {
         "status": "ok",
@@ -163,14 +185,17 @@ def main():
     # Load frozen phase config if available, fall back to module-level constants
     frozen_path = root / ".flow-states" / f"{branch}-phases.json"
     frozen_order = None
+    frozen_commands = None
     if frozen_path.exists():
-        frozen_order, _, _, _ = load_phase_config(frozen_path)
+        frozen_order, _, _, frozen_commands = load_phase_config(frozen_path)
 
     if args.action == "enter":
         state, result = phase_enter(state, args.phase)
     else:
         state, result = phase_complete(
-            state, args.phase, args.next_phase, phase_order=frozen_order,
+            state, args.phase, args.next_phase,
+            phase_order=frozen_order,
+            phase_commands=frozen_commands,
         )
 
     state_path.write_text(json.dumps(state, indent=2))

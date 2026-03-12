@@ -350,6 +350,91 @@ def test_reenter_code_review_resets_code_review_step():
     assert updated["code_review_step"] == 0
 
 
+# --- Auto-continue flag (in-process) ---
+
+
+def test_complete_sets_auto_continue_when_skills_continue_auto():
+    """phase_complete sets _auto_continue when skills.<phase>.continue is 'auto'."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
+    state["skills"] = {"flow-start": {"continue": "auto"}}
+
+    updated, result = _mod.phase_complete(state, "flow-start")
+
+    assert updated["_auto_continue"] == "/flow:flow-plan"
+    assert result["next_phase"] == "flow-plan"
+
+
+def test_complete_sets_auto_continue_with_flat_string_config():
+    """phase_complete handles flat string skill config (e.g. 'auto')."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
+    state["skills"] = {"flow-start": "auto"}
+
+    updated, result = _mod.phase_complete(state, "flow-start")
+
+    assert updated["_auto_continue"] == "/flow:flow-plan"
+
+
+def test_complete_no_auto_continue_when_manual():
+    """phase_complete does NOT set _auto_continue when continue is 'manual'."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
+    state["skills"] = {"flow-start": {"continue": "manual"}}
+
+    updated, result = _mod.phase_complete(state, "flow-start")
+
+    assert "_auto_continue" not in updated
+
+
+def test_complete_no_auto_continue_when_no_skills():
+    """phase_complete does NOT set _auto_continue when state has no skills key."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
+
+    updated, result = _mod.phase_complete(state, "flow-start")
+
+    assert "_auto_continue" not in updated
+
+
+def test_complete_clears_auto_continue_when_switching_to_manual():
+    """phase_complete removes _auto_continue if it was set but mode is now manual."""
+    state = make_state(current_phase="flow-plan", phase_statuses={
+        "flow-start": "complete", "flow-plan": "in_progress",
+    })
+    state["skills"] = {"flow-plan": {"continue": "manual"}}
+    state["_auto_continue"] = "/flow:flow-plan"
+
+    updated, result = _mod.phase_complete(state, "flow-plan")
+
+    assert "_auto_continue" not in updated
+
+
+def test_complete_no_auto_continue_when_skill_config_unexpected_type():
+    """phase_complete does NOT set _auto_continue when skill config is unexpected type."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
+    state["skills"] = {"flow-start": 42}
+
+    updated, result = _mod.phase_complete(state, "flow-start")
+
+    assert "_auto_continue" not in updated
+
+
+def test_enter_clears_auto_continue():
+    """phase_enter clears _auto_continue from the previous phase."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
+    state["_auto_continue"] = "/flow:flow-plan"
+
+    updated, result = _mod.phase_enter(state, "flow-plan")
+
+    assert "_auto_continue" not in updated
+
+
+def test_enter_no_error_when_auto_continue_absent():
+    """phase_enter does not error when _auto_continue is not in state."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
+
+    updated, result = _mod.phase_enter(state, "flow-plan")
+
+    assert "_auto_continue" not in updated
+
+
 def test_complete_future_session_started_clamps_to_zero():
     """If session_started_at is in the future, elapsed clamps to 0."""
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})

@@ -75,6 +75,15 @@
             "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-exit-plan.py"
           }
         ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-ask-user.py"
+          }
+        ]
       }
     ],
     "Stop": [
