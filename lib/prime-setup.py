@@ -88,19 +88,38 @@ def _allow_list(framework):
     return UNIVERSAL_ALLOW + _load_framework_permissions(framework)
 
 
-def compute_config_hash(framework):
-    """Compute a deterministic hash of all structural config inputs.
+def _canonical_config(framework, setup_epoch=None):
+    """Build the canonical config dict for hashing.
 
-    Hashes the canonical JSON of sorted allow list, deny list, exclude
-    entries, and defaultMode. Returns a 12-char hex digest.
+    Args:
+        framework: Framework name (e.g., 'python', 'rails')
+        setup_epoch: Override for SETUP_EPOCH (default: use current SETUP_EPOCH)
+
+    Returns:
+        Dict with allow, defaultMode, deny, exclude, and setup_epoch entries.
     """
-    canonical = {
+    if setup_epoch is None:
+        setup_epoch = SETUP_EPOCH
+    return {
         "allow": sorted(_allow_list(framework)),
         "defaultMode": "acceptEdits",
         "deny": sorted(FLOW_DENY),
         "exclude": sorted(EXCLUDE_ENTRIES),
-        "setup_epoch": SETUP_EPOCH,
+        "setup_epoch": setup_epoch,
     }
+
+
+def compute_config_hash(framework, setup_epoch=None):
+    """Compute a deterministic hash of all structural config inputs.
+
+    Hashes the canonical JSON of sorted allow list, deny list, exclude
+    entries, and defaultMode. Returns a 12-char hex digest.
+
+    Args:
+        framework: Framework name (e.g., 'python', 'rails')
+        setup_epoch: Override for SETUP_EPOCH (default: use current SETUP_EPOCH)
+    """
+    canonical = _canonical_config(framework, setup_epoch)
     raw = json.dumps(canonical, sort_keys=True)
     return hashlib.sha256(raw.encode()).hexdigest()[:12]
 

@@ -348,14 +348,15 @@ def test_hooks_json_has_stop_continue_hook():
 
 
 def test_version_changes_when_config_hash_changes():
-    """Verify the invariant: if config_hash changes, flow_version must change.
+    """Validate the checksum → version invariant is documented and would trigger on SETUP_EPOCH change.
 
-    This test validates that whenever SETUP_EPOCH (or other structural config)
-    changes, the flow_version is also bumped. This prevents projects from having
-    mismatched structural config and version.
+    This test verifies:
+    1. config_hash computation differs when SETUP_EPOCH increments
+    2. The invariant is documented in CLAUDE.md
+
+    Note: Full validation that developers actually bump flow_version when SETUP_EPOCH
+    increments requires release-time inspection of version history, not a unit test.
     """
-    import sys
-    import hashlib
     import importlib.util
 
     # Load prime-setup.py dynamically
@@ -364,41 +365,16 @@ def test_version_changes_when_config_hash_changes():
     prime_setup = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(prime_setup)
 
-    compute_config_hash = prime_setup.compute_config_hash
-    SETUP_EPOCH = prime_setup.SETUP_EPOCH
-    UNIVERSAL_ALLOW = prime_setup.UNIVERSAL_ALLOW
-    FLOW_DENY = prime_setup.FLOW_DENY
-    EXCLUDE_ENTRIES = prime_setup.EXCLUDE_ENTRIES
-    _allow_list = prime_setup._allow_list
-
-    # Get the current version
-    plugin = json.loads(
-        (REPO_ROOT / ".claude-plugin" / "plugin.json").read_text()
-    )
-    current_version = plugin["version"]
-
-    # Compute what the config_hash would be with current SETUP_EPOCH (Python framework)
-    current_hash = compute_config_hash("python")
-
-    # Simulate what happens if SETUP_EPOCH is incremented
-    simulated_epoch = SETUP_EPOCH + 1
-    canonical_new = {
-        "allow": sorted(_allow_list("python")),
-        "defaultMode": "acceptEdits",
-        "deny": sorted(FLOW_DENY),
-        "exclude": sorted(EXCLUDE_ENTRIES),
-        "setup_epoch": simulated_epoch,
-    }
-    raw = json.dumps(canonical_new, sort_keys=True)
-    simulated_hash = hashlib.sha256(raw.encode()).hexdigest()[:12]
+    # Compute what the config_hash would be with current and incremented SETUP_EPOCH
+    current_hash = prime_setup.compute_config_hash("python")
+    simulated_hash = prime_setup.compute_config_hash("python", setup_epoch=prime_setup.SETUP_EPOCH + 1)
 
     # Verify the hashes would actually differ
     assert current_hash != simulated_hash, (
         "Test setup error: config_hash should differ with SETUP_EPOCH+1"
     )
 
-    # Verify: if SETUP_EPOCH would change, version must change too
-    # This is enforced by checking that the version documentation mentions the invariant
+    # Verify: the invariant is documented in CLAUDE.md
     claude_md = (REPO_ROOT / "CLAUDE.md").read_text()
     assert "Checksum → Version Invariant" in claude_md or "if config_hash changes" in claude_md, (
         "CLAUDE.md must document the checksum → version invariant"
