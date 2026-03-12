@@ -141,8 +141,42 @@ def test_cleanup_skips_missing_ci_sentinel(git_repo):
     assert data["steps"]["ci_sentinel"] == "skipped"
 
 
+def test_cleanup_deletes_timings_file(git_repo):
+    wt_rel = _setup_feature(git_repo)
+    timings = git_repo / ".flow-states" / "test-feature-timings.md"
+    timings.write_text("| Phase | Duration |\n")
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["timings_file"] == "deleted"
+    assert not timings.exists()
+
+
+def test_cleanup_skips_missing_timings_file(git_repo):
+    wt_rel = _setup_feature(git_repo)
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["timings_file"] == "skipped"
+
+
+def test_cleanup_deletes_issues_file(git_repo):
+    wt_rel = _setup_feature(git_repo)
+    issues = git_repo / ".flow-states" / "test-feature-issues.md"
+    issues.write_text("| Label | Title |\n")
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["issues_file"] == "deleted"
+    assert not issues.exists()
+
+
+def test_cleanup_skips_missing_issues_file(git_repo):
+    wt_rel = _setup_feature(git_repo)
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["issues_file"] == "skipped"
+
+
 def test_cleanup_full_happy_path(git_repo):
-    """Single invocation asserts all 7 step results, return code, status,
+    """Single invocation asserts all 9 step results, return code, status,
     and all 3 filesystem effects (worktree, state file, log file)."""
     wt_rel = _setup_feature(git_repo)
     result = _run(git_repo, "test-feature", wt_rel)
@@ -159,6 +193,8 @@ def test_cleanup_full_happy_path(git_repo):
     assert data["steps"]["state_file"] == "deleted"
     assert data["steps"]["log_file"] == "deleted"
     assert data["steps"]["ci_sentinel"] == "skipped"
+    assert data["steps"]["timings_file"] == "skipped"
+    assert data["steps"]["issues_file"] == "skipped"
 
     # All 3 filesystem effects
     assert not (git_repo / wt_rel).exists()
@@ -343,6 +379,50 @@ def test_ci_sentinel_unlink_failure(git_repo, monkeypatch):
     monkeypatch.setattr(PosixPath, "unlink", _fail_third_unlink)
     steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
     assert steps["ci_sentinel"].startswith("failed:")
+
+
+def test_timings_file_unlink_failure(git_repo, monkeypatch):
+    wt_rel = _setup_feature(git_repo)
+    timings = git_repo / ".flow-states" / "test-feature-timings.md"
+    timings.write_text("| Phase | Duration |\n")
+    original_unlink = timings.unlink.__func__
+
+    call_count = 0
+
+    # state_file=1, log_file=2, timings=3 (frozen_phases + ci_sentinel skipped)
+    def _fail_third_unlink(self, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 3:
+            raise PermissionError("no permission")
+        return original_unlink(self, *args, **kwargs)
+
+    from pathlib import PosixPath
+    monkeypatch.setattr(PosixPath, "unlink", _fail_third_unlink)
+    steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
+    assert steps["timings_file"].startswith("failed:")
+
+
+def test_issues_file_unlink_failure(git_repo, monkeypatch):
+    wt_rel = _setup_feature(git_repo)
+    issues = git_repo / ".flow-states" / "test-feature-issues.md"
+    issues.write_text("| Label | Title |\n")
+    original_unlink = issues.unlink.__func__
+
+    call_count = 0
+
+    # state_file=1, log_file=2, issues=3 (frozen_phases + ci_sentinel + timings skipped)
+    def _fail_third_unlink(self, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 3:
+            raise PermissionError("no permission")
+        return original_unlink(self, *args, **kwargs)
+
+    from pathlib import PosixPath
+    monkeypatch.setattr(PosixPath, "unlink", _fail_third_unlink)
+    steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
+    assert steps["issues_file"].startswith("failed:")
 
 
 # --- tmp/ directory cleanup ---

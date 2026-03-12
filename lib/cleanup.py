@@ -130,6 +130,28 @@ def cleanup(project_root, branch, worktree, pr_number=None):
     else:
         steps["ci_sentinel"] = "skipped"
 
+    # Delete timings file
+    timings_file = root / ".flow-states" / f"{branch}-timings.md"
+    if timings_file.exists():
+        try:
+            timings_file.unlink()
+            steps["timings_file"] = "deleted"
+        except Exception as e:
+            steps["timings_file"] = f"failed: {e}"
+    else:
+        steps["timings_file"] = "skipped"
+
+    # Delete issues file
+    issues_file = root / ".flow-states" / f"{branch}-issues.md"
+    if issues_file.exists():
+        try:
+            issues_file.unlink()
+            steps["issues_file"] = "deleted"
+        except Exception as e:
+            steps["issues_file"] = f"failed: {e}"
+    else:
+        steps["issues_file"] = "skipped"
+
     return steps
 
 
