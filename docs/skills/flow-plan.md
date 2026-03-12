@@ -25,8 +25,8 @@ former Research, Design, and Plan phases with a single integrated phase.
    approach, and writes the plan to a plan file
 4. User iterates directly with the plan via plan mode's revision loop
 5. Stores the plan file path in the state file, adds the plan file artifact
-   to the PR, then calls `ExitPlanMode`
-6. Completes the phase and transitions to Code
+   to the PR, completes the phase, then calls `ExitPlanMode`
+6. If context survives ExitPlanMode: shows status banner and transitions to Code
 
 ---
 

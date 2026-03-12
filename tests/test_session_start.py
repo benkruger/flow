@@ -440,6 +440,39 @@ def test_multi_feature_code_review_step_tracking(git_repo):
     assert "Code Review Plugin" in ctx
 
 
+def test_never_entered_phase_instructs_auto_continue(git_repo):
+    """Phase advanced but never entered (status still pending) → auto-continue."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    # current_phase advanced to flow-code by Plan completion, but phase_enter never ran
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete",
+    })
+    state["feature"] = "Auto Continue"
+    write_state(state_dir, "auto-continue", state)
+
+    result = _run(git_repo)
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "flow:flow-continue" in ctx
+    assert "Do NOT invoke flow:flow-continue" not in ctx
+
+
+def test_phase_1_never_entered_does_not_auto_continue(git_repo):
+    """Phase 1 (flow-start) with started_at None → normal behavior, no auto-continue."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
+    state["feature"] = "Fresh Start"
+    state["phases"]["flow-start"]["started_at"] = None
+    write_state(state_dir, "fresh-start", state)
+
+    result = _run(git_repo)
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "Do NOT invoke" in ctx
+
+
 def test_output_has_both_context_fields(git_repo):
     """Output must have both additional_context and hookSpecificOutput.additionalContext."""
     state_dir = git_repo / ".flow-states"

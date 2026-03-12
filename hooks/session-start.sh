@@ -91,12 +91,19 @@ if len(states) == 1:
     feature = s.get("feature", "")
     plan_file = s.get("plan_file")
     plan_approved = cp == "flow-plan" and plan_file is not None
+    phase_data = s.get("phases", {}).get(cp, {})
+    never_entered = cp != "flow-start" and phase_data.get("status") == "pending"
 
     if plan_approved:
         resume_instruction = (
             "The plan was approved and ExitPlanMode cleared context.\n"
             "Invoke flow:flow-continue immediately to complete Phase 2 and "
             "transition to Phase 3: Code.\n"
+        )
+    elif never_entered:
+        resume_instruction = (
+            "The previous phase completed but the current phase was never entered.\n"
+            "Invoke flow:flow-continue immediately to resume.\n"
         )
     else:
         resume_instruction = (
@@ -129,18 +136,22 @@ else:
 
     feature_list = "\n".join(f"  - {f}" for f in features)
 
-    plan_approved_feature = None
+    auto_continue_feature = None
     for s in states:
         cp = s.get("current_phase", "flow-start")
         if cp == "flow-plan" and s.get("plan_file") is not None:
-            plan_approved_feature = s.get("feature", "")
+            auto_continue_feature = s.get("feature", "")
+            break
+        phase_data = s.get("phases", {}).get(cp, {})
+        if cp != "flow-start" and phase_data.get("status") == "pending":
+            auto_continue_feature = s.get("feature", "")
             break
 
-    if plan_approved_feature:
+    if auto_continue_feature:
         resume_instruction = (
-            f'FLOW feature "{plan_approved_feature}" has an approved plan.\n'
+            f'FLOW feature "{auto_continue_feature}" needs to resume.\n'
             "Invoke flow:flow-continue immediately to restore worktree context "
-            "and transition to Phase 3: Code.\n"
+            "and continue.\n"
         )
     else:
         resume_instruction = (

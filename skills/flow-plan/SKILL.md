@@ -166,7 +166,7 @@ The plan file should include these sections:
 
 ---
 
-## Step 3 — Store plan file and exit plan mode
+## Step 3 — Store plan file, complete phase, and exit plan mode
 
 Store the plan file path in the state file BEFORE exiting plan mode.
 `ExitPlanMode` may clear context, so nothing after it is guaranteed
@@ -185,21 +185,24 @@ Add the plan file artifact to the PR:
 bin/flow update-pr-body --pr <pr_number> --add-artifact --label "Plan file" --value <plan_file_path>
 ```
 
-After the plan file path is stored, call `ExitPlanMode`.
-
----
-
-## Done — Update state and complete phase
-
-Complete the phase:
+Complete the phase before exiting plan mode:
 
 ```bash
 bin/flow phase-transition --phase flow-plan --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
-Use the `formatted_time` field in the COMPLETE banner below. Do not print
-the timing calculation.
+Save the `formatted_time` field — use it in the Done banner if context
+survives. Do not print the timing calculation.
+
+After phase completion is recorded, call `ExitPlanMode`.
+
+---
+
+## Done — Banner and transition (best-effort)
+
+`ExitPlanMode` may clear context. If you reach this section, the phase
+is already complete (recorded in Step 3).
 
 Output in your response (not via Bash) inside a fenced code block:
 

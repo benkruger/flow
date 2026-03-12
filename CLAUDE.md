@@ -24,7 +24,7 @@ In the target project:
 
 | Phase | Name | Command | Model | Purpose |
 |-------|------|---------|-------|---------|
-| 1 | Start | `/flow:flow-start` | haiku | Create worktree, PR, state file, configure workspace |
+| 1 | Start | `/flow:flow-start` | sonnet | Create worktree, PR, state file, configure workspace |
 | 2 | Plan | `/flow:flow-plan` | opus | Explore codebase, design approach, create implementation plan |
 | 3 | Code | `/flow:flow-code` | opus | Execute plan tasks one at a time with TDD |
 | 4 | Code Review | `/flow:flow-code-review` | opus | Four lenses: clarity, correctness, safety, CLAUDE.md compliance |

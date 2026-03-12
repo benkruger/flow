@@ -1,7 +1,7 @@
 ---
 name: flow-start
 description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrades dependencies, opens a PR, creates .flow-states/<branch>.json, and configures the workspace. Usage: /flow:flow-start <feature name words>"
-model: haiku
+model: sonnet
 ---
 
 # FLOW Start — Phase 1: Start
@@ -272,11 +272,14 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ```
 ````
 
+**If continue=auto**, invoke `flow:flow-plan` directly. Do not invoke
+`flow:flow-status` or use AskUserQuestion.
+
+**If continue=manual**:
+
 Invoke the `flow:flow-status` skill to show the current state.
 
-**If continue=auto**, skip the transition question and invoke `flow:flow-plan` directly.
-
-**If continue=manual**, use AskUserQuestion:
+Use AskUserQuestion:
 
 > "Phase 1: Start is complete. Ready to begin Phase 2: Plan?"
 >

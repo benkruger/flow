@@ -476,9 +476,9 @@ def test_model_frontmatter_is_valid():
 
 def test_model_frontmatter_matches_documented_table():
     """Model frontmatter must match: opus for Plan/Code/Code Review, sonnet for
-    Learn/Commit, haiku for Start/Complete."""
+    Start/Learn/Commit, haiku for Complete."""
     expected = {
-        "flow-start": "haiku",
+        "flow-start": "sonnet",
         "flow-plan": "opus",
         "flow-code": "opus",
         "flow-code-review": "opus",
