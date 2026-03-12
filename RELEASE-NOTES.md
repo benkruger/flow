@@ -1,5 +1,18 @@
 # Release Notes
 
+## v0.28.7 — Bug fixes for phase halting and ci-fixer agent name
+
+### Fixes
+
+- Fix ci-fixer sub-agent launch failure — skills now use the namespaced
+  `flow:ci-fixer` agent type instead of bare `ci-fixer`, eliminating the
+  wasted "agent not found" error on every CI failure
+- Fix Code and Learn phases halting after child skill returns — applied
+  self-invocation pattern so phases auto-resume after `/flow:flow-commit`
+  and other built-in skills return control
+- Add `--auto` and `--manual` flags to `/flow:flow-commit` so phase skills
+  can control approval behavior explicitly
+
 ## v0.28.6 — Worktree path safety hook
 
 - Add PreToolUse hook (`validate-worktree-paths.py`) that blocks Edit, Write,
