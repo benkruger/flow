@@ -38,13 +38,23 @@ Parse the JSON output. If there are no open issues, print the COMPLETE banner an
 
 ## Step 2 — Categorize
 
-Assign each issue to exactly one category. Use labels first, then fall back to content analysis of the title and body:
+Assign each issue to exactly one category. If an issue has a label
+matching one of the label-based categories below, use that label as
+the category directly. Otherwise, fall back to content analysis of
+the title and body:
+
+**Label-based categories** (matched by GitHub label):
+
+- **Rule** — rule addition or update for `.claude/rules/`
+- **Flow** — FLOW process gap or improvement
+- **Flaky Test** — intermittent test failure with reproduction data
+- **Tech Debt** — working but fragile, duplicated, or convention-violating code
+- **Documentation Drift** — docs out of sync with actual behavior
+
+**Content-based categories** (fallback when no label matches):
 
 - **Bug** — something is broken or behaving incorrectly
 - **Enhancement** — new feature or improvement to existing behavior
-- **Learning** — insight, pattern, or convention to capture
-- **Process Gap** — missing workflow step, skill gap, or automation opportunity
-- **Documentation** — docs out of sync, missing docs, or unclear docs
 - **Other** — does not fit any category above
 
 ## Step 3 — Prioritize
