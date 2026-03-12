@@ -1172,6 +1172,25 @@ def test_learning_files_flow_issues_not_learning():
     )
 
 
+def test_code_files_flaky_test_issues():
+    """Code skill CI Gate must file Flaky Test issues for intermittent failures."""
+    content = _read_skill("flow-code")
+    # CI Gate section must mention flaky test detection
+    ci_gate_match = re.search(
+        r"### bin/flow ci Gate.*?\n(.*?)(?:\n### Commit|\n---)",
+        content,
+        re.DOTALL,
+    )
+    assert ci_gate_match, "Code skill has no 'bin/flow ci Gate' section"
+    ci_gate_text = ci_gate_match.group(1)
+    assert "Flaky Test" in ci_gate_text, (
+        "Code CI Gate must detect and file 'Flaky Test' issues"
+    )
+    assert "bin/flow issue" in ci_gate_text, (
+        "Code CI Gate must use 'bin/flow issue' to file flaky test issues"
+    )
+
+
 def test_generic_skills_have_no_framework_conditionals():
     """Skills that were made generic must not contain framework conditionals.
 

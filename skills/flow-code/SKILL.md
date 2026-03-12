@@ -260,6 +260,23 @@ Run `bin/flow ci`. This must be green before committing.
 - Re-run `bin/flow ci` after each fix
 - Max 3 attempts — if still failing after 3, stop and report exactly what is failing
 
+**Flaky test detection:** If a test fails on one attempt but passes on a
+subsequent attempt without any code changes, it is flaky. File a
+"Flaky Test" issue with reproduction data and continue:
+
+```bash
+bin/flow issue --label "Flaky Test" --title "<issue_title>" --body "<issue_body>"
+```
+
+The issue body must include: the test name, the failure message, how many
+attempts it took to pass, and the task being worked on.
+
+After filing, record it:
+
+```bash
+bin/flow add-issue --label "Flaky Test" --title "<issue_title>" --url "<issue_url>" --phase "flow-code"
+```
+
 <HARD-GATE>
 Do NOT commit and do NOT move to the next task until `bin/flow ci` is green.
 </HARD-GATE>
