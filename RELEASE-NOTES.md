@@ -1,5 +1,15 @@
 # Release Notes
 
+## v0.28.14 — Fix ci-fixer commit enforcement and docs accuracy
+
+- Start Phase: ci-fixer fixes on main now use `/flow:flow-commit --auto` with a
+  HARD-GATE to prevent uncommitted changes from being invisible in the worktree.
+  Step 6 dependency commits also use `--auto` for consistency.
+- Commit skill: `--auto` exception list expanded from just `/flow:flow-learn` to
+  all phase skills that commit autonomously.
+- Docs: Removed incorrect claim that FLOW commits files to the repo — nothing is
+  committed.
+
 ## v0.28.13 — Docs restructure and auto-loop CI pending
 
 - Restructured README and marketing site around three core goals (Unobtrusive,
