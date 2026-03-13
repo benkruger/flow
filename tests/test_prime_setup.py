@@ -508,12 +508,12 @@ def test_pre_commit_hook_idempotent(git_repo):
     assert content_first == content_second
 
 
-def test_pre_commit_hook_blocks_direct_commit(git_repo):
+def test_pre_commit_hook_blocks_direct_commit(git_repo, branch):
     _mod.install_pre_commit_hook(git_repo)
     # Create active FLOW state file for current branch
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(exist_ok=True)
-    (state_dir / "main.json").write_text("{}")
+    (state_dir / f"{branch}.json").write_text("{}")
     (git_repo / "test.txt").write_text("hello")
     subprocess.run(["git", "add", "test.txt"], cwd=git_repo, check=True)
     result = subprocess.run(
@@ -524,12 +524,12 @@ def test_pre_commit_hook_blocks_direct_commit(git_repo):
     assert "BLOCKED" in result.stderr or "BLOCKED" in result.stdout
 
 
-def test_pre_commit_hook_allows_flow_commit(git_repo):
+def test_pre_commit_hook_allows_flow_commit(git_repo, branch):
     _mod.install_pre_commit_hook(git_repo)
     # Create active FLOW state file for current branch
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(exist_ok=True)
-    (state_dir / "main.json").write_text("{}")
+    (state_dir / f"{branch}.json").write_text("{}")
     (git_repo / "test.txt").write_text("hello")
     subprocess.run(["git", "add", "test.txt"], cwd=git_repo, check=True)
     (git_repo / ".flow-commit-msg").write_text("test commit message")
