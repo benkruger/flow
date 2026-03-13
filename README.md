@@ -18,7 +18,7 @@ Claude Code is powerful, but undisciplined by default. FLOW imposes structure. N
 
 ### Unobtrusive
 
-Zero dependencies — pure Markdown skills with a thin Python dispatcher. Only `.flow.json` and `.claude/settings.json` are committed (via `/flow-prime`, once per project). During active development, a single gitignored JSON state file exists at `.flow-states/<branch>.json`. When the feature completes, that file is deleted too. Three commands to set up. One file while you work. Zero when you're done.
+Zero dependencies — pure Markdown skills with a thin Python dispatcher. Nothing is committed — `.flow.json` and `.claude/settings.json` are git-excluded (via `/flow-prime`, once per project). During active development, a single gitignored JSON state file exists at `.flow-states/<branch>.json`. When the feature completes, that file is deleted too. Three commands to set up. One file while you work. Zero when you're done.
 
 ### Autonomous or Manual
 

@@ -8,13 +8,13 @@ This repo is the plugin source code. When installed in a target project, skills 
 
 Three core tenets guide every design decision:
 
-1. **Unobtrusive** — zero repo footprint, zero dependencies. Only `.claude/settings.json` and `.flow.json` are committed. Everything else lives in `.git/` or is gitignored.
+1. **Unobtrusive** — zero repo footprint, zero dependencies. Nothing is committed — `.claude/settings.json` and `.flow.json` are git-excluded. Everything else lives in `.git/` or is gitignored.
 2. **As autonomous or manual as you want** — configurable autonomy via `.flow.json` skills settings.
 3. **Safe for local env** — no containers needed, no permission prompts ever. Native tools only, no external dependencies.
 
 In the target project:
 
-- Only `.claude/settings.json` and `.flow.json` are committed (permissions and config)
+- Nothing is committed — `.claude/settings.json` and `.flow.json` are git-excluded
 - `.flow-states/` is gitignored and deleted at Complete
 - After Complete, the only permanent artifacts are the merged PR and any CLAUDE.md learnings
 - Skills are pure Markdown instructions, not executable code
