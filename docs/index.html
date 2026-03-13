@@ -102,17 +102,18 @@
     }
 
     section {
-      padding: 48px 0;
+      padding: 64px 0;
       border-bottom: 1px solid var(--border);
     }
 
     section:last-of-type { border-bottom: none; }
 
     h2 {
-      font-size: 28px;
-      font-weight: 600;
-      margin-bottom: 20px;
-      letter-spacing: -0.3px;
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 24px;
+      letter-spacing: -0.5px;
+      margin-top: 0;
     }
 
     h3 {
@@ -237,6 +238,11 @@
     .feature p {
       font-size: 14px;
       margin-bottom: 0;
+    }
+
+    .feature:nth-child(4) {
+      border: 2px solid var(--accent);
+      background: linear-gradient(135deg, var(--accent-subtle), var(--surface));
     }
 
     table {
@@ -414,6 +420,30 @@
     <p class="tagline">An opinionated 6-phase software development lifecycle for Claude Code. Every feature follows the same phases in the same order. No shortcuts. Supports <span class="highlight-phrase">Rails</span> and <span class="highlight-phrase">Python</span>.</p>
   </header>
 
+  <!-- FLOW GOALS -->
+  <section>
+    <h2>FLOW Goals</h2>
+    <p>Three core principles guide FLOW:</p>
+    <div class="features">
+      <div class="feature">
+        <strong>🛡️ Unobtrusive</strong>
+        <p>Zero repo footprint. Zero dependencies. Only `.flow.json` and `.claude/settings.json` are committed. When your feature is done, the state file deletes itself.</p>
+      </div>
+      <div class="feature">
+        <strong>⚙️ As Autonomous or Manual as You Want</strong>
+        <p>Control per skill. Per axis. Per run. Start fully manual. Dial up autonomy as your comfort grows. Go fully autonomous when you trust the workflow.</p>
+      </div>
+      <div class="feature">
+        <strong>🔐 Safe for Local Env</strong>
+        <p>No containers needed. No permission prompts. Native tools only. No external dependencies. Runs entirely in your environment on your machine.</p>
+      </div>
+      <div class="feature">
+        <strong>✅ Guardrails Built In</strong>
+        <p>100% test coverage enforced. <2 min CI gate. Linter compliant. No skipping tests, no weak coverage, no shortcuts past review.</p>
+      </div>
+    </div>
+  </section>
+
   <!-- WHY -->
   <section>
     <h2>Why</h2>
@@ -510,6 +540,9 @@
   <!-- WHY FLOW IS DIFFERENT -->
   <section>
     <h2>Why FLOW Is Different</h2>
+    <div class="callout">
+      <p><strong>Guardrails are Non-Negotiable:</strong> 100% test coverage. <code>bin/flow ci</code> passes. Linter green. Every commit enforced. FLOW prevents skipped tests, untested code, coverage gaps, linter violations, and shortcuts past review. These are not suggestions — they are mandatory gates.</p>
+    </div>
     <div class="cool-grid">
 
       <div class="cool-card-front">
