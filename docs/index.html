@@ -240,7 +240,7 @@
       margin-bottom: 0;
     }
 
-    .feature:nth-child(4) {
+    .feature-highlight {
       border: 2px solid var(--accent);
       background: linear-gradient(135deg, var(--accent-subtle), var(--surface));
     }
@@ -437,9 +437,9 @@
         <strong>🔐 Safe for Local Env</strong>
         <p>No containers needed. No permission prompts. Native tools only. No external dependencies. Runs entirely in your environment on your machine.</p>
       </div>
-      <div class="feature">
+      <div class="feature feature-highlight">
         <strong>✅ Guardrails Built In</strong>
-        <p>100% test coverage enforced. <2 min CI gate. Linter compliant. No skipping tests, no weak coverage, no shortcuts past review.</p>
+        <p>Every commit gates on <code>bin/flow ci</code>. 100% coverage. Linter green. Under 2 minutes. No exceptions.</p>
       </div>
     </div>
   </section>
