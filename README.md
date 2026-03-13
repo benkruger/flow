@@ -127,6 +127,32 @@ FLOW configures workspace permissions in `.claude/settings.json` and a version m
 
 ---
 
+## Dependencies & Guardrails
+
+FLOW enforces discipline through guardrails — code that doesn't pass scrutiny doesn't get committed.
+
+Every commit requires `bin/flow ci` to pass. This is not optional, and no flags bypass it.
+
+- **100% test coverage** — every line exercised, both branches of every conditional
+- **All tests passing** — no flaky tests, no skipped tests
+- **Linter compliant** — framework-specific style rules (RuboCop for Rails, ruff for Python)
+- **<2 minute guarantee** — guardrails complete in under 2 minutes, so you stay in flow state
+
+The Code phase enforces this: after every task, before committing, `bin/flow ci` must be green. If it fails, fix the code — don't work around the guardrails.
+
+**What FLOW prevents:**
+
+- ✓ Committing code without tests
+- ✓ Merging untested branches
+- ✓ Code coverage falling below 100%
+- ✓ Linter violations lingering
+- ✓ Skipping the review phase
+- ✓ Force-merging under pressure
+
+See **Framework-Specific Hard Rules** in the project's CLAUDE.md for language-specific conventions.
+
+---
+
 ## Utility Commands
 
 Available at any point in the workflow:
