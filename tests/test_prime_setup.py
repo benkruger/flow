@@ -18,11 +18,15 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
-def _run(project_root, framework="rails"):
+def _run(project_root, framework="rails", skills_json=None, commit_format=None):
     """Run prime-setup.py via subprocess."""
     cmd = [sys.executable, SCRIPT, str(project_root)]
     if framework:
         cmd.extend(["--framework", framework])
+    if skills_json is not None:
+        cmd.extend(["--skills-json", skills_json])
+    if commit_format is not None:
+        cmd.extend(["--commit-format", commit_format])
     result = subprocess.run(cmd, capture_output=True, text=True)
     return result
 
@@ -525,3 +529,113 @@ def test_pre_commit_hook_allows_flow_commit(git_repo):
         cwd=git_repo, capture_output=True, text=True,
     )
     assert result.returncode == 0
+
+
+# --- commit_format in version marker ---
+
+
+def test_version_marker_with_commit_format(tmp_path):
+    _mod.write_version_marker(
+        tmp_path, _mod._plugin_version(), "rails", commit_format="full",
+    )
+    data = json.loads((tmp_path / ".flow.json").read_text())
+    assert data["commit_format"] == "full"
+
+
+def test_version_marker_without_commit_format_has_no_key(tmp_path):
+    _mod.write_version_marker(tmp_path, _mod._plugin_version(), "rails")
+    data = json.loads((tmp_path / ".flow.json").read_text())
+    assert "commit_format" not in data
+
+
+def test_version_marker_title_only_format(tmp_path):
+    _mod.write_version_marker(
+        tmp_path, _mod._plugin_version(), "python", commit_format="title-only",
+    )
+    data = json.loads((tmp_path / ".flow.json").read_text())
+    assert data["commit_format"] == "title-only"
+
+
+# --- CLI --skills-json and --commit-format ---
+
+
+def test_cli_skills_json_written_to_flow_json(git_repo):
+    skills = {"flow-start": {"continue": "manual"}, "flow-abort": "auto"}
+    result = _run(git_repo, skills_json=json.dumps(skills))
+    assert result.returncode == 0
+    data = json.loads((git_repo / ".flow.json").read_text())
+    assert data["skills"] == skills
+
+
+def test_cli_commit_format_written_to_flow_json(git_repo):
+    result = _run(git_repo, commit_format="title-only")
+    assert result.returncode == 0
+    data = json.loads((git_repo / ".flow.json").read_text())
+    assert data["commit_format"] == "title-only"
+
+
+def test_cli_skills_json_and_commit_format_together(git_repo):
+    skills = {"flow-code": {"commit": "auto", "continue": "auto"}}
+    result = _run(
+        git_repo, skills_json=json.dumps(skills), commit_format="full",
+    )
+    assert result.returncode == 0
+    data = json.loads((git_repo / ".flow.json").read_text())
+    assert data["skills"] == skills
+    assert data["commit_format"] == "full"
+
+
+def test_cli_invalid_skills_json_returns_error(git_repo):
+    result = _run(git_repo, skills_json="not valid json")
+    assert result.returncode == 1
+    data = json.loads(result.stdout)
+    assert data["status"] == "error"
+    assert "skills-json" in data["message"].lower()
+
+
+def test_cli_ignores_unknown_args(git_repo):
+    cmd = [sys.executable, SCRIPT, str(git_repo), "--framework", "rails", "--unknown"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+
+
+# --- Consolidated prime-project and create-dependencies ---
+
+
+def test_cli_primes_project_claude_md(git_repo):
+    (git_repo / "CLAUDE.md").write_text("# Project\n")
+    result = _run(git_repo, framework="rails")
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["prime_project"] == "ok"
+    content = (git_repo / "CLAUDE.md").read_text()
+    assert "<!-- FLOW:BEGIN -->" in content
+
+
+def test_cli_prime_project_error_does_not_block_success(git_repo):
+    result = _run(git_repo, framework="rails")
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["prime_project"] == "error"
+    assert data["status"] == "ok"
+
+
+def test_cli_creates_bin_dependencies(git_repo):
+    result = _run(git_repo, framework="rails")
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["dependencies"] == "ok"
+    assert (git_repo / "bin" / "dependencies").exists()
+
+
+def test_cli_dependencies_skipped_when_exists(git_repo):
+    bin_dir = git_repo / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "dependencies").write_text("#!/bin/bash\ncustom\n")
+    result = _run(git_repo, framework="rails")
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["dependencies"] == "skipped"
+    assert (bin_dir / "dependencies").read_text() == "#!/bin/bash\ncustom\n"

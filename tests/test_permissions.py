@@ -146,6 +146,8 @@ PLACEHOLDER_SUBS = {
     "<issue_url>": "https://github.com/test/test/issues/1",
     "<n>": "3",
     "<file>": "lib/foo.py",
+    "<skills_dict_json>": '{"flow-start":{"continue":"manual"}}',
+    "<commit_format>": "full",
 }
 
 

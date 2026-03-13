@@ -165,22 +165,29 @@ Store the result as `commit_format`:
 
 ### Step 4 — Run prime setup script
 
+Serialize `skills_dict` from Step 2 as a JSON string for the `--skills-json` argument.
+Pass the `commit_format` value from Step 3 via `--commit-format`.
+
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --framework <framework>
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --framework <framework> --skills-json '<skills_dict_json>' --commit-format <commit_format>
 ```
 
-The script handles:
+The script handles everything in a single call:
 
 - Reading or creating `.claude/settings.json`
 - Merging FLOW permissions (additive only — preserves existing entries)
 - Setting `defaultMode` to `acceptEdits` (overrides existing values — FLOW requires this for state file writes without prompts)
-- Writing `.flow.json` with version marker and framework
+- Writing `.flow.json` with version marker, framework, config hash, skills config, and commit format
 - Adding `.flow-states/`, `.worktrees/`, `.flow.json`, and `bin/dependencies` to `.git/info/exclude`
 - Installing a pre-commit hook at `.git/hooks/pre-commit` that blocks direct `git commit` and requires all commits to go through `/flow:flow-commit`
+- Priming the project CLAUDE.md with framework conventions (if CLAUDE.md exists)
+- Creating `bin/dependencies` from the framework template (skips if already exists)
 
-Output JSON: `{"status": "ok", "settings_merged": true, "exclude_updated": true, "version_marker": true, "hook_installed": true, "framework": "rails|python"}`
+Output JSON: `{"status": "ok", "settings_merged": true, "exclude_updated": true, "version_marker": true, "hook_installed": true, "framework": "rails|python", "prime_project": "ok|error", "dependencies": "ok|skipped"}`
 
 If the script returns an error, show the message and stop.
+
+The `config_hash` field in `.flow.json` is a 12-character hex digest. When the plugin version changes, `/flow-start` recomputes the hash and compares against the stored value to decide whether re-prime is needed. If the config hasn't changed, the version is auto-upgraded without re-running `/flow-prime`.
 
 The permissions merged depend on the framework. Universal permissions are
 always merged. Framework-specific permissions are loaded from
@@ -275,46 +282,7 @@ claude plugin install code-review@claude-code-plugins
 
 If both are already present, skip silently.
 
-### Step 6 — Write skills config to .flow.json
-
-After the prime-setup script writes `.flow.json`, read it back with the Read tool,
-add the `skills` key from `skills_dict` (Step 2) and the `commit_format` key
-from Step 3, and write the file back with the Write tool. The result should
-look like:
-
-```json
-{"flow_version": "0.16.4", "framework": "python", "config_hash": "2c54c5cd6972", "commit_format": "full", "skills": {"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}}
-```
-
-The `config_hash` field is a 12-character hex digest stored by `prime-setup`. When the plugin version changes, `/flow-start` recomputes the hash and compares against the stored value to decide whether re-prime is needed. If the config hasn't changed, the version is auto-upgraded without re-running `/flow-prime`.
-
-### Step 7 — Prime project CLAUDE.md
-
-If the project has a `CLAUDE.md`, prime it with framework conventions:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-project <project_root> --framework <framework>
-```
-
-Parse the JSON output. If `"status": "ok"`, the project CLAUDE.md now
-contains framework conventions between `<!-- FLOW:BEGIN -->` and
-`<!-- FLOW:END -->` markers. If `"status": "error"`, skip priming
-silently — the user can prime later by running init again after
-creating a CLAUDE.md.
-
-### Step 8 — Create bin/dependencies
-
-Create the dependency updater script from the framework template:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow create-dependencies <project_root> --framework <framework>
-```
-
-Parse the JSON output. If `"status": "ok"`, `bin/dependencies` was
-created. If `"status": "skipped"`, the file already exists (user may
-have customized it). If `"status": "error"`, report to the user.
-
-### Step 9 — Commit and push
+### Step 6 — Commit and push
 
 Check if anything is staged by running `git status`. If the output contains "nothing to commit", skip the commit and push — go straight to Done.
 

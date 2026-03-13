@@ -19,16 +19,15 @@ One-time project setup. Configures workspace permissions in `.claude/settings.js
 1. Auto-detects framework using data-driven detection (`frameworks/*/detect.json`) and confirms with the user
 2. Asks the user to choose an autonomy level (fully autonomous, fully manual, recommended, or customize per skill)
 3. Asks the user to choose a commit message format (title-only or full)
-4. Reads `.claude/settings.json` (or starts with `{}`)
-5. Merges FLOW allow/deny permission entries (universal + framework-specific from `frameworks/<name>/permissions.json`), preserving existing entries
-6. Writes the merged `.claude/settings.json`
-7. Writes `.flow.json` with the current FLOW version, framework, commit format, and skills configuration
-8. Adds `.flow-states/` and `.worktrees/` to `.git/info/exclude`
-9. Installs a pre-commit hook at `.git/hooks/pre-commit` that blocks direct `git commit` and requires `/flow:flow-commit`
-10. Installs the `code-review` plugin from the `anthropics/claude-code` marketplace
-11. Primes the project CLAUDE.md with framework conventions from `frameworks/<name>/priming.md`
-12. Creates `bin/dependencies` from the framework template
-13. Commits `.claude/settings.json` and `.flow.json`
+4. Runs a single setup script that handles all configuration in one call:
+   - Reads or creates `.claude/settings.json` and merges FLOW allow/deny permissions (universal + framework-specific)
+   - Writes `.flow.json` with version, framework, config hash, commit format, and skills configuration
+   - Adds `.flow-states/`, `.worktrees/`, `.flow.json`, and `bin/dependencies` to `.git/info/exclude`
+   - Installs a pre-commit hook that blocks direct `git commit` and requires `/flow:flow-commit`
+   - Primes the project CLAUDE.md with framework conventions from `frameworks/<name>/priming.md`
+   - Creates `bin/dependencies` from the framework template
+5. Installs the `code-review` plugin from the `anthropics/claude-code` marketplace
+6. Commits `.claude/settings.json` and `.flow.json`
 
 ---
 

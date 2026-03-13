@@ -17,7 +17,17 @@ import subprocess
 import sys
 from pathlib import Path
 
+import importlib.util
 from flow_utils import frameworks_dir as _frameworks_dir
+
+
+def _import_sibling(name, filename):
+    """Import a sibling module with a hyphenated filename."""
+    path = Path(__file__).resolve().parent / filename
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 UNIVERSAL_ALLOW = [
     "Bash(git -C *)",
@@ -173,17 +183,20 @@ def merge_settings(project_root, framework):
 
 
 def write_version_marker(project_root, version, framework, skills=None,
-                         config_hash=None):
+                         config_hash=None, commit_format=None):
     """Write .flow.json with the plugin version, framework, and optional fields.
 
     If skills is provided, it is included as a top-level key mapping skill
     names to "auto" or "manual". If config_hash is provided, it is stored
-    for version upgrade comparisons.
+    for version upgrade comparisons. If commit_format is provided, it is
+    stored as a top-level key.
     """
     flow_json = project_root / ".flow.json"
     data = {"flow_version": version, "framework": framework}
     if config_hash is not None:
         data["config_hash"] = config_hash
+    if commit_format is not None:
+        data["commit_format"] = commit_format
     if skills is not None:
         data["skills"] = skills
     flow_json.write_text(json.dumps(data) + "\n")
@@ -283,12 +296,23 @@ def main():
         }))
         sys.exit(1)
 
-    # Parse --framework argument
+    # Parse arguments
     framework = None
-    for i, arg in enumerate(sys.argv[2:], start=2):
-        if arg == "--framework" and i + 1 < len(sys.argv):
+    skills_json = None
+    commit_format = None
+    i = 2
+    while i < len(sys.argv):
+        if sys.argv[i] == "--framework" and i + 1 < len(sys.argv):
             framework = sys.argv[i + 1]
-            break
+            i += 2
+        elif sys.argv[i] == "--skills-json" and i + 1 < len(sys.argv):
+            skills_json = sys.argv[i + 1]
+            i += 2
+        elif sys.argv[i] == "--commit-format" and i + 1 < len(sys.argv):
+            commit_format = sys.argv[i + 1]
+            i += 2
+        else:
+            i += 1
 
     if not framework or not (_frameworks_dir() / framework).is_dir():
         print(json.dumps({
@@ -297,15 +321,32 @@ def main():
         }))
         sys.exit(1)
 
+    skills = None
+    if skills_json is not None:
+        try:
+            skills = json.loads(skills_json)
+        except json.JSONDecodeError as e:
+            print(json.dumps({
+                "status": "error",
+                "message": f"Invalid --skills-json: {e}",
+            }))
+            sys.exit(1)
+
     try:
         plugin_data = _plugin_json()
         version = plugin_data["version"]
         config_hash = compute_config_hash(framework)
         merge_settings(project_root, framework)
         write_version_marker(project_root, version, framework,
-                             config_hash=config_hash)
+                             skills=skills, config_hash=config_hash,
+                             commit_format=commit_format)
         exclude_updated = update_git_exclude(project_root)
         install_pre_commit_hook(project_root)
+
+        _prime_project = _import_sibling("prime_project", "prime-project.py")
+        _create_deps = _import_sibling("create_deps", "create-dependencies.py")
+        prime_result = _prime_project.prime(str(project_root), framework)
+        deps_result = _create_deps.create(str(project_root), framework)
 
         print(json.dumps({
             "status": "ok",
@@ -314,6 +355,8 @@ def main():
             "version_marker": True,
             "hook_installed": True,
             "framework": framework,
+            "prime_project": prime_result["status"],
+            "dependencies": deps_result["status"],
         }))
     except Exception as e:
         print(json.dumps({
