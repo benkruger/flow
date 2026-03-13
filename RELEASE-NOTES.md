@@ -1,5 +1,15 @@
 # Release Notes
 
+## v0.28.13 — Docs restructure and auto-loop CI pending
+
+- Restructured README and marketing site around three core goals (Unobtrusive,
+  Autonomous or Manual, Safe for Local Env) with dedicated Guardrails, Autonomy,
+  and Commands sections
+- Fixed Code Review description from "three lenses" to "four lenses" across
+  docs/skills/index.md, README, and index.html
+- Start and Complete now auto-invoke `/loop` when CI is pending instead of
+  stopping and telling the user to do it
+
 ## v0.28.12 — System-enforce auto-continue via PreToolUse hook
 
 - **AskUserQuestion hook enforcement** — auto-continue (`continue=auto`) is
