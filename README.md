@@ -8,23 +8,25 @@ An opinionated 6-phase development plugin for [Claude Code](https://docs.anthrop
 
 ---
 
-## The Problem
+## Why FLOW
 
-Claude Code is powerful, but undisciplined by default.
-
-FLOW imposes structure. Not bureaucracy — discipline.
+Claude Code is powerful, but undisciplined by default. FLOW imposes structure. Not bureaucracy — discipline. Plan mode exploration, then TDD execution, then four-lens code review, then learnings that compound. Every feature, same order.
 
 ---
 
-## Why FLOW
+## Three Goals
 
-- **Plan mode** exploration, then TDD execution — every feature, same order
-- **Zero dependencies** — pure Markdown skills with a thin Python dispatcher
-- **Learning system** that routes corrections to CLAUDE.md, rules, and memory
-- **Autonomy** on your terms — fully manual to fully autonomous, per skill
-- **Opus** for planning, code, and code review, Haiku for setup
-- **Rails** and Python today, more frameworks ahead
-- **Minimal footprint** — `.flow-states` is the only artifact while you work, and Complete deletes even that
+### Unobtrusive
+
+Zero dependencies — pure Markdown skills with a thin Python dispatcher. Only `.flow.json` and `.claude/settings.json` are committed (via `/flow-prime`, once per project). During active development, a single gitignored JSON state file exists at `.flow-states/<branch>.json`. When the feature completes, that file is deleted too. Three commands to set up. One file while you work. Zero when you're done.
+
+### Autonomous or Manual
+
+Every skill has two independent axes — **commit** (show diffs or auto-commit) and **continue** (prompt before advancing or auto-advance). Start fully manual. Dial up autonomy per skill as comfort grows. Go fully autonomous when you trust the workflow. See [Autonomy](#you-control-the-autonomy) below.
+
+### Safe for Local Env
+
+No containers. No external dependencies. Native tools only — git, gh, your linter, your test runner. Every command is pre-approved in `.claude/settings.json` so you never see a permission prompt. Worktree isolation protects main — multiple features run in parallel without touching your working branch.
 
 ---
 
@@ -43,6 +45,17 @@ Start → Plan → Code → Code Review → Learn → Complete
 | **4: Code Review** | `/flow-code-review` | **Opus** | Four lenses — clarity (`/simplify`), correctness (`/review`), safety (`/security-review`), and CLAUDE.md compliance (`code-review:code-review` plugin) |
 | **5: Learn** | `/flow-learn` | Sonnet | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
 | **6: Complete** | `/flow-complete` | Haiku | Close issues referenced in prompt, PR merged, worktree removed, state file deleted, feature done |
+
+---
+
+## Guardrails
+
+- **`bin/ci` is the universal gate** — must be green before every commit and every phase transition. Recommend keeping guardrails under 2 minutes for tight feedback loops.
+- **100% test coverage required** — Code phase cannot advance to Code Review without it.
+- **TDD always** — test must fail before implementation is written; test must pass before commit.
+- **No lint suppression** — fix the code, not the linter. No exclusions, no suppression comments.
+- **Worktree isolation** — main is never touched directly; multiple features run in parallel.
+- **Commit discipline** — imperative verb + tl;dr + per-file breakdown, every commit.
 
 ---
 
@@ -114,16 +127,6 @@ Start a new Claude Code session so permissions take effect, then start a feature
 ```
 
 This creates branch `invoice-pdf-export`, a worktree at `.worktrees/invoice-pdf-export`, opens a GitHub PR, runs `bin/ci` to establish a baseline, upgrades dependencies, runs `bin/ci` again to confirm green, and lands you in Phase 2: Plan.
-
----
-
-## Minimal Footprint
-
-The plugin itself installs into Claude Code's managed plugin directory — one place, fully managed by Claude Code.
-
-FLOW configures workspace permissions in `.claude/settings.json` and a version marker in `.flow.json` (via `/flow-prime`, committed once). During active development, a single gitignored JSON state file per feature exists at `.flow-states/<branch>.json`. When the feature is done and Complete runs, that file is deleted too.
-
-**Three commands to set up. One file while you work. Zero when you're done.**
 
 ---
 
@@ -232,18 +235,6 @@ Phases that allow it offer back-navigation when something was missed:
 | Code Review | Code, Plan |
 
 When returning, state is reset appropriately. Later phases are invalidated. Prior findings are preserved and extended — never discarded.
-
----
-
-## What It Enforces
-
-- **Worktree isolation** — main is never touched directly; multiple features run in parallel
-- **Plan before code** — codebase explored, risks identified, approach approved before any implementation
-- **TDD always** — test must fail before implementation is written; test must pass before commit
-- **`bin/ci` gate** — must be green before every commit and every phase transition
-- **100% test coverage** — Code phase cannot transition to Code Review without it
-- **No disabling linters** — fix the code, not the linter; no lint suppression comments
-- **Commit discipline** — imperative verb + tl;dr + per-file breakdown, every commit
 
 ---
 
