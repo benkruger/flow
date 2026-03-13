@@ -164,8 +164,12 @@ knows what failed.
 
 Wait for the sub-agent to return.
 
-- **Fixed** — commit the fixes via `/flow:flow-commit`, then continue to Step 4
+- **Fixed** — commit the fixes via `/flow:flow-commit --auto`, then continue to Step 4
 - **Not fixed** — stop and report to the user. Do not create a worktree, PR, or state file
+
+<HARD-GATE>
+Do NOT proceed to Step 4 until the ci-fixer changes are committed and pushed via `/flow:flow-commit --auto`. Uncommitted fixes on main will not appear in the worktree.
+</HARD-GATE>
 
 ### Step 4 — Set up workspace
 
@@ -248,7 +252,7 @@ If `bin/dependencies` does not exist, skip to Done silently.
 
 Run `git status` to check for uncommitted changes. If there are no changes, skip directly to Done.
 
-Otherwise, use `/flow:flow-commit` to review and commit any dependency changes. No exceptions. Never use `git commit` directly.
+Otherwise, use `/flow:flow-commit --auto` to review and commit any dependency changes. No exceptions. Never use `git commit` directly.
 
 ### Done — Update state and complete phase
 

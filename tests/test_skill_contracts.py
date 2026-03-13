@@ -1016,11 +1016,12 @@ def test_commit_has_commit_format_support():
 def test_no_skill_invokes_commit_with_auto():
     """Skills that use /flow:flow-commit --auto must be in the allow list.
 
+    Start uses --auto for ci-fixer and dependency commits on main.
     Learn uses --auto because the phase is fully autonomous. Code and
     Code Review conditionally use --auto based on the commit axis setting."""
     for d in sorted(SKILLS_DIR.iterdir()):
         if not d.is_dir() or d.name in (
-            "flow-commit", "flow-learn", "flow-code", "flow-code-review",
+            "flow-commit", "flow-start", "flow-learn", "flow-code", "flow-code-review",
         ):
             continue
         content = (d / "SKILL.md").read_text()
