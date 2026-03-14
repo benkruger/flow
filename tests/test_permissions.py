@@ -843,9 +843,9 @@ def test_permission_to_regex_known_conversions():
     assert r.match("bin/flow run")
 
     # rm with glob suffix
-    r = _permission_to_regex("Bash(rm .flow-commit-*)")
+    r = _permission_to_regex("Bash(rm .flow-*)")
     assert r is not None
-    assert r.match("rm .flow-commit-abc123")
+    assert r.match("rm .flow-commit-msg")
 
     # Pipe deny pattern
     r = _permission_to_regex("Bash(* | *)")

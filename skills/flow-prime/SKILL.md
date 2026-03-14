@@ -255,7 +255,7 @@ All permissions (universal + all framework sets) for reference:
       "Bash(gh pr edit *)",
       "Bash(gh pr close *)",
       "Bash(bin/*)",
-      "Bash(rm .flow-commit-*)",
+      "Bash(rm .flow-*)",
       "Bash(rm .claude/settings.local.json)",
       "Bash(*bin/flow *)",
       "Bash(gh pr view *)",

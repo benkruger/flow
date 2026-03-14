@@ -8,7 +8,7 @@
       "Bash(gh release create *)",
       "Bash(gh run list *)",
       "Bash(bin/flow *)",
-      "Bash(rm .flow-commit-*)",
+      "Bash(rm .flow-*)",
       "Bash(rm .flow-states/.dev-mode)",
       "Bash(bin/ci)",
       "Bash(claude plugin marketplace add *)",
