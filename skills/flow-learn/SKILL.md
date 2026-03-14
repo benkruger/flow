@@ -235,16 +235,17 @@ For each item routed to `.claude/rules/` (coding anti-patterns, gotchas):
    it is a new rule or an update to an existing rule
 3. File a GitHub issue on the target project and record it
 
-File the issue:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Rule" --title "<issue_title>" --body "<issue_body>"
-```
-
 The issue body must contain the full rule text, the target file path
 (e.g. `.claude/rules/testing-gotchas.md`), whether this is a new rule
 or an update, and the section to place it in (if updating an existing
 file).
+
+Write the issue body to `.flow-issue-body` in the project root using the
+Write tool, then file:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Rule" --title "<issue_title>" --body-file .flow-issue-body
+```
 
 Parse the JSON output. If `"status": "ok"`, record the issue:
 
@@ -341,16 +342,19 @@ Skip for Maintainer and Standalone.
 
 ### Process gap issues
 
-For each item in "Process gaps", file a GitHub issue on the plugin repo:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo benkruger/flow --label "Flow" --title "<issue_title>" --body "<issue_body>"
-```
+For each item in "Process gaps", file a GitHub issue on the plugin repo.
 
 The issue title should be a concise description of the process gap. The
 issue body should describe the gap generically — no user project details,
 no feature-specific context. Focus on what the FLOW process should do
 differently.
+
+Write the issue body to `.flow-issue-body` in the project root using the
+Write tool, then file:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo benkruger/flow --label "Flow" --title "<issue_title>" --body-file .flow-issue-body
+```
 
 After each successful issue, record it:
 
@@ -361,14 +365,17 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_tit
 ### Documentation drift issues
 
 For each item where documentation is out of sync with actual behavior
-(discovered during Step 2 synthesis), file an issue on the target project:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Documentation Drift" --title "<issue_title>" --body "<issue_body>"
-```
+(discovered during Step 2 synthesis), file an issue on the target project.
 
 The issue body should describe what is stale and what the current
 behavior actually is.
+
+Write the issue body to `.flow-issue-body` in the project root using the
+Write tool, then file:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Documentation Drift" --title "<issue_title>" --body-file .flow-issue-body
+```
 
 After each successful issue, record it:
 

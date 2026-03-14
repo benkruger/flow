@@ -1,11 +1,11 @@
 """Create a GitHub issue via gh CLI.
 
 Usage:
-  bin/flow issue --title <title> [--repo <repo>] [--label <label>] [--body <body>]
+  bin/flow issue --title <title> [--repo <repo>] [--label <label>] [--body-file <path>]
 
-Wraps `gh issue create` so Claude's Bash command is always a clean
-one-liner matching `Bash(bin/flow *)` — no heredocs, no long inline
-strings, no permission prompt variance.
+Body text is always passed via a file to avoid shell escaping issues
+with special characters (|, &&, ;) that trigger the Bash hook validator.
+The file is read and deleted before the gh call.
 
 Output (JSON to stdout):
   Success: {"status": "ok", "url": "<issue_url>"}
@@ -14,6 +14,7 @@ Output (JSON to stdout):
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -42,6 +43,25 @@ def detect_repo():
         return None
 
 
+def read_body_file(path):
+    """Read body text from a file and delete the file.
+
+    Returns (body_text, error_message). On success error is None.
+    The file is always deleted after reading, even if empty.
+    """
+    try:
+        body = open(path).read()
+    except (OSError, IOError) as exc:
+        return None, f"Could not read body file '{path}': {exc}"
+
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+    return body, None
+
+
 def create_issue(repo, title, label=None, body=None):
     """Run gh issue create and return the issue URL."""
     cmd = ["gh", "issue", "create", "--repo", repo, "--title", title]
@@ -65,7 +85,8 @@ def main():
     parser.add_argument("--repo", default=None, help="Repository (owner/name)")
     parser.add_argument("--title", required=True, help="Issue title")
     parser.add_argument("--label", default=None, help="Issue label")
-    parser.add_argument("--body", default=None, help="Issue body")
+    parser.add_argument("--body-file", default=None,
+                        help="Path to file containing issue body (file is deleted after reading)")
     args = parser.parse_args()
 
     repo = args.repo
@@ -78,7 +99,14 @@ def main():
             }))
             sys.exit(1)
 
-    url, error = create_issue(repo, args.title, args.label, args.body)
+    body = None
+    if args.body_file:
+        body, read_error = read_body_file(args.body_file)
+        if read_error:
+            print(json.dumps({"status": "error", "message": read_error}))
+            sys.exit(1)
+
+    url, error = create_issue(repo, args.title, args.label, body)
 
     if error:
         print(json.dumps({"status": "error", "message": error}))

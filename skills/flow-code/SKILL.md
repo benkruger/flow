@@ -261,14 +261,17 @@ Run `bin/flow ci`. This must be green before committing.
 
 **Flaky test detection:** If a test fails on one attempt but passes on a
 subsequent attempt without any code changes, it is flaky. File a
-"Flaky Test" issue with reproduction data and continue:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Flaky Test" --title "<issue_title>" --body "<issue_body>"
-```
+"Flaky Test" issue with reproduction data and continue.
 
 The issue body must include: the test name, the failure message, how many
 attempts it took to pass, and the task being worked on.
+
+Write the issue body to `.flow-issue-body` in the project root using the
+Write tool, then file:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Flaky Test" --title "<issue_title>" --body-file .flow-issue-body
+```
 
 After filing, record it:
 

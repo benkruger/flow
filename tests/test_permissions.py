@@ -139,7 +139,6 @@ PLACEHOLDER_SUBS = {
     "<path>": "design.approved_at",
     "<plan_file_path>": ".claude/plans/test-plan.md",
     "<issue_title>": "Test issue title",
-    "<issue_body>": "Test issue body",
     "<transcript_path>": "~/.claude/projects/-tmp-test/abc123.jsonl",
     "<full-start-prompt>": "test feature #42",
     "<issue_number>": "107",

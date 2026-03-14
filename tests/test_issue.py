@@ -98,6 +98,58 @@ class TestDetectRepo:
             assert issue_mod.detect_repo() is None
 
 
+class TestReadBodyFile:
+    """Tests for the read_body_file function."""
+
+    def test_reads_and_deletes_file(self, tmp_path):
+        body_file = tmp_path / ".flow-issue-body"
+        body_file.write_text("Issue body with | pipes and && ampersands")
+
+        body, error = issue_mod.read_body_file(str(body_file))
+
+        assert body == "Issue body with | pipes and && ampersands"
+        assert error is None
+        assert not body_file.exists()
+
+    def test_missing_file_returns_error(self, tmp_path):
+        body_file = tmp_path / "nonexistent.md"
+
+        body, error = issue_mod.read_body_file(str(body_file))
+
+        assert body is None
+        assert "Could not read body file" in error
+
+    def test_empty_file_returns_empty_string(self, tmp_path):
+        body_file = tmp_path / ".flow-issue-body"
+        body_file.write_text("")
+
+        body, error = issue_mod.read_body_file(str(body_file))
+
+        assert body == ""
+        assert error is None
+        assert not body_file.exists()
+
+    def test_rich_markdown_preserved(self, tmp_path):
+        body_file = tmp_path / ".flow-issue-body"
+        content = "## Summary\n\n| Column | Value |\n|--------|-------|\n| A | B |\n"
+        body_file.write_text(content)
+
+        body, error = issue_mod.read_body_file(str(body_file))
+
+        assert body == content
+        assert error is None
+
+    def test_delete_failure_still_returns_body(self, tmp_path):
+        body_file = tmp_path / ".flow-issue-body"
+        body_file.write_text("Body text")
+
+        with patch.object(issue_mod.os, "remove", side_effect=OSError("permission denied")):
+            body, error = issue_mod.read_body_file(str(body_file))
+
+        assert body == "Body text"
+        assert error is None
+
+
 class TestCreateIssue:
     """Tests for the create_issue function."""
 
@@ -215,7 +267,9 @@ class TestCreateIssue:
 class TestMain:
     """Tests for the main() CLI entry point."""
 
-    def test_main_success(self, capsys):
+    def test_main_success_with_body_file(self, capsys, tmp_path):
+        body_file = tmp_path / ".flow-issue-body"
+        body_file.write_text("Body from file")
         fake_result = subprocess.CompletedProcess(
             args=[], returncode=0,
             stdout="https://github.com/owner/repo/issues/10\n",
@@ -224,12 +278,39 @@ class TestMain:
         with patch.object(issue_mod.subprocess, "run", return_value=fake_result), \
              patch("sys.argv", ["issue.py", "--repo", "owner/repo",
                                 "--title", "Test", "--label", "bug",
-                                "--body", "Body text"]):
+                                "--body-file", str(body_file)]):
             issue_mod.main()
 
         output = json.loads(capsys.readouterr().out)
         assert output["status"] == "ok"
         assert output["url"] == "https://github.com/owner/repo/issues/10"
+        assert not body_file.exists()
+
+    def test_main_success_no_body(self, capsys):
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout="https://github.com/owner/repo/issues/11\n",
+            stderr="",
+        )
+        with patch.object(issue_mod.subprocess, "run", return_value=fake_result), \
+             patch("sys.argv", ["issue.py", "--repo", "owner/repo",
+                                "--title", "No body"]):
+            issue_mod.main()
+
+        output = json.loads(capsys.readouterr().out)
+        assert output["status"] == "ok"
+
+    def test_main_body_file_missing(self, capsys, tmp_path):
+        missing = tmp_path / "gone.md"
+        with patch("sys.argv", ["issue.py", "--repo", "owner/repo",
+                                "--title", "Test",
+                                "--body-file", str(missing)]), \
+             pytest.raises(SystemExit, match="1"):
+            issue_mod.main()
+
+        output = json.loads(capsys.readouterr().out)
+        assert output["status"] == "error"
+        assert "Could not read body file" in output["message"]
 
     def test_main_failure(self, capsys):
         fake_result = subprocess.CompletedProcess(

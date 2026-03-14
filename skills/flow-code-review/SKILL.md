@@ -257,16 +257,19 @@ Classify as one of:
 - **Tech Debt** — working but fragile, duplicated, or convention-violating code
 - **Documentation Drift** — docs out of sync with actual behavior
 
-File an issue and move on — do not fix out-of-scope findings:
+File an issue and move on — do not fix out-of-scope findings.
+
+Write the issue body to `.flow-issue-body` in the project root using the
+Write tool, then file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Tech Debt" --title "<issue_title>" --body "<issue_body>"
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Tech Debt" --title "<issue_title>" --body-file .flow-issue-body
 ```
 
 Or for documentation:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Documentation Drift" --title "<issue_title>" --body "<issue_body>"
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Documentation Drift" --title "<issue_title>" --body-file .flow-issue-body
 ```
 
 After filing, record it:
