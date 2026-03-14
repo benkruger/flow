@@ -187,6 +187,34 @@ def test_ci_failure_without_sentinel(ci_project):
     assert not sentinel.exists()
 
 
+def test_runs_non_bash_ci_script(target_project):
+    """ci.py must not force bash — target projects may use Ruby, Python, etc."""
+    result = _run(target_project)
+    assert result.returncode == 0
+    output = _parse(result)
+    assert output["status"] == "ok"
+
+
+def test_non_bash_ci_with_if_dirty(target_project):
+    """--if-dirty works with non-bash CI scripts too."""
+    result = _run(target_project, args=["--if-dirty"])
+    assert result.returncode == 0
+    output = _parse(result)
+    assert output["status"] == "ok"
+    assert output["skipped"] is False
+
+
+def test_non_bash_ci_failure(target_project):
+    """Non-bash CI script that fails is detected correctly."""
+    (target_project / "bin" / "ci").write_text(
+        "#!/usr/bin/env python3\nimport sys\nsys.exit(1)\n"
+    )
+    result = _run(target_project)
+    assert result.returncode == 1
+    output = _parse(result)
+    assert output["status"] == "error"
+
+
 def test_missing_bin_ci_exits_1(git_repo):
     result = _run(git_repo)
     assert result.returncode == 1

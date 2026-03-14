@@ -132,6 +132,16 @@ from the state file and dispatches to the next sub-step on re-entry.
 This mirrors how phase-to-phase transitions work — the Skill invocation
 is the last action, never a mid-response call.
 
+## Target Project Mindset
+
+Every bash block, subprocess call, and file path in a plugin skill
+or lib script runs in a target project, not this repo. Before
+adding any command, ask: "Does this work in a Rails project with
+no `bin/flow`, no `.venv/`, and non-bash `bin/` scripts?" The FLOW
+repo is Python with bash scripts — it is the worst possible test
+environment for a multi-framework plugin. Integration tests for
+lib scripts must use the `target_project` fixture, not `git_repo`.
+
 ## Plugin Root for bin/flow
 
 Every `bin/flow` call in a plugin skill bash block must use

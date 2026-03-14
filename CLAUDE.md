@@ -162,7 +162,7 @@ Every `` ```bash `` block in every skill and docs file must run without triggeri
 
 ## Test Architecture
 
-Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_dir` (flow-states dir inside git repo), `make_state()` (build state dicts), `write_state()` (write state JSON files).
+Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_project` (git repo with non-bash `bin/ci` and no `bin/flow` — simulates a Rails/non-Python target project), `state_dir` (flow-states dir inside git repo), `make_state()` (build state dicts), `write_state()` (write state JSON files). Integration tests for lib scripts that run in target projects must use `target_project`, not `git_repo`.
 
 | Test File | What It Enforces |
 |-----------|------------------|

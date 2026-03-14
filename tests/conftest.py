@@ -93,6 +93,29 @@ def state_dir(git_repo):
     return d
 
 
+@pytest.fixture
+def target_project(git_repo):
+    """Simulate a target project where FLOW is installed.
+
+    Uses a non-bash bin/ci (Python with shebang) to catch hardcoded
+    bash assumptions. Has no bin/flow — target projects never have it.
+    This fixture exists because the FLOW repo itself is Python with bash
+    scripts, making it the worst possible test environment for a
+    multi-framework plugin.
+    """
+    bin_dir = git_repo / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "ci").write_text(
+        "#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n"
+    )
+    (bin_dir / "ci").chmod(0o755)
+    subprocess.run(["git", "add", "-A"], cwd=str(git_repo), check=True,
+                   capture_output=True)
+    subprocess.run(["git", "commit", "-m", "add bin/ci"], cwd=str(git_repo),
+                   check=True, capture_output=True)
+    return git_repo
+
+
 def make_state(current_phase="flow-start", phase_statuses=None, framework="rails"):
     """Build a minimal state dict.
 
