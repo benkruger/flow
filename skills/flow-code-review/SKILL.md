@@ -63,7 +63,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ============================================
-  FLOW v0.28.19 — Phase 4: Code Review — STARTING
+  FLOW v0.28.20 — Phase 4: Code Review — STARTING
 ============================================
 ```
 ````
@@ -534,7 +534,7 @@ Output in your response (not via Bash) inside a fenced code block:
 ````markdown
 ```text
 ============================================
-  FLOW v0.28.19 — Phase 4: Code Review — COMPLETE (<formatted_time>)
+  FLOW v0.28.20 — Phase 4: Code Review — COMPLETE (<formatted_time>)
 ============================================
 ```
 ````

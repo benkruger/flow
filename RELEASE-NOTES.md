@@ -1,5 +1,19 @@
 # Release Notes
 
+## v0.28.20 — Fix bin/flow resolution in target projects
+
+### Fixes
+
+- All `bin/flow` calls in plugin skill bash blocks now use `exec ${CLAUDE_PLUGIN_ROOT}/bin/flow`.
+  Bare `bin/flow` resolved locally during plugin development but failed with exit 127 in every
+  target project.
+- New CI-enforced contract test (`test_plugin_skills_use_plugin_root_for_bin_flow`) prevents
+  bare `bin/flow` from being reintroduced in any plugin skill.
+
+### Improvements
+
+- **flow-release**: 19 sequential rounds → 11 via parallelization and `finalize-commit` reuse.
+
 ## v0.28.19 — Skill performance: parallelization and round-trip reduction
 
 ### Improvements
