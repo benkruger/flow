@@ -989,12 +989,14 @@ def test_no_skill_invokes_commit_with_auto():
 # --- Release flags ---
 
 
-def test_release_default_skips_approval():
-    """Release SKILL.md default (no flags) must proceed without approval."""
+def test_release_default_requires_approval():
+    """Release SKILL.md default (no flags) must pause for approval."""
     content = (REPO_ROOT / ".claude" / "skills" / "flow-release" / "SKILL.md").read_text()
-    assert "proceed directly to Step 6" in content, (
-        "Release SKILL.md must indicate that the default proceeds directly "
-        "to Step 6 without approval"
+    assert "AskUserQuestion" in content, (
+        "Release SKILL.md must use AskUserQuestion for approval by default"
+    )
+    assert "--auto" in content and "proceed directly to Step 5" in content, (
+        "Release SKILL.md must only skip approval when --auto is explicitly passed"
     )
 
 

@@ -197,6 +197,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `state_di
 
 ## Conventions
 
+- **Never invoke `/flow-release` unless the user explicitly runs it** — fixing a bug does not authorize a release. Committing a fix and releasing it are separate decisions. The user decides when to ship.
 - All commits via `/flow:flow-commit` skill — no exceptions, no shortcuts, no "just this once"
 - All changes require `bin/flow ci` green before committing — tests are the gate
 - New skills are automatically covered by test_skill_contracts.py (glob-based discovery)
