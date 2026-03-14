@@ -82,7 +82,7 @@ def main():
             sys.exit(0)
 
     result = subprocess.run(
-        ["bash", str(bin_ci)],
+        [str(bin_ci)],
         cwd=str(cwd),
     )
 
