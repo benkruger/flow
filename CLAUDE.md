@@ -71,6 +71,7 @@ CI will fail if these are missing:
 - `lib/set-timestamp.py` — mid-phase timestamp fields via dot-path notation
 - `frameworks/<name>/` — per-framework data: `detect.json`, `permissions.json`, `dependencies`, `priming.md`
 - `lib/detect-framework.py` — data-driven framework auto-detection from `frameworks/*/detect.json`
+- `lib/load-suggestions.py` — reads `suggested_permissions` from framework `permissions.json` for interactive collection during prime
 - `lib/prime-project.py` — inserts framework conventions into target CLAUDE.md between markers
 - `lib/create-dependencies.py` — copies framework dependency template to `bin/dependencies`
 - `agents/ci-fixer.md` — custom plugin sub-agent for CI failure diagnosis and fix
@@ -183,6 +184,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_set_timestamp.py` | Mid-phase timestamps: dot-path navigation, NOW replacement |
 | `test_extract_release.py` | Release notes extraction from RELEASE-NOTES.md |
 | `test_detect_framework.py` | Framework auto-detection: file patterns, multiple matches, defaults, CLI |
+| `test_load_suggestions.py` | Permission suggestions: framework loading, structure validation, CLI |
 | `test_prime_project.py` | CLAUDE.md priming: marker insertion, idempotent replacement, framework switching |
 | `test_create_dependencies.py` | Dependency template: file creation, skip-if-exists, chmod, CLI |
 | `test_prime_setup.py` | Prime setup: data-driven permissions, settings merge, version marker, git exclude, pre-commit hook |

@@ -147,6 +147,7 @@ PLACEHOLDER_SUBS = {
     "<file>": "lib/foo.py",
     "<skills_dict_json>": '{"flow-start":{"continue":"manual"}}',
     "<commit_format>": "full",
+    "<project_permissions_json>": '["Bash(killall TestApp)"]',
 }
 
 

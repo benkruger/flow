@@ -3,5 +3,11 @@
     "Bash(open *)",
     "Bash(xcrun *)",
     "Bash(xcodebuild *)"
+  ],
+  "suggested_permissions": [
+    {
+      "label": "App process name (for killall after tests)",
+      "template": "Bash(killall {value})"
+    }
   ]
 }

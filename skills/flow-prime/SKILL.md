@@ -34,9 +34,9 @@ If `--reprime` was passed:
 
 1. Use the Read tool to read `.flow.json` from the project root.
    - If the file does not exist, stop with: "No existing config to reprime from. Run `/flow:flow-prime` instead."
-2. Extract `framework`, `skills`, and `commit_format` from the JSON.
-3. Run `claude plugin list` to check plugin state (needed for Step 5).
-4. Skip Steps 1–3 entirely. Jump to Step 4 with the extracted values.
+2. Extract `framework`, `skills`, `commit_format`, and `project_permissions` from the JSON.
+3. Run `claude plugin list` to check plugin state (needed for Step 6).
+4. Skip Steps 1–4 entirely. Jump to Step 5 with the extracted values.
 
 ## Steps
 
@@ -52,7 +52,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow detect-framework <project_root>
 claude plugin list
 ```
 
-Keep the plugin list output for Step 5 — do not re-run it.
+Keep the plugin list output for Step 6 — do not re-run it.
 
 Parse the detect-framework JSON output. The `detected` array contains frameworks matched
 by file presence, and `available` lists all supported frameworks.
@@ -182,13 +182,44 @@ Store the result as `commit_format`:
 - "Title only" → `"title-only"`
 - "Full format" → `"full"`
 
-### Step 4 — Run prime setup script
+### Step 4 — Collect project-specific permissions
+
+Run:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow load-suggestions <framework>
+```
+
+Parse the JSON output. If `suggestions` is non-empty, for each suggestion ask the user via AskUserQuestion:
+
+> "<label>"
+>
+> - **Skip** — "No permission needed for this"
+> - **Enter value** — "Provide a value"
+
+If the user chooses "Enter value", ask a follow-up AskUserQuestion for the value, then substitute `{value}` in the `template` string to produce the permission entry.
+
+After all suggestions, ask one final AskUserQuestion:
+
+> "Any other project-specific bash commands to allow? (e.g., `ps aux`, `open -a Simulator`)"
+>
+> - **No** — "No additional commands"
+> - **Yes** — "Enter commands to allow"
+
+If yes, ask for the commands. Wrap each in `Bash(...)` format if not already wrapped.
+
+Collect all entries into a `project_permissions` array. If the user skipped everything, set to an empty array `[]`.
+
+If `suggestions` is empty and the framework has no suggested permissions, skip the suggestion questions but still ask the generic "Any other project-specific bash commands?" question.
+
+### Step 5 — Run prime setup script
 
 Serialize `skills_dict` from Step 2 as a JSON string for the `--skills-json` argument.
 Pass the `commit_format` value from Step 3 via `--commit-format`.
+Serialize `project_permissions` from Step 4 as a JSON string for `--project-permissions-json`.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --framework <framework> --skills-json '<skills_dict_json>' --commit-format <commit_format>
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --framework <framework> --skills-json '<skills_dict_json>' --commit-format <commit_format> --project-permissions-json '<project_permissions_json>'
 ```
 
 The script handles everything in a single call:
@@ -265,7 +296,7 @@ All permissions (universal + all framework sets) for reference:
 }
 ```
 
-### Step 5 — Install code-review plugin
+### Step 6 — Install code-review plugin
 
 Use the `claude plugin list` output from Step 1 (do not re-run it).
 
@@ -283,7 +314,7 @@ claude plugin install code-review@claude-code-plugins
 
 If both are already present, skip silently.
 
-### Step 6 — Commit and push
+### Step 7 — Commit and push
 
 Check if anything is staged by running `git status`. If the output contains "nothing to commit", skip the commit and push — go straight to Done.
 
@@ -308,6 +339,7 @@ Report:
 - Version marker written to `.flow.json` (git-excluded)
 - Git excludes configured for `.flow-states/`, `.worktrees/`, `.flow.json`, and `bin/dependencies`
 - Pre-commit hook installed — blocks direct `git commit`, requires `/flow:flow-commit`
+- Project permissions: `<count>` entries (or "none")
 - Changes committed
 
 Display the skills configuration as a pipe-delimited markdown table with exactly this format (not a bullet list):
