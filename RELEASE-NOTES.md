@@ -1,5 +1,17 @@
 # Release Notes
 
+## v0.28.18 — Fix auto-upgrade skipping artifact reinstallation
+
+### Fixes
+
+- Auto-upgrade now checks both `config_hash` (permission structure) and
+  `setup_hash` (installer file content). Previously, changes to installed
+  artifacts like the pre-commit hook were silently skipped because only
+  `config_hash` was compared. Projects upgrading to this version will be
+  prompted to re-run `/flow:flow-prime`.
+- Removed `SETUP_EPOCH` — redundant now that `setup_hash` covers all
+  changes to `prime-setup.py`.
+
 ## v0.28.17 — Model-agnostic skills and consolidated git permissions
 
 ### Improvements
