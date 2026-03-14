@@ -1,5 +1,16 @@
 # Release Notes
 
+## v0.29.0 — iOS framework support
+
+- Add iOS as third supported framework alongside Rails and Python
+- Data-driven detection via `*.xcodeproj` glob pattern
+- iOS permissions: `open`, `xcrun`, `xcodebuild`
+- iOS priming: SwiftUI, Swift Testing, structured concurrency conventions
+- iOS dependency template: SPM resolution when Package.swift exists
+- Enable glob-based detection in detect-framework.py (backwards-compatible)
+- Add derived permissions: iOS auto-derives `killall AppName` from xcodeproj name
+- Widen rm permission from `.flow-commit-*` to `.flow-*`
+
 ## v0.28.22 — PostCompact hook, permission cleanup, and fast reprime
 
 - Add PostCompact hook to capture conversation summary after context

@@ -1,7 +1,7 @@
 {
   "name": "flow",
   "description": "Opinionated development lifecycle for Claude Code — data-driven framework support",
-  "version": "0.28.22",
+  "version": "0.29.0",
   "author": {
     "name": "Ben Kruger"
   },
