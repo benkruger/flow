@@ -488,3 +488,124 @@ def test_output_has_both_context_fields(git_repo):
     assert "hookSpecificOutput" in output
     assert "additionalContext" in output["hookSpecificOutput"]
     assert output["additional_context"] == output["hookSpecificOutput"]["additionalContext"]
+
+
+# --- Compact summary injection ---
+
+
+def test_compact_summary_injected_into_context(git_repo):
+    """State with compact_summary → context includes the summary in a compact-summary block."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete",
+        "flow-code": "in_progress",
+    })
+    state["compact_summary"] = "User was writing tests for webhook handler."
+    write_state(state_dir, "my-feature", state)
+
+    result = _run(git_repo)
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "compact-summary" in ctx
+    assert "User was writing tests for webhook handler." in ctx
+
+
+def test_compact_summary_cleared_from_state_after_injection(git_repo):
+    """After SessionStart injects compact_summary, it must be cleared from the state file."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete",
+        "flow-code": "in_progress",
+    })
+    state["compact_summary"] = "Summary to consume."
+    state["compact_cwd"] = "/some/path"
+    write_state(state_dir, "my-feature", state)
+
+    _run(git_repo)
+
+    updated = json.loads((state_dir / "my-feature.json").read_text())
+    assert "compact_summary" not in updated
+    assert "compact_cwd" not in updated
+
+
+def test_compact_cwd_mismatch_shows_warning(git_repo):
+    """When compact_cwd does not match worktree, context includes a CWD drift warning."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete",
+        "flow-code": "in_progress",
+    })
+    state["compact_cwd"] = "/wrong/directory"
+    state["worktree"] = ".worktrees/test-feature"
+    write_state(state_dir, "my-feature", state)
+
+    result = _run(git_repo)
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "/wrong/directory" in ctx
+    assert ".worktrees/test-feature" in ctx
+
+
+def test_compact_cwd_matches_worktree_no_warning(git_repo):
+    """When compact_cwd matches worktree, no CWD drift warning appears."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete",
+        "flow-code": "in_progress",
+    })
+    state["compact_summary"] = "Summary."
+    state["compact_cwd"] = ".worktrees/test-feature"
+    state["worktree"] = ".worktrees/test-feature"
+    write_state(state_dir, "my-feature", state)
+
+    result = _run(git_repo)
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "compact-summary" in ctx
+    assert "WARNING" not in ctx
+
+
+def test_no_compact_data_no_compact_block(git_repo):
+    """State without compact_summary → no compact-summary block in context."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete",
+        "flow-code": "in_progress",
+    })
+    write_state(state_dir, "my-feature", state)
+
+    result = _run(git_repo)
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "compact-summary" not in ctx
+    assert "WARNING" not in ctx
+
+
+def test_multi_feature_compact_summary_injected(git_repo):
+    """Multi-feature: compact_summary on one feature → included in context."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+
+    s1 = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete",
+        "flow-code": "in_progress",
+    })
+    s1["feature"] = "Feature Alpha"
+    s1["compact_summary"] = "Was debugging the payment flow."
+    write_state(state_dir, "feature-alpha", s1)
+
+    s2 = make_state(current_phase="flow-plan", phase_statuses={
+        "flow-start": "complete", "flow-plan": "in_progress",
+    })
+    s2["feature"] = "Feature Beta"
+    write_state(state_dir, "feature-beta", s2)
+
+    result = _run(git_repo)
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "Was debugging the payment flow." in ctx

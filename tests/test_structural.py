@@ -328,6 +328,25 @@ def test_plugin_json_has_no_config_hash():
     )
 
 
+def test_hooks_json_has_post_compact_hook():
+    """hooks.json must register post-compact.py as a PostCompact hook."""
+    hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
+    assert "PostCompact" in hooks["hooks"], (
+        "hooks.json missing PostCompact key — "
+        "the compaction data capture hook must be registered"
+    )
+    matchers = hooks["hooks"]["PostCompact"]
+    assert len(matchers) >= 1, "PostCompact hook must have at least one entry"
+    commands = [
+        h["command"]
+        for entry in matchers
+        for h in entry["hooks"]
+    ]
+    assert any("post-compact.py" in cmd for cmd in commands), (
+        "PostCompact hook must reference post-compact.py"
+    )
+
+
 def test_hooks_json_has_stop_continue_hook():
     """hooks.json must register stop-continue.py as a Stop hook."""
     hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())

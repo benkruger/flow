@@ -41,12 +41,47 @@ def reset_interrupted(path, state):
             json.dump(state, f, indent=2)
 
 
+def consume_compact_data(path, state):
+    """Extract compact_summary and compact_cwd, clear from state file."""
+    summary = state.pop("compact_summary", None)
+    cwd = state.pop("compact_cwd", None)
+    if summary is not None or cwd is not None:
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+    return summary, cwd
+
+
+def build_compact_block(summary, cwd, worktree):
+    """Build compact context block from PostCompact data."""
+    block = ""
+    if summary:
+        block += (
+            "<compact-summary>\n"
+            "The conversation was just compacted. "
+            "Here is what was happening before compaction:\n"
+            f"{summary}\n"
+            "</compact-summary>\n\n"
+        )
+    if cwd and cwd != worktree:
+        block += (
+            f"WARNING: CWD at compaction was {cwd} but the active "
+            f"worktree is {worktree}. Run /flow:flow-continue to "
+            "re-enter the worktree.\n\n"
+        )
+    return block
+
+
 states = []
 for path in files:
     try:
         with open(path) as f:
             state = json.load(f)
         reset_interrupted(path, state)
+        summary, cwd = consume_compact_data(path, state)
+        if summary:
+            state["_compact_summary"] = summary
+        if cwd:
+            state["_compact_cwd"] = cwd
         states.append(state)
     except Exception:
         continue
@@ -111,11 +146,16 @@ if len(states) == 1:
             "The user will type /flow:flow-continue when ready to resume.\n"
         )
 
+    compact_block = build_compact_block(
+        s.get("_compact_summary"), s.get("_compact_cwd"), s.get("worktree", "")
+    )
+
     context = (
         "<flow-session-context>\n"
         f"{dev_preamble}"
         f'FLOW feature in progress: "{feature}" — {phase_name}\n'
         "\n"
+        f"{compact_block}"
         f"{resume_instruction}"
         "\n"
         f"{implementation_guardrail}"
@@ -159,12 +199,21 @@ else:
             "The user will type /flow:flow-continue when ready to resume.\n"
         )
 
+    compact_blocks = ""
+    for s in states:
+        block = build_compact_block(
+            s.get("_compact_summary"), s.get("_compact_cwd"), s.get("worktree", "")
+        )
+        if block:
+            compact_blocks += f'[{s.get("feature", "?")}] {block}'
+
     context = (
         "<flow-session-context>\n"
         f"{dev_preamble}"
         "Multiple FLOW features are in progress:\n"
         f"{feature_list}\n"
         "\n"
+        f"{compact_blocks}"
         f"{resume_instruction}"
         "\n"
         f"{implementation_guardrail}"

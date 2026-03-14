@@ -249,6 +249,8 @@ Three independent mechanisms enforce this:
 
 - **SessionStart hook** — fires on every session start (`startup`, `/clear`, `/compact`). Reads the state file and injects the current phase directly into Claude's context. After a week away, Claude opens knowing exactly where it is and cannot proceed as if it doesn't.
 
+- **PostCompact hook** — fires after context compaction. Captures the conversation summary and CWD into the state file so the SessionStart hook can inject richer context on resume. Tracks compaction count per feature.
+
 ---
 
 ## Maintainer Tools

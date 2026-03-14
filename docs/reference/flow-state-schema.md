@@ -107,6 +107,9 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `prompt` | string | The full text passed to `/flow-start` — used by Plan as feature description and by Complete to extract `#N` issue references for auto-closing |
 | `notes` | array | Corrections captured via `/flow-note` — see [Notes Array](#notes-array) |
 | `issues_filed` | array | GitHub issues filed during the feature — see [Issues Filed Array](#issues-filed-array) |
+| `compact_summary` | string / null | Conversation summary from last compaction. Written by PostCompact hook, consumed and cleared by SessionStart hook. Transient. |
+| `compact_cwd` | string / null | CWD at last compaction time. Written by PostCompact hook, consumed and cleared by SessionStart hook. Transient. |
+| `compact_count` | integer | Total number of context compactions during this feature. Incremented by PostCompact hook. Permanent. |
 
 ---
 
