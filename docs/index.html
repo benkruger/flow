@@ -500,7 +500,7 @@
       <div class="pipeline-step">
         <div class="step-num">2</div>
         <span class="step-label">Plan</span>
-        <span class="step-detail">Native plan mode &mdash; explore codebase, design approach, identify risks, write tasks</span>
+        <span class="step-detail">DAG decompose plugin &mdash; dependency analysis, explore codebase, ordered tasks with risks</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">3</div>
@@ -631,7 +631,7 @@
       </thead>
       <tbody>
         <tr><td><code>/flow-start</code></td><td>1</td><td>Create worktree, push branch, open PR, green CI baseline, upgrade dependencies</td></tr>
-        <tr><td><code>/flow-plan</code></td><td>2</td><td>Explore codebase, design approach, produce ordered tasks via plan mode</td></tr>
+        <tr><td><code>/flow-plan</code></td><td>2</td><td>DAG decompose for dependency analysis, explore codebase, produce ordered tasks</td></tr>
         <tr><td><code>/flow-code</code></td><td>3</td><td>TDD task by task, diff review, <code>bin/ci</code> gate before each commit</td></tr>
         <tr><td><code>/flow-code-review</code></td><td>4</td><td>Four lenses &mdash; clarity, correctness, safety, and CLAUDE.md compliance</td></tr>
         <tr><td><code>/flow-learn</code></td><td>5</td><td>Extract learnings, route to CLAUDE.md and project rules</td></tr>

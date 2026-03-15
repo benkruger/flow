@@ -35,6 +35,7 @@
       "Bash(gh pr merge *)",
       "Bash(gh pr:*)",
       "Skill(code-review:code-review)",
+      "Skill(decompose:decompose)",
       "Read(~/.claude/rules/*)",
       "Read(/tmp/*.txt)",
       "Bash(cd *)",

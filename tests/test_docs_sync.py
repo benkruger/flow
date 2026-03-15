@@ -16,7 +16,7 @@ from flow_utils import PHASE_NUMBER
 REQUIRED_FEATURES = {
     "Autonomy config": ["autonomy"],
     "Learning system": ["learning system"],
-    "Native Claude features": ["plan mode"],
+    "DAG decomposition": ["dag", "decompose"],
     "Zero dependencies": ["zero dependencies"],
     "Minimal repo artifacts": [".flow-states"],
     "Multi-language": ["rails"],
