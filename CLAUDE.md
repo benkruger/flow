@@ -152,7 +152,7 @@ If `config_hash` or `setup_hash` changes, `flow_version` MUST change. `config_ha
 
 ### State Mutations
 
-Claude never computes timestamps, time differences, or counter increments. All standard state mutations go through `bin/flow` commands: `phase-transition` for entry/completion, `set-timestamp` for mid-phase fields. The plan file lives at `~/.claude/plans/` (Claude Code's native location) and its path is stored in `state["plan_file"]`.
+Claude never computes timestamps, time differences, or counter increments. All standard state mutations go through `bin/flow` commands: `phase-transition` for entry/completion, `set-timestamp` for mid-phase fields. The plan file lives at `.flow-states/<branch>-plan.md` and its path is stored in `state["plan_file"]`. The DAG file (from decompose plugin) lives at `.flow-states/<branch>-dag.md` and is stored in `state["dag_file"]`.
 
 ### Permission Invariant
 

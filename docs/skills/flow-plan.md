@@ -50,7 +50,7 @@ Configurable via `.flow.json` under `skills.flow-plan.dag`:
 
 ## Plan File Structure
 
-The plan file lives at `~/.claude/plans/<branch>.md` and includes:
+The plan file lives at `.flow-states/<branch>-plan.md` and includes:
 
 - **Context** — what the user wants to build and why
 - **Exploration** — what exists in the codebase, affected files, patterns

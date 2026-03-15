@@ -32,7 +32,7 @@ DAG decomposition is configurable via `skills.flow-plan.dag` in
 
 ## The Plan File
 
-The plan lives at `~/.claude/plans/<branch>.md`. It includes:
+The plan lives at `.flow-states/<branch>-plan.md`. It includes:
 
 - **Context** — what the user wants to build and why
 - **Exploration** — what exists in the codebase, affected files, patterns

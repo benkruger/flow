@@ -205,8 +205,9 @@ Always include TDD order — test task before every implementation task.
 
 ### Plan file structure
 
-Write the plan file to `~/.claude/plans/<branch>.md` where `<branch>` is
-the feature branch name.
+Write the plan file to `<project_root>/.flow-states/<branch>-plan.md`
+where `<branch>` is the feature branch name. This keeps the plan
+alongside other feature artifacts in `.flow-states/`.
 
 The plan file should include these sections:
 
@@ -245,10 +246,26 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_file=<plan_file_pat
 Replace `<plan_file_path>` with the actual path to the plan file written
 in Step 3.
 
-Add the plan file artifact to the PR:
+Add artifact paths to the PR:
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --add-artifact --label "Plan file" --value <plan_file_path>
+```
+
+Embed the plan content in the PR as a collapsible section:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --append-section --heading "Plan" --summary "Implementation plan" --content-file <plan_file_path> --format text
+```
+
+If a DAG file was produced in Step 2, add it as well:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --add-artifact --label "DAG file" --value <dag_file_path>
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --append-section --heading "DAG Analysis" --summary "Decompose plugin output" --content-file <dag_file_path> --format text
 ```
 
 Complete the phase:
@@ -310,7 +327,7 @@ Invoke `flow:flow-status`.
 ## Hard Rules
 
 - Never write implementation code during Plan — task descriptions only
-- The plan file lives in `~/.claude/plans/` — Claude Code's native location
+- The plan file lives in `.flow-states/<branch>-plan.md` alongside other feature artifacts
 - Store the plan file path in state before completing the phase
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
