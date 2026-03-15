@@ -74,6 +74,10 @@ CI will fail if these are missing:
 - `lib/prime-project.py` — inserts framework conventions into target CLAUDE.md between markers
 - `lib/create-dependencies.py` — copies framework dependency template to `bin/dependencies`
 - `agents/ci-fixer.md` — custom plugin sub-agent for CI failure diagnosis and fix
+- `agents/issue-worker.md` — custom plugin sub-agent for autonomous issue fixing (used by flow-sweep)
+- `lib/sweep-init.py` — creates `.flow-states/sweep.json` with queued issues and timestamp
+- `lib/sweep-status.py` — reads `.flow-states/sweep.json`, formats sweep dashboard table
+- `lib/sweep-update.py` — updates issue status in `.flow-states/sweep.json`
 - `lib/finalize-commit.py` — consolidates commit + message-file cleanup + pull + push into one subprocess chain
 - `lib/log.py` — appends timestamped entries to `.flow-states/<branch>.log` via Python file append
 - `lib/close-issues.py` — closes GitHub issues referenced in the start prompt (`#N` patterns) via `gh issue close`
@@ -115,9 +119,9 @@ The state file (`.flow-states/<branch>.json`) is the backbone. Schema reference:
 
 ### Sub-Agents
 
-FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Steps 3 and 5) and Complete (Step 4). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands and file-read commands in all Bash calls — including those from built-in skills' sub-agents. The ci-fixer also retains its own hook declaration for defense in depth.
+FLOW uses two custom plugin sub-agents. `ci-fixer` (`agents/ci-fixer.md`) diagnoses and fixes CI failures in Start (Steps 3 and 5) and Complete (Step 4). `issue-worker` (`agents/issue-worker.md`) autonomously fixes a single GitHub issue — used by `/flow:flow-sweep` to process multiple issues in parallel. Both agents declare their own `PreToolUse` hook (`lib/validate-ci-bash.py`) for defense in depth, in addition to the global hook in `hooks/hooks.json`.
 
-Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`). Code Review delegates to built-in `/simplify`, `/review`, `/security-review`, and the `code-review:code-review` plugin for multi-agent validation. Code and Learn have no sub-agents. Complete uses ci-fixer for CI failures.
+Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`). Code Review delegates to built-in `/simplify`, `/review`, `/security-review`, and the `code-review:code-review` plugin for multi-agent validation. Code and Learn have no sub-agents. Complete uses ci-fixer for CI failures. Sweep uses issue-worker for parallel issue processing.
 
 ### Memory and Learning System
 
@@ -190,6 +194,9 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_post_compact.py` | PostCompact hook: compact_summary/cwd/count written to state, fail-open on errors, subprocess integration |
 | `test_finalize_commit.py` | Commit finalization: happy path, commit/pull/push failures, merge conflict detection, message file cleanup, CLI |
 | `test_log.py` | Log append: existing file, new file, directory creation, multiple appends, CLI integration |
+| `test_sweep_init.py` | Sweep initialization: issue structure, concurrency limit, disk persistence, force overwrite, CLI |
+| `test_sweep_status.py` | Sweep dashboard: empty/mixed/complete issues, PR display, title truncation, CLI exit codes |
+| `test_sweep_update.py` | Sweep state mutation: status changes, PR fields, timestamps, completion detection, CLI integration |
 
 ## Maintainer Skills (private to this repo)
 

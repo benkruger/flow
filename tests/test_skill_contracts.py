@@ -320,6 +320,22 @@ def test_ci_fixer_agent_exists():
     )
 
 
+def test_issue_worker_agent_exists():
+    """agents/issue-worker.md must exist with required frontmatter fields."""
+    agent_file = REPO_ROOT / "agents" / "issue-worker.md"
+    assert agent_file.exists(), "agents/issue-worker.md does not exist"
+    content = agent_file.read_text()
+    assert "name: issue-worker" in content, (
+        "agents/issue-worker.md missing 'name: issue-worker' in frontmatter"
+    )
+    assert "PreToolUse" in content, (
+        "agents/issue-worker.md missing PreToolUse hook"
+    )
+    assert "validate-ci-bash" in content, (
+        "agents/issue-worker.md missing reference to validate-ci-bash"
+    )
+
+
 def test_code_review_delegates_to_builtin_review():
     """Code Review skill must delegate to Claude's built-in /review command."""
     content = _read_skill("flow-code-review")
@@ -754,7 +770,7 @@ def test_release_complete_banner_confirms_marketplace_update():
 def test_utility_skill_banners_include_version():
     """Utility skill STARTING and COMPLETE banners must include the version."""
     version = _plugin_version()
-    utility_with_banners = ["flow-commit", "flow-abort", "flow-status", "flow-issues"]
+    utility_with_banners = ["flow-commit", "flow-abort", "flow-status", "flow-issues", "flow-sweep"]
 
     for name in utility_with_banners:
         content = _read_skill(name)

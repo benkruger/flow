@@ -147,6 +147,10 @@ PLACEHOLDER_SUBS = {
     "<file>": "lib/foo.py",
     "<skills_dict_json>": '{"flow-start":{"continue":"manual"}}',
     "<commit_format>": "full",
+    "<JSON_ARRAY>": '[{"number":42,"title":"Test"}]',
+    "<NUMBER>": "42",
+    "<URL>": "https://github.com/test/repo/pull/1",
+    "<message>": "agent timed out",
 }
 
 
