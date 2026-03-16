@@ -23,7 +23,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ============================================
-  FLOW v0.30.0 — Prime — STARTING
+  FLOW v0.31.0 — Prime — STARTING
 ============================================
 ```
 ````
@@ -239,10 +239,15 @@ All permissions (universal + all framework sets) for reference:
       "Bash(*bin/flow *)",
       "Bash(gh pr view *)",
       "Bash(bin/rails test *)",
+      "Bash(rails *)",
+      "Bash(RAILS_ENV=* rails *)",
+      "Bash(RAILS_ENV=* bundle *)",
+      "Bash(RAILS_ENV=* bin/*)",
+      "Bash(bundle *)",
+      "Bash(ruby *)",
+      "Bash(./migrate.sh *)",
       "Bash(rubocop *)",
       "Bash(rubocop -A)",
-      "Bash(bundle update --all)",
-      "Bash(bundle exec *)",
       "Bash(psql *)",
       "Bash(.venv/bin/pip install *)",
       "Bash(open *)",
@@ -323,7 +328,7 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ````markdown
 ```text
 ============================================
-  FLOW v0.30.0 — Prime — COMPLETE
+  FLOW v0.31.0 — Prime — COMPLETE
 ============================================
 ```
 ````
