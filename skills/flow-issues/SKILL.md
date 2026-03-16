@@ -64,13 +64,57 @@ Within each category, assign High, Medium, or Low priority based on:
 - **Medium** — older than 7 days, or affects developer experience
 - **Low** — recent, cosmetic, or nice-to-have
 
-## Step 4 — Display
+## Step 4 — Batch Detection
+
+Scan each issue's body for file path references. File paths are strings
+containing `/` with recognizable patterns: directory prefixes like `lib/`,
+`skills/`, `tests/`, `docs/`, `hooks/`, `frameworks/`, `.claude/`, or
+paths ending with file extensions like `.py`, `.md`, `.json`, `.sh`.
+
+For each pair of issues, check whether they share 2 or more file paths.
+Group issues that share files using transitive closure: if issue A shares
+files with B, and B shares files with C, then A, B, and C form one batch.
+
+Record:
+
+- **Batches** — groups of 2+ issues with their shared file paths
+- **Solo issues** — issues that do not share 2+ files with any other issue
+
+If no batches are found (all issues are solo), skip the batch output in
+the next step.
+
+## Step 5 — Display
 
 Print a summary line with total count and per-category counts.
 
 Then for each non-empty category, print a markdown table with columns: `#`, `Title`, `Age`, `Priority`. Sort by priority (High first), then by age (oldest first).
 
-After all categories are displayed, output the following banner in your response (not via Bash) inside a fenced code block:
+### Recommended Work Order
+
+After the category tables, print a "Recommended Work Order" section.
+This is a numbered list showing the recommended sequence for working
+through the issues:
+
+- **Priority ordering** — High before Medium before Low
+- **Batches as units** — when issues form a batch, list them as a group.
+  The batch's effective priority is its highest-priority member.
+- **Dependencies** — if one issue refactors files that another issue
+  adds features to (based on category: Tech Debt, Rule, or Flow issues
+  that touch shared files), place the refactoring issue first
+- **Ties** — broken by age (oldest first)
+
+For each entry in the work order, show:
+
+- Issue number(s) and title(s)
+- Effective priority
+- If batched: the shared files that link them
+- If dependency-ordered: brief rationale
+
+If there are no batches and no dependency relationships, the work order
+is simply the priority-then-age sort from the category tables. State
+this rather than repeating the full list.
+
+After the work order is displayed, output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
