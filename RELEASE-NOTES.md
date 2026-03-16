@@ -1,5 +1,15 @@
 # Release Notes
 
+## v0.31.1 — Fixes and cleanup
+
+- Remove the version-bump-on-hash-change rule from CLAUDE.md — version bumps
+  are now exclusively a release decision via /flow-release, not a side effect
+  of permission changes (#157, closes #156)
+- Fix cleanup to delete plan and DAG files left behind by the Complete phase
+- Add worktree bin/flow rule for repo-modifying commands during Code phase
+- Fix iOS framework permission issue (#153)
+- Add ci-fixer agent permission and clean up stale commit message file handling
+
 ## v0.30.0 — DAG-enhanced planning via decompose plugin
 
 - Plan phase now invokes the `decompose` plugin (`decompose:decompose`)
