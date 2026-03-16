@@ -21,7 +21,7 @@ confirmation before the irreversible merge.
 
 1. Reads `.flow-states/<branch>.json` for worktree, feature name, and PR number
    (or infers from git state if the file is missing)
-2. Checks PR status — if already merged, skips to cleanup
+2. Checks PR status — if already merged, skips to archive (step 6), then cleanup
 3. Merges `origin/main` into the feature branch, resolving any conflicts
 4. Checks CI status — waits for checks to pass (suggests `/loop` for pending)
 5. Confirms with the user (only when `--manual` is passed)
@@ -47,8 +47,8 @@ from the FLOW workflow.
 
 The skill is safe to re-invoke (e.g., via `/loop 15s /flow:flow-complete`).
 Each step checks its precondition and skips if already done: merged PRs
-skip to cleanup, up-to-date branches skip the merge, passing CI skips
-the wait. After cleanup completes, the next invocation finds no state
+skip to archive then cleanup, up-to-date branches skip the merge,
+passing CI skips the wait. After cleanup completes, the next invocation finds no state
 file and exits cleanly.
 
 ---

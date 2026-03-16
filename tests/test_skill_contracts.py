@@ -1992,6 +1992,46 @@ def test_complete_done_banner_includes_phase_timings():
         )
 
 
+def test_complete_step6_archives_all_pr_sections():
+    """Complete Step 6 must reference all required PR body section headings."""
+    content = _read_skill("flow-complete")
+    required_headings = [
+        "Phase Timings",
+        "State File",
+        "Session Log",
+        "Issues Filed",
+    ]
+    for heading in required_headings:
+        assert heading in content, (
+            f"flow-complete/SKILL.md must reference '{heading}' "
+            f"section heading in Step 6 archive"
+        )
+
+
+def test_complete_merged_path_includes_archive():
+    """Complete Step 2 MERGED path must route through Step 6 (archive)."""
+    content = _read_skill("flow-complete")
+    assert "Step 6" in content, (
+        "flow-complete/SKILL.md must reference Step 6"
+    )
+    # The MERGED path instruction must mention Step 6
+    # to ensure archive runs before cleanup
+    merged_idx = content.find("MERGED")
+    assert merged_idx != -1, (
+        "flow-complete/SKILL.md must contain MERGED path handling"
+    )
+    # Use the next status check as boundary instead of a magic number
+    open_idx = content.find("**If `OPEN`**", merged_idx)
+    assert open_idx > merged_idx, (
+        "flow-complete/SKILL.md must have OPEN path after MERGED path"
+    )
+    merged_section = content[merged_idx:open_idx]
+    assert "Step 6" in merged_section, (
+        "flow-complete/SKILL.md MERGED path must route through Step 6 "
+        "(archive artifacts) before proceeding to cleanup"
+    )
+
+
 # --- DAG decomposition contracts ---
 
 
