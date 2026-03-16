@@ -13,16 +13,21 @@ moves forward without the user approving the diff and `bin/flow ci` going green.
 
 ---
 
-## The Task Loop
+## One Task Per Invocation
 
-For each task in the plan, in order:
+Each skill invocation executes exactly one task from the plan. After
+committing, the skill self-invokes (`--continue-step`) to handle the
+next task in a fresh invocation. The `code_task` field in the state
+file is validated to increment by exactly 1 — preventing task batching.
+
+For the current task:
 
 1. **Architecture check** — read what needs to be read before writing anything
 2. **TDD cycle** — write failing test, confirm it fails, write code, confirm it passes, refactor
 3. **Diff review** — show the changes, AskUserQuestion approval before `bin/flow ci`. After the first task, the user can opt into streamline mode which auto-proceeds through remaining tasks
 4. **`bin/flow ci`** — must be green, 100% coverage
 5. **`/flow-commit`** — commit this task
-6. **Next task**
+6. **Self-invoke** for next task
 
 ---
 
