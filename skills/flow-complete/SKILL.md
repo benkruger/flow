@@ -314,6 +314,9 @@ For the banner below, compute `<formatted_time>` from the integer
 `Xm` if >= 60, `<1m` if < 60. Do not write the formatted string back
 to the state file.
 
+Apply the same formatting rules to each phase's `cumulative_seconds`
+for the per-phase timing summary lines.
+
 Output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````markdown
@@ -321,6 +324,11 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ============================================
   FLOW v0.31.1 — Phase 6: Complete — COMPLETE (<formatted_time>)
   Feature '<feature>' is fully done.
+  PR: <pr_url>
+
+  Start: <time> | Plan: <time> | Code: <time>
+  Code Review: <time> | Learn: <time> | Complete: <time>
+
   Worktree removed, state file and log deleted.
   <banner_line>
 ============================================
