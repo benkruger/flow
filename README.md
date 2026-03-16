@@ -10,7 +10,7 @@ An opinionated 6-phase development plugin for [Claude Code](https://docs.anthrop
 
 ## Why FLOW
 
-Claude Code is powerful, but undisciplined by default. FLOW imposes structure. Not bureaucracy — discipline. Plan mode exploration, then TDD execution, then four-lens code review, then learnings that compound. Every feature, same order.
+Claude Code is powerful, but undisciplined by default. FLOW imposes structure. Not bureaucracy — discipline. DAG decomposition for planning, then TDD execution, then four-lens code review, then learnings that compound. Every feature, same order.
 
 ---
 
@@ -40,7 +40,7 @@ Start → Plan → Code → Code Review → Learn → Complete
 | Phase | Command | What happens |
 |-------|---------|-------------|
 | **1: Start** | `/flow-start <prompt>` | New worktree, push branch, open PR, `bin/ci` baseline, upgrade dependencies, `bin/ci` green — sub-agent fixes CI failures |
-| **2: Plan** | `/flow-plan` | Reads the start prompt as feature description, enters native plan mode — explore codebase, design approach, produce ordered tasks with risks |
+| **2: Plan** | `/flow-plan` | Reads the start prompt, invokes DAG decompose plugin for dependency analysis, explores codebase, produces ordered tasks with dependency graph |
 | **3: Code** | `/flow-code` | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
 | **4: Code Review** | `/flow-code-review` | Four lenses — clarity (`/simplify`), correctness (`/review`), safety (`/security-review`), and CLAUDE.md compliance (`code-review:code-review` plugin) |
 | **5: Learn** | `/flow-learn` | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
@@ -152,7 +152,7 @@ Available at any point in the workflow:
 
 ### Sub-Agent Architecture
 
-Start uses a Sonnet sub-agent for CI failures. Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`) instead of sub-agents. Code Review invokes Claude Code's built-in `/simplify`, `/review`, and `/security-review` commands directly, then delegates to the `code-review:code-review` plugin for multi-agent validation. Code has no sub-agent.
+Start uses a Sonnet sub-agent for CI failures. Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition. Code Review invokes Claude Code's built-in `/simplify`, `/review`, and `/security-review` commands directly, then delegates to the `code-review:code-review` plugin for multi-agent validation. Code has no sub-agent.
 
 ```text
 Main conversation          Sub-agent (general-purpose)

@@ -39,11 +39,12 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
   "framework": "rails",
   "prompt": "fix #83 and #89 — close issues at complete time",
   "plan_file": null,
+  "dag_file": null,
   "session_id": null,
   "transcript_path": null,
   "skills": {
     "flow-start": {"continue": "manual"},
-    "flow-plan": {"continue": "auto"},
+    "flow-plan": {"continue": "auto", "dag": "auto"},
     "flow-code": {"commit": "manual", "continue": "manual"},
     "flow-code-review": {"commit": "auto", "continue": "auto"},
     "flow-learn": {"commit": "auto", "continue": "auto"},

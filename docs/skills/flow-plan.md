@@ -10,9 +10,9 @@ parent: Skills
 
 **Usage:** `/flow-plan`, `/flow-plan --auto`, or `/flow-plan --manual`
 
-Explores the codebase, designs the approach, and produces an ordered
-implementation plan using Claude Code's native plan mode. Replaces the
-former Research, Design, and Plan phases with a single integrated phase.
+Invokes the `decompose` plugin for DAG-based task decomposition,
+explores the codebase, validates the DAG against reality, and produces
+an ordered implementation plan with a dependency graph.
 
 ---
 
@@ -20,47 +20,70 @@ former Research, Design, and Plan phases with a single integrated phase.
 
 1. Reads the feature description from the `prompt` field in the state file
    (the full text passed to `/flow-start`)
-2. Enters Claude Code's native plan mode (`EnterPlanMode`)
-3. In plan mode: explores the codebase, identifies risks, designs the
-   approach, and writes the plan to a plan file
-4. User iterates directly with the plan via plan mode's revision loop
-5. Stores the plan file path in the state file, adds the plan file artifact
-   to the PR, completes the phase, then calls `ExitPlanMode`
-6. If context survives ExitPlanMode: shows status banner and transitions to Code
+2. Fetches referenced GitHub issues (`#N` patterns in the prompt)
+3. Invokes `/decompose:decompose` for structured DAG decomposition
+   (configurable via `dag` mode — see below)
+4. Explores the codebase to validate the DAG against reality
+5. Writes the plan file with a Dependency Graph section and ordered tasks
+6. Stores the plan file path in state and transitions to Code
+
+---
+
+## DAG Decomposition
+
+The Plan phase optionally invokes the
+[decompose plugin](https://github.com/matt-k-wong/mkw-DAG-architect)
+to decompose the feature into a Directed Acyclic Graph with explicit
+dependencies, node types, and topological ordering. The DAG output is
+stored to `.flow-states/<branch>-dag.md` and used to inform the plan
+file's Dependency Graph and task ordering.
+
+### DAG Mode
+
+Configurable via `.flow.json` under `skills.flow-plan.dag`:
+
+- `"auto"` (default) — use DAG decomposition
+- `"always"` — always use DAG decomposition
+- `"never"` — skip DAG decomposition entirely
 
 ---
 
 ## Plan File Structure
 
-The plan file lives at `~/.claude/plans/<name>.md` and includes:
+The plan file lives at `.flow-states/<branch>-plan.md` and includes:
 
 - **Context** — what the user wants to build and why
 - **Exploration** — what exists in the codebase, affected files, patterns
 - **Risks** — what could go wrong, edge cases, constraints
 - **Approach** — the chosen approach and rationale
+- **Dependency Graph** — table of tasks with types and dependencies
+  (from DAG decomposition)
 - **Tasks** — ordered implementation tasks with files and TDD notes
 
 ---
 
 ## Resuming
 
-If the session breaks mid-plan, `/flow-continue` checks whether
-`plan_file` is already set in the state file. If set, the plan was
-already approved — the phase completes and transitions to Code.
-If not set, the plan mode flow restarts.
+If the session breaks mid-plan, `/flow-continue` checks the state file:
+
+- `dag_file` set, `plan_file` null — DAG was produced, skip to plan writing
+- `plan_file` set — plan was written, complete the phase
+- Both null — restart from Step 1
 
 ---
 
 ## Mode
 
-Mode is configurable via `.flow.json` (default: manual) under `skills.flow-plan.continue`. In auto mode, the phase transition advances to Code without asking. Flags `--auto` and `--manual` override the configured mode.
+Mode is configurable via `.flow.json` (default: manual) under
+`skills.flow-plan.continue`. In auto mode, the phase transition
+advances to Code without asking. Flags `--auto` and `--manual`
+override the configured mode.
 
 ---
 
 ## Gates
 
 - Requires Phase 1: Start to be complete
-- Plan mode approval required before proceeding to Code
 - Plan file path must be stored in state before phase completion
 
 ---
@@ -68,3 +91,4 @@ Mode is configurable via `.flow.json` (default: manual) under `skills.flow-plan.
 ## See Also
 
 - [FLOW State Schema](../reference/flow-state-schema.md)
+- [DAG Planning Design](../reference/dag-planning-design.md)

@@ -91,19 +91,19 @@ Ask the user how much autonomy FLOW should have using AskUserQuestion:
 **Fully autonomous** — all auto:
 
 ```json
-{"flow-start": {"continue": "auto"}, "flow-plan": {"continue": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}
+{"flow-start": {"continue": "auto"}, "flow-plan": {"continue": "auto", "dag": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}
 ```
 
 **Fully manual** — all manual:
 
 ```json
-{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "manual", "continue": "manual"}, "flow-learn": {"commit": "manual", "continue": "manual"}, "flow-abort": "manual", "flow-complete": "manual"}
+{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "manual", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "manual", "continue": "manual"}, "flow-learn": {"commit": "manual", "continue": "manual"}, "flow-abort": "manual", "flow-complete": "manual"}
 ```
 
 **Recommended** — safe defaults for all frameworks:
 
 ```json
-{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}
+{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "auto", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}
 ```
 
 **Customize** — ask per skill, in this order: start, plan, code, code-review, learn, abort, complete. For each skill, ask about only the applicable axes. List the recommended option first with "(Recommended)" in the label:
@@ -147,12 +147,22 @@ For **start** (continue only), ask one AskUserQuestion:
 > - **Manual (Recommended)** — "Prompt before advancing"
 > - **Auto** — "Auto-advance to next phase"
 
-For **plan** (continue only), ask one AskUserQuestion:
+For **plan** (continue and dag), ask two AskUserQuestions:
+
+First question:
 
 > "Continue mode for /flow:flow-plan? (controls phase advancement to Code)"
 >
 > - **Auto (Recommended)** — "Auto-advance to Code phase"
 > - **Manual** — "Prompt before advancing"
+
+Second question:
+
+> "DAG mode for /flow:flow-plan? (complexity-aware decomposition via decompose plugin)"
+>
+> - **Auto (Recommended)** — "Use DAG decomposition for complex features, skip for simple"
+> - **Always** — "Always use DAG decomposition"
+> - **Never** — "Skip DAG decomposition"
 
 For **abort** and **complete** (single mode), ask one AskUserQuestion each:
 
@@ -246,7 +256,8 @@ All permissions (universal + all framework sets) for reference:
       "Bash(gh issue *)",
       "Read(~/.claude/rules/*)",
       "Read(/tmp/*.txt)",
-      "Agent(flow:ci-fixer)"
+      "Agent(flow:ci-fixer)",
+      "Skill(decompose:decompose)"
     ],
     "deny": [
       "Bash(git rebase *)",
@@ -265,9 +276,11 @@ All permissions (universal + all framework sets) for reference:
 }
 ```
 
-### Step 5 — Install code-review plugin
+### Step 5 — Install plugins
 
 Use the `claude plugin list` output from Step 1 (do not re-run it).
+
+**Code-review plugin:**
 
 If the output does not contain `claude-code-plugins`, add the marketplace source:
 
@@ -281,7 +294,21 @@ If the output does not contain `code-review`, install it:
 claude plugin install code-review@claude-code-plugins
 ```
 
-If both are already present, skip silently.
+**Decompose plugin (DAG planning):**
+
+If the output does not contain `decompose-marketplace`, add the marketplace source:
+
+```bash
+claude plugin marketplace add matt-k-wong/mkw-DAG-architect
+```
+
+If the output does not contain `decompose`, install it:
+
+```bash
+claude plugin install decompose@decompose-marketplace
+```
+
+If all plugins are already present, skip silently.
 
 ### Step 6 — Commit and push
 

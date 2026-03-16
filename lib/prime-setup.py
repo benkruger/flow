@@ -49,6 +49,7 @@ UNIVERSAL_ALLOW = [
     "Read(~/.claude/rules/*)",
     "Read(/tmp/*.txt)",
     "Agent(flow:ci-fixer)",
+    "Skill(decompose:decompose)",
 ]
 
 FLOW_DENY = [

@@ -1941,3 +1941,81 @@ def test_complete_skill_has_session_log_artifact():
     assert "transcript_path" in content, (
         "flow-complete/SKILL.md must reference transcript_path"
     )
+
+
+# --- DAG decomposition contracts ---
+
+
+def test_plan_skill_has_dag_step():
+    """Plan SKILL.md must reference the decompose plugin for DAG analysis."""
+    content = _read_skill("flow-plan")
+    assert "decompose:decompose" in content, (
+        "flow-plan/SKILL.md must reference decompose:decompose plugin"
+    )
+
+
+def test_plan_skill_has_dag_resume_check():
+    """Plan SKILL.md must check dag_file and plan_file for resume."""
+    content = _read_skill("flow-plan")
+    assert "dag_file" in content, (
+        "flow-plan/SKILL.md must reference dag_file for resume"
+    )
+
+
+def test_plan_skill_has_approval_gate():
+    """Plan SKILL.md must have an approval gate using AskUserQuestion."""
+    content = _read_skill("flow-plan")
+    assert "AskUserQuestion" in content, (
+        "flow-plan/SKILL.md must use AskUserQuestion for approval gate"
+    )
+
+
+def test_plan_skill_does_not_use_plan_mode():
+    """Plan SKILL.md must not use EnterPlanMode or ExitPlanMode."""
+    content = _read_skill("flow-plan")
+    assert "EnterPlanMode" not in content, (
+        "flow-plan/SKILL.md must not reference EnterPlanMode — "
+        "plan mode was replaced by direct decompose plugin invocation"
+    )
+    assert "ExitPlanMode" not in content, (
+        "flow-plan/SKILL.md must not reference ExitPlanMode — "
+        "plan mode was replaced by direct decompose plugin invocation"
+    )
+
+
+def test_plan_skill_has_dag_mode_resolution():
+    """Plan SKILL.md Mode Resolution must reference dag config."""
+    content = _read_skill("flow-plan")
+    assert "skills.flow-plan.dag" in content, (
+        "flow-plan/SKILL.md Mode Resolution must reference "
+        "'skills.flow-plan.dag' key"
+    )
+
+
+def test_prime_presets_include_dag_config():
+    """All 3 prime presets must include 'dag' key in flow-plan config."""
+    content = _read_skill("flow-prime")
+    json_blocks = re.findall(r"```json\n(\{.*?\})\n```", content, re.DOTALL)
+    assert len(json_blocks) >= 3, (
+        f"Expected at least 3 JSON preset blocks, found {len(json_blocks)}"
+    )
+    preset_names = ["fully autonomous", "fully manual", "recommended"]
+    for i, preset_name in enumerate(preset_names):
+        parsed = json.loads(json_blocks[i])
+        plan_config = parsed.get("flow-plan", {})
+        assert "dag" in plan_config, (
+            f"'dag' key missing from flow-plan config in "
+            f"{preset_name} preset"
+        )
+
+
+def test_prime_installs_decompose_plugin():
+    """flow-prime SKILL.md must install the decompose plugin."""
+    content = _read_skill("flow-prime")
+    assert "decompose-marketplace" in content, (
+        "flow-prime/SKILL.md must reference decompose-marketplace"
+    )
+    assert "decompose@decompose-marketplace" in content, (
+        "flow-prime/SKILL.md must contain install command for "
+        "decompose@decompose-marketplace"
+    )

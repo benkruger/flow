@@ -1,6 +1,6 @@
 ---
 name: flow-plan
-description: "Phase 2: Plan — explore the codebase, design the approach, and create an implementation plan using Claude Code's native plan mode."
+description: "Phase 2: Plan — invoke DAG decomposition, explore the codebase, design the approach, and create an implementation plan."
 ---
 
 # FLOW Plan — Phase 2: Plan
@@ -30,7 +30,8 @@ stop immediately and show the error to the user.
 3. Check `phases.flow-start.status` in the JSON.
    - If not `"complete"`: STOP. "BLOCKED: Phase 1: Start must be
      complete. Run /flow:flow-start first."
-4. Note `pr_number` and `prompt` from the state file — you will need them in Steps 1 and 3.
+4. Note `pr_number`, `prompt`, and `branch` from the state file — you will need them later.
+
 </HARD-GATE>
 
 Keep the project root, branch, state data, and `pr_number` from the gate
@@ -45,6 +46,12 @@ to the project root — `bin/flow` commands find paths internally.
 2. If `--manual` was passed → continue=manual
 3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-plan.continue`.
 4. If the state file has no `skills` key → use built-in default: continue=manual
+
+## DAG Mode Resolution
+
+1. Read `skills.flow-plan.dag` from the state file.
+2. Valid values: `"auto"` (default), `"always"`, `"never"`.
+3. If the key does not exist → use built-in default: `"auto"`.
 
 ## Announce
 
@@ -69,23 +76,31 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-plan --action 
 Parse the JSON output to confirm `"status": "ok"`.
 If `"status": "error"`, report the error and stop.
 
-## Enter Plan Mode
-
-Call `EnterPlanMode` now. All subsequent steps run in plan mode —
-no file edits are possible until the plan is approved and ExitPlanMode
-is called.
-
 ## Logging
 
-No logging for this phase. Plan uses Claude Code's native plan mode —
-there are no Bash commands to log beyond the entry gate.
+After every Bash command in Steps 1–4, log it to `.flow-states/<branch>.log`.
+
+Run the command directly — do not append any suffix:
+
+```bash
+COMMAND
+```
+
+Then Read `.flow-states/<branch>.log` (empty string if it does not
+exist yet) and Write it back with this line appended:
+
+```text
+YYYY-MM-DDTHH:MM:SSZ [Phase 2] Step X — desc (exit EC)
+```
 
 ---
 
-## Resuming
+## Resume Check
 
-If `plan_file` in the state file is already set (not null), the plan was
-previously written and approved. Output in your response (not via Bash) inside a fenced code block:
+Check `dag_file` and `plan_file` in the state file:
+
+- If `plan_file` is set (not null), the plan was previously written.
+  Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
@@ -97,7 +112,13 @@ previously written and approved. Output in your response (not via Bash) inside a
 ```
 ````
 
-Skip to "Done — Update state and complete phase" to finish the phase.
+  Skip to "Done — Update state and complete phase" to finish the phase.
+
+- If `dag_file` is set (not null) but `plan_file` is null, the DAG was
+  produced but the plan was not yet written. Read the DAG output file
+  at `dag_file` path. Skip to Step 3 (Explore and write plan).
+
+- If both are null, proceed to Step 1.
 
 ---
 
@@ -134,12 +155,44 @@ Proceed to Step 2.
 
 ---
 
-## Step 2 — Explore and write the plan
+## Step 2 — DAG decomposition
 
-You are already in plan mode (entered after Update State). Explore the
-codebase, design the approach, and write the implementation plan to a
-plan file. Use the full power of plan mode: read files, search code,
-explore patterns, and design the solution.
+Check the DAG mode from DAG Mode Resolution:
+
+- If dag=`"never"` → skip to Step 3.
+- If dag=`"auto"` or `"always"` → invoke the decompose plugin.
+
+Invoke `/decompose:decompose` using the Skill tool. Pass the feature
+description (the `prompt` from Step 1, plus any issue context fetched)
+as the task argument.
+
+The decompose plugin will produce structured DAG output:
+an impact preview, an XML DAG plan with nodes and dependencies,
+node-by-node reasoning, and a synthesis.
+
+After the decompose plugin returns, save the DAG output:
+
+1. Write the DAG content from the conversation to
+   `<project_root>/.flow-states/<branch>-dag.md` using the Write tool.
+2. Store the path in the state file:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set dag_file=<project_root>/.flow-states/<branch>-dag.md
+```
+
+Proceed to Step 3.
+
+---
+
+## Step 3 — Explore and write the plan
+
+Explore the codebase, validate the DAG against reality (if DAG was
+produced), and write the implementation plan to a plan file.
+
+If a DAG was produced in Step 2, use it as the foundation:
+- Validate that the files and patterns the DAG references actually exist
+- Check whether the dependencies the DAG identified make sense
+- Look for patterns or constraints the DAG missed
 
 ### Framework Conventions
 
@@ -152,56 +205,82 @@ Always include TDD order — test task before every implementation task.
 
 ### Plan file structure
 
+Write the plan file to `<project_root>/.flow-states/<branch>-plan.md`
+where `<branch>` is the feature branch name. This keeps the plan
+alongside other feature artifacts in `.flow-states/`.
+
 The plan file should include these sections:
 
 - **Context** — what the user wants to build and why
 - **Exploration** — what exists in the codebase, affected files, patterns discovered
 - **Risks** — what could go wrong, edge cases, constraints
 - **Approach** — the chosen approach and rationale
-- **Tasks** — ordered implementation tasks, each with:
+- **Dependency Graph** (if DAG was produced) — table of tasks with types and dependencies:
+
+```markdown
+| Task | Type | Depends On |
+|------|------|------------|
+| 1. Write conftest fixtures | design | — |
+| 2. Write parser tests | test | 1 |
+| 3. Implement parser | implement | 2 |
+```
+
+- **Tasks** — ordered implementation tasks derived from the dependency graph,
+  each with:
   - Description of what to build
   - Files to create or modify
   - TDD notes (what the test should verify)
 
+Proceed to Step 4.
+
 ---
 
-## Step 3 — Store plan file, complete phase, and exit plan mode
+## Step 4 — Store plan file and complete phase
 
-Store the plan file path in the state file BEFORE exiting plan mode.
-`ExitPlanMode` may clear context, so nothing after it is guaranteed
-to run.
+Store the plan file path in the state file:
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_file=<plan_file_path>
 ```
 
-Replace `<plan_file_path>` with the actual path to the plan file that
-was written during plan mode.
+Replace `<plan_file_path>` with the actual path to the plan file written
+in Step 3.
 
-Add the plan file artifact to the PR:
+Add artifact paths to the PR:
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --add-artifact --label "Plan file" --value <plan_file_path>
 ```
 
-Complete the phase before exiting plan mode:
+Embed the plan content in the PR as a collapsible section:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --append-section --heading "Plan" --summary "Implementation plan" --content-file <plan_file_path> --format text
+```
+
+If a DAG file was produced in Step 2, add it as well:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --add-artifact --label "DAG file" --value <dag_file_path>
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --append-section --heading "DAG Analysis" --summary "Decompose plugin output" --content-file <dag_file_path> --format text
+```
+
+Complete the phase:
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-plan --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
-Save the `formatted_time` field — use it in the Done banner if context
-survives. Do not print the timing calculation.
-
-After phase completion is recorded, call `ExitPlanMode`.
+Use the `formatted_time` field in the COMPLETE banner below. Do not print
+the timing calculation.
 
 ---
 
-## Done — Banner and transition (best-effort)
-
-`ExitPlanMode` may clear context. If you reach this section, the phase
-is already complete (recorded in Step 3).
+## Done — Banner and transition
 
 Output in your response (not via Bash) inside a fenced code block:
 
@@ -248,10 +327,9 @@ Invoke `flow:flow-status`.
 ## Hard Rules
 
 - Never write implementation code during Plan — task descriptions only
-- The plan file lives in `~/.claude/plans/` — Claude Code's native location
+- The plan file lives in `.flow-states/<branch>-plan.md` alongside other feature artifacts
 - Store the plan file path in state before completing the phase
 - Never use Bash to print banners — output them as text in your response
-- Never use AskUserQuestion in Step 1 — print the question as text
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories
 - Never cd before running `bin/flow` — it detects the project root internally
