@@ -150,9 +150,12 @@ first task that doesn't have a matching commit.
 
 ---
 
-## Task Loop
+## Execute Next Task
 
-Work through each task from the plan file in order. For each task:
+From the plan file, identify the next task to work on (task number
+`code_task + 1`). Execute only this single task — do not look ahead
+to subsequent tasks. After committing, self-invoke to handle the next
+task in a fresh skill invocation.
 
 ### Before Starting a Task
 
@@ -322,7 +325,7 @@ invocation.
 
 ## Back Navigation
 
-At any point during the task loop, if something fundamental is wrong:
+At any point during task execution, if something fundamental is wrong:
 
 Use AskUserQuestion:
 > - **Go back to Plan** — task description is wrong or missing tasks

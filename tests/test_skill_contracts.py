@@ -1774,10 +1774,10 @@ def test_code_has_resume_check():
     """Code SKILL.md must have a Resume Check section that reads code_task."""
     content = _read_skill("flow-code")
     resume_match = re.search(
-        r"## Resume Check\n(.*?)(?=\n## Task Loop)", content, re.DOTALL
+        r"## Resume Check\n(.*?)(?=\n## Execute Next Task)", content, re.DOTALL
     )
     assert resume_match, (
-        "flow-code must have a Resume Check section before Task Loop"
+        "flow-code must have a Resume Check section before Execute Next Task"
     )
     resume_text = resume_match.group(1)
     assert "code_task" in resume_text, (
@@ -1821,6 +1821,26 @@ def test_code_commit_records_task():
     assert commit_match, "Could not find Commit section in flow-code/SKILL.md"
     assert "code_task=" in commit_match.group(1), (
         "Commit section must contain 'code_task=' marker"
+    )
+
+
+# --- Code phase single-task framing contracts ---
+
+
+def test_code_skill_uses_single_task_framing():
+    """Code skill must use single-task framing, not loop-iteration language."""
+    content = _read_skill("flow-code")
+    assert "## Execute Next Task" in content, (
+        "flow-code must have '## Execute Next Task' section (not '## Task Loop')"
+    )
+    assert "## Task Loop" not in content, (
+        "flow-code must not contain '## Task Loop' — use single-task framing"
+    )
+    assert "Work through each task" not in content, (
+        "flow-code must not contain loop-iteration language"
+    )
+    assert "For each task" not in content, (
+        "flow-code must not contain 'For each task' loop language"
     )
 
 

@@ -16,9 +16,14 @@ the next task begins.
 
 ---
 
-## The Loop
+## One Task Per Invocation
 
-For each task:
+Each skill invocation executes exactly one task. After committing, the
+skill self-invokes (`--continue-step`) to handle the next task in a
+fresh invocation. The `code_task` field in the state file tracks progress
+and is validated to increment by exactly 1 — preventing task batching.
+
+For the current task:
 
 1. Architecture check (read full hierarchy, find test helpers)
 2. Write failing test → confirm it fails
@@ -26,7 +31,7 @@ For each task:
 4. Show diff → AskUserQuestion review (streamline available after first task)
 5. `bin/flow ci` green (required)
 6. `/flow-commit` for this task
-7. Next task
+7. Self-invoke for next task
 
 ---
 
