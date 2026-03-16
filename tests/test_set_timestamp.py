@@ -6,6 +6,8 @@ import re
 import subprocess
 import sys
 
+import pytest
+
 from conftest import LIB_DIR, make_state, write_state
 
 SCRIPT = str(LIB_DIR / "set-timestamp.py")
@@ -270,7 +272,6 @@ def _load_module():
 
 def test_set_nested_list_non_numeric_intermediate():
     """Non-numeric key on a list intermediate raises KeyError."""
-    import pytest
     mod = _load_module()
     obj = {"items": [{"a": 1}]}
     with pytest.raises(KeyError, match="Expected numeric index"):
@@ -279,7 +280,6 @@ def test_set_nested_list_non_numeric_intermediate():
 
 def test_set_nested_non_traversable_intermediate():
     """Navigating into a string (non-dict, non-list) raises KeyError."""
-    import pytest
     mod = _load_module()
     obj = {"outer": {"name": "hello"}}
     with pytest.raises(KeyError, match="Cannot navigate into"):
@@ -288,7 +288,6 @@ def test_set_nested_non_traversable_intermediate():
 
 def test_set_nested_list_final_non_numeric():
     """Non-numeric final key on a list raises KeyError."""
-    import pytest
     mod = _load_module()
     obj = {"items": [1, 2, 3]}
     with pytest.raises(KeyError, match="Expected numeric index"):
@@ -297,7 +296,6 @@ def test_set_nested_list_final_non_numeric():
 
 def test_set_nested_list_final_out_of_range():
     """Out-of-range final index on a list raises IndexError."""
-    import pytest
     mod = _load_module()
     obj = {"items": [1, 2, 3]}
     with pytest.raises(IndexError, match="out of range"):
@@ -306,7 +304,6 @@ def test_set_nested_list_final_out_of_range():
 
 def test_set_nested_non_settable_final():
     """Setting a key on a non-dict, non-list final target raises KeyError."""
-    import pytest
     mod = _load_module()
     obj = {"x": 42}
     with pytest.raises(KeyError, match="Cannot set key"):
@@ -319,7 +316,6 @@ def test_set_nested_non_settable_final():
 
 def test_set_nested_list_intermediate_out_of_range():
     """Out-of-range intermediate index on a list raises IndexError."""
-    import pytest
     mod = _load_module()
     obj = {"items": [{"a": 1}]}
     with pytest.raises(IndexError, match="out of range"):
@@ -378,7 +374,6 @@ def test_now_values_remain_timestamp_strings():
 
 def test_set_nested_dict_key_not_found_intermediate():
     """Missing key in intermediate dict raises KeyError."""
-    import pytest
     mod = _load_module()
     obj = {"a": {"b": 1}}
     with pytest.raises(KeyError, match="not found"):
@@ -414,7 +409,6 @@ def test_code_task_initial_set_to_one_allowed():
 
 def test_code_task_jump_blocked():
     """code_task 0→5 is blocked (batching attempt)."""
-    import pytest
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
     })
@@ -426,7 +420,6 @@ def test_code_task_jump_blocked():
 
 def test_code_task_skip_blocked():
     """code_task 3→5 is blocked (skipped a task)."""
-    import pytest
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
     })
@@ -449,7 +442,6 @@ def test_code_task_reset_to_zero_allowed():
 
 def test_code_task_initial_jump_blocked():
     """code_task absent → 3 is blocked (must start at 1)."""
-    import pytest
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
     })
@@ -460,7 +452,6 @@ def test_code_task_initial_jump_blocked():
 
 def test_code_task_non_integer_blocked():
     """code_task with a non-integer value is blocked."""
-    import pytest
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
     })
