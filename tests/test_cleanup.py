@@ -99,6 +99,40 @@ def test_cleanup_deletes_log_file(git_repo):
     assert not (git_repo / ".flow-states" / "test-feature.log").exists()
 
 
+def test_cleanup_deletes_plan_file(git_repo):
+    wt_rel = _setup_feature(git_repo)
+    plan = git_repo / ".flow-states" / "test-feature-plan.md"
+    plan.write_text("# Plan\n")
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["plan_file"] == "deleted"
+    assert not plan.exists()
+
+
+def test_cleanup_skips_missing_plan_file(git_repo):
+    wt_rel = _setup_feature(git_repo)
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["plan_file"] == "skipped"
+
+
+def test_cleanup_deletes_dag_file(git_repo):
+    wt_rel = _setup_feature(git_repo)
+    dag = git_repo / ".flow-states" / "test-feature-dag.md"
+    dag.write_text("# DAG\n")
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["dag_file"] == "deleted"
+    assert not dag.exists()
+
+
+def test_cleanup_skips_missing_dag_file(git_repo):
+    wt_rel = _setup_feature(git_repo)
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["dag_file"] == "skipped"
+
+
 def test_cleanup_deletes_frozen_phases_file(git_repo):
     wt_rel = _setup_feature(git_repo)
     # Create frozen phases file
@@ -185,12 +219,14 @@ def test_cleanup_full_happy_path(git_repo):
     data = json.loads(result.stdout)
     assert data["status"] == "ok"
 
-    # All 7 step results
+    # All 9 step results
     assert data["steps"]["pr_close"] == "skipped"
     assert data["steps"]["worktree"] == "removed"
     assert data["steps"]["remote_branch"].startswith("failed:")  # no remote
     assert data["steps"]["local_branch"] == "deleted"
     assert data["steps"]["state_file"] == "deleted"
+    assert data["steps"]["plan_file"] == "skipped"
+    assert data["steps"]["dag_file"] == "skipped"
     assert data["steps"]["log_file"] == "deleted"
     assert data["steps"]["ci_sentinel"] == "skipped"
     assert data["steps"]["timings_file"] == "skipped"
@@ -401,6 +437,50 @@ def test_timings_file_unlink_failure(git_repo, monkeypatch):
     monkeypatch.setattr(PosixPath, "unlink", _fail_third_unlink)
     steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
     assert steps["timings_file"].startswith("failed:")
+
+
+def test_plan_file_unlink_failure(git_repo, monkeypatch):
+    wt_rel = _setup_feature(git_repo)
+    plan = git_repo / ".flow-states" / "test-feature-plan.md"
+    plan.write_text("# Plan\n")
+    original_unlink = plan.unlink.__func__
+
+    call_count = 0
+
+    # state_file=1, plan_file=2
+    def _fail_second_unlink(self, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise PermissionError("no permission")
+        return original_unlink(self, *args, **kwargs)
+
+    from pathlib import PosixPath
+    monkeypatch.setattr(PosixPath, "unlink", _fail_second_unlink)
+    steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
+    assert steps["plan_file"].startswith("failed:")
+
+
+def test_dag_file_unlink_failure(git_repo, monkeypatch):
+    wt_rel = _setup_feature(git_repo)
+    dag = git_repo / ".flow-states" / "test-feature-dag.md"
+    dag.write_text("# DAG\n")
+    original_unlink = dag.unlink.__func__
+
+    call_count = 0
+
+    # state_file=1, dag_file=2 (plan_file skipped — no file)
+    def _fail_second_unlink(self, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise PermissionError("no permission")
+        return original_unlink(self, *args, **kwargs)
+
+    from pathlib import PosixPath
+    monkeypatch.setattr(PosixPath, "unlink", _fail_second_unlink)
+    steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
+    assert steps["dag_file"].startswith("failed:")
 
 
 def test_issues_file_unlink_failure(git_repo, monkeypatch):

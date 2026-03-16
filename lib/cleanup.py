@@ -97,6 +97,28 @@ def cleanup(project_root, branch, worktree, pr_number=None):
     else:
         steps["state_file"] = "skipped"
 
+    # Delete plan file
+    plan_file = root / ".flow-states" / f"{branch}-plan.md"
+    if plan_file.exists():
+        try:
+            plan_file.unlink()
+            steps["plan_file"] = "deleted"
+        except Exception as e:
+            steps["plan_file"] = f"failed: {e}"
+    else:
+        steps["plan_file"] = "skipped"
+
+    # Delete DAG file
+    dag_file = root / ".flow-states" / f"{branch}-dag.md"
+    if dag_file.exists():
+        try:
+            dag_file.unlink()
+            steps["dag_file"] = "deleted"
+        except Exception as e:
+            steps["dag_file"] = f"failed: {e}"
+    else:
+        steps["dag_file"] = "skipped"
+
     # Delete log file
     log_file = root / ".flow-states" / f"{branch}.log"
     if log_file.exists():

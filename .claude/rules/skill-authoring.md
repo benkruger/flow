@@ -151,3 +151,12 @@ it. This works during plugin development (the FLOW repo has
 `bin/flow` locally) but fails with exit 127 in every target
 project. CI enforces this via
 `test_plugin_skills_use_plugin_root_for_bin_flow`.
+
+## Worktree bin/flow for Repo-Modifying Commands
+
+When running repo-modifying bin/flow subcommands (e.g. bump-version) during
+the Code phase in a worktree, use the worktree's own bin/flow — not the
+cached plugin's ${CLAUDE_PLUGIN_ROOT}/bin/flow. These scripts resolve file
+paths relative to __file__, so the cached plugin writes to the cache
+directory. FLOW state commands (phase-transition, set-timestamp, log, ci) use
+project_root() and work from either path.
