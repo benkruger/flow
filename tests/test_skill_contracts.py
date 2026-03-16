@@ -9,7 +9,7 @@ import json
 import re
 
 from conftest import DOCS_DIR, LIB_DIR, REPO_ROOT, SKILLS_DIR, PHASE_ORDER
-from flow_utils import PHASE_NUMBER
+from flow_utils import PHASE_NAMES, PHASE_NUMBER
 
 
 def _load_phases():
@@ -1961,6 +1961,35 @@ def test_complete_skill_has_session_log_artifact():
     assert "transcript_path" in content, (
         "flow-complete/SKILL.md must reference transcript_path"
     )
+
+
+def test_complete_done_banner_includes_pr_url():
+    """Complete Done banner must include the PR URL for quick access."""
+    content = _read_skill("flow-complete")
+    # Verify PR: <pr_url> appears after the Done banner heading
+    in_done = False
+    found_pr_in_banner = False
+    for line in content.splitlines():
+        if "Done" in line and "Print banner" in line:
+            in_done = True
+        if in_done and "<pr_url>" in line and "PR:" in line:
+            found_pr_in_banner = True
+            break
+    assert found_pr_in_banner, (
+        "flow-complete/SKILL.md Done banner must include 'PR: <pr_url>' line"
+    )
+
+
+def test_complete_done_banner_includes_phase_timings():
+    """Complete Done banner must include per-phase timing summary."""
+    content = _read_skill("flow-complete")
+    # Check that all phase names appear as timing entries in the banner
+    for name in PHASE_NAMES.values():
+        label = f"{name}:"
+        assert label in content, (
+            f"flow-complete/SKILL.md Done banner must include '{label}' "
+            f"for per-phase timing summary"
+        )
 
 
 def test_complete_step6_archives_all_pr_sections():

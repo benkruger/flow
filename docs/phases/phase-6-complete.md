@@ -100,6 +100,8 @@ By the end of Phase 6:
 - Referenced GitHub issues closed (extracted from the start prompt)
 - Remote branch deleted
 - Worktree and all its contents removed
+- PR link displayed in Done banner for quick access
+- Per-phase timing summary displayed in Done banner
 - Issues filed count displayed in Done banner (if any were filed)
 - State file deleted — no more session hook injection for this feature
 - Log file deleted — no stale logs left behind
