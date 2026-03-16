@@ -322,6 +322,20 @@ def test_integer_coercion_for_digit_values():
     assert isinstance(updated["code_review_step"], int)
 
 
+def test_negative_integer_coercion():
+    """Negative digit values like '-5' are stored as int, not str."""
+    state = make_state(current_phase="flow-code-review", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+        "flow-code-review": "in_progress",
+    })
+    state["offset"] = 0
+
+    updated, updates = _mod.apply_updates(state, ["offset=-5"])
+
+    assert updated["offset"] == -5
+    assert isinstance(updated["offset"], int)
+
+
 def test_non_digit_values_remain_strings():
     """Non-digit values stay as strings."""
     state = make_state(current_phase="flow-code-review", phase_statuses={
