@@ -6,6 +6,8 @@ import re
 import subprocess
 import sys
 
+import pytest
+
 from conftest import LIB_DIR, make_state, write_state
 
 SCRIPT = str(LIB_DIR / "set-timestamp.py")
@@ -257,80 +259,52 @@ def test_error_detached_head_no_state_files(git_repo):
 # --- Unit tests for _set_nested edge cases ---
 
 
-def _load_module():
-    """Import set-timestamp.py as a module for unit testing."""
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "set_timestamp", LIB_DIR / "set-timestamp.py"
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
 def test_set_nested_list_non_numeric_intermediate():
     """Non-numeric key on a list intermediate raises KeyError."""
-    import pytest
-    mod = _load_module()
     obj = {"items": [{"a": 1}]}
     with pytest.raises(KeyError, match="Expected numeric index"):
-        mod._set_nested(obj, ["items", "abc", "a"], "val")
+        _mod._set_nested(obj, ["items", "abc", "a"], "val")
 
 
 def test_set_nested_non_traversable_intermediate():
     """Navigating into a string (non-dict, non-list) raises KeyError."""
-    import pytest
-    mod = _load_module()
     obj = {"outer": {"name": "hello"}}
     with pytest.raises(KeyError, match="Cannot navigate into"):
-        mod._set_nested(obj, ["outer", "name", "deep", "sub"], "val")
+        _mod._set_nested(obj, ["outer", "name", "deep", "sub"], "val")
 
 
 def test_set_nested_list_final_non_numeric():
     """Non-numeric final key on a list raises KeyError."""
-    import pytest
-    mod = _load_module()
     obj = {"items": [1, 2, 3]}
     with pytest.raises(KeyError, match="Expected numeric index"):
-        mod._set_nested(obj, ["items", "abc"], "val")
+        _mod._set_nested(obj, ["items", "abc"], "val")
 
 
 def test_set_nested_list_final_out_of_range():
     """Out-of-range final index on a list raises IndexError."""
-    import pytest
-    mod = _load_module()
     obj = {"items": [1, 2, 3]}
     with pytest.raises(IndexError, match="out of range"):
-        mod._set_nested(obj, ["items", "99"], "val")
+        _mod._set_nested(obj, ["items", "99"], "val")
 
 
 def test_set_nested_non_settable_final():
     """Setting a key on a non-dict, non-list final target raises KeyError."""
-    import pytest
-    mod = _load_module()
-    obj = {"x": 42}
+    obj = {"items": [1, 2]}
     with pytest.raises(KeyError, match="Cannot set key"):
-        # x is an int, so navigating to x then trying to set "y" fails
-        # We need a path where the second-to-last lookup gives an int
-        obj2 = {"items": [1, 2]}
-        # items[0] is int 1, then try to set "sub" on it
-        mod._set_nested(obj2, ["items", "0", "sub"], "val")
+        _mod._set_nested(obj, ["items", "0", "sub"], "val")
 
 
 def test_set_nested_list_intermediate_out_of_range():
     """Out-of-range intermediate index on a list raises IndexError."""
-    import pytest
-    mod = _load_module()
     obj = {"items": [{"a": 1}]}
     with pytest.raises(IndexError, match="out of range"):
-        mod._set_nested(obj, ["items", "99", "a"], "val")
+        _mod._set_nested(obj, ["items", "99", "a"], "val")
 
 
 def test_set_nested_list_final_sets_value():
     """Setting a value by numeric index on a list works."""
-    mod = _load_module()
     obj = {"items": [10, 20, 30]}
-    mod._set_nested(obj, ["items", "1"], 99)
+    _mod._set_nested(obj, ["items", "1"], 99)
     assert obj["items"][1] == 99
 
 
@@ -346,6 +320,20 @@ def test_integer_coercion_for_digit_values():
 
     assert updated["code_review_step"] == 1
     assert isinstance(updated["code_review_step"], int)
+
+
+def test_negative_integer_coercion():
+    """Negative digit values like '-5' are stored as int, not str."""
+    state = make_state(current_phase="flow-code-review", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+        "flow-code-review": "in_progress",
+    })
+    state["offset"] = 0
+
+    updated, updates = _mod.apply_updates(state, ["offset=-5"])
+
+    assert updated["offset"] == -5
+    assert isinstance(updated["offset"], int)
 
 
 def test_non_digit_values_remain_strings():
@@ -378,11 +366,9 @@ def test_now_values_remain_timestamp_strings():
 
 def test_set_nested_dict_key_not_found_intermediate():
     """Missing key in intermediate dict raises KeyError."""
-    import pytest
-    mod = _load_module()
     obj = {"a": {"b": 1}}
     with pytest.raises(KeyError, match="not found"):
-        mod._set_nested(obj, ["a", "missing", "x"], "val")
+        _mod._set_nested(obj, ["a", "missing", "x"], "val")
 
 
 # --- code_task increment validation (in-process) ---
@@ -414,7 +400,6 @@ def test_code_task_initial_set_to_one_allowed():
 
 def test_code_task_jump_blocked():
     """code_task 0→5 is blocked (batching attempt)."""
-    import pytest
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
     })
@@ -426,7 +411,6 @@ def test_code_task_jump_blocked():
 
 def test_code_task_skip_blocked():
     """code_task 3→5 is blocked (skipped a task)."""
-    import pytest
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
     })
@@ -449,7 +433,6 @@ def test_code_task_reset_to_zero_allowed():
 
 def test_code_task_initial_jump_blocked():
     """code_task absent → 3 is blocked (must start at 1)."""
-    import pytest
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
     })
@@ -460,7 +443,6 @@ def test_code_task_initial_jump_blocked():
 
 def test_code_task_non_integer_blocked():
     """code_task with a non-integer value is blocked."""
-    import pytest
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
     })

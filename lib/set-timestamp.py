@@ -98,8 +98,11 @@ def apply_updates(state, set_args):
 
         if value == "NOW":
             value = now()
-        elif value.isdigit():
-            value = int(value)
+        else:
+            try:
+                value = int(value)
+            except ValueError:
+                pass
 
         if path_parts == ["code_task"]:
             _validate_code_task(state, value)
