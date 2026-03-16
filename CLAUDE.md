@@ -68,7 +68,7 @@ CI will fail if these are missing:
 - `lib/start-setup.py` — consolidated Start phase setup (git pull, worktree, settings, PR, state file)
 - `lib/flow_utils.py` — shared utilities: `now()` (Pacific Time timestamps), `PACIFIC` timezone, `format_time()`, `current_branch()`, `project_root()`, `PHASE_NAMES`, `COMMANDS`
 - `lib/phase-transition.py` — phase entry/completion (timing, counters, status, formatted_time)
-- `lib/set-timestamp.py` — mid-phase timestamp fields via dot-path notation
+- `lib/set-timestamp.py` — mid-phase timestamp fields via dot-path notation, code_task increment validation (prevents task batching)
 - `frameworks/<name>/` — per-framework data: `detect.json`, `permissions.json`, `dependencies`, `priming.md`
 - `lib/detect-framework.py` — data-driven framework auto-detection from `frameworks/*/detect.json`
 - `lib/prime-project.py` — inserts framework conventions into target CLAUDE.md between markers
@@ -180,7 +180,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_bin_test.py` | Test runner: venv detection, pass/fail, argument passthrough |
 | `test_start_setup.py` | Start setup script: branch naming, settings merge, worktree, state file, logging, error paths |
 | `test_phase_transition.py` | Phase entry/completion: timing, counters, status, formatted_time |
-| `test_set_timestamp.py` | Mid-phase timestamps: dot-path navigation, NOW replacement |
+| `test_set_timestamp.py` | Mid-phase timestamps: dot-path navigation, NOW replacement, code_task increment validation |
 | `test_extract_release.py` | Release notes extraction from RELEASE-NOTES.md |
 | `test_detect_framework.py` | Framework auto-detection: file patterns, multiple matches, defaults, CLI |
 | `test_prime_project.py` | CLAUDE.md priming: marker insertion, idempotent replacement, framework switching |
