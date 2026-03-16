@@ -1985,13 +1985,18 @@ def test_complete_merged_path_includes_archive():
     assert "Step 6" in content, (
         "flow-complete/SKILL.md must reference Step 6"
     )
-    # The MERGED path instruction must mention both Step 6 and Step 8
+    # The MERGED path instruction must mention Step 6
     # to ensure archive runs before cleanup
     merged_idx = content.find("MERGED")
     assert merged_idx != -1, (
         "flow-complete/SKILL.md must contain MERGED path handling"
     )
-    merged_section = content[merged_idx:merged_idx + 500]
+    # Use the next status check as boundary instead of a magic number
+    open_idx = content.find("**If `OPEN`**", merged_idx)
+    assert open_idx > merged_idx, (
+        "flow-complete/SKILL.md must have OPEN path after MERGED path"
+    )
+    merged_section = content[merged_idx:open_idx]
     assert "Step 6" in merged_section, (
         "flow-complete/SKILL.md MERGED path must route through Step 6 "
         "(archive artifacts) before proceeding to cleanup"
