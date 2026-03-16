@@ -35,3 +35,27 @@
   temp file names (e.g., `.flow-issue-body-1`,
   `.flow-issue-body-2`) and launch all Write + `bin/flow
   issue` calls concurrently.
+
+## Problem vs Solution Boundary
+
+Issues describe problems, not solutions. The solution comes
+from Plan phase decomposition after proper codebase
+exploration.
+
+**Include:**
+
+- Observable behavior and evidence (state file values,
+  error messages, screenshots)
+- Why it matters — what breaks, what the user experiences
+- Where to look — which files are involved, what to
+  investigate
+- How to reproduce — steps or conditions that trigger it
+
+**Omit until proper research:**
+
+- Fix sections — speculative solutions not validated by
+  reading the code
+- Root cause analysis — unless you traced the actual code
+  path, a guess is not analysis
+- Prescribed code changes — naming files to investigate
+  is fine, prescribing specific changes is premature
