@@ -2039,3 +2039,22 @@ def test_prime_installs_decompose_plugin():
         "flow-prime/SKILL.md must contain install command for "
         "decompose@decompose-marketplace"
     )
+
+
+# --- flow-issues batch detection and work order ---
+
+
+def test_flow_issues_has_batch_detection_step():
+    """flow-issues SKILL.md must have a Batch Detection step."""
+    content = _read_skill("flow-issues")
+    assert re.search(r"##\s+Step\s+\d+\s*—\s*Batch", content), (
+        "flow-issues/SKILL.md must have a step with 'Batch' in the heading"
+    )
+
+
+def test_flow_issues_has_work_order_section():
+    """flow-issues SKILL.md must have a Work Order section in its display step."""
+    content = _read_skill("flow-issues")
+    assert "Work Order" in content, (
+        "flow-issues/SKILL.md must contain 'Work Order' section"
+    )
