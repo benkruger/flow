@@ -1,5 +1,21 @@
 # Release Notes
 
+## v0.31.2 — PR enrichment, issue batching, and commit enforcement
+
+### Improvements
+
+- Complete phase done banner now includes PR link and phase timing summary
+- PR body includes key sections (plan, timing, issues filed)
+- Issues skill supports batching related issues into a single filing
+
+### Fixes
+
+- Enforce per-task commits and self-invocation loops via preset
+- Add problem-vs-solution boundary rule to filing-issues skill
+- Fix batch-of-related-issues routing
+- Untrack scheduled_tasks.lock (session-specific state, not repo content)
+- Clean up stale commit message file from v0.31.1 release
+
 ## v0.31.1 — Fixes and cleanup
 
 - Remove the version-bump-on-hash-change rule from CLAUDE.md — version bumps
