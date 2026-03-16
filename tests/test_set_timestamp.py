@@ -289,8 +289,8 @@ def test_set_nested_list_final_out_of_range():
 
 def test_set_nested_non_settable_final():
     """Setting a key on a non-dict, non-list final target raises KeyError."""
+    obj = {"items": [1, 2]}
     with pytest.raises(KeyError, match="Cannot set key"):
-        obj = {"items": [1, 2]}
         _mod._set_nested(obj, ["items", "0", "sub"], "val")
 
 
