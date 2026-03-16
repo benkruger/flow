@@ -385,6 +385,106 @@ def test_set_nested_dict_key_not_found_intermediate():
         mod._set_nested(obj, ["a", "missing", "x"], "val")
 
 
+# --- code_task increment validation (in-process) ---
+
+
+def test_code_task_increment_by_one_allowed():
+    """code_task can increment by 1: 0→1 and 1→2."""
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["code_task"] = 0
+
+    updated, updates = _mod.apply_updates(state, ["code_task=1"])
+    assert updated["code_task"] == 1
+
+    updated, updates = _mod.apply_updates(updated, ["code_task=2"])
+    assert updated["code_task"] == 2
+
+
+def test_code_task_initial_set_to_one_allowed():
+    """code_task absent → 1 is allowed (first task)."""
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+
+    updated, updates = _mod.apply_updates(state, ["code_task=1"])
+    assert updated["code_task"] == 1
+
+
+def test_code_task_jump_blocked():
+    """code_task 0→5 is blocked (batching attempt)."""
+    import pytest
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["code_task"] = 0
+
+    with pytest.raises(ValueError, match="increment by 1"):
+        _mod.apply_updates(state, ["code_task=5"])
+
+
+def test_code_task_skip_blocked():
+    """code_task 3→5 is blocked (skipped a task)."""
+    import pytest
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["code_task"] = 3
+
+    with pytest.raises(ValueError, match="increment by 1"):
+        _mod.apply_updates(state, ["code_task=5"])
+
+
+def test_code_task_reset_to_zero_allowed():
+    """code_task 3→0 is allowed (phase re-entry reset)."""
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["code_task"] = 3
+
+    updated, updates = _mod.apply_updates(state, ["code_task=0"])
+    assert updated["code_task"] == 0
+
+
+def test_code_task_initial_jump_blocked():
+    """code_task absent → 3 is blocked (must start at 1)."""
+    import pytest
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+
+    with pytest.raises(ValueError, match="increment by 1"):
+        _mod.apply_updates(state, ["code_task=3"])
+
+
+def test_code_task_non_integer_blocked():
+    """code_task with a non-integer value is blocked."""
+    import pytest
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["code_task"] = 0
+
+    with pytest.raises(ValueError, match="must be an integer"):
+        _mod.apply_updates(state, ["code_task=abc"])
+
+
+def test_code_task_cli_increment_blocked(git_repo, state_dir, branch):
+    """CLI blocks code_task jump with error exit code."""
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["code_task"] = 0
+    write_state(state_dir, branch, state)
+
+    result = _run(git_repo, "code_task=5")
+    assert result.returncode == 1
+    output = json.loads(result.stdout)
+    assert output["status"] == "error"
+    assert "increment by 1" in output["message"]
+
+
 # --- --branch flag (subprocess) ---
 
 
