@@ -363,12 +363,17 @@ def test_hooks_json_has_stop_continue_hook():
 
 
 def test_checksum_version_invariant():
-    """Validate the checksum → version invariant is documented and setup_hash exists.
+    """Validate checksum functions exist and the upgrade mechanism is documented.
 
     This test verifies:
     1. compute_setup_hash() exists and returns a valid 12-char hex digest
     2. compute_config_hash() exists and returns a valid 12-char hex digest
-    3. The invariant is documented in CLAUDE.md
+    3. The checksum → version section is documented in CLAUDE.md
+
+    Hashes are used by prime-check.py for auto-upgrade detection at runtime.
+    When a version mismatch exists, matching hashes allow auto-upgrade while
+    mismatching hashes force a re-prime. Hash changes during development do
+    not require version bumps — version bumps are a release decision.
     """
     import importlib.util
 
