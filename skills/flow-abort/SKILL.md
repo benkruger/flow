@@ -105,10 +105,11 @@ Then output the following banner in your response (not via Bash) inside a fenced
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ✓ FLOW v0.31.4 — Abort — COMPLETE
-  ✓ Feature '<feature>' has been abandoned.
-  ✓ PR closed, remote branch deleted,
-  ✓ worktree removed, state file and log deleted.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Feature '<feature>' has been abandoned.
+  PR closed, remote branch deleted,
+  worktree removed, state file and log deleted.
 ```
 ````
 
