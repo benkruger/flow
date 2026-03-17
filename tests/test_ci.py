@@ -333,3 +333,21 @@ def test_detects_staged_content_change(ci_project_excluded):
     second = _run(ci_project_excluded)
     assert second.returncode == 0
     assert _parse(second)["skipped"] is False
+
+
+def test_detects_untracked_file_rename(ci_project_excluded):
+    """Renaming an untracked file must change the snapshot."""
+    # Create an untracked file
+    (ci_project_excluded / "old_name.txt").write_text("same content\n")
+    # Run CI — creates sentinel
+    first = _run(ci_project_excluded)
+    assert first.returncode == 0
+    assert _parse(first)["skipped"] is False
+    # Rename without changing content
+    (ci_project_excluded / "old_name.txt").rename(
+        ci_project_excluded / "new_name.txt"
+    )
+    # Must NOT skip — file was renamed
+    second = _run(ci_project_excluded)
+    assert second.returncode == 0
+    assert _parse(second)["skipped"] is False

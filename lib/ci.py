@@ -58,7 +58,7 @@ def _tree_snapshot(root):
         )
         untracked_hash = hash_result.stdout
 
-    combined = head.stdout.strip() + "\n" + diff.stdout + "\n" + untracked_hash
+    combined = head.stdout.strip() + "\n" + diff.stdout + "\n" + untracked_files + "\n" + untracked_hash
     return hashlib.sha256(combined.encode()).hexdigest()
 
 
