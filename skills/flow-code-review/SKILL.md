@@ -132,6 +132,29 @@ because Phase 3 (Code) tests already verified all behavior.
 
 Wait for `/simplify` to complete and report its changes.
 
+### Out-of-scope findings
+
+Review `/simplify`'s output for any findings it identified but did not fix
+because they are pre-existing (not introduced by the current PR). For each
+out-of-scope finding, classify as Tech Debt and file an issue.
+
+Write the issue body to `.flow-issue-body` in the project root using the
+Write tool, then file:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Tech Debt" --title "<issue_title>" --body-file .flow-issue-body
+```
+
+After filing, record it:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Tech Debt" --title "<issue_title>" --url "<issue_url>" --phase "flow-code-review"
+```
+
+Repeat for each out-of-scope finding. Then continue to the diff review below.
+
+### Diff review
+
 Show the user what `/simplify` changed:
 
 ```bash

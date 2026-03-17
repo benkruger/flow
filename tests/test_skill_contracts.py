@@ -1319,6 +1319,23 @@ def test_code_review_files_tech_debt_issues():
     )
 
 
+def test_code_review_step1_files_tech_debt_issues():
+    """Code Review Step 1 (Simplify) must file Tech Debt issues for out-of-scope findings."""
+    content = _read_skill("flow-code-review")
+    step1_start = content.index("## Step 1")
+    step2_start = content.index("## Step 2")
+    step1_content = content[step1_start:step2_start]
+    assert "Tech Debt" in step1_content, (
+        "Code Review Step 1 must mention 'Tech Debt' for out-of-scope findings"
+    )
+    assert "bin/flow issue" in step1_content, (
+        "Code Review Step 1 must use 'bin/flow issue' to file issues"
+    )
+    assert "bin/flow add-issue" in step1_content, (
+        "Code Review Step 1 must use 'bin/flow add-issue' to record filed issues"
+    )
+
+
 def test_code_review_files_doc_drift_issues():
     """Code Review skill must file Documentation Drift issues for stale docs."""
     content = _read_skill("flow-code-review")
@@ -1820,6 +1837,28 @@ def test_start_truncation_proceeds_without_confirmation():
     assert "without" in content and "confirm" in content, (
         "flow-start SKILL.md must instruct Claude to proceed without "
         "asking for confirmation after branch name truncation"
+    )
+
+
+def test_start_derives_branch_name_from_prompt():
+    """flow-start must derive a concise branch name, not pass all words verbatim."""
+    content = _read_skill("flow-start")
+    # Old verbatim instruction must be gone
+    assert "ALL remaining words are the feature name" not in content, (
+        "flow-start SKILL.md must not tell Claude to use all words as the "
+        "feature name — Claude should derive a concise branch name"
+    )
+    # Must instruct Claude to derive a branch name
+    assert "derive" in content.lower(), (
+        "flow-start SKILL.md must instruct Claude to derive a branch name "
+        "from the prompt"
+    )
+    # A HARD-GATE must prohibit treating the prompt as conversation
+    gates = re.findall(r"<HARD-GATE>(.*?)</HARD-GATE>", content, re.DOTALL)
+    conversation_gate = any("conversation" in g.lower() for g in gates)
+    assert conversation_gate, (
+        "flow-start SKILL.md must have a HARD-GATE that prohibits treating "
+        "the prompt as a conversation"
     )
 
 
