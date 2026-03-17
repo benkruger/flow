@@ -267,7 +267,11 @@ remaining items.
 
 ## Step 4 — Promote local permissions (all modes)
 
-Set the continuation flag before invoking the child skill:
+Set the continuation context and flag before invoking the child skill:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_step=4, clear _continue_pending, then self-invoke flow:flow-learn --continue-step."
+```
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=local-permission
@@ -317,7 +321,11 @@ user with excluded files), skip the commit gracefully — do not error.
 
 **Standalone:** Skip entirely — no commit.
 
-Set the continuation flag before committing:
+Set the continuation context and flag before committing:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_step=5, then self-invoke flow:flow-learn --continue-step."
+```
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
