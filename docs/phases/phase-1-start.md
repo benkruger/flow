@@ -21,16 +21,12 @@ Run `bin/flow prime-check` to verify `/flow-prime` has been run with the current
 
 Also checks GitHub for newer FLOW releases and displays upgrade instructions if one is available. This check is informational — it never blocks.
 
-### 2. Check for existing features
-
-Scans for active `.flow-states/*.json` files. If any exist, asks whether to proceed or cancel.
-
-### 3. Verify main is green
+### 2. Verify main is green
 
 Run `bin/flow ci` on main. If it fails, stop — fix CI before starting a feature.
 No worktree, PR, or state file is created if main is broken.
 
-### 4. Set up workspace
+### 3. Set up workspace
 
 A single Python script (`lib/start-setup.py`) handles all mechanical setup in one process:
 
@@ -41,11 +37,11 @@ A single Python script (`lib/start-setup.py`) handles all mechanical setup in on
 
 The script returns JSON with the worktree path, PR URL, and PR number. Claude then `cd`s into the worktree for all remaining steps.
 
-### 5. Framework-specific setup
+### 4. Framework-specific setup
 
 **Rails:** Upgrade gems with `bundle update --all`, then run `bin/flow ci`. If it fails, the ci-fixer sub-agent diagnoses and fixes (max 3 attempts). Commit changes via `/flow-commit`.
 
-**Python:** No additional setup — Step 3 verified `bin/flow ci` on main.
+**Python:** No additional setup — Step 2 verified `bin/flow ci` on main.
 
 ---
 
