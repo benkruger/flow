@@ -2138,17 +2138,19 @@ def test_plan_skill_does_not_reference_transcript_path():
     )
 
 
-def test_complete_skill_has_session_log_artifact():
-    """Complete Step 6 must add the session log artifact to the PR."""
+def test_complete_skill_uses_render_pr_body():
+    """Complete Step 6 must use render-pr-body for PR archival."""
     content = _read_skill("flow-complete")
-    assert "--add-artifact" in content, (
-        "flow-complete/SKILL.md must contain --add-artifact for the session log"
+    assert "render-pr-body" in content, (
+        "flow-complete/SKILL.md must use render-pr-body for PR body rendering"
     )
-    assert "Session log" in content, (
-        "flow-complete/SKILL.md must contain 'Session log' label"
-    )
-    assert "transcript_path" in content, (
-        "flow-complete/SKILL.md must reference transcript_path"
+
+
+def test_plan_skill_uses_render_pr_body():
+    """Plan Step 4 must use render-pr-body for PR body rendering."""
+    content = _read_skill("flow-plan")
+    assert "render-pr-body" in content, (
+        "flow-plan/SKILL.md must use render-pr-body for PR body rendering"
     )
 
 
