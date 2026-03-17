@@ -43,7 +43,7 @@ def test_happy_path(tmp_path):
 
 
 def test_commit_failure(tmp_path):
-    """Commit fails — error returned, message file preserved."""
+    """Commit fails — error returned, message file cleaned up."""
     msg_file = tmp_path / ".flow-commit-msg"
     msg_file.write_text("Test commit.")
 
@@ -51,7 +51,7 @@ def test_commit_failure(tmp_path):
         result = _mod.finalize_commit(str(msg_file), "my-branch")
 
     assert result == {"status": "error", "step": "commit", "message": "nothing to commit"}
-    assert msg_file.exists()
+    assert not msg_file.exists()
 
 
 def test_pull_conflict(tmp_path):
