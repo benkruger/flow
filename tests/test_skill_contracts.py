@@ -971,7 +971,7 @@ def test_commit_has_commit_format_support():
 def test_no_skill_invokes_commit_with_auto():
     """Skills that use /flow:flow-commit --auto must be in the allow list.
 
-    Start uses --auto for ci-fixer and dependency commits on main.
+    Start uses --auto for CI baseline fixes and dependency commits on main.
     Learn uses --auto because the phase is fully autonomous. Code and
     Code Review conditionally use --auto based on the commit axis setting."""
     for d in sorted(SKILLS_DIR.iterdir()):
@@ -1437,33 +1437,33 @@ def test_phase_1_hard_gate_requires_rerun_with_arguments():
     )
 
 
-def test_start_step_3_has_ci_fix_subagent():
-    """Step 3 must launch the ci-fixer sub-agent to fix CI failures on main."""
+def test_start_step_2_has_ci_fix_subagent():
+    """Step 2 must launch the ci-fixer sub-agent for CI failures on main."""
     content = _read_skill("flow-start")
-    step3_match = re.search(
-        r"### Step 3.*?\n(.*?)(?=\n### Step 4)", content, re.DOTALL
+    step2_match = re.search(
+        r"### Step 2.*?\n(.*?)(?=\n### Step 3)", content, re.DOTALL
     )
-    assert step3_match, "Could not find Step 3 in flow-start/SKILL.md"
-    step3_text = step3_match.group(1)
-    assert "ci-fixer" in step3_text, (
-        "flow-start Step 3 must reference the ci-fixer sub-agent "
+    assert step2_match, "Could not find Step 2 in flow-start/SKILL.md"
+    step2_text = step2_match.group(1)
+    assert "ci-fixer" in step2_text, (
+        "flow-start Step 2 must reference the ci-fixer sub-agent "
         "for automatic CI fix"
     )
-    assert "sub-agent" in step3_text.lower() or "Agent" in step3_text, (
-        "flow-start Step 3 must reference launching a sub-agent"
+    assert "sub-agent" in step2_text.lower() or "Agent" in step2_text, (
+        "flow-start Step 2 must reference launching a sub-agent"
     )
 
 
 def test_start_ci_fixes_committed_via_flow_commit():
-    """CI fixes on main must be committed via /flow:flow-commit."""
+    """CI fixes on main must be committed via /flow:flow-commit in Step 2."""
     content = _read_skill("flow-start")
-    step1_match = re.search(
-        r"### Step 1.*?\n(.*?)(?=\n### Step 2)", content, re.DOTALL
+    step2_match = re.search(
+        r"### Step 2.*?\n(.*?)(?=\n### Step 3)", content, re.DOTALL
     )
-    assert step1_match, "Could not find Step 1 in flow-start/SKILL.md"
-    step1_text = step1_match.group(1)
-    assert "/flow:flow-commit" in step1_text, (
-        "flow-start Step 1 must commit CI fixes via /flow:flow-commit"
+    assert step2_match, "Could not find Step 2 in flow-start/SKILL.md"
+    step2_text = step2_match.group(1)
+    assert "/flow:flow-commit" in step2_text, (
+        "flow-start Step 2 must commit CI fixes via /flow:flow-commit"
     )
 
 
@@ -1644,24 +1644,32 @@ def test_code_review_has_self_invocation_check():
     )
 
 
-def test_start_commit_step_enforces_flow_commit_exclusively():
-    """Commit step must use /flow:flow-commit and not suggest git commit."""
+def test_start_step_2_acquires_lock():
+    """Step 2 must acquire the start lock before CI and dependency work."""
     content = _read_skill("flow-start")
-    step4_match = re.search(
-        r"### Step 4.*?\n(.*?)(?=\n### Done)", content, re.DOTALL
+    step2_match = re.search(
+        r"### Step 2.*?\n(.*?)(?=\n### Step 3)", content, re.DOTALL
     )
-    assert step4_match, "Could not find Step 4 in flow-start/SKILL.md"
-    step4_text = step4_match.group(1)
-    assert "/flow:flow-commit" in step4_text, (
-        "flow-start Step 4 must reference /flow:flow-commit"
+    assert step2_match, "Could not find Step 2 in flow-start/SKILL.md"
+    step2_text = step2_match.group(1)
+    assert "start-lock" in step2_text, (
+        "flow-start Step 2 must reference start-lock for serialization"
     )
-    # Step 4 may mention "git commit" only in a prohibition (e.g. "Never use")
-    for line in step4_text.splitlines():
-        if "git commit" in line:
-            assert re.search(r"[Nn]ever", line), (
-                f"flow-start Step 4 mentions 'git commit' outside a "
-                f"prohibition: {line.strip()}"
-            )
+
+
+def test_start_step_2_has_two_ci_gates():
+    """Step 2 must have two bin/flow ci calls (baseline + post-deps)."""
+    content = _read_skill("flow-start")
+    step2_match = re.search(
+        r"### Step 2.*?\n(.*?)(?=\n### Step 3)", content, re.DOTALL
+    )
+    assert step2_match, "Could not find Step 2 in flow-start/SKILL.md"
+    step2_text = step2_match.group(1)
+    ci_count = step2_text.count("bin/flow ci")
+    assert ci_count >= 2, (
+        f"flow-start Step 2 must have at least 2 bin/flow ci calls "
+        f"(baseline + post-deps), found {ci_count}"
+    )
 
 
 def test_start_truncation_proceeds_without_confirmation():
