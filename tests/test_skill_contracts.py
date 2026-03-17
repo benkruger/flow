@@ -1120,12 +1120,8 @@ def test_learning_detects_dangling_async_operations():
     assert "background" in source_b_text.lower(), (
         "Learn Source B must mention background agents as a conversation signal"
     )
-    # Step 2 section
-    step2_match = re.search(
-        r"## Step 2.*?\n(.*?)(?:\n## Step 3|\n---)", content, re.DOTALL
-    )
-    assert step2_match, "Learn skill has no Step 2 section"
-    step2_text = step2_match.group(1)
+    # Step 2 section (reuse existing helper)
+    step2_text = _learn_step_text(2)
     assert "dangling" in step2_text.lower() or "async" in step2_text.lower(), (
         "Learn Step 2 must include guidance on classifying dangling async findings"
     )
