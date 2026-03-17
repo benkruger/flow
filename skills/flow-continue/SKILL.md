@@ -84,9 +84,9 @@ When the user selects "Not yet", always output the following banner in your resp
 
 ````markdown
 ```text
-============================================
-  FLOW — Paused
-  Run /flow:flow-continue when ready to continue.
-============================================
+══════════════════════════════════════════════════
+  ◆ FLOW — Paused
+  Run /flow:flow-continue when ready.
+══════════════════════════════════════════════════
 ```
 ````

@@ -35,7 +35,18 @@ if not files:
 def reset_interrupted(path, state):
     cp = state.get("current_phase", "flow-start")
     phase = state.get("phases", {}).get(cp, {})
-    if phase.get("session_started_at") is not None:
+    session_started = phase.get("session_started_at")
+    if session_started is not None:
+        try:
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            started_dt = datetime.fromisoformat(session_started)
+            now_dt = datetime.now(ZoneInfo("America/Los_Angeles"))
+            elapsed = max(0, int((now_dt - started_dt).total_seconds()))
+            existing = phase.get("cumulative_seconds", 0)
+            state["phases"][cp]["cumulative_seconds"] = existing + elapsed
+        except Exception:
+            pass
         state["phases"][cp]["session_started_at"] = None
         with open(path, "w") as f:
             json.dump(state, f, indent=2)

@@ -813,6 +813,128 @@ def test_phase_skills_have_time_format_instruction():
         )
 
 
+# --- Banner style: tiered weight ---
+
+
+def test_no_skills_use_equals_banners():
+    """No SKILL.md should contain the old ============ banner pattern."""
+    skill_dirs = [
+        d for d in sorted(SKILLS_DIR.iterdir()) if d.is_dir()
+    ]
+    maintainer_dir = REPO_ROOT / ".claude" / "skills"
+    if maintainer_dir.is_dir():
+        skill_dirs.extend(
+            d for d in sorted(maintainer_dir.iterdir()) if d.is_dir()
+        )
+
+    for skill_dir in skill_dirs:
+        skill_file = skill_dir / "SKILL.md"
+        if not skill_file.exists():
+            continue
+        content = skill_file.read_text()
+        name = skill_dir.name
+        assert "============" not in content, (
+            f"{name}/SKILL.md still uses old ============ banner pattern — "
+            f"use tiered Unicode borders instead (━ heavy, ─ light, ═ double)"
+        )
+
+
+def test_starting_banners_use_light_horizontal():
+    """Every phase STARTING banner must use ── (light horizontal) borders."""
+    phase_skills = _phase_skills()
+    for key, skill_name in phase_skills.items():
+        content = _read_skill(skill_name)
+        num = PHASE_NUMBER[key]
+        # STARTING banner must be preceded/followed by light ── lines
+        pattern = rf"──{{10,}}.*?STARTING.*?──{{10,}}"
+        assert re.search(pattern, content, re.DOTALL), (
+            f"Phase {num} ({skill_name}) STARTING banner must use "
+            f"── (light horizontal) borders, not ━ or ═ or ="
+        )
+
+
+def test_complete_banners_use_heavy_horizontal():
+    """Every phase COMPLETE banner must use ━━ (heavy horizontal) borders."""
+    phase_skills = _phase_skills()
+    for key, skill_name in phase_skills.items():
+        content = _read_skill(skill_name)
+        num = PHASE_NUMBER[key]
+        # COMPLETE banner must be preceded/followed by heavy ━━ lines
+        pattern = rf"━━{{10,}}.*?COMPLETE.*?━━{{10,}}"
+        assert re.search(pattern, content, re.DOTALL), (
+            f"Phase {num} ({skill_name}) COMPLETE banner must use "
+            f"━━ (heavy horizontal) borders, not ─ or ═ or ="
+        )
+
+
+def test_paused_banners_use_double_horizontal():
+    """Every PAUSED banner must use ══ (double horizontal) borders."""
+    phase_skills = _phase_skills()
+    for key, skill_name in phase_skills.items():
+        content = _read_skill(skill_name)
+        if "Paused" not in content:
+            continue
+        # PAUSED banner must use double ══ lines
+        pattern = r"══{10,}.*?Paused.*?══{10,}"
+        assert re.search(pattern, content, re.DOTALL), (
+            f"{skill_name} PAUSED banner must use "
+            f"══ (double horizontal) borders, not ━ or ─ or ="
+        )
+
+
+def test_complete_banners_have_check_mark():
+    """Phase COMPLETE banner title lines must include ✓ marker."""
+    phase_skills = _phase_skills()
+    version = _plugin_version()
+    for key, skill_name in phase_skills.items():
+        content = _read_skill(skill_name)
+        num = PHASE_NUMBER[key]
+        pattern = rf"✓\s+FLOW v{re.escape(version)}\s*—\s*Phase {num}:.*COMPLETE"
+        assert re.search(pattern, content), (
+            f"Phase {num} ({skill_name}) COMPLETE banner title must "
+            f"include ✓ marker before FLOW version"
+        )
+
+
+def test_paused_banners_have_diamond():
+    """PAUSED banner title lines must include ◆ marker."""
+    phase_skills = _phase_skills()
+    for key, skill_name in phase_skills.items():
+        content = _read_skill(skill_name)
+        if "Paused" not in content:
+            continue
+        pattern = r"◆\s+FLOW\s*—\s*Paused"
+        assert re.search(pattern, content), (
+            f"{skill_name} PAUSED banner title must "
+            f"include ◆ marker before FLOW"
+        )
+
+
+def test_format_status_no_equals_banners():
+    """format-status.py must not use old ============ banner pattern."""
+    content = (LIB_DIR / "format-status.py").read_text()
+    assert "============" not in content, (
+        "lib/format-status.py still uses old ============ banner pattern — "
+        "use tiered Unicode borders (─ for status, ━ for all-complete)"
+    )
+
+
+def test_docs_no_equals_banners():
+    """Docs reference files must not use old ============ banner pattern."""
+    doc_files = [
+        DOCS_DIR / "reference" / "skill-pattern.md",
+        DOCS_DIR / "skills" / "flow-status.md",
+    ]
+    for doc_file in doc_files:
+        if not doc_file.exists():
+            continue
+        content = doc_file.read_text()
+        assert "============" not in content, (
+            f"{doc_file.name} still uses old ============ banner pattern — "
+            f"update to tiered Unicode borders"
+        )
+
+
 # --- Commit --auto flag ---
 
 
@@ -2016,17 +2138,19 @@ def test_plan_skill_does_not_reference_transcript_path():
     )
 
 
-def test_complete_skill_has_session_log_artifact():
-    """Complete Step 6 must add the session log artifact to the PR."""
+def test_complete_skill_uses_render_pr_body():
+    """Complete Step 6 must use render-pr-body for PR archival."""
     content = _read_skill("flow-complete")
-    assert "--add-artifact" in content, (
-        "flow-complete/SKILL.md must contain --add-artifact for the session log"
+    assert "render-pr-body" in content, (
+        "flow-complete/SKILL.md must use render-pr-body for PR body rendering"
     )
-    assert "Session log" in content, (
-        "flow-complete/SKILL.md must contain 'Session log' label"
-    )
-    assert "transcript_path" in content, (
-        "flow-complete/SKILL.md must reference transcript_path"
+
+
+def test_plan_skill_uses_render_pr_body():
+    """Plan Step 4 must use render-pr-body for PR body rendering."""
+    content = _read_skill("flow-plan")
+    assert "render-pr-body" in content, (
+        "flow-plan/SKILL.md must use render-pr-body for PR body rendering"
     )
 
 

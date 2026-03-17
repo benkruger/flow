@@ -145,11 +145,133 @@ def test_correct_git_commands(tmp_path):
         _mod.finalize_commit(str(msg_file), "feat-branch")
 
     assert mock_run.call_args_list == [
-        call(["git", "commit", "-F", str(msg_file)], capture_output=True, text=True),
-        call(["git", "pull", "origin", "feat-branch"], capture_output=True, text=True),
-        call(["git", "push"], capture_output=True, text=True),
-        call(["git", "rev-parse", "HEAD"], capture_output=True, text=True),
+        call(["git", "commit", "-F", str(msg_file)], capture_output=True, text=True, timeout=30),
+        call(["git", "pull", "origin", "feat-branch"], capture_output=True, text=True, timeout=60),
+        call(["git", "push"], capture_output=True, text=True, timeout=60),
+        call(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=30),
     ]
+
+
+def test_rev_parse_failure(tmp_path):
+    """Rev-parse fails — ok with warning, empty SHA."""
+    msg_file = tmp_path / ".flow-commit-msg"
+    msg_file.write_text("Test commit.")
+
+    responses = [
+        _make_result(),                                 # git commit
+        _make_result(),                                 # git pull
+        _make_result(),                                 # git push
+        _make_result(returncode=1, stderr="bad HEAD"),  # git rev-parse HEAD
+    ]
+
+    with patch("subprocess.run", side_effect=responses):
+        result = _mod.finalize_commit(str(msg_file), "my-branch")
+
+    assert result == {
+        "status": "ok",
+        "sha": "",
+        "warning": "commit succeeded but SHA retrieval failed",
+    }
+
+
+def test_commit_timeout(tmp_path):
+    """Commit times out — error with step and timeout message."""
+    msg_file = tmp_path / ".flow-commit-msg"
+    msg_file.write_text("Test commit.")
+
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("git", 30)):
+        result = _mod.finalize_commit(str(msg_file), "my-branch")
+
+    assert result == {
+        "status": "error",
+        "step": "commit",
+        "message": "git commit timed out after 30s",
+    }
+    assert not msg_file.exists()
+
+
+def test_pull_timeout(tmp_path):
+    """Pull times out — error with step and timeout message."""
+    msg_file = tmp_path / ".flow-commit-msg"
+    msg_file.write_text("Test commit.")
+
+    responses = [
+        _make_result(),  # git commit succeeds
+        subprocess.TimeoutExpired("git", 60),  # git pull times out
+    ]
+
+    with patch("subprocess.run", side_effect=responses):
+        result = _mod.finalize_commit(str(msg_file), "my-branch")
+
+    assert result == {
+        "status": "error",
+        "step": "pull",
+        "message": "git pull timed out after 60s",
+    }
+
+
+def test_push_timeout(tmp_path):
+    """Push times out — error with step and timeout message."""
+    msg_file = tmp_path / ".flow-commit-msg"
+    msg_file.write_text("Test commit.")
+
+    responses = [
+        _make_result(),  # git commit
+        _make_result(),  # git pull
+        subprocess.TimeoutExpired("git", 60),  # git push times out
+    ]
+
+    with patch("subprocess.run", side_effect=responses):
+        result = _mod.finalize_commit(str(msg_file), "my-branch")
+
+    assert result == {
+        "status": "error",
+        "step": "push",
+        "message": "git push timed out after 60s",
+    }
+
+
+def test_rev_parse_timeout(tmp_path):
+    """Rev-parse times out — ok with warning since commit succeeded."""
+    msg_file = tmp_path / ".flow-commit-msg"
+    msg_file.write_text("Test commit.")
+
+    responses = [
+        _make_result(),  # git commit
+        _make_result(),  # git pull
+        _make_result(),  # git push
+        subprocess.TimeoutExpired("git", 30),  # git rev-parse times out
+    ]
+
+    with patch("subprocess.run", side_effect=responses):
+        result = _mod.finalize_commit(str(msg_file), "my-branch")
+
+    assert result == {
+        "status": "ok",
+        "sha": "",
+        "warning": "commit succeeded but SHA retrieval timed out",
+    }
+
+
+def test_status_porcelain_timeout(tmp_path):
+    """Status-porcelain times out during pull failure — falls through to pull error."""
+    msg_file = tmp_path / ".flow-commit-msg"
+    msg_file.write_text("Test commit.")
+
+    responses = [
+        _make_result(),                                     # git commit
+        _make_result(1, stderr="Could not resolve host"),   # git pull fails
+        subprocess.TimeoutExpired("git", 30),               # git status --porcelain times out
+    ]
+
+    with patch("subprocess.run", side_effect=responses):
+        result = _mod.finalize_commit(str(msg_file), "my-branch")
+
+    assert result == {
+        "status": "error",
+        "step": "pull",
+        "message": "Could not resolve host",
+    }
 
 
 def test_dd_conflict_detected(tmp_path):
