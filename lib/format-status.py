@@ -116,6 +116,9 @@ def format_panel(state, version, now=None, dev_mode=False, phase_config=None):
 
     if current_phase_data:
         seconds = current_phase_data.get("cumulative_seconds", 0)
+        session_started = current_phase_data.get("session_started_at")
+        if session_started:
+            seconds += _elapsed_since(session_started, now)
         visits = current_phase_data.get("visit_count", 0)
         lines.append(f"  Time in current phase : {format_time(seconds)}")
         lines.append(f"  Times visited         : {visits}")
