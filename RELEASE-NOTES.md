@@ -1,5 +1,16 @@
 # Release Notes
 
+## v0.31.3 — Fix flow-start existing-feature check and Complete phase continuation
+
+### Fixes
+
+- Remove existing-feature check from flow-start — flow-start no longer scans
+  .flow-states/ for active features or prompts about them. Multiple simultaneous
+  features are supported by design; flow-continue is the command for resuming.
+  Closes #184.
+- Fix Complete phase stopping after merge conflict resolution because
+  _continue_pending was not set before commit. Closes #178.
+
 ## v0.31.2 — PR enrichment, issue batching, and commit enforcement
 
 ### Improvements
