@@ -1,5 +1,19 @@
 # Release Notes
 
+## v0.32.1 — Fix Code Review dropping background agent findings
+
+### Fixes
+
+- Code Review steps now wait for all background agents to complete before
+  evaluating findings. Previously, built-in skills (/simplify, /review,
+  /security-review) launched background agents whose findings were silently
+  dropped because the stop-continue hook resumed the parent skill before
+  agents completed. Closes #175, #209.
+
+### Housekeeping
+
+- Remove stale .flow-commit-msg left over from the v0.32.0 release.
+
 ## v0.32.0 — Start lock wait flag and bug fixes
 
 ### New features
