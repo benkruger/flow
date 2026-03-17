@@ -47,7 +47,11 @@ def test_commit_failure(tmp_path):
     msg_file = tmp_path / ".flow-commit-msg"
     msg_file.write_text("Test commit.")
 
-    with patch("subprocess.run", return_value=_make_result(1, stderr="nothing to commit")):
+    responses = [
+        _make_result(1, stderr="nothing to commit"),    # git commit
+    ]
+
+    with patch("subprocess.run", side_effect=responses):
         result = _mod.finalize_commit(str(msg_file), "my-branch")
 
     assert result == {"status": "error", "step": "commit", "message": "nothing to commit"}
