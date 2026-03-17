@@ -9,6 +9,7 @@ file is written.
 
 Output (JSON to stdout):
   Success:   {"status": "ok", "sha": "<commit-hash>"}
+  Warning:   {"status": "ok", "sha": "", "warning": "..."}
   Conflict:  {"status": "conflict", "files": ["file1.py", ...]}
   Error:     {"status": "error", "step": "commit|pull|push", "message": "..."}
 """
@@ -68,6 +69,8 @@ def finalize_commit(message_file, branch):
         ["git", "rev-parse", "HEAD"],
         capture_output=True, text=True,
     )
+    if sha.returncode != 0:
+        return {"status": "ok", "sha": "", "warning": "commit succeeded but SHA retrieval failed"}
 
     return {"status": "ok", "sha": sha.stdout.strip()}
 

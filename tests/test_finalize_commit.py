@@ -148,6 +148,28 @@ def test_correct_git_commands(tmp_path):
     ]
 
 
+def test_rev_parse_failure(tmp_path):
+    """Rev-parse fails — ok with warning, empty SHA."""
+    msg_file = tmp_path / ".flow-commit-msg"
+    msg_file.write_text("Test commit.")
+
+    responses = [
+        _make_result(),                                 # git commit
+        _make_result(),                                 # git pull
+        _make_result(),                                 # git push
+        _make_result(returncode=1, stderr="bad HEAD"),  # git rev-parse HEAD
+    ]
+
+    with patch("subprocess.run", side_effect=responses):
+        result = _mod.finalize_commit(str(msg_file), "my-branch")
+
+    assert result == {
+        "status": "ok",
+        "sha": "",
+        "warning": "commit succeeded but SHA retrieval failed",
+    }
+
+
 def test_dd_conflict_detected(tmp_path):
     """DD (both deleted) status is recognized as a conflict."""
     msg_file = tmp_path / ".flow-commit-msg"
