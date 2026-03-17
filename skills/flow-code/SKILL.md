@@ -109,8 +109,8 @@ Get `<branch>` from the state file.
 
 ## Resume Check
 
-Read `plan_file` from the state file to get the plan file path. Use the
-Read tool to read the plan file. Identify the Tasks section — this is the
+Read `files.plan` from the state file to get the plan file path (fall back
+to `plan_file` for old state files). Use the Read tool to read the plan file. Identify the Tasks section — this is the
 ordered list of implementation tasks to execute.
 
 Read `code_task` from the state file (default `0` if absent).

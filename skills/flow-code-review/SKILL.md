@@ -243,7 +243,7 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 
 ## Step 2 — Review
 
-Read `pr_number` from the state file. Read `plan_file` from the state
+Read `pr_number` from the state file. Read `files.plan` from the state
 file to get the plan file path. Use the Read tool to read the plan file.
 
 Set the continuation context and flag before invoking the child skill:
