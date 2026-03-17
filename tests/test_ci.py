@@ -239,3 +239,70 @@ def test_branch_flag_uses_specified_sentinel(ci_project):
     assert output["status"] == "ok"
     sentinel = ci_project / ".flow-states" / "other-feature-ci-passed"
     assert sentinel.exists()
+
+
+def test_detects_tracked_file_content_change(ci_project):
+    """Editing an already-modified tracked file must change the snapshot."""
+    exclude = ci_project / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    exclude.write_text(".flow-states/\n")
+    # Create and commit a tracked file
+    (ci_project / "app.py").write_text("version = 1\n")
+    subprocess.run(["git", "add", "-A"], cwd=str(ci_project), check=True,
+                   capture_output=True)
+    subprocess.run(["git", "commit", "-m", "add app"], cwd=str(ci_project),
+                   check=True, capture_output=True)
+    # Modify the tracked file (status: M)
+    (ci_project / "app.py").write_text("version = 2\n")
+    # Run CI — creates sentinel with "version = 2" content
+    first = _run(ci_project, args=["--if-dirty"])
+    assert first.returncode == 0
+    assert _parse(first)["skipped"] is False
+    # Modify again — still M status, but different content
+    (ci_project / "app.py").write_text("version = 3\n")
+    # Must NOT skip — content changed even though status is the same
+    second = _run(ci_project, args=["--if-dirty"])
+    assert second.returncode == 0
+    assert _parse(second)["skipped"] is False
+
+
+def test_detects_untracked_file_content_change(ci_project):
+    """Editing an untracked file must change the snapshot."""
+    exclude = ci_project / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    exclude.write_text(".flow-states/\n")
+    # Create an untracked file
+    (ci_project / "notes.txt").write_text("draft 1\n")
+    # Run CI — creates sentinel with "draft 1" content
+    first = _run(ci_project, args=["--if-dirty"])
+    assert first.returncode == 0
+    assert _parse(first)["skipped"] is False
+    # Modify untracked file — still ?? status, but different content
+    (ci_project / "notes.txt").write_text("draft 2\n")
+    # Must NOT skip — content changed
+    second = _run(ci_project, args=["--if-dirty"])
+    assert second.returncode == 0
+    assert _parse(second)["skipped"] is False
+
+
+def test_detects_staged_content_change(ci_project):
+    """Re-staging a file with different content must change the snapshot."""
+    exclude = ci_project / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    exclude.write_text(".flow-states/\n")
+    # Create a file, stage it
+    (ci_project / "config.py").write_text("setting = 'a'\n")
+    subprocess.run(["git", "add", "config.py"], cwd=str(ci_project),
+                   check=True, capture_output=True)
+    # Run CI — creates sentinel
+    first = _run(ci_project, args=["--if-dirty"])
+    assert first.returncode == 0
+    assert _parse(first)["skipped"] is False
+    # Replace content and re-stage — status stays "A" but content differs
+    (ci_project / "config.py").write_text("setting = 'b'\n")
+    subprocess.run(["git", "add", "config.py"], cwd=str(ci_project),
+                   check=True, capture_output=True)
+    # Must NOT skip — staged content changed
+    second = _run(ci_project, args=["--if-dirty"])
+    assert second.returncode == 0
+    assert _parse(second)["skipped"] is False
