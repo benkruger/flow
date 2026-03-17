@@ -206,6 +206,133 @@ def test_acquire_creates_state_dir_if_missing(tmp_path):
     assert (tmp_path / ".flow-states" / "start.lock").exists()
 
 
+# --- acquire_with_wait tests ---
+
+
+def test_acquire_with_wait_immediate(tmp_path):
+    """Wait mode acquires immediately when lock is free, no sleep called."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+
+    with patch.object(_mod, "project_root", return_value=tmp_path), \
+         patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
+         patch("os.getppid", return_value=12345), \
+         patch.object(_mod.time, "sleep") as mock_sleep:
+        result = _mod.acquire_with_wait("test-feature", timeout=300, interval=10)
+
+    assert result["status"] == "acquired"
+    mock_sleep.assert_not_called()
+
+
+def test_acquire_with_wait_succeeds_after_retry(tmp_path):
+    """Wait mode retries after sleep and succeeds when lock is released."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    lock_file = state_dir / "start.lock"
+    lock_file.write_text(json.dumps({
+        "pid": 99999,
+        "feature": "other-feature",
+        "acquired_at": "2026-01-01T10:00:00-08:00",
+    }))
+
+    sleep_args = []
+
+    def mock_sleep_side_effect(seconds):
+        sleep_args.append(seconds)
+        lock_file.unlink()
+
+    with patch.object(_mod, "project_root", return_value=tmp_path), \
+         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"), \
+         patch("os.getppid", return_value=12345), \
+         patch("os.kill") as mock_kill, \
+         patch.object(_mod.time, "sleep", side_effect=mock_sleep_side_effect), \
+         patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0, 10.0]):
+        mock_kill.return_value = None
+        result = _mod.acquire_with_wait("new-feature", timeout=300, interval=10)
+
+    assert result["status"] == "acquired"
+    assert sleep_args == [10]
+
+
+def test_acquire_with_wait_timeout(tmp_path):
+    """Wait mode returns timeout when lock is never released."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    lock_file = state_dir / "start.lock"
+    lock_file.write_text(json.dumps({
+        "pid": 99999,
+        "feature": "blocking-feature",
+        "acquired_at": "2026-01-01T10:00:00-08:00",
+    }))
+
+    with patch.object(_mod, "project_root", return_value=tmp_path), \
+         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"), \
+         patch("os.kill") as mock_kill, \
+         patch.object(_mod.time, "sleep"), \
+         patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0, 35.0]):
+        mock_kill.return_value = None
+        result = _mod.acquire_with_wait("new-feature", timeout=30, interval=10)
+
+    assert result["status"] == "timeout"
+    assert result["feature"] == "blocking-feature"
+    assert result["pid"] == 99999
+    assert result["waited_seconds"] == 35
+
+
+def test_acquire_with_wait_stale_during_wait(tmp_path):
+    """Wait mode succeeds when PID dies between retries (stale detected)."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    lock_file = state_dir / "start.lock"
+    lock_file.write_text(json.dumps({
+        "pid": 99999,
+        "feature": "dying-feature",
+        "acquired_at": "2026-01-01T10:00:00-08:00",
+    }))
+
+    kill_calls = [None, ProcessLookupError]
+
+    def kill_side_effect(pid, sig):
+        effect = kill_calls.pop(0)
+        if effect is not None:
+            raise effect
+
+    with patch.object(_mod, "project_root", return_value=tmp_path), \
+         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"), \
+         patch("os.getppid", return_value=12345), \
+         patch("os.kill", side_effect=kill_side_effect), \
+         patch.object(_mod.time, "sleep"), \
+         patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0, 10.0]):
+        result = _mod.acquire_with_wait("new-feature", timeout=300, interval=10)
+
+    assert result["status"] == "acquired"
+    assert result["stale_broken"] is True
+    assert result["stale_feature"] == "dying-feature"
+
+
+def test_acquire_with_wait_timeout_zero(tmp_path):
+    """Wait mode with timeout=0 makes a single attempt, no sleep."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    lock_file = state_dir / "start.lock"
+    lock_file.write_text(json.dumps({
+        "pid": 99999,
+        "feature": "other-feature",
+        "acquired_at": "2026-01-01T10:00:00-08:00",
+    }))
+
+    with patch.object(_mod, "project_root", return_value=tmp_path), \
+         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"), \
+         patch("os.kill") as mock_kill, \
+         patch.object(_mod.time, "sleep") as mock_sleep, \
+         patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0]):
+        mock_kill.return_value = None
+        result = _mod.acquire_with_wait("new-feature", timeout=0, interval=10)
+
+    assert result["status"] == "timeout"
+    mock_sleep.assert_not_called()
+
+
 # --- release tests ---
 
 
@@ -366,3 +493,23 @@ def test_cli_missing_feature_for_acquire(target_project):
     assert result.returncode == 1
     output = json.loads(result.stdout)
     assert output["status"] == "error"
+
+
+def test_cli_acquire_wait(target_project):
+    """CLI acquire with --wait acquires immediately when lock is free."""
+    state_dir = target_project / ".flow-states"
+    state_dir.mkdir()
+
+    script = Path(__file__).resolve().parent.parent / "lib" / "start-lock.py"
+    result = subprocess.run(
+        [sys.executable, str(script),
+         "--acquire", "--wait", "--timeout", "1",
+         "--feature", "cli-wait-feature"],
+        capture_output=True, text=True,
+        cwd=str(target_project),
+    )
+
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert output["status"] == "acquired"
+    assert (state_dir / "start.lock").exists()
