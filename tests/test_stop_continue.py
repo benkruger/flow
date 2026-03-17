@@ -218,6 +218,18 @@ class TestCheckContinue:
         assert skill_name == "commit"
         assert context is None
 
+    def test_context_without_pending_allows(self, git_repo, state_dir, branch, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_continue_context"] = "Stale context from a previous invocation."
+        write_state(state_dir, branch, state)
+
+        should_block, skill_name, context = _mod.check_continue()
+
+        assert should_block is False
+        assert skill_name is None
+        assert context is None
+
 
 # --- Subprocess integration tests ---
 
