@@ -62,6 +62,15 @@ Every plan must include test tasks — even for pure-markdown skills,
 add contract tests in `test_skill_contracts.py`. TDD means the test
 task comes before the implementation task it validates.
 
+## Decompose Completeness
+
+When the user makes a material correction to the approach after the
+initial decompose run, re-run decompose with the complete corrected
+understanding before writing the plan. A decompose based on partial
+understanding produces a plan that looks correct but was never
+validated against the full design. Do not patch the plan manually —
+the decompose must see the complete algorithm.
+
 ## Negative-Assertion Test Compatibility
 
 When writing a SKILL.md instruction that prohibits a specific string
