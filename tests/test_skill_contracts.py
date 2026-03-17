@@ -989,14 +989,17 @@ def test_no_skill_invokes_commit_with_auto():
 # --- Release flags ---
 
 
-def test_release_default_requires_approval():
-    """Release SKILL.md default (no flags) must pause for approval."""
+def test_release_manual_requires_approval():
+    """Release SKILL.md --manual flag must pause for approval; default proceeds."""
     content = (REPO_ROOT / ".claude" / "skills" / "flow-release" / "SKILL.md").read_text()
     assert "AskUserQuestion" in content, (
-        "Release SKILL.md must use AskUserQuestion for approval by default"
+        "Release SKILL.md must use AskUserQuestion for --manual approval"
     )
-    assert "--auto" in content and "proceed directly to Step 5" in content, (
-        "Release SKILL.md must only skip approval when --auto is explicitly passed"
+    assert "If `--manual` was explicitly passed" in content, (
+        "Release SKILL.md must only prompt when --manual is explicitly passed"
+    )
+    assert "Unless `--manual` was explicitly passed" in content, (
+        "Release SKILL.md default must proceed directly to Step 5"
     )
 
 
@@ -1101,6 +1104,29 @@ def test_learning_destinations_are_repo_only():
     )
     assert "Rule" in content, (
         "Learn skill must route .claude/rules/ changes as Rule issues"
+    )
+
+
+def test_learning_detects_dangling_async_operations():
+    """Learn Source B must check for background agents launched but never awaited.
+
+    Issue #177: Learn synthesis missed dangling background agents. Source B
+    must include a proactive signal for async operations, and Step 2 must
+    explain how to classify them."""
+    content = _read_skill("flow-learn")
+    # Source B section
+    source_b_match = re.search(
+        r"### Source B.*?\n(.*?)(?:\n### Source C|\n---)", content, re.DOTALL
+    )
+    assert source_b_match, "Learn skill has no Source B section"
+    source_b_text = source_b_match.group(1)
+    assert "background" in source_b_text.lower(), (
+        "Learn Source B must mention background agents as a conversation signal"
+    )
+    # Step 2 section (reuse existing helper)
+    step2_text = _learn_step_text(2)
+    assert "dangling" in step2_text.lower() or "async" in step2_text.lower(), (
+        "Learn Step 2 must include guidance on classifying dangling async findings"
     )
 
 
