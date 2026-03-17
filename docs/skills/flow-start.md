@@ -22,7 +22,7 @@ Begins a new feature. This is always the first command run for any piece of work
 
 ## What It Does
 
-1. Pre-flight: runs version gate, upgrade check, existing feature check, and `bin/flow ci` in parallel
+1. Pre-flight: runs version gate, upgrade check, and `bin/flow ci` in parallel
 2. Runs `lib/start-setup.py` — git pull, worktree creation, empty commit + push + PR, and state file creation. The `--prompt` flag passes the user's raw input (including `#N` issue references) so it is preserved verbatim in the state file for issue closing at completion
 3. Runs `bin/dependencies` if it exists (created by `/flow-prime`), then `bin/flow ci`, with ci-fixer sub-agent if needed
 4. Commits dependency changes and marks Phase 1 complete
@@ -45,7 +45,7 @@ Branch names are capped at 32 characters, truncated at word boundaries.
 
 ## Mode
 
-Mode is configurable via `.flow.json` (default: manual) and copied into the state file at start. In auto mode, the existing-feature warning auto-proceeds and the phase transition advances to Plan without asking.
+Mode is configurable via `.flow.json` (default: manual) and copied into the state file at start. In auto mode, the phase transition advances to Plan without asking.
 
 ---
 
