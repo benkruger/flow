@@ -272,6 +272,12 @@ def test_elapsed_since_with_no_started_at():
     assert _mod._elapsed_since(None) == 0
 
 
+def test_elapsed_since_with_no_now_uses_current_time():
+    """_elapsed_since with a valid started_at and now=None computes live elapsed."""
+    result = _mod._elapsed_since("2026-01-01T00:00:00Z")
+    assert result > 0
+
+
 def test_read_version_returns_fallback_when_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(_mod, "__file__", str(tmp_path / "lib" / "format-status.py"))
     assert _mod._read_version() == "?"

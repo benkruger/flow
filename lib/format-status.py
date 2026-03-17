@@ -48,6 +48,8 @@ def _read_version():
 
 def format_panel(state, version, now=None, dev_mode=False, phase_config=None):
     """Build the status panel string from state dict and version."""
+    if now is None:
+        now = datetime.now(PACIFIC)
     if phase_config:
         order, names, numbers, commands = phase_config
     else:
