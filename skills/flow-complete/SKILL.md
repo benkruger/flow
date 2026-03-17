@@ -276,61 +276,24 @@ If no warnings:
 
 ### Step 6 — Archive artifacts to PR
 
-Archive key artifacts to the PR body before merging. These files are
-deleted during cleanup, so this is the last chance to preserve them.
-
-**Session log artifact:** If `transcript_path` from the state file is
-not null, add a session log link to the PR artifacts:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --add-artifact --label "Session log" --value <transcript_path>
-```
-
-If `transcript_path` is null, skip this command.
-
-**Phase Timings:** Generate the phase timings table and append it to
-the PR body as a non-collapsible section:
+Render the complete PR body. This single call generates all sections
+(What, Artifacts, Plan, DAG Analysis, Phase Timings, State File,
+Session Log, Issues Filed) from the state file and available artifact
+files. Sections with missing data are omitted automatically.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-pr-timings --state-file <project_root>/.flow-states/<branch>.json --output <project_root>/.flow-states/<branch>-timings.md
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow render-pr-body --pr <pr_number>
 ```
 
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --append-section --heading "Phase Timings" --content-file <project_root>/.flow-states/<branch>-timings.md --no-collapse
-```
-
-**State file and session log:** Use the Read tool to read
-`<project_root>/.flow-states/<branch>.json` and
-`<project_root>/.flow-states/<branch>.log`.
-
-Append the state file to the PR body:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --append-section --heading "State File" --summary ".flow-states/<branch>.json" --content-file <project_root>/.flow-states/<branch>.json --format json
-```
-
-Append the session log to the PR body:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --append-section --heading "Session Log" --summary ".flow-states/<branch>.log" --content-file <project_root>/.flow-states/<branch>.log --format text
-```
-
-If any file does not exist, skip that step — do not fail.
-
-**Issues Filed:** Format the issues summary:
+**Issues banner line:** Format the issues summary to get the banner
+line for the Done banner:
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-issues-summary --state-file <project_root>/.flow-states/<branch>.json --output <project_root>/.flow-states/<branch>-issues.md
 ```
 
-Parse the JSON output. If `has_issues` is `false`, skip the PR body append.
-If `has_issues` is `true`, append the table to the PR body:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --append-section --heading "Issues Filed" --content-file <project_root>/.flow-states/<branch>-issues.md --no-collapse
-```
-
-Keep the `banner_line` from the JSON output — use it in the Done banner below.
+Parse the JSON output. Keep the `banner_line` — use it in the Done
+banner below. If `has_issues` is `false`, there is no banner line.
 
 ### Step 7 — Merge PR
 
