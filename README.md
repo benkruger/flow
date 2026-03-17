@@ -39,7 +39,7 @@ Start → Plan → Code → Code Review → Learn → Complete
 
 | Phase | Command | What happens |
 |-------|---------|-------------|
-| **1: Start** | `/flow-start <prompt>` | New worktree, push branch, open PR, `bin/ci` baseline, upgrade dependencies, `bin/ci` green — sub-agent fixes CI failures |
+| **1: Start** | `/flow-start <prompt>` | Lock, pull main, `bin/ci` baseline, upgrade dependencies, `bin/ci` post-deps, commit to main, unlock, new worktree + PR — ci-fixer sub-agent handles failures |
 | **2: Plan** | `/flow-plan` | Reads the start prompt, invokes DAG decompose plugin for dependency analysis, explores codebase, produces ordered tasks with dependency graph |
 | **3: Code** | `/flow-code` | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
 | **4: Code Review** | `/flow-code-review` | Four lenses — clarity (`/simplify`), correctness (`/review`), safety (`/security-review`), and CLAUDE.md compliance (`code-review:code-review` plugin) |
@@ -126,7 +126,7 @@ Start a new Claude Code session so permissions take effect, then start a feature
 /flow-start invoice pdf export
 ```
 
-This creates branch `invoice-pdf-export`, a worktree at `.worktrees/invoice-pdf-export`, opens a GitHub PR, runs `bin/ci` to establish a baseline, upgrades dependencies, runs `bin/ci` again to confirm green, and lands you in Phase 2: Plan.
+This acquires a start lock (serializing concurrent starts), pulls main, runs `bin/ci` for a clean baseline, upgrades dependencies on main, runs `bin/ci` again to catch dep-induced breakage, commits everything to main, then creates branch `invoice-pdf-export` with a worktree at `.worktrees/invoice-pdf-export` and opens a GitHub PR. You land in Phase 2: Plan.
 
 ---
 
@@ -169,7 +169,7 @@ Main conversation          Sub-agent (general-purpose)
       |─── Updates state file
 ```
 
-Phase 1 also uses a **general-purpose sub-agent** when `bin/ci` fails — whether from a dirty main branch, dependency upgrade breakage, or flaky tests. The sub-agent diagnoses failures, fixes them, iterates up to 3 times, then reports back.
+Phase 1 uses the **ci-fixer sub-agent** when `bin/ci` fails — at the baseline CI gate and again after dependency upgrades. The sub-agent diagnoses failures, fixes them, iterates up to 3 times, then reports back. A file lock serializes concurrent starts so they do not fight over main.
 
 ### State File Persistence
 

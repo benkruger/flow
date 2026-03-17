@@ -21,27 +21,28 @@ Run `bin/flow prime-check` to verify `/flow-prime` has been run with the current
 
 Also checks GitHub for newer FLOW releases and displays upgrade instructions if one is available. This check is informational — it never blocks.
 
-### 2. Verify main is green
+### 2. Prepare main (locked)
 
-Run `bin/flow ci` on main. If it fails, stop — fix CI before starting a feature.
-No worktree, PR, or state file is created if main is broken.
+Acquires a lock (`lib/start-lock.py`) so only one flow-start runs at a time. Under the lock:
+
+1. `git pull origin main`
+2. `bin/flow ci` — establish a clean baseline
+3. If CI fails, the ci-fixer sub-agent diagnoses and fixes, then commits to main
+4. `bin/dependencies` — update dependencies on main (not in a worktree)
+5. If dependencies changed, `bin/flow ci` again — catches dep-induced breakage (rubocop, breaking changes)
+6. If CI fails, ci-fixer again, then commits to main
+7. Release the lock
+
+This ensures every worktree starts from a clean, current main. Concurrent starts wait for the lock — the second start finds main already clean and breezes through.
 
 ### 3. Set up workspace
 
 A single Python script (`lib/start-setup.py`) handles all mechanical setup in one process:
 
-1. `git pull origin main`
+1. `git pull origin main` (no-op — already pulled in Step 2)
 2. Create a git worktree at `.worktrees/app-payment-webhooks`
 3. Empty commit, push branch, and open a PR via `gh pr create`
 4. Create `.flow-states/app-payment-webhooks.json` (initial state)
-
-The script returns JSON with the worktree path, PR URL, and PR number. Claude then `cd`s into the worktree for all remaining steps.
-
-### 4. Framework-specific setup
-
-**Rails:** Upgrade gems with `bundle update --all`, then run `bin/flow ci`. If it fails, the ci-fixer sub-agent diagnoses and fixes (max 3 attempts). Commit changes via `/flow-commit`.
-
-**Python:** No additional setup — Step 2 verified `bin/flow ci` on main.
 
 ---
 

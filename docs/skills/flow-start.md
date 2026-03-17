@@ -22,10 +22,9 @@ Begins a new feature. This is always the first command run for any piece of work
 
 ## What It Does
 
-1. Pre-flight: runs version gate, upgrade check, and `bin/flow ci` in parallel
-2. Runs `lib/start-setup.py` — git pull, worktree creation, empty commit + push + PR, and state file creation. The `--prompt` flag passes the user's raw input (including `#N` issue references) so it is preserved verbatim in the state file for issue closing at completion
-3. Runs `bin/dependencies` if it exists (created by `/flow-prime`), then `bin/flow ci`, with ci-fixer sub-agent if needed
-4. Commits dependency changes and marks Phase 1 complete
+1. Pre-flight: runs version gate and upgrade check in parallel
+2. Prepare main (locked): acquires a lock so only one start runs at a time, pulls main, runs `bin/flow ci` for a clean baseline, updates dependencies on main via `bin/dependencies`, runs `bin/flow ci` again to catch dep-induced breakage, commits everything to main, releases lock. The ci-fixer sub-agent handles failures at both CI gates
+3. Runs `lib/start-setup.py` — worktree creation, empty commit + push + PR, and state file creation. The `--prompt` flag passes the user's raw input (including `#N` issue references) so it is preserved verbatim in the state file for issue closing at completion
 
 ---
 
@@ -52,7 +51,8 @@ Mode is configurable via `.flow.json` (default: manual) and copied into the stat
 ## Gates
 
 - Stops immediately if no feature name is provided
-- Stops if `bin/flow ci` fails on main before creating worktree
+- Serializes starts with a lock — only one start runs at a time
+- Stops if CI baseline on main cannot be fixed
 - Stops if `git pull` fails
 - Will not proceed past dependency upgrade until `bin/flow ci` is green
 - Escalates to the user if `bin/flow ci` cannot be fixed after three attempts

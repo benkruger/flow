@@ -495,7 +495,7 @@
       <div class="pipeline-step">
         <div class="step-num">1</div>
         <span class="step-label">Start</span>
-        <span class="step-detail">Branch, PR, green CI baseline, dependencies upgraded</span>
+        <span class="step-detail">Lock, CI baseline, dependencies on main, CI post-deps, worktree + PR</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">2</div>
@@ -630,7 +630,7 @@
         <tr><th>Command</th><th>Phase</th><th>What it does</th></tr>
       </thead>
       <tbody>
-        <tr><td><code>/flow-start</code></td><td>1</td><td>Create worktree, push branch, open PR, green CI baseline, upgrade dependencies</td></tr>
+        <tr><td><code>/flow-start</code></td><td>1</td><td>Lock, CI baseline on main, upgrade dependencies, CI post-deps, commit to main, create worktree + PR</td></tr>
         <tr><td><code>/flow-plan</code></td><td>2</td><td>DAG decompose for dependency analysis, explore codebase, produce ordered tasks</td></tr>
         <tr><td><code>/flow-code</code></td><td>3</td><td>TDD task by task, diff review, <code>bin/ci</code> gate before each commit</td></tr>
         <tr><td><code>/flow-code-review</code></td><td>4</td><td>Four lenses &mdash; clarity, correctness, safety, and CLAUDE.md compliance</td></tr>
