@@ -38,19 +38,23 @@ def _lock_path():
 
 
 def _read_lock(lock_file):
-    """Read and parse lock file. Returns None if missing, empty, or corrupted."""
+    """Read and parse lock file. Returns (data, file_existed).
+
+    data is None if missing, empty, or corrupted. file_existed is True
+    if the lock file was present on disk (even if corrupted).
+    """
     if not lock_file.exists():
-        return None
+        return None, False
     try:
         text = lock_file.read_text().strip()
         if not text:
-            return None
+            return None, True
         data = json.loads(text)
         if "pid" not in data or "feature" not in data or "acquired_at" not in data:
-            return None
-        return data
+            return None, True
+        return data, True
     except (json.JSONDecodeError, OSError):
-        return None
+        return None, True
 
 
 def _is_pid_alive(pid):
@@ -86,31 +90,32 @@ def _write_lock(lock_file, feature):
     return lock_data
 
 
+def _break_and_acquire(lock_file, feature, stale_feature=None):
+    """Break a stale/corrupted lock and acquire a new one."""
+    _write_lock(lock_file, feature)
+    result = {"status": "acquired", "stale_broken": True}
+    if stale_feature is not None:
+        result["stale_feature"] = stale_feature
+    return result
+
+
 def acquire(feature):
     """Attempt to acquire the start lock."""
     lock_file = _lock_path()
-    existing = _read_lock(lock_file)
+    existing, file_existed = _read_lock(lock_file)
 
     if existing is None:
-        # No lock or corrupted — check if file existed (for stale_broken)
-        was_stale = lock_file.exists()
-        lock_data = _write_lock(lock_file, feature)
-        result = {"status": "acquired"}
-        if was_stale:
-            result["stale_broken"] = True
-        return result
+        if file_existed:
+            return _break_and_acquire(lock_file, feature)
+        _write_lock(lock_file, feature)
+        return {"status": "acquired"}
 
     pid = existing["pid"]
     existing_feature = existing["feature"]
     acquired_at = existing["acquired_at"]
 
     if not _is_pid_alive(pid) or _is_timed_out(acquired_at):
-        _write_lock(lock_file, feature)
-        return {
-            "status": "acquired",
-            "stale_broken": True,
-            "stale_feature": existing_feature,
-        }
+        return _break_and_acquire(lock_file, feature, existing_feature)
 
     return {
         "status": "locked",
@@ -130,7 +135,7 @@ def release():
 def check():
     """Check the current lock status without modifying."""
     lock_file = _lock_path()
-    existing = _read_lock(lock_file)
+    existing, _ = _read_lock(lock_file)
 
     if existing is None:
         return {"status": "free"}
