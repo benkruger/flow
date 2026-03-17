@@ -24,9 +24,9 @@ Shows where you are in the FLOW workflow at any moment. Reads `.flow-states/<bra
 ## Example Output
 
 ```text
-============================================
+──────────────────────────────────────────────────
   FLOW v0.8.4 — Current Status
-============================================
+──────────────────────────────────────────────────
 
   Feature : App Payment Webhooks
   Branch  : app-payment-webhooks
@@ -49,7 +49,7 @@ Shows where you are in the FLOW workflow at any moment. Reads `.flow-states/<bra
 
   Continue: /flow-code
 
-============================================
+──────────────────────────────────────────────────
 ```
 
 ---

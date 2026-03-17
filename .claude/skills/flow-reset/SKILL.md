@@ -77,9 +77,9 @@ Print the full inventory inside a fenced code block:
 
 ````markdown
 ```text
-============================================
+──────────────────────────────────────────────────
   FLOW Reset — Artifact Inventory
-============================================
+──────────────────────────────────────────────────
 
 Worktrees: <count>
 State files: <count>
@@ -87,7 +87,7 @@ Local branches: <count>
 Remote branches: <count>
 Open PRs: <count>
 Dev mode: active / inactive
-============================================
+──────────────────────────────────────────────────
 ```
 ````
 
@@ -160,9 +160,9 @@ Print results inside a fenced code block:
 
 ````markdown
 ```text
-============================================
-  FLOW Reset — Complete
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ FLOW Reset — Complete
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 PRs closed: <count>
 Worktrees removed: <count>
@@ -171,7 +171,7 @@ Local branches deleted: <count>
 State files deleted: <count>
 Dev mode: restored / was inactive
 Errors: <count or "none">
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 

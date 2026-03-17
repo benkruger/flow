@@ -38,9 +38,9 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ````markdown
 ```text
-============================================
+──────────────────────────────────────────────────
   FLOW v0.31.4 — flow:flow-commit — STARTING
-============================================
+──────────────────────────────────────────────────
 ```
 ````
 
@@ -48,9 +48,9 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ````markdown
 ```text
-============================================
+──────────────────────────────────────────────────
   Commit — STARTING
-============================================
+──────────────────────────────────────────────────
 ```
 ````
 
@@ -60,9 +60,9 @@ On completion (whether approved, denied, or nothing to commit), print the same w
 
 ````markdown
 ```text
-============================================
-  FLOW v0.31.4 — flow:flow-commit — COMPLETE
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ FLOW v0.31.4 — flow:flow-commit — COMPLETE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -70,9 +70,9 @@ On completion (whether approved, denied, or nothing to commit), print the same w
 
 ````markdown
 ```text
-============================================
-  Commit — COMPLETE
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ Commit — COMPLETE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 

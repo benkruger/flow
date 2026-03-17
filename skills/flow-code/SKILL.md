@@ -62,9 +62,9 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ````markdown
 ```text
-============================================
+──────────────────────────────────────────────────
   FLOW v0.31.4 — Phase 3: Code — STARTING
-============================================
+──────────────────────────────────────────────────
 ```
 ````
 
@@ -126,12 +126,12 @@ Read `code_task` from the state file (default `0` if absent).
 
 ````markdown
 ```text
-============================================
+──────────────────────────────────────────────────
   FLOW — Resuming Code
-============================================
+──────────────────────────────────────────────────
   Resuming at: <task description>
   Tasks complete: <code_task> of <total>
-============================================
+──────────────────────────────────────────────────
 ```
 ````
 
@@ -163,11 +163,9 @@ Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
-============================================
-  Task <n> of <total>
+  ── Task <n> of <total> ───────────────────────
   <description>
   Files: <files>
-============================================
 ```
 ````
 
@@ -373,9 +371,9 @@ Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
-============================================
-  FLOW v0.31.4 — Phase 3: Code — COMPLETE (<formatted_time>)
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ FLOW v0.31.4 — Phase 3: Code — COMPLETE (<formatted_time>)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -402,10 +400,10 @@ Invoke `flow:flow-status`.
 
 ````markdown
 ```text
-============================================
-  FLOW — Paused
-  Run /flow:flow-continue when ready to continue.
-============================================
+══════════════════════════════════════════════════
+  ◆ FLOW — Paused
+  Run /flow:flow-continue when ready.
+══════════════════════════════════════════════════
 ```
 ````
 
