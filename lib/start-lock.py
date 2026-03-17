@@ -6,11 +6,14 @@ reports the lock.
 
 Usage:
     bin/flow start-lock --acquire --feature <name>
+    bin/flow start-lock --acquire --wait --feature <name>
+    bin/flow start-lock --acquire --wait --timeout 300 --feature <name>
     bin/flow start-lock --release
     bin/flow start-lock --check
 
 Output (JSON to stdout):
     Acquire: {"status": "acquired"} or {"status": "locked", "feature": ..., "pid": ..., "acquired_at": ...}
+    Acquire --wait: {"status": "acquired"} or {"status": "timeout", "feature": ..., "pid": ..., "waited_seconds": ...}
     Release: {"status": "released"}
     Check:   {"status": "free"} or {"status": "locked", ...}
 """
@@ -19,6 +22,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -125,6 +129,28 @@ def acquire(feature):
     }
 
 
+def acquire_with_wait(feature, timeout=300, interval=10):
+    """Acquire the lock, retrying with sleep until acquired or timed out."""
+    start = time.monotonic()
+    result = acquire(feature)
+    if result["status"] == "acquired":
+        return result
+
+    while True:
+        elapsed = time.monotonic() - start
+        if elapsed >= timeout:
+            return {
+                "status": "timeout",
+                "feature": result["feature"],
+                "pid": result["pid"],
+                "waited_seconds": int(elapsed),
+            }
+        time.sleep(interval)
+        result = acquire(feature)
+        if result["status"] == "acquired":
+            return result
+
+
 def release():
     """Release the start lock."""
     lock_file = _lock_path()
@@ -158,13 +184,18 @@ def main():
     parser.add_argument("--release", action="store_true", help="Release the lock")
     parser.add_argument("--check", action="store_true", help="Check lock status")
     parser.add_argument("--feature", default=None, help="Feature name (required for --acquire)")
+    parser.add_argument("--wait", action="store_true", help="Wait for lock to be released")
+    parser.add_argument("--timeout", type=int, default=300, help="Max seconds to wait (default 300)")
     args = parser.parse_args()
 
     if args.acquire:
         if not args.feature:
             print(json.dumps({"status": "error", "message": "--feature required for --acquire"}))
             sys.exit(1)
-        result = acquire(args.feature)
+        if args.wait:
+            result = acquire_with_wait(args.feature, timeout=args.timeout)
+        else:
+            result = acquire(args.feature)
     elif args.release:
         result = release()
     elif args.check:
