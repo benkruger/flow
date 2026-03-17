@@ -167,10 +167,19 @@ The decompose plugin will produce structured DAG output:
 an impact preview, an XML DAG plan with nodes and dependencies,
 node-by-node reasoning, and a synthesis.
 
-After the decompose plugin returns, save the DAG output:
+After the decompose plugin returns, save the complete decompose output:
 
-1. Write the DAG content from the conversation to
-   `<project_root>/.flow-states/<branch>-dag.md` using the Write tool.
+1. Capture everything the decompose plugin produced — the XML DAG plan,
+   all node executions with quality scores, and the synthesis block.
+   Write it verbatim to `<project_root>/.flow-states/<branch>-dag.md`
+   using the Write tool, wrapped with a markdown heading:
+
+   ```text
+   # DAG Analysis: <feature description>
+
+   <complete output from decompose plugin>
+   ```
+
 2. Store the path in the state file:
 
 ```bash
