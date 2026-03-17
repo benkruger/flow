@@ -8,11 +8,11 @@ parent: Skills
 
 **Phase:** 1 — Start
 
-**Usage:** `/flow-start <feature name words>`, `/flow-start --auto <words>`, or `/flow-start --manual <words>`
+**Usage:** `/flow-start <prompt>`, `/flow-start --auto <prompt>`, or `/flow-start --manual <prompt>`
 
 **Example:** `/flow-start app payment webhooks`
 
-**Auto mode example:** `/flow-start --auto invoice pdf export`
+**Auto mode example:** `/flow-start --auto fix login timeout when session expires`
 
 Begins a new feature. This is always the first command run for any piece of work. It sets up an isolated environment, ensures dependencies are current, and establishes the PR before any feature code is written.
 
@@ -30,15 +30,14 @@ Begins a new feature. This is always the first command run for any piece of work
 
 ## Naming
 
-Words after `/flow-start` are joined with hyphens to form the feature name:
+Claude derives a concise branch name (2-5 words) from the prompt:
 
-| Part | Value |
-|------|-------|
-| Branch | `app-payment-webhooks` |
-| Worktree | `.worktrees/app-payment-webhooks` |
-| PR title | `App Payment Webhooks` |
+| Prompt | Branch |
+|--------|--------|
+| `app payment webhooks` | `app-payment-webhooks` |
+| `fix login timeout when session expires` | `fix-login-timeout` |
 
-Branch names are capped at 32 characters, truncated at word boundaries.
+The derived name is hyphenated and used for the branch, worktree (`.worktrees/<name>`), and PR title (title-cased). Branch names are capped at 32 characters, truncated at word boundaries.
 
 ---
 

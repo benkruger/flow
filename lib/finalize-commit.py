@@ -28,13 +28,13 @@ def finalize_commit(message_file, branch):
         ["git", "commit", "-F", message_file],
         capture_output=True, text=True,
     )
-    if result.returncode != 0:
-        return {"status": "error", "step": "commit", "message": result.stderr.strip()}
-
     try:
         os.remove(message_file)
     except OSError:
         pass
+
+    if result.returncode != 0:
+        return {"status": "error", "step": "commit", "message": result.stderr.strip()}
 
     result = subprocess.run(
         ["git", "pull", "origin", branch],
