@@ -1264,16 +1264,10 @@ def test_mode_resolution_references_config_source():
             f"skills/{name}/SKILL.md has no Mode Resolution section"
         )
         resolution_text = resolution_match.group(1)
-        if name == "flow-start":
-            assert ".flow.json" in resolution_text, (
-                f"skills/{name}/SKILL.md Mode Resolution does not reference "
-                f".flow.json for config lookup"
-            )
-        else:
-            assert ".flow-states/" in resolution_text, (
-                f"skills/{name}/SKILL.md Mode Resolution does not reference "
-                f"state file for config lookup"
-            )
+        assert ".flow-states/" in resolution_text, (
+            f"skills/{name}/SKILL.md Mode Resolution does not reference "
+            f"state file for config lookup"
+        )
         assert f"skills.{name}" in resolution_text, (
             f"skills/{name}/SKILL.md Mode Resolution does not reference "
             f"'skills.{name}' key"

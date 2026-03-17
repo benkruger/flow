@@ -18,44 +18,30 @@
 
 ## Content Standards
 
-- **Make every decision in the issue.** Never write "decide
-  whether to" or "choose between." If you know the answer,
-  state it. If you genuinely don't know, say what you'd need
-  to find out — not "pick one of these options."
-- **Include the WHY for every decision.** A future session
-  has no memory of this conversation. State the reasoning,
-  not just the conclusion. "Skip X" is incomplete. "Skip X
-  because Y blocks it at runtime — adding it would be
-  actively misleading" is complete.
-- **Write for a cold start.** The issue is the only context
-  a future session has. Include: what's wrong, why it
-  matters, what to do, which files to touch, and how to
-  verify.
+Issues are bug reports, not design documents. Capture
+the problem with zero solutioning. Research, diagnosis,
+and design happen in the Plan phase after proper codebase
+exploration.
+
+- **Write for a cold start.** A future session has no
+  memory of this conversation. The issue is its only
+  context for the problem.
+- **Describe what is broken and why it matters.** Include
+  observable behavior, evidence (state file values, error
+  messages, logs), and user impact.
+- **Include reproduction steps.** Steps or conditions that
+  trigger the problem.
+- **Name files to investigate, not files to change.** Point
+  to where the behavior originates so the Plan phase knows
+  where to start reading.
 - **File independent issues in parallel.** Use different
   temp file names (e.g., `.flow-issue-body-1`,
   `.flow-issue-body-2`) and launch all Write + `bin/flow
   issue` calls concurrently.
 
-## Problem vs Solution Boundary
+## Never Include
 
-Issues describe problems, not solutions. The solution comes
-from Plan phase decomposition after proper codebase
-exploration.
-
-**Include:**
-
-- Observable behavior and evidence (state file values,
-  error messages, screenshots)
-- Why it matters — what breaks, what the user experiences
-- Where to look — which files are involved, what to
-  investigate
-- How to reproduce — steps or conditions that trigger it
-
-**Omit until proper research:**
-
-- Fix sections — speculative solutions not validated by
-  reading the code
-- Root cause analysis — unless you traced the actual code
-  path, a guess is not analysis
-- Prescribed code changes — naming files to investigate
-  is fine, prescribing specific changes is premature
+- Root cause analysis — a guess is not analysis
+- Proposed solutions or "open questions" about tradeoffs
+- Prescribed code changes or architectural suggestions
+- Diagnosis of why the bug happens — only what happens

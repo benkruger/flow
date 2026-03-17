@@ -44,7 +44,7 @@ Branch names are capped at 32 characters, truncated at word boundaries.
 
 ## Mode
 
-Mode is configurable via `.flow.json` (default: manual) and copied into the state file at start. In auto mode, the phase transition advances to Plan without asking.
+Mode is configurable via `.flow.json` (default: manual) and cached in the state file during setup. The Done section reads the resolved mode from the state file, not `.flow.json` directly. In auto mode, the phase transition advances to Plan without asking.
 
 ---
 

@@ -36,8 +36,7 @@ No interactive prompt. The user re-runs the command with arguments.
 
 1. If `--auto` was passed → continue=auto
 2. If `--manual` was passed → continue=manual
-3. Otherwise, read `.flow.json` from the project root. Use `skills.flow-start.continue`.
-4. If `.flow.json` has no `skills` key → use built-in default: continue=manual
+3. Otherwise → resolved in the Done section by reading `skills.flow-start.continue` from `.flow-states/<branch>.json` (which exists after Step 3)
 
 ## Announce
 
@@ -284,6 +283,10 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ============================================
 ```
 ````
+
+If no flag override was set, read the state file at
+`<project_root>/.flow-states/<branch>.json`. Use `skills.flow-start.continue`.
+If the state file has no `skills` key → use built-in default: continue=manual.
 
 **If continue=auto**, invoke `flow:flow-plan` directly. Do not invoke
 `flow:flow-status` or use AskUserQuestion.
