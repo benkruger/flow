@@ -225,6 +225,7 @@ def test_cli_commit_failure(git_repo, branch):
     output = json.loads(result.stdout)
     assert output["status"] == "error"
     assert output["step"] == "commit"
+    assert not msg_file.exists()
 
 
 def test_cli_missing_args():
