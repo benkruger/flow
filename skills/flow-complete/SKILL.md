@@ -11,11 +11,15 @@ description: "Phase 6: Complete — merge the PR, remove the worktree, and delet
 /flow:flow-complete
 /flow:flow-complete --auto
 /flow:flow-complete --manual
+/flow:flow-complete --continue-step
+/flow:flow-complete --continue-step --auto
+/flow:flow-complete --continue-step --manual
 ```
 
 - `/flow:flow-complete` — uses configured mode from the state file (default: auto)
 - `/flow:flow-complete --auto` — skips confirmation and proceeds directly
 - `/flow:flow-complete --manual` — prompts for user confirmation before merge
+- `/flow:flow-complete --continue-step` — self-invocation: skip Announce and SOFT-GATE, dispatch to the next step via Resume Check
 
 ## Mode Resolution
 
@@ -23,6 +27,23 @@ description: "Phase 6: Complete — merge the PR, remove the worktree, and delet
 2. If `--manual` was passed → mode is **manual**
 3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-complete` value.
 4. If the state file has no `skills` key → use built-in default: **auto**
+
+## Self-Invocation Check
+
+If `--continue-step` was passed, this is a self-invocation from a
+previous step's commit. Skip the Announce banner and the SOFT-GATE.
+
+Run `git worktree list --porcelain` to find the project root (first
+`worktree` line) and `git branch --show-current` for the current branch.
+Navigate to the project root:
+
+```bash
+cd <project_root>
+```
+
+Use the Read tool to read `<project_root>/.flow-states/<branch>.json`
+to get the state data (`feature`, `branch`, `worktree`, `pr_number`,
+`pr_url`). Proceed directly to the Resume Check section.
 
 <SOFT-GATE>
 Run this entry check as your very first action. This gate never
@@ -70,6 +91,16 @@ At the very start, output the following banner in your response (not via Bash) i
 
 No logging for this phase. Complete deletes the log file as part of its
 operation — writing log entries that are immediately deleted is pointless.
+
+---
+
+## Resume Check
+
+Read `complete_step` from the state file (default `0` if absent).
+
+- If `complete_step` is `4`: skip to Step 4 (Check CI status).
+- If `complete_step` is `5`: skip to Step 5 (Confirm with user).
+- If `complete_step` is `0` or absent: proceed normally to Step 1.
 
 ---
 
@@ -140,12 +171,35 @@ git push
 - Continue to Step 4.
 
 **If the merge has conflicts:**
+
 1. Read each conflicted file using the Read tool
 2. Resolve the conflicts using the Edit tool — you have full context of the
    feature from this session
-3. Commit the resolution via `/flow:flow-commit` — the commit skill handles
-   staging, diff review, and push
-4. Continue to Step 4.
+3. Set the continuation flag and commit the resolution
+
+Set the continuation flag before committing:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+```
+
+Commit the resolution via `/flow:flow-commit` — the commit skill handles
+staging, diff review, and push.
+
+After the commit completes, clear the continuation flag and record the
+resume step:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+```
+
+To continue to Step 4, invoke `flow:flow-complete --continue-step` using
+the Skill tool as your final action. If mode was resolved to auto, pass
+`--auto` as well. Do not output anything else after this invocation.
 
 **If the merge fails for any other reason** — stop and report the error.
 
@@ -174,9 +228,31 @@ knows what failed.
 
 Wait for the sub-agent to return.
 
-- **Fixed** — commit the fixes via `/flow:flow-commit`, then re-check CI
-  by running `gh pr checks <pr_number>` again. If still failing after 3
-  attempts, stop and report.
+- **Fixed** — set the continuation flag before committing:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+```
+
+Commit the fixes via `/flow:flow-commit`.
+
+After the commit completes, clear the continuation flag and record the
+resume step:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=5
+```
+
+To re-check CI, invoke `flow:flow-complete --continue-step` using
+the Skill tool as your final action. If mode was resolved to auto, pass
+`--auto` as well. Do not output anything else after this invocation.
+
+If still failing after 3 attempts, stop and report.
+
 - **Not fixed** — stop and report to the user.
 
 ### Step 5 — Confirm with user (manual mode only)

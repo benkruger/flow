@@ -2032,6 +2032,52 @@ def test_complete_merged_path_includes_archive():
     )
 
 
+# --- Complete phase self-invocation contracts ---
+
+
+def test_complete_has_self_invocation_check():
+    """Complete must have a Self-Invocation Check section for --continue-step."""
+    content = _read_skill("flow-complete")
+    assert "## Self-Invocation Check" in content, (
+        "flow-complete must have a '## Self-Invocation Check' section"
+    )
+    si_match = re.search(
+        r"## Self-Invocation Check\n(.*?)(?=\n## )", content, re.DOTALL
+    )
+    assert si_match, "Could not find Self-Invocation Check section content"
+    assert "--continue-step" in si_match.group(1), (
+        "Self-Invocation Check must reference --continue-step flag"
+    )
+
+
+def test_complete_has_resume_check():
+    """Complete must have a Resume Check section that reads complete_step."""
+    content = _read_skill("flow-complete")
+    resume_match = re.search(
+        r"## Resume Check\n(.*?)(?=\n## Steps)", content, re.DOTALL
+    )
+    assert resume_match, (
+        "flow-complete must have a Resume Check section before Steps"
+    )
+    resume_text = resume_match.group(1)
+    assert "complete_step" in resume_text, (
+        "Resume Check must reference complete_step field"
+    )
+
+
+def test_complete_sets_continue_pending_before_commit():
+    """Complete must set _continue_pending=commit before /flow:flow-commit."""
+    content = _read_skill("flow-complete")
+    assert "_continue_pending=commit" in content, (
+        "Complete must set _continue_pending=commit before commit"
+    )
+    flag_pos = content.index("_continue_pending=commit")
+    commit_pos = content.index("/flow:flow-commit", flag_pos)
+    assert flag_pos < commit_pos, (
+        "_continue_pending=commit must appear before /flow:flow-commit"
+    )
+
+
 # --- DAG decomposition contracts ---
 
 
