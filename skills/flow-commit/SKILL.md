@@ -292,6 +292,12 @@ git reset HEAD
 `git reset HEAD` only unstages — it moves files back from staged to unstaged.
 No code is deleted, no changes are lost. It is the opposite of `git add`.
 
+Clean up the message file (written in Round 5 Step 1 before denial):
+
+```bash
+rm .flow-commit-msg
+```
+
 Then ask: **What needs to be addressed before committing?**
 
 Listen to the reason, acknowledge it clearly, and stop. Do not commit. The user
