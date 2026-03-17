@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Opinionated development lifecycle for Claude Code — supports Rails, Python, and iOS",
-    "version": "0.31.4"
+    "version": "0.32.0"
   },
   "plugins": [
     {
       "name": "flow",
       "source": "./",
       "description": "Opinionated development lifecycle — worktree-first, TDD, phase-gated workflow for Claude Code. Supports Rails, Python, and iOS",
-      "version": "0.31.4",
+      "version": "0.32.0",
       "strict": true
     }
   ]

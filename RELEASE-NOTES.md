@@ -1,5 +1,26 @@
 # Release Notes
 
+## v0.32.0 — Start lock wait flag and bug fixes
+
+### New features
+
+- Start lock `--wait` flag: callers can now wait for an existing lock to release instead of failing immediately (#202)
+
+### Fixes
+
+- Learn phase in manual mode no longer stops prematurely (#204)
+- Code Review phase timing no longer shows 0 seconds (#200)
+- Finalize-commit handles rev-parse and timeouts correctly (#201)
+- Allow reading /tmp diff files for commit review (#203)
+- Phase timing table no longer shows stale "or" formatting (#195)
+- Complete banner formatting improved (#196)
+- Flow commit message file cleanup after finalize (#198)
+- Code Review Step 1 (Simplify) invocation fixed (#199)
+
+### Improvements
+
+- CLAUDE.md test architecture table added and CI-enforced (#206)
+
 ## v0.31.4 — Fix flow-start mode resolution and CI gate
 
 ### Fixes

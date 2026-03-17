@@ -20,7 +20,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v0.31.4 — flow:flow-issues — STARTING
+  FLOW v0.32.0 — flow:flow-issues — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -119,7 +119,7 @@ After the work order is displayed, output the following banner in your response 
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v0.31.4 — flow:flow-issues — COMPLETE
+  ✓ FLOW v0.32.0 — flow:flow-issues — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
