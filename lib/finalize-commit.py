@@ -34,7 +34,7 @@ def finalize_commit(message_file, branch):
             capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
-        return {"status": "error", "step": "commit", "message": "git commit timed out after 30s"}
+        return {"status": "error", "step": "commit", "message": f"git commit timed out after {LOCAL_TIMEOUT}s"}
     if result.returncode != 0:
         return {"status": "error", "step": "commit", "message": result.stderr.strip()}
 
@@ -49,7 +49,7 @@ def finalize_commit(message_file, branch):
             capture_output=True, text=True, timeout=NETWORK_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
-        return {"status": "error", "step": "pull", "message": "git pull timed out after 60s"}
+        return {"status": "error", "step": "pull", "message": f"git pull timed out after {NETWORK_TIMEOUT}s"}
     if result.returncode != 0:
         try:
             status = subprocess.run(
@@ -76,7 +76,7 @@ def finalize_commit(message_file, branch):
             capture_output=True, text=True, timeout=NETWORK_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
-        return {"status": "error", "step": "push", "message": "git push timed out after 60s"}
+        return {"status": "error", "step": "push", "message": f"git push timed out after {NETWORK_TIMEOUT}s"}
     if result.returncode != 0:
         return {"status": "error", "step": "push", "message": result.stderr.strip()}
 
