@@ -119,7 +119,11 @@ inform fix decisions.
 
 ## Step 1 — Simplify
 
-Set the continuation flag before invoking the child skill:
+Set the continuation context and flag before invoking the child skill:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Process simplify output, review diff, fix out-of-scope findings, then commit if changes were made."
+```
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=simplify
@@ -197,7 +201,11 @@ to Step 2.
 process as "No, revert" above), then follow the back-navigation
 instructions below.
 
-**Commit**: Run `bin/flow ci` first. If green, set the continuation flag:
+**Commit**: Run `bin/flow ci` first. If green, set the continuation context and flag:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_review_step=1, then self-invoke flow:flow-code-review --continue-step."
+```
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
@@ -234,7 +242,11 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 Read `pr_number` from the state file. Read `plan_file` from the state
 file to get the plan file path. Use the Read tool to read the plan file.
 
-Set the continuation flag before invoking the child skill:
+Set the continuation context and flag before invoking the child skill:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Process review findings, fix issues, run bin/flow ci, then commit if fixes were made."
+```
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=review
@@ -312,7 +324,11 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 Any fix made during Review requires `bin/flow ci` to run again.
 </HARD-GATE>
 
-If fixes were made, set the continuation flag before committing:
+If fixes were made, set the continuation context and flag before committing:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Show review summary, set code_review_step=2, then self-invoke flow:flow-code-review --continue-step."
+```
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
@@ -368,7 +384,11 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 
 ## Step 3 — Security
 
-Set the continuation flag before invoking the child skill:
+Set the continuation context and flag before invoking the child skill:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Process security findings, fix issues, run bin/flow ci, then commit if fixes were made."
+```
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=security-review
@@ -389,10 +409,11 @@ For each finding from the security review:
 
 1. Fix the issue in code
 2. Run `bin/flow ci`
-3. Set `bin/flow set-timestamp --set _continue_pending=commit`
-4. If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise invoke `/flow:flow-commit`.
-5. After the commit completes, clear with `bin/flow set-timestamp --set _continue_pending=`
-6. Move to the next finding
+3. Set `bin/flow set-timestamp --set "_continue_context=Clear _continue_pending and continue fixing remaining security findings."`
+4. Set `bin/flow set-timestamp --set _continue_pending=commit`
+5. If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise invoke `/flow:flow-commit`.
+6. After the commit completes, clear with `bin/flow set-timestamp --set _continue_pending=`
+7. Move to the next finding
 
 <HARD-GATE>
 `bin/flow ci` must be green after every fix. Do not move to the next
@@ -448,7 +469,11 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 
 ## Step 4 — Code Review Plugin
 
-Set the continuation flag before invoking the child skill:
+Set the continuation context and flag before invoking the child skill:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Process code-review findings, fix issues, run bin/flow ci, then commit if fixes were made."
+```
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=code-review:code-review
@@ -474,10 +499,11 @@ For each finding from the code-review plugin:
 
 1. Fix the issue in code
 2. Run `bin/flow ci`
-3. Set `bin/flow set-timestamp --set _continue_pending=commit`
-4. If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise invoke `/flow:flow-commit`.
-5. After the commit completes, clear with `bin/flow set-timestamp --set _continue_pending=`
-6. Move to the next finding
+3. Set `bin/flow set-timestamp --set "_continue_context=Clear _continue_pending and continue fixing remaining code-review findings."`
+4. Set `bin/flow set-timestamp --set _continue_pending=commit`
+5. If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise invoke `/flow:flow-commit`.
+6. After the commit completes, clear with `bin/flow set-timestamp --set _continue_pending=`
+7. Move to the next finding
 
 <HARD-GATE>
 `bin/flow ci` must be green after every fix. Do not move to the next

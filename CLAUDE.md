@@ -84,7 +84,7 @@ CI will fail if these are missing:
 - `lib/format-pr-timings.py` — reads state file, formats phase durations as a markdown table for PR body
 - `lib/render-pr-body.py` — idempotent PR body renderer: reads state file + artifact files, generates complete body in canonical section order (What, Artifacts, Plan, DAG Analysis, Phase Timings, State File, Session Log, Issues Filed)
 - `lib/update-pr-body.py` — updates PR body: `--add-artifact` for list items, `--append-section` for collapsible/plain sections
-- `lib/stop-continue.py` — Stop hook script that forces continuation when `_continue_pending` flag is set in the state file
+- `lib/stop-continue.py` — Stop hook script that forces continuation when `_continue_pending` flag is set in the state file; reads `_continue_context` for specific next-step instructions in the block reason
 - `lib/post-compact.py` — PostCompact hook that captures `compact_summary`, `compact_cwd`, and `compact_count` in the state file for SessionStart to inject
 - `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands and file-read commands in all Bash calls)
 - `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (blocks prompts when `_auto_continue` is set in state file)

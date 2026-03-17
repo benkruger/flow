@@ -176,7 +176,11 @@ git push
    feature from this session
 3. Set the continuation flag and commit the resolution
 
-Set the continuation flag before committing:
+Set the continuation context and flag before committing:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set complete_step=4, then self-invoke flow:flow-complete --continue-step."
+```
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
@@ -227,7 +231,11 @@ knows what failed.
 
 Wait for the sub-agent to return.
 
-- **Fixed** — set the continuation flag before committing:
+- **Fixed** — set the continuation context and flag before committing:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set complete_step=4, then self-invoke flow:flow-complete --continue-step."
+```
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
