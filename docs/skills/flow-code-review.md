@@ -80,9 +80,9 @@ Announce banner and phase entry update, proceeding directly to the Resume
 Check which dispatches to the next step.
 
 Before advancing, each step waits for all background agents launched by
-the child skill to complete. Built-in skills may launch background review
-agents whose findings arrive asynchronously. No step evaluates "no
-changes" or "no findings" until every agent has reported.
+the child skill to complete. Built-in skills and plugins may launch
+background review agents whose findings arrive asynchronously. No step
+evaluates "no changes" or "no findings" until every agent has reported.
 
 ---
 
