@@ -65,6 +65,7 @@ CI will fail if these are missing:
 - `.claude/settings.json` — project permissions (git rebase denied)
 - `docs/` — GitHub Pages site (main /docs, static HTML)
 - `lib/extract-release-notes.py` — extracts version sections from RELEASE-NOTES.md for GitHub Releases
+- `lib/start-lock.py` — serializes concurrent flow-start operations using a file lock at `.flow-states/start.lock` (PID-based stale detection + 30-min timeout)
 - `lib/start-setup.py` — consolidated Start phase setup (git pull, worktree, settings, PR, state file)
 - `lib/flow_utils.py` — shared utilities: `now()` (Pacific Time timestamps), `PACIFIC` timezone, `format_time()`, `current_branch()`, `project_root()`, `PHASE_NAMES`, `COMMANDS`
 - `lib/phase-transition.py` — phase entry/completion (timing, counters, status, formatted_time)
@@ -115,7 +116,7 @@ The state file (`.flow-states/<branch>.json`) is the backbone. Schema reference:
 
 ### Sub-Agents
 
-FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Steps 3 and 5) and Complete (Step 4). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands and file-read commands in all Bash calls — including those from built-in skills' sub-agents. The ci-fixer also retains its own hook declaration for defense in depth.
+FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Step 2) and Complete (Step 4). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands and file-read commands in all Bash calls — including those from built-in skills' sub-agents. The ci-fixer also retains its own hook declaration for defense in depth.
 
 Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition — no plan mode. Code Review delegates to built-in `/simplify`, `/review`, `/security-review`, and the `code-review:code-review` plugin for multi-agent validation. Code and Learn have no sub-agents. Complete uses ci-fixer for CI failures.
 
@@ -178,6 +179,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_permissions.py` | Permission simulation: allow/deny coverage, placeholder validation, source-of-truth sync between prime-setup.py and flow-prime/SKILL.md, regex unit tests. Unrecognized placeholders fail loudly |
 | `test_bin_ci.py` | CI runner: venv detection, pass/fail behavior |
 | `test_bin_test.py` | Test runner: venv detection, pass/fail, argument passthrough |
+| `test_start_lock.py` | Start lock: acquire/release/check, stale PID detection, timeout, corrupted lock handling, CLI integration |
 | `test_start_setup.py` | Start setup script: branch naming, settings merge, worktree, state file, logging, error paths |
 | `test_phase_transition.py` | Phase entry/completion: timing, counters, status, formatted_time |
 | `test_set_timestamp.py` | Mid-phase timestamps: dot-path navigation, NOW replacement, code_task increment validation |
