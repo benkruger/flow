@@ -195,14 +195,15 @@ def render_body(state, project_dir):
     section_names.append("State File")
 
     # 7. Session Log (conditional)
-    branch = state.get("branch", "unknown")
-    log_path = Path(project_dir) / ".flow-states" / f"{branch}.log"
-    if log_path.exists():
+    log_path = _resolve_path(
+        files.get("log") or f".flow-states/{state.get('branch', 'unknown')}.log",
+        project_dir,
+    )
+    if log_path and log_path.exists():
+        log_rel = files.get("log") or f".flow-states/{state.get('branch', 'unknown')}.log"
         content = log_path.read_text().rstrip("\n")
         sections.append(
-            _build_details(
-                "Session Log", f".flow-states/{branch}.log", content, "text"
-            )
+            _build_details("Session Log", log_rel, content, "text")
         )
         section_names.append("Session Log")
 
