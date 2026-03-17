@@ -42,7 +42,7 @@ def _branch_name(feature_words):
 
 def _title_case(feature_words):
     """Title-case the feature name."""
-    return " ".join(w.capitalize() for w in feature_words.split())
+    return " ".join(w.capitalize() for w in feature_words.replace("-", " ").split())
 
 
 def _run_cmd(args, cwd, step_name):

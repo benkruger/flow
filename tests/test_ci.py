@@ -28,6 +28,20 @@ def ci_project(git_repo):
     return git_repo
 
 
+@pytest.fixture
+def ci_project_excluded(ci_project):
+    """ci_project with .flow-states/ excluded from git status.
+
+    Matches real FLOW projects where .git/info/exclude hides .flow-states/.
+    Without this, the sentinel file itself appears as an untracked file and
+    changes the snapshot between runs.
+    """
+    exclude = ci_project / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    exclude.write_text(".flow-states/\n")
+    return ci_project
+
+
 def _run(project_dir, args=None, extra_env=None):
     """Run lib/ci.py inside the given project directory."""
     env = os.environ.copy()
@@ -70,73 +84,66 @@ def test_runs_ci_and_creates_sentinel(ci_project):
     assert sentinel.exists()
 
 
-def test_runs_ci_even_with_sentinel(ci_project):
+def test_stale_sentinel_does_not_skip(ci_project):
+    """A stale sentinel (content mismatch) does not cause a skip."""
     branch = _branch_name(ci_project)
     sentinel = ci_project / ".flow-states" / f"{branch}-ci-passed"
     sentinel.parent.mkdir(parents=True, exist_ok=True)
-    sentinel.touch()
+    sentinel.write_text("stale-snapshot-content")
     result = _run(ci_project)
     assert result.returncode == 0
     output = _parse(result)
     assert output["skipped"] is False
 
 
-def test_if_dirty_skips_when_sentinel_and_clean(ci_project):
-    # Exclude .flow-states from git (as real projects do via .git/info/exclude)
-    exclude = ci_project / ".git" / "info" / "exclude"
-    exclude.parent.mkdir(parents=True, exist_ok=True)
-    exclude.write_text(".flow-states/\n")
+def test_default_skips_when_sentinel_and_clean(ci_project_excluded):
+    """Default behavior skips when sentinel matches current snapshot."""
     # Run CI once to create sentinel with current snapshot
-    first = _run(ci_project)
+    first = _run(ci_project_excluded)
     assert first.returncode == 0
-    # Now --if-dirty should skip — nothing changed
-    result = _run(ci_project, args=["--if-dirty"])
+    # Run again — default should skip (sentinel matches, nothing changed)
+    result = _run(ci_project_excluded)
     assert result.returncode == 0
     output = _parse(result)
     assert output["skipped"] is True
     assert "no changes" in output["reason"]
 
 
-def test_if_dirty_runs_when_no_sentinel(ci_project):
-    result = _run(ci_project, args=["--if-dirty"])
+def test_default_runs_when_no_sentinel(ci_project):
+    """First run with no sentinel always runs CI."""
+    result = _run(ci_project)
     assert result.returncode == 0
     output = _parse(result)
     assert output["skipped"] is False
 
 
-def test_if_dirty_runs_when_dirty(ci_project):
-    # Exclude .flow-states from git (as real projects do via .git/info/exclude)
-    exclude = ci_project / ".git" / "info" / "exclude"
-    exclude.parent.mkdir(parents=True, exist_ok=True)
-    exclude.write_text(".flow-states/\n")
+def test_default_runs_when_dirty(ci_project_excluded):
+    """Default behavior runs when files changed since last sentinel."""
     # Run CI once to create sentinel with current snapshot
-    first = _run(ci_project)
+    first = _run(ci_project_excluded)
     assert first.returncode == 0
     # Add a file so the tree snapshot changes
-    (ci_project / "untracked.txt").write_text("dirty\n")
-    result = _run(ci_project, args=["--if-dirty"])
+    (ci_project_excluded / "untracked.txt").write_text("dirty\n")
+    result = _run(ci_project_excluded)
     assert result.returncode == 0
     output = _parse(result)
     assert output["skipped"] is False
 
 
-def test_if_dirty_skips_after_commit(ci_project):
-    """After committing, --if-dirty still skips because HEAD hash is in snapshot."""
-    exclude = ci_project / ".git" / "info" / "exclude"
-    exclude.parent.mkdir(parents=True, exist_ok=True)
-    exclude.write_text(".flow-states/\n")
+def test_default_skips_after_commit(ci_project_excluded):
+    """After committing and running CI, second run skips (HEAD in snapshot)."""
     # Create a new file and commit it
-    (ci_project / "feature.py").write_text("# new feature\n")
-    subprocess.run(["git", "add", "-A"], cwd=str(ci_project), check=True,
+    (ci_project_excluded / "feature.py").write_text("# new feature\n")
+    subprocess.run(["git", "add", "-A"], cwd=str(ci_project_excluded), check=True,
                    capture_output=True)
-    subprocess.run(["git", "commit", "-m", "add feature"], cwd=str(ci_project),
+    subprocess.run(["git", "commit", "-m", "add feature"], cwd=str(ci_project_excluded),
                    check=True, capture_output=True)
     # Run CI — creates sentinel with post-commit snapshot
-    first = _run(ci_project)
+    first = _run(ci_project_excluded)
     assert first.returncode == 0
     assert _parse(first)["skipped"] is False
-    # Run CI again with --if-dirty — should skip (HEAD unchanged, tree clean)
-    second = _run(ci_project, args=["--if-dirty"])
+    # Run CI again — should skip (HEAD unchanged, tree clean)
+    second = _run(ci_project_excluded)
     assert second.returncode == 0
     output = _parse(second)
     assert output["skipped"] is True
@@ -195,13 +202,19 @@ def test_runs_non_bash_ci_script(target_project):
     assert output["status"] == "ok"
 
 
-def test_non_bash_ci_with_if_dirty(target_project):
-    """--if-dirty works with non-bash CI scripts too."""
-    result = _run(target_project, args=["--if-dirty"])
-    assert result.returncode == 0
-    output = _parse(result)
-    assert output["status"] == "ok"
-    assert output["skipped"] is False
+def test_non_bash_ci_skips_on_second_run(target_project):
+    """Default dirty-check works with non-bash CI scripts too."""
+    exclude = target_project / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    exclude.write_text(".flow-states/\n")
+    first = _run(target_project)
+    assert first.returncode == 0
+    assert _parse(first)["skipped"] is False
+    # Second run — should skip (nothing changed)
+    second = _run(target_project)
+    assert second.returncode == 0
+    output = _parse(second)
+    assert output["skipped"] is True
 
 
 def test_non_bash_ci_failure(target_project):
@@ -239,3 +252,102 @@ def test_branch_flag_uses_specified_sentinel(ci_project):
     assert output["status"] == "ok"
     sentinel = ci_project / ".flow-states" / "other-feature-ci-passed"
     assert sentinel.exists()
+
+
+def test_force_runs_even_with_matching_sentinel(ci_project_excluded):
+    """--force bypasses sentinel check and always runs CI."""
+    # Run CI once to create sentinel
+    first = _run(ci_project_excluded)
+    assert first.returncode == 0
+    assert _parse(first)["skipped"] is False
+    # Run with --force — must run even though sentinel matches
+    second = _run(ci_project_excluded, args=["--force"])
+    assert second.returncode == 0
+    output = _parse(second)
+    assert output["skipped"] is False
+
+
+def test_force_creates_sentinel(ci_project):
+    """--force still writes sentinel on success."""
+    branch = _branch_name(ci_project)
+    result = _run(ci_project, args=["--force"])
+    assert result.returncode == 0
+    assert _parse(result)["skipped"] is False
+    sentinel = ci_project / ".flow-states" / f"{branch}-ci-passed"
+    assert sentinel.exists()
+
+
+def test_detects_tracked_file_content_change(ci_project_excluded):
+    """Editing an already-modified tracked file must change the snapshot."""
+    # Create and commit a tracked file
+    (ci_project_excluded / "app.py").write_text("version = 1\n")
+    subprocess.run(["git", "add", "-A"], cwd=str(ci_project_excluded), check=True,
+                   capture_output=True)
+    subprocess.run(["git", "commit", "-m", "add app"], cwd=str(ci_project_excluded),
+                   check=True, capture_output=True)
+    # Modify the tracked file (status: M)
+    (ci_project_excluded / "app.py").write_text("version = 2\n")
+    # Run CI — creates sentinel with "version = 2" content
+    first = _run(ci_project_excluded)
+    assert first.returncode == 0
+    assert _parse(first)["skipped"] is False
+    # Modify again — still M status, but different content
+    (ci_project_excluded / "app.py").write_text("version = 3\n")
+    # Must NOT skip — content changed even though status is the same
+    second = _run(ci_project_excluded)
+    assert second.returncode == 0
+    assert _parse(second)["skipped"] is False
+
+
+def test_detects_untracked_file_content_change(ci_project_excluded):
+    """Editing an untracked file must change the snapshot."""
+    # Create an untracked file
+    (ci_project_excluded / "notes.txt").write_text("draft 1\n")
+    # Run CI — creates sentinel with "draft 1" content
+    first = _run(ci_project_excluded)
+    assert first.returncode == 0
+    assert _parse(first)["skipped"] is False
+    # Modify untracked file — still ?? status, but different content
+    (ci_project_excluded / "notes.txt").write_text("draft 2\n")
+    # Must NOT skip — content changed
+    second = _run(ci_project_excluded)
+    assert second.returncode == 0
+    assert _parse(second)["skipped"] is False
+
+
+def test_detects_staged_content_change(ci_project_excluded):
+    """Re-staging a file with different content must change the snapshot."""
+    # Create a file, stage it
+    (ci_project_excluded / "config.py").write_text("setting = 'a'\n")
+    subprocess.run(["git", "add", "config.py"], cwd=str(ci_project_excluded),
+                   check=True, capture_output=True)
+    # Run CI — creates sentinel
+    first = _run(ci_project_excluded)
+    assert first.returncode == 0
+    assert _parse(first)["skipped"] is False
+    # Replace content and re-stage — status stays "A" but content differs
+    (ci_project_excluded / "config.py").write_text("setting = 'b'\n")
+    subprocess.run(["git", "add", "config.py"], cwd=str(ci_project_excluded),
+                   check=True, capture_output=True)
+    # Must NOT skip — staged content changed
+    second = _run(ci_project_excluded)
+    assert second.returncode == 0
+    assert _parse(second)["skipped"] is False
+
+
+def test_detects_untracked_file_rename(ci_project_excluded):
+    """Renaming an untracked file must change the snapshot."""
+    # Create an untracked file
+    (ci_project_excluded / "old_name.txt").write_text("same content\n")
+    # Run CI — creates sentinel
+    first = _run(ci_project_excluded)
+    assert first.returncode == 0
+    assert _parse(first)["skipped"] is False
+    # Rename without changing content
+    (ci_project_excluded / "old_name.txt").rename(
+        ci_project_excluded / "new_name.txt"
+    )
+    # Must NOT skip — file was renamed
+    second = _run(ci_project_excluded)
+    assert second.returncode == 0
+    assert _parse(second)["skipped"] is False

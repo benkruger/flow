@@ -145,22 +145,23 @@ dynamically by `compute_config_hash()` and `compute_setup_hash()` in
 `lib/prime-setup.py` at prime time and compared at start time by
 `lib/prime-check.py`. No manual hash updates are needed during releases.
 
-## Step 6 — Update release notes and write commit message
-
-Run both in parallel (one response, one Edit + one Write):
+## Step 6 — Update release notes and stage
 
 Edit `RELEASE-NOTES.md` — add the release notes section from Step 4 at the
 top (below the `# Release Notes` heading).
 
-Write `Release v<new_version>` to `.flow-commit-msg` via the Write tool.
-
-## Step 7 — Stage and commit
-
-Stage all changes:
+Then stage all changes:
 
 ```bash
 git add -A
 ```
+
+Staging must happen before writing `.flow-commit-msg` in Step 7 — otherwise
+`git add -A` picks up the message file and commits it into the repo.
+
+## Step 7 — Write commit message and finalize
+
+Write `Release v<new_version>` to `.flow-commit-msg` via the Write tool.
 
 Then finalize the commit in one call:
 

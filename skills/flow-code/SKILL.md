@@ -336,10 +336,10 @@ Use AskUserQuestion:
 
 Once every task from the plan file is complete:
 
-**Final `bin/flow ci --if-dirty` sweep:**
+**Final `bin/flow ci` sweep:**
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --if-dirty
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
 
 Then check coverage — Read `coverage/uncovered.txt`.

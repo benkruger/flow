@@ -363,24 +363,38 @@ For the banner below, compute `<formatted_time>` from the integer
 to the state file.
 
 Apply the same formatting rules to each phase's `cumulative_seconds`
-for the per-phase timing summary lines.
+for the per-phase timing rows. Compute the total by summing all phase
+`cumulative_seconds` values and formatting the result the same way.
+
+Use `<feature>` and `<branch>` from the SOFT-GATE data.
 
 Output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ✓ FLOW v0.32.1 — Phase 6: Complete — COMPLETE (<formatted_time>)
-  ◆ Feature:  <feature>
-  ◆ PR:       <pr_url>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  Start: <time> · Plan: <time> · Code: <time>
-  Code Review: <time> · Learn: <time> · Complete: <time>
+  Feature:      <feature>
+  Branch:       <branch>
+  PR:           <pr_url>
+
+  ┌─────────────────────────┐
+  │ Start:         <time>   │
+  │ Plan:          <time>   │
+  │ Code:          <time>   │
+  │ Code Review:   <time>   │
+  │ Learn:         <time>   │
+  │ Complete:      <time>   │
+  ├─────────────────────────┤
+  │ Total:         <time>   │
+  └─────────────────────────┘
 
   ✓ Worktree removed
   ✓ state file and log deleted
   <banner_line>
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
