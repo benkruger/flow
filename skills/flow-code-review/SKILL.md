@@ -122,7 +122,7 @@ inform fix decisions.
 Set the continuation context and flag before invoking the child skill:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Process simplify output, review diff, fix out-of-scope findings, then commit if changes were made."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Wait for all pending background agents to complete. Then process simplify output, review diff, fix out-of-scope findings, then commit if changes were made."
 ```
 
 ```bash
@@ -135,6 +135,15 @@ naming while preserving exact functionality. It is safe to run here
 because Phase 3 (Code) tests already verified all behavior.
 
 Wait for `/simplify` to complete and report its changes.
+
+### Background agent check
+
+Built-in skills may launch background review agents that run
+asynchronously. After the child skill returns and the stop-continue hook
+resumes you, check for any pending background agent notifications. Wait
+for ALL background agents to complete before proceeding. Do not evaluate
+"no changes" or process findings until every agent has reported. Treat
+agent findings the same as direct findings from the child skill.
 
 ### Out-of-scope findings
 
@@ -245,7 +254,7 @@ file to get the plan file path. Use the Read tool to read the plan file.
 Set the continuation context and flag before invoking the child skill:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Process review findings, fix issues, run bin/flow ci, then commit if fixes were made."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Wait for all pending background agents to complete. Then process review findings, fix issues, run bin/flow ci, then commit if fixes were made."
 ```
 
 ```bash
@@ -260,6 +269,15 @@ Invoke Claude's built-in review command on the PR:
 
 This analyzes the full diff for code quality, correctness, and test
 coverage using Claude's language-aware analysis.
+
+### Background agent check
+
+Built-in skills may launch background review agents that run
+asynchronously. After the child skill returns and the stop-continue hook
+resumes you, check for any pending background agent notifications. Wait
+for ALL background agents to complete before proceeding. Do not evaluate
+"no findings" until every agent has reported. Treat agent findings the
+same as direct findings from the child skill.
 
 If `/review` reports no findings, show the Review summary with zero
 findings listed, then without pausing continue to Step 3.
@@ -387,7 +405,7 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 Set the continuation context and flag before invoking the child skill:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Process security findings, fix issues, run bin/flow ci, then commit if fixes were made."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Wait for all pending background agents to complete. Then process security findings, fix issues, run bin/flow ci, then commit if fixes were made."
 ```
 
 ```bash
@@ -402,6 +420,15 @@ Invoke Claude's built-in security review command:
 
 This analyzes the branch diff for security vulnerabilities using Claude's
 language-aware security analysis.
+
+### Background agent check
+
+Built-in skills may launch background review agents that run
+asynchronously. After the child skill returns and the stop-continue hook
+resumes you, check for any pending background agent notifications. Wait
+for ALL background agents to complete before proceeding. Do not evaluate
+"no findings" until every agent has reported. Treat agent findings the
+same as direct findings from the child skill.
 
 ### Fix every finding
 
@@ -472,7 +499,7 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 Set the continuation context and flag before invoking the child skill:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Process code-review findings, fix issues, run bin/flow ci, then commit if fixes were made."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Wait for all pending background agents to complete. Then process code-review findings, fix issues, run bin/flow ci, then commit if fixes were made."
 ```
 
 ```bash
@@ -489,6 +516,15 @@ findings only.
 
 If the plugin returns early (pre-flight skip, e.g. "no review needed" or
 "already reviewed"), treat this as no findings.
+
+### Background agent check
+
+Plugins may launch background review agents that run asynchronously.
+After the child skill returns and the stop-continue hook resumes you,
+check for any pending background agent notifications. Wait for ALL
+background agents to complete before proceeding. Do not evaluate "no
+findings" until every agent has reported. Treat agent findings the same
+as direct findings from the child skill.
 
 If the plugin reports no findings, skip the commit. Show the Code Review
 Plugin summary with zero findings, then without pausing continue to Done.
