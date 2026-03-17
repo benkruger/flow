@@ -62,9 +62,9 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ````markdown
 ```text
-============================================
+──────────────────────────────────────────────────
   FLOW v0.31.4 — Phase 4: Code Review — STARTING
-============================================
+──────────────────────────────────────────────────
 ```
 ````
 
@@ -310,9 +310,9 @@ Show a summary of what was found and fixed inside a fenced code block:
 
 ````markdown
 ```text
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   FLOW — Code Review — Step 2: Review — SUMMARY
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Findings fixed
   --------------
@@ -321,7 +321,7 @@ Show a summary of what was found and fixed inside a fenced code block:
 
   bin/flow ci       : ✓ green
 
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -387,9 +387,9 @@ Show a summary of what was found and fixed inside a fenced code block:
 
 ````markdown
 ```text
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   FLOW — Code Review — Step 3: Security — SUMMARY
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Findings         : N
   Fixed            : N
@@ -401,7 +401,7 @@ Show a summary of what was found and fixed inside a fenced code block:
 
   bin/flow ci      : ✓ green
 
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -469,9 +469,9 @@ Show a summary of what was found and fixed inside a fenced code block:
 
 ````markdown
 ```text
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   FLOW — Code Review — Step 4: Code Review Plugin — SUMMARY
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Findings         : N
   Fixed            : N
@@ -483,7 +483,7 @@ Show a summary of what was found and fixed inside a fenced code block:
 
   bin/flow ci      : ✓ green
 
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -536,9 +536,9 @@ Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
-============================================
-  FLOW v0.31.4 — Phase 4: Code Review — COMPLETE (<formatted_time>)
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ FLOW v0.31.4 — Phase 4: Code Review — COMPLETE (<formatted_time>)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -565,10 +565,10 @@ Invoke `flow:flow-status`.
 
 ````markdown
 ```text
-============================================
-  FLOW — Paused
-  Run /flow:flow-continue when ready to continue.
-============================================
+══════════════════════════════════════════════════
+  ◆ FLOW — Paused
+  Run /flow:flow-continue when ready.
+══════════════════════════════════════════════════
 ```
 ````
 
