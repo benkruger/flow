@@ -457,7 +457,7 @@ def test_code_review_bad_step_does_not_crash(git_repo):
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
     assert "Bad Step" in ctx
-    assert "Step" not in ctx or "Step " not in ctx.split("Bad Step")[1]
+    assert "done" not in ctx
 
 
 def test_code_review_empty_string_step_does_not_crash(git_repo):
