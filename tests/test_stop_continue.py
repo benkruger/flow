@@ -107,10 +107,11 @@ class TestCheckContinue:
         state["_continue_pending"] = "simplify"
         write_state(state_dir, branch, state)
 
-        should_block, skill_name = _mod.check_continue()
+        should_block, skill_name, context = _mod.check_continue()
 
         assert should_block is True
         assert skill_name == "simplify"
+        assert context is None
 
         updated = json.loads((state_dir / f"{branch}.json").read_text())
         assert updated["_continue_pending"] == ""
@@ -121,45 +122,101 @@ class TestCheckContinue:
         state["_continue_pending"] = ""
         write_state(state_dir, branch, state)
 
-        should_block, skill_name = _mod.check_continue()
+        should_block, skill_name, context = _mod.check_continue()
 
         assert should_block is False
         assert skill_name is None
+        assert context is None
 
     def test_flag_absent_allows(self, git_repo, state_dir, branch, monkeypatch):
         monkeypatch.chdir(git_repo)
         state = make_state(current_phase="flow-code-review")
         write_state(state_dir, branch, state)
 
-        should_block, skill_name = _mod.check_continue()
+        should_block, skill_name, context = _mod.check_continue()
 
         assert should_block is False
         assert skill_name is None
+        assert context is None
 
     def test_no_state_file_allows(self, git_repo, monkeypatch):
         monkeypatch.chdir(git_repo)
 
-        should_block, skill_name = _mod.check_continue()
+        should_block, skill_name, context = _mod.check_continue()
 
         assert should_block is False
         assert skill_name is None
+        assert context is None
 
     def test_no_branch_allows(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
 
-        should_block, skill_name = _mod.check_continue()
+        should_block, skill_name, context = _mod.check_continue()
 
         assert should_block is False
         assert skill_name is None
+        assert context is None
 
     def test_corrupt_state_file_allows(self, git_repo, state_dir, branch, monkeypatch):
         monkeypatch.chdir(git_repo)
         (state_dir / f"{branch}.json").write_text("{bad json")
 
-        should_block, skill_name = _mod.check_continue()
+        should_block, skill_name, context = _mod.check_continue()
 
         assert should_block is False
         assert skill_name is None
+        assert context is None
+
+    def test_context_returned_when_present(self, git_repo, state_dir, branch, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        state = make_state(
+            current_phase="flow-learn",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "complete",
+                "flow-code-review": "complete",
+                "flow-learn": "in_progress",
+            },
+        )
+        state["_continue_pending"] = "commit"
+        state["_continue_context"] = "Set learn_step=5, then self-invoke flow:flow-learn --continue-step."
+        write_state(state_dir, branch, state)
+
+        should_block, skill_name, context = _mod.check_continue()
+
+        assert should_block is True
+        assert skill_name == "commit"
+        assert context == "Set learn_step=5, then self-invoke flow:flow-learn --continue-step."
+
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert updated["_continue_pending"] == ""
+        assert updated["_continue_context"] == ""
+
+    def test_context_absent_returns_none(self, git_repo, state_dir, branch, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_continue_pending"] = "commit"
+        write_state(state_dir, branch, state)
+
+        should_block, skill_name, context = _mod.check_continue()
+
+        assert should_block is True
+        assert skill_name == "commit"
+        assert context is None
+
+    def test_context_empty_returns_none(self, git_repo, state_dir, branch, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_continue_pending"] = "commit"
+        state["_continue_context"] = ""
+        write_state(state_dir, branch, state)
+
+        should_block, skill_name, context = _mod.check_continue()
+
+        assert should_block is True
+        assert skill_name == "commit"
+        assert context is None
 
 
 # --- Subprocess integration tests ---
@@ -225,6 +282,50 @@ class TestSubprocess:
 
         assert exit_code == 0
         assert stdout == ""
+
+    def test_context_included_in_block_reason(self, git_repo, state_dir, branch):
+        state = make_state(
+            current_phase="flow-learn",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "complete",
+                "flow-code-review": "complete",
+                "flow-learn": "in_progress",
+            },
+        )
+        state["_continue_pending"] = "commit"
+        state["_continue_context"] = "Set learn_step=5, then self-invoke flow:flow-learn --continue-step."
+        write_state(state_dir, branch, state)
+
+        stdin = json.dumps({})
+        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+
+        assert exit_code == 0
+        output = json.loads(stdout)
+        assert output["decision"] == "block"
+        assert "Next steps:" in output["reason"]
+        assert "learn_step=5" in output["reason"]
+
+    def test_no_context_uses_generic_reason(self, git_repo, state_dir, branch):
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
+        state["_continue_pending"] = "commit"
+        write_state(state_dir, branch, state)
+
+        stdin = json.dumps({})
+        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+
+        assert exit_code == 0
+        output = json.loads(stdout)
+        assert output["decision"] == "block"
+        assert "Resume the parent skill instructions" in output["reason"]
 
     def test_main_passes_stdin_to_capture(self, git_repo, state_dir, branch):
         state = make_state(current_phase="flow-start")

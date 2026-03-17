@@ -52,32 +52,36 @@ def capture_session_id(hook_input):
 def check_continue():
     """Check if _continue_pending flag is set in the active state file.
 
-    Returns (should_block: bool, skill_name: str|None).
-    If should_block is True, the flag has been cleared in the state file.
+    Returns (should_block: bool, skill_name: str|None, context: str|None).
+    If should_block is True, both _continue_pending and _continue_context
+    have been cleared in the state file.
     """
     try:
         root = project_root()
         branch, _ = resolve_branch()
 
         if not branch:
-            return (False, None)
+            return (False, None, None)
 
         state_path = root / ".flow-states" / f"{branch}.json"
         if not state_path.exists():
-            return (False, None)
+            return (False, None, None)
 
         state = json.loads(state_path.read_text())
         pending = state.get("_continue_pending", "")
 
         if not pending:
-            return (False, None)
+            return (False, None, None)
+
+        context = state.get("_continue_context", "") or None
 
         state["_continue_pending"] = ""
+        state["_continue_context"] = ""
         state_path.write_text(json.dumps(state, indent=2))
 
-        return (True, pending)
+        return (True, pending, context)
     except Exception:
-        return (False, None)
+        return (False, None, None)
 
 
 def main():
@@ -89,16 +93,18 @@ def main():
 
     capture_session_id(hook_input)
 
-    should_block, skill_name = check_continue()
+    should_block, skill_name, context = check_continue()
 
     if should_block:
-        print(json.dumps({
-            "decision": "block",
-            "reason": (
-                f"Continue parent phase — child skill '{skill_name}' "
-                f"has returned. Resume the parent skill instructions."
-            ),
-        }))
+        reason = (
+            f"Continue parent phase — child skill '{skill_name}' "
+            f"has returned."
+        )
+        if context:
+            reason += f"\n\nNext steps:\n{context}"
+        else:
+            reason += " Resume the parent skill instructions."
+        print(json.dumps({"decision": "block", "reason": reason}))
 
 
 if __name__ == "__main__":
