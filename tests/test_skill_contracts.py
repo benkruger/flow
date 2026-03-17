@@ -2032,6 +2032,93 @@ def test_complete_merged_path_includes_archive():
     )
 
 
+# --- Complete phase self-invocation contracts ---
+
+
+def test_complete_has_self_invocation_check():
+    """Complete must have a Self-Invocation Check section for --continue-step."""
+    content = _read_skill("flow-complete")
+    assert "## Self-Invocation Check" in content, (
+        "flow-complete must have a '## Self-Invocation Check' section"
+    )
+    si_match = re.search(
+        r"## Self-Invocation Check\n(.*?)(?=\n## )", content, re.DOTALL
+    )
+    assert si_match, "Could not find Self-Invocation Check section content"
+    assert "--continue-step" in si_match.group(1), (
+        "Self-Invocation Check must reference --continue-step flag"
+    )
+
+
+def test_complete_has_resume_check():
+    """Complete must have a Resume Check section that reads complete_step."""
+    content = _read_skill("flow-complete")
+    resume_match = re.search(
+        r"## Resume Check\n(.*?)(?=\n## Steps)", content, re.DOTALL
+    )
+    assert resume_match, (
+        "flow-complete must have a Resume Check section before Steps"
+    )
+    resume_text = resume_match.group(1)
+    assert "complete_step" in resume_text, (
+        "Resume Check must reference complete_step field"
+    )
+
+
+def test_complete_sets_continue_pending_before_commit():
+    """Complete must set _continue_pending=commit before every /flow:flow-commit."""
+    content = _read_skill("flow-complete")
+    # Find all _continue_pending=commit occurrences
+    flag_positions = []
+    start = 0
+    while True:
+        pos = content.find("_continue_pending=commit", start)
+        if pos == -1:
+            break
+        flag_positions.append(pos)
+        start = pos + 1
+    assert len(flag_positions) >= 2, (
+        "Complete must set _continue_pending=commit at least twice "
+        f"(Step 3 and Step 4), found {len(flag_positions)}"
+    )
+    # Each flag must precede a /flow:flow-commit
+    for i, flag_pos in enumerate(flag_positions):
+        commit_pos = content.find("/flow:flow-commit", flag_pos)
+        assert commit_pos > flag_pos, (
+            f"_continue_pending=commit occurrence {i + 1} must appear "
+            f"before a /flow:flow-commit invocation"
+        )
+
+
+def test_complete_commit_points_self_invoke():
+    """Complete Steps 3 and 4 must self-invoke via --continue-step."""
+    content = _read_skill("flow-complete")
+    # Step 3 section (merge conflicts)
+    step3_match = re.search(
+        r"### Step 3.*?\n(.*?)(?=\n### Step 4)", content, re.DOTALL
+    )
+    assert step3_match, "Could not find Step 3 section"
+    assert "flow:flow-complete --continue-step" in step3_match.group(1), (
+        "Step 3 must self-invoke via 'flow:flow-complete --continue-step'"
+    )
+    # Step 4 section (CI check)
+    step4_match = re.search(
+        r"### Step 4.*?\n(.*?)(?=\n### Step 5)", content, re.DOTALL
+    )
+    assert step4_match, "Could not find Step 4 section"
+    assert "flow:flow-complete --continue-step" in step4_match.group(1), (
+        "Step 4 must self-invoke via 'flow:flow-complete --continue-step'"
+    )
+
+
+def test_complete_commit_points_record_step():
+    """Complete Steps 3 and 4 must record complete_step via set-timestamp."""
+    content = _read_skill("flow-complete")
+    assert "complete_step=4" in content, (
+        "Complete must record complete_step=4 after Step 3 commit"
+    )
+
+
 # --- DAG decomposition contracts ---
 
 

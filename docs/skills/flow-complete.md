@@ -8,12 +8,16 @@ parent: Skills
 
 **Phase:** 6 — Complete
 
-**Usage:** `/flow-complete`, `/flow-complete --auto`, or `/flow-complete --manual`
+**Usage:** `/flow-complete`, `/flow-complete --auto`, `/flow-complete --manual`, or `/flow-complete --continue-step`
 
 The final phase. Merges the PR into main, removes the git worktree,
 and deletes the state file. Mode is configurable via `.flow.json`
 (default: auto, skips confirmation). Use `--manual` to prompt for
-confirmation before the irreversible merge.
+confirmation before the irreversible merge. The `--continue-step`
+flag is used for self-invocation after mid-phase commits (merge
+conflict resolution or CI fix) — it skips the Announce banner and
+SOFT-GATE, re-establishes project root context, and dispatches via
+the Resume Check.
 
 ---
 
@@ -22,8 +26,13 @@ confirmation before the irreversible merge.
 1. Reads `.flow-states/<branch>.json` for worktree, feature name, and PR number
    (or infers from git state if the file is missing)
 2. Checks PR status — if already merged, skips to archive (step 6), then cleanup
-3. Merges `origin/main` into the feature branch, resolving any conflicts
-4. Checks CI status — waits for checks to pass (suggests `/loop` for pending)
+3. Merges `origin/main` into the feature branch, resolving any conflicts.
+   If conflicts exist, sets `_continue_pending=commit` before invoking
+   `/flow:flow-commit`, then self-invokes with `--continue-step` to resume
+   at Step 4
+4. Checks CI status — waits for checks to pass (suggests `/loop` for pending).
+   If CI fails and ci-fixer commits a fix, uses the same self-invocation
+   pattern to loop back and re-check CI
 5. Confirms with the user (only when `--manual` is passed)
 6. Archives artifacts to the PR body: session log link (from transcript path),
    phase timings table (non-collapsible), state file, and session log dump
