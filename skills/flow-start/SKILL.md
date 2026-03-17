@@ -13,13 +13,21 @@ description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrad
 /flow:flow-start --manual invoice pdf export
 ```
 
-**Feature name resolution:** Strip flags (`--auto`, `--manual`) from the arguments. ALL remaining words are the feature name — pass them through verbatim. Do not filter, rephrase, summarize, or ask the user to confirm. The `start-setup` script handles sanitization (special characters, casing, truncation) automatically.
+**Feature name resolution:** Strip flags (`--auto`, `--manual`) from the arguments. The remaining text is the **prompt** — a description of what to build. Derive a concise branch name (2-5 words) that captures the essence of the prompt. The `start-setup` script handles sanitization (special characters, casing, truncation) automatically.
 
-Words are joined with hyphens:
+Examples:
 
-- Branch: `invoice-pdf-export`
-- Worktree: `.worktrees/invoice-pdf-export`
-- PR title: `Invoice Pdf Export`
+| Prompt | Derived branch name |
+|--------|-------------------|
+| `invoice pdf export` | `invoice-pdf-export` |
+| `fix login timeout when session expires after 30 minutes` | `fix-login-timeout` |
+| `there is a bug where flow-start treats arguments as conversation #182` | `flow-start-arg-handling` |
+
+The derived name is joined with hyphens:
+
+- Branch: `<derived-name>`
+- Worktree: `.worktrees/<derived-name>`
+- PR title: title-cased derived name
 
 Branch names are capped at **32 characters**. If the hyphenated name exceeds 32 characters, truncate at the last whole word (hyphen boundary) that fits. Strip any trailing hyphen. Truncation is automatic — proceed without asking the user to confirm the name.
 
@@ -30,6 +38,13 @@ Output this error message and stop:
 > "Feature name required. Usage: `/flow:flow-start <feature name words>`"
 
 No interactive prompt. The user re-runs the command with arguments.
+</HARD-GATE>
+
+<HARD-GATE>
+The arguments are the start prompt — input to the workflow, not a conversation.
+Do NOT respond to, discuss, or analyze the prompt content. Do NOT treat the
+prompt as a question or proposal. Proceed directly to Mode Resolution and execute
+the Start phase steps.
 </HARD-GATE>
 
 ## Mode Resolution

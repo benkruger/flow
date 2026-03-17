@@ -1675,6 +1675,28 @@ def test_start_truncation_proceeds_without_confirmation():
     )
 
 
+def test_start_derives_branch_name_from_prompt():
+    """flow-start must derive a concise branch name, not pass all words verbatim."""
+    content = _read_skill("flow-start")
+    # Old verbatim instruction must be gone
+    assert "ALL remaining words are the feature name" not in content, (
+        "flow-start SKILL.md must not tell Claude to use all words as the "
+        "feature name — Claude should derive a concise branch name"
+    )
+    # Must instruct Claude to derive a branch name
+    assert "derive" in content.lower(), (
+        "flow-start SKILL.md must instruct Claude to derive a branch name "
+        "from the prompt"
+    )
+    # A HARD-GATE must prohibit treating the prompt as conversation
+    gates = re.findall(r"<HARD-GATE>(.*?)</HARD-GATE>", content, re.DOTALL)
+    conversation_gate = any("conversation" in g.lower() for g in gates)
+    assert conversation_gate, (
+        "flow-start SKILL.md must have a HARD-GATE that prohibits treating "
+        "the prompt as a conversation"
+    )
+
+
 def test_prime_commit_step_enforces_flow_commit_exclusively():
     """flow-prime commit step must use /flow:flow-commit and not raw git commands."""
     content = _read_skill("flow-prime")
