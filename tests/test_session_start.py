@@ -59,17 +59,80 @@ def test_single_feature_returns_valid_json(git_repo):
 
 
 def test_single_feature_resets_session_started_at(git_repo):
-    """Single feature should reset session_started_at to null in the state file."""
+    """Single feature should reset session_started_at to null and accumulate elapsed time."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
     state["phases"]["flow-plan"]["session_started_at"] = "2026-01-15T10:00:00Z"
+    state["phases"]["flow-plan"]["cumulative_seconds"] = 0
     write_state(state_dir, "my-feature", state)
 
     _run(git_repo)
 
     updated = json.loads((state_dir / "my-feature.json").read_text())
     assert updated["phases"]["flow-plan"]["session_started_at"] is None
+    assert updated["phases"]["flow-plan"]["cumulative_seconds"] > 0
+
+
+def test_reset_interrupted_preserves_existing_cumulative_seconds(git_repo):
+    """Existing cumulative_seconds must be preserved when accumulating interrupted time."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
+    state["phases"]["flow-plan"]["session_started_at"] = "2026-01-15T10:00:00Z"
+    state["phases"]["flow-plan"]["cumulative_seconds"] = 600
+    write_state(state_dir, "my-feature", state)
+
+    _run(git_repo)
+
+    updated = json.loads((state_dir / "my-feature.json").read_text())
+    assert updated["phases"]["flow-plan"]["cumulative_seconds"] > 600
+
+
+def test_reset_interrupted_null_session_started_at_no_change(git_repo):
+    """Null session_started_at should not change cumulative_seconds."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
+    state["phases"]["flow-plan"]["session_started_at"] = None
+    state["phases"]["flow-plan"]["cumulative_seconds"] = 300
+    write_state(state_dir, "my-feature", state)
+
+    _run(git_repo)
+
+    updated = json.loads((state_dir / "my-feature.json").read_text())
+    assert updated["phases"]["flow-plan"]["cumulative_seconds"] == 300
+
+
+def test_multi_feature_preserves_all_timing(git_repo):
+    """All features must have their interrupted timing accumulated, not just the first."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+
+    s1 = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
+    s1["feature"] = "Feature Alpha"
+    s1["phases"]["flow-plan"]["session_started_at"] = "2026-01-15T10:00:00Z"
+    s1["phases"]["flow-plan"]["cumulative_seconds"] = 0
+    write_state(state_dir, "feature-alpha", s1)
+
+    s2 = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    s2["feature"] = "Feature Beta"
+    s2["phases"]["flow-code"]["session_started_at"] = "2026-01-15T12:00:00Z"
+    s2["phases"]["flow-code"]["cumulative_seconds"] = 0
+    write_state(state_dir, "feature-beta", s2)
+
+    _run(git_repo)
+
+    updated_a = json.loads((state_dir / "feature-alpha.json").read_text())
+    updated_b = json.loads((state_dir / "feature-beta.json").read_text())
+
+    assert updated_a["phases"]["flow-plan"]["session_started_at"] is None
+    assert updated_a["phases"]["flow-plan"]["cumulative_seconds"] > 0
+
+    assert updated_b["phases"]["flow-code"]["session_started_at"] is None
+    assert updated_b["phases"]["flow-code"]["cumulative_seconds"] > 0
 
 
 # --- Multiple features ---
