@@ -1107,6 +1107,29 @@ def test_learning_destinations_are_repo_only():
     )
 
 
+def test_learning_detects_dangling_async_operations():
+    """Learn Source B must check for background agents launched but never awaited.
+
+    Issue #177: Learn synthesis missed dangling background agents. Source B
+    must include a proactive signal for async operations, and Step 2 must
+    explain how to classify them."""
+    content = _read_skill("flow-learn")
+    # Source B section
+    source_b_match = re.search(
+        r"### Source B.*?\n(.*?)(?:\n### Source C|\n---)", content, re.DOTALL
+    )
+    assert source_b_match, "Learn skill has no Source B section"
+    source_b_text = source_b_match.group(1)
+    assert "background" in source_b_text.lower(), (
+        "Learn Source B must mention background agents as a conversation signal"
+    )
+    # Step 2 section (reuse existing helper)
+    step2_text = _learn_step_text(2)
+    assert "dangling" in step2_text.lower() or "async" in step2_text.lower(), (
+        "Learn Step 2 must include guidance on classifying dangling async findings"
+    )
+
+
 def test_learning_files_rule_issues():
     """Learn skill must file Rule issues for .claude/rules/ learnings."""
     content = _read_skill("flow-learn")
