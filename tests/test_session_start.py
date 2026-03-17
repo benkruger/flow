@@ -440,6 +440,66 @@ def test_multi_feature_code_review_step_tracking(git_repo):
     assert "Code Review Plugin" in ctx
 
 
+def test_code_review_bad_step_does_not_crash(git_repo):
+    """Non-integer code_review_step → no crash, no step suffix in context."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code-review", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete",
+        "flow-code": "complete", "flow-code-review": "in_progress",
+    })
+    state["feature"] = "Bad Step"
+    state["code_review_step"] = "bad"
+    write_state(state_dir, "bad-step", state)
+
+    result = _run(git_repo)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "Bad Step" in ctx
+    assert "Step" not in ctx or "Step " not in ctx.split("Bad Step")[1]
+
+
+def test_code_review_empty_string_step_does_not_crash(git_repo):
+    """Empty string code_review_step → no crash, no step suffix in context."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code-review", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete",
+        "flow-code": "complete", "flow-code-review": "in_progress",
+    })
+    state["feature"] = "Empty Step"
+    state["code_review_step"] = ""
+    write_state(state_dir, "empty-step", state)
+
+    result = _run(git_repo)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "Empty Step" in ctx
+    assert "done" not in ctx
+
+
+def test_code_review_float_string_step_does_not_crash(git_repo):
+    """Float string code_review_step → no crash, no step suffix in context."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code-review", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete",
+        "flow-code": "complete", "flow-code-review": "in_progress",
+    })
+    state["feature"] = "Float Step"
+    state["code_review_step"] = "2.5"
+    write_state(state_dir, "float-step", state)
+
+    result = _run(git_repo)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "Float Step" in ctx
+    assert "done" not in ctx
+
+
 def test_never_entered_phase_instructs_auto_continue(git_repo):
     """Phase advanced but never entered (status still pending) → auto-continue."""
     state_dir = git_repo / ".flow-states"

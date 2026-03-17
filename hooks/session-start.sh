@@ -112,7 +112,10 @@ def step_suffix(state):
     cp = state.get("current_phase", "flow-start")
     step = state.get("code_review_step")
     if cp == "flow-code-review" and step is not None:
-        step_int = int(step)
+        try:
+            step_int = int(step)
+        except (ValueError, TypeError):
+            return ""
         if 0 < step_int < 4:
             return f" (Step {step_int}/4 done — resume at Step {step_int + 1}: {STEP_NAMES[step_int]})"
     return ""
