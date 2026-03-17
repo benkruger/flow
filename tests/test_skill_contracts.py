@@ -726,6 +726,32 @@ def test_start_logging_uses_safe_pattern():
     )
 
 
+def test_logged_phases_use_bin_flow_log():
+    """Phases 2-4 logging sections must use bin/flow log, not Read+Write.
+
+    The Read+Write pattern (read log file, append line, write back) is
+    unreliable — Claude frequently skips the multi-step process. bin/flow log
+    is a single command that always works. Phase 1 already uses it.
+    Phases 5-6 intentionally have no logging commands."""
+    logged_phases = ["flow-plan", "flow-code", "flow-code-review"]
+    for skill_name in logged_phases:
+        content = _read_skill(skill_name)
+        logging_match = re.search(
+            r"## Logging\n(.*?)(?=\n## |\n---|\Z)", content, re.DOTALL
+        )
+        assert logging_match, f"{skill_name}/SKILL.md has no ## Logging section"
+        logging_section = logging_match.group(1)
+
+        assert "bin/flow log" in logging_section, (
+            f"{skill_name}/SKILL.md ## Logging section must use bin/flow log"
+        )
+        has_read_write = "Read" in logging_section and "Write" in logging_section
+        assert not has_read_write, (
+            f"{skill_name}/SKILL.md ## Logging section must NOT use Read+Write "
+            "pattern — it is unreliable. Use bin/flow log instead"
+        )
+
+
 def test_start_references_setup_script():
     """Start SKILL.md must reference start-setup.py for consolidated setup."""
     content = _read_skill("flow-start")

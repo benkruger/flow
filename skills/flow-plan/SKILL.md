@@ -78,20 +78,17 @@ If `"status": "error"`, report the error and stop.
 
 ## Logging
 
-After every Bash command in Steps 1–4, log it to `.flow-states/<branch>.log`.
+After every Bash command in Steps 1–4, log it to `.flow-states/<branch>.log`
+using `bin/flow log`.
 
-Run the command directly — do not append any suffix:
+Run the command first, then log the result. Pipeline the log call with the
+next command where possible (run both in parallel in one response).
 
 ```bash
-COMMAND
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 2] Step X — desc (exit EC)"
 ```
 
-Then Read `.flow-states/<branch>.log` (empty string if it does not
-exist yet) and Write it back with this line appended:
-
-```text
-YYYY-MM-DDTHH:MM:SSZ [Phase 2] Step X — desc (exit EC)
-```
+Get `<branch>` from the state file.
 
 ---
 
