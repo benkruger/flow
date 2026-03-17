@@ -235,11 +235,10 @@ def test_acquire_with_wait_succeeds_after_retry(tmp_path):
         "acquired_at": "2026-01-01T10:00:00-08:00",
     }))
 
-    call_count = 0
+    sleep_args = []
 
     def mock_sleep_side_effect(seconds):
-        nonlocal call_count
-        call_count += 1
+        sleep_args.append(seconds)
         lock_file.unlink()
 
     with patch.object(_mod, "project_root", return_value=tmp_path), \
@@ -252,7 +251,7 @@ def test_acquire_with_wait_succeeds_after_retry(tmp_path):
         result = _mod.acquire_with_wait("new-feature", timeout=300, interval=10)
 
     assert result["status"] == "acquired"
-    assert call_count == 1
+    assert sleep_args == [10]
 
 
 def test_acquire_with_wait_timeout(tmp_path):

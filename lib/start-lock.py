@@ -145,7 +145,8 @@ def acquire_with_wait(feature, timeout=300, interval=10):
                 "pid": result["pid"],
                 "waited_seconds": int(elapsed),
             }
-        time.sleep(interval)
+        remaining = timeout - elapsed
+        time.sleep(min(interval, remaining))
         result = acquire(feature)
         if result["status"] == "acquired":
             return result
