@@ -130,10 +130,37 @@ def test_panel_shows_current_phase_timing():
         phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
     )
     state["phases"]["flow-plan"]["cumulative_seconds"] = 120
+    state["phases"]["flow-plan"]["session_started_at"] = None
     state["phases"]["flow-plan"]["visit_count"] = 2
     panel = _mod.format_panel(state, VERSION)
     assert "Time in current phase : 2m" in panel
     assert "Times visited         : 2" in panel
+
+
+def test_in_progress_phase_shows_live_elapsed():
+    """In-progress phase with session_started_at should show live elapsed, not just cumulative."""
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
+    )
+    state["phases"]["flow-plan"]["cumulative_seconds"] = 0
+    state["phases"]["flow-plan"]["session_started_at"] = "2026-01-01T00:00:00Z"
+    now = datetime(2026, 1, 1, 0, 10, 0, tzinfo=timezone.utc)
+    panel = _mod.format_panel(state, VERSION, now=now)
+    assert "Time in current phase : 10m" in panel
+
+
+def test_in_progress_phase_adds_live_to_cumulative():
+    """Live elapsed should be added to existing cumulative_seconds for display."""
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
+    )
+    state["phases"]["flow-plan"]["cumulative_seconds"] = 600
+    state["phases"]["flow-plan"]["session_started_at"] = "2026-01-01T00:00:00Z"
+    now = datetime(2026, 1, 1, 0, 5, 0, tzinfo=timezone.utc)
+    panel = _mod.format_panel(state, VERSION, now=now)
+    assert "Time in current phase : 15m" in panel
 
 
 def test_panel_shows_elapsed_time():
@@ -243,6 +270,12 @@ def test_panel_has_all_6_phases():
 
 def test_elapsed_since_with_no_started_at():
     assert _mod._elapsed_since(None) == 0
+
+
+def test_elapsed_since_with_no_now_uses_current_time():
+    """_elapsed_since with a valid started_at and now=None computes live elapsed."""
+    result = _mod._elapsed_since("2026-01-01T00:00:00Z")
+    assert result > 0
 
 
 def test_read_version_returns_fallback_when_missing(tmp_path, monkeypatch):
