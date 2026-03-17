@@ -59,9 +59,9 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ````markdown
 ```text
-============================================
+──────────────────────────────────────────────────
   FLOW v0.31.4 — Phase 2: Plan — STARTING
-============================================
+──────────────────────────────────────────────────
 ```
 ````
 
@@ -104,11 +104,11 @@ Check `dag_file` and `plan_file` in the state file:
 
 ````markdown
 ```text
-============================================
+──────────────────────────────────────────────────
   FLOW — Plan already approved
-============================================
+──────────────────────────────────────────────────
   Plan file: <plan_file path>
-============================================
+──────────────────────────────────────────────────
 ```
 ````
 
@@ -246,26 +246,11 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_file=<plan_file_pat
 Replace `<plan_file_path>` with the actual path to the plan file written
 in Step 3.
 
-Add artifact paths to the PR:
+Render the complete PR body (artifacts, plan, DAG, timings, and state
+are all derived from the state file automatically):
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --add-artifact --label "Plan file" --value <plan_file_path>
-```
-
-Embed the plan content in the PR as a collapsible section:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --append-section --heading "Plan" --summary "Implementation plan" --content-file <plan_file_path> --format text
-```
-
-If a DAG file was produced in Step 2, add it as well:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --add-artifact --label "DAG file" --value <dag_file_path>
-```
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow update-pr-body --pr <pr_number> --append-section --heading "DAG Analysis" --summary "Decompose plugin output" --content-file <dag_file_path> --format text
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow render-pr-body --pr <pr_number>
 ```
 
 Complete the phase:
@@ -286,9 +271,9 @@ Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
-============================================
-  FLOW v0.31.4 — Phase 2: Plan — COMPLETE (<formatted_time>)
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ FLOW v0.31.4 — Phase 2: Plan — COMPLETE (<formatted_time>)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -315,10 +300,10 @@ Invoke `flow:flow-status`.
 
 ````markdown
 ```text
-============================================
-  FLOW — Paused
-  Run /flow:flow-continue when ready to continue.
-============================================
+══════════════════════════════════════════════════
+  ◆ FLOW — Paused
+  Run /flow:flow-continue when ready.
+══════════════════════════════════════════════════
 ```
 ````
 

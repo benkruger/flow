@@ -75,9 +75,9 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ````markdown
 ```text
-============================================
+──────────────────────────────────────────────────
   FLOW v0.31.4 — Phase 5: Learn — STARTING
-============================================
+──────────────────────────────────────────────────
 ```
 ````
 
@@ -85,9 +85,9 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ````markdown
 ```text
-============================================
+──────────────────────────────────────────────────
   Learn — STARTING
-============================================
+──────────────────────────────────────────────────
 ```
 ````
 
@@ -408,9 +408,9 @@ Present the full report to the user:
 
 ````markdown
 ```text
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Learn — Report
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Findings
   --------
@@ -447,7 +447,7 @@ Present the full report to the user:
   [Flow] #42: Commit skill should warn when branch is behind
   [Documentation Drift] #45: README still references old auth flow
 
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -482,10 +482,10 @@ Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
-============================================
-  FLOW v0.31.4 — Phase 5: Learn — COMPLETE (<formatted_time>)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ FLOW v0.31.4 — Phase 5: Learn — COMPLETE (<formatted_time>)
   Run /flow:flow-complete to merge the PR and clean up.
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -512,10 +512,10 @@ Invoke `flow:flow-status`.
 
 ````markdown
 ```text
-============================================
-  FLOW — Paused
-  Run /flow:flow-continue when ready to continue.
-============================================
+══════════════════════════════════════════════════
+  ◆ FLOW — Paused
+  Run /flow:flow-continue when ready.
+══════════════════════════════════════════════════
 ```
 ````
 
@@ -525,9 +525,9 @@ Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
-============================================
-  Learn — COMPLETE
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ Learn — COMPLETE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
