@@ -105,7 +105,7 @@ On completion (whether approved, denied, or nothing to commit), print the same w
 **FLOW and Maintainer mode:** run both in parallel (one response, two Bash calls):
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --if-dirty
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
 
 ```bash

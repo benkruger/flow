@@ -73,7 +73,7 @@ All three modes share the same diff/message/approval/push process.
 - Never commits without showing the diff first
 - Never skips the approval step — unless mode is **auto** (via `--auto` flag or `.flow.json` config)
 - Never uses `--no-verify`
-- FLOW and Maintainer mode: Runs `bin/flow ci --if-dirty` before the diff — skipped in Standalone mode
+- FLOW and Maintainer mode: Runs `bin/flow ci` before the diff (skips automatically if nothing changed) — skipped in Standalone mode
 - FLOW mode: Warns if `bin/flow ci` has not been run since the last code change
 
 ---

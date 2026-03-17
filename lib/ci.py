@@ -1,10 +1,10 @@
-"""Run the target project's bin/ci with optional dirty-check optimization.
+"""Run the target project's bin/ci with dirty-check optimization.
 
 Usage:
-  bin/flow ci [--if-dirty]
+  bin/flow ci [--force]
 
-Without --if-dirty, always runs bin/ci.
-With --if-dirty, skips if nothing changed since the last passing run.
+By default, skips if nothing changed since the last passing run.
+With --force, always runs bin/ci regardless of sentinel state.
 
 Output (JSON to stdout):
   Success:  {"status": "ok", "skipped": false}
@@ -12,6 +12,7 @@ Output (JSON to stdout):
   Error:    {"status": "error", "message": "..."}
 """
 
+import hashlib
 import json
 import os
 import subprocess
@@ -23,21 +24,42 @@ from flow_utils import project_root, resolve_branch
 
 
 def _tree_snapshot(root):
-    """Return HEAD hash + git status as a snapshot string.
+    """Return a content-aware SHA-256 hash of the working tree state.
 
-    Combines `git rev-parse HEAD` and `git status --porcelain` so the
-    snapshot changes after a commit (HEAD moves) even if the working tree
-    is clean in both cases.
+    Combines three signals into a single digest:
+    1. HEAD commit hash — changes after every commit
+    2. git diff HEAD — captures all tracked content changes (staged + unstaged)
+    3. Untracked file content hashes via git hash-object — captures edits to
+       untracked files that git status --porcelain would miss
+
+    The old implementation used git status --porcelain which only captured
+    file status (M, ??, A) without content. Editing an already-modified or
+    untracked file produced an identical snapshot, causing incorrect skips.
     """
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=str(root), capture_output=True, text=True,
     )
-    status = subprocess.run(
-        ["git", "status", "--porcelain"],
+    diff = subprocess.run(
+        ["git", "diff", "HEAD"],
         cwd=str(root), capture_output=True, text=True,
     )
-    return head.stdout.strip() + "\n" + status.stdout
+    untracked = subprocess.run(
+        ["git", "ls-files", "--others", "--exclude-standard"],
+        cwd=str(root), capture_output=True, text=True,
+    )
+    untracked_hash = ""
+    untracked_files = untracked.stdout.strip()
+    if untracked_files:
+        hash_result = subprocess.run(
+            ["git", "hash-object", "--stdin-paths"],
+            input=untracked_files,
+            cwd=str(root), capture_output=True, text=True,
+        )
+        untracked_hash = hash_result.stdout
+
+    combined = head.stdout.strip() + "\n" + diff.stdout + "\n" + untracked_files + "\n" + untracked_hash
+    return hashlib.sha256(combined.encode()).hexdigest()
 
 
 def main():
@@ -50,7 +72,7 @@ def main():
     os.environ["FLOW_CI_RUNNING"] = "1"
 
     args = sys.argv[1:]
-    if_dirty = "--if-dirty" in args
+    force = "--force" in args
 
     cwd = Path.cwd()
     bin_ci = cwd / "bin" / "ci"
@@ -76,7 +98,7 @@ def main():
 
     snapshot = _tree_snapshot(cwd)
 
-    if if_dirty and sentinel and sentinel.exists():
+    if not force and sentinel and sentinel.exists():
         if sentinel.read_text() == snapshot:
             print(json.dumps({"status": "ok", "skipped": True, "reason": "no changes since last CI pass"}))
             sys.exit(0)
