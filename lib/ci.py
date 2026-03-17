@@ -1,10 +1,10 @@
-"""Run the target project's bin/ci with optional dirty-check optimization.
+"""Run the target project's bin/ci with dirty-check optimization.
 
 Usage:
-  bin/flow ci [--if-dirty]
+  bin/flow ci [--force]
 
-Without --if-dirty, always runs bin/ci.
-With --if-dirty, skips if nothing changed since the last passing run.
+By default, skips if nothing changed since the last passing run.
+With --force, always runs bin/ci regardless of sentinel state.
 
 Output (JSON to stdout):
   Success:  {"status": "ok", "skipped": false}
@@ -72,7 +72,7 @@ def main():
     os.environ["FLOW_CI_RUNNING"] = "1"
 
     args = sys.argv[1:]
-    if_dirty = "--if-dirty" in args
+    force = "--force" in args
 
     cwd = Path.cwd()
     bin_ci = cwd / "bin" / "ci"
@@ -98,7 +98,7 @@ def main():
 
     snapshot = _tree_snapshot(cwd)
 
-    if if_dirty and sentinel and sentinel.exists():
+    if not force and sentinel and sentinel.exists():
         if sentinel.read_text() == snapshot:
             print(json.dumps({"status": "ok", "skipped": True, "reason": "no changes since last CI pass"}))
             sys.exit(0)
