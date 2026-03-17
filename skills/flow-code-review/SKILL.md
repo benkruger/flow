@@ -62,9 +62,9 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ````markdown
 ```text
-============================================
+──────────────────────────────────────────────────
   FLOW v0.31.4 — Phase 4: Code Review — STARTING
-============================================
+──────────────────────────────────────────────────
 ```
 ````
 
@@ -131,6 +131,29 @@ naming while preserving exact functionality. It is safe to run here
 because Phase 3 (Code) tests already verified all behavior.
 
 Wait for `/simplify` to complete and report its changes.
+
+### Out-of-scope findings
+
+Review `/simplify`'s output for any findings it identified but did not fix
+because they are pre-existing (not introduced by the current PR). For each
+out-of-scope finding, classify as Tech Debt and file an issue.
+
+Write the issue body to `.flow-issue-body` in the project root using the
+Write tool, then file:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Tech Debt" --title "<issue_title>" --body-file .flow-issue-body
+```
+
+After filing, record it:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Tech Debt" --title "<issue_title>" --url "<issue_url>" --phase "flow-code-review"
+```
+
+Repeat for each out-of-scope finding. Then continue to the diff review below.
+
+### Diff review
 
 Show the user what `/simplify` changed:
 
@@ -310,9 +333,9 @@ Show a summary of what was found and fixed inside a fenced code block:
 
 ````markdown
 ```text
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   FLOW — Code Review — Step 2: Review — SUMMARY
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Findings fixed
   --------------
@@ -321,7 +344,7 @@ Show a summary of what was found and fixed inside a fenced code block:
 
   bin/flow ci       : ✓ green
 
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -387,9 +410,9 @@ Show a summary of what was found and fixed inside a fenced code block:
 
 ````markdown
 ```text
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   FLOW — Code Review — Step 3: Security — SUMMARY
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Findings         : N
   Fixed            : N
@@ -401,7 +424,7 @@ Show a summary of what was found and fixed inside a fenced code block:
 
   bin/flow ci      : ✓ green
 
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -469,9 +492,9 @@ Show a summary of what was found and fixed inside a fenced code block:
 
 ````markdown
 ```text
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   FLOW — Code Review — Step 4: Code Review Plugin — SUMMARY
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Findings         : N
   Fixed            : N
@@ -483,7 +506,7 @@ Show a summary of what was found and fixed inside a fenced code block:
 
   bin/flow ci      : ✓ green
 
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -536,9 +559,9 @@ Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
-============================================
-  FLOW v0.31.4 — Phase 4: Code Review — COMPLETE (<formatted_time>)
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ FLOW v0.31.4 — Phase 4: Code Review — COMPLETE (<formatted_time>)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -565,10 +588,10 @@ Invoke `flow:flow-status`.
 
 ````markdown
 ```text
-============================================
-  FLOW — Paused
-  Run /flow:flow-continue when ready to continue.
-============================================
+══════════════════════════════════════════════════
+  ◆ FLOW — Paused
+  Run /flow:flow-continue when ready.
+══════════════════════════════════════════════════
 ```
 ````
 

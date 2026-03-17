@@ -59,9 +59,9 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ````markdown
 ```text
-============================================
+──────────────────────────────────────────────────
   FLOW v0.31.4 — Phase 1: Start — STARTING
-============================================
+──────────────────────────────────────────────────
 ```
 ````
 
@@ -293,9 +293,9 @@ Output the following banner in your response (not via Bash) inside a fenced code
 
 ````markdown
 ```text
-============================================
-  FLOW v0.31.4 — Phase 1: Start — COMPLETE (<formatted_time>)
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ FLOW v0.31.4 — Phase 1: Start — COMPLETE (<formatted_time>)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -329,10 +329,10 @@ Use AskUserQuestion:
 
 ````markdown
 ```text
-============================================
-  FLOW — Paused
-  Run /flow:flow-continue when ready to continue.
-============================================
+══════════════════════════════════════════════════
+  ◆ FLOW — Paused
+  Run /flow:flow-continue when ready.
+══════════════════════════════════════════════════
 ```
 ````
 

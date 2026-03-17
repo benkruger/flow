@@ -38,6 +38,7 @@
       "Skill(decompose:decompose)",
       "Read(~/.claude/rules/*)",
       "Read(/tmp/*.txt)",
+      "Read(/tmp/*.diff)",
       "Bash(cd *)",
       "Bash(bin/*)",
       "Agent(flow:ci-fixer)"

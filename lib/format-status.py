@@ -70,9 +70,9 @@ def format_panel(state, version, now=None, dev_mode=False, phase_config=None):
 
     dev_label = " [DEV MODE]" if dev_mode else ""
     lines = []
-    lines.append("============================================")
+    lines.append("────────────────────────────────────────────")
     lines.append(f"  FLOW v{version} — Current Status{dev_label}")
-    lines.append("============================================")
+    lines.append("────────────────────────────────────────────")
     lines.append("")
     lines.append(f"  Feature : {state['feature']}")
     lines.append(f"  Branch  : {state['branch']}")
@@ -138,7 +138,7 @@ def format_panel(state, version, now=None, dev_mode=False, phase_config=None):
         cmd = commands.get(current, "")
         lines.append(f"  Next: {cmd}")
     lines.append("")
-    lines.append("============================================")
+    lines.append("────────────────────────────────────────────")
 
     return "\n".join(lines)
 
@@ -152,9 +152,9 @@ def _format_all_complete(state, version, phases, dev_mode=False, phase_config=No
 
     dev_label = " [DEV MODE]" if dev_mode else ""
     lines = []
-    lines.append("============================================")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     lines.append(f"  FLOW v{version} — All Phases Complete!{dev_label}")
-    lines.append("============================================")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     lines.append("")
     lines.append(f"  Feature : {state['feature']}")
     lines.append(f"  PR      : {state.get('pr_url', 'N/A')}")
@@ -179,7 +179,7 @@ def _format_all_complete(state, version, phases, dev_mode=False, phase_config=No
         lines.append(f"  [x] Phase {num}:  {padded_name} ({time_str})")
 
     lines.append("")
-    lines.append("============================================")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     return "\n".join(lines)
 
@@ -188,9 +188,9 @@ def format_multi_panel(results, version, dev_mode=False):
     """Build a summary panel listing multiple active features."""
     dev_label = " [DEV MODE]" if dev_mode else ""
     lines = []
-    lines.append("============================================")
+    lines.append("────────────────────────────────────────────")
     lines.append(f"  FLOW v{version} — Multiple Features Active{dev_label}")
-    lines.append("============================================")
+    lines.append("────────────────────────────────────────────")
     lines.append("")
 
     for i, (path, state, matched_branch) in enumerate(results, 1):
@@ -207,7 +207,7 @@ def format_multi_panel(results, version, dev_mode=False):
         lines.append(f"     Next   : {cmd}")
         lines.append("")
 
-    lines.append("============================================")
+    lines.append("────────────────────────────────────────────")
     return "\n".join(lines)
 
 
