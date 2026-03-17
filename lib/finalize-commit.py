@@ -19,16 +19,22 @@ import os
 import subprocess
 import sys
 
+LOCAL_TIMEOUT = 30
+NETWORK_TIMEOUT = 60
+
 
 def finalize_commit(message_file, branch):
     """Commit, clean up message file, pull, and push.
 
     Returns a dict with status and details.
     """
-    result = subprocess.run(
-        ["git", "commit", "-F", message_file],
-        capture_output=True, text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "commit", "-F", message_file],
+            capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "step": "commit", "message": "git commit timed out after 30s"}
     if result.returncode != 0:
         return {"status": "error", "step": "commit", "message": result.stderr.strip()}
 
@@ -37,15 +43,21 @@ def finalize_commit(message_file, branch):
     except OSError:
         pass
 
-    result = subprocess.run(
-        ["git", "pull", "origin", branch],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        status = subprocess.run(
-            ["git", "status", "--porcelain"],
-            capture_output=True, text=True,
+    try:
+        result = subprocess.run(
+            ["git", "pull", "origin", branch],
+            capture_output=True, text=True, timeout=NETWORK_TIMEOUT,
         )
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "step": "pull", "message": "git pull timed out after 60s"}
+    if result.returncode != 0:
+        try:
+            status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            return {"status": "error", "step": "pull", "message": result.stderr.strip()}
         conflict_files = []
         for line in status.stdout.strip().split("\n"):
             if not line:
@@ -58,17 +70,23 @@ def finalize_commit(message_file, branch):
             return {"status": "conflict", "files": conflict_files}
         return {"status": "error", "step": "pull", "message": result.stderr.strip()}
 
-    result = subprocess.run(
-        ["git", "push"],
-        capture_output=True, text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "push"],
+            capture_output=True, text=True, timeout=NETWORK_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "step": "push", "message": "git push timed out after 60s"}
     if result.returncode != 0:
         return {"status": "error", "step": "push", "message": result.stderr.strip()}
 
-    sha = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        capture_output=True, text=True,
-    )
+    try:
+        sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return {"status": "ok", "sha": "", "warning": "commit succeeded but SHA retrieval timed out"}
     if sha.returncode != 0:
         return {"status": "ok", "sha": "", "warning": "commit succeeded but SHA retrieval failed"}
 
