@@ -143,13 +143,12 @@ the lock is released.
 **2a. Acquire the lock:**
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --acquire --feature <feature-name>
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --acquire --wait --feature <feature-name>
 ```
 
 - If `"status": "acquired"` — continue. If `stale_broken` is true, log it.
-- If `"status": "locked"` — another start is in progress. Wait 10 seconds,
-  then retry. After 5 minutes of retries, stop and report to the user that
-  another start holds the lock (show the feature name and PID).
+- If `"status": "timeout"` — stop and report to the user that another start
+  holds the lock (show the feature name and PID from the response).
 
 **2b. Pull latest main:**
 
