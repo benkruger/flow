@@ -21,13 +21,15 @@ Invokes Claude Code's built-in `/simplify` on the committed code from the
 Code phase. Refactors for clarity: removes unnecessary abstractions, simplifies
 conditionals, improves naming. Never changes what the code does, only how.
 
-If `/simplify` proposes changes, they are shown as a diff, committed via
+Waits for all background agents to complete before evaluating results. If
+`/simplify` proposes changes, they are shown as a diff, committed via
 `/flow-commit`, and `bin/flow ci` is run. If no changes are proposed, this
 step is skipped.
 
 ### Step 2 — Review (correctness)
 
-Invokes Claude Code's built-in `/review` against the PR. Checks plan
+Invokes Claude Code's built-in `/review` against the PR. Waits for all
+background agents to complete before evaluating findings. Checks plan
 alignment, risk coverage, framework anti-patterns, and does a fresh
 read-through of every changed file.
 
@@ -37,6 +39,7 @@ via `/flow-commit`.
 ### Step 3 — Security (safety)
 
 Invokes Claude Code's built-in `/security-review` against the PR diff.
+Waits for all background agents to complete before evaluating findings.
 Scans for vulnerabilities, authentication gaps, data exposure, and
 injection risks.
 
@@ -50,6 +53,7 @@ Four parallel agents (2x CLAUDE.md compliance, 1x bug scan, 1x
 security/logic scan) with a validation layer that re-validates each finding
 at 80+ confidence. Produces high-signal findings only.
 
+Waits for all background agents to complete before evaluating findings.
 Every finding is fixed, `bin/flow ci` is run, and changes are committed
 via `/flow-commit`.
 
@@ -64,6 +68,11 @@ pattern (Phase 1 invoking Phase 2) and prevents context loss that occurs
 when the model treats a built-in skill return as a conversation turn
 boundary. The Resume Check section dispatches to the correct step on
 re-entry.
+
+Before advancing, each step waits for all background agents launched by
+the child skill to complete. Built-in skills and plugins may launch
+background review agents whose findings arrive asynchronously. No step
+evaluates "no changes" or "no findings" until every agent has reported.
 
 ---
 

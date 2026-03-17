@@ -21,13 +21,15 @@ each with its own commit checkpoint.
 
 ### Step 1 — Simplify (clarity)
 
-Invokes Claude Code's built-in `/simplify`. If changes are proposed, shows
-the diff, commits via `/flow-commit`, and runs `bin/flow ci`. If no changes,
-skips to Step 2.
+Invokes Claude Code's built-in `/simplify`. Waits for all background
+agents to complete before evaluating results. If changes are proposed,
+shows the diff, commits via `/flow-commit`, and runs `bin/flow ci`. If
+no changes, skips to Step 2.
 
 ### Step 2 — Review (correctness)
 
-Invokes Claude Code's built-in `/review` against the PR. Checks plan
+Invokes Claude Code's built-in `/review` against the PR. Waits for all
+background agents to complete before evaluating findings. Checks plan
 alignment, risk coverage, and framework anti-patterns. If no findings,
 skips to the next step. Every finding is fixed, `bin/flow ci` is run,
 and changes are committed via `/flow-commit`.
@@ -35,6 +37,7 @@ and changes are committed via `/flow-commit`.
 ### Step 3 — Security (safety)
 
 Invokes Claude Code's built-in `/security-review` against the PR diff.
+Waits for all background agents to complete before evaluating findings.
 If no findings, skips to the next step. Every finding is fixed,
 `bin/flow ci` is run, and changes are committed via `/flow-commit`.
 
@@ -43,6 +46,7 @@ If no findings, skips to the next step. Every finding is fixed,
 Invokes the `code-review:code-review` plugin for multi-agent validation.
 Four parallel agents (2x CLAUDE.md compliance, 1x bug scan, 1x
 security/logic scan) with a validation layer that filters false positives.
+Waits for all background agents to complete before evaluating findings.
 If no findings, skips to Done. Every finding is fixed, `bin/flow ci` is
 run, and changes are committed via `/flow-commit`.
 
@@ -74,6 +78,11 @@ context loss that occurs when the model treats a built-in skill return as
 a conversation turn boundary. The `--continue-step` flag skips the
 Announce banner and phase entry update, proceeding directly to the Resume
 Check which dispatches to the next step.
+
+Before advancing, each step waits for all background agents launched by
+the child skill to complete. Built-in skills and plugins may launch
+background review agents whose findings arrive asynchronously. No step
+evaluates "no changes" or "no findings" until every agent has reported.
 
 ---
 

@@ -1788,6 +1788,14 @@ def test_code_review_steps_self_invoke():
         )
 
 
+def test_code_review_steps_await_background_agents():
+    """Each Code Review step must instruct waiting for background agents."""
+    for step_num, step_text in _code_review_steps():
+        assert "background agent" in step_text.lower(), (
+            f"Step {step_num} must contain background agent wait instructions"
+        )
+
+
 def test_code_review_has_self_invocation_check():
     """Code Review must have a Self-Invocation Check section for --continue-step."""
     content = _read_skill("flow-code-review")
