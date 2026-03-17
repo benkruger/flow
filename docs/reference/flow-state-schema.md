@@ -38,8 +38,13 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
   "current_phase": "flow-plan",
   "framework": "rails",
   "prompt": "fix #83 and #89 — close issues at complete time",
+  "files": {
+    "plan": null,
+    "dag": null,
+    "log": ".flow-states/app-payment-webhooks.log",
+    "state": ".flow-states/app-payment-webhooks.json"
+  },
   "plan_file": null,
-  "dag_file": null,
   "session_id": null,
   "transcript_path": null,
   "skills": {
@@ -98,7 +103,8 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `started_at` | ISO 8601 | When the feature was started (Phase 1 entry) |
 | `current_phase` | string | The currently active phase key (e.g. `"flow-code"`) |
 | `framework` | string | `"rails"` or `"python"` — set during `/flow-prime`, copied to state by `/flow-start` |
-| `plan_file` | string / null | Absolute path to the plan file at `~/.claude/plans/<name>.md` — set by Phase 2: Plan |
+| `files` | object | Structured artifact file paths — see [Files Object](#files-object) |
+| `plan_file` | string / null | Legacy: absolute path to the plan file. Superseded by `files.plan` — kept for backward compatibility |
 | `session_id` | string / null | Claude Code session UUID — set by Stop hook from hook stdin |
 | `transcript_path` | string / null | Absolute path to session transcript .jsonl — set by Stop hook from hook stdin |
 | `skills` | object / absent | Per-skill autonomy settings copied from `.flow.json` by `/flow-start` — see [Skills Object](#skills-object) |
@@ -157,6 +163,31 @@ Present only when `.flow.json` contains a `skills` key (i.e., after running `/fl
   "flow-complete": "auto"
 }
 ```
+
+---
+
+## Files Object
+
+Structured artifact file paths using relative paths (relative to project root)
+for portability. Created by `/flow-start` with `plan` and `dag` set to `null`.
+Updated by `/flow-plan` via `set-timestamp --set files.plan=<path>` and
+`set-timestamp --set files.dag=<path>`.
+
+```json
+"files": {
+  "plan": ".flow-states/app-payment-webhooks-plan.md",
+  "dag": ".flow-states/app-payment-webhooks-dag.md",
+  "log": ".flow-states/app-payment-webhooks.log",
+  "state": ".flow-states/app-payment-webhooks.json"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `plan` | string / null | Relative path to the implementation plan file — set by Phase 2 |
+| `dag` | string / null | Relative path to the DAG analysis file — set by Phase 2 |
+| `log` | string | Relative path to the session log file — set at creation |
+| `state` | string | Relative path to this state file — set at creation |
 
 ---
 
