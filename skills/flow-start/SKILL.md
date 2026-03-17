@@ -53,8 +53,8 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ## Logging
 
-After every Bash command in Steps 3–4, log it to `.flow-states/<branch>.log`
-using `bin/flow log`. Step 2 handles its own logging internally.
+After every Bash command in Steps 2–3, log it to `.flow-states/<branch>.log`
+using `bin/flow log`. Step 3 handles its own logging internally via start-setup.
 
 Run the command first, then log the result. Pipeline the log call with the
 next command where possible (run both in parallel in one response).
@@ -71,7 +71,7 @@ Use the feature name as `<branch>` — it matches the branch name.
 
 ### Step 1 — Pre-flight checks
 
-Run all three in parallel (one response, multiple tool calls):
+Run both in parallel (one response, multiple tool calls):
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-check
@@ -79,10 +79,6 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-check
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow upgrade-check
-```
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
 
 Process the results in this order:
@@ -124,9 +120,36 @@ Do NOT proceed if version check fails. Show the error message and stop.
 ```
 ````
 
-**1c. CI result:**
+### Step 2 — Prepare main (locked)
 
-If CI passed, continue to Step 2.
+This step serializes all main-branch work behind a lock. Only one
+flow-start runs this section at a time. Concurrent starts wait until
+the lock is released.
+
+**2a. Acquire the lock:**
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --acquire --feature <feature-name>
+```
+
+- If `"status": "acquired"` — continue. If `stale_broken` is true, log it.
+- If `"status": "locked"` — another start is in progress. Wait 10 seconds,
+  then retry. After 5 minutes of retries, stop and report to the user that
+  another start holds the lock (show the feature name and PID).
+
+**2b. Pull latest main:**
+
+```bash
+git pull origin main
+```
+
+**2c. CI baseline gate:**
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+```
+
+If CI passes, continue to 2d.
 
 If it fails, launch the `ci-fixer` sub-agent to diagnose and fix. Use the Agent tool:
 
@@ -138,14 +161,65 @@ knows what failed.
 
 Wait for the sub-agent to return.
 
-- **Fixed** — commit the fixes via `/flow:flow-commit --auto`, then continue to Step 2
-- **Not fixed** — stop and report to the user. Do not create a worktree, PR, or state file
+- **Fixed** — commit the fixes via `/flow:flow-commit --auto`, then continue to 2d
+- **Not fixed** — release the lock and stop. Report to the user.
+
+**2d. Update dependencies:**
+
+Use the Read tool to check if `bin/dependencies` exists at `<project_root>/bin/dependencies`.
+
+If it does not exist, skip to 2g (release lock).
+
+If it exists, run it:
+
+```bash
+bin/dependencies
+```
+
+Then check if anything changed:
+
+```bash
+git status
+```
+
+If `git status` shows no changes, skip to 2g (release lock).
+
+**2e. CI post-deps gate:**
+
+If dependencies changed anything, run CI again to catch dep-induced breakage
+(rubocop violations, breaking changes, etc.):
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+```
+
+If CI passes, continue to 2f.
+
+If it fails, launch the `ci-fixer` sub-agent:
+
+- `subagent_type`: `"flow:ci-fixer"`
+- `description`: `"Fix bin/flow ci failures after dependency update"`
+
+- **Fixed** — continue to 2f
+- **Not fixed** — release the lock and stop. Report to the user.
+
+**2f. Commit to main:**
+
+If there are any uncommitted changes (dependency updates + CI fixes),
+commit them to main via `/flow:flow-commit --auto`.
+
+**2g. Release the lock:**
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release
+```
 
 <HARD-GATE>
-Do NOT proceed to Step 2 until the ci-fixer changes are committed and pushed via `/flow:flow-commit --auto`. Uncommitted fixes on main will not appear in the worktree.
+Do NOT proceed to Step 3 until the lock is released and `bin/flow ci` is green.
+Uncommitted fixes on main will not appear in the worktree.
 </HARD-GATE>
 
-### Step 2 — Set up workspace
+### Step 3 — Set up workspace
 
 Run the consolidated setup script:
 
@@ -157,7 +231,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt "<full
 
 The script performs these operations in a single process:
 
-1. `git pull origin main`
+1. `git pull origin main` (no-op if Step 2 already pulled)
 2. `git worktree add .worktrees/<branch> -b <branch>`
 3. `git commit --allow-empty` + `git push -u origin` + `gh pr create`
 4. Create `.flow-states/<branch>.json` (initial state, all 6 phases)
@@ -170,19 +244,15 @@ The script logs each operation to `.flow-states/<branch>.log` internally.
 {"status": "ok", "worktree": ".worktrees/<branch>", "pr_url": "...", "pr_number": 123, "feature": "...", "branch": "..."}
 ```
 
-Parse the JSON. Then run both in parallel (one response, two tool calls):
+Parse the JSON. Then run:
 
 ```bash
 cd .worktrees/<branch>
 ```
 
-Also use the Read tool to check if `bin/dependencies` exists at `<project_root>/.worktrees/<branch>/bin/dependencies`.
-
 The Bash tool persists working directory between calls, so all subsequent
 commands run inside the worktree automatically. Do NOT repeat `cd .worktrees/`
 in later steps — it would look for a nested `.worktrees/` that doesn't exist.
-
-If Read returns an error (file not found), skip to Done silently.
 
 **On failure** — stdout is error JSON, details on stderr:
 
@@ -192,64 +262,6 @@ If Read returns an error (file not found), skip to Done silently.
 
 If the script returns an error, read the stderr output for details, report
 the failure to the user, and stop.
-
-### Step 3 — Update dependencies
-
-If `bin/dependencies` was found in Step 2, run it:
-
-```bash
-bin/dependencies
-```
-
-Then run the log and CI in parallel (one response, two Bash calls):
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 1] Step 3 — bin/dependencies (exit EC)"
-```
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
-```
-
-Use the exit code from the `bin/dependencies` command for EC in the log entry.
-
-- **CI passes** — continue to Step 4
-- **CI fails** — launch the `ci-fixer` sub-agent to diagnose and fix.
-  Use the Agent tool:
-  - `subagent_type`: `"flow:ci-fixer"`
-  - `description`: `"Fix bin/flow ci failures"`
-  - Provide the full `bin/flow ci` output in the prompt.
-  - After the sub-agent returns:
-    - **Fixed** — continue to Step 4 (dependency changes + fixes committed together)
-    - **Not fixed** — stop and report to the user what is failing
-
-<HARD-GATE>
-Do NOT proceed past Step 3 until `bin/flow ci` is green.
-</HARD-GATE>
-
-### Step 4 — Commit and push
-
-Run the CI log and git status in parallel (one response, two Bash calls):
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 1] Step 3 — bin/flow ci (exit EC)"
-```
-
-```bash
-git status
-```
-
-Use the exit code from the `bin/flow ci` command for EC in the log entry.
-
-Then log the status result:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 1] Step 4 — git status (exit EC)"
-```
-
-If `git status` shows no uncommitted changes, skip directly to Done.
-
-Otherwise, use `/flow:flow-commit --auto` to review and commit any dependency changes. No exceptions. Never use `git commit` directly.
 
 ### Done — Update state and complete phase
 
