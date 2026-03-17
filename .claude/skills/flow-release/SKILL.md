@@ -21,11 +21,11 @@ Print:
 
 ## Flags
 
-**Default (no flags):** Auto-detect version, display version and release notes, then pause at Step 4 for approval before bumping.
+**Default (no flags):** Auto-detect version, display version and release notes, then proceed directly from Step 4 to Step 5.
 
-**`--auto`:** Skip the approval prompt — proceed directly from Step 4 to Step 5.
+**`--auto`:** Same as default (explicit flag for clarity).
 
-**`--manual`:** Same as default (explicit flag for clarity). Also serves as a dry-run — deny at the prompt to stop.
+**`--manual`:** Pause at Step 4 for approval before bumping. Serves as a dry-run — deny at the prompt to stop.
 
 ## Step 1 — Pre-flight checks
 
@@ -117,7 +117,7 @@ Group by: new features, fixes, improvements. Be concise.>
 
 Present the recommendation and the draft release notes in your response.
 
-**Unless `--auto` was explicitly passed**, use one AskUserQuestion:
+**If `--manual` was explicitly passed**, use one AskUserQuestion:
 
 > "I recommend **<type>** (v<new_version>) — <one sentence reason>.
 >  Release notes are above. Approve this release?"
@@ -125,7 +125,7 @@ Present the recommendation and the draft release notes in your response.
 > - **Different version** — specify in Other
 > - **Notes need changes** — describe in Other
 
-**If `--auto` was passed:** proceed directly to Step 5.
+**Unless `--manual` was explicitly passed**, proceed directly to Step 5.
 
 ## Step 5 — Bump version and prepare release notes
 
@@ -230,5 +230,4 @@ Print:
 - Always tag before pushing — the tag is what humans see on GitHub
 - Always create a GitHub Release — it's the public changelog
 - Never add Co-Authored-By trailers or attribution lines
-- `--auto` is user-invoked only. Claude must never pass this flag programmatically.
 - The skill is idempotent: safe to re-invoke via `/loop` after a "pending CI" stop
