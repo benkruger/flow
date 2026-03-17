@@ -37,8 +37,43 @@ _timings_mod = _load_sibling("format_pr_timings", "format-pr-timings.py")
 _issues_mod = _load_sibling("format_issues_summary", "format-issues-summary.py")
 
 
+def _resolve_path(path_str, project_dir):
+    """Resolve a file path, handling both absolute and relative paths.
+
+    Returns a Path object or None if path_str is falsy.
+    Relative paths are resolved against project_dir.
+    """
+    if not path_str:
+        return None
+    p = Path(path_str)
+    if p.is_absolute():
+        return p
+    return Path(project_dir) / p
+
+
 def _build_artifacts(state):
-    """Build the ## Artifacts section from state fields."""
+    """Build the ## Artifacts section from state fields.
+
+    Prefers the structured files block (relative paths) when present.
+    Falls back to legacy top-level plan_file/dag_file for old state files.
+    """
+    files = state.get("files")
+    if files:
+        rows = [
+            "| File | Path |",
+            "|------|------|",
+        ]
+        labels = [("Plan", "plan"), ("DAG", "dag"), ("Log", "log"), ("State", "state")]
+        for label, key in labels:
+            path = files.get(key)
+            if path:
+                rows.append(f"| {label} | `{path}` |")
+        transcript = state.get("transcript_path")
+        if transcript:
+            rows.append(f"| Transcript | `{transcript}` |")
+        return rows if len(rows) > 2 else []
+
+    # Legacy: top-level plan_file/dag_file
     items = []
     plan_file = state.get("plan_file")
     if plan_file:
@@ -122,22 +157,25 @@ def render_body(state, project_dir):
     # 2. Artifacts (always, items conditional)
     artifact_items = _build_artifacts(state)
     if artifact_items:
-        sections.append("## Artifacts\n\n" + "\n\n".join(artifact_items))
+        sections.append("## Artifacts\n\n" + "\n".join(artifact_items))
     else:
         sections.append("## Artifacts")
     section_names.append("Artifacts")
 
+    # Resolve artifact paths from files block with legacy fallback
+    files = state.get("files", {})
+    plan_path = _resolve_path(files.get("plan") or state.get("plan_file"), project_dir)
+    dag_path = _resolve_path(files.get("dag") or state.get("dag_file"), project_dir)
+
     # 3. Plan (conditional)
-    plan_file = state.get("plan_file")
-    if plan_file and Path(plan_file).exists():
-        content = Path(plan_file).read_text().rstrip("\n")
+    if plan_path and plan_path.exists():
+        content = plan_path.read_text().rstrip("\n")
         sections.append(_build_details("Plan", "Implementation plan", content, "text"))
         section_names.append("Plan")
 
     # 4. DAG Analysis (conditional, always text format)
-    dag_file = state.get("dag_file")
-    if dag_file and Path(dag_file).exists():
-        content = Path(dag_file).read_text().rstrip("\n")
+    if dag_path and dag_path.exists():
+        content = dag_path.read_text().rstrip("\n")
         sections.append(
             _build_details("DAG Analysis", "Decompose plugin output", content, "text")
         )
