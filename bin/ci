@@ -10,5 +10,5 @@ else
   PYTHON="python3"
 fi
 
-"$PYTHON" -m pymarkdown -c "$REPO_ROOT/.pymarkdown.yml" scan -r -e ".venv" -e ".pytest_cache" -e ".claude" -e "tmp" .
+"$PYTHON" -m pymarkdown -c "$REPO_ROOT/.pymarkdown.yml" scan -r -e ".venv" -e ".pytest_cache" -e ".claude" -e "tmp" -e ".flow-states" .
 "$PYTHON" -m pytest tests/
