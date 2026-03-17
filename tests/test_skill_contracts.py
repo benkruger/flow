@@ -1197,6 +1197,23 @@ def test_code_review_files_tech_debt_issues():
     )
 
 
+def test_code_review_step1_files_tech_debt_issues():
+    """Code Review Step 1 (Simplify) must file Tech Debt issues for out-of-scope findings."""
+    content = _read_skill("flow-code-review")
+    step1_start = content.index("## Step 1")
+    step2_start = content.index("## Step 2")
+    step1_content = content[step1_start:step2_start]
+    assert "Tech Debt" in step1_content, (
+        "Code Review Step 1 must mention 'Tech Debt' for out-of-scope findings"
+    )
+    assert "bin/flow issue" in step1_content, (
+        "Code Review Step 1 must use 'bin/flow issue' to file issues"
+    )
+    assert "bin/flow add-issue" in step1_content, (
+        "Code Review Step 1 must use 'bin/flow add-issue' to record filed issues"
+    )
+
+
 def test_code_review_files_doc_drift_issues():
     """Code Review skill must file Documentation Drift issues for stale docs."""
     content = _read_skill("flow-code-review")
