@@ -159,7 +159,7 @@ git pull origin main
 **2c. CI baseline gate:**
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --force
 ```
 
 If CI passes, continue to 2d.
@@ -203,7 +203,7 @@ If dependencies changed anything, run CI again to catch dep-induced breakage
 (rubocop violations, breaking changes, etc.):
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --force
 ```
 
 If CI passes, continue to 2f.
