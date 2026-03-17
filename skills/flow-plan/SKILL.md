@@ -94,9 +94,9 @@ Get `<branch>` from the state file.
 
 ## Resume Check
 
-Check `dag_file` and `plan_file` in the state file:
+Check `files.plan` and `files.dag` in the state file:
 
-- If `plan_file` is set (not null), the plan was previously written.
+- If `files.plan` is set (not null), the plan was previously written.
   Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
@@ -104,16 +104,16 @@ Check `dag_file` and `plan_file` in the state file:
 ──────────────────────────────────────────────────
   FLOW — Plan already approved
 ──────────────────────────────────────────────────
-  Plan file: <plan_file path>
+  Plan file: <files.plan path>
 ──────────────────────────────────────────────────
 ```
 ````
 
   Skip to "Done — Update state and complete phase" to finish the phase.
 
-- If `dag_file` is set (not null) but `plan_file` is null, the DAG was
+- If `files.dag` is set (not null) but `files.plan` is null, the DAG was
   produced but the plan was not yet written. Read the DAG output file
-  at `dag_file` path. Skip to Step 3 (Explore and write plan).
+  at `files.dag` path. Skip to Step 3 (Explore and write plan).
 
 - If both are null, proceed to Step 1.
 
@@ -183,8 +183,10 @@ After the decompose plugin returns, save the complete decompose output:
 2. Store the path in the state file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set dag_file=<project_root>/.flow-states/<branch>-dag.md
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.dag=<dag_file_path>
 ```
+
+Replace `<dag_file_path>` with the relative path `.flow-states/<branch>-dag.md`.
 
 Proceed to Step 3.
 
@@ -246,11 +248,10 @@ Proceed to Step 4.
 Store the plan file path in the state file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_file=<plan_file_path>
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.plan=<plan_file_path>
 ```
 
-Replace `<plan_file_path>` with the actual path to the plan file written
-in Step 3.
+Replace `<plan_file_path>` with the relative path `.flow-states/<branch>-plan.md`.
 
 Render the complete PR body (artifacts, plan, DAG, timings, and state
 are all derived from the state file automatically):
