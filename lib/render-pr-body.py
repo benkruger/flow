@@ -15,10 +15,8 @@ Output (JSON to stdout):
 import argparse
 import importlib.util
 import json
-import re
 import subprocess
 import sys
-from collections import OrderedDict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
