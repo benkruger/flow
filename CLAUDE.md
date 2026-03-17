@@ -192,6 +192,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_post_compact.py` | PostCompact hook: compact_summary/cwd/count written to state, fail-open on errors, subprocess integration |
 | `test_finalize_commit.py` | Commit finalization: happy path, commit/pull/push failures, merge conflict detection, message file cleanup, CLI |
 | `test_log.py` | Log append: existing file, new file, directory creation, multiple appends, CLI integration |
+| `test_update_pr_body.py` | PR body management: artifact lines, section insertion, collapsible sections, add-artifact/append-section modes, idempotent replacement, content-file reading, CLI integration |
 
 ## Maintainer Skills (private to this repo)
 
