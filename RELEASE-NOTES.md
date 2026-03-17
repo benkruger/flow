@@ -1,5 +1,14 @@
 # Release Notes
 
+## v0.31.4 — Fix flow-start mode resolution and CI gate
+
+### Fixes
+
+- flow-start mode resolution now reads from the state file in the Done section
+  instead of .flow.json directly — fixes auto mode falling through to manual
+  after cd into worktree. Closes #174, #187.
+- flow-start CI baseline gate on main before worktree creation. Closes #188.
+
 ## v0.31.3 — Fix flow-start existing-feature check and Complete phase continuation
 
 ### Fixes
