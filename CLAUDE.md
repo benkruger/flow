@@ -83,7 +83,7 @@ CI will fail if these are missing:
 - `lib/format-issues-summary.py` — formats `issues_filed` as a markdown table and banner line for Complete phase
 - `lib/format-pr-timings.py` — reads state file, formats phase durations as a markdown table for PR body
 - `lib/update-pr-body.py` — updates PR body: `--add-artifact` for list items, `--append-section` for collapsible/plain sections
-- `lib/stop-continue.py` — Stop hook script that forces continuation when `_continue_pending` flag is set in the state file
+- `lib/stop-continue.py` — Stop hook script that forces continuation when `_continue_pending` flag is set in the state file; reads `_continue_context` for specific next-step instructions in the block reason
 - `lib/post-compact.py` — PostCompact hook that captures `compact_summary`, `compact_cwd`, and `compact_count` in the state file for SessionStart to inject
 - `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands and file-read commands in all Bash calls)
 - `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (blocks prompts when `_auto_continue` is set in state file)
