@@ -71,7 +71,7 @@ Use the feature name as `<branch>` — it matches the branch name.
 
 ### Step 1 — Pre-flight checks
 
-Run all four in parallel (one response, multiple tool calls):
+Run all three in parallel (one response, multiple tool calls):
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-check
@@ -84,8 +84,6 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow upgrade-check
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
-
-Also use the Glob tool: pattern `*.json`, path `.flow-states` — checks for existing active features.
 
 Process the results in this order:
 
@@ -126,24 +124,7 @@ Do NOT proceed if version check fails. Show the error message and stop.
 ```
 ````
 
-**1c. Existing feature check (Glob results):**
-
-If any state files are found, list their names (the branch names from the filenames).
-
-If any files are found and continue=auto, print a warning and proceed automatically.
-
-If any files are found and continue=manual, use AskUserQuestion:
-
-> "An active FLOW feature already exists. What would you like to do?"
->
-> - **Start a new feature anyway** — proceed
-> - **Cancel** — stop here
-
-<HARD-GATE>
-Do NOT proceed past the existing feature check. If existing features are found and the user chooses Cancel, stop here.
-</HARD-GATE>
-
-**1d. CI result:**
+**1c. CI result:**
 
 If CI passed, continue to Step 2.
 
