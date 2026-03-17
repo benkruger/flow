@@ -136,6 +136,8 @@ Review the current conversation for:
 - Responses where Claude was overruled or pushed back
 - Misunderstandings that required clarification
 - Suggestions Claude made that were rejected
+- Background agents launched but whose results were never checked or
+  processed (dangling async work)
 
 Note: context may have been compacted. Use what is available.
 
@@ -183,6 +185,11 @@ existing rule covered it. These are gaps in CLAUDE.md.
 **Process gaps** — places where the development process itself (tools,
 skills, workflows) should be improved. These are not CLAUDE.md rules —
 they are process changes.
+
+**Dangling async operations** — background agents that were launched
+but whose results were never awaited or processed. Classify these as
+Claude mistakes if Claude forgot to check the results, or as process
+gaps if the skill that launched the agents lacks follow-up instructions.
 
 ---
 
