@@ -2066,15 +2066,56 @@ def test_complete_has_resume_check():
 
 
 def test_complete_sets_continue_pending_before_commit():
-    """Complete must set _continue_pending=commit before /flow:flow-commit."""
+    """Complete must set _continue_pending=commit before every /flow:flow-commit."""
     content = _read_skill("flow-complete")
-    assert "_continue_pending=commit" in content, (
-        "Complete must set _continue_pending=commit before commit"
+    # Find all _continue_pending=commit occurrences
+    flag_positions = []
+    start = 0
+    while True:
+        pos = content.find("_continue_pending=commit", start)
+        if pos == -1:
+            break
+        flag_positions.append(pos)
+        start = pos + 1
+    assert len(flag_positions) >= 2, (
+        "Complete must set _continue_pending=commit at least twice "
+        f"(Step 3 and Step 4), found {len(flag_positions)}"
     )
-    flag_pos = content.index("_continue_pending=commit")
-    commit_pos = content.index("/flow:flow-commit", flag_pos)
-    assert flag_pos < commit_pos, (
-        "_continue_pending=commit must appear before /flow:flow-commit"
+    # Each flag must precede a /flow:flow-commit
+    for i, flag_pos in enumerate(flag_positions):
+        commit_pos = content.find("/flow:flow-commit", flag_pos)
+        assert commit_pos > flag_pos, (
+            f"_continue_pending=commit occurrence {i + 1} must appear "
+            f"before a /flow:flow-commit invocation"
+        )
+
+
+def test_complete_commit_points_self_invoke():
+    """Complete Steps 3 and 4 must self-invoke via --continue-step."""
+    content = _read_skill("flow-complete")
+    # Step 3 section (merge conflicts)
+    step3_match = re.search(
+        r"### Step 3.*?\n(.*?)(?=\n### Step 4)", content, re.DOTALL
+    )
+    assert step3_match, "Could not find Step 3 section"
+    assert "flow:flow-complete --continue-step" in step3_match.group(1), (
+        "Step 3 must self-invoke via 'flow:flow-complete --continue-step'"
+    )
+    # Step 4 section (CI check)
+    step4_match = re.search(
+        r"### Step 4.*?\n(.*?)(?=\n### Step 5)", content, re.DOTALL
+    )
+    assert step4_match, "Could not find Step 4 section"
+    assert "flow:flow-complete --continue-step" in step4_match.group(1), (
+        "Step 4 must self-invoke via 'flow:flow-complete --continue-step'"
+    )
+
+
+def test_complete_commit_points_record_step():
+    """Complete Steps 3 and 4 must record complete_step via set-timestamp."""
+    content = _read_skill("flow-complete")
+    assert "complete_step=4" in content, (
+        "Complete must record complete_step=4 after Step 3 commit"
     )
 
 

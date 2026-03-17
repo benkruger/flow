@@ -99,7 +99,6 @@ operation — writing log entries that are immediately deleted is pointless.
 Read `complete_step` from the state file (default `0` if absent).
 
 - If `complete_step` is `4`: skip to Step 4 (Check CI status).
-- If `complete_step` is `5`: skip to Step 5 (Confirm with user).
 - If `complete_step` is `0` or absent: proceed normally to Step 1.
 
 ---
@@ -244,7 +243,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=5
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
 ```
 
 To re-check CI, invoke `flow:flow-complete --continue-step` using
