@@ -360,14 +360,18 @@ def test_extract_pr_number_non_numeric():
     assert _mod._extract_pr_number("https://github.com/org/repo/pull/abc") == 0
 
 
-# --- plan_file field (shared run) ---
+# --- files block (shared run) ---
 
 
-def test_state_file_has_plan_file_null(_default_run):
-    """State file must have plan_file: null on creation."""
+def test_state_file_has_files_block(_default_run):
+    """State file must have a files block with plan, dag, log, and state paths."""
     data, state, log, repo = _default_run
-    assert "plan_file" in state
-    assert state["plan_file"] is None
+    assert "files" in state
+    files = state["files"]
+    assert files["plan"] is None
+    assert files["dag"] is None
+    assert files["log"] == ".flow-states/test-feature.log"
+    assert files["state"] == ".flow-states/test-feature.json"
 
 
 # --- .venv symlink in worktree ---

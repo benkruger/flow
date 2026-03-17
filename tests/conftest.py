@@ -145,6 +145,12 @@ def make_state(current_phase="flow-start", phase_statuses=None, framework="rails
         "started_at": "2026-01-01T00:00:00Z",
         "current_phase": current_phase,
         "framework": framework,
+        "files": {
+            "plan": None,
+            "dag": None,
+            "log": ".flow-states/test-feature.log",
+            "state": ".flow-states/test-feature.json",
+        },
         "plan_file": None,
         "session_id": None,
         "transcript_path": None,
