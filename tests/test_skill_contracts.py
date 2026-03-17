@@ -989,14 +989,17 @@ def test_no_skill_invokes_commit_with_auto():
 # --- Release flags ---
 
 
-def test_release_default_requires_approval():
-    """Release SKILL.md default (no flags) must pause for approval."""
+def test_release_manual_requires_approval():
+    """Release SKILL.md --manual flag must pause for approval; default proceeds."""
     content = (REPO_ROOT / ".claude" / "skills" / "flow-release" / "SKILL.md").read_text()
     assert "AskUserQuestion" in content, (
-        "Release SKILL.md must use AskUserQuestion for approval by default"
+        "Release SKILL.md must use AskUserQuestion for --manual approval"
     )
-    assert "--auto" in content and "proceed directly to Step 5" in content, (
-        "Release SKILL.md must only skip approval when --auto is explicitly passed"
+    assert "If `--manual` was explicitly passed" in content, (
+        "Release SKILL.md must only prompt when --manual is explicitly passed"
+    )
+    assert "Unless `--manual` was explicitly passed" in content, (
+        "Release SKILL.md default must proceed directly to Step 5"
     )
 
 
