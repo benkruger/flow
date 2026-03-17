@@ -23,6 +23,14 @@ LOCAL_TIMEOUT = 30
 NETWORK_TIMEOUT = 60
 
 
+def _remove_message_file(message_file):
+    """Remove the commit message file, ignoring errors."""
+    try:
+        os.remove(message_file)
+    except OSError:
+        pass
+
+
 def finalize_commit(message_file, branch):
     """Commit, clean up message file, pull, and push.
 
@@ -34,14 +42,13 @@ def finalize_commit(message_file, branch):
             capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
+        _remove_message_file(message_file)
         return {"status": "error", "step": "commit", "message": f"git commit timed out after {LOCAL_TIMEOUT}s"}
+
+    _remove_message_file(message_file)
+
     if result.returncode != 0:
         return {"status": "error", "step": "commit", "message": result.stderr.strip()}
-
-    try:
-        os.remove(message_file)
-    except OSError:
-        pass
 
     try:
         result = subprocess.run(

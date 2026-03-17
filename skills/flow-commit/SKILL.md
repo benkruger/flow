@@ -38,9 +38,9 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ````markdown
 ```text
-============================================
+──────────────────────────────────────────────────
   FLOW v0.31.4 — flow:flow-commit — STARTING
-============================================
+──────────────────────────────────────────────────
 ```
 ````
 
@@ -48,9 +48,9 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ````markdown
 ```text
-============================================
+──────────────────────────────────────────────────
   Commit — STARTING
-============================================
+──────────────────────────────────────────────────
 ```
 ````
 
@@ -60,9 +60,9 @@ On completion (whether approved, denied, or nothing to commit), print the same w
 
 ````markdown
 ```text
-============================================
-  FLOW v0.31.4 — flow:flow-commit — COMPLETE
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ FLOW v0.31.4 — flow:flow-commit — COMPLETE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -70,9 +70,9 @@ On completion (whether approved, denied, or nothing to commit), print the same w
 
 ````markdown
 ```text
-============================================
-  Commit — COMPLETE
-============================================
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ Commit — COMPLETE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
@@ -291,6 +291,12 @@ git reset HEAD
 
 `git reset HEAD` only unstages — it moves files back from staged to unstaged.
 No code is deleted, no changes are lost. It is the opposite of `git add`.
+
+Clean up the message file (written in Round 5 Step 1 before denial):
+
+```bash
+rm .flow-commit-msg
+```
 
 Then ask: **What needs to be addressed before committing?**
 
