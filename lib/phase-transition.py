@@ -15,6 +15,7 @@ Output (JSON to stdout):
 
 import argparse
 import json
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,42 @@ from flow_utils import (
     COMMANDS, PACIFIC, format_time, load_phase_config, now, project_root,
     resolve_branch, PHASE_ORDER,
 )
+
+
+def _capture_diff_stats():
+    """Capture git diff --stat summary for the current branch vs main.
+
+    Returns a dict with files_changed, insertions, deletions, captured_at.
+    Best-effort: returns zeros if git fails.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--stat", "main...HEAD"],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            return {"files_changed": 0, "insertions": 0, "deletions": 0, "captured_at": now()}
+        lines = result.stdout.strip().split("\n")
+        summary = lines[-1]
+        files_changed = 0
+        insertions = 0
+        deletions = 0
+        for part in summary.split(","):
+            part = part.strip()
+            if "file" in part:
+                files_changed = int(part.split()[0])
+            elif "insertion" in part:
+                insertions = int(part.split()[0])
+            elif "deletion" in part:
+                deletions = int(part.split()[0])
+        return {
+            "files_changed": files_changed,
+            "insertions": insertions,
+            "deletions": deletions,
+            "captured_at": now(),
+        }
+    except Exception:
+        return {"files_changed": 0, "insertions": 0, "deletions": 0, "captured_at": now()}
 
 
 def _parse_timestamp(ts):
@@ -112,6 +149,9 @@ def phase_complete(state, phase, next_phase=None, phase_order=None,
             state["_auto_continue"] = next_command
     else:
         state.pop("_auto_continue", None)
+
+    if phase == "flow-code":
+        state["diff_stats"] = _capture_diff_stats()
 
     return state, {
         "status": "ok",
