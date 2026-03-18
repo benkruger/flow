@@ -15,32 +15,13 @@ Output (JSON to stdout):
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-def detect_repo():
-    """Auto-detect GitHub repo from git remote origin URL.
-
-    Returns 'owner/repo' string or None if detection fails.
-    """
-    try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            capture_output=True, text=True,
-        )
-        if result.returncode != 0:
-            return None
-        url = result.stdout.strip()
-        if not url:
-            return None
-        match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
-        if match:
-            return match.group(1)
-        return None
-    except Exception:
-        return None
+from flow_utils import detect_repo
 
 
 def read_body_file(path):

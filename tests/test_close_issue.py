@@ -224,15 +224,8 @@ def test_cli_auto_detects_repo():
 
 def test_cli_error_when_detection_fails():
     """CLI outputs error when repo detection fails."""
-    def mock_run(args, **kwargs):
-        return subprocess.CompletedProcess(
-            args=args, returncode=1, stdout="", stderr="No such remote",
-        )
-
-    with patch.object(_mod, "subprocess") as mock_subprocess:
+    with patch.object(_mod, "detect_repo", return_value=None):
         with patch.object(sys, "argv", ["close-issue.py", "--number", "117"]):
-            mock_subprocess.run = mock_run
-
             output_text = io.StringIO()
             with redirect_stdout(output_text):
                 with pytest.raises(SystemExit):

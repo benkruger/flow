@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import derive_feature, now, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER
+from flow_utils import derive_feature, detect_repo, now, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 
@@ -123,28 +123,6 @@ def _extract_pr_number(pr_url):
                 pass
     return 0
 
-
-def _detect_repo(cwd):
-    """Auto-detect GitHub repo from git remote origin URL.
-
-    Returns 'owner/repo' string or None if detection fails.
-    """
-    try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            capture_output=True, text=True, cwd=str(cwd),
-        )
-        if result.returncode != 0:
-            return None
-        url = result.stdout.strip()
-        if not url:
-            return None
-        match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
-        if match:
-            return match.group(1)
-        return None
-    except Exception:
-        return None
 
 
 def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
@@ -267,7 +245,7 @@ def main():
         _log(project_root, branch, f"git commit + push + gh pr create (exit 0)")
 
         # Detect GitHub repo for caching
-        repo = _detect_repo(project_root)
+        repo = detect_repo(cwd=str(project_root))
 
         # Create state file
         _create_state_file(project_root, branch, feature_title, pr_url, pr_number,

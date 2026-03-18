@@ -14,9 +14,13 @@ Output (JSON to stdout):
 
 import argparse
 import json
-import re
 import subprocess
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from flow_utils import detect_repo
 
 
 def detect_repo_or_fail():
@@ -24,21 +28,13 @@ def detect_repo_or_fail():
 
     Returns 'owner/repo' string or exits with error JSON.
     """
-    error_message = "Could not detect repo from git remote. Use --repo owner/name."
-    try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            capture_output=True, text=True,
-        )
-        if result.returncode == 0:
-            url = result.stdout.strip()
-            if url:
-                match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
-                if match:
-                    return match.group(1)
-    except Exception:
-        pass
-    print(json.dumps({"status": "error", "message": error_message}))
+    repo = detect_repo()
+    if repo:
+        return repo
+    print(json.dumps({
+        "status": "error",
+        "message": "Could not detect repo from git remote. Use --repo owner/name.",
+    }))
     sys.exit(1)
 
 
