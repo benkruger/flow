@@ -124,8 +124,31 @@ def _extract_pr_number(pr_url):
     return 0
 
 
+def _detect_repo(cwd):
+    """Auto-detect GitHub repo from git remote origin URL.
+
+    Returns 'owner/repo' string or None if detection fails.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, cwd=str(cwd),
+        )
+        if result.returncode != 0:
+            return None
+        url = result.stdout.strip()
+        if not url:
+            return None
+        match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
+        if match:
+            return match.group(1)
+        return None
+    except Exception:
+        return None
+
+
 def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                       framework="rails", skills=None, prompt=""):
+                       framework="rails", skills=None, prompt="", repo=None):
     """Create the FLOW state file."""
     current_time = now()
     phases = {}
@@ -153,9 +176,9 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
             }
 
     state = {
-        "feature": feature_title,
+        "schema_version": 1,
         "branch": branch,
-        "worktree": f".worktrees/{branch}",
+        "repo": repo,
         "pr_number": pr_number,
         "pr_url": pr_url,
         "started_at": current_time,
@@ -172,6 +195,7 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
         "notes": [],
         "prompt": prompt,
         "phases": phases,
+        "phase_transitions": [],
     }
     if skills is not None:
         state["skills"] = skills
@@ -242,9 +266,13 @@ def main():
         pr_url, pr_number = _initial_commit_push_pr(wt_path, branch, feature_title)
         _log(project_root, branch, f"git commit + push + gh pr create (exit 0)")
 
+        # Detect GitHub repo for caching
+        repo = _detect_repo(project_root)
+
         # Create state file
         _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                           framework=framework, skills=skills, prompt=raw_prompt)
+                           framework=framework, skills=skills, prompt=raw_prompt,
+                           repo=repo)
         _log(project_root, branch, f"create .flow-states/{branch}.json (exit 0)")
 
         # Freeze phase config for this feature

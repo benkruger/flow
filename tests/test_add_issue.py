@@ -101,7 +101,7 @@ def test_append_to_existing_issues_filed(tmp_path):
 def test_creates_issues_filed_array_if_missing(tmp_path):
     """add_issue creates issues_filed key if state file lacks it."""
     mod = _import_module()
-    state = {"feature": "Test", "branch": "test", "current_phase": "flow-learn"}
+    state = {"branch": "test", "current_phase": "flow-learn"}
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
 

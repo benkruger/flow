@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import PHASE_NAMES, PHASE_ORDER, format_time, project_root, current_branch
+from flow_utils import PHASE_NAMES, PHASE_ORDER, derive_feature, format_time, project_root, current_branch
 
 
 def _load_sibling(name, filename):
@@ -150,7 +150,7 @@ def render_body(state, project_dir):
     section_names = []
 
     # 1. What (always)
-    feature = state.get("feature", "Unknown")
+    feature = derive_feature(state.get("branch", "unknown"))
     sections.append(f"## What\n\n{feature}.")
     section_names.append("What")
 

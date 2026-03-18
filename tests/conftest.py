@@ -137,9 +137,9 @@ def make_state(current_phase="flow-start", phase_statuses=None, framework="rails
             "visit_count": 1 if status in ("complete", "in_progress") else 0,
         }
     state = {
-        "feature": "Test Feature",
+        "schema_version": 1,
         "branch": "test-feature",
-        "worktree": ".worktrees/test-feature",
+        "repo": "test/test",
         "pr_number": 1,
         "pr_url": "https://github.com/test/test/pull/1",
         "started_at": "2026-01-01T00:00:00Z",
@@ -157,6 +157,7 @@ def make_state(current_phase="flow-start", phase_statuses=None, framework="rails
         "notes": [],
         "prompt": "test feature",
         "phases": phases,
+        "phase_transitions": [],
         "issues_filed": [],
     }
     return state

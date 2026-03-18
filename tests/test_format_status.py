@@ -362,7 +362,6 @@ def test_wrong_branch_multiple_features_returns_panel(state_dir, git_repo, branc
     """When on wrong branch with multiple state files, returns panel text."""
     for name in ["feature-a", "feature-b"]:
         state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
-        state["feature"] = name
         state["branch"] = name
         write_state(state_dir, name, state)
     result = _run(git_repo)

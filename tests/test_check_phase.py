@@ -166,7 +166,7 @@ def test_phase_6_requires_phase_5_complete():
 
 def test_missing_phases_key_blocks():
     """State file with no 'phases' key should block (defaults to pending)."""
-    state = {"feature": "Test", "branch": "test", "current_phase": "flow-plan"}
+    state = {"branch": "test", "current_phase": "flow-plan"}
     allowed, output = _mod.check_phase(state, "flow-plan")
     assert not allowed
     assert "BLOCKED" in output

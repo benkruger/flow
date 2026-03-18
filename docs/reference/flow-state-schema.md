@@ -31,9 +31,9 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 
 ```json
 {
-  "feature": "App Payment Webhooks",
+  "schema_version": 1,
   "branch": "app-payment-webhooks",
-  "worktree": ".worktrees/app-payment-webhooks",
+  "repo": "org/repo",
   "pr_number": 42,
   "pr_url": "https://github.com/org/repo/pull/42",
   "started_at": "2026-02-20T10:00:00-08:00",
@@ -87,6 +87,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
       "visit_count": 0
     }
   },
+  "phase_transitions": [],
   "issues_filed": []
 }
 ```
@@ -97,9 +98,9 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `feature` | string | Human-readable feature name — may be long |
-| `branch` | string | Git branch name — slug format |
-| `worktree` | string | Path to the git worktree |
+| `schema_version` | integer | Schema version marker — currently `1` |
+| `branch` | string | Git branch name — slug format. Canonical identity field. Feature name and worktree path are derived from this at read time |
+| `repo` | string / null | GitHub repo in `owner/repo` format, cached during `/flow-start`. Used by `issue.py` to avoid repeated `git remote` calls. Null if detection fails |
 | `pr_number` | integer | GitHub PR number |
 | `pr_url` | string | Full GitHub PR URL |
 | `started_at` | ISO 8601 | When the feature was started (Phase 1 entry) |
@@ -116,6 +117,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `_auto_continue` | string | Command to invoke next (e.g. `/flow:flow-plan`). Set by `phase_complete()` when `skills.<phase>.continue` is `"auto"`. Cleared by `phase_enter()` when the next phase starts. A PreToolUse hook on AskUserQuestion blocks prompts while this flag is set. |
 | `prompt` | string | The full text passed to `/flow-start` — used by Plan as feature description and by Complete to extract `#N` issue references for auto-closing |
 | `notes` | array | Corrections captured via `/flow-note` — see [Notes Array](#notes-array) |
+| `phase_transitions` | array | Phase entry log recording every `phase_enter()` call with from/to/timestamp and optional reason — see [Phase Transitions Array](#phase-transitions-array) |
 | `issues_filed` | array | GitHub issues filed during the feature — see [Issues Filed Array](#issues-filed-array) |
 | `compact_summary` | string / null | Conversation summary from last compaction. Written by PostCompact hook, consumed and cleared by SessionStart hook. Transient. |
 | `compact_cwd` | string / null | CWD at last compaction time. Written by PostCompact hook, consumed and cleared by SessionStart hook. Transient. |
@@ -209,6 +211,29 @@ and session restarts. Read by Learn as a primary source.
   }
 ]
 ```
+
+---
+
+## Phase Transitions Array
+
+Populated by `phase_enter()` on every phase entry. Records the journey
+through phases, enabling the Learn phase to identify rework patterns.
+
+```json
+"phase_transitions": [
+  {"from": "flow-start", "to": "flow-plan", "timestamp": "2026-02-20T10:05:00-08:00"},
+  {"from": "flow-plan", "to": "flow-code", "timestamp": "2026-02-20T10:30:00-08:00"},
+  {"from": "flow-code", "to": "flow-code-review", "timestamp": "2026-02-20T14:00:00-08:00"},
+  {"from": "flow-code-review", "to": "flow-code", "timestamp": "2026-02-20T14:30:00-08:00", "reason": "test failures"}
+]
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `from` | string / null | Phase key before transition. Null on first entry |
+| `to` | string | Phase key being entered |
+| `timestamp` | ISO 8601 | When the transition occurred |
+| `reason` | string / absent | Optional reason for backward transitions |
 
 ---
 

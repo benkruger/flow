@@ -218,8 +218,9 @@ def test_schema_doc_covers_top_level_fields():
     """Schema doc must document all top-level fields from conftest.make_state()."""
     schema = (DOCS_DIR / "reference" / "flow-state-schema.md").read_text()
     top_level_fields = [
-        "feature", "branch", "worktree", "pr_number", "pr_url",
+        "schema_version", "branch", "repo", "pr_number", "pr_url",
         "started_at", "current_phase", "prompt", "notes",
+        "phase_transitions",
     ]
     for field in top_level_fields:
         pattern = rf"`{re.escape(field)}`"

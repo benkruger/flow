@@ -90,8 +90,7 @@ def test_cli_integration(tmp_path):
     """Subprocess call with --state-file reads prompt and closes issues."""
     state = {
         "prompt": "fix #42 and #99",
-        "feature": "Test",
-        "branch": "test",
+                "branch": "test",
     }
     state_file = tmp_path / "state.json"
     state_file.write_text(json.dumps(state))
@@ -109,8 +108,7 @@ def test_cli_integration(tmp_path):
 def test_cli_no_prompt_field(tmp_path):
     """State file without prompt field outputs ok with empty lists."""
     state = {
-        "feature": "Test",
-        "branch": "test",
+                "branch": "test",
     }
     state_file = tmp_path / "state.json"
     state_file.write_text(json.dumps(state))

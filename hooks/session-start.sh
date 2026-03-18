@@ -118,6 +118,15 @@ implementation_guardrail = (
 STEP_NAMES = ["Simplify", "Review", "Security", "Code Review Plugin"]
 
 
+def _feature(state):
+    branch = state.get("branch", "")
+    return " ".join(w.capitalize() for w in branch.replace("-", " ").split())
+
+
+def _worktree(state):
+    return f".worktrees/{state.get('branch', '')}"
+
+
 def step_suffix(state):
     """Return step progress suffix for Code Review, or empty string."""
     cp = state.get("current_phase", "flow-start")
@@ -137,7 +146,7 @@ if len(states) == 1:
     cp = s.get("current_phase", "flow-start")
     phase_name = s.get("phases", {}).get(cp, {}).get("name", "")
     phase_name += step_suffix(s)
-    feature = s.get("feature", "")
+    feature = _feature(s)
     plan_file = s.get("plan_file") or (s.get("files") or {}).get("plan")
     plan_approved = cp == "flow-plan" and plan_file is not None
     phase_data = s.get("phases", {}).get(cp, {})
@@ -161,7 +170,7 @@ if len(states) == 1:
         )
 
     compact_block = build_compact_block(
-        s.get("_compact_summary"), s.get("_compact_cwd"), s.get("worktree", "")
+        s.get("_compact_summary"), s.get("_compact_cwd"), _worktree(s)
     )
 
     context = (
@@ -186,7 +195,7 @@ else:
         cp = s.get("current_phase", "flow-start")
         phase_name = s.get("phases", {}).get(cp, {}).get("name", "")
         phase_name += step_suffix(s)
-        features.append(f"{s.get('feature')} — {phase_name}")
+        features.append(f"{_feature(s)} — {phase_name}")
 
     feature_list = "\n".join(f"  - {f}" for f in features)
 
@@ -194,11 +203,11 @@ else:
     for s in states:
         cp = s.get("current_phase", "flow-start")
         if cp == "flow-plan" and (s.get("plan_file") or (s.get("files") or {}).get("plan")) is not None:
-            auto_continue_feature = s.get("feature", "")
+            auto_continue_feature = _feature(s)
             break
         phase_data = s.get("phases", {}).get(cp, {})
         if cp != "flow-start" and phase_data.get("status") == "pending":
-            auto_continue_feature = s.get("feature", "")
+            auto_continue_feature = _feature(s)
             break
 
     if auto_continue_feature:
@@ -216,10 +225,10 @@ else:
     compact_blocks = ""
     for s in states:
         block = build_compact_block(
-            s.get("_compact_summary"), s.get("_compact_cwd"), s.get("worktree", "")
+            s.get("_compact_summary"), s.get("_compact_cwd"), _worktree(s)
         )
         if block:
-            compact_blocks += f'[{s.get("feature", "?")}] {block}'
+            compact_blocks += f'[{_feature(s)}] {block}'
 
     context = (
         "<flow-session-context>\n"

@@ -209,7 +209,7 @@ def test_error_invalid_phase(git_repo, state_dir, branch):
 
 def test_error_phase_not_in_state(git_repo, state_dir, branch):
     """Phase key missing from state phases dict returns error."""
-    state = {"feature": "Test", "branch": branch, "current_phase": "flow-start", "phases": {}}
+    state = {"branch": branch, "current_phase": "flow-start", "phases": {}}
     write_state(state_dir, branch, state)
 
     result = _run(git_repo, "flow-plan", "enter")

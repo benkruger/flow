@@ -73,7 +73,7 @@ def test_happy_path_returns_ok_with_all_fields(state_dir, git_repo, branch):
     assert data["current_phase"] == "flow-plan"
     assert data["phase_name"] == "Plan"
     assert data["phase_command"] == "/flow:flow-plan"
-    assert data["worktree"] == ".worktrees/test-feature"
+    assert data["worktree"] == f".worktrees/{branch}"
 
 
 def test_all_complete_returns_ok_with_phase_6():
@@ -82,19 +82,18 @@ def test_all_complete_returns_ok_with_phase_6():
     assert _mod.COMMANDS["flow-complete"] == "/flow:flow-complete"
 
 
-def test_missing_worktree_still_returns_ok(state_dir, git_repo, branch):
-    """Worktree field from state is passed through even if dir doesn't exist."""
+def test_worktree_derived_from_branch(state_dir, git_repo, branch):
+    """Worktree field is derived from the matched branch name."""
     state = make_state(
         current_phase="flow-code",
         phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
-    state["worktree"] = "/nonexistent/worktree/path"
     write_state(state_dir, branch, state)
     result = _run(git_repo)
     assert result.returncode == 0
     data = json.loads(result.stdout)
     assert data["status"] == "ok"
-    assert data["worktree"] == "/nonexistent/worktree/path"
+    assert data["worktree"] == f".worktrees/{branch}"
 
 
 # --- Regression: panel identity ---
@@ -165,7 +164,6 @@ def test_wrong_branch_multiple_features_returns_multiple(state_dir, git_repo, br
     """When on wrong branch with multiple state files, returns multiple_features."""
     for name in ["feature-a", "feature-b"]:
         state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
-        state["feature"] = name
         state["branch"] = name
         write_state(state_dir, name, state)
     result = _run(git_repo)
