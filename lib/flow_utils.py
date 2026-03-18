@@ -211,6 +211,30 @@ def derive_worktree(branch):
     return f".worktrees/{branch}"
 
 
+def detect_repo(cwd=None):
+    """Auto-detect GitHub repo from git remote origin URL.
+
+    Returns 'owner/repo' string or None if detection fails.
+    Optional cwd parameter for running git in a specific directory.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, cwd=cwd,
+        )
+        if result.returncode != 0:
+            return None
+        url = result.stdout.strip()
+        if not url:
+            return None
+        match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
+        if match:
+            return match.group(1)
+        return None
+    except Exception:
+        return None
+
+
 def permission_to_regex(perm):
     """Convert a Bash(pattern) permission to a compiled regex.
 

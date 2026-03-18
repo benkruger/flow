@@ -4,6 +4,7 @@ import importlib.util
 import json
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -390,3 +391,76 @@ def test_derive_feature_already_capitalized():
 def test_derive_worktree_from_branch():
     """Branch name produces .worktrees/ prefixed path."""
     assert _mod.derive_worktree("app-payment-webhooks") == ".worktrees/app-payment-webhooks"
+
+
+# --- detect_repo ---
+
+
+class TestDetectRepo:
+    """Tests for the detect_repo function."""
+
+    def _fake_result(self, stdout, returncode=0):
+        return subprocess.CompletedProcess(
+            args=[], returncode=returncode, stdout=stdout, stderr="",
+        )
+
+    def test_ssh_url_with_dotgit(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("git@github.com:owner/repo.git\n")):
+            assert _mod.detect_repo() == "owner/repo"
+
+    def test_https_url_with_dotgit(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("https://github.com/owner/repo.git\n")):
+            assert _mod.detect_repo() == "owner/repo"
+
+    def test_https_url_without_dotgit(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("https://github.com/owner/repo\n")):
+            assert _mod.detect_repo() == "owner/repo"
+
+    def test_ssh_url_without_dotgit(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("git@github.com:owner/repo\n")):
+            assert _mod.detect_repo() == "owner/repo"
+
+    def test_non_github_url_returns_none(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("https://gitlab.com/owner/repo.git\n")):
+            assert _mod.detect_repo() is None
+
+    def test_git_failure_returns_none(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("", returncode=1)):
+            assert _mod.detect_repo() is None
+
+    def test_empty_output_returns_none(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("")):
+            assert _mod.detect_repo() is None
+
+    def test_malformed_url_returns_none(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("not-a-url\n")):
+            assert _mod.detect_repo() is None
+
+    def test_subprocess_exception_returns_none(self):
+        with patch.object(_mod.subprocess, "run",
+                          side_effect=OSError("git not found")):
+            assert _mod.detect_repo() is None
+
+    def test_cwd_parameter_passed_to_subprocess(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("git@github.com:owner/repo.git\n")) as mock_run:
+            _mod.detect_repo(cwd="/some/path")
+
+        call_kwargs = mock_run.call_args
+        assert call_kwargs[1].get("cwd") == "/some/path"
+
+    def test_cwd_none_by_default(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("git@github.com:owner/repo.git\n")) as mock_run:
+            _mod.detect_repo()
+
+        call_kwargs = mock_run.call_args
+        assert call_kwargs[1].get("cwd") is None
