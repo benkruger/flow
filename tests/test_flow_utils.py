@@ -464,3 +464,78 @@ class TestDetectRepo:
 
         call_kwargs = mock_run.call_args
         assert call_kwargs[1].get("cwd") is None
+
+
+# --- mutate_state ---
+
+
+class TestMutateState:
+    """Tests for the mutate_state function."""
+
+    def test_basic_mutation_persists_to_disk(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        state_path.write_text(json.dumps({"count": 0}))
+
+        result = _mod.mutate_state(state_path, lambda s: s.__setitem__("count", 1))
+
+        assert result["count"] == 1
+        on_disk = json.loads(state_path.read_text())
+        assert on_disk["count"] == 1
+
+    def test_returns_updated_state_dict(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        state_path.write_text(json.dumps({"items": []}))
+
+        result = _mod.mutate_state(state_path, lambda s: s["items"].append("new"))
+
+        assert result["items"] == ["new"]
+
+    def test_corrupt_json_raises_json_decode_error(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        state_path.write_text("{corrupt")
+
+        with pytest.raises(json.JSONDecodeError):
+            _mod.mutate_state(state_path, lambda s: None)
+
+    def test_missing_file_raises_file_not_found_error(self, tmp_path):
+        state_path = tmp_path / "nonexistent.json"
+
+        with pytest.raises(FileNotFoundError):
+            _mod.mutate_state(state_path, lambda s: None)
+
+    def test_closure_captures_pre_mutation_values(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        state_path.write_text(json.dumps({"flag": "active", "data": "hello"}))
+
+        captured = {}
+
+        def transform(state):
+            captured["flag"] = state.get("flag", "")
+            state["flag"] = ""
+
+        _mod.mutate_state(state_path, transform)
+
+        assert captured["flag"] == "active"
+        on_disk = json.loads(state_path.read_text())
+        assert on_disk["flag"] == ""
+
+    def test_file_locking_uses_flock(self, tmp_path):
+        import fcntl
+        state_path = tmp_path / "state.json"
+        state_path.write_text(json.dumps({"x": 1}))
+
+        with patch.object(fcntl, "flock") as mock_flock:
+            _mod.mutate_state(state_path, lambda s: s.__setitem__("x", 2))
+
+        mock_flock.assert_called_once()
+        call_args = mock_flock.call_args[0]
+        assert call_args[1] == fcntl.LOCK_EX
+
+    def test_preserves_existing_keys(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        state_path.write_text(json.dumps({"a": 1, "b": 2, "c": 3}))
+
+        _mod.mutate_state(state_path, lambda s: s.__setitem__("b", 99))
+
+        on_disk = json.loads(state_path.read_text())
+        assert on_disk == {"a": 1, "b": 99, "c": 3}

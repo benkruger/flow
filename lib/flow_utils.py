@@ -7,6 +7,7 @@ Provides common functions used across multiple hook scripts:
 - current_branch: get the current git branch name
 """
 
+import fcntl
 import json
 import re
 import subprocess
@@ -209,6 +210,26 @@ def derive_feature(branch):
 def derive_worktree(branch):
     """Derive the worktree path from a branch name."""
     return f".worktrees/{branch}"
+
+
+def mutate_state(state_path, transform_fn):
+    """Atomic read-lock-transform-write for state files.
+
+    Opens the file, acquires an exclusive advisory lock, reads and parses
+    JSON, calls transform_fn(state) to mutate the dict in place, then
+    writes back and releases the lock.
+
+    Returns the final (mutated) state dict.
+    Raises json.JSONDecodeError on corrupt JSON, FileNotFoundError if missing.
+    """
+    with open(state_path, "r+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        state = json.loads(f.read())
+        transform_fn(state)
+        f.seek(0)
+        f.write(json.dumps(state, indent=2))
+        f.truncate()
+    return state
 
 
 def detect_repo(cwd=None):
