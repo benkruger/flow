@@ -1,5 +1,18 @@
 # Release Notes
 
+## v0.32.2 — Fixes and improvements
+
+### Fixes
+
+- Fix release skill staging order to prevent `.flow-commit-msg` from being committed.
+- Fix CI dirty check to use default branch detection.
+
+### Improvements
+
+- Flow issues now filters WIP items using the "Flow In-Progress" label.
+- PR artifacts: improved section rendering and content handling.
+- Complete phase banner now includes the feature name.
+
 ## v0.32.1 — Fix Code Review dropping background agent findings
 
 ### Fixes
