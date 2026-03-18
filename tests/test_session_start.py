@@ -809,13 +809,13 @@ def test_processes_only_matching_branch_state(git_repo):
     s1 = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
     })
-    s1["feature"] = "Feature Alpha"
+    s1["branch"] = "feature-alpha"
     write_state(state_dir, "feature-alpha", s1)
 
     s2 = make_state(current_phase="flow-plan", phase_statuses={
         "flow-start": "complete", "flow-plan": "in_progress",
     })
-    s2["feature"] = "Feature Beta"
+    s2["branch"] = "feature-beta"
     write_state(state_dir, "feature-beta", s2)
 
     _switch(git_repo, "feature-alpha")
@@ -835,7 +835,7 @@ def test_detached_head_single_file_fallback(git_repo):
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
     })
-    state["feature"] = "Solo Feature"
+    state["branch"] = "solo-feature"
     write_state(state_dir, "solo-feature", state)
 
     _detach(git_repo)
@@ -854,13 +854,13 @@ def test_detached_head_multiple_files_fallback(git_repo):
     s1 = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
     })
-    s1["feature"] = "Feature One"
+    s1["branch"] = "feature-one"
     write_state(state_dir, "feature-one", s1)
 
     s2 = make_state(current_phase="flow-plan", phase_statuses={
         "flow-start": "complete", "flow-plan": "in_progress",
     })
-    s2["feature"] = "Feature Two"
+    s2["branch"] = "feature-two"
     write_state(state_dir, "feature-two", s2)
 
     _detach(git_repo)
