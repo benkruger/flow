@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import find_state_files, project_root, resolve_branch, COMMANDS, PHASE_NAMES
+from flow_utils import derive_feature, derive_worktree, find_state_files, project_root, resolve_branch, COMMANDS, PHASE_NAMES
 
 # Import format_panel from format-status.py (same pattern as tests)
 _spec = importlib.util.spec_from_file_location(
@@ -62,13 +62,13 @@ def main():
         features = []
         for path, state, matched_branch in results:
             features.append({
-                "feature": state.get("feature", matched_branch),
+                "feature": derive_feature(matched_branch),
                 "branch": matched_branch,
                 "current_phase": state.get("current_phase", "flow-start"),
                 "phase_name": PHASE_NAMES.get(
                     state.get("current_phase", "flow-start"), "?"
                 ),
-                "worktree": state.get("worktree", ""),
+                "worktree": derive_worktree(matched_branch),
             })
         print(json.dumps({
             "status": "multiple_features",
@@ -86,7 +86,7 @@ def main():
         "status": "ok",
         "panel": panel,
         "branch": matched_branch,
-        "worktree": state.get("worktree", ""),
+        "worktree": derive_worktree(matched_branch),
         "current_phase": current_phase,
         "phase_name": PHASE_NAMES.get(current_phase, current_phase),
         "phase_command": COMMANDS.get(current_phase, f"/flow:{current_phase}"),

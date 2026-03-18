@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    find_state_files, format_time, load_phase_config, PACIFIC,
+    derive_feature, find_state_files, format_time, load_phase_config, PACIFIC,
     project_root, resolve_branch, COMMANDS, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER,
 )
 
@@ -74,7 +74,7 @@ def format_panel(state, version, now=None, dev_mode=False, phase_config=None):
     lines.append(f"  FLOW v{version} — Current Status{dev_label}")
     lines.append("────────────────────────────────────────────")
     lines.append("")
-    lines.append(f"  Feature : {state['feature']}")
+    lines.append(f"  Feature : {derive_feature(state['branch'])}")
     lines.append(f"  Branch  : {state['branch']}")
     lines.append(f"  PR      : {state.get('pr_url', 'N/A')}")
 
@@ -156,7 +156,7 @@ def _format_all_complete(state, version, phases, dev_mode=False, phase_config=No
     lines.append(f"  FLOW v{version} — All Phases Complete!{dev_label}")
     lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     lines.append("")
-    lines.append(f"  Feature : {state['feature']}")
+    lines.append(f"  Feature : {derive_feature(state['branch'])}")
     lines.append(f"  PR      : {state.get('pr_url', 'N/A')}")
 
     # Total elapsed from phase timings
@@ -201,7 +201,7 @@ def format_multi_panel(results, version, dev_mode=False):
             phase_key, {},
         ).get("status", "pending")
         cmd = COMMANDS.get(phase_key, f"/flow:{phase_key}")
-        lines.append(f"  {i}. {state.get('feature', matched_branch)}")
+        lines.append(f"  {i}. {derive_feature(matched_branch)}")
         lines.append(f"     Branch : {matched_branch}")
         lines.append(f"     Phase  : {phase_num} — {phase_name} ({phase_status})")
         lines.append(f"     Next   : {cmd}")

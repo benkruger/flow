@@ -209,7 +209,7 @@ def test_error_invalid_phase(git_repo, state_dir, branch):
 
 def test_error_phase_not_in_state(git_repo, state_dir, branch):
     """Phase key missing from state phases dict returns error."""
-    state = {"feature": "Test", "branch": branch, "current_phase": "flow-start", "phases": {}}
+    state = {"branch": branch, "current_phase": "flow-start", "phases": {}}
     write_state(state_dir, branch, state)
 
     result = _run(git_repo, "flow-plan", "enter")
@@ -554,3 +554,170 @@ def test_error_ambiguous_multiple_state_files(git_repo, state_dir):
     assert output["status"] == "error"
     assert "Multiple" in output["message"]
     assert sorted(output["candidates"]) == ["feat-a", "feat-b"]
+
+
+# --- Phase transitions recording ---
+
+
+def test_enter_records_phase_transition():
+    """phase_enter appends a transition entry with from/to/timestamp."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
+    state["phase_transitions"] = []
+
+    updated, result = _mod.phase_enter(state, "flow-plan")
+
+    assert len(updated["phase_transitions"]) == 1
+    entry = updated["phase_transitions"][0]
+    assert entry["from"] == "flow-start"
+    assert entry["to"] == "flow-plan"
+    assert "timestamp" in entry
+    assert "reason" not in entry
+
+
+def test_enter_appends_to_existing_transitions():
+    """phase_enter appends to existing transitions array."""
+    state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "complete"})
+    state["phase_transitions"] = [
+        {"from": "flow-start", "to": "flow-plan", "timestamp": "2026-01-01T00:00:00-08:00"},
+    ]
+
+    updated, result = _mod.phase_enter(state, "flow-code")
+
+    assert len(updated["phase_transitions"]) == 2
+    assert updated["phase_transitions"][1]["from"] == "flow-plan"
+    assert updated["phase_transitions"][1]["to"] == "flow-code"
+
+
+def test_enter_transition_has_no_reason_by_default():
+    """phase_enter without reason parameter does not include reason key."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
+    state["phase_transitions"] = []
+
+    updated, result = _mod.phase_enter(state, "flow-plan")
+
+    assert "reason" not in updated["phase_transitions"][0]
+
+
+def test_enter_transition_with_reason():
+    """phase_enter with reason includes it in the transition entry."""
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+    })
+    state["phase_transitions"] = []
+
+    updated, result = _mod.phase_enter(state, "flow-plan", reason="approach was wrong")
+
+    assert updated["phase_transitions"][0]["reason"] == "approach was wrong"
+
+
+def test_enter_creates_transitions_array_if_missing():
+    """phase_enter creates phase_transitions if the key is absent (old state files)."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
+    state.pop("phase_transitions", None)
+
+    updated, result = _mod.phase_enter(state, "flow-plan")
+
+    assert "phase_transitions" in updated
+    assert len(updated["phase_transitions"]) == 1
+
+
+# --- Diff stats ---
+
+
+def test_complete_code_phase_captures_diff_stats(git_repo, state_dir):
+    """Code phase completion captures diff_stats with files/insertions/deletions."""
+    # Add a file on main so the feature branch can delete it (covers deletion parsing)
+    (git_repo / "old_file.py").write_text("remove_me\n")
+    subprocess.run(["git", "add", "-A"], cwd=str(git_repo), capture_output=True, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "add old file"],
+        cwd=str(git_repo), capture_output=True, check=True,
+    )
+    # Create a feature branch: add a new file and delete the old one
+    subprocess.run(
+        ["git", "checkout", "-b", "my-feature"],
+        cwd=str(git_repo), capture_output=True, check=True,
+    )
+    (git_repo / "new_file.py").write_text("print('hello')\n")
+    (git_repo / "old_file.py").unlink()
+    subprocess.run(["git", "add", "-A"], cwd=str(git_repo), capture_output=True, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "add file and delete old"],
+        cwd=str(git_repo), capture_output=True, check=True,
+    )
+
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    write_state(state_dir, "my-feature", state)
+
+    result = _run(git_repo, "flow-code", "complete", branch="my-feature")
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert output["status"] == "ok"
+
+    updated = json.loads((state_dir / "my-feature.json").read_text())
+    assert "diff_stats" in updated
+    assert updated["diff_stats"]["files_changed"] >= 1
+    assert updated["diff_stats"]["insertions"] >= 1
+    assert updated["diff_stats"]["deletions"] >= 1
+    assert "captured_at" in updated["diff_stats"]
+
+
+def test_complete_non_code_phase_no_diff_stats():
+    """Plan phase completion does not capture diff_stats."""
+    state = make_state(current_phase="flow-plan", phase_statuses={
+        "flow-start": "complete", "flow-plan": "in_progress",
+    })
+
+    updated, result = _mod.phase_complete(state, "flow-plan")
+
+    assert "diff_stats" not in updated
+
+
+def test_complete_code_phase_no_git_skips_diff_stats():
+    """Code phase completion without git access skips diff_stats gracefully."""
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+
+    # In-process call — git diff runs in cwd which is a repo, so it succeeds
+    updated, result = _mod.phase_complete(state, "flow-code")
+
+    # Should succeed with diff_stats (zeros since no branch diff)
+    assert result["status"] == "ok"
+    assert "diff_stats" in updated
+
+
+def test_capture_diff_stats_git_failure(monkeypatch):
+    """_capture_diff_stats returns zeros when git diff fails."""
+    class FakeResult:
+        returncode = 1
+        stdout = ""
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: FakeResult())
+    stats = _mod._capture_diff_stats()
+    assert stats["files_changed"] == 0
+    assert stats["insertions"] == 0
+    assert stats["deletions"] == 0
+    assert "captured_at" in stats
+
+
+def test_capture_diff_stats_exception(monkeypatch):
+    """_capture_diff_stats returns zeros when subprocess raises."""
+    def _raise(*a, **kw):
+        raise OSError("git not found")
+    monkeypatch.setattr(subprocess, "run", _raise)
+    stats = _mod._capture_diff_stats()
+    assert stats["files_changed"] == 0
+
+
+def test_capture_diff_stats_empty_output(monkeypatch):
+    """_capture_diff_stats returns zeros when git output is empty (no diff)."""
+    class FakeResult:
+        returncode = 0
+        stdout = ""
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: FakeResult())
+    stats = _mod._capture_diff_stats()
+    assert stats["files_changed"] == 0
+    assert stats["insertions"] == 0
+    assert stats["deletions"] == 0

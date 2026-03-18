@@ -148,7 +148,7 @@ def test_write_failure_returns_error(state_dir, git_repo):
 
 def test_append_note_creates_notes_array_if_missing(tmp_path):
     state_path = tmp_path / "state.json"
-    state = {"feature": "Test", "branch": "test", "current_phase": "flow-start"}
+    state = {"branch": "test", "current_phase": "flow-start"}
     state_path.write_text(json.dumps(state))
 
     result = _mod.append_note(state_path, "flow-start", "correction", "test note")

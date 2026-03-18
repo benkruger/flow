@@ -198,6 +198,19 @@ def extract_issue_numbers(prompt):
     return result
 
 
+def derive_feature(branch):
+    """Derive the human-readable feature name from a branch name.
+
+    Title-cases each hyphen-separated word.
+    """
+    return " ".join(w.capitalize() for w in branch.replace("-", " ").split())
+
+
+def derive_worktree(branch):
+    """Derive the worktree path from a branch name."""
+    return f".worktrees/{branch}"
+
+
 def permission_to_regex(perm):
     """Convert a Bash(pattern) permission to a compiled regex.
 

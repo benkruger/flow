@@ -116,7 +116,7 @@ def test_find_state_files_exact_match(tmp_path):
     assert len(results) == 1
     path, data, branch_name = results[0]
     assert path == state_dir / "my-feature.json"
-    assert data["feature"] == "Test Feature"
+    assert data["branch"] == "test-feature"
     assert branch_name == "my-feature"
 
 
@@ -152,7 +152,6 @@ def test_find_state_files_fallback_multiple(tmp_path):
     state_dir.mkdir()
     for name in ["feature-a", "feature-b", "feature-c"]:
         state = make_state(current_phase="flow-plan")
-        state["feature"] = name
         (state_dir / f"{name}.json").write_text(json.dumps(state))
 
     results = _mod.find_state_files(tmp_path, "main")
@@ -261,15 +260,13 @@ def test_find_state_files_exact_match_priority(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     state_exact = make_state(current_phase="flow-plan")
-    state_exact["feature"] = "Exact"
     (state_dir / "my-branch.json").write_text(json.dumps(state_exact))
     state_other = make_state(current_phase="flow-code")
-    state_other["feature"] = "Other"
     (state_dir / "other-branch.json").write_text(json.dumps(state_other))
 
     results = _mod.find_state_files(tmp_path, "my-branch")
     assert len(results) == 1
-    assert results[0][1]["feature"] == "Exact"
+    assert results[0][1]["branch"] == "test-feature"
     assert results[0][2] == "my-branch"
 
 
@@ -367,3 +364,29 @@ def test_resolve_branch_skips_corrupt_files(monkeypatch, tmp_path):
     branch, candidates = _mod.resolve_branch()
     assert branch == "good"
     assert candidates == []
+
+
+# --- derive_feature ---
+
+
+def test_derive_feature_from_branch():
+    """Hyphenated branch name produces title-cased feature name."""
+    assert _mod.derive_feature("app-payment-webhooks") == "App Payment Webhooks"
+
+
+def test_derive_feature_single_word():
+    """Single-word branch name produces capitalized feature name."""
+    assert _mod.derive_feature("bugfix") == "Bugfix"
+
+
+def test_derive_feature_already_capitalized():
+    """Already-capitalized words are handled correctly."""
+    assert _mod.derive_feature("fix-login-timeout") == "Fix Login Timeout"
+
+
+# --- derive_worktree ---
+
+
+def test_derive_worktree_from_branch():
+    """Branch name produces .worktrees/ prefixed path."""
+    assert _mod.derive_worktree("app-payment-webhooks") == ".worktrees/app-payment-webhooks"

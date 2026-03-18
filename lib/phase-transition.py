@@ -15,6 +15,7 @@ Output (JSON to stdout):
 
 import argparse
 import json
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -27,13 +28,50 @@ from flow_utils import (
 )
 
 
+def _capture_diff_stats():
+    """Capture git diff --stat summary for the current branch vs main.
+
+    Returns a dict with files_changed, insertions, deletions, captured_at.
+    Best-effort: returns zeros if git fails.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--stat", "main...HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return {"files_changed": 0, "insertions": 0, "deletions": 0, "captured_at": now()}
+        lines = result.stdout.strip().split("\n")
+        summary = lines[-1]
+        files_changed = 0
+        insertions = 0
+        deletions = 0
+        for part in summary.split(","):
+            part = part.strip()
+            if "file" in part:
+                files_changed = int(part.split()[0])
+            elif "insertion" in part:
+                insertions = int(part.split()[0])
+            elif "deletion" in part:
+                deletions = int(part.split()[0])
+        return {
+            "files_changed": files_changed,
+            "insertions": insertions,
+            "deletions": deletions,
+            "captured_at": now(),
+        }
+    except Exception:
+        return {"files_changed": 0, "insertions": 0, "deletions": 0, "captured_at": now()}
+
+
 def _parse_timestamp(ts):
     """Parse an ISO 8601 timestamp string to a timezone-aware datetime."""
     return datetime.fromisoformat(ts)
 
 
-def phase_enter(state, phase):
+def phase_enter(state, phase, reason=None):
     """Apply phase entry mutations. Returns (state, result_dict)."""
+    prev_phase = state.get("current_phase")
     phase_data = state["phases"][phase]
 
     phase_data["status"] = "in_progress"
@@ -42,6 +80,11 @@ def phase_enter(state, phase):
     phase_data["session_started_at"] = now()
     phase_data["visit_count"] = phase_data.get("visit_count", 0) + 1
     state["current_phase"] = phase
+
+    transition = {"from": prev_phase, "to": phase, "timestamp": now()}
+    if reason:
+        transition["reason"] = reason
+    state.setdefault("phase_transitions", []).append(transition)
 
     if phase == "flow-code-review":
         state["code_review_step"] = 0
@@ -110,6 +153,9 @@ def phase_complete(state, phase, next_phase=None, phase_order=None,
     else:
         state.pop("_auto_continue", None)
 
+    if phase == "flow-code":
+        state["diff_stats"] = _capture_diff_stats()
+
     return state, {
         "status": "ok",
         "phase": phase,
@@ -133,6 +179,8 @@ def main():
                         help="Override next phase name (default: next in order)")
     parser.add_argument("--branch", type=str, default=None,
                         help="Override branch for state file lookup")
+    parser.add_argument("--reason", type=str, default=None,
+                        help="Optional reason for backward transitions")
     args = parser.parse_args()
 
     if args.phase not in _VALID_PHASES:
@@ -192,7 +240,7 @@ def main():
         frozen_order, _, _, frozen_commands = load_phase_config(frozen_path)
 
     if args.action == "enter":
-        state, result = phase_enter(state, args.phase)
+        state, result = phase_enter(state, args.phase, reason=args.reason)
     else:
         state, result = phase_complete(
             state, args.phase, args.next_phase,

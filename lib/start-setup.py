@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import now, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER
+from flow_utils import derive_feature, now, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 
@@ -40,16 +40,16 @@ def _branch_name(feature_words):
     return name[:32]
 
 
-def _title_case(feature_words):
-    """Title-case the feature name."""
-    return " ".join(w.capitalize() for w in feature_words.replace("-", " ").split())
 
-
-def _run_cmd(args, cwd, step_name):
+def _run_cmd(args, cwd, step_name, timeout=None):
     """Run a shell command, returning (stdout, stderr). Raises on failure."""
-    result = subprocess.run(
-        args, capture_output=True, text=True, cwd=str(cwd),
-    )
+    try:
+        result = subprocess.run(
+            args, capture_output=True, text=True, cwd=str(cwd),
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        raise SetupError(step_name, f"Timed out after {timeout}s")
     if result.returncode != 0:
         raise SetupError(step_name, result.stderr.strip() or result.stdout.strip())
     return result.stdout.strip(), result.stderr.strip()
@@ -66,7 +66,7 @@ class SetupError(Exception):
 
 def _git_pull(cwd):
     """Pull latest main."""
-    _run_cmd(["git", "pull", "origin", "main"], cwd, "git_pull")
+    _run_cmd(["git", "pull", "origin", "main"], cwd, "git_pull", timeout=60)
 
 
 def _create_worktree(project_root, branch):
@@ -95,7 +95,7 @@ def _initial_commit_push_pr(wt_path, branch, feature_title, prompt):
         commit_msg_path.unlink(missing_ok=True)
     _run_cmd(
         ["git", "push", "-u", "origin", branch],
-        wt_path, "push",
+        wt_path, "push", timeout=60,
     )
 
     pr_body = f"## What\n\n{prompt}."
@@ -104,7 +104,7 @@ def _initial_commit_push_pr(wt_path, branch, feature_title, prompt):
          "--title", feature_title,
          "--body", pr_body,
          "--base", "main"],
-        wt_path, "pr_create",
+        wt_path, "pr_create", timeout=60,
     )
 
     pr_url = stdout.strip()
@@ -124,8 +124,31 @@ def _extract_pr_number(pr_url):
     return 0
 
 
+def _detect_repo(cwd):
+    """Auto-detect GitHub repo from git remote origin URL.
+
+    Returns 'owner/repo' string or None if detection fails.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, cwd=str(cwd),
+        )
+        if result.returncode != 0:
+            return None
+        url = result.stdout.strip()
+        if not url:
+            return None
+        match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
+        if match:
+            return match.group(1)
+        return None
+    except Exception:
+        return None
+
+
 def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                       framework="rails", skills=None, prompt=""):
+                       framework="rails", skills=None, prompt="", repo=None):
     """Create the FLOW state file."""
     current_time = now()
     phases = {}
@@ -153,9 +176,9 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
             }
 
     state = {
-        "feature": feature_title,
+        "schema_version": 1,
         "branch": branch,
-        "worktree": f".worktrees/{branch}",
+        "repo": repo,
         "pr_number": pr_number,
         "pr_url": pr_url,
         "started_at": current_time,
@@ -172,6 +195,7 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
         "notes": [],
         "prompt": prompt,
         "phases": phases,
+        "phase_transitions": [],
     }
     if skills is not None:
         state["skills"] = skills
@@ -220,7 +244,7 @@ def main():
     feature_words = args.feature_name
     raw_prompt = args.prompt if args.prompt is not None else feature_words
     branch = _branch_name(feature_words)
-    feature_title = _title_case(feature_words)
+    feature_title = derive_feature(feature_words)
     project_root = Path.cwd()
 
     try:
@@ -242,9 +266,13 @@ def main():
         pr_url, pr_number = _initial_commit_push_pr(wt_path, branch, feature_title, raw_prompt)
         _log(project_root, branch, f"git commit + push + gh pr create (exit 0)")
 
+        # Detect GitHub repo for caching
+        repo = _detect_repo(project_root)
+
         # Create state file
         _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                           framework=framework, skills=skills, prompt=raw_prompt)
+                           framework=framework, skills=skills, prompt=raw_prompt,
+                           repo=repo)
         _log(project_root, branch, f"create .flow-states/{branch}.json (exit 0)")
 
         # Freeze phase config for this feature

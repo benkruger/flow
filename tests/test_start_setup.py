@@ -177,24 +177,6 @@ def test_branch_name_single_long_word():
     assert result == "a" * 32
 
 
-# --- Feature name title-casing (in-process) ---
-
-
-def test_feature_name_title_cased():
-    """Feature name in output is title-cased."""
-    assert _mod._title_case("invoice pdf export") == "Invoice Pdf Export"
-
-
-def test_feature_name_title_cased_from_hyphenated():
-    """Hyphenated branch names (the real-world input) produce spaced title case."""
-    assert _mod._title_case("complete-banner-and-feature-name") == "Complete Banner And Feature Name"
-
-
-def test_feature_name_title_cased_short_hyphenated():
-    """Short hyphenated names also produce proper title case."""
-    assert _mod._title_case("fix-login-timeout") == "Fix Login Timeout"
-
-
 # --- Happy path output (shared run) ---
 
 
@@ -254,9 +236,9 @@ def test_worktree_created(_default_run):
 def test_state_file_created(_default_run):
     """State file created at .flow-states/<branch>.json."""
     data, state, log, repo = _default_run
-    assert state["feature"] == "Test Feature"
+    assert "feature" not in state
+    assert "worktree" not in state
     assert state["branch"] == "test-feature"
-    assert state["worktree"] == ".worktrees/test-feature"
     assert state["current_phase"] == "flow-start"
     assert state["notes"] == []
 
@@ -360,6 +342,58 @@ def test_missing_feature_name_fails(tmp_path):
 # --- In-process unit tests for edge cases ---
 
 
+def test_detect_repo_returns_none_without_remote(tmp_path):
+    """Repo detection returns None when git remote fails."""
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    assert _mod._detect_repo(tmp_path) is None
+
+
+def test_detect_repo_returns_none_for_non_github(git_repo_with_remote):
+    """Repo detection returns None for non-GitHub remotes (bare local path)."""
+    result = _mod._detect_repo(git_repo_with_remote)
+    assert result is None
+
+
+def test_detect_repo_returns_none_on_error(tmp_path):
+    """Repo detection returns None when not a git repo."""
+    assert _mod._detect_repo(tmp_path) is None
+
+
+def test_detect_repo_parses_github_https_url(monkeypatch):
+    """Repo detection parses GitHub HTTPS URL to owner/repo."""
+    class FakeResult:
+        returncode = 0
+        stdout = "https://github.com/owner/repo.git\n"
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: FakeResult())
+    assert _mod._detect_repo("/fake") == "owner/repo"
+
+
+def test_detect_repo_parses_github_ssh_url(monkeypatch):
+    """Repo detection parses GitHub SSH URL to owner/repo."""
+    class FakeResult:
+        returncode = 0
+        stdout = "git@github.com:owner/repo.git\n"
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: FakeResult())
+    assert _mod._detect_repo("/fake") == "owner/repo"
+
+
+def test_detect_repo_returns_none_for_empty_url(monkeypatch):
+    """Repo detection returns None when remote URL is empty."""
+    class FakeResult:
+        returncode = 0
+        stdout = "\n"
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: FakeResult())
+    assert _mod._detect_repo("/fake") is None
+
+
+def test_detect_repo_returns_none_on_exception(monkeypatch):
+    """Repo detection returns None when subprocess raises."""
+    def _raise(*a, **kw):
+        raise OSError("git not found")
+    monkeypatch.setattr(subprocess, "run", _raise)
+    assert _mod._detect_repo("/fake") is None
+
+
 def test_extract_pr_number_malformed_url():
     """Malformed PR URL returns 0."""
     assert _mod._extract_pr_number("not-a-url") == 0
@@ -368,6 +402,23 @@ def test_extract_pr_number_malformed_url():
 def test_extract_pr_number_non_numeric():
     """PR URL with non-numeric part after /pull/ returns 0."""
     assert _mod._extract_pr_number("https://github.com/org/repo/pull/abc") == 0
+
+
+# --- Subprocess timeouts ---
+
+
+def test_run_cmd_timeout_raises_setup_error(tmp_path):
+    """TimeoutExpired from _run_cmd is caught and raised as SetupError."""
+    with pytest.raises(_mod.SetupError) as exc_info:
+        _mod._run_cmd(["sleep", "10"], tmp_path, "test_step", timeout=0.01)
+    assert "test_step" in str(exc_info.value)
+    assert "Timed out" in exc_info.value.message
+
+
+def test_run_cmd_without_timeout_no_error(tmp_path):
+    """_run_cmd without timeout parameter succeeds normally."""
+    stdout, stderr = _mod._run_cmd(["echo", "hello"], tmp_path, "echo_step")
+    assert stdout == "hello"
 
 
 # --- files block (shared run) ---
@@ -518,6 +569,25 @@ def test_state_file_has_prompt(_default_run):
     """State file stores the raw start prompt for Plan and Complete phases."""
     data, state, log, repo = _default_run
     assert state["prompt"] == "test feature"
+
+
+def test_state_file_has_schema_version(_default_run):
+    """State file has schema_version: 1."""
+    data, state, log, repo = _default_run
+    assert state["schema_version"] == 1
+
+
+def test_state_file_has_phase_transitions_empty(_default_run):
+    """State file has empty phase_transitions array at creation."""
+    data, state, log, repo = _default_run
+    assert state["phase_transitions"] == []
+
+
+def test_state_file_has_repo(_default_run):
+    """State file has repo field (string or None)."""
+    data, state, log, repo = _default_run
+    assert "repo" in state
+    assert state["repo"] is None or isinstance(state["repo"], str)
 
 
 # --- Branch name sanitization (in-process) ---
