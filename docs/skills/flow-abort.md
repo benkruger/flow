@@ -26,16 +26,17 @@ file is missing.
 
 1. Reads `.flow-states/<branch>.json` for feature details
    (or infers from git state if the file is missing)
-2. Confirms with the user before any destructive action, including any
+2. Removes the "Flow In-Progress" label from any issues referenced in the prompt (if state file exists)
+3. Confirms with the user before any destructive action, including any
    warnings from the entry check
-3. Navigates to the project root
-4. Closes the PR with `gh pr close` and a comment
-5. Removes the worktree with `git worktree remove --force`
-6. Deletes the remote branch with `git push origin --delete`
-7. Deletes the local branch with `git branch -D`
-8. Deletes `.flow-states/<branch>.json` and CI sentinel
+4. Navigates to the project root
+5. Closes the PR with `gh pr close` and a comment
+6. Removes the worktree with `git worktree remove --force`
+7. Deletes the remote branch with `git push origin --delete`
+8. Deletes the local branch with `git branch -D`
+9. Deletes `.flow-states/<branch>.json` and CI sentinel
 
-Steps 3–8 follow a mix of abort-specific actions and cleanup operations.
+Steps 4–9 follow a mix of abort-specific actions and cleanup operations.
 Every step after confirmation is best-effort — if one fails (e.g., PR
 already closed, worktree already removed), it continues to the next.
 

@@ -180,7 +180,7 @@ Every feature has a state file at `.flow-states/<branch>.json`. It stores:
 - **Timing** — per-phase cumulative seconds and visit counts
 - **Security findings** — vulnerability tracking with fix status
 
-State survives session breaks and compaction. Multiple features can run simultaneously in separate worktrees with separate state files.
+State survives session breaks and compaction. Multiple features can run simultaneously in separate worktrees with separate state files — both on the same machine and across multiple engineers. State files are local to each machine; GitHub labels ("Flow In-Progress") provide cross-engineer WIP detection so `/flow-issues` shows which issues are already being worked on.
 
 ### Session Hook — Feature Awareness
 
