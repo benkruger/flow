@@ -389,18 +389,16 @@ If the pull fails, warn the user but do not block — cleanup succeeded.
 
 ### Done — Print banner
 
-For each phase row, format its `cumulative_seconds` (from the SOFT-GATE
-data) as: `Xh Ym` if >= 3600, `Xm` if >= 60, `<1m` if < 60. For the
-Complete row, use `formatted_time` from the `phase-transition --complete`
-output in Step 6 (the SOFT-GATE data predates Complete's timing).
+Generate the summary by running:
 
-Compute the total by summing all phase `cumulative_seconds` values
-(including Complete's `cumulative_seconds` from the Step 6 output)
-and formatting the result the same way.
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-complete-summary --state-file <project_root>/.flow-states/<branch>.json
+```
 
-Use `<feature>` and `<branch>` from the SOFT-GATE data.
+Parse the JSON output. The `summary` field contains the formatted banner text.
 
-Output the following banner in your response (not via Bash) inside a fenced code block:
+Output the COMPLETE banner line first, then the summary, in your response
+(not via Bash) inside a single fenced code block:
 
 ````markdown
 ```text
@@ -408,31 +406,19 @@ Output the following banner in your response (not via Bash) inside a fenced code
   ✓ FLOW v0.32.4 — Phase 6: Complete — COMPLETE (<formatted_time>)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  Feature:      <feature>
-  Branch:       <branch>
-  PR:           <pr_url>
+<summary text from format-complete-summary>
 
-  ┌─────────────────────────┐
-  │ Start:         <time>   │
-  │ Plan:          <time>   │
-  │ Code:          <time>   │
-  │ Code Review:   <time>   │
-  │ Learn:         <time>   │
-  │ Complete:      <time>   │
-  ├─────────────────────────┤
-  │ Total:         <time>   │
-  └─────────────────────────┘
+  PR:           <pr_url>
 
   ✓ Worktree removed
   ✓ state file and log deleted
-  <banner_line>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
-Only include the `<banner_line>` line if `has_issues` was `true` in the
-`format-issues-summary` output from Step 6. Use the `banner_line` value
-exactly as returned — do not recompute it.
+The summary includes the feature name, prompt, per-phase timeline
+(Start:, Plan:, Code:, Code Review:, Learn:, Complete:, Total:),
+and artifact counts (issues filed, notes captured).
 
 ## Rules
 
