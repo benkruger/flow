@@ -234,13 +234,15 @@ Uncommitted fixes on main will not appear in the worktree.
 
 ### Step 3 — Set up workspace
 
-Run the consolidated setup script:
+Write the user's original start prompt (verbatim, including `#N` issue references
+and any special characters) to `.flow-start-prompt` in the project root using the
+Write tool. Then run the setup script:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt "<full-start-prompt>"
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt-file .flow-start-prompt
 ```
 
-`<full-start-prompt>` is the user's original input verbatim, including `#N` issue references and any special characters. Do not sanitize or transform it.
+The script reads the prompt file and deletes it automatically after reading.
 
 The script performs these operations in a single process:
 
