@@ -35,7 +35,8 @@ def _read_prompt_file(path):
     The file is always deleted after reading, even if empty.
     """
     try:
-        content = open(path).read()
+        with open(path) as fh:
+            content = fh.read()
     except (OSError, IOError) as exc:
         return None, f"Could not read prompt file '{path}': {exc}"
 
