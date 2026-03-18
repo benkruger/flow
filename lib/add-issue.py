@@ -19,27 +19,24 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import now, project_root, resolve_branch, PHASE_NAMES
+from flow_utils import mutate_state, now, project_root, resolve_branch, PHASE_NAMES
 
 
 def add_issue(state_path, label, title, url, phase):
     """Append an issue to the state file. Returns the updated state dict."""
-    state = json.loads(state_path.read_text())
+    def transform(state):
+        if "issues_filed" not in state:
+            state["issues_filed"] = []
+        state["issues_filed"].append({
+            "label": label,
+            "title": title,
+            "url": url,
+            "phase": phase,
+            "phase_name": PHASE_NAMES.get(phase, phase),
+            "timestamp": now(),
+        })
 
-    if "issues_filed" not in state:
-        state["issues_filed"] = []
-
-    state["issues_filed"].append({
-        "label": label,
-        "title": title,
-        "url": url,
-        "phase": phase,
-        "phase_name": PHASE_NAMES.get(phase, phase),
-        "timestamp": now(),
-    })
-
-    state_path.write_text(json.dumps(state, indent=2))
-    return state
+    return mutate_state(state_path, transform)
 
 
 def main():

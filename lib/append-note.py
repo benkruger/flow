@@ -19,26 +19,23 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import now, project_root, resolve_branch, PHASE_NAMES
+from flow_utils import mutate_state, now, project_root, resolve_branch, PHASE_NAMES
 
 
 def append_note(state_path, phase, note_type, note_text):
     """Append a note to the state file. Returns the updated state dict."""
-    state = json.loads(state_path.read_text())
+    def transform(state):
+        if "notes" not in state:
+            state["notes"] = []
+        state["notes"].append({
+            "phase": phase,
+            "phase_name": PHASE_NAMES.get(phase, phase),
+            "timestamp": now(),
+            "type": note_type,
+            "note": note_text,
+        })
 
-    if "notes" not in state:
-        state["notes"] = []
-
-    state["notes"].append({
-        "phase": phase,
-        "phase_name": PHASE_NAMES.get(phase, phase),
-        "timestamp": now(),
-        "type": note_type,
-        "note": note_text,
-    })
-
-    state_path.write_text(json.dumps(state, indent=2))
-    return state
+    return mutate_state(state_path, transform)
 
 
 def main():
