@@ -5,6 +5,7 @@ creates state file, and logs all operations. The version gate
 (prime-check) runs as a separate step before this script.
 
 Usage: bin/flow start-setup "<feature name>" [--prompt "<full prompt>"]
+       bin/flow start-setup "<feature name>" --prompt-file <path>
 
 Output (JSON to stdout):
   Success: {"status": "ok", "worktree": "...", "pr_url": "...", "pr_number": N, "feature": "...", "branch": "..."}
@@ -13,6 +14,7 @@ Output (JSON to stdout):
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -24,6 +26,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from flow_utils import derive_feature, now, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _read_prompt_file(path):
+    """Read prompt text from a file and delete the file.
+
+    Returns (prompt_text, error_message). On success error is None.
+    The file is always deleted after reading, even if empty.
+    """
+    try:
+        content = open(path).read()
+    except (OSError, IOError) as exc:
+        return None, f"Could not read prompt file '{path}': {exc}"
+
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+    return content, None
 
 
 def _branch_name(feature_words):
@@ -231,6 +252,8 @@ def main():
     parser.add_argument("feature_name", nargs="?", help="Feature name words")
     parser.add_argument("--prompt", default=None,
                         help="Full start prompt (preserved verbatim in state file)")
+    parser.add_argument("--prompt-file", default=None,
+                        help="Path to file containing start prompt (file is deleted after reading)")
     args = parser.parse_args()
 
     if not args.feature_name:
@@ -242,7 +265,19 @@ def main():
         sys.exit(1)
 
     feature_words = args.feature_name
-    raw_prompt = args.prompt if args.prompt is not None else feature_words
+    if args.prompt_file:
+        raw_prompt, read_error = _read_prompt_file(args.prompt_file)
+        if read_error:
+            print(json.dumps({
+                "status": "error",
+                "step": "prompt_file",
+                "message": read_error,
+            }))
+            sys.exit(1)
+    elif args.prompt is not None:
+        raw_prompt = args.prompt
+    else:
+        raw_prompt = feature_words
     branch = _branch_name(feature_words)
     feature_title = derive_feature(feature_words)
     project_root = Path.cwd()
