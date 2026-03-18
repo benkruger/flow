@@ -72,16 +72,13 @@ def main():
         sys.exit(0)
 
     try:
-        json.loads(state_path.read_text())
-    except Exception as e:
+        state = add_issue(state_path, args.label, args.title, args.url, args.phase)
+    except (json.JSONDecodeError, FileNotFoundError) as e:
         print(json.dumps({
             "status": "error",
             "message": f"Could not read state file: {e}",
         }))
         sys.exit(1)
-
-    try:
-        state = add_issue(state_path, args.label, args.title, args.url, args.phase)
     except Exception as e:
         print(json.dumps({
             "status": "error",
