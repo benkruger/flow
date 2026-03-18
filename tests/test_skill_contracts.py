@@ -726,6 +726,56 @@ def test_start_logging_uses_safe_pattern():
     )
 
 
+def test_logged_phases_use_bin_flow_log():
+    """Phases 2-4 logging sections must use bin/flow log, not Read+Write.
+
+    The Read+Write pattern (read log file, append line, write back) is
+    unreliable — Claude frequently skips the multi-step process. bin/flow log
+    is a single command that always works. Phase 1 already uses it.
+    Phases 5-6 intentionally have no logging commands."""
+    logged_phases = ["flow-plan", "flow-code", "flow-code-review"]
+    for skill_name in logged_phases:
+        content = _read_skill(skill_name)
+        logging_match = re.search(
+            r"## Logging\n(.*?)(?=\n## |\n---|\Z)", content, re.DOTALL
+        )
+        assert logging_match, f"{skill_name}/SKILL.md has no ## Logging section"
+        logging_section = logging_match.group(1)
+
+        assert "bin/flow log" in logging_section, (
+            f"{skill_name}/SKILL.md ## Logging section must use bin/flow log"
+        )
+        has_read_write = "Read" in logging_section and "Write" in logging_section
+        assert not has_read_write, (
+            f"{skill_name}/SKILL.md ## Logging section must NOT use Read+Write "
+            "pattern — it is unreliable. Use bin/flow log instead"
+        )
+
+
+def test_plan_dag_capture_is_explicit():
+    """Plan SKILL.md Step 2 must have explicit DAG capture instructions.
+
+    The vague phrase 'DAG content from the conversation' led to inconsistent
+    DAG files — sometimes XML only, sometimes synthesis only. The instructions
+    must specify capturing the complete decompose output."""
+    content = _read_skill("flow-plan")
+    # Extract Step 2 section
+    step2_match = re.search(
+        r"## Step 2.*?\n(.*?)(?=\n## Step 3|\Z)", content, re.DOTALL
+    )
+    assert step2_match, "flow-plan/SKILL.md has no Step 2 section"
+    step2 = step2_match.group(1)
+
+    assert "DAG content from the conversation" not in step2, (
+        "flow-plan/SKILL.md Step 2 must NOT use the vague phrase "
+        "'DAG content from the conversation' — it leads to inconsistent captures"
+    )
+    assert "complete decompose output" in step2.lower() or "complete output" in step2.lower(), (
+        "flow-plan/SKILL.md Step 2 must instruct capturing the complete "
+        "decompose output (XML plan + node executions + synthesis)"
+    )
+
+
 def test_start_references_setup_script():
     """Start SKILL.md must reference start-setup.py for consolidated setup."""
     content = _read_skill("flow-start")

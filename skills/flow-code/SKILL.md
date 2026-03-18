@@ -93,19 +93,14 @@ and hard rules during `/flow:flow-prime`. Follow those conventions for:
 
 ## Logging
 
-After every Bash command completes, log it to `.flow-states/<branch>.log`.
+After every Bash command completes, log it to `.flow-states/<branch>.log`
+using `bin/flow log`.
 
-Run the command directly — do not append any suffix:
+Run the command first, then log the result. Pipeline the log call with the
+next command where possible (run both in parallel in one response).
 
 ```bash
-COMMAND
-```
-
-Then Read `.flow-states/<branch>.log` (empty string if it does not
-exist yet) and Write it back with this line appended:
-
-```text
-YYYY-MM-DDTHH:MM:SSZ [Phase 3] Step X — desc (exit EC)
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 3] Step X — desc (exit EC)"
 ```
 
 Get `<branch>` from the state file.
@@ -114,8 +109,8 @@ Get `<branch>` from the state file.
 
 ## Resume Check
 
-Read `plan_file` from the state file to get the plan file path. Use the
-Read tool to read the plan file. Identify the Tasks section — this is the
+Read `files.plan` from the state file to get the plan file path (fall back
+to `plan_file` for old state files). Use the Read tool to read the plan file. Identify the Tasks section — this is the
 ordered list of implementation tasks to execute.
 
 Read `code_task` from the state file (default `0` if absent).

@@ -38,6 +38,13 @@ dependencies, node types, and topological ordering. The DAG output is
 stored to `.flow-states/<branch>-dag.md` and used to inform the plan
 file's Dependency Graph and task ordering.
 
+### DAG Capture
+
+After the decompose plugin returns, the complete output — XML DAG plan,
+node executions with quality scores, and synthesis block — is captured
+verbatim to `.flow-states/<branch>-dag.md` with a markdown heading. The
+path is stored in `files.dag` in the state file.
+
 ### DAG Mode
 
 Configurable via `.flow.json` under `skills.flow-plan.dag`:
@@ -66,8 +73,8 @@ The plan file lives at `.flow-states/<branch>-plan.md` and includes:
 
 If the session breaks mid-plan, `/flow-continue` checks the state file:
 
-- `dag_file` set, `plan_file` null — DAG was produced, skip to plan writing
-- `plan_file` set — plan was written, complete the phase
+- `files.dag` set, `files.plan` null — DAG was produced, skip to plan writing
+- `files.plan` set — plan was written, complete the phase
 - Both null — restart from Step 1
 
 ---
