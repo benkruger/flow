@@ -408,11 +408,10 @@ def test_phase_skills_have_update_state_section():
 
 
 def test_phase_skills_use_phase_transition_for_entry():
-    """Phases 2-5 must use bin/flow phase-transition for state entry.
-    Phase 1 uses start-setup.py which creates the state file directly.
-    Phase 6 (cleanup) uses bin/flow cleanup instead."""
+    """Phases 2-6 must use bin/flow phase-transition for state entry.
+    Phase 1 uses start-setup.py which creates the state file directly."""
     phase_skills = _phase_skills()
-    for key in PHASE_ORDER[1:-1]:
+    for key in PHASE_ORDER[1:]:
         skill_name = phase_skills[key]
         content = _read_skill(skill_name)
         assert "phase-transition" in content, (
@@ -426,9 +425,9 @@ def test_phase_skills_use_phase_transition_for_entry():
 
 
 def test_phase_skills_use_phase_transition_for_completion():
-    """Phases 1-7 must use bin/flow phase-transition for state completion."""
+    """Phases 1-6 must use bin/flow phase-transition for state completion."""
     phase_skills = _phase_skills()
-    for key in PHASE_ORDER[:-1]:
+    for key in PHASE_ORDER:
         skill_name = phase_skills[key]
         content = _read_skill(skill_name)
         assert "--action complete" in content, (
@@ -561,12 +560,6 @@ def test_phase_6_has_delete_state_instructions():
     )
     assert has_delete, (
         "Phase 6 (complete) should have delete/remove instructions for state file"
-    )
-    # Should NOT have "Update State" section like other phases
-    has_update_state = bool(re.search(r"##.*Update State", content, re.IGNORECASE))
-    assert not has_update_state, (
-        "Phase 6 (cleanup) should NOT have an 'Update State' section — "
-        "it deletes the state file instead"
     )
 
 

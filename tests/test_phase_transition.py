@@ -316,6 +316,88 @@ def test_cli_falls_back_without_frozen_phases(git_repo, state_dir, branch):
     assert data["next_phase"] == "flow-code"
 
 
+def test_enter_flow_complete():
+    """Enter flow-complete sets status, started_at, session_started_at, visit_count."""
+    state = make_state(current_phase="flow-learn", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+        "flow-code-review": "complete", "flow-learn": "complete",
+    })
+
+    updated, result = _mod.phase_enter(state, "flow-complete")
+
+    assert result["status"] == "ok"
+    assert result["phase"] == "flow-complete"
+    assert result["visit_count"] == 1
+    assert result["first_visit"] is True
+    assert updated["phases"]["flow-complete"]["status"] == "in_progress"
+    assert updated["phases"]["flow-complete"]["started_at"] is not None
+    assert updated["current_phase"] == "flow-complete"
+
+
+def test_complete_flow_complete_with_next_phase():
+    """Complete flow-complete with explicit next_phase works."""
+    state = make_state(current_phase="flow-complete", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+        "flow-code-review": "complete", "flow-learn": "complete",
+        "flow-complete": "in_progress",
+    })
+
+    updated, result = _mod.phase_complete(state, "flow-complete", next_phase="flow-complete")
+
+    assert result["status"] == "ok"
+    assert result["phase"] == "flow-complete"
+    assert result["next_phase"] == "flow-complete"
+    assert updated["phases"]["flow-complete"]["status"] == "complete"
+    assert updated["phases"]["flow-complete"]["completed_at"] is not None
+    assert updated["current_phase"] == "flow-complete"
+
+
+def test_complete_terminal_phase_auto_next():
+    """Complete flow-complete without explicit next_phase handles terminal phase."""
+    state = make_state(current_phase="flow-complete", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+        "flow-code-review": "complete", "flow-learn": "complete",
+        "flow-complete": "in_progress",
+    })
+
+    updated, result = _mod.phase_complete(state, "flow-complete")
+
+    assert result["status"] == "ok"
+    assert result["next_phase"] == "flow-complete"
+    assert updated["current_phase"] == "flow-complete"
+
+
+def test_cli_flow_complete_enter(git_repo, state_dir, branch):
+    """CLI accepts flow-complete as a valid phase for entry."""
+    state = make_state(current_phase="flow-learn", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+        "flow-code-review": "complete", "flow-learn": "complete",
+    })
+    write_state(state_dir, branch, state)
+
+    result = _run(git_repo, "flow-complete", "enter")
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert output["status"] == "ok"
+    assert output["phase"] == "flow-complete"
+
+
+def test_cli_flow_complete_complete(git_repo, state_dir, branch):
+    """CLI accepts flow-complete for completion with --next-phase."""
+    state = make_state(current_phase="flow-complete", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+        "flow-code-review": "complete", "flow-learn": "complete",
+        "flow-complete": "in_progress",
+    })
+    write_state(state_dir, branch, state)
+
+    result = _run(git_repo, "flow-complete", "complete", next_phase="flow-complete")
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert output["status"] == "ok"
+    assert output["phase"] == "flow-complete"
+
+
 def test_enter_code_review_sets_code_review_step():
     """Entering flow-code-review sets code_review_step to 0 (integer)."""
     state = make_state(current_phase="flow-code", phase_statuses={
@@ -544,15 +626,23 @@ def test_enter_creates_transitions_array_if_missing():
 
 def test_complete_code_phase_captures_diff_stats(git_repo, state_dir):
     """Code phase completion captures diff_stats with files/insertions/deletions."""
-    # Create a feature branch off main with a new file
+    # Add a file on main so the feature branch can delete it (covers deletion parsing)
+    (git_repo / "old_file.py").write_text("remove_me\n")
+    subprocess.run(["git", "add", "-A"], cwd=str(git_repo), capture_output=True, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "add old file"],
+        cwd=str(git_repo), capture_output=True, check=True,
+    )
+    # Create a feature branch: add a new file and delete the old one
     subprocess.run(
         ["git", "checkout", "-b", "my-feature"],
         cwd=str(git_repo), capture_output=True, check=True,
     )
     (git_repo / "new_file.py").write_text("print('hello')\n")
+    (git_repo / "old_file.py").unlink()
     subprocess.run(["git", "add", "-A"], cwd=str(git_repo), capture_output=True, check=True)
     subprocess.run(
-        ["git", "commit", "-m", "add file"],
+        ["git", "commit", "-m", "add file and delete old"],
         cwd=str(git_repo), capture_output=True, check=True,
     )
 
@@ -569,8 +659,8 @@ def test_complete_code_phase_captures_diff_stats(git_repo, state_dir):
     updated = json.loads((state_dir / "my-feature.json").read_text())
     assert "diff_stats" in updated
     assert updated["diff_stats"]["files_changed"] >= 1
-    assert isinstance(updated["diff_stats"]["insertions"], int)
-    assert isinstance(updated["diff_stats"]["deletions"], int)
+    assert updated["diff_stats"]["insertions"] >= 1
+    assert updated["diff_stats"]["deletions"] >= 1
     assert "captured_at" in updated["diff_stats"]
 
 

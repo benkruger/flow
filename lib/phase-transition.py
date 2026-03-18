@@ -111,7 +111,10 @@ def phase_complete(state, phase, next_phase=None, phase_order=None,
     if next_phase is None:
         order = phase_order or PHASE_ORDER
         phase_idx = order.index(phase)
-        next_phase = order[phase_idx + 1]
+        if phase_idx + 1 < len(order):
+            next_phase = order[phase_idx + 1]
+        else:
+            next_phase = phase
 
     session_started = phase_data.get("session_started_at")
     if session_started:
@@ -163,8 +166,7 @@ def phase_complete(state, phase, next_phase=None, phase_order=None,
     }
 
 
-# Phases that support entry/completion via this script (all except complete)
-_VALID_PHASES = PHASE_ORDER[:-1]
+_VALID_PHASES = PHASE_ORDER
 
 
 def main():

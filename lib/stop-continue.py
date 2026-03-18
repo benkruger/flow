@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import project_root, resolve_branch
+from flow_utils import current_branch, project_root
 
 
 def capture_session_id(hook_input):
@@ -27,7 +27,7 @@ def capture_session_id(hook_input):
 
     try:
         root = project_root()
-        branch, _ = resolve_branch()
+        branch = current_branch()
         if not branch:
             return
 
@@ -49,16 +49,21 @@ def capture_session_id(hook_input):
         pass  # Fail-open, same as check_continue
 
 
-def check_continue():
+def check_continue(hook_input=None):
     """Check if _continue_pending flag is set in the active state file.
 
     Returns (should_block: bool, skill_name: str|None, context: str|None).
     If should_block is True, both _continue_pending and _continue_context
     have been cleared in the state file.
+
+    Session isolation: if the state file's session_id differs from the
+    hook input's session_id, the flag is stale (set by a previous session).
+    Clear it and allow stop. Backward compatible: if either session_id is
+    missing, skip the check and fire the flag as before.
     """
     try:
         root = project_root()
-        branch, _ = resolve_branch()
+        branch = current_branch()
 
         if not branch:
             return (False, None, None)
@@ -71,6 +76,14 @@ def check_continue():
         pending = state.get("_continue_pending", "")
 
         if not pending:
+            return (False, None, None)
+
+        state_sid = state.get("session_id")
+        hook_sid = (hook_input or {}).get("session_id")
+        if state_sid and hook_sid and state_sid != hook_sid:
+            state["_continue_pending"] = ""
+            state["_continue_context"] = ""
+            state_path.write_text(json.dumps(state, indent=2))
             return (False, None, None)
 
         context = state.get("_continue_context", "") or None
@@ -91,9 +104,9 @@ def main():
     except Exception:
         pass
 
-    capture_session_id(hook_input)
+    should_block, skill_name, context = check_continue(hook_input)
 
-    should_block, skill_name, context = check_continue()
+    capture_session_id(hook_input)
 
     if should_block:
         reason = (

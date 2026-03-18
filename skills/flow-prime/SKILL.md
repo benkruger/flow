@@ -23,7 +23,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v0.32.2 — Prime — STARTING
+  FLOW v0.32.4 — Prime — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -260,8 +260,8 @@ All permissions (universal + all framework sets) for reference:
       "Bash(claude plugin install *)",
       "Bash(gh issue *)",
       "Read(~/.claude/rules/*)",
-      "Read(/tmp/*.txt)",
-      "Read(/tmp/*.diff)",
+      "Read(//tmp/*.txt)",
+      "Read(//tmp/*.diff)",
       "Agent(flow:ci-fixer)",
       "Skill(decompose:decompose)"
     ],
@@ -329,7 +329,7 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v0.32.2 — Prime — COMPLETE
+  ✓ FLOW v0.32.4 — Prime — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````

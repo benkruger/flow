@@ -31,7 +31,8 @@ description: "Phase 6: Complete — merge the PR, remove the worktree, and delet
 ## Self-Invocation Check
 
 If `--continue-step` was passed, this is a self-invocation from a
-previous step's commit. Skip the Announce banner and the SOFT-GATE.
+previous step's commit. Skip the Announce banner, the SOFT-GATE,
+and the Update State section (do not call `phase-transition` again).
 
 Run `git worktree list --porcelain` to find the project root (first
 `worktree` line) and `git branch --show-current` for the current branch.
@@ -82,7 +83,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v0.32.2 — Phase 6: Complete — STARTING
+  FLOW v0.32.4 — Phase 6: Complete — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -91,6 +92,16 @@ At the very start, output the following banner in your response (not via Bash) i
 
 No logging for this phase. Complete deletes the log file as part of its
 operation — writing log entries that are immediately deleted is pointless.
+
+## Update State
+
+Record phase entry in the state file:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-complete --action enter
+```
+
+Parse the JSON output and confirm `status` is `"ok"`.
 
 ---
 
@@ -285,6 +296,17 @@ If no warnings:
 
 ### Step 6 — Archive artifacts to PR
 
+Record phase completion in the state file so Phase Timings includes
+the Complete row:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-complete --action complete --next-phase flow-complete
+```
+
+Parse the JSON output. Keep `formatted_time` and `cumulative_seconds`
+from this output — use them for the Complete row and total in the Done
+banner below.
+
 Render the complete PR body. This single call generates all sections
 (What, Artifacts, Plan, DAG Analysis, Phase Timings, State File,
 Session Log, Issues Filed) from the state file and available artifact
@@ -367,14 +389,14 @@ If the pull fails, warn the user but do not block — cleanup succeeded.
 
 ### Done — Print banner
 
-For the banner below, compute `<formatted_time>` from the integer
-`cumulative_seconds` read in the SOFT-GATE: `Xh Ym` if >= 3600,
-`Xm` if >= 60, `<1m` if < 60. Do not write the formatted string back
-to the state file.
+For each phase row, format its `cumulative_seconds` (from the SOFT-GATE
+data) as: `Xh Ym` if >= 3600, `Xm` if >= 60, `<1m` if < 60. For the
+Complete row, use `formatted_time` from the `phase-transition --complete`
+output in Step 6 (the SOFT-GATE data predates Complete's timing).
 
-Apply the same formatting rules to each phase's `cumulative_seconds`
-for the per-phase timing rows. Compute the total by summing all phase
-`cumulative_seconds` values and formatting the result the same way.
+Compute the total by summing all phase `cumulative_seconds` values
+(including Complete's `cumulative_seconds` from the Step 6 output)
+and formatting the result the same way.
 
 Use `<feature>` and `<branch>` from the SOFT-GATE data.
 
@@ -383,7 +405,7 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v0.32.2 — Phase 6: Complete — COMPLETE (<formatted_time>)
+  ✓ FLOW v0.32.4 — Phase 6: Complete — COMPLETE (<formatted_time>)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Feature:      <feature>

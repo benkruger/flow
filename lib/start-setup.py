@@ -82,7 +82,7 @@ def _create_worktree(project_root, branch):
     return wt_path
 
 
-def _initial_commit_push_pr(wt_path, branch, feature_title):
+def _initial_commit_push_pr(wt_path, branch, feature_title, prompt):
     """Make empty commit, push, and create PR. Returns (pr_url, pr_number)."""
     commit_msg_path = wt_path / ".flow-commit-msg"
     try:
@@ -98,7 +98,7 @@ def _initial_commit_push_pr(wt_path, branch, feature_title):
         wt_path, "push", timeout=60,
     )
 
-    pr_body = f"## What\n\n{feature_title}."
+    pr_body = f"## What\n\n{prompt}."
     stdout, _ = _run_cmd(
         ["gh", "pr", "create",
          "--title", feature_title,
@@ -263,7 +263,7 @@ def main():
         _log(project_root, branch, f"git worktree add .worktrees/{branch} (exit 0)")
 
         # Commit, push, PR
-        pr_url, pr_number = _initial_commit_push_pr(wt_path, branch, feature_title)
+        pr_url, pr_number = _initial_commit_push_pr(wt_path, branch, feature_title, raw_prompt)
         _log(project_root, branch, f"git commit + push + gh pr create (exit 0)")
 
         # Detect GitHub repo for caching

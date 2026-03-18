@@ -6,11 +6,12 @@ This repo is the plugin source code. When installed in a target project, skills 
 
 ## Design Philosophy
 
-Three core tenets guide every design decision:
+Four core tenets guide every design decision:
 
 1. **Unobtrusive** — zero repo footprint, zero dependencies. Nothing is committed — `.claude/settings.json` and `.flow.json` are git-excluded. Everything else lives in `.git/` or is gitignored.
 2. **As autonomous or manual as you want** — configurable autonomy via `.flow.json` skills settings.
 3. **Safe for local env** — no containers needed, no permission prompts ever. Native tools only, no external dependencies.
+4. **N×N×N concurrent** — N engineers running N flows on N boxes at the same time is the primary use case, not an edge case. Every feature, fix, and design decision must work when multiple flows are active simultaneously — on the same machine (multiple worktrees) and across machines (shared GitHub state). Local state (`.flow-states/`, worktrees) is per-machine. Shared state (PRs, issues, labels) is coordinated through GitHub. Nothing assumes a single active flow.
 
 In the target project:
 
@@ -19,6 +20,7 @@ In the target project:
 - After Complete, the only permanent artifacts are the merged PR and any CLAUDE.md learnings
 - Skills are pure Markdown instructions, not executable code
 - Framework support is data-driven via `frameworks/<name>/` directories — adding a language means adding a directory, not editing skills
+- Multiple flows run simultaneously via branch-scoped worktrees and state files — nothing assumes a single active flow
 
 ## The 6 Phases
 
@@ -215,7 +217,6 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 - New skills are automatically covered by test_skill_contracts.py (glob-based discovery)
 - Namespace is `flow:` — plugin.json name is `"flow"`
 - Never rebase — merge only (denied in `.claude/settings.json`)
-- CLAUDE.md changes only through `/flow:flow-learn` — never edit CLAUDE.md directly. The `/flow:flow-learn` skill exists to review mistakes, propose additions, get individual approval for each change, and commit. Editing CLAUDE.md outside of `/flow:flow-learn` bypasses all of that. **Exception:** If a structural test validates that specific content exists in CLAUDE.md (e.g., `test_checksum_version_invariant` validates "Checksum → Version Invariant"), the Code phase may add that content directly to satisfy `bin/flow ci` requirements. The Learn phase reviews this and confirms placement.
 - **Never add pymarkdown exclusions** — The `.pymarkdown.yml` disables MD013 (line length), MD025 (multiple H1 with frontmatter), MD033 (inline HTML), and MD036 (emphasis as heading) because those conflict with this repo's intentional patterns. No further rule disablements or path exclusions may be added. If a markdown file triggers a lint error, fix the file — do not suppress the rule. If a rule genuinely cannot be satisfied, surface it to the user for a decision.
 - **Skills must never instruct Claude to compute values** — no timestamp generation, no time arithmetic, no counter increments, no `date -u`. All computation goes through `bin/flow` subcommands. Skills say "run this command", never "calculate this value". `test_skill_contracts.py` enforces this: `test_phase_skills_no_inline_time_computation` fails if any phase skill contains computational instruction patterns.
 - **All timestamps use Pacific Time** — `lib/flow_utils.py` provides `now()` which returns `datetime.now(ZoneInfo("America/Los_Angeles")).isoformat(timespec="seconds")`. All scripts import `now` from `flow_utils` — never generate timestamps locally. Existing state files with UTC timestamps (`Z` suffix) are handled by `datetime.fromisoformat()` which parses both formats.
