@@ -6,11 +6,12 @@ This repo is the plugin source code. When installed in a target project, skills 
 
 ## Design Philosophy
 
-Three core tenets guide every design decision:
+Four core tenets guide every design decision:
 
 1. **Unobtrusive** — zero repo footprint, zero dependencies. Nothing is committed — `.claude/settings.json` and `.flow.json` are git-excluded. Everything else lives in `.git/` or is gitignored.
 2. **As autonomous or manual as you want** — configurable autonomy via `.flow.json` skills settings.
 3. **Safe for local env** — no containers needed, no permission prompts ever. Native tools only, no external dependencies.
+4. **N×N×N concurrent** — N engineers running N flows on N boxes at the same time is the primary use case, not an edge case. Every feature, fix, and design decision must work when multiple flows are active simultaneously — on the same machine (multiple worktrees) and across machines (shared GitHub state). Local state (`.flow-states/`, worktrees) is per-machine. Shared state (PRs, issues, labels) is coordinated through GitHub. Nothing assumes a single active flow.
 
 In the target project:
 
@@ -19,6 +20,7 @@ In the target project:
 - After Complete, the only permanent artifacts are the merged PR and any CLAUDE.md learnings
 - Skills are pure Markdown instructions, not executable code
 - Framework support is data-driven via `frameworks/<name>/` directories — adding a language means adding a directory, not editing skills
+- Multiple flows run simultaneously via branch-scoped worktrees and state files — nothing assumes a single active flow
 
 ## The 6 Phases
 
