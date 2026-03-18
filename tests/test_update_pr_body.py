@@ -160,7 +160,7 @@ def test_build_details_block_nested_fences():
     lines = result.split("\n")
     # Outer fence must be longer than 3 backticks
     fence_lines = [line for line in lines if line.startswith("````")]
-    assert len(fence_lines) >= 2, "Expected at least open and close 4+ backtick fences"
+    assert len(fence_lines) == 2, "Expected exactly open and close 4+ backtick fences"
     # Inner triple-backtick fences appear verbatim
     assert "```xml" in result
     assert "```python" in result

@@ -85,8 +85,9 @@ def _fence_for_content(content):
     Scans for the longest consecutive run of backticks in the content
     and returns a fence that is at least one backtick longer (minimum 3).
     """
-    runs = re.findall(r"`+", content)
-    max_len = max((len(r) for r in runs), default=0)
+    if "`" not in content:
+        return "```"
+    max_len = max((len(m.group()) for m in re.finditer(r"`+", content)), default=0)
     return "`" * max(3, max_len + 1)
 
 
