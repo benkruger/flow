@@ -54,7 +54,7 @@ def _git_repo_template(tmp_path_factory):
     """Create a git repo template once per worker for copying."""
     template = tmp_path_factory.mktemp("git-template")
     subprocess.run(
-        ["git", "init"], cwd=template,
+        ["git", "-c", "init.defaultBranch=main", "init"], cwd=template,
         capture_output=True, check=True,
     )
     config_path = template / ".git" / "config"
