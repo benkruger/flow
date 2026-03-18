@@ -367,3 +367,29 @@ def test_resolve_branch_skips_corrupt_files(monkeypatch, tmp_path):
     branch, candidates = _mod.resolve_branch()
     assert branch == "good"
     assert candidates == []
+
+
+# --- derive_feature ---
+
+
+def test_derive_feature_from_branch():
+    """Hyphenated branch name produces title-cased feature name."""
+    assert _mod.derive_feature("app-payment-webhooks") == "App Payment Webhooks"
+
+
+def test_derive_feature_single_word():
+    """Single-word branch name produces capitalized feature name."""
+    assert _mod.derive_feature("bugfix") == "Bugfix"
+
+
+def test_derive_feature_already_capitalized():
+    """Already-capitalized words are handled correctly."""
+    assert _mod.derive_feature("fix-login-timeout") == "Fix Login Timeout"
+
+
+# --- derive_worktree ---
+
+
+def test_derive_worktree_from_branch():
+    """Branch name produces .worktrees/ prefixed path."""
+    assert _mod.derive_worktree("app-payment-webhooks") == ".worktrees/app-payment-webhooks"
