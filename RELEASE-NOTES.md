@@ -1,5 +1,12 @@
 # Release Notes
 
+## v0.32.4 — Fix hook isolation for concurrent flows
+
+### Fixes
+
+- Fix SessionStart hook branch isolation — filter state files to current branch only, preventing wrong-context injection and timing data corruption when multiple flows are active on the same machine. Fail-open fallback on detached HEAD.
+- Fix stop-continue hook session and branch isolation — replace resolve_branch() with current_branch() for exact match, reorder main() to check before capture for stale flag detection, add session_id comparison to clear flags from previous sessions.
+
 ## v0.32.3 — Fixes and documentation
 
 ### Fixes
