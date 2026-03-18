@@ -368,6 +368,7 @@ class TestSessionIsolation:
         })
         state["session_id"] = "old-session"
         state["_continue_pending"] = "simplify"
+        state["_continue_context"] = "Resume at step 2."
         write_state(state_dir, branch, state)
 
         should_block, skill_name, context = _mod.check_continue({"session_id": "new-session"})
@@ -378,6 +379,7 @@ class TestSessionIsolation:
 
         updated = json.loads((state_dir / f"{branch}.json").read_text())
         assert updated["_continue_pending"] == ""
+        assert updated["_continue_context"] == ""
 
     def test_matching_session_fires_flag(self, git_repo, state_dir, branch, monkeypatch):
         """Flag set by same session → check_continue blocks."""
