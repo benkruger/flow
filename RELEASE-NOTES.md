@@ -1,5 +1,18 @@
 # Release Notes
 
+## v0.32.3 — Fixes and documentation
+
+### Fixes
+
+- Fix Read(/tmp/) permission patterns to use double-slash absolute paths.
+- Remove the Learn-phase-only restriction on CLAUDE.md edits because it was blocking legitimate edits in other phases.
+
+### Improvements
+
+- Add phase-transition calls to Complete so its timing appears in Phase Timings.
+- Use the full start prompt for the PR "What" section because the title-cased slug loses the user's actual description.
+- Add N×N×N concurrency as the 4th core design tenet because past bugs stemmed from assuming single-flow usage.
+
 ## v0.32.2 — Fixes and improvements
 
 ### Fixes
