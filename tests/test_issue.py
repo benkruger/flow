@@ -373,3 +373,61 @@ class TestMain:
         with patch("sys.argv", ["issue.py", "--repo", "owner/repo"]), \
              pytest.raises(SystemExit, match="2"):
             issue_mod.main()
+
+    def test_main_uses_repo_from_state_file(self, capsys, tmp_path):
+        """--state-file reads repo from state before falling back to detect_repo."""
+        state_file = tmp_path / "state.json"
+        state_file.write_text(json.dumps({"repo": "cached/repo", "branch": "test"}))
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout="https://github.com/cached/repo/issues/55\n",
+            stderr="",
+        )
+        with patch.object(issue_mod, "detect_repo") as mock_detect, \
+             patch.object(issue_mod.subprocess, "run", return_value=fake_result), \
+             patch("sys.argv", ["issue.py", "--title", "From state",
+                                "--state-file", str(state_file)]):
+            issue_mod.main()
+
+        mock_detect.assert_not_called()
+        output = json.loads(capsys.readouterr().out)
+        assert output["status"] == "ok"
+        assert output["url"] == "https://github.com/cached/repo/issues/55"
+
+    def test_main_state_file_corrupt_falls_back(self, capsys, tmp_path):
+        """--state-file with corrupt JSON falls back to detect_repo."""
+        state_file = tmp_path / "bad.json"
+        state_file.write_text("{corrupt")
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout="https://github.com/detected/repo/issues/88\n",
+            stderr="",
+        )
+        with patch.object(issue_mod, "detect_repo", return_value="detected/repo"), \
+             patch.object(issue_mod.subprocess, "run", return_value=fake_result), \
+             patch("sys.argv", ["issue.py", "--title", "Corrupt state",
+                                "--state-file", str(state_file)]):
+            issue_mod.main()
+
+        output = json.loads(capsys.readouterr().out)
+        assert output["status"] == "ok"
+
+    def test_main_state_file_no_repo_falls_back(self, capsys):
+        """--state-file with no repo key falls back to detect_repo."""
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"branch": "test"}, f)
+            state_path = f.name
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout="https://github.com/detected/repo/issues/77\n",
+            stderr="",
+        )
+        with patch.object(issue_mod, "detect_repo", return_value="detected/repo"), \
+             patch.object(issue_mod.subprocess, "run", return_value=fake_result), \
+             patch("sys.argv", ["issue.py", "--title", "Fallback",
+                                "--state-file", state_path]):
+            issue_mod.main()
+
+        output = json.loads(capsys.readouterr().out)
+        assert output["status"] == "ok"

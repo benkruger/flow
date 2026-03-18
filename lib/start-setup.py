@@ -45,11 +45,15 @@ def _title_case(feature_words):
     return " ".join(w.capitalize() for w in feature_words.replace("-", " ").split())
 
 
-def _run_cmd(args, cwd, step_name):
+def _run_cmd(args, cwd, step_name, timeout=None):
     """Run a shell command, returning (stdout, stderr). Raises on failure."""
-    result = subprocess.run(
-        args, capture_output=True, text=True, cwd=str(cwd),
-    )
+    try:
+        result = subprocess.run(
+            args, capture_output=True, text=True, cwd=str(cwd),
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        raise SetupError(step_name, f"Timed out after {timeout}s")
     if result.returncode != 0:
         raise SetupError(step_name, result.stderr.strip() or result.stdout.strip())
     return result.stdout.strip(), result.stderr.strip()
@@ -66,7 +70,7 @@ class SetupError(Exception):
 
 def _git_pull(cwd):
     """Pull latest main."""
-    _run_cmd(["git", "pull", "origin", "main"], cwd, "git_pull")
+    _run_cmd(["git", "pull", "origin", "main"], cwd, "git_pull", timeout=60)
 
 
 def _create_worktree(project_root, branch):
@@ -95,7 +99,7 @@ def _initial_commit_push_pr(wt_path, branch, feature_title):
         commit_msg_path.unlink(missing_ok=True)
     _run_cmd(
         ["git", "push", "-u", "origin", branch],
-        wt_path, "push",
+        wt_path, "push", timeout=60,
     )
 
     pr_body = f"## What\n\n{feature_title}."
@@ -104,7 +108,7 @@ def _initial_commit_push_pr(wt_path, branch, feature_title):
          "--title", feature_title,
          "--body", pr_body,
          "--base", "main"],
-        wt_path, "pr_create",
+        wt_path, "pr_create", timeout=60,
     )
 
     pr_url = stdout.strip()

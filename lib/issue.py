@@ -87,9 +87,17 @@ def main():
     parser.add_argument("--label", default=None, help="Issue label")
     parser.add_argument("--body-file", default=None,
                         help="Path to file containing issue body (file is deleted after reading)")
+    parser.add_argument("--state-file", default=None,
+                        help="Path to state file for repo lookup (checks state before detect_repo)")
     args = parser.parse_args()
 
     repo = args.repo
+    if repo is None and args.state_file:
+        try:
+            state = json.loads(open(args.state_file).read())
+            repo = state.get("repo")
+        except Exception:
+            pass
     if repo is None:
         repo = detect_repo()
         if repo is None:

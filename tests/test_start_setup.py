@@ -422,6 +422,23 @@ def test_extract_pr_number_non_numeric():
     assert _mod._extract_pr_number("https://github.com/org/repo/pull/abc") == 0
 
 
+# --- Subprocess timeouts ---
+
+
+def test_run_cmd_timeout_raises_setup_error(tmp_path):
+    """TimeoutExpired from _run_cmd is caught and raised as SetupError."""
+    with pytest.raises(_mod.SetupError) as exc_info:
+        _mod._run_cmd(["sleep", "10"], tmp_path, "test_step", timeout=0.01)
+    assert "test_step" in str(exc_info.value)
+    assert "Timed out" in exc_info.value.message
+
+
+def test_run_cmd_without_timeout_no_error(tmp_path):
+    """_run_cmd without timeout parameter succeeds normally."""
+    stdout, stderr = _mod._run_cmd(["echo", "hello"], tmp_path, "echo_step")
+    assert stdout == "hello"
+
+
 # --- files block (shared run) ---
 
 
