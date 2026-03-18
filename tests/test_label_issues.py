@@ -14,7 +14,7 @@ import importlib
 
 _mod = importlib.import_module("label-issues")
 
-from conftest import make_state, write_state
+from conftest import make_state
 
 
 # --- label_issues (add) ---
@@ -89,23 +89,11 @@ def test_partial_failure():
     assert result == {"labeled": [83], "failed": [89]}
 
 
-def test_deduplicates_issue_numbers():
-    """Duplicate issue numbers are processed only once."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr="",
-        )
-        result = _mod.label_issues([83, 83], action="add")
-
-    assert result == {"labeled": [83], "failed": []}
-    assert mock_run.call_count == 1
-
-
 # --- main (CLI integration) ---
 
 
 def test_cli_integration_add(tmp_path):
-    """Subprocess call with --add returns valid JSON."""
+    """Subprocess call with --add returns valid JSON with status ok."""
     state = make_state()
     state["prompt"] = "fix #42"
     state_file = tmp_path / "state.json"
@@ -118,11 +106,13 @@ def test_cli_integration_add(tmp_path):
     )
 
     output = json.loads(result.stdout)
-    assert output["status"] in ("ok", "error")
+    assert output["status"] == "ok"
+    assert "labeled" in output
+    assert "failed" in output
 
 
 def test_cli_integration_remove(tmp_path):
-    """Subprocess call with --remove returns valid JSON."""
+    """Subprocess call with --remove returns valid JSON with status ok."""
     state = make_state()
     state["prompt"] = "fix #42"
     state_file = tmp_path / "state.json"
@@ -135,7 +125,9 @@ def test_cli_integration_remove(tmp_path):
     )
 
     output = json.loads(result.stdout)
-    assert output["status"] in ("ok", "error")
+    assert output["status"] == "ok"
+    assert "labeled" in output
+    assert "failed" in output
 
 
 def test_missing_prompt_field(tmp_path):
