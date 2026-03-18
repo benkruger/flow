@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from flow_utils import format_time, PHASE_NAMES, PHASE_ORDER
 
 
-def format_timings_table(state):
+def format_timings_table(state, *, started_only=False):
     """Build a markdown timings table from state dict."""
     phases = state.get("phases", {})
     lines = [
@@ -28,8 +28,11 @@ def format_timings_table(state):
     total_seconds = 0
     for key in PHASE_ORDER:
         phase = phases.get(key, {})
-        name = PHASE_NAMES.get(key, key)
+        started = phase.get("started_at")
         seconds = phase.get("cumulative_seconds", 0)
+        if started_only and not started and seconds == 0:
+            continue
+        name = PHASE_NAMES.get(key, key)
         total_seconds += seconds
         lines.append(f"| {name} | {format_time(seconds)} |")
 

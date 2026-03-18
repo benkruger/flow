@@ -15,13 +15,12 @@ Output (JSON to stdout):
 import argparse
 import importlib.util
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import PHASE_NAMES, PHASE_ORDER, format_time, project_root, current_branch
+from flow_utils import project_root, current_branch
 
 
 def _load_sibling(name, filename):
@@ -35,6 +34,11 @@ def _load_sibling(name, filename):
 
 _timings_mod = _load_sibling("format_pr_timings", "format-pr-timings.py")
 _issues_mod = _load_sibling("format_issues_summary", "format-issues-summary.py")
+_upb_mod = _load_sibling("update_pr_body", "update-pr-body.py")
+
+_build_details = _upb_mod._build_details_block
+_build_plain_section = _upb_mod._build_plain_section
+_gh_set_body = _upb_mod._gh_set_body
 
 
 def _resolve_path(path_str, project_dir):
@@ -85,47 +89,6 @@ def _build_artifacts(state):
     if transcript:
         items.append(f"- **Session log**: `{transcript}`")
     return items
-
-
-def _build_details(heading, summary, content, fmt):
-    """Build a collapsible <details> section."""
-    return (
-        f"## {heading}\n\n"
-        f"<details>\n"
-        f"<summary>{summary}</summary>\n\n"
-        f"```{fmt}\n"
-        f"{content}\n"
-        f"```\n\n"
-        f"</details>"
-    )
-
-
-def _build_plain_section(heading, content):
-    """Build a plain section with end sentinel."""
-    return f"## {heading}\n\n{content}\n\n<!-- end:{heading} -->"
-
-
-def _format_timings_started_only(state):
-    """Format phase timings table showing only phases that have started."""
-    phases = state.get("phases", {})
-    lines = [
-        "| Phase | Duration |",
-        "|-------|----------|",
-    ]
-
-    total_seconds = 0
-    for key in PHASE_ORDER:
-        phase = phases.get(key, {})
-        started = phase.get("started_at")
-        seconds = phase.get("cumulative_seconds", 0)
-        if not started and seconds == 0:
-            continue
-        name = PHASE_NAMES.get(key, key)
-        total_seconds += seconds
-        lines.append(f"| {name} | {format_time(seconds)} |")
-
-    lines.append(f"| **Total** | **{format_time(total_seconds)}** |")
-    return "\n".join(lines)
 
 
 def _format_issues_table(state):
@@ -184,7 +147,7 @@ def render_body(state, project_dir):
         section_names.append("DAG Analysis")
 
     # 5. Phase Timings (always, started phases only)
-    timings_table = _format_timings_started_only(state)
+    timings_table = _timings_mod.format_timings_table(state, started_only=True)
     sections.append(_build_plain_section("Phase Timings", timings_table))
     section_names.append("Phase Timings")
 
@@ -216,16 +179,6 @@ def render_body(state, project_dir):
         section_names.append("Issues Filed")
 
     return "\n\n".join(sections)
-
-
-def _gh_set_body(pr_number, body):
-    """Write PR body via gh."""
-    result = subprocess.run(
-        ["gh", "pr", "edit", str(pr_number), "--body", body],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
 
 
 def main():
