@@ -472,3 +472,68 @@ def test_error_ambiguous_multiple_state_files(git_repo, state_dir):
     assert output["status"] == "error"
     assert "Multiple" in output["message"]
     assert sorted(output["candidates"]) == ["feat-a", "feat-b"]
+
+
+# --- Phase transitions recording ---
+
+
+def test_enter_records_phase_transition():
+    """phase_enter appends a transition entry with from/to/timestamp."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
+    state["phase_transitions"] = []
+
+    updated, result = _mod.phase_enter(state, "flow-plan")
+
+    assert len(updated["phase_transitions"]) == 1
+    entry = updated["phase_transitions"][0]
+    assert entry["from"] == "flow-start"
+    assert entry["to"] == "flow-plan"
+    assert "timestamp" in entry
+    assert "reason" not in entry
+
+
+def test_enter_appends_to_existing_transitions():
+    """phase_enter appends to existing transitions array."""
+    state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "complete"})
+    state["phase_transitions"] = [
+        {"from": "flow-start", "to": "flow-plan", "timestamp": "2026-01-01T00:00:00-08:00"},
+    ]
+
+    updated, result = _mod.phase_enter(state, "flow-code")
+
+    assert len(updated["phase_transitions"]) == 2
+    assert updated["phase_transitions"][1]["from"] == "flow-plan"
+    assert updated["phase_transitions"][1]["to"] == "flow-code"
+
+
+def test_enter_transition_has_no_reason_by_default():
+    """phase_enter without reason parameter does not include reason key."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
+    state["phase_transitions"] = []
+
+    updated, result = _mod.phase_enter(state, "flow-plan")
+
+    assert "reason" not in updated["phase_transitions"][0]
+
+
+def test_enter_transition_with_reason():
+    """phase_enter with reason includes it in the transition entry."""
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+    })
+    state["phase_transitions"] = []
+
+    updated, result = _mod.phase_enter(state, "flow-plan", reason="approach was wrong")
+
+    assert updated["phase_transitions"][0]["reason"] == "approach was wrong"
+
+
+def test_enter_creates_transitions_array_if_missing():
+    """phase_enter creates phase_transitions if the key is absent (old state files)."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
+    state.pop("phase_transitions", None)
+
+    updated, result = _mod.phase_enter(state, "flow-plan")
+
+    assert "phase_transitions" in updated
+    assert len(updated["phase_transitions"]) == 1

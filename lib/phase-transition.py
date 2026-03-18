@@ -32,8 +32,9 @@ def _parse_timestamp(ts):
     return datetime.fromisoformat(ts)
 
 
-def phase_enter(state, phase):
+def phase_enter(state, phase, reason=None):
     """Apply phase entry mutations. Returns (state, result_dict)."""
+    prev_phase = state.get("current_phase")
     phase_data = state["phases"][phase]
 
     phase_data["status"] = "in_progress"
@@ -42,6 +43,11 @@ def phase_enter(state, phase):
     phase_data["session_started_at"] = now()
     phase_data["visit_count"] = phase_data.get("visit_count", 0) + 1
     state["current_phase"] = phase
+
+    transition = {"from": prev_phase, "to": phase, "timestamp": now()}
+    if reason:
+        transition["reason"] = reason
+    state.setdefault("phase_transitions", []).append(transition)
 
     if phase == "flow-code-review":
         state["code_review_step"] = 0
@@ -131,6 +137,8 @@ def main():
                         help="Override next phase name (default: next in order)")
     parser.add_argument("--branch", type=str, default=None,
                         help="Override branch for state file lookup")
+    parser.add_argument("--reason", type=str, default=None,
+                        help="Optional reason for backward transitions")
     args = parser.parse_args()
 
     if args.phase not in _VALID_PHASES:
@@ -190,7 +198,7 @@ def main():
         frozen_order, _, _, frozen_commands = load_phase_config(frozen_path)
 
     if args.action == "enter":
-        state, result = phase_enter(state, args.phase)
+        state, result = phase_enter(state, args.phase, reason=args.reason)
     else:
         state, result = phase_complete(
             state, args.phase, args.next_phase,
