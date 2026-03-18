@@ -47,8 +47,8 @@ UNIVERSAL_ALLOW = [
     "Bash(claude plugin install *)",
     "Bash(gh issue *)",
     "Read(~/.claude/rules/*)",
-    "Read(/tmp/*.txt)",
-    "Read(/tmp/*.diff)",
+    "Read(//tmp/*.txt)",
+    "Read(//tmp/*.diff)",
     "Agent(flow:ci-fixer)",
     "Skill(decompose:decompose)",
 ]
