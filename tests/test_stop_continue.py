@@ -353,3 +353,115 @@ class TestSubprocess:
         updated = json.loads((state_dir / f"{branch}.json").read_text())
         assert updated["session_id"] == "from-stdin-test"
         assert updated["transcript_path"] == "/path/to/from-stdin.jsonl"
+
+
+# --- Session isolation tests ---
+
+
+class TestSessionIsolation:
+    def test_stale_session_clears_flag(self, git_repo, state_dir, branch, monkeypatch):
+        """Flag set by old session → check_continue with new session_id clears it."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code-review", phase_statuses={
+            "flow-start": "complete", "flow-plan": "complete",
+            "flow-code": "complete", "flow-code-review": "in_progress",
+        })
+        state["session_id"] = "old-session"
+        state["_continue_pending"] = "simplify"
+        write_state(state_dir, branch, state)
+
+        should_block, skill_name, context = _mod.check_continue({"session_id": "new-session"})
+
+        assert should_block is False
+        assert skill_name is None
+        assert context is None
+
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert updated["_continue_pending"] == ""
+
+    def test_matching_session_fires_flag(self, git_repo, state_dir, branch, monkeypatch):
+        """Flag set by same session → check_continue blocks."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code-review", phase_statuses={
+            "flow-start": "complete", "flow-plan": "complete",
+            "flow-code": "complete", "flow-code-review": "in_progress",
+        })
+        state["session_id"] = "same-session"
+        state["_continue_pending"] = "simplify"
+        write_state(state_dir, branch, state)
+
+        should_block, skill_name, context = _mod.check_continue({"session_id": "same-session"})
+
+        assert should_block is True
+        assert skill_name == "simplify"
+
+    def test_missing_state_session_fires_flag(self, git_repo, state_dir, branch, monkeypatch):
+        """State has no session_id (old state file) → backward compat, flag fires."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_continue_pending"] = "commit"
+        write_state(state_dir, branch, state)
+
+        should_block, skill_name, context = _mod.check_continue({"session_id": "any"})
+
+        assert should_block is True
+        assert skill_name == "commit"
+
+    def test_missing_hook_session_fires_flag(self, git_repo, state_dir, branch, monkeypatch):
+        """Hook has no session_id → backward compat, flag fires."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["session_id"] = "abc123"
+        state["_continue_pending"] = "commit"
+        write_state(state_dir, branch, state)
+
+        should_block, skill_name, context = _mod.check_continue({})
+
+        assert should_block is True
+        assert skill_name == "commit"
+
+    def test_no_state_file_on_main_allows(self, git_repo, state_dir, monkeypatch):
+        """On main with only feature-branch.json → no exact match, allows stop."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_continue_pending"] = "commit"
+        write_state(state_dir, "feature-branch", state)
+
+        should_block, skill_name, context = _mod.check_continue()
+
+        assert should_block is False
+        assert skill_name is None
+
+    def test_subprocess_stale_session_no_block(self, git_repo, state_dir, branch):
+        """Subprocess: stale session_id → no block output."""
+        state = make_state(current_phase="flow-code-review", phase_statuses={
+            "flow-start": "complete", "flow-plan": "complete",
+            "flow-code": "complete", "flow-code-review": "in_progress",
+        })
+        state["session_id"] = "old-session"
+        state["_continue_pending"] = "simplify"
+        write_state(state_dir, branch, state)
+
+        stdin = json.dumps({"session_id": "new-session"})
+        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+
+        assert exit_code == 0
+        assert stdout == ""
+
+    def test_main_reorder_capture_after_check(self, git_repo, state_dir, branch):
+        """After main(): stale flag cleared AND session_id updated to new (proves check before capture)."""
+        state = make_state(current_phase="flow-code-review", phase_statuses={
+            "flow-start": "complete", "flow-plan": "complete",
+            "flow-code": "complete", "flow-code-review": "in_progress",
+        })
+        state["session_id"] = "old-session"
+        state["_continue_pending"] = "simplify"
+        write_state(state_dir, branch, state)
+
+        stdin = json.dumps({"session_id": "new-session"})
+        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+
+        assert exit_code == 0
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert updated["_continue_pending"] == ""
+        assert updated["session_id"] == "new-session"
