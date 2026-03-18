@@ -66,9 +66,9 @@ CI will fail if these are missing:
 - `docs/` — GitHub Pages site (main /docs, static HTML)
 - `lib/extract-release-notes.py` — extracts version sections from RELEASE-NOTES.md for GitHub Releases
 - `lib/start-lock.py` — serializes concurrent flow-start operations using a file lock at `.flow-states/start.lock` (PID-based stale detection + 30-min timeout)
-- `lib/start-setup.py` — consolidated Start phase setup (git pull, worktree, settings, PR, state file)
-- `lib/flow_utils.py` — shared utilities: `now()` (Pacific Time timestamps), `PACIFIC` timezone, `format_time()`, `current_branch()`, `project_root()`, `extract_issue_numbers()`, `PHASE_NAMES`, `COMMANDS`
-- `lib/phase-transition.py` — phase entry/completion (timing, counters, status, formatted_time)
+- `lib/start-setup.py` — consolidated Start phase setup (git pull, worktree, settings, PR, state file, repo detection)
+- `lib/flow_utils.py` — shared utilities: `now()` (Pacific Time timestamps), `PACIFIC` timezone, `format_time()`, `current_branch()`, `project_root()`, `extract_issue_numbers()`, `derive_feature()`, `derive_worktree()`, `PHASE_NAMES`, `COMMANDS`
+- `lib/phase-transition.py` — phase entry/completion (timing, counters, status, formatted_time, phase_transitions recording, diff_stats capture)
 - `lib/set-timestamp.py` — mid-phase timestamp fields via dot-path notation, code_task increment validation (prevents task batching)
 - `frameworks/<name>/` — per-framework data: `detect.json`, `permissions.json`, `dependencies`, `priming.md`
 - `lib/detect-framework.py` — data-driven framework auto-detection from `frameworks/*/detect.json`
@@ -79,7 +79,7 @@ CI will fail if these are missing:
 - `lib/log.py` — appends timestamped entries to `.flow-states/<branch>.log` via Python file append
 - `lib/close-issues.py` — closes GitHub issues referenced in the start prompt (`#N` patterns) via `gh issue close`
 - `lib/label-issues.py` — adds or removes the "Flow In-Progress" label on GitHub issues referenced by `#N` in the start prompt; used by Start (add), Complete (remove), and Abort (remove) for multi-engineer WIP detection
-- `lib/issue.py` — creates GitHub issues via `gh` subprocess (wraps `gh issue create`; auto-detects repo from git remote when `--repo` is omitted)
+- `lib/issue.py` — creates GitHub issues via `gh` subprocess (wraps `gh issue create`; resolves repo via `--state-file` cached value, then `--repo` flag, then git remote detection)
 - `lib/add-issue.py` — records filed issues in the state file's `issues_filed` array (follows `append-note.py` pattern)
 - `lib/format-issues-summary.py` — formats `issues_filed` as a markdown table and banner line for Complete phase
 - `lib/format-pr-timings.py` — reads state file, formats phase durations as a markdown table for PR body
@@ -187,8 +187,8 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_bin_ci.py` | CI runner: venv detection, pass/fail behavior |
 | `test_bin_test.py` | Test runner: venv detection, pass/fail, argument passthrough |
 | `test_start_lock.py` | Start lock: acquire/release/check, stale PID detection, timeout, corrupted lock handling, CLI integration |
-| `test_start_setup.py` | Start setup script: branch naming, settings merge, worktree, state file, logging, error paths |
-| `test_phase_transition.py` | Phase entry/completion: timing, counters, status, formatted_time |
+| `test_start_setup.py` | Start setup script: branch naming, settings merge, worktree, state file, logging, error paths, repo detection, subprocess timeouts |
+| `test_phase_transition.py` | Phase entry/completion: timing, counters, status, formatted_time, phase_transitions recording, diff_stats capture |
 | `test_set_timestamp.py` | Mid-phase timestamps: dot-path navigation, NOW replacement, code_task increment validation |
 | `test_extract_release.py` | Release notes extraction from RELEASE-NOTES.md |
 | `test_detect_framework.py` | Framework auto-detection: file patterns, multiple matches, defaults, CLI |
