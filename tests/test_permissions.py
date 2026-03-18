@@ -141,7 +141,6 @@ PLACEHOLDER_SUBS = {
     "<dag_file_path>": ".flow-states/test-branch-dag.md",
     "<issue_title>": "Test issue title",
     "<transcript_path>": "~/.claude/projects/-tmp-test/abc123.jsonl",
-    "<full-start-prompt>": "test feature #42",
     "<issue_number>": "107",
     "<issue_url>": "https://github.com/test/test/issues/1",
     "<n>": "3",
