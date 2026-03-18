@@ -177,24 +177,6 @@ def test_branch_name_single_long_word():
     assert result == "a" * 32
 
 
-# --- Feature name title-casing (in-process) ---
-
-
-def test_feature_name_title_cased():
-    """Feature name in output is title-cased."""
-    assert _mod._title_case("invoice pdf export") == "Invoice Pdf Export"
-
-
-def test_feature_name_title_cased_from_hyphenated():
-    """Hyphenated branch names (the real-world input) produce spaced title case."""
-    assert _mod._title_case("complete-banner-and-feature-name") == "Complete Banner And Feature Name"
-
-
-def test_feature_name_title_cased_short_hyphenated():
-    """Short hyphenated names also produce proper title case."""
-    assert _mod._title_case("fix-login-timeout") == "Fix Login Timeout"
-
-
 # --- Happy path output (shared run) ---
 
 

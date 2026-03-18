@@ -94,9 +94,10 @@ def main():
     repo = args.repo
     if repo is None and args.state_file:
         try:
-            state = json.loads(open(args.state_file).read())
+            from pathlib import Path as _Path
+            state = json.loads(_Path(args.state_file).read_text())
             repo = state.get("repo")
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             pass
     if repo is None:
         repo = detect_repo()

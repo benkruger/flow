@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import now, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER
+from flow_utils import derive_feature, now, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 
@@ -39,10 +39,6 @@ def _branch_name(feature_words):
         return truncated[:last_hyphen]
     return name[:32]
 
-
-def _title_case(feature_words):
-    """Title-case the feature name."""
-    return " ".join(w.capitalize() for w in feature_words.replace("-", " ").split())
 
 
 def _run_cmd(args, cwd, step_name, timeout=None):
@@ -248,7 +244,7 @@ def main():
     feature_words = args.feature_name
     raw_prompt = args.prompt if args.prompt is not None else feature_words
     branch = _branch_name(feature_words)
-    feature_title = _title_case(feature_words)
+    feature_title = derive_feature(feature_words)
     project_root = Path.cwd()
 
     try:

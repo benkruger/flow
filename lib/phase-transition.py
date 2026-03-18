@@ -37,7 +37,7 @@ def _capture_diff_stats():
     try:
         result = subprocess.run(
             ["git", "diff", "--stat", "main...HEAD"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, timeout=10,
         )
         if result.returncode != 0:
             return {"files_changed": 0, "insertions": 0, "deletions": 0, "captured_at": now()}
