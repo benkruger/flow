@@ -316,6 +316,88 @@ def test_cli_falls_back_without_frozen_phases(git_repo, state_dir, branch):
     assert data["next_phase"] == "flow-code"
 
 
+def test_enter_flow_complete():
+    """Enter flow-complete sets status, started_at, session_started_at, visit_count."""
+    state = make_state(current_phase="flow-learn", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+        "flow-code-review": "complete", "flow-learn": "complete",
+    })
+
+    updated, result = _mod.phase_enter(state, "flow-complete")
+
+    assert result["status"] == "ok"
+    assert result["phase"] == "flow-complete"
+    assert result["visit_count"] == 1
+    assert result["first_visit"] is True
+    assert updated["phases"]["flow-complete"]["status"] == "in_progress"
+    assert updated["phases"]["flow-complete"]["started_at"] is not None
+    assert updated["current_phase"] == "flow-complete"
+
+
+def test_complete_flow_complete_with_next_phase():
+    """Complete flow-complete with explicit next_phase works."""
+    state = make_state(current_phase="flow-complete", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+        "flow-code-review": "complete", "flow-learn": "complete",
+        "flow-complete": "in_progress",
+    })
+
+    updated, result = _mod.phase_complete(state, "flow-complete", next_phase="flow-complete")
+
+    assert result["status"] == "ok"
+    assert result["phase"] == "flow-complete"
+    assert result["next_phase"] == "flow-complete"
+    assert updated["phases"]["flow-complete"]["status"] == "complete"
+    assert updated["phases"]["flow-complete"]["completed_at"] is not None
+    assert updated["current_phase"] == "flow-complete"
+
+
+def test_complete_terminal_phase_auto_next():
+    """Complete flow-complete without explicit next_phase handles terminal phase."""
+    state = make_state(current_phase="flow-complete", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+        "flow-code-review": "complete", "flow-learn": "complete",
+        "flow-complete": "in_progress",
+    })
+
+    updated, result = _mod.phase_complete(state, "flow-complete")
+
+    assert result["status"] == "ok"
+    assert result["next_phase"] == "flow-complete"
+    assert updated["current_phase"] == "flow-complete"
+
+
+def test_cli_flow_complete_enter(git_repo, state_dir, branch):
+    """CLI accepts flow-complete as a valid phase for entry."""
+    state = make_state(current_phase="flow-learn", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+        "flow-code-review": "complete", "flow-learn": "complete",
+    })
+    write_state(state_dir, branch, state)
+
+    result = _run(git_repo, "flow-complete", "enter")
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert output["status"] == "ok"
+    assert output["phase"] == "flow-complete"
+
+
+def test_cli_flow_complete_complete(git_repo, state_dir, branch):
+    """CLI accepts flow-complete for completion with --next-phase."""
+    state = make_state(current_phase="flow-complete", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+        "flow-code-review": "complete", "flow-learn": "complete",
+        "flow-complete": "in_progress",
+    })
+    write_state(state_dir, branch, state)
+
+    result = _run(git_repo, "flow-complete", "complete", next_phase="flow-complete")
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert output["status"] == "ok"
+    assert output["phase"] == "flow-complete"
+
+
 def test_enter_code_review_sets_code_review_step():
     """Entering flow-code-review sets code_review_step to 0 (integer)."""
     state = make_state(current_phase="flow-code", phase_statuses={
