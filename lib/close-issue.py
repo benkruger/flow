@@ -40,10 +40,13 @@ def detect_repo_or_fail():
 
 def close_issue_by_number(repo, number):
     """Close a GitHub issue and return error message or None on success."""
-    result = subprocess.run(
-        ["gh", "issue", "close", "--repo", repo, str(number)],
-        capture_output=True, text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["gh", "issue", "close", "--repo", repo, str(number)],
+            capture_output=True, text=True, timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return "Command timed out after 30 seconds"
 
     if result.returncode != 0:
         error = result.stderr.strip() or result.stdout.strip() or "Unknown error"

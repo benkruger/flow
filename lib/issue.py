@@ -51,7 +51,10 @@ def create_issue(repo, title, label=None, body=None):
     if body:
         cmd.extend(["--body", body])
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        return None, "Command timed out after 30 seconds"
 
     if result.returncode != 0:
         error = result.stderr.strip() or result.stdout.strip() or "Unknown error"

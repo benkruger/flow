@@ -88,7 +88,7 @@ class TestCreateIssue:
         mock_run.assert_called_once_with(
             ["gh", "issue", "create", "--repo", "owner/repo",
              "--title", "Test title", "--label", "bug", "--body", "Test body"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, timeout=30,
         )
 
     def test_happy_path_minimal_args(self):
@@ -105,7 +105,7 @@ class TestCreateIssue:
         mock_run.assert_called_once_with(
             ["gh", "issue", "create", "--repo", "owner/repo",
              "--title", "Title only"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, timeout=30,
         )
 
     def test_label_only_no_body(self):
@@ -124,7 +124,7 @@ class TestCreateIssue:
         mock_run.assert_called_once_with(
             ["gh", "issue", "create", "--repo", "owner/repo",
              "--title", "With label", "--label", "enhancement"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, timeout=30,
         )
 
     def test_body_only_no_label(self):
@@ -143,7 +143,7 @@ class TestCreateIssue:
         mock_run.assert_called_once_with(
             ["gh", "issue", "create", "--repo", "owner/repo",
              "--title", "With body", "--body", "Details here"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, timeout=30,
         )
 
     def test_gh_failure_stderr(self):
@@ -181,6 +181,14 @@ class TestCreateIssue:
 
         assert url is None
         assert error == "Unknown error"
+
+    def test_timeout_returns_error(self):
+        with patch.object(issue_mod.subprocess, "run",
+                          side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30)):
+            url, error = issue_mod.create_issue("owner/repo", "Test")
+
+        assert url is None
+        assert "timed out" in error.lower()
 
 
 class TestMain:

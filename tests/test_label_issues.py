@@ -31,7 +31,7 @@ def test_add_label_to_single_issue():
     assert result == {"labeled": [83], "failed": []}
     mock_run.assert_called_once_with(
         ["gh", "issue", "edit", "83", "--add-label", "Flow In-Progress"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, timeout=30,
     )
 
 
@@ -46,7 +46,7 @@ def test_remove_label_from_single_issue():
     assert result == {"labeled": [83], "failed": []}
     mock_run.assert_called_once_with(
         ["gh", "issue", "edit", "83", "--remove-label", "Flow In-Progress"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, timeout=30,
     )
 
 
@@ -87,6 +87,14 @@ def test_partial_failure():
         result = _mod.label_issues([83, 89], action="add")
 
     assert result == {"labeled": [83], "failed": [89]}
+
+
+def test_timeout_counts_as_failure():
+    """TimeoutExpired on gh call adds issue to failed list."""
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30)):
+        result = _mod.label_issues([42], action="add")
+
+    assert result == {"labeled": [], "failed": [42]}
 
 
 # --- main (CLI integration) ---

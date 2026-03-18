@@ -25,13 +25,16 @@ def close_issues(issue_numbers):
     closed = []
     failed = []
     for num in issue_numbers:
-        result = subprocess.run(
-            ["gh", "issue", "close", str(num)],
-            capture_output=True, text=True,
-        )
-        if result.returncode == 0:
-            closed.append(num)
-        else:
+        try:
+            result = subprocess.run(
+                ["gh", "issue", "close", str(num)],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0:
+                closed.append(num)
+            else:
+                failed.append(num)
+        except subprocess.TimeoutExpired:
             failed.append(num)
     return {"closed": closed, "failed": failed}
 
@@ -41,7 +44,14 @@ def main():
     parser.add_argument("--state-file", required=True, help="Path to state JSON file")
     args = parser.parse_args()
 
-    state = json.loads(Path(args.state_file).read_text())
+    try:
+        state = json.loads(Path(args.state_file).read_text())
+    except Exception as exc:
+        print(json.dumps({
+            "status": "error",
+            "message": f"Could not read state file: {exc}",
+        }))
+        sys.exit(1)
     prompt = state.get("prompt", "")
     issue_numbers = extract_issue_numbers(prompt)
     result = close_issues(issue_numbers)

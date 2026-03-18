@@ -63,11 +63,11 @@ def test_closes_all_extracted_issues():
     assert mock_run.call_count == 2
     mock_run.assert_any_call(
         ["gh", "issue", "close", "83"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, timeout=30,
     )
     mock_run.assert_any_call(
         ["gh", "issue", "close", "89"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, timeout=30,
     )
 
 
@@ -96,6 +96,14 @@ def test_partial_failure():
         result = _mod.close_issues([83, 89])
 
     assert result == {"closed": [83], "failed": [89]}
+
+
+def test_timeout_counts_as_failure():
+    """TimeoutExpired on gh call adds issue to failed list."""
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30)):
+        result = _mod.close_issues([42])
+
+    assert result == {"closed": [], "failed": [42]}
 
 
 # --- CLI integration ---
@@ -136,3 +144,20 @@ def test_cli_no_prompt_field(tmp_path):
 
     output = json.loads(result.stdout)
     assert output == {"status": "ok", "closed": [], "failed": []}
+
+
+def test_cli_corrupt_state_file(tmp_path):
+    """Corrupt state file returns structured error."""
+    state_file = tmp_path / "state.json"
+    state_file.write_text("{corrupt")
+
+    script = Path(__file__).resolve().parent.parent / "lib" / "close-issues.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--state-file", str(state_file)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    output = json.loads(result.stdout)
+    assert output["status"] == "error"
+    assert "state file" in output["message"].lower()

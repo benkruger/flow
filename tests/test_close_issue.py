@@ -31,7 +31,7 @@ def test_closes_single_issue():
     assert result is None
     mock_run.assert_called_once_with(
         ["gh", "issue", "close", "--repo", "benkruger/flow", "117"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, timeout=30,
     )
 
 
@@ -66,6 +66,14 @@ def test_close_issue_generic_error():
         result = _mod.close_issue_by_number("benkruger/flow", 999)
 
     assert result == "Unknown error"
+
+
+def test_close_issue_timeout():
+    """TimeoutExpired returns timeout error message."""
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30)):
+        result = _mod.close_issue_by_number("benkruger/flow", 42)
+
+    assert "timed out" in result.lower()
 
 
 # --- detect_repo_or_fail ---

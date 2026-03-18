@@ -33,13 +33,16 @@ def label_issues(issue_numbers, action="add"):
     failed = []
     flag = "--add-label" if action == "add" else "--remove-label"
     for num in issue_numbers:
-        result = subprocess.run(
-            ["gh", "issue", "edit", str(num), flag, LABEL],
-            capture_output=True, text=True,
-        )
-        if result.returncode == 0:
-            labeled.append(num)
-        else:
+        try:
+            result = subprocess.run(
+                ["gh", "issue", "edit", str(num), flag, LABEL],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0:
+                labeled.append(num)
+            else:
+                failed.append(num)
+        except subprocess.TimeoutExpired:
             failed.append(num)
     return {"labeled": labeled, "failed": failed}
 
