@@ -123,6 +123,52 @@ def test_build_details_block_text_format():
     assert "line 1\nline 2" in result
 
 
+# --- _fence_for_content ---
+
+
+def test_fence_for_content_no_backticks():
+    """Content with no backticks returns triple-backtick fence."""
+    result = _mod._fence_for_content("plain text without any fences")
+    assert result == "```"
+
+
+def test_fence_for_content_triple_backticks():
+    """Content with triple backticks returns 4-backtick fence."""
+    result = _mod._fence_for_content("before\n```python\ncode\n```\nafter")
+    assert result == "````"
+
+
+def test_fence_for_content_quad_backticks():
+    """Content with 4 backticks returns 5-backtick fence."""
+    result = _mod._fence_for_content("before\n````text\ncontent\n````\nafter")
+    assert result == "`````"
+
+
+def test_fence_for_content_mixed_lengths():
+    """Content with mixed backtick runs uses the longest."""
+    result = _mod._fence_for_content("```python\ncode\n```\n\n````xml\ndata\n````")
+    assert result == "`````"
+
+
+# --- _build_details_block with nested fences ---
+
+
+def test_build_details_block_nested_fences():
+    """Content with inner fences uses longer outer fence."""
+    content = "# DAG\n\n```xml\n<dag/>\n```\n\n```python\nprint('hi')\n```"
+    result = _mod._build_details_block("DAG Analysis", "dag.md", content, "text")
+    lines = result.split("\n")
+    # Outer fence must be longer than 3 backticks
+    fence_lines = [line for line in lines if line.startswith("````")]
+    assert len(fence_lines) >= 2, "Expected at least open and close 4+ backtick fences"
+    # Inner triple-backtick fences appear verbatim
+    assert "```xml" in result
+    assert "```python" in result
+    # Block structure is valid
+    assert result.startswith("## DAG Analysis")
+    assert result.endswith("</details>")
+
+
 # --- _append_section_to_body ---
 
 

@@ -79,15 +79,27 @@ def _append_plain_section_to_body(body, heading, content):
     return body.rstrip("\n") + "\n\n" + block
 
 
+def _fence_for_content(content):
+    """Return a backtick fence long enough to safely wrap content.
+
+    Scans for the longest consecutive run of backticks in the content
+    and returns a fence that is at least one backtick longer (minimum 3).
+    """
+    runs = re.findall(r"`+", content)
+    max_len = max((len(r) for r in runs), default=0)
+    return "`" * max(3, max_len + 1)
+
+
 def _build_details_block(heading, summary, content, fmt):
     """Build a collapsible details block with heading and fenced code."""
+    fence = _fence_for_content(content)
     return (
         f"## {heading}\n\n"
         f"<details>\n"
         f"<summary>{summary}</summary>\n\n"
-        f"```{fmt}\n"
+        f"{fence}{fmt}\n"
         f"{content}\n"
-        f"```\n\n"
+        f"{fence}\n\n"
         f"</details>"
     )
 
