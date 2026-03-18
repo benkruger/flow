@@ -539,3 +539,45 @@ class TestMutateState:
 
         on_disk = json.loads(state_path.read_text())
         assert on_disk == {"a": 1, "b": 99, "c": 3}
+
+
+# --- extract_issue_numbers (URL support) ---
+
+
+class TestExtractIssueNumbersUrls:
+    """Tests for URL-format issue reference extraction."""
+
+    def test_github_url_extracts_number(self):
+        assert _mod.extract_issue_numbers(
+            "fix https://github.com/owner/repo/issues/42"
+        ) == [42]
+
+    def test_mixed_hash_and_url_formats(self):
+        result = _mod.extract_issue_numbers(
+            "fix #83 and https://github.com/owner/repo/issues/89"
+        )
+        assert result == [83, 89]
+
+    def test_deduplication_across_formats(self):
+        result = _mod.extract_issue_numbers(
+            "fix #42 and https://github.com/owner/repo/issues/42"
+        )
+        assert result == [42]
+
+    def test_multiple_urls(self):
+        result = _mod.extract_issue_numbers(
+            "https://github.com/owner/repo/issues/10 and https://github.com/owner/repo/issues/20"
+        )
+        assert result == [10, 20]
+
+    def test_url_only_no_hash(self):
+        result = _mod.extract_issue_numbers(
+            "see https://github.com/owner/repo/issues/99"
+        )
+        assert result == [99]
+
+    def test_hash_ordering_preserved_first(self):
+        result = _mod.extract_issue_numbers(
+            "https://github.com/owner/repo/issues/200 and #100"
+        )
+        assert result == [100, 200]

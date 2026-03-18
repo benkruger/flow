@@ -187,11 +187,12 @@ def find_state_files(root, branch):
 
 
 def extract_issue_numbers(prompt):
-    """Extract unique issue numbers from #N patterns in a prompt string."""
-    matches = re.findall(r"#(\d+)", prompt)
+    """Extract unique issue numbers from #N patterns and GitHub URLs in a prompt string."""
+    hash_matches = re.findall(r"#(\d+)", prompt)
+    url_matches = re.findall(r"/issues/(\d+)", prompt)
     seen = set()
     result = []
-    for match in matches:
+    for match in hash_matches + url_matches:
         num = int(match)
         if num not in seen:
             seen.add(num)

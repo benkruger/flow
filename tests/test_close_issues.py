@@ -33,6 +33,21 @@ def test_deduplicates_issue_numbers():
     assert _mod.extract_issue_numbers("fix #83 and #83") == [83]
 
 
+def test_extracts_issue_numbers_from_urls():
+    """Extracts issue numbers from GitHub URL format."""
+    assert _mod.extract_issue_numbers(
+        "fix https://github.com/owner/repo/issues/42"
+    ) == [42]
+
+
+def test_extracts_mixed_hash_and_url():
+    """Extracts issue numbers from mixed #N and URL formats."""
+    result = _mod.extract_issue_numbers(
+        "fix #83 and https://github.com/owner/repo/issues/89"
+    )
+    assert result == [83, 89]
+
+
 # --- close_issues ---
 
 
