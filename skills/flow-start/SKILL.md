@@ -235,11 +235,11 @@ Uncommitted fixes on main will not appear in the worktree.
 ### Step 3 — Set up workspace
 
 Write the user's original start prompt (verbatim, including `#N` issue references
-and any special characters) to `.flow-start-prompt` in the project root using the
+and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
 Write tool. Then run the setup script:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt-file .flow-start-prompt
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt
 ```
 
 The script reads the prompt file and deletes it automatically after reading.
