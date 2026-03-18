@@ -11,23 +11,13 @@ Output (JSON to stdout):
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-def extract_issue_numbers(prompt):
-    """Extract unique issue numbers from #N patterns in the prompt."""
-    matches = re.findall(r"#(\d+)", prompt)
-    seen = set()
-    result = []
-    for match in matches:
-        num = int(match)
-        if num not in seen:
-            seen.add(num)
-            result.append(num)
-    return result
+from flow_utils import extract_issue_numbers
 
 
 def close_issues(issue_numbers):

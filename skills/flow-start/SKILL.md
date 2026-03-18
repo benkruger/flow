@@ -276,6 +276,18 @@ in later steps — it would look for a nested `.worktrees/` that doesn't exist.
 If the script returns an error, read the stderr output for details, report
 the failure to the user, and stop.
 
+### Step 4 — Label referenced issues
+
+If the start prompt contains `#N` issue references, add the "Flow In-Progress"
+label so other engineers can see these issues are being worked on:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --add
+```
+
+Best-effort — if labeling fails, log the result and continue. Do not block
+the Start phase for a label failure.
+
 ### Done — Update state and complete phase
 
 Complete the phase:

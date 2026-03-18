@@ -29,8 +29,8 @@ and PR number. If the state file is missing, infer from git state
 ### 2. Check PR status
 
 Check whether the PR is already merged. If merged, skip directly to
-archive artifacts (step 6), then continue to close issues (step 8) —
-skipping the merge since it already happened. If open, continue to merge
+archive artifacts (step 6), then continue to remove labels (step 8) and
+close issues (step 9) — skipping the merge since it already happened. If open, continue to merge
 flow. If closed but not merged, stop with an error.
 
 ### 3. Merge main into branch
@@ -70,13 +70,18 @@ ensure artifacts are present regardless of how the PR was merged.
 Squash-merge the PR via `gh pr merge --squash`. Branch deletion is
 handled by the cleanup script in the next step.
 
-### 8. Close referenced issues
+### 8. Remove In-Progress labels
+
+Removes the "Flow In-Progress" label from any issues referenced in the
+start prompt. Best-effort — continues to close-issues even if removal fails.
+
+### 9. Close referenced issues
 
 If the `/flow-start` prompt contained `#N` issue references (e.g.,
 "fix #83 and #89"), those issues are closed via `gh issue close` after
 the merge succeeds. Best-effort — cleanup continues even if closing fails.
 
-### 9. Run cleanup
+### 10. Run cleanup
 
 `bin/flow cleanup` handles all resources from the project root:
 remote and local branch deletion, worktree removal, state file deletion,
@@ -85,7 +90,7 @@ if one fails, the rest still run.
 
 This resets the SessionStart hook — the next session starts clean.
 
-### 10. Pull merged changes
+### 11. Pull merged changes
 
 Pulls `origin main` so local main has the merged feature code. If the
 pull fails, a warning is shown but cleanup is still considered complete.
@@ -132,7 +137,7 @@ The skill is safe to re-invoke (e.g., via `/loop 15s /flow:flow-complete`):
 | State file missing | Warns, infers from git, proceeds (confirms if `--manual`) |
 | PR not open or merged | Hard block, does not proceed |
 
-Every step after the merge (Steps 8-10) is best-effort — if one fails,
+Every step after the merge (Steps 8-11) is best-effort — if one fails,
 continue to the next.
 
 ---

@@ -137,8 +137,9 @@ gh pr view <branch> --json state --jq .state
 ```
 
 **If `MERGED`** — the PR is already merged. Skip directly to Step 6
-(archive artifacts to PR). After Step 6, continue to Step 8 (close
-issues) — skip Step 7 (merge) since the PR is already merged.
+(archive artifacts to PR). After Step 6, continue to Step 8 (remove
+labels), then Step 9 (close issues) — skip Step 7 (merge) since the
+PR is already merged.
 
 **If `OPEN`** — continue to Step 3 to merge.
 
@@ -317,7 +318,16 @@ If the merge succeeds, report to the user:
 If the merge fails, stop and report the error to the user. Do not retry
 the merge command with any additional flags or elevated privileges.
 
-### Step 8 — Close referenced issues
+### Step 8 — Remove In-Progress labels
+
+Remove the "Flow In-Progress" label from any issues referenced in the start
+prompt. This is best-effort — continue to close-issues even if removal fails.
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --remove
+```
+
+### Step 9 — Close referenced issues
 
 Close any GitHub issues referenced in the start prompt. This is best-effort —
 continue to cleanup even if closing fails.
@@ -329,7 +339,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow close-issues --state-file <project_root>/.fl
 Parse the JSON output. Report which issues were closed and which failed.
 If no issues were referenced, proceed silently.
 
-### Step 9 — Run cleanup script
+### Step 10 — Run cleanup script
 
 Run the cleanup script from the project root:
 
@@ -344,7 +354,7 @@ resource (worktree, state\_file, log\_file, ci\_sentinel). Each step reports
 Report the results to the user: what was cleaned, what was already gone,
 and what failed.
 
-### Step 10 — Pull merged changes
+### Step 11 — Pull merged changes
 
 The worktree is removed and you are on main. Pull to get the merged
 feature code:

@@ -67,7 +67,7 @@ CI will fail if these are missing:
 - `lib/extract-release-notes.py` — extracts version sections from RELEASE-NOTES.md for GitHub Releases
 - `lib/start-lock.py` — serializes concurrent flow-start operations using a file lock at `.flow-states/start.lock` (PID-based stale detection + 30-min timeout)
 - `lib/start-setup.py` — consolidated Start phase setup (git pull, worktree, settings, PR, state file)
-- `lib/flow_utils.py` — shared utilities: `now()` (Pacific Time timestamps), `PACIFIC` timezone, `format_time()`, `current_branch()`, `project_root()`, `PHASE_NAMES`, `COMMANDS`
+- `lib/flow_utils.py` — shared utilities: `now()` (Pacific Time timestamps), `PACIFIC` timezone, `format_time()`, `current_branch()`, `project_root()`, `extract_issue_numbers()`, `PHASE_NAMES`, `COMMANDS`
 - `lib/phase-transition.py` — phase entry/completion (timing, counters, status, formatted_time)
 - `lib/set-timestamp.py` — mid-phase timestamp fields via dot-path notation, code_task increment validation (prevents task batching)
 - `frameworks/<name>/` — per-framework data: `detect.json`, `permissions.json`, `dependencies`, `priming.md`
@@ -78,6 +78,7 @@ CI will fail if these are missing:
 - `lib/finalize-commit.py` — consolidates commit + message-file cleanup + pull + push into one subprocess chain
 - `lib/log.py` — appends timestamped entries to `.flow-states/<branch>.log` via Python file append
 - `lib/close-issues.py` — closes GitHub issues referenced in the start prompt (`#N` patterns) via `gh issue close`
+- `lib/label-issues.py` — adds or removes the "Flow In-Progress" label on GitHub issues referenced by `#N` in the start prompt; used by Start (add), Complete (remove), and Abort (remove) for multi-engineer WIP detection
 - `lib/issue.py` — creates GitHub issues via `gh` subprocess (wraps `gh issue create`; auto-detects repo from git remote when `--repo` is omitted)
 - `lib/add-issue.py` — records filed issues in the state file's `issues_filed` array (follows `append-note.py` pattern)
 - `lib/format-issues-summary.py` — formats `issues_filed` as a markdown table and banner line for Complete phase
@@ -114,6 +115,10 @@ Skills are pure Markdown instructions (`skills/<name>/SKILL.md`). The only execu
 ### State File
 
 The state file (`.flow-states/<branch>.json`) is the backbone. Schema reference: `docs/reference/flow-state-schema.md`. Test fixture: `tests/conftest.py:make_state()`.
+
+### Local vs Shared State
+
+State files (`.flow-states/`) are local to each machine. In a multi-engineer team, each engineer's `.flow-states/` only contains their own features. GitHub (issues, PRs, labels) is the shared coordination layer. The "Flow In-Progress" label on issues is the mechanism for cross-engineer WIP detection: Start adds it, Complete and Abort remove it, and `flow-issues` reads it from the existing label fetch.
 
 ### Sub-Agents
 
@@ -174,6 +179,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_add_issue.py` | Issue recording: append to empty/existing array, missing state file, CLI integration |
 | `test_format_issues_summary.py` | Issues summary formatting: empty/missing/single/multiple issues, label grouping, table output, CLI |
 | `test_close_issues.py` | Issue closing: extraction of `#N` patterns from prompt, deduplication, partial failure, CLI integration |
+| `test_label_issues.py` | Issue labeling: add/remove Flow In-Progress label, partial failure, deduplication, missing prompt, CLI integration |
 | `test_check_phase.py` | Phase guard: blocks on incomplete prerequisites, allows on complete, handles worktrees, re-entry notes |
 | `test_session_start.py` | Session hook: feature detection, timing reset, awareness injection, multi-feature handling |
 | `test_docs_sync.py` | Docs completeness: every skill has a docs page, every phase has a docs page, index and README mention all commands |

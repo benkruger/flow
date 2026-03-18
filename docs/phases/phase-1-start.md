@@ -44,6 +44,10 @@ A single Python script (`lib/start-setup.py`) handles all mechanical setup in on
 3. Empty commit, push branch, and open a PR via `gh pr create`
 4. Create `.flow-states/app-payment-webhooks.json` (initial state)
 
+### 4. Label referenced issues
+
+If the start prompt contains `#N` issue references (e.g., `fix #83 and #89`), adds the "Flow In-Progress" label to those issues on GitHub. This signals to other engineers (on other machines) that these issues are being worked on. Best-effort — labeling failures do not block the Start phase.
+
 ---
 
 ## What You Get
@@ -53,6 +57,7 @@ By the end of Phase 1:
 - An isolated worktree at `.worktrees/<feature-name>`
 - A branch pushed to remote with CI running
 - An open PR
+- Referenced issues labeled "Flow In-Progress" (visible to all engineers)
 - Workspace permissions configured in `.claude/settings.json`
 - Dependencies current and `bin/flow ci` green
 - A clean, known-good baseline to build from

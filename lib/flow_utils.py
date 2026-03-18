@@ -185,6 +185,19 @@ def find_state_files(root, branch):
     return results
 
 
+def extract_issue_numbers(prompt):
+    """Extract unique issue numbers from #N patterns in a prompt string."""
+    matches = re.findall(r"#(\d+)", prompt)
+    seen = set()
+    result = []
+    for match in matches:
+        num = int(match)
+        if num not in seen:
+            seen.add(num)
+            result.append(num)
+    return result
+
+
 def permission_to_regex(perm):
     """Convert a Bash(pattern) permission to a compiled regex.
 
