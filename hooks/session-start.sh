@@ -21,12 +21,26 @@ fi
 
 # Reset any interrupted session timing, build context, and emit JSON output
 python3 - << 'PYTHON'
-import json, sys
+import json, subprocess, sys
 from pathlib import Path
 
 state_dir = Path(".flow-states")
 files = sorted(state_dir.glob("*.json"))
 files = [f for f in files if not f.name.endswith("-phases.json")]
+
+# Branch isolation: only process state files matching the current branch.
+# Fail-open: if branch detection fails (detached HEAD, non-git), scan all.
+try:
+    _br = subprocess.run(
+        ["git", "branch", "--show-current"],
+        capture_output=True, text=True, check=True,
+    )
+    _current = _br.stdout.strip() or None
+except Exception:
+    _current = None
+
+if _current:
+    files = [f for f in files if f.stem == _current]
 
 if not files:
     sys.exit(0)

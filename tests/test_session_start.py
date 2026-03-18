@@ -19,6 +19,22 @@ def _run(git_repo):
     return result
 
 
+def _switch(git_repo, branch_name):
+    """Switch the test git repo to a named branch (for branch isolation)."""
+    subprocess.run(
+        ["git", "checkout", "-b", branch_name],
+        cwd=str(git_repo), capture_output=True, check=True,
+    )
+
+
+def _detach(git_repo):
+    """Detach HEAD in the test git repo (triggers fallback to scan-all)."""
+    subprocess.run(
+        ["git", "checkout", "--detach"],
+        cwd=str(git_repo), capture_output=True, check=True,
+    )
+
+
 # --- No features ---
 
 
@@ -48,6 +64,7 @@ def test_single_feature_returns_valid_json(git_repo):
     state["feature"] = "Invoice Pdf Export"
     write_state(state_dir, "invoice-pdf-export", state)
 
+    _switch(git_repo, "invoice-pdf-export")
     result = _run(git_repo)
     assert result.returncode == 0
 
@@ -67,6 +84,7 @@ def test_single_feature_resets_session_started_at(git_repo):
     state["phases"]["flow-plan"]["cumulative_seconds"] = 0
     write_state(state_dir, "my-feature", state)
 
+    _switch(git_repo, "my-feature")
     _run(git_repo)
 
     updated = json.loads((state_dir / "my-feature.json").read_text())
@@ -83,6 +101,7 @@ def test_reset_interrupted_preserves_existing_cumulative_seconds(git_repo):
     state["phases"]["flow-plan"]["cumulative_seconds"] = 600
     write_state(state_dir, "my-feature", state)
 
+    _switch(git_repo, "my-feature")
     _run(git_repo)
 
     updated = json.loads((state_dir / "my-feature.json").read_text())
@@ -98,6 +117,7 @@ def test_reset_interrupted_null_session_started_at_no_change(git_repo):
     state["phases"]["flow-plan"]["cumulative_seconds"] = 300
     write_state(state_dir, "my-feature", state)
 
+    _switch(git_repo, "my-feature")
     _run(git_repo)
 
     updated = json.loads((state_dir / "my-feature.json").read_text())
@@ -123,6 +143,7 @@ def test_multi_feature_preserves_all_timing(git_repo):
     s2["phases"]["flow-code"]["cumulative_seconds"] = 0
     write_state(state_dir, "feature-beta", s2)
 
+    _detach(git_repo)
     _run(git_repo)
 
     updated_a = json.loads((state_dir / "feature-alpha.json").read_text())
@@ -153,6 +174,7 @@ def test_multiple_features_mentions_both(git_repo):
     s2["feature"] = "Feature Beta"
     write_state(state_dir, "feature-beta", s2)
 
+    _detach(git_repo)
     result = _run(git_repo)
     assert result.returncode == 0
 
@@ -174,6 +196,7 @@ def test_special_characters_in_feature_name(git_repo):
     state["feature"] = 'Test "Feature" with \\backslash'
     write_state(state_dir, "test-special", state)
 
+    _switch(git_repo, "test-special")
     result = _run(git_repo)
     assert result.returncode == 0
     # Must still be valid JSON despite special chars
@@ -194,6 +217,7 @@ def test_corrupt_state_file_among_valid_ones(git_repo):
     state["feature"] = "Valid Feature"
     write_state(state_dir, "valid-branch", state)
 
+    _switch(git_repo, "valid-branch")
     result = _run(git_repo)
     assert result.returncode == 0
     output = json.loads(result.stdout)
@@ -232,6 +256,7 @@ def test_missing_current_phase_defaults_to_phase_1(git_repo):
     del state["current_phase"]
     write_state(state_dir, "no-phase-field", state)
 
+    _switch(git_repo, "no-phase-field")
     result = _run(git_repo)
     assert result.returncode == 0
     output = json.loads(result.stdout)
@@ -245,6 +270,7 @@ def test_single_feature_does_not_force_action(git_repo):
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
     write_state(state_dir, "my-feature", state)
 
+    _switch(git_repo, "my-feature")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -259,6 +285,7 @@ def test_single_feature_includes_note_instruction(git_repo):
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
     write_state(state_dir, "my-feature", state)
 
+    _switch(git_repo, "my-feature")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -280,6 +307,7 @@ def test_multiple_features_does_not_force_action(git_repo):
     s2["feature"] = "Feature Two"
     write_state(state_dir, "feature-two", s2)
 
+    _detach(git_repo)
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -302,6 +330,7 @@ def test_multiple_features_includes_note_instruction(git_repo):
     s2["feature"] = "Feature Two"
     write_state(state_dir, "feature-two", s2)
 
+    _detach(git_repo)
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -319,6 +348,7 @@ def test_phase_2_plan_approved_instructs_auto_continue(git_repo):
     state["plan_file"] = "/Users/test/.claude/plans/test-plan.md"
     write_state(state_dir, "my-feature", state)
 
+    _switch(git_repo, "my-feature")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -335,6 +365,7 @@ def test_phase_2_no_plan_file_does_not_auto_continue(git_repo):
     state["plan_file"] = None
     write_state(state_dir, "my-feature", state)
 
+    _switch(git_repo, "my-feature")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -350,6 +381,7 @@ def test_phase_2_plan_approved_via_files_block(git_repo):
     state["files"]["plan"] = ".flow-states/my-feature-plan.md"
     write_state(state_dir, "my-feature", state)
 
+    _switch(git_repo, "my-feature")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -372,6 +404,7 @@ def test_phases_json_files_are_ignored(git_repo):
     # Ghost: a -phases.json file (copied flow-phases.json)
     (state_dir / "real-feature-phases.json").write_text(json.dumps({"phases": []}))
 
+    _switch(git_repo, "real-feature")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -396,6 +429,7 @@ def test_multiple_features_plan_approved_instructs_auto_continue(git_repo):
     s2["feature"] = "Other Work"
     write_state(state_dir, "other-work", s2)
 
+    _detach(git_repo)
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -413,6 +447,7 @@ def test_single_feature_no_plan_includes_implementation_guardrail(git_repo):
     })
     write_state(state_dir, "my-feature", state)
 
+    _switch(git_repo, "my-feature")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -434,6 +469,7 @@ def test_multiple_features_includes_implementation_guardrail(git_repo):
     s2["feature"] = "Feature B"
     write_state(state_dir, "feature-b", s2)
 
+    _detach(git_repo)
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -449,6 +485,7 @@ def test_single_feature_plan_approved_includes_implementation_guardrail(git_repo
     state["plan_file"] = "/Users/test/.claude/plans/test-plan.md"
     write_state(state_dir, "my-feature", state)
 
+    _switch(git_repo, "my-feature")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -467,6 +504,7 @@ def test_code_review_with_step_tracking_shows_progress(git_repo):
     state["code_review_step"] = 2
     write_state(state_dir, "step-tracking", state)
 
+    _switch(git_repo, "step-tracking")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -485,6 +523,7 @@ def test_code_review_without_step_tracking_still_works(git_repo):
     state["feature"] = "No Steps"
     write_state(state_dir, "no-steps", state)
 
+    _switch(git_repo, "no-steps")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -512,6 +551,7 @@ def test_multi_feature_code_review_step_tracking(git_repo):
     s2["feature"] = "Other Feature"
     write_state(state_dir, "other-feature", s2)
 
+    _detach(git_repo)
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -531,6 +571,7 @@ def test_code_review_bad_step_does_not_crash(git_repo):
     state["code_review_step"] = "bad"
     write_state(state_dir, "bad-step", state)
 
+    _switch(git_repo, "bad-step")
     result = _run(git_repo)
     assert result.returncode == 0
     output = json.loads(result.stdout)
@@ -551,6 +592,7 @@ def test_code_review_empty_string_step_does_not_crash(git_repo):
     state["code_review_step"] = ""
     write_state(state_dir, "empty-step", state)
 
+    _switch(git_repo, "empty-step")
     result = _run(git_repo)
     assert result.returncode == 0
     output = json.loads(result.stdout)
@@ -571,6 +613,7 @@ def test_code_review_float_string_step_does_not_crash(git_repo):
     state["code_review_step"] = "2.5"
     write_state(state_dir, "float-step", state)
 
+    _switch(git_repo, "float-step")
     result = _run(git_repo)
     assert result.returncode == 0
     output = json.loads(result.stdout)
@@ -590,6 +633,7 @@ def test_never_entered_phase_instructs_auto_continue(git_repo):
     state["feature"] = "Auto Continue"
     write_state(state_dir, "auto-continue", state)
 
+    _switch(git_repo, "auto-continue")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -606,6 +650,7 @@ def test_phase_1_never_entered_does_not_auto_continue(git_repo):
     state["phases"]["flow-start"]["started_at"] = None
     write_state(state_dir, "fresh-start", state)
 
+    _switch(git_repo, "fresh-start")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -619,6 +664,7 @@ def test_output_has_both_context_fields(git_repo):
     state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
     write_state(state_dir, "some-feature", state)
 
+    _switch(git_repo, "some-feature")
     result = _run(git_repo)
     assert result.returncode == 0
 
@@ -643,6 +689,7 @@ def test_compact_summary_injected_into_context(git_repo):
     state["compact_summary"] = "User was writing tests for webhook handler."
     write_state(state_dir, "my-feature", state)
 
+    _switch(git_repo, "my-feature")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -662,6 +709,7 @@ def test_compact_summary_cleared_from_state_after_injection(git_repo):
     state["compact_cwd"] = "/some/path"
     write_state(state_dir, "my-feature", state)
 
+    _switch(git_repo, "my-feature")
     _run(git_repo)
 
     updated = json.loads((state_dir / "my-feature.json").read_text())
@@ -681,6 +729,7 @@ def test_compact_cwd_mismatch_shows_warning(git_repo):
     state["worktree"] = ".worktrees/test-feature"
     write_state(state_dir, "my-feature", state)
 
+    _switch(git_repo, "my-feature")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -701,6 +750,7 @@ def test_compact_cwd_matches_worktree_no_warning(git_repo):
     state["worktree"] = ".worktrees/test-feature"
     write_state(state_dir, "my-feature", state)
 
+    _switch(git_repo, "my-feature")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -718,6 +768,7 @@ def test_no_compact_data_no_compact_block(git_repo):
     })
     write_state(state_dir, "my-feature", state)
 
+    _switch(git_repo, "my-feature")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
@@ -744,7 +795,99 @@ def test_multi_feature_compact_summary_injected(git_repo):
     s2["feature"] = "Feature Beta"
     write_state(state_dir, "feature-beta", s2)
 
+    _detach(git_repo)
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
     assert "Was debugging the payment flow." in ctx
+
+
+# --- Branch isolation ---
+
+
+def test_ignores_state_file_for_different_branch(git_repo):
+    """State file for feature-alpha, session on main → silent exit (no context)."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["feature"] = "Feature Alpha"
+    write_state(state_dir, "feature-alpha", state)
+
+    # git_repo is on main (default branch) — feature-alpha should not match
+    result = _run(git_repo)
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
+def test_processes_only_matching_branch_state(git_repo):
+    """Two state files, session on feature-alpha → context shows only Alpha."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+
+    s1 = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    s1["feature"] = "Feature Alpha"
+    write_state(state_dir, "feature-alpha", s1)
+
+    s2 = make_state(current_phase="flow-plan", phase_statuses={
+        "flow-start": "complete", "flow-plan": "in_progress",
+    })
+    s2["feature"] = "Feature Beta"
+    write_state(state_dir, "feature-beta", s2)
+
+    _switch(git_repo, "feature-alpha")
+    result = _run(git_repo)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "Feature Alpha" in ctx
+    assert "Feature Beta" not in ctx
+    assert "Multiple" not in ctx
+
+
+def test_detached_head_single_file_fallback(git_repo):
+    """Detached HEAD with single state file → fallback to old behavior (processes it)."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["feature"] = "Solo Feature"
+    write_state(state_dir, "solo-feature", state)
+
+    _detach(git_repo)
+    result = _run(git_repo)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "Solo Feature" in ctx
+
+
+def test_detached_head_multiple_files_fallback(git_repo):
+    """Detached HEAD with two state files → fallback to old multi-feature behavior."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+
+    s1 = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    s1["feature"] = "Feature One"
+    write_state(state_dir, "feature-one", s1)
+
+    s2 = make_state(current_phase="flow-plan", phase_statuses={
+        "flow-start": "complete", "flow-plan": "in_progress",
+    })
+    s2["feature"] = "Feature Two"
+    write_state(state_dir, "feature-two", s2)
+
+    _detach(git_repo)
+    result = _run(git_repo)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "Multiple FLOW features" in ctx
+    assert "Feature One" in ctx
+    assert "Feature Two" in ctx
