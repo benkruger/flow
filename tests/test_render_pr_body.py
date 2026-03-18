@@ -46,6 +46,48 @@ def test_minimal_state(tmp_path):
     assert "## Issues Filed" not in body
 
 
+def test_what_uses_prompt_over_feature(tmp_path):
+    """What section uses prompt field when present, not the title-cased feature."""
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={"flow-start": "in_progress"},
+    )
+    state["prompt"] = "fix login timeout when session expires"
+    state["feature"] = "Fix Login Timeout"
+    state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
+
+    body = _mod.render_body(state, tmp_path)
+
+    assert "fix login timeout when session expires." in body
+    assert "Fix Login Timeout." not in body
+
+
+def test_what_raises_on_empty_prompt(tmp_path):
+    """Missing prompt is a bug — render_body raises ValueError."""
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={"flow-start": "in_progress"},
+    )
+    state["prompt"] = ""
+    state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
+
+    with pytest.raises(ValueError, match="missing 'prompt'"):
+        _mod.render_body(state, tmp_path)
+
+
+def test_what_raises_when_no_prompt_key(tmp_path):
+    """Missing prompt key is a bug — render_body raises ValueError."""
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={"flow-start": "in_progress"},
+    )
+    del state["prompt"]
+    state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
+
+    with pytest.raises(ValueError, match="missing 'prompt'"):
+        _mod.render_body(state, tmp_path)
+
+
 def test_with_plan_only(tmp_path):
     """Plan file set and exists — Plan section appears."""
     state = make_state(

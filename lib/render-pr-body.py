@@ -149,9 +149,11 @@ def render_body(state, project_dir):
     sections = []
     section_names = []
 
-    # 1. What (always)
-    feature = state.get("feature", "Unknown")
-    sections.append(f"## What\n\n{feature}.")
+    # 1. What (always) — requires prompt field from start-setup
+    what_text = state.get("prompt")
+    if not what_text:
+        raise ValueError("State file missing 'prompt' field — start-setup.py should always set this")
+    sections.append(f"## What\n\n{what_text}.")
     section_names.append("What")
 
     # 2. Artifacts (always, items conditional)
