@@ -35,7 +35,15 @@ gh issue list --state open --json number,title,labels,createdAt,body --limit 100
 
 Parse the JSON output. If there are no open issues, print the COMPLETE banner and stop.
 
-## Step 2 — Categorize
+## Step 2 — Detect In-Progress Issues
+
+Check each issue's labels for "Flow In-Progress". Issues with this label
+are actively being worked on by another FLOW feature (possibly on a
+different engineer's machine). Mark these issues as in-progress for use
+in later steps. Still include them in categorization and display — the
+label is an annotation, not a filter.
+
+## Step 3 — Categorize
 
 Assign each issue to exactly one category. If an issue has a label
 matching one of the label-based categories below, use that label as
@@ -56,7 +64,7 @@ the title and body:
 - **Enhancement** — new feature or improvement to existing behavior
 - **Other** — does not fit any category above
 
-## Step 3 — Prioritize
+## Step 4 — Prioritize
 
 Within each category, assign High, Medium, or Low priority based on:
 
@@ -64,7 +72,7 @@ Within each category, assign High, Medium, or Low priority based on:
 - **Medium** — older than 7 days, or affects developer experience
 - **Low** — recent, cosmetic, or nice-to-have
 
-## Step 4 — Batch Detection
+## Step 5 — Batch Detection
 
 Scan each issue's body for file path references. File paths are strings
 containing `/` with recognizable patterns: directory prefixes like `lib/`,
@@ -83,17 +91,30 @@ Record:
 If no batches are found (all issues are solo), skip the batch output in
 the next step.
 
-## Step 5 — Display
+## Step 6 — Display
 
 Print a summary line with total count and per-category counts.
 
-Then for each non-empty category, print a markdown table with columns: `#`, `Title`, `Age`, `Priority`. Sort by priority (High first), then by age (oldest first).
+### In Progress Section
+
+If any issues have the "Flow In-Progress" label, print an "In Progress"
+section before the category tables listing each in-progress issue with
+its number and title. If no issues have the label, skip this section.
+
+### Category Tables
+
+For each non-empty category, print a markdown table with columns: `#`, `Title`, `Age`, `Priority`. Sort by priority (High first), then by age (oldest first).
+
+For in-progress issues, append `[In Progress]` to the title in the table.
+Never remove in-progress issues from the table — always display all issues.
 
 ### Recommended Work Order
 
 After the category tables, print a "Recommended Work Order" section.
 This is a numbered list showing the recommended sequence for working
-through the issues:
+through the issues. Exclude issues with the "Flow In-Progress" label
+from the work order — they are already being worked on by another
+engineer.
 
 - **Priority ordering** — High before Medium before Low
 - **Batches as units** — when issues form a batch, list them as a group.
@@ -127,6 +148,7 @@ After the work order is displayed, output the following banner in your response 
 ## Hard Rules
 
 - Read-only — never create, edit, or close issues
-- Display all open issues — never filter or hide
+- Display all open issues in category tables — annotate in-progress issues, never remove rows
+- Exclude in-progress issues from the Recommended Work Order
 - No AskUserQuestion — this is a display-only skill
 - Never use Bash to print banners — output them as text in your response

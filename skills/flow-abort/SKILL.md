@@ -83,7 +83,17 @@ If the entry check printed warnings, include them in the confirmation:
 - **Yes, abort everything** — proceed
 - **No, keep going** — stop here
 
-### Steps 2–7 — Run cleanup script
+### Step 2 — Remove In-Progress labels
+
+If a state file was found in the entry check, remove the "Flow In-Progress"
+label from any issues referenced in the prompt. Best-effort — continue to
+cleanup even if removal fails. Skip this step if no state file exists.
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --remove
+```
+
+### Steps 3–8 — Run cleanup script
 
 Run the cleanup script from the project root with abort flags:
 

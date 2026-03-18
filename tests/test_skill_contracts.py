@@ -2413,3 +2413,50 @@ def test_flow_issues_has_work_order_section():
     assert "Work Order" in content, (
         "flow-issues/SKILL.md must contain 'Work Order' section"
     )
+
+
+# --- flow-issues WIP detection ---
+
+
+def test_flow_issues_has_wip_detection():
+    """flow-issues SKILL.md must reference 'Flow In-Progress' for WIP detection."""
+    content = _read_skill("flow-issues")
+    assert "Flow In-Progress" in content, (
+        "flow-issues/SKILL.md must contain 'Flow In-Progress' for WIP detection"
+    )
+
+
+# --- label-issues integration in Start, Complete, Abort ---
+
+
+def test_flow_start_labels_issues():
+    """flow-start SKILL.md must call bin/flow label-issues with --add."""
+    content = _read_skill("flow-start")
+    assert "label-issues" in content, (
+        "flow-start/SKILL.md must reference label-issues"
+    )
+    assert "--add" in content, (
+        "flow-start/SKILL.md must use --add flag for label-issues"
+    )
+
+
+def test_flow_complete_removes_labels():
+    """flow-complete SKILL.md must call bin/flow label-issues with --remove."""
+    content = _read_skill("flow-complete")
+    assert "label-issues" in content, (
+        "flow-complete/SKILL.md must reference label-issues"
+    )
+    assert "--remove" in content, (
+        "flow-complete/SKILL.md must use --remove flag for label-issues"
+    )
+
+
+def test_flow_abort_removes_labels():
+    """flow-abort SKILL.md must call bin/flow label-issues with --remove."""
+    content = _read_skill("flow-abort")
+    assert "label-issues" in content, (
+        "flow-abort/SKILL.md must reference label-issues"
+    )
+    assert "--remove" in content, (
+        "flow-abort/SKILL.md must use --remove flag for label-issues"
+    )
