@@ -341,6 +341,22 @@ def test_phase_2_no_plan_file_does_not_auto_continue(git_repo):
     assert "Do NOT invoke flow:flow-continue" in ctx
 
 
+def test_phase_2_plan_approved_via_files_block(git_repo):
+    """Phase 2 with files.plan set (new schema) → auto-continue works."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
+    state["feature"] = "My Feature"
+    state["files"]["plan"] = ".flow-states/my-feature-plan.md"
+    write_state(state_dir, "my-feature", state)
+
+    result = _run(git_repo)
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "flow:flow-continue" in ctx
+    assert "Do NOT invoke flow:flow-continue" not in ctx
+
+
 def test_phases_json_files_are_ignored(git_repo):
     """-phases.json files (copies of flow-phases.json) must not appear as features."""
     state_dir = git_repo / ".flow-states"

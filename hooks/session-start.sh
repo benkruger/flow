@@ -138,7 +138,7 @@ if len(states) == 1:
     phase_name = s.get("phases", {}).get(cp, {}).get("name", "")
     phase_name += step_suffix(s)
     feature = s.get("feature", "")
-    plan_file = s.get("plan_file")
+    plan_file = s.get("plan_file") or (s.get("files") or {}).get("plan")
     plan_approved = cp == "flow-plan" and plan_file is not None
     phase_data = s.get("phases", {}).get(cp, {})
     never_entered = cp != "flow-start" and phase_data.get("status") == "pending"
@@ -193,7 +193,7 @@ else:
     auto_continue_feature = None
     for s in states:
         cp = s.get("current_phase", "flow-start")
-        if cp == "flow-plan" and s.get("plan_file") is not None:
+        if cp == "flow-plan" and (s.get("plan_file") or (s.get("files") or {}).get("plan")) is not None:
             auto_continue_feature = s.get("feature", "")
             break
         phase_data = s.get("phases", {}).get(cp, {})

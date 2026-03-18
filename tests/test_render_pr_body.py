@@ -108,7 +108,7 @@ def test_dag_always_text_format(tmp_path):
 
 
 def test_with_transcript(tmp_path):
-    """Transcript path set — Session log appears in Artifacts."""
+    """Transcript path set — transcript appears in Artifacts table."""
     state = make_state(
         current_phase="flow-code",
         phase_statuses={"flow-start": "complete"},
@@ -118,7 +118,7 @@ def test_with_transcript(tmp_path):
 
     body = _mod.render_body(state, tmp_path)
 
-    assert "**Session log**" in body
+    assert "| Transcript |" in body
     assert "/path/to/session.jsonl" in body
 
 
@@ -182,6 +182,99 @@ def test_with_issues(tmp_path):
 
     assert "## Issues Filed" in body
     assert "Add rule X" in body
+
+
+def test_plan_from_files_block(tmp_path):
+    """Plan path in files block (relative) — Plan section appears."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete"},
+    )
+    plan_dir = tmp_path / ".flow-states"
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    plan_file = plan_dir / "test-feature-plan.md"
+    plan_file.write_text("# Plan from files block")
+    state["files"]["plan"] = ".flow-states/test-feature-plan.md"
+    state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
+    state["phases"]["flow-plan"]["started_at"] = "2026-01-01T00:01:00Z"
+
+    body = _mod.render_body(state, tmp_path)
+
+    assert "## Plan" in body
+    assert "Plan from files block" in body
+
+
+def test_dag_from_files_block(tmp_path):
+    """DAG path in files block (relative) — DAG Analysis section appears."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete"},
+    )
+    dag_dir = tmp_path / ".flow-states"
+    dag_dir.mkdir(parents=True, exist_ok=True)
+    dag_file = dag_dir / "test-feature-dag.md"
+    dag_file.write_text("# DAG from files block")
+    state["files"]["dag"] = ".flow-states/test-feature-dag.md"
+    state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
+    state["phases"]["flow-plan"]["started_at"] = "2026-01-01T00:01:00Z"
+
+    body = _mod.render_body(state, tmp_path)
+
+    assert "## DAG Analysis" in body
+    assert "DAG from files block" in body
+
+
+def test_artifacts_table_from_files_block(tmp_path):
+    """Artifacts section shows files block as a table with relative paths."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete"},
+    )
+    state["files"]["plan"] = ".flow-states/test-feature-plan.md"
+    state["files"]["dag"] = ".flow-states/test-feature-dag.md"
+    state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
+
+    body = _mod.render_body(state, tmp_path)
+
+    assert "| File | Path |" in body
+    assert ".flow-states/test-feature-plan.md" in body
+    assert ".flow-states/test-feature-dag.md" in body
+    assert ".flow-states/test-feature.log" in body
+    assert ".flow-states/test-feature.json" in body
+
+
+def test_legacy_artifacts_without_files_block(tmp_path):
+    """State without files block uses legacy bullet format for artifacts."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete"},
+    )
+    del state["files"]
+    state["plan_file"] = "/abs/path/to/plan.md"
+    state["dag_file"] = "/abs/path/to/dag.md"
+    state["transcript_path"] = "/abs/path/to/session.jsonl"
+    state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
+
+    body = _mod.render_body(state, tmp_path)
+
+    assert "**Plan file**" in body
+    assert "**DAG file**" in body
+    assert "**Session log**" in body
+    assert "| File | Path |" not in body
+
+
+def test_empty_artifacts_no_files_block(tmp_path):
+    """State without files block and no artifact paths — empty Artifacts."""
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={"flow-start": "in_progress"},
+    )
+    del state["files"]
+    state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
+
+    body = _mod.render_body(state, tmp_path)
+
+    assert "## Artifacts\n\n## Phase" in body
 
 
 def test_missing_plan_file(tmp_path):

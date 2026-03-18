@@ -78,28 +78,25 @@ If `"status": "error"`, report the error and stop.
 
 ## Logging
 
-After every Bash command in Steps 1–4, log it to `.flow-states/<branch>.log`.
+After every Bash command in Steps 1–4, log it to `.flow-states/<branch>.log`
+using `bin/flow log`.
 
-Run the command directly — do not append any suffix:
+Run the command first, then log the result. Pipeline the log call with the
+next command where possible (run both in parallel in one response).
 
 ```bash
-COMMAND
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 2] Step X — desc (exit EC)"
 ```
 
-Then Read `.flow-states/<branch>.log` (empty string if it does not
-exist yet) and Write it back with this line appended:
-
-```text
-YYYY-MM-DDTHH:MM:SSZ [Phase 2] Step X — desc (exit EC)
-```
+Get `<branch>` from the state file.
 
 ---
 
 ## Resume Check
 
-Check `dag_file` and `plan_file` in the state file:
+Check `files.plan` and `files.dag` in the state file:
 
-- If `plan_file` is set (not null), the plan was previously written.
+- If `files.plan` is set (not null), the plan was previously written.
   Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
@@ -107,16 +104,16 @@ Check `dag_file` and `plan_file` in the state file:
 ──────────────────────────────────────────────────
   FLOW — Plan already approved
 ──────────────────────────────────────────────────
-  Plan file: <plan_file path>
+  Plan file: <files.plan path>
 ──────────────────────────────────────────────────
 ```
 ````
 
   Skip to "Done — Update state and complete phase" to finish the phase.
 
-- If `dag_file` is set (not null) but `plan_file` is null, the DAG was
+- If `files.dag` is set (not null) but `files.plan` is null, the DAG was
   produced but the plan was not yet written. Read the DAG output file
-  at `dag_file` path. Skip to Step 3 (Explore and write plan).
+  at `files.dag` path. Skip to Step 3 (Explore and write plan).
 
 - If both are null, proceed to Step 1.
 
@@ -170,15 +167,26 @@ The decompose plugin will produce structured DAG output:
 an impact preview, an XML DAG plan with nodes and dependencies,
 node-by-node reasoning, and a synthesis.
 
-After the decompose plugin returns, save the DAG output:
+After the decompose plugin returns, save the complete decompose output:
 
-1. Write the DAG content from the conversation to
-   `<project_root>/.flow-states/<branch>-dag.md` using the Write tool.
+1. Capture everything the decompose plugin produced — the XML DAG plan,
+   all node executions with quality scores, and the synthesis block.
+   Write it verbatim to `<project_root>/.flow-states/<branch>-dag.md`
+   using the Write tool, wrapped with a markdown heading:
+
+   ```text
+   # DAG Analysis: <feature description>
+
+   <complete output from decompose plugin>
+   ```
+
 2. Store the path in the state file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set dag_file=<project_root>/.flow-states/<branch>-dag.md
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.dag=<dag_file_path>
 ```
+
+Replace `<dag_file_path>` with the relative path `.flow-states/<branch>-dag.md`.
 
 Proceed to Step 3.
 
@@ -240,11 +248,10 @@ Proceed to Step 4.
 Store the plan file path in the state file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_file=<plan_file_path>
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.plan=<plan_file_path>
 ```
 
-Replace `<plan_file_path>` with the actual path to the plan file written
-in Step 3.
+Replace `<plan_file_path>` with the relative path `.flow-states/<branch>-plan.md`.
 
 Render the complete PR body (artifacts, plan, DAG, timings, and state
 are all derived from the state file automatically):
