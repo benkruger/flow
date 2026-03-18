@@ -500,7 +500,7 @@ def test_cli_missing_state_file(tmp_path):
 
 def test_gh_set_body_success():
     """_gh_set_body calls gh pr edit with correct args."""
-    with patch.object(_mod.subprocess, "run") as mock_run:
+    with patch.object(_mod._upb_mod.subprocess, "run") as mock_run:
         mock_run.return_value = MagicMock(returncode=0)
         _mod._gh_set_body(42, "body text")
     mock_run.assert_called_once_with(
@@ -511,7 +511,7 @@ def test_gh_set_body_success():
 
 def test_gh_set_body_failure():
     """_gh_set_body raises RuntimeError on failure."""
-    with patch.object(_mod.subprocess, "run") as mock_run:
+    with patch.object(_mod._upb_mod.subprocess, "run") as mock_run:
         mock_run.return_value = MagicMock(returncode=1, stderr="auth failed", stdout="")
         with pytest.raises(RuntimeError, match="auth failed"):
             _mod._gh_set_body(42, "body")

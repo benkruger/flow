@@ -72,6 +72,33 @@ def test_format_timings_table_partial_state():
     assert "| Complete |" in result
 
 
+def test_format_timings_table_started_only():
+    """started_only=True excludes phases with no started_at and 0 seconds."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
+    state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
+    state["phases"]["flow-start"]["cumulative_seconds"] = 30
+    state["phases"]["flow-plan"]["started_at"] = "2026-01-01T00:01:00Z"
+    state["phases"]["flow-plan"]["cumulative_seconds"] = 300
+    state["phases"]["flow-code"]["started_at"] = "2026-01-01T00:06:00Z"
+
+    result = _mod.format_timings_table(state, started_only=True)
+
+    assert "| Start |" in result
+    assert "| Plan |" in result
+    assert "| Code |" in result
+    assert "| Code Review |" not in result
+    assert "| Learn |" not in result
+    assert "| Complete |" not in result
+    assert "| **Total** |" in result
+
+
 def test_format_timings_table_uses_format_time():
     """Duration values use flow_utils.format_time formatting."""
     state = make_state(
