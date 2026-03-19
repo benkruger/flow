@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import project_root, resolve_branch
+from flow_utils import mutate_state, project_root, resolve_branch
 
 
 def capture_compact_data(hook_input):
@@ -45,15 +45,14 @@ def capture_compact_data(hook_input):
         if not state_path.exists():
             return
 
-        state = json.loads(state_path.read_text())
+        def transform(state):
+            if compact_summary:
+                state["compact_summary"] = compact_summary
+            if cwd:
+                state["compact_cwd"] = cwd
+            state["compact_count"] = state.get("compact_count", 0) + 1
 
-        if compact_summary:
-            state["compact_summary"] = compact_summary
-        if cwd:
-            state["compact_cwd"] = cwd
-        state["compact_count"] = state.get("compact_count", 0) + 1
-
-        state_path.write_text(json.dumps(state, indent=2))
+        mutate_state(state_path, transform)
     except Exception:
         pass
 

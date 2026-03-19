@@ -31,7 +31,7 @@ def test_closes_single_issue():
     assert result is None
     mock_run.assert_called_once_with(
         ["gh", "issue", "close", "--repo", "benkruger/flow", "117"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, timeout=30,
     )
 
 
@@ -66,6 +66,14 @@ def test_close_issue_generic_error():
         result = _mod.close_issue_by_number("benkruger/flow", 999)
 
     assert result == "Unknown error"
+
+
+def test_close_issue_timeout():
+    """TimeoutExpired returns timeout error message."""
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30)):
+        result = _mod.close_issue_by_number("benkruger/flow", 42)
+
+    assert "timed out" in result.lower()
 
 
 # --- detect_repo_or_fail ---
@@ -224,15 +232,8 @@ def test_cli_auto_detects_repo():
 
 def test_cli_error_when_detection_fails():
     """CLI outputs error when repo detection fails."""
-    def mock_run(args, **kwargs):
-        return subprocess.CompletedProcess(
-            args=args, returncode=1, stdout="", stderr="No such remote",
-        )
-
-    with patch.object(_mod, "subprocess") as mock_subprocess:
+    with patch.object(_mod, "detect_repo", return_value=None):
         with patch.object(sys, "argv", ["close-issue.py", "--number", "117"]):
-            mock_subprocess.run = mock_run
-
             output_text = io.StringIO()
             with redirect_stdout(output_text):
                 with pytest.raises(SystemExit):

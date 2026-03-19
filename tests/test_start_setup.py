@@ -342,60 +342,6 @@ def test_missing_feature_name_fails(tmp_path):
     assert "feature name" in data["message"].lower()
 
 
-# --- In-process unit tests for edge cases ---
-
-
-def test_detect_repo_returns_none_without_remote(tmp_path):
-    """Repo detection returns None when git remote fails."""
-    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
-    assert _mod._detect_repo(tmp_path) is None
-
-
-def test_detect_repo_returns_none_for_non_github(git_repo_with_remote):
-    """Repo detection returns None for non-GitHub remotes (bare local path)."""
-    result = _mod._detect_repo(git_repo_with_remote)
-    assert result is None
-
-
-def test_detect_repo_returns_none_on_error(tmp_path):
-    """Repo detection returns None when not a git repo."""
-    assert _mod._detect_repo(tmp_path) is None
-
-
-def test_detect_repo_parses_github_https_url(monkeypatch):
-    """Repo detection parses GitHub HTTPS URL to owner/repo."""
-    class FakeResult:
-        returncode = 0
-        stdout = "https://github.com/owner/repo.git\n"
-    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: FakeResult())
-    assert _mod._detect_repo("/fake") == "owner/repo"
-
-
-def test_detect_repo_parses_github_ssh_url(monkeypatch):
-    """Repo detection parses GitHub SSH URL to owner/repo."""
-    class FakeResult:
-        returncode = 0
-        stdout = "git@github.com:owner/repo.git\n"
-    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: FakeResult())
-    assert _mod._detect_repo("/fake") == "owner/repo"
-
-
-def test_detect_repo_returns_none_for_empty_url(monkeypatch):
-    """Repo detection returns None when remote URL is empty."""
-    class FakeResult:
-        returncode = 0
-        stdout = "\n"
-    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: FakeResult())
-    assert _mod._detect_repo("/fake") is None
-
-
-def test_detect_repo_returns_none_on_exception(monkeypatch):
-    """Repo detection returns None when subprocess raises."""
-    def _raise(*a, **kw):
-        raise OSError("git not found")
-    monkeypatch.setattr(subprocess, "run", _raise)
-    assert _mod._detect_repo("/fake") is None
-
 
 def test_extract_pr_number_malformed_url():
     """Malformed PR URL returns 0."""
