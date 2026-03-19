@@ -135,17 +135,16 @@ For each issue, compute an impact score from four signals:
   = 1 point.
 - **Acceptance criteria density** — count `- [ ]` patterns in the body.
   10 or more = 1 point.
-- **Reverse reference count** — count how many other open issues reference
-  `#N` where N is this issue's number. 2 or more = 1 point.
+- **Reverse reference count** — from the dependency map built in 4b,
+  count how many other open issues depend on this issue. 2 or more
+  = 1 point.
 
 Impact tier: 3-4 points = High, 1-2 points = Medium, 0 points = Low.
 
 ### 4e. Blocking Score
 
-Using the dependency map from 4b, compute the reverse dependency count
-(in-degree) for each issue — how many other open issues depend on it.
-An issue blocking 1 or more other issues triggers the blocking modifier
-in Step 5.
+Using the reverse reference count from 4d, an issue with 1 or more
+dependents triggers the blocking modifier in Step 5.
 
 ## Step 5 — Prioritize
 
@@ -160,9 +159,8 @@ apply impact and blocking modifiers.
 
 ### Modifiers
 
-- **Impact modifier** — if the impact tier from 4d is High (3-4 of 4
-  signals), promote the issue one tier (Low → Medium, Medium → High,
-  High stays High).
+- **Impact modifier** — if the impact tier from 4d is High, promote
+  the issue one tier (Low → Medium, Medium → High, High stays High).
 - **Blocking modifier** — if the issue blocks 1 or more other open
   issues (from 4e), promote one tier.
 - Modifiers stack: an issue at Low with both High impact and blocking
@@ -170,9 +168,9 @@ apply impact and blocking modifiers.
 
 ### Tiebreaking
 
+- Decomposed issues sort before non-decomposed within the same tier.
 - Age is used only as a tiebreaker within the same tier — it never
   promotes across tiers.
-- Decomposed issues sort before non-decomposed within the same tier.
 
 ## Step 6 — Display
 
