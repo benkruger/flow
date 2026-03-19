@@ -320,11 +320,11 @@ def test_complete_does_not_contain_admin_flag():
 
 
 def test_complete_navigates_to_project_root():
-    """Complete skill must navigate to project root before running commands."""
+    """Complete skill must cd to project root before cleanup (Step 10)."""
     content = _read_skill("flow-complete")
     assert "cd <project_root>" in content, (
-        "Complete skill must include cd <project_root> to enforce "
-        "running from the project root"
+        "Complete skill must include cd <project_root> before cleanup — "
+        "worktree removal cannot run from inside the worktree"
     )
 
 

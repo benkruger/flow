@@ -36,11 +36,6 @@ and the Update State section (do not call `phase-transition` again).
 
 Run `git worktree list --porcelain` to find the project root (first
 `worktree` line) and `git branch --show-current` for the current branch.
-Navigate to the project root:
-
-```bash
-cd <project_root>
-```
 
 Use the Read tool to read `<project_root>/.flow-states/<branch>.json`
 to get the state data (`feature`, `branch`, `worktree`, `pr_number`,
@@ -67,13 +62,6 @@ Carry any warnings forward to the confirmation step in Step 5.
 
 Resolve the mode using the Mode Resolution rules above.
 
-Navigate to the project root now — all subsequent steps must run from
-the project root, not from inside the worktree:
-
-```bash
-cd <project_root>
-```
-
 </SOFT-GATE>
 
 ## Announce
@@ -98,7 +86,7 @@ operation — writing log entries that are immediately deleted is pointless.
 Record phase entry in the state file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-complete --action enter
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-complete --action enter --branch <branch>
 ```
 
 Parse the JSON output and confirm `status` is `"ok"`.
@@ -149,8 +137,8 @@ gh pr view <branch> --json state --jq .state
 
 **If `MERGED`** — the PR is already merged. Skip directly to Step 6
 (archive artifacts to PR). After Step 6, continue to Step 8 (remove
-labels), then Step 9 (close issues) — skip Step 7 (merge) since the
-PR is already merged.
+labels), then Step 9 (close issues), then continue through cleanup
+(Steps 10-11) — skip Step 7 (merge) since the PR is already merged.
 
 **If `OPEN`** — continue to Step 3 to merge.
 
@@ -300,7 +288,7 @@ Record phase completion in the state file so Phase Timings includes
 the Complete row:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-complete --action complete --next-phase flow-complete
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-complete --action complete --next-phase flow-complete --branch <branch>
 ```
 
 Parse the JSON output. Keep `formatted_time` and `cumulative_seconds`
@@ -370,6 +358,16 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow close-issues --state-file <project_root>/.fl
 Parse the JSON output. Report which issues were closed and which failed.
 If no issues were referenced, proceed silently.
 
+### Navigate to project root
+
+The worktree is about to be removed — you cannot be inside it when that
+happens. Navigate to the project root now. All subsequent steps (cleanup
+and pull) run from the project root on main.
+
+```bash
+cd <project_root>
+```
+
 ### Step 10 — Run cleanup script
 
 Run the cleanup script from the project root:
@@ -422,7 +420,7 @@ Do not add a separate PR line — it is part of the summary.
 
 ## Rules
 
-- Never run from inside the worktree — the SOFT-GATE navigates to project root
+- Steps 1-9 run from the worktree (feature branch); Steps 10-11 run from the project root after an explicit cd before Step 10
 - If the merge fails, never retry with additional flags or elevated privileges — report to the user and stop
 - Confirm with the user only when mode is **manual**
 - State file deletion is what resets the session hook — do not skip it
