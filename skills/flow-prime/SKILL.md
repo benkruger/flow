@@ -35,8 +35,8 @@ If `--reprime` was passed:
 1. Use the Read tool to read `.flow.json` from the project root.
    - If the file does not exist, stop with: "No existing config to reprime from. Run `/flow:flow-prime` instead."
 2. Extract `framework`, `skills`, and `commit_format` from the JSON.
-3. Run `claude plugin list` to check plugin state (needed for Step 5).
-4. Skip Steps 1–3 entirely. Jump to Step 4 with the extracted values.
+3. Run `claude plugin list` to check plugin state (needed for Step 6).
+4. Skip Steps 1–4 entirely. Jump to Step 5 with the extracted values.
 
 ## Steps
 
@@ -52,7 +52,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow detect-framework <project_root>
 claude plugin list
 ```
 
-Keep the plugin list output for Step 5 — do not re-run it.
+Keep the plugin list output for Step 6 — do not re-run it.
 
 Parse the detect-framework JSON output. The `detected` array contains frameworks matched
 by file presence, and `available` lists all supported frameworks.
@@ -91,19 +91,19 @@ Ask the user how much autonomy FLOW should have using AskUserQuestion:
 **Fully autonomous** — all auto:
 
 ```json
-{"flow-start": {"continue": "auto"}, "flow-plan": {"continue": "auto", "dag": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-code-review": {"commit": "auto", "continue": "auto", "code_review_plugin": "always"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}
+{"flow-start": {"continue": "auto"}, "flow-plan": {"continue": "auto", "dag": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}
 ```
 
 **Fully manual** — all manual:
 
 ```json
-{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "manual", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "manual", "continue": "manual", "code_review_plugin": "always"}, "flow-learn": {"commit": "manual", "continue": "manual"}, "flow-abort": "manual", "flow-complete": "manual"}
+{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "manual", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "manual", "continue": "manual"}, "flow-learn": {"commit": "manual", "continue": "manual"}, "flow-abort": "manual", "flow-complete": "manual"}
 ```
 
 **Recommended** — safe defaults for all frameworks:
 
 ```json
-{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "auto", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto", "code_review_plugin": "always"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}
+{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "auto", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}
 ```
 
 **Customize** — ask per skill, in this order: start, plan, code, code-review, learn, abort, complete. For each skill, ask about only the applicable axes. List the recommended option first with "(Recommended)" in the label:
@@ -124,7 +124,7 @@ Second question:
 > - **Manual (Recommended)** — "Prompt before advancing"
 > - **Auto** — "Auto-advance to next phase"
 
-For **code-review** (commit, continue, and code\_review\_plugin), ask three AskUserQuestions:
+For **code-review** (commit and continue), ask two AskUserQuestions:
 
 First question:
 
@@ -139,14 +139,6 @@ Second question:
 >
 > - **Auto (Recommended)** — "Auto-advance to next phase"
 > - **Manual** — "Prompt before advancing"
-
-Third question:
-
-> "Code Review Plugin mode? (multi-agent validation via code-review:code-review)"
->
-> - **Always (Default)** — "Always run the code-review plugin (Step 4)"
-> - **Auto** — "Run plugin based on change complexity"
-> - **Never** — "Skip the code-review plugin, complete after Step 3"
 
 For **learning** (commit and continue), ask two AskUserQuestions:
 
@@ -195,9 +187,27 @@ For **abort** and **complete** (single mode), ask one AskUserQuestion each:
 > - **Auto (Recommended)** — "Skip confirmation prompt"
 > - **Manual** — "Require confirmation prompt"
 
-Store the result as `skills_dict` for Step 4.
+Store the result as `skills_dict` for Step 5.
 
-### Step 3 — Choose commit message format
+### Step 3 — Choose code review plugin mode
+
+The code-review plugin provides multi-agent validation as Step 4 of the Code Review phase. Its mode controls whether that step runs.
+
+Ask the user which mode to use with AskUserQuestion:
+
+> "Code Review Plugin mode? (multi-agent validation via code-review:code-review)"
+>
+> - **Always (Default)** — "Always run the code-review plugin step"
+> - **Auto** — "Run plugin based on change complexity"
+> - **Never** — "Skip the code-review plugin step"
+
+Store the result by injecting into `skills_dict["flow-code-review"]["code_review_plugin"]`:
+
+- "Always" → `"always"`
+- "Auto" → `"auto"`
+- "Never" → `"never"`
+
+### Step 4 — Choose commit message format
 
 FLOW supports two commit message formats:
 
@@ -216,10 +226,10 @@ Store the result as `commit_format`:
 - "Title only" → `"title-only"`
 - "Full format" → `"full"`
 
-### Step 4 — Run prime setup script
+### Step 5 — Run prime setup script
 
 Serialize `skills_dict` from Step 2 as a JSON string for the `--skills-json` argument.
-Pass the `commit_format` value from Step 3 via `--commit-format`.
+Pass the `commit_format` value from Step 4 via `--commit-format`.
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --framework <framework> --skills-json '<skills_dict_json>' --commit-format <commit_format>
@@ -306,7 +316,7 @@ All permissions (universal + all framework sets) for reference:
 }
 ```
 
-### Step 5 — Install plugins
+### Step 6 — Install plugins
 
 Use the `claude plugin list` output from Step 1 (do not re-run it).
 
@@ -340,7 +350,7 @@ claude plugin install decompose@decompose-marketplace
 
 If all plugins are already present, skip silently.
 
-### Step 6 — Commit and push
+### Step 7 — Commit and push
 
 Check if anything is staged by running `git status`. If the output contains "nothing to commit", skip the commit and push — go straight to Done.
 
