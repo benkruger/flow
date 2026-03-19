@@ -1,6 +1,6 @@
 ---
 name: flow-issues
-description: "Fetch open issues, categorize, prioritize, and display a dashboard."
+description: "Fetch open issues, categorize, prioritize, detect batchable issues, and display a dashboard with recommended work order."
 ---
 
 # FLOW Issues
