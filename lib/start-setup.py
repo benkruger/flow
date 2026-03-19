@@ -5,7 +5,7 @@ file, and logs all operations. Optionally pulls main first (skipped
 via --skip-pull when the caller already pulled). The version gate
 (prime-check) runs as a separate step before this script.
 
-Usage: bin/flow start-setup "<feature name>" [--prompt "<full prompt>"] [--prompt-file <path>] [--skip-pull]
+Usage: bin/flow start-setup "<feature name>" [--prompt "<full prompt>"] [--prompt-file <path>] [--skip-pull] [--auto]
 
 Output (JSON to stdout):
   Success: {"status": "ok", "worktree": "...", "pr_url": "...", "pr_number": N, "feature": "...", "branch": "..."}
@@ -27,6 +27,16 @@ from flow_utils import derive_feature, detect_repo, now, PHASE_NAMES, PHASE_NUMB
 from log import append_log
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
+
+AUTO_SKILLS = {
+    "flow-start": {"continue": "auto"},
+    "flow-plan": {"continue": "auto", "dag": "auto"},
+    "flow-code": {"commit": "auto", "continue": "auto"},
+    "flow-code-review": {"commit": "auto", "continue": "auto", "code_review_plugin": "never"},
+    "flow-learn": {"commit": "auto", "continue": "auto"},
+    "flow-abort": "auto",
+    "flow-complete": "auto",
+}
 
 
 def _read_prompt_file(path):
@@ -227,6 +237,8 @@ def main():
                         help="Path to file containing start prompt (file is deleted after reading)")
     parser.add_argument("--skip-pull", action="store_true",
                         help="Skip git pull (caller already pulled main)")
+    parser.add_argument("--auto", action="store_true",
+                        help="Override all skills to fully autonomous preset")
     args = parser.parse_args()
 
     if not args.feature_name:
@@ -261,6 +273,8 @@ def main():
         init_data = json.loads(flow_json.read_text())
         framework = init_data.get("framework", "rails")
         skills = init_data.get("skills")
+        if args.auto:
+            skills = AUTO_SKILLS
 
         # Git pull (skip when caller already pulled main)
         if not args.skip_pull:
