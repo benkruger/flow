@@ -540,3 +540,94 @@ class TestFormatTabTitle:
         """Branch name is title-cased into the feature name."""
         title = format_tab_title(self._state("flow-start", branch="invoice-pdf-export"))
         assert title == "Flow: Phase 1: Start \u2014 Invoice Pdf Export"
+
+
+# --- set_tab_title tests ---
+
+
+class TestSetTabTitle:
+    def test_writes_escape_sequence_to_tty(self, git_repo, state_dir, branch, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
+        write_state(state_dir, branch, state)
+
+        written = []
+        fake_tty = type("FakeTTY", (), {
+            "write": lambda self, data: written.append(data),
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if path == "/dev/tty":
+                return fake_tty
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+        _mod.set_tab_title()
+
+        assert len(written) == 1
+        assert written[0] == "\033]0;Flow: Phase 3: Code \u2014 Test Feature\007"
+
+    def test_oserror_silently_caught(self, git_repo, state_dir, branch, monkeypatch):
+        """OSError from /dev/tty is caught silently."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
+        write_state(state_dir, branch, state)
+
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if path == "/dev/tty":
+                raise OSError("No tty available")
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+        # Should not raise
+        _mod.set_tab_title()
+
+    def test_no_state_file_no_error(self, git_repo, monkeypatch):
+        """No state file — function returns silently."""
+        monkeypatch.chdir(git_repo)
+        _mod.set_tab_title()
+
+    def test_no_branch_no_error(self, tmp_path, monkeypatch):
+        """Not in a git repo — function returns silently."""
+        monkeypatch.chdir(tmp_path)
+        _mod.set_tab_title()
+
+    def test_unknown_phase_no_write(self, git_repo, state_dir, branch, monkeypatch):
+        """State file with unknown phase — format_tab_title returns None, no tty write."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["current_phase"] = "flow-unknown"
+        write_state(state_dir, branch, state)
+
+        written = []
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if path == "/dev/tty":
+                written.append("opened")
+                raise AssertionError("Should not open /dev/tty")
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+        _mod.set_tab_title()
+        assert len(written) == 0
