@@ -326,6 +326,15 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-issues-summary --state-file <project_
 Parse the JSON output. Keep the `banner_line` — use it in the Done
 banner below. If `has_issues` is `false`, there is no banner line.
 
+**Generate the summary** while the state file still exists:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-complete-summary --state-file <project_root>/.flow-states/<branch>.json
+```
+
+Parse the JSON output. Keep the `summary` field — use it in the Done
+banner below.
+
 ### Step 7 — Merge PR
 
 Merge the PR via squash merge:
@@ -389,16 +398,8 @@ If the pull fails, warn the user but do not block — cleanup succeeded.
 
 ### Done — Print banner
 
-Generate the summary by running:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-complete-summary --state-file <project_root>/.flow-states/<branch>.json
-```
-
-Parse the JSON output. The `summary` field contains the formatted banner text.
-
-Output the COMPLETE banner line first, then the summary, in your response
-(not via Bash) inside a single fenced code block:
+Output the COMPLETE banner line, the summary from Step 6, and cleanup
+status in your response (not via Bash) inside a single fenced code block:
 
 ````markdown
 ```text
@@ -408,17 +409,16 @@ Output the COMPLETE banner line first, then the summary, in your response
 
 <summary text from format-complete-summary>
 
-  PR:           <pr_url>
-
   ✓ Worktree removed
   ✓ state file and log deleted
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
-The summary includes the feature name, prompt, per-phase timeline
-(Start:, Plan:, Code:, Code Review:, Learn:, Complete:, Total:),
-and artifact counts (issues filed, notes captured).
+The summary already includes the feature name, prompt, PR: <pr_url>,
+per-phase timeline (Start:, Plan:, Code:, Code Review:, Learn:,
+Complete:, Total:), and artifact counts (issues filed, notes captured).
+Do not add a separate PR line — it is part of the summary.
 
 ## Rules
 
