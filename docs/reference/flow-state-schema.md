@@ -268,7 +268,7 @@ via `bin/flow issue`. Surfaced in the Complete phase PR body and Done banner.
 
 ## Plan File
 
-The plan lives outside the state file at `~/.claude/plans/<name>.md` (Claude Code's native plan file location). The state file stores only the path in `plan_file`. The plan file includes:
+The plan lives at `.flow-states/<branch>-plan.md` alongside other feature artifacts. The state file stores the relative path in `files.plan`. The plan file includes:
 
 - **Context** — what the user wants to build and why
 - **Exploration** — what exists in the codebase, affected files, patterns
