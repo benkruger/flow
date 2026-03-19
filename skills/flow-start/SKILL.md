@@ -169,7 +169,7 @@ git pull origin main
 **2c. CI baseline gate:**
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --force
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 ```
 
 If CI passes, continue to 2d.
@@ -213,7 +213,7 @@ If dependencies changed anything, run CI again to catch dep-induced breakage
 (rubocop violations, breaking changes, etc.):
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --force
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 ```
 
 If CI passes, continue to 2f.
@@ -249,17 +249,16 @@ and any special characters) to `.flow-states/<feature-name>-start-prompt` using 
 Write tool. Then run the setup script:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull
 ```
 
 The script reads the prompt file and deletes it automatically after reading.
 
 The script performs these operations in a single process:
 
-1. `git pull origin main` (no-op if Step 2 already pulled)
-2. `git worktree add .worktrees/<branch> -b <branch>`
-3. `git commit --allow-empty` + `git push -u origin` + `gh pr create`
-4. Create `.flow-states/<branch>.json` (initial state, all 6 phases)
+1. `git worktree add .worktrees/<branch> -b <branch>`
+2. `git commit --allow-empty` + `git push -u origin` + `gh pr create`
+3. Create `.flow-states/<branch>.json` (initial state, all 6 phases)
 
 The script logs each operation to `.flow-states/<branch>.log` internally.
 
@@ -282,7 +281,7 @@ in later steps — it would look for a nested `.worktrees/` that doesn't exist.
 **On failure** — stdout is error JSON, details on stderr:
 
 ```json
-{"status": "error", "step": "git_pull", "message": "..."}
+{"status": "error", "step": "worktree", "message": "..."}
 ```
 
 If the script returns an error, read the stderr output for details, report

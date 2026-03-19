@@ -100,7 +100,7 @@ def _write_flow_json(repo, version, framework="rails", skills=None):
 
 
 def _run_no_gh(cwd, feature_name, framework="rails", prompt=None,
-               prompt_file=None):
+               prompt_file=None, skip_pull=False):
     """Run start-setup.py with gh stubbed out and flow.json initialized."""
     # Ensure flow.json exists with correct version for the version gate
     _write_flow_json(cwd, _current_plugin_version(), framework)
@@ -121,6 +121,8 @@ def _run_no_gh(cwd, feature_name, framework="rails", prompt=None,
         cmd.extend(["--prompt", prompt])
     if prompt_file is not None:
         cmd.extend(["--prompt-file", prompt_file])
+    if skip_pull:
+        cmd.append("--skip-pull")
     result = subprocess.run(
         cmd,
         capture_output=True, text=True, cwd=str(cwd), env=env,
@@ -691,3 +693,32 @@ def test_initial_commit_succeeds_with_pre_commit_hook(git_repo_with_remote):
     assert data["status"] == "ok"
     wt_path = git_repo_with_remote / ".worktrees" / "hook-test"
     assert not (wt_path / ".flow-commit-msg").exists()
+
+
+# --- --skip-pull flag ---
+
+
+def test_skip_pull_skips_git_pull(git_repo_with_remote):
+    """--skip-pull omits the git pull step from the log."""
+    result = _run_no_gh(git_repo_with_remote, "skip pull test", skip_pull=True)
+    assert result.returncode == 0, result.stderr
+    log_path = git_repo_with_remote / ".flow-states" / "skip-pull-test.log"
+    log = log_path.read_text()
+    assert "git pull" not in log
+    assert "git worktree add" in log
+
+
+def test_skip_pull_still_creates_worktree_and_state(git_repo_with_remote):
+    """--skip-pull produces full output: worktree, state file, PR."""
+    result = _run_no_gh(git_repo_with_remote, "skip pull full", skip_pull=True)
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+    assert data["worktree"] == ".worktrees/skip-pull-full"
+    assert data["pr_number"] == 42
+    wt_path = git_repo_with_remote / ".worktrees" / "skip-pull-full"
+    assert wt_path.is_dir()
+    state_path = git_repo_with_remote / ".flow-states" / "skip-pull-full.json"
+    assert state_path.exists()
+    state = json.loads(state_path.read_text())
+    assert state["branch"] == "skip-pull-full"

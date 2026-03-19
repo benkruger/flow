@@ -1,11 +1,11 @@
 """Consolidated setup for FLOW Start phase.
 
-Runs git pull, creates worktree, makes initial commit + push + PR,
-creates state file, and logs all operations. The version gate
+Creates worktree, makes initial commit + push + PR, creates state
+file, and logs all operations. Optionally pulls main first (skipped
+via --skip-pull when the caller already pulled). The version gate
 (prime-check) runs as a separate step before this script.
 
-Usage: bin/flow start-setup "<feature name>" [--prompt "<full prompt>"]
-       bin/flow start-setup "<feature name>" --prompt-file <path>
+Usage: bin/flow start-setup "<feature name>" [--prompt "<full prompt>"] [--prompt-file <path>] [--skip-pull]
 
 Output (JSON to stdout):
   Success: {"status": "ok", "worktree": "...", "pr_url": "...", "pr_number": N, "feature": "...", "branch": "..."}
@@ -233,6 +233,8 @@ def main():
                         help="Full start prompt (preserved verbatim in state file)")
     parser.add_argument("--prompt-file", default=None,
                         help="Path to file containing start prompt (file is deleted after reading)")
+    parser.add_argument("--skip-pull", action="store_true",
+                        help="Skip git pull (caller already pulled main)")
     args = parser.parse_args()
 
     if not args.feature_name:
@@ -268,9 +270,10 @@ def main():
         framework = init_data.get("framework", "rails")
         skills = init_data.get("skills")
 
-        # Git pull
-        _git_pull(project_root)
-        _log(project_root, branch, "git pull origin main (exit 0)")
+        # Git pull (skip when caller already pulled main)
+        if not args.skip_pull:
+            _git_pull(project_root)
+            _log(project_root, branch, "git pull origin main (exit 0)")
 
         # Create worktree
         wt_path = _create_worktree(project_root, branch)
