@@ -59,7 +59,7 @@ shared state must be idempotent.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → continue=auto
+1. If `--auto` was passed → continue=auto AND override ALL skills to fully autonomous (all commits auto, all continues auto, code review plugin skipped). The `--auto` flag is passed through to `start-setup` in Step 3, which writes the autonomous preset to the state file. All downstream phases inherit the override automatically.
 2. If `--manual` was passed → continue=manual
 3. Otherwise → resolved in the Done section by reading `skills.flow-start.continue` from `.flow-states/<branch>.json` (which exists after Step 3)
 
@@ -246,11 +246,19 @@ Uncommitted fixes on main will not appear in the worktree.
 
 Write the user's original start prompt (verbatim, including `#N` issue references
 and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
-Write tool. Then run the setup script:
+Write tool. Then run the setup script. If `--auto` was passed to this skill
+invocation, also pass `--auto` to the start-setup command:
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull
 ```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull --auto
+```
+
+Use the first form when no mode flag was passed or `--manual` was passed.
+Use the second form when `--auto` was passed.
 
 The script reads the prompt file and deletes it automatically after reading.
 

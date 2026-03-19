@@ -100,7 +100,7 @@ def _write_flow_json(repo, version, framework="rails", skills=None):
 
 
 def _run_no_gh(cwd, feature_name, framework="rails", prompt=None,
-               prompt_file=None, skip_pull=False):
+               prompt_file=None, skip_pull=False, auto=False):
     """Run start-setup.py with gh stubbed out and flow.json initialized."""
     # Ensure flow.json exists with correct version for the version gate
     _write_flow_json(cwd, _current_plugin_version(), framework)
@@ -123,6 +123,8 @@ def _run_no_gh(cwd, feature_name, framework="rails", prompt=None,
         cmd.extend(["--prompt-file", prompt_file])
     if skip_pull:
         cmd.append("--skip-pull")
+    if auto:
+        cmd.append("--auto")
     result = subprocess.run(
         cmd,
         capture_output=True, text=True, cwd=str(cwd), env=env,
@@ -488,6 +490,73 @@ def test_state_file_omits_skills_when_not_in_flow_json(_default_run):
     """State file should not have a skills key when .flow.json has no skills."""
     data, state, log, repo = _default_run
     assert "skills" not in state
+
+
+# --- --auto flag overrides skills ---
+
+
+def test_auto_flag_overrides_skills_to_fully_autonomous(git_repo_with_remote):
+    """--auto flag overrides .flow.json skills to the fully autonomous preset."""
+    manual_skills = {
+        "flow-start": {"continue": "manual"},
+        "flow-plan": {"continue": "manual", "dag": "auto"},
+        "flow-code": {"commit": "manual", "continue": "manual"},
+        "flow-code-review": {"commit": "manual", "continue": "manual"},
+        "flow-learn": {"commit": "manual", "continue": "manual"},
+        "flow-abort": "manual",
+        "flow-complete": "manual",
+    }
+    version = _current_plugin_version()
+    _write_flow_json(git_repo_with_remote, version, skills=manual_skills)
+
+    env = os.environ.copy()
+    stub_dir = git_repo_with_remote / ".stub-bin"
+    stub_dir.mkdir(exist_ok=True)
+    gh_stub = stub_dir / "gh"
+    gh_stub.write_text(
+        '#!/bin/bash\n'
+        'echo "https://github.com/test/repo/pull/42"\n'
+    )
+    gh_stub.chmod(0o755)
+    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [sys.executable, SCRIPT, "auto override test", "--auto"],
+        capture_output=True, text=True, cwd=str(git_repo_with_remote), env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    state_path = git_repo_with_remote / ".flow-states" / "auto-override-test.json"
+    state = json.loads(state_path.read_text())
+    assert "skills" in state
+    expected = {
+        "flow-start": {"continue": "auto"},
+        "flow-plan": {"continue": "auto", "dag": "auto"},
+        "flow-code": {"commit": "auto", "continue": "auto"},
+        "flow-code-review": {"commit": "auto", "continue": "auto", "code_review_plugin": "never"},
+        "flow-learn": {"commit": "auto", "continue": "auto"},
+        "flow-abort": "auto",
+        "flow-complete": "auto",
+    }
+    assert state["skills"] == expected
+
+
+def test_auto_flag_overrides_even_without_skills_in_flow_json(git_repo_with_remote):
+    """--auto flag sets skills even when .flow.json has no skills key."""
+    result = _run_no_gh(git_repo_with_remote, "auto no skills", auto=True)
+    assert result.returncode == 0, result.stderr
+    state_path = git_repo_with_remote / ".flow-states" / "auto-no-skills.json"
+    state = json.loads(state_path.read_text())
+    assert "skills" in state
+    expected = {
+        "flow-start": {"continue": "auto"},
+        "flow-plan": {"continue": "auto", "dag": "auto"},
+        "flow-code": {"commit": "auto", "continue": "auto"},
+        "flow-code-review": {"commit": "auto", "continue": "auto", "code_review_plugin": "never"},
+        "flow-learn": {"commit": "auto", "continue": "auto"},
+        "flow-abort": "auto",
+        "flow-complete": "auto",
+    }
+    assert state["skills"] == expected
 
 
 # --- session_id and transcript_path in state file ---
