@@ -42,7 +42,7 @@ Start → Plan → Code → Code Review → Learn → Complete
 | **1: Start** | `/flow-start <prompt>` | Lock, pull main, `bin/ci` baseline, upgrade dependencies, `bin/ci` post-deps, commit to main, unlock, new worktree + PR — ci-fixer sub-agent handles failures |
 | **2: Plan** | `/flow-plan` | Reads the start prompt, invokes DAG decompose plugin for dependency analysis, explores codebase, produces ordered tasks with dependency graph |
 | **3: Code** | `/flow-code` | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
-| **4: Code Review** | `/flow-code-review` | Four lenses — clarity (`/simplify`), correctness (`/review`), safety (`/security-review`), and CLAUDE.md compliance (`code-review:code-review` plugin) |
+| **4: Code Review** | `/flow-code-review` | Four lenses — clarity (foreground review agents), correctness (`/review`), safety (`/security-review`), and CLAUDE.md compliance (`code-review:code-review` plugin) |
 | **5: Learn** | `/flow-learn` | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
 | **6: Complete** | `/flow-complete` | Close issues referenced in prompt, PR merged, worktree removed, state file deleted, feature done |
 
@@ -153,7 +153,7 @@ Available at any point in the workflow:
 
 ### Sub-Agent Architecture
 
-Start uses a Sonnet sub-agent for CI failures. Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition. Code Review invokes Claude Code's built-in `/simplify`, `/review`, and `/security-review` commands directly, then delegates to the `code-review:code-review` plugin for multi-agent validation. Code has no sub-agent.
+Start uses a Sonnet sub-agent for CI failures. Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition. Code Review uses three foreground review agents for clarity, then delegates to built-in `/review` and `/security-review` commands, and optionally the `code-review:code-review` plugin for multi-agent validation. Code has no sub-agent.
 
 ```text
 Main conversation          Sub-agent (general-purpose)
