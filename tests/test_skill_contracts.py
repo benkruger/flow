@@ -2516,6 +2516,14 @@ def test_plan_has_continue_pending_for_decompose():
     )
 
 
+def test_plan_detects_decomposed_label():
+    """Plan SKILL.md must detect the 'decomposed' label on referenced issues."""
+    content = _read_skill("flow-plan")
+    assert "decomposed" in content, (
+        "flow-plan/SKILL.md must reference 'decomposed' label for skip detection"
+    )
+
+
 def test_done_hardgates_reread_state_file():
     """Phases 1-5 Done HARD-GATEs must re-read continue mode from state file."""
     phase_skills = _phase_skills()
