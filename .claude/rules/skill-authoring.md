@@ -111,6 +111,18 @@ closing ` ``` ` and the tag. pymarkdown MD031 requires a blank line
 after every fenced code block, including when the next line is a
 closing tag rather than prose.
 
+## Contract Test Atomicity in Plan Dependencies
+
+When a plan removes content that a contract test asserts exists, and a
+later task re-adds it at a different location, the plan must mark those
+tasks as atomically dependent — they must be in the same commit. Otherwise
+CI fails in the intermediate state when the content is absent.
+
+Before finalizing the dependency graph, check every removal task against
+`test_skill_contracts.py` assertions. If any assertion validates the
+presence of the removed content, pair the removal with the re-addition
+task.
+
 ## Destination Renumbering
 
 When renumbering destinations or steps within a SKILL.md, grep for the
