@@ -513,6 +513,11 @@ class TestFormatTabTitle:
         title = format_tab_title(self._state("flow-code", code_task=0))
         assert title == "Flow: Phase 3: Code \u2014 Test Feature"
 
+    def test_code_with_string_task(self):
+        """Non-integer code_task is ignored — no step info."""
+        title = format_tab_title(self._state("flow-code", code_task="2"))
+        assert title == "Flow: Phase 3: Code \u2014 Test Feature"
+
     def test_code_review_with_step(self):
         title = format_tab_title(self._state("flow-code-review", code_review_step=2))
         assert title == "Flow: Phase 4: Code Review (step 2/4) \u2014 Test Feature"
