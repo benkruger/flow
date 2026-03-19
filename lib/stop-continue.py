@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import current_branch, mutate_state, project_root
+from flow_utils import current_branch, format_tab_title, mutate_state, project_root
 
 
 def capture_session_id(hook_input):
@@ -97,6 +97,32 @@ def check_continue(hook_input=None):
         return (False, None, None)
 
 
+def set_tab_title():
+    """Write the current FLOW phase to the terminal tab title via /dev/tty.
+
+    Fail-open: any error is caught silently — this is cosmetic only.
+    """
+    try:
+        root = project_root()
+        branch = current_branch()
+        if not branch:
+            return
+
+        state_path = root / ".flow-states" / f"{branch}.json"
+        if not state_path.exists():
+            return
+
+        state = json.loads(state_path.read_text())
+        title = format_tab_title(state)
+        if not title:
+            return
+
+        with open("/dev/tty", "w") as tty:
+            tty.write(f"\033]0;{title}\007")
+    except Exception:
+        pass
+
+
 def main():
     hook_input = {}
     try:
@@ -107,6 +133,8 @@ def main():
     should_block, skill_name, context = check_continue(hook_input)
 
     capture_session_id(hook_input)
+
+    set_tab_title()
 
     if should_block:
         reason = (
