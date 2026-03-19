@@ -149,4 +149,4 @@ continue to the next.
 - Missing state file is a warning, not a hard block
 - CI must pass before merge
 - Confirmation only when `--manual` is passed
-- Must run from project root
+- Steps 1-9 run from the worktree; Steps 10-11 run from the project root

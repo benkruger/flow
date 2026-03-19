@@ -16,8 +16,7 @@ and deletes the state file. Mode is configurable via `.flow.json`
 confirmation before the irreversible merge. The `--continue-step`
 flag is used for self-invocation after mid-phase commits (merge
 conflict resolution or CI fix) — it skips the Announce banner and
-SOFT-GATE, re-establishes project root context, and dispatches via
-the Resume Check.
+SOFT-GATE and dispatches via the Resume Check.
 
 ---
 
@@ -85,6 +84,6 @@ state file doesn't exist, it notes that and finishes.
 - Phase 5 complete is a warning, not a hard block
 - Missing state file is a warning, not a hard block
 - Confirmation only when mode is manual (via `--manual` or `.flow.json`)
-- Must run from the project root — never from inside the worktree
+- Steps 1-9 run from the worktree; Steps 10-11 run from the project root
 - Merge is irreversible; branch deletion is handled by the cleanup script
 - If merge fails, stop and report — never retry with additional flags or elevated privileges
