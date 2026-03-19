@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — four lenses on the same diff: clarity, correctness, safety, and CLAUDE.md compliance. Invokes /simplify, /review, /security-review, and code-review:code-review with a commit after each step."
+description: "Phase 4: Code Review — three built-in lenses (clarity, correctness, safety) plus an optional fourth (CLAUDE.md compliance via code-review:code-review plugin, configurable). Invokes /simplify, /review, /security-review, and optionally code-review:code-review with a commit after each step."
 ---
 
 # FLOW Code Review — Phase 4: Code Review
@@ -119,9 +119,9 @@ Read `code_review_step` from the state file (default `0` if absent).
 
 Read the project's CLAUDE.md for framework-specific conventions. The
 first three review steps use Claude's built-in commands which apply
-language-aware checks automatically. The fourth step uses the
-code-review plugin for multi-agent validation. The CLAUDE.md conventions
-inform fix decisions.
+language-aware checks automatically. When enabled via Code Review Plugin
+Mode Resolution, a fourth step uses the code-review plugin for
+multi-agent validation. The CLAUDE.md conventions inform fix decisions.
 
 ---
 
@@ -684,11 +684,11 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
 - Always run `bin/flow ci` after any fix made during Code Review
 - Never transition to Learn unless `bin/flow ci` is green
-- Fix every finding from `/review`, `/security-review`, and `code-review:code-review` — do not leave findings unaddressed
+- Fix every finding from `/review`, `/security-review`, and (when enabled) `code-review:code-review` — do not leave findings unaddressed
 - Follow the project CLAUDE.md conventions when fixing
-- Each step (Simplify, Review, Security, Code Review Plugin) gets its own commit when changes are made
+- Each active step (Simplify, Review, Security, and Code Review Plugin when enabled) gets its own commit when changes are made
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories
 - Never cd before running `bin/flow` — it detects the project root internally
-- After each step (Simplify, Review, Security, Code Review Plugin) completes, advance to the next step via self-invocation — never pause or wait for user input between steps
+- After each active step completes, advance to the next step via self-invocation — never pause or wait for user input between steps
