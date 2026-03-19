@@ -2544,3 +2544,34 @@ def test_flow_abort_removes_labels():
     assert "--remove" in content, (
         "flow-abort/SKILL.md must use --remove flag for label-issues"
     )
+
+
+# --- code_review_plugin config axis ---
+
+
+def test_code_review_skill_has_plugin_mode_resolution():
+    """Code Review SKILL.md must reference code_review_plugin config."""
+    content = _read_skill("flow-code-review")
+    assert "skills.flow-code-review.code_review_plugin" in content, (
+        "flow-code-review/SKILL.md Mode Resolution must reference "
+        "'skills.flow-code-review.code_review_plugin' key"
+    )
+
+
+def test_prime_presets_include_code_review_plugin_config():
+    """All 3 prime presets must include 'code_review_plugin' in flow-code-review."""
+    content = _read_skill("flow-prime")
+    json_blocks = re.findall(r"```json\n(\{.*?\})\n```", content, re.DOTALL)
+    assert len(json_blocks) >= 3, (
+        f"Expected at least 3 JSON preset blocks, found {len(json_blocks)}"
+    )
+    preset_names = ["fully autonomous", "fully manual", "recommended"]
+    for i, preset_name in enumerate(preset_names):
+        parsed = json.loads(json_blocks[i])
+        cr_config = parsed.get("flow-code-review", {})
+        if isinstance(cr_config, str):
+            cr_config = {}
+        assert "code_review_plugin" in cr_config, (
+            f"'code_review_plugin' key missing from flow-code-review config "
+            f"in {preset_name} preset"
+        )
