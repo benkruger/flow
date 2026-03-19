@@ -40,7 +40,7 @@ At the very start, output the following banner in your response (not via Bash) i
 Run:
 
 ```bash
-gh issue list --state open --json number,title,labels,createdAt,body --limit 100
+gh issue list --state open --json number,title,labels,createdAt,body,url --limit 100
 ```
 
 Parse the JSON output. If there are no open issues, print the COMPLETE banner and stop.
@@ -88,7 +88,9 @@ Within each category, assign High, Medium, or Low priority based on:
 - **Medium** — older than 7 days, or affects developer experience
 - **Low** — recent, cosmetic, or nice-to-have
 
-## Step 5 — Batch Detection
+## Step 5 — Batch Detection and Analysis
+
+### 5a. Batch Detection
 
 Scan each issue's body for file path references. File paths are strings
 containing `/` with recognizable patterns: directory prefixes like `lib/`,
@@ -103,9 +105,30 @@ Record:
 
 - **Batches** — groups of 2+ issues with their shared file paths
 - **Solo issues** — issues that do not share 2+ files with any other issue
+- **File count** — the number of file path references per issue, displayed
+  as a complexity signal in the category tables
 
-If no batches are found (all issues are solo), skip the batch output in
-the next step.
+If no batches are found (all issues are solo), omit the batch section
+from the Step 6 display.
+
+### 5b. Dependency Detection
+
+Scan each issue's body for `#N` patterns where N matches the number of
+another open issue in the fetched list. If issue A's body mentions `#B`,
+then A depends on B — B must be completed before A.
+
+Build a dependency map recording which issues depend on which. Only
+record dependencies between issues that are both in the current open
+issue list — references to closed or non-existent issues are ignored.
+
+### 5c. Stale Detection
+
+For issues older than 60 days that have file path references and are not
+marked in-progress, check whether each referenced file still exists using
+the Glob tool. Run Glob calls for all qualifying issues in parallel.
+Count the number of missing files per issue. Mark issues with one or more
+missing files as stale. Record the missing file count for display in
+Step 6.
 
 ## Step 6 — Display
 
@@ -119,11 +142,16 @@ its number and title. If no issues have the label, skip this section.
 
 ### Category Tables
 
-For each non-empty category, print a markdown table with columns: `#`, `Title`, `Age`, `Priority`. Sort by priority (High first), then by age (oldest first).
+For each non-empty category, print a markdown table with columns: `#`, `Title`, `Files`, `Age`, `Priority`. Sort by priority (High first), then by age (oldest first).
+
+The `Files` column shows the file path count from Step 5a (e.g., `~3`).
+If an issue has no file path references, show `—` in the Files column.
 
 For in-progress issues, append `[In Progress]` to the title in the table.
 For decomposed issues, append `[Decomposed]` to the title in the table.
-An issue can display both annotations: `[In Progress] [Decomposed]`.
+For stale issues (from Step 5c), append `[Stale: N files missing]` to the
+title where N is the count of missing files.
+An issue can display multiple annotations: `[In Progress] [Decomposed] [Stale: 2 files missing]`.
 Never remove in-progress issues from the table — always display all issues.
 
 ### Recommended Work Order
@@ -134,10 +162,14 @@ through the issues. Exclude issues with the "Flow In-Progress" label
 from the work order — they are already being worked on by another
 engineer.
 
+- **Explicit dependencies first** — if issue A depends on B (from Step 5b),
+  B must appear before A regardless of priority. Use topological sort to
+  respect the full dependency chain. If a cycle exists, note it and fall
+  back to priority ordering for the cycle members.
 - **Priority ordering** — High before Medium before Low
 - **Batches as units** — when issues form a batch, list them as a group.
   The batch's effective priority is its highest-priority member.
-- **Dependencies** — if one issue refactors files that another issue
+- **Implicit dependencies** — if one issue refactors files that another issue
   adds features to (based on category: Tech Debt, Rule, or Flow issues
   that touch shared files), place the refactoring issue first
 - **Decomposed boost** — issues with the "decomposed" label sort before
@@ -150,11 +182,12 @@ For each entry in the work order, show:
 - Issue number(s) and title(s)
 - Effective priority
 - If batched: the shared files that link them
-- If dependency-ordered: brief rationale
+- If dependency-ordered: brief rationale (e.g., "prerequisite for #264")
+- A copy-paste start command: `/flow:flow-start work on issue #N`
 
 If there are no batches and no dependency relationships, the work order
-is simply the priority-then-age sort from the category tables. State
-this rather than repeating the full list.
+is simply the priority-then-age sort from the category tables. List each
+entry with its start command but omit batch and dependency detail.
 
 After the work order is displayed, output the following banner in your response (not via Bash) inside a fenced code block:
 

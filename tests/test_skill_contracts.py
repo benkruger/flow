@@ -2633,6 +2633,56 @@ def test_flow_issues_has_decomposed_detection():
     )
 
 
+# --- flow-issues dependency detection ---
+
+
+def test_flow_issues_has_dependency_detection():
+    """flow-issues SKILL.md must have cross-reference dependency detection."""
+    content = _read_skill("flow-issues")
+    assert "dependency" in content.lower(), (
+        "flow-issues/SKILL.md must contain dependency detection logic"
+    )
+    assert "#N" in content, (
+        "flow-issues/SKILL.md must reference #N cross-reference patterns"
+    )
+
+
+# --- flow-issues file count column ---
+
+
+def test_flow_issues_has_file_count_column():
+    """flow-issues SKILL.md must include a Files column in category tables."""
+    content = _read_skill("flow-issues")
+    assert "`Files`" in content, (
+        "flow-issues/SKILL.md must contain a 'Files' column in the table definition"
+    )
+
+
+# --- flow-issues stale detection ---
+
+
+def test_flow_issues_has_stale_detection():
+    """flow-issues SKILL.md must have stale issue detection."""
+    content = _read_skill("flow-issues")
+    assert "stale" in content.lower(), (
+        "flow-issues/SKILL.md must contain stale detection logic"
+    )
+    assert "60" in content, (
+        "flow-issues/SKILL.md must reference the 60-day threshold"
+    )
+
+
+# --- flow-issues start commands ---
+
+
+def test_flow_issues_has_start_commands():
+    """flow-issues SKILL.md must include flow-start commands in work order."""
+    content = _read_skill("flow-issues")
+    assert "flow-start" in content, (
+        "flow-issues/SKILL.md must contain flow-start command in work order"
+    )
+
+
 # --- label-issues integration in Start, Complete, Abort ---
 
 
