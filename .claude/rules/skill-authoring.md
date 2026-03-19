@@ -97,6 +97,12 @@ The `git worktree remove` call deletes the entire directory tree —
 any step that reads or removes worktree-internal files must precede
 it or the target path will not exist.
 
+Similarly, any SKILL.md command that reads `.flow-states/` files
+(state file, log, CI sentinel) must be placed in a numbered step
+BEFORE the cleanup step. The Done section runs after cleanup — by
+that point, `.flow-states/<branch>.json` has been deleted and any
+command that reads it will fail.
+
 ## Fenced Code Blocks Before Closing Tags
 
 When a bash block ends immediately before a closing XML-like tag
