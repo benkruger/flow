@@ -36,11 +36,6 @@ and the Update State section (do not call `phase-transition` again).
 
 Run `git worktree list --porcelain` to find the project root (first
 `worktree` line) and `git branch --show-current` for the current branch.
-Navigate to the project root:
-
-```bash
-cd <project_root>
-```
 
 Use the Read tool to read `<project_root>/.flow-states/<branch>.json`
 to get the state data (`feature`, `branch`, `worktree`, `pr_number`,
