@@ -21,10 +21,14 @@ an ordered implementation plan with a dependency graph.
 
 1. Reads the feature description from the `prompt` field in the state file
    (the full text passed to `/flow-start`)
-2. Fetches referenced GitHub issues (`#N` patterns in the prompt)
-3. Invokes `/decompose:decompose` for structured DAG decomposition
-   (configurable via `dag` mode — see below), then self-invokes with
-   `--continue-step` to ensure continuation after the turn boundary
+2. Fetches referenced GitHub issues (`#N` patterns in the prompt) and
+   checks for the "decomposed" label
+3. If a referenced issue has the "decomposed" label, skips decompose
+   and uses the issue body as a head start (see Pre-Decomposed Issues
+   below). Otherwise, invokes `/decompose:decompose` for structured
+   DAG decomposition (configurable via `dag` mode — see below), then
+   self-invokes with `--continue-step` to ensure continuation after
+   the turn boundary
 4. Explores the codebase to validate the DAG against reality
 5. Writes the plan file with a Dependency Graph section and ordered tasks
 6. Stores the plan file path in state and transitions to Code
@@ -58,6 +62,20 @@ Configurable via `.flow.json` under `skills.flow-plan.dag`:
 - `"auto"` (default) — use DAG decomposition
 - `"always"` — always use DAG decomposition
 - `"never"` — skip DAG decomposition entirely
+
+### Pre-Decomposed Issues
+
+When a referenced issue has the "decomposed" label (applied by
+`/create-issue`), the Plan phase skips the decompose plugin invocation
+entirely. The issue body — which contains verified file paths, acceptance
+criteria, scope boundaries, and architectural context from a prior
+decompose run — is written to `.flow-states/<branch>-dag.md` as a
+pre-existing analysis and used as a head start for plan writing. This
+applies regardless of the configured DAG mode.
+
+No self-invocation or continuation flags are needed when skipping
+decompose — execution proceeds directly to codebase exploration and
+plan writing in the same turn.
 
 ---
 
