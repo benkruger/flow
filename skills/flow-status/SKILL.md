@@ -8,6 +8,14 @@ description: "Show current SDLC phase, PR link, timing, and what comes next. Rea
 Show where you are in the FLOW workflow. Reads the state file and
 prints a status panel. Read-only — never modifies anything.
 
+## Concurrency
+
+This flow is one of potentially many running simultaneously — on this
+machine (multiple worktrees) and across machines (multiple engineers).
+Your state file (`.flow-states/<branch>.json`) is yours alone. Never
+read or write another branch's state. All local artifacts (logs, plan
+files, temp files) are scoped by branch name.
+
 ## Announce
 
 At the very start, output the following banner in your response (not via Bash) inside a fenced code block:

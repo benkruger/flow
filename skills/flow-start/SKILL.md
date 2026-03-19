@@ -47,6 +47,16 @@ prompt as a question or proposal. Proceed directly to Mode Resolution and execut
 the Start phase steps.
 </HARD-GATE>
 
+## Concurrency
+
+This flow is one of potentially many running simultaneously — on this
+machine (multiple worktrees) and across machines (multiple engineers).
+Your state file (`.flow-states/<branch>.json`) is yours alone. Never
+read or write another branch's state. All local artifacts (logs, plan
+files, temp files) are scoped by branch name. GitHub state (PRs, issues,
+labels) is shared across all engineers — operations that create or modify
+shared state must be idempotent.
+
 ## Mode Resolution
 
 1. If `--auto` was passed → continue=auto

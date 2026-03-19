@@ -21,6 +21,16 @@ description: "Phase 6: Complete — merge the PR, remove the worktree, and delet
 - `/flow:flow-complete --manual` — prompts for user confirmation before merge
 - `/flow:flow-complete --continue-step` — self-invocation: skip Announce and SOFT-GATE, dispatch to the next step via Resume Check
 
+## Concurrency
+
+This flow is one of potentially many running simultaneously — on this
+machine (multiple worktrees) and across machines (multiple engineers).
+Your state file (`.flow-states/<branch>.json`) is yours alone. Never
+read or write another branch's state. All local artifacts (logs, plan
+files, temp files) are scoped by branch name. GitHub state (PRs, issues,
+labels) is shared across all engineers — operations that create or modify
+shared state must be idempotent.
+
 ## Mode Resolution
 
 1. If `--auto` was passed → mode is **auto**

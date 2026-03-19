@@ -7,6 +7,16 @@ description: "Review the full diff, approve or deny, then git add + commit + pus
 
 Review all pending changes as a diff before committing. You must get explicit approval before touching git.
 
+## Concurrency
+
+This flow is one of potentially many running simultaneously — on this
+machine (multiple worktrees) and across machines (multiple engineers).
+Your state file (`.flow-states/<branch>.json`) is yours alone. Never
+read or write another branch's state. All local artifacts (logs, plan
+files, temp files) are scoped by branch name. GitHub state (PRs, issues,
+labels) is shared across all engineers — operations that create or modify
+shared state must be idempotent.
+
 ## Round 1 — Setup
 
 Run all of these in parallel (one response, multiple tool calls):

@@ -8,6 +8,14 @@ description: "Invoke automatically whenever the user corrects Claude, disagrees 
 Capture a correction or learning to the state file immediately.
 This skill must be fast — capture and continue, no interruption.
 
+## Concurrency
+
+This flow is one of potentially many running simultaneously — on this
+machine (multiple worktrees) and across machines (multiple engineers).
+Your state file (`.flow-states/<branch>.json`) is yours alone. Never
+read or write another branch's state. All local artifacts (logs, plan
+files, temp files) are scoped by branch name.
+
 ## When to invoke automatically
 
 Invoke this skill BEFORE replying whenever the user:

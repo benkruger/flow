@@ -8,6 +8,14 @@ description: "Resume the current FLOW feature. Mid-session: re-asks the last pha
 This skill behaves differently depending on whether you are mid-session
 or starting fresh. Choose the right path below.
 
+## Concurrency
+
+This flow is one of potentially many running simultaneously — on this
+machine (multiple worktrees) and across machines (multiple engineers).
+Your state file (`.flow-states/<branch>.json`) is yours alone. Never
+read or write another branch's state. All local artifacts (logs, plan
+files, temp files) are scoped by branch name.
+
 ---
 
 ## Path A — Mid-session (you already have context)
