@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import derive_feature, detect_repo, now, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER
+from log import append_log
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 
@@ -216,15 +217,6 @@ def _freeze_phases(project_root, branch):
     shutil.copy2(source, dest)
 
 
-def _log(project_root, branch, message):
-    """Append a log entry to .flow-states/<branch>.log."""
-    log_dir = project_root / ".flow-states"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / f"{branch}.log"
-    timestamp = now()
-    with open(log_path, "a") as f:
-        f.write(f"{timestamp} [Phase 1] {message}\n")
-
 
 def main():
     parser = argparse.ArgumentParser(description="FLOW Start phase setup")
@@ -273,15 +265,15 @@ def main():
         # Git pull (skip when caller already pulled main)
         if not args.skip_pull:
             _git_pull(project_root)
-            _log(project_root, branch, "git pull origin main (exit 0)")
+            append_log(branch, "[Phase 1] git pull origin main (exit 0)")
 
         # Create worktree
         wt_path = _create_worktree(project_root, branch)
-        _log(project_root, branch, f"git worktree add .worktrees/{branch} (exit 0)")
+        append_log(branch, f"[Phase 1] git worktree add .worktrees/{branch} (exit 0)")
 
         # Commit, push, PR
         pr_url, pr_number = _initial_commit_push_pr(wt_path, branch, feature_title, raw_prompt)
-        _log(project_root, branch, f"git commit + push + gh pr create (exit 0)")
+        append_log(branch, "[Phase 1] git commit + push + gh pr create (exit 0)")
 
         # Detect GitHub repo for caching
         repo = detect_repo(cwd=str(project_root))
@@ -290,11 +282,11 @@ def main():
         _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
                            framework=framework, skills=skills, prompt=raw_prompt,
                            repo=repo)
-        _log(project_root, branch, f"create .flow-states/{branch}.json (exit 0)")
+        append_log(branch, f"[Phase 1] create .flow-states/{branch}.json (exit 0)")
 
         # Freeze phase config for this feature
         _freeze_phases(project_root, branch)
-        _log(project_root, branch, f"freeze .flow-states/{branch}-phases.json (exit 0)")
+        append_log(branch, f"[Phase 1] freeze .flow-states/{branch}-phases.json (exit 0)")
 
         output = {
             "status": "ok",
