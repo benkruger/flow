@@ -10,9 +10,9 @@ parent: Skills
 
 **Usage:** `/flow-code-review`, `/flow-code-review --auto`, or `/flow-code-review --manual`
 
-Three built-in lenses (clarity, correctness, safety) plus an optional fourth
+Three review lenses (clarity, correctness, safety) plus an optional fourth
 (CLAUDE.md compliance via the code-review:code-review plugin). Combines
-simplification, code review, and security review into a single phase with
+clarity review, code review, and security review into a single phase with
 up to four ordered steps, each with its own commit checkpoint.
 
 ---
@@ -21,8 +21,9 @@ up to four ordered steps, each with its own commit checkpoint.
 
 ### Step 1 — Simplify (clarity)
 
-Invokes Claude Code's built-in `/simplify`. Waits for all background
-agents to complete before evaluating results. If changes are proposed,
+Launches three foreground review agents in parallel (code reuse, code
+quality, efficiency) against the branch diff. All three complete within
+the response turn — no background agents. If changes are proposed,
 shows the diff, commits via `/flow-commit`, and runs `bin/flow ci`. If
 no changes, skips to Step 2.
 
@@ -90,10 +91,10 @@ a conversation turn boundary. The `--continue-step` flag skips the
 Announce banner and phase entry update, proceeding directly to the Resume
 Check which dispatches to the next step.
 
-Before advancing, each step waits for all background agents launched by
-the child skill to complete. Built-in skills and plugins may launch
-background review agents whose findings arrive asynchronously. No step
-evaluates "no changes" or "no findings" until every agent has reported.
+Step 1 uses foreground agents that complete within the response turn.
+Steps 2-4 invoke built-in skills or plugins that may launch background
+review agents — each of those steps waits for all background agents to
+complete before evaluating findings.
 
 ---
 
