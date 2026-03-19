@@ -8,7 +8,8 @@ parent: Skills
 
 **Phase:** 2 — Plan
 
-**Usage:** `/flow-plan`, `/flow-plan --auto`, or `/flow-plan --manual`
+**Usage:** `/flow-plan`, `/flow-plan --auto`, `/flow-plan --manual`, or
+`/flow-plan --continue-step`
 
 Invokes the `decompose` plugin for DAG-based task decomposition,
 explores the codebase, validates the DAG against reality, and produces
@@ -22,7 +23,8 @@ an ordered implementation plan with a dependency graph.
    (the full text passed to `/flow-start`)
 2. Fetches referenced GitHub issues (`#N` patterns in the prompt)
 3. Invokes `/decompose:decompose` for structured DAG decomposition
-   (configurable via `dag` mode — see below)
+   (configurable via `dag` mode — see below), then self-invokes with
+   `--continue-step` to ensure continuation after the turn boundary
 4. Explores the codebase to validate the DAG against reality
 5. Writes the plan file with a Dependency Graph section and ordered tasks
 6. Stores the plan file path in state and transitions to Code
@@ -40,10 +42,14 @@ file's Dependency Graph and task ordering.
 
 ### DAG Capture
 
-After the decompose plugin returns, the complete output — XML DAG plan,
-node executions with quality scores, and synthesis block — is captured
-verbatim to `.flow-states/<branch>-dag.md` with a markdown heading. The
-path is stored in `files.dag` in the state file.
+Before invoking decompose, the skill sets `_continue_pending` and
+`_continue_context` so the stop-continue hook forces continuation after
+the plugin returns. After the decompose plugin returns, the complete
+output — XML DAG plan, node executions with quality scores, and
+synthesis block — is captured verbatim to `.flow-states/<branch>-dag.md`
+with a markdown heading. The path is stored in `files.dag` in the state
+file. The skill then self-invokes with `--continue-step` to dispatch to
+the plan writing step via the Resume Check.
 
 ### DAG Mode
 
@@ -71,9 +77,11 @@ The plan file lives at `.flow-states/<branch>-plan.md` and includes:
 
 ## Resuming
 
-If the session breaks mid-plan, `/flow-continue` checks the state file:
+The Resume Check handles both session restarts and mid-session
+self-invocation (after decompose returns). It checks the state file:
 
-- `files.dag` set, `files.plan` null — DAG was produced, skip to plan writing
+- `files.dag` set, `files.plan` null — DAG was produced, skip to plan
+  writing (triggered by self-invocation or session restart)
 - `files.plan` set — plan was written, complete the phase
 - Both null — restart from Step 1
 
