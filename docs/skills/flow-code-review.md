@@ -10,10 +10,10 @@ parent: Skills
 
 **Usage:** `/flow-code-review`, `/flow-code-review --auto`, or `/flow-code-review --manual`
 
-Four lenses on the same diff — clarity, correctness, safety, and CLAUDE.md
-compliance. Combines simplification, code review, security review, and
-multi-agent plugin validation into a single phase with four ordered steps,
-each with its own commit checkpoint.
+Three built-in lenses (clarity, correctness, safety) plus an optional fourth
+(CLAUDE.md compliance via the code-review:code-review plugin). Combines
+simplification, code review, and security review into a single phase with
+up to four ordered steps, each with its own commit checkpoint.
 
 ---
 
@@ -41,14 +41,17 @@ Waits for all background agents to complete before evaluating findings.
 If no findings, skips to the next step. Every finding is fixed,
 `bin/flow ci` is run, and changes are committed via `/flow-commit`.
 
-### Step 4 — Code Review Plugin (CLAUDE.md compliance)
+### Step 4 — Code Review Plugin (CLAUDE.md compliance, configurable)
 
-Invokes the `code-review:code-review` plugin for multi-agent validation.
-Four parallel agents (2x CLAUDE.md compliance, 1x bug scan, 1x
-security/logic scan) with a validation layer that filters false positives.
-Waits for all background agents to complete before evaluating findings.
-If no findings, skips to Done. Every finding is fixed, `bin/flow ci` is
-run, and changes are committed via `/flow-commit`.
+Controlled by the `code_review_plugin` config axis. When set to `"never"`,
+this step is skipped and the phase completes after Step 3.
+
+When enabled (`"always"` or `"auto"`), invokes the `code-review:code-review`
+plugin for multi-agent validation. Four parallel agents (2x CLAUDE.md
+compliance, 1x bug scan, 1x security/logic scan) with a validation layer
+that filters false positives. Waits for all background agents to complete
+before evaluating findings. If no findings, skips to Done. Every finding is
+fixed, `bin/flow ci` is run, and changes are committed via `/flow-commit`.
 
 ---
 
@@ -64,9 +67,17 @@ Each finding is classified before fixing:
 
 ## Mode
 
-Mode is configurable via `.flow.json` (default: manual). Both commit and
-continue are configurable independently. In auto mode, findings are
-auto-fixed and the phase transition advances to Learn without asking.
+Mode is configurable via `.flow.json` (default: manual). Three axes are
+configurable independently:
+
+- **commit** — `"auto"` or `"manual"` (default). Controls diff approval.
+- **continue** — `"auto"` or `"manual"` (default). Controls phase advancement.
+- **code\_review\_plugin** — `"always"` (default), `"auto"`, or `"never"`.
+  Controls whether Step 4 (the code-review:code-review plugin) runs.
+
+In auto mode, findings are auto-fixed and the phase transition advances to
+Learn without asking. When `code_review_plugin` is `"never"`, the phase
+completes after Step 3.
 
 ---
 
