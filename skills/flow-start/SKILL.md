@@ -312,33 +312,33 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ```
 ````
 
-If no flag override was set, read the state file at
-`<project_root>/.flow-states/<branch>.json`. Use `skills.flow-start.continue`.
-If the state file has no `skills` key → use built-in default: continue=manual.
+<HARD-GATE>
+Before advancing to the next phase, you MUST check the continue mode:
 
-**If continue=auto**, invoke `flow:flow-plan` directly. Do not invoke
-`flow:flow-status` or use AskUserQuestion.
+1. If no flag override was set, read `skills.flow-start.continue` from the
+   state file at `<project_root>/.flow-states/<branch>.json`.
+   If the state file has no `skills` key → continue=manual.
+2. If continue=auto → invoke `flow:flow-plan` directly.
+   Do NOT invoke `flow:flow-status`. Do NOT use AskUserQuestion.
+3. If continue=manual → you MUST do all of the following before proceeding:
+   a. Invoke `flow:flow-status`
+   b. Use AskUserQuestion:
+      "Phase 1: Start is complete. Ready to begin Phase 2: Plan?"
+      Options: "Yes, start Phase 2 now", "Not yet",
+      "I have a correction or learning to capture"
+   c. If "I have a correction or learning to capture":
+      ask what to capture, invoke `/flow:flow-note`, then re-ask with
+      only "Yes, start Phase 2 now" and "Not yet"
+   d. If Yes → invoke `flow:flow-plan` using the Skill tool
+   e. If Not yet → print the paused banner below, then report worktree
+      location, PR link, and any framework report items
+   f. Do NOT invoke `flow:flow-plan` until the user responds
 
-**If continue=manual**:
+Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
-Invoke the `flow:flow-status` skill to show the current state.
+</HARD-GATE>
 
-Use AskUserQuestion:
-
-> "Phase 1: Start is complete. Ready to begin Phase 2: Plan?"
->
-> - **Yes, start Phase 2 now**
-> - **Not yet**
-> - **I have a correction or learning to capture**
-
-**If "I have a correction or learning to capture":**
-1. Ask the user what they want to capture
-2. Invoke `/flow:flow-note` with their message
-3. Re-ask with only "Yes, start Phase 2 now" and "Not yet"
-
-**If Yes** — invoke the `flow:flow-plan` skill using the Skill tool.
-
-**If Not yet** — output the following banner in your response (not via Bash) inside a fenced code block:
+**If Not yet**, output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
@@ -348,11 +348,6 @@ Use AskUserQuestion:
 ══════════════════════════════════════════════════
 ```
 ````
-
-Then report:
-- Worktree location
-- PR link
-- Any additional report items from the framework section above
 
 ## Hard Rules
 

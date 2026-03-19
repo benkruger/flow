@@ -92,6 +92,30 @@ def test_phase_1_has_no_previous_phase_gate():
     )
 
 
+def test_phase_skills_1_through_5_have_done_section_hard_gate():
+    """Phases 1-5 must have a HARD-GATE enforcing continue-mode branching."""
+    phase_skills = _phase_skills()
+    for key in PHASE_ORDER[:-1]:  # Exclude flow-complete (terminal)
+        skill_name = phase_skills[key]
+        content = _read_skill(skill_name)
+
+        # Extract all HARD-GATE blocks
+        hard_gates = re.findall(
+            r"<HARD-GATE>(.*?)</HARD-GATE>", content, re.DOTALL
+        )
+
+        # At least one HARD-GATE must enforce continue-mode branching
+        has_continue_gate = any(
+            "continue=manual" in gate and "continue=auto" in gate
+            for gate in hard_gates
+        )
+        assert has_continue_gate, (
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) has no HARD-GATE "
+            f"enforcing continue-mode branching (must contain both "
+            f"'continue=auto' and 'continue=manual')"
+        )
+
+
 # --- State field schema ---
 
 
@@ -2289,6 +2313,23 @@ def test_complete_has_self_invocation_check():
     assert si_match, "Could not find Self-Invocation Check section content"
     assert "--continue-step" in si_match.group(1), (
         "Self-Invocation Check must reference --continue-step flag"
+    )
+
+
+def test_complete_done_uses_format_complete_summary():
+    """Complete Done section must call format-complete-summary script."""
+    content = _read_skill("flow-complete")
+    in_done = False
+    found_script_call = False
+    for line in content.splitlines():
+        if "Done" in line and "Print banner" in line:
+            in_done = True
+        if in_done and "format-complete-summary" in line:
+            found_script_call = True
+            break
+    assert found_script_call, (
+        "flow-complete/SKILL.md Done section must call "
+        "format-complete-summary to generate the summary banner"
     )
 
 

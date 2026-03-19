@@ -7,6 +7,7 @@ Provides common functions used across multiple hook scripts:
 - current_branch: get the current git branch name
 """
 
+import fcntl
 import json
 import re
 import subprocess
@@ -186,11 +187,12 @@ def find_state_files(root, branch):
 
 
 def extract_issue_numbers(prompt):
-    """Extract unique issue numbers from #N patterns in a prompt string."""
-    matches = re.findall(r"#(\d+)", prompt)
+    """Extract unique issue numbers from #N patterns and GitHub URLs in a prompt string."""
+    hash_matches = re.findall(r"#(\d+)", prompt)
+    url_matches = re.findall(r"/issues/(\d+)", prompt)
     seen = set()
     result = []
-    for match in matches:
+    for match in hash_matches + url_matches:
         num = int(match)
         if num not in seen:
             seen.add(num)
@@ -209,6 +211,50 @@ def derive_feature(branch):
 def derive_worktree(branch):
     """Derive the worktree path from a branch name."""
     return f".worktrees/{branch}"
+
+
+def mutate_state(state_path, transform_fn):
+    """Atomic read-lock-transform-write for state files.
+
+    Opens the file, acquires an exclusive advisory lock, reads and parses
+    JSON, calls transform_fn(state) to mutate the dict in place, then
+    writes back and releases the lock.
+
+    Returns the final (mutated) state dict.
+    Raises json.JSONDecodeError on corrupt JSON, FileNotFoundError if missing.
+    """
+    with open(state_path, "r+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        state = json.loads(f.read())
+        transform_fn(state)
+        f.seek(0)
+        f.write(json.dumps(state, indent=2))
+        f.truncate()
+    return state
+
+
+def detect_repo(cwd=None):
+    """Auto-detect GitHub repo from git remote origin URL.
+
+    Returns 'owner/repo' string or None if detection fails.
+    Optional cwd parameter for running git in a specific directory.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, cwd=cwd,
+        )
+        if result.returncode != 0:
+            return None
+        url = result.stdout.strip()
+        if not url:
+            return None
+        match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
+        if match:
+            return match.group(1)
+        return None
+    except Exception:
+        return None
 
 
 def permission_to_regex(perm):

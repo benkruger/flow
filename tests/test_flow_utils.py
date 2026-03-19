@@ -4,6 +4,7 @@ import importlib.util
 import json
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -390,3 +391,193 @@ def test_derive_feature_already_capitalized():
 def test_derive_worktree_from_branch():
     """Branch name produces .worktrees/ prefixed path."""
     assert _mod.derive_worktree("app-payment-webhooks") == ".worktrees/app-payment-webhooks"
+
+
+# --- detect_repo ---
+
+
+class TestDetectRepo:
+    """Tests for the detect_repo function."""
+
+    def _fake_result(self, stdout, returncode=0):
+        return subprocess.CompletedProcess(
+            args=[], returncode=returncode, stdout=stdout, stderr="",
+        )
+
+    def test_ssh_url_with_dotgit(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("git@github.com:owner/repo.git\n")):
+            assert _mod.detect_repo() == "owner/repo"
+
+    def test_https_url_with_dotgit(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("https://github.com/owner/repo.git\n")):
+            assert _mod.detect_repo() == "owner/repo"
+
+    def test_https_url_without_dotgit(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("https://github.com/owner/repo\n")):
+            assert _mod.detect_repo() == "owner/repo"
+
+    def test_ssh_url_without_dotgit(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("git@github.com:owner/repo\n")):
+            assert _mod.detect_repo() == "owner/repo"
+
+    def test_non_github_url_returns_none(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("https://gitlab.com/owner/repo.git\n")):
+            assert _mod.detect_repo() is None
+
+    def test_git_failure_returns_none(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("", returncode=1)):
+            assert _mod.detect_repo() is None
+
+    def test_empty_output_returns_none(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("")):
+            assert _mod.detect_repo() is None
+
+    def test_malformed_url_returns_none(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("not-a-url\n")):
+            assert _mod.detect_repo() is None
+
+    def test_subprocess_exception_returns_none(self):
+        with patch.object(_mod.subprocess, "run",
+                          side_effect=OSError("git not found")):
+            assert _mod.detect_repo() is None
+
+    def test_cwd_parameter_passed_to_subprocess(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("git@github.com:owner/repo.git\n")) as mock_run:
+            _mod.detect_repo(cwd="/some/path")
+
+        call_kwargs = mock_run.call_args
+        assert call_kwargs[1].get("cwd") == "/some/path"
+
+    def test_cwd_none_by_default(self):
+        with patch.object(_mod.subprocess, "run",
+                          return_value=self._fake_result("git@github.com:owner/repo.git\n")) as mock_run:
+            _mod.detect_repo()
+
+        call_kwargs = mock_run.call_args
+        assert call_kwargs[1].get("cwd") is None
+
+
+# --- mutate_state ---
+
+
+class TestMutateState:
+    """Tests for the mutate_state function."""
+
+    def test_basic_mutation_persists_to_disk(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        state_path.write_text(json.dumps({"count": 0}))
+
+        result = _mod.mutate_state(state_path, lambda s: s.__setitem__("count", 1))
+
+        assert result["count"] == 1
+        on_disk = json.loads(state_path.read_text())
+        assert on_disk["count"] == 1
+
+    def test_returns_updated_state_dict(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        state_path.write_text(json.dumps({"items": []}))
+
+        result = _mod.mutate_state(state_path, lambda s: s["items"].append("new"))
+
+        assert result["items"] == ["new"]
+
+    def test_corrupt_json_raises_json_decode_error(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        state_path.write_text("{corrupt")
+
+        with pytest.raises(json.JSONDecodeError):
+            _mod.mutate_state(state_path, lambda s: None)
+
+    def test_missing_file_raises_file_not_found_error(self, tmp_path):
+        state_path = tmp_path / "nonexistent.json"
+
+        with pytest.raises(FileNotFoundError):
+            _mod.mutate_state(state_path, lambda s: None)
+
+    def test_closure_captures_pre_mutation_values(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        state_path.write_text(json.dumps({"flag": "active", "data": "hello"}))
+
+        captured = {}
+
+        def transform(state):
+            captured["flag"] = state.get("flag", "")
+            state["flag"] = ""
+
+        _mod.mutate_state(state_path, transform)
+
+        assert captured["flag"] == "active"
+        on_disk = json.loads(state_path.read_text())
+        assert on_disk["flag"] == ""
+
+    def test_file_locking_uses_flock(self, tmp_path):
+        import fcntl
+        state_path = tmp_path / "state.json"
+        state_path.write_text(json.dumps({"x": 1}))
+
+        with patch.object(fcntl, "flock") as mock_flock:
+            _mod.mutate_state(state_path, lambda s: s.__setitem__("x", 2))
+
+        mock_flock.assert_called_once()
+        call_args = mock_flock.call_args[0]
+        assert call_args[1] == fcntl.LOCK_EX
+
+    def test_preserves_existing_keys(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        state_path.write_text(json.dumps({"a": 1, "b": 2, "c": 3}))
+
+        _mod.mutate_state(state_path, lambda s: s.__setitem__("b", 99))
+
+        on_disk = json.loads(state_path.read_text())
+        assert on_disk == {"a": 1, "b": 99, "c": 3}
+
+
+# --- extract_issue_numbers (URL support) ---
+
+
+class TestExtractIssueNumbersUrls:
+    """Tests for URL-format issue reference extraction."""
+
+    def test_github_url_extracts_number(self):
+        assert _mod.extract_issue_numbers(
+            "fix https://github.com/owner/repo/issues/42"
+        ) == [42]
+
+    def test_mixed_hash_and_url_formats(self):
+        result = _mod.extract_issue_numbers(
+            "fix #83 and https://github.com/owner/repo/issues/89"
+        )
+        assert result == [83, 89]
+
+    def test_deduplication_across_formats(self):
+        result = _mod.extract_issue_numbers(
+            "fix #42 and https://github.com/owner/repo/issues/42"
+        )
+        assert result == [42]
+
+    def test_multiple_urls(self):
+        result = _mod.extract_issue_numbers(
+            "https://github.com/owner/repo/issues/10 and https://github.com/owner/repo/issues/20"
+        )
+        assert result == [10, 20]
+
+    def test_url_only_no_hash(self):
+        result = _mod.extract_issue_numbers(
+            "see https://github.com/owner/repo/issues/99"
+        )
+        assert result == [99]
+
+    def test_hash_ordering_preserved_first(self):
+        result = _mod.extract_issue_numbers(
+            "https://github.com/owner/repo/issues/200 and #100"
+        )
+        assert result == [100, 200]

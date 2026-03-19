@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import current_branch, project_root
+from flow_utils import current_branch, mutate_state, project_root
 
 
 def capture_session_id(hook_input):
@@ -35,18 +35,17 @@ def capture_session_id(hook_input):
         if not state_path.exists():
             return
 
-        state = json.loads(state_path.read_text())
-        if state.get("session_id") == session_id:
-            return  # Already set, skip write
+        def transform(state):
+            if state.get("session_id") == session_id:
+                return
+            state["session_id"] = session_id
+            transcript_path = hook_input.get("transcript_path")
+            if transcript_path:
+                state["transcript_path"] = transcript_path
 
-        state["session_id"] = session_id
-        transcript_path = hook_input.get("transcript_path")
-        if transcript_path:
-            state["transcript_path"] = transcript_path
-
-        state_path.write_text(json.dumps(state, indent=2))
+        mutate_state(state_path, transform)
     except Exception:
-        pass  # Fail-open, same as check_continue
+        pass
 
 
 def check_continue(hook_input=None):
@@ -72,27 +71,28 @@ def check_continue(hook_input=None):
         if not state_path.exists():
             return (False, None, None)
 
-        state = json.loads(state_path.read_text())
-        pending = state.get("_continue_pending", "")
+        result = {"should_block": False, "skill": None, "context": None}
 
-        if not pending:
-            return (False, None, None)
+        def transform(state):
+            pending = state.get("_continue_pending", "")
+            if not pending:
+                return
 
-        state_sid = state.get("session_id")
-        hook_sid = (hook_input or {}).get("session_id")
-        if state_sid and hook_sid and state_sid != hook_sid:
+            state_sid = state.get("session_id")
+            hook_sid = (hook_input or {}).get("session_id")
+            if state_sid and hook_sid and state_sid != hook_sid:
+                state["_continue_pending"] = ""
+                state["_continue_context"] = ""
+                return
+
+            result["context"] = state.get("_continue_context", "") or None
             state["_continue_pending"] = ""
             state["_continue_context"] = ""
-            state_path.write_text(json.dumps(state, indent=2))
-            return (False, None, None)
+            result["should_block"] = True
+            result["skill"] = pending
 
-        context = state.get("_continue_context", "") or None
-
-        state["_continue_pending"] = ""
-        state["_continue_context"] = ""
-        state_path.write_text(json.dumps(state, indent=2))
-
-        return (True, pending, context)
+        mutate_state(state_path, transform)
+        return (result["should_block"], result["skill"], result["context"])
     except Exception:
         return (False, None, None)
 
