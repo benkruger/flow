@@ -1,5 +1,28 @@
 # Release Notes
 
+## v0.33.0 — Complete phase improvements, flow_utils modernization, and phase transition enforcement
+
+### New Features
+
+- Business-friendly Done banner in Complete phase via `format-complete-summary` — shows feature name, prompt, per-phase timeline, and artifact counts
+- HARD-GATE enforcement on all phase skill Done sections — prevents auto-momentum from skipping `continue=manual` transition prompts
+
+### Improvements
+
+- Shared `detect_repo()` and `mutate_state()` in flow_utils — consolidates duplicated repo detection regex and adds fcntl file locking for atomic state writes
+- Subprocess timeouts (30s) on all `gh` CLI calls — prevents indefinite hangs on network issues
+- `extract_issue_numbers()` now matches GitHub issue URLs (`/issues/N`) in addition to `#N` patterns
+- Start prompt stored verbatim in state file via `--prompt` flag
+- PR body rendering deduplicated into single `render-pr-body` call
+
+### Fixes
+
+- Complete skill: premature `cd` to project root broke Step 3 merge and phase-transition with concurrent flows (#241)
+- Complete skill: MERGED fast-path now continues through cleanup (Steps 10-11) instead of terminating at Step 9
+- PR body fenced blocks: fixed pymarkdown MD031 violations in rendered sections
+- Session-start tests: fixed to use branch field instead of removed feature field
+- CI fixture: set default branch to main for GitHub Actions compatibility
+
 ## v0.32.4 — Fix hook isolation for concurrent flows
 
 ### Fixes
