@@ -2653,8 +2653,8 @@ def test_flow_issues_has_dependency_detection():
 def test_flow_issues_has_file_count_column():
     """flow-issues SKILL.md must include a Files column in category tables."""
     content = _read_skill("flow-issues")
-    assert "Files" in content, (
-        "flow-issues/SKILL.md must contain a 'Files' column"
+    assert "`Files`" in content, (
+        "flow-issues/SKILL.md must contain a 'Files' column in the table definition"
     )
 
 
