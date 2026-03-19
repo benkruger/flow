@@ -273,7 +273,7 @@ def main():
 
         # Commit, push, PR
         pr_url, pr_number = _initial_commit_push_pr(wt_path, branch, feature_title, raw_prompt)
-        append_log(branch, f"[Phase 1] git commit + push + gh pr create (exit 0)")
+        append_log(branch, "[Phase 1] git commit + push + gh pr create (exit 0)")
 
         # Detect GitHub repo for caching
         repo = detect_repo(cwd=str(project_root))
