@@ -14,7 +14,7 @@ Print:
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v0.33.0 — release — STARTING
+  FLOW v0.33.1 — release — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -213,7 +213,7 @@ Print:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v0.33.0 — release — COMPLETE
+  ✓ FLOW v0.33.1 — release — COMPLETE
   Released v<new_version>
   https://github.com/benkruger/flow/releases/tag/v<new_version>
 

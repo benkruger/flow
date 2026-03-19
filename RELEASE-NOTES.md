@@ -1,5 +1,21 @@
 # Release Notes
 
+## v0.33.1 — Concurrency awareness and safety guards
+
+### Improvements
+
+- Add concurrency context to all 12 phase and auxiliary skills — establishes N×N×N model (state isolation, branch scoping, GitHub idempotency) at runtime
+- Add "never discard uncommitted changes" safety guard to flow-complete, flow-commit, and flow-code-review
+- Split concurrency-model.md — architecture principles moved to CLAUDE.md, developer checklists stay as rule
+- Code Review plugin mode now configurable via `code_review_plugin` axis ("always", "auto", "never")
+- Sub-skill continuation hardened — stop-continue hook enforces self-invocation loops across built-in skill boundaries
+- Skill authoring rules expanded — negative-assertion test compatibility, codebase-wide renames, config chain integrity
+- Strengthen skill instructions with explicit hard rules and gate enforcement
+
+### Fixes
+
+- Doc drift schema issues fixed
+
 ## v0.33.0 — Complete phase improvements, flow_utils modernization, and phase transition enforcement
 
 ### New Features
