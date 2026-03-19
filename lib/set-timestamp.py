@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import now, project_root, resolve_branch
+from flow_utils import mutate_state, now, project_root, resolve_branch
 
 
 def _set_nested(obj, path_parts, value):
@@ -147,17 +147,20 @@ def main():
         }))
         sys.exit(1)
 
+    updates = []
+
+    def transform(state):
+        nonlocal updates
+        _, updates = apply_updates(state, args.set_args)
+
     try:
-        state = json.loads(state_path.read_text())
-    except Exception as e:
+        mutate_state(state_path, transform)
+    except json.JSONDecodeError as e:
         print(json.dumps({
             "status": "error",
             "message": f"Could not read state file: {e}",
         }))
         sys.exit(1)
-
-    try:
-        state, updates = apply_updates(state, args.set_args)
     except (KeyError, IndexError, ValueError) as e:
         print(json.dumps({
             "status": "error",
@@ -165,7 +168,6 @@ def main():
         }))
         sys.exit(1)
 
-    state_path.write_text(json.dumps(state, indent=2))
     print(json.dumps({"status": "ok", "updates": updates}))
 
 

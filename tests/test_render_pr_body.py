@@ -149,6 +149,33 @@ def test_dag_always_text_format(tmp_path):
     assert '<dag goal="test">' in body
 
 
+def test_nested_fences_preserve_subsequent_sections(tmp_path):
+    """DAG content with inner fenced code blocks does not break later sections."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete"},
+    )
+    dag_file = tmp_path / "dag.md"
+    dag_file.write_text(
+        "# DAG Analysis\n\n"
+        "```xml\n<dag goal='test'><node id='1'/></dag>\n```\n\n"
+        "```python\nprint('hello')\n```"
+    )
+    state["dag_file"] = str(dag_file)
+    state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
+    state["phases"]["flow-plan"]["started_at"] = "2026-01-01T00:01:00Z"
+
+    body = _mod.render_body(state, tmp_path)
+
+    # Sections after DAG Analysis must still be present
+    assert "## Phase Timings" in body
+    assert "## State File" in body
+    # The outer fence for DAG must be longer than triple backticks
+    dag_section_start = body.index("## DAG Analysis")
+    dag_section = body[dag_section_start:]
+    assert "````" in dag_section
+
+
 def test_with_transcript(tmp_path):
     """Transcript path set — transcript appears in Artifacts table."""
     state = make_state(
