@@ -2662,18 +2662,28 @@ def test_code_review_skill_has_plugin_mode_resolution():
     )
 
 
-def test_prime_presets_include_code_review_plugin_config():
-    """All 3 prime presets must include 'code_review_plugin' in flow-code-review."""
+def test_prime_has_independent_code_review_plugin_question():
+    """flow-prime must ask about code_review_plugin as an independent step."""
     content = _read_skill("flow-prime")
+    assert "Code Review Plugin mode" in content, (
+        "flow-prime/SKILL.md must contain an independent AskUserQuestion "
+        "about 'Code Review Plugin mode'"
+    )
+    for option in ["Always", "Auto", "Never"]:
+        assert option in content, (
+            f"flow-prime/SKILL.md code review plugin question "
+            f"must include '{option}' option"
+        )
     json_blocks = re.findall(r"```json\n(\{.*?\})\n```", content, re.DOTALL)
     assert len(json_blocks) >= 3, (
         f"Expected at least 3 JSON preset blocks, found {len(json_blocks)}"
     )
-    preset_names = ["fully autonomous", "fully manual", "recommended"]
-    for i, preset_name in enumerate(preset_names):
+    for i, name in enumerate(
+        ["fully autonomous", "fully manual", "recommended"]
+    ):
         parsed = json.loads(json_blocks[i])
         cr_config = parsed.get("flow-code-review", {})
-        assert "code_review_plugin" in cr_config, (
-            f"'code_review_plugin' key missing from flow-code-review config "
-            f"in {preset_name} preset"
+        assert "code_review_plugin" not in cr_config, (
+            f"'code_review_plugin' must NOT be in {name} preset — "
+            f"it is now an independent question"
         )
