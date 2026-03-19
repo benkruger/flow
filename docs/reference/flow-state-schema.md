@@ -53,7 +53,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
     "flow-start": {"continue": "manual"},
     "flow-plan": {"continue": "auto", "dag": "auto"},
     "flow-code": {"commit": "manual", "continue": "manual"},
-    "flow-code-review": {"commit": "auto", "continue": "auto"},
+    "flow-code-review": {"commit": "auto", "continue": "auto", "code_review_plugin": "always"},
     "flow-learn": {"commit": "auto", "continue": "auto"},
     "flow-abort": "auto",
     "flow-complete": "auto"
@@ -105,14 +105,14 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `pr_url` | string | Full GitHub PR URL |
 | `started_at` | ISO 8601 | When the feature was started (Phase 1 entry) |
 | `current_phase` | string | The currently active phase key (e.g. `"flow-code"`) |
-| `framework` | string | `"rails"` or `"python"` — set during `/flow-prime`, copied to state by `/flow-start` |
+| `framework` | string | `"rails"`, `"python"`, or `"ios"` — set during `/flow-prime`, copied to state by `/flow-start` |
 | `files` | object | Structured artifact file paths — see [Files Object](#files-object) |
 | `plan_file` | string / null | Legacy: absolute path to the plan file. Superseded by `files.plan` — kept for backward compatibility |
 | `session_id` | string / null | Claude Code session UUID — set by Stop hook from hook stdin |
 | `transcript_path` | string / null | Absolute path to session transcript .jsonl — set by Stop hook from hook stdin |
 | `skills` | object / absent | Per-skill autonomy settings copied from `.flow.json` by `/flow-start` — see [Skills Object](#skills-object) |
 | `code_review_step` | integer | Last completed Code Review step (0-4). Set to 0 on phase entry, incremented after each step. Used for resume after context compaction. |
-| `_continue_pending` | string | Name of the child skill currently executing. Set before invoking a child skill, cleared by the Stop hook after forcing continuation. Empty string or absent means no continuation pending. |
+| `_continue_pending` | string | Child skill or action currently executing. Phase skills set this before invoking a child skill so the Stop hook (`stop-continue.py`) blocks the turn from ending and forces continuation. Values are either a child skill name (`simplify`, `review`, `security-review`, `code-review:code-review`, `local-permission`) or the action `commit` (used by flow-code, flow-code-review, flow-learn, and flow-complete when invoking `/flow:flow-commit`). Cleared by the Stop hook after forcing continuation. Empty string or absent means no continuation pending. |
 | `_continue_context` | string | Specific next-step instructions for the model after a child skill returns. Written by phase skills before `_continue_pending`, read and cleared by the Stop hook. Included in the block reason so the model knows what to do after the turn boundary. Empty string or absent means use the generic fallback message. |
 | `_auto_continue` | string | Command to invoke next (e.g. `/flow:flow-plan`). Set by `phase_complete()` when `skills.<phase>.continue` is `"auto"`. Cleared by `phase_enter()` when the next phase starts. A PreToolUse hook on AskUserQuestion blocks prompts while this flag is set. |
 | `prompt` | string | The full text passed to `/flow-start` — used by Plan as feature description and by Complete to extract `#N` issue references for auto-closing |
@@ -161,7 +161,7 @@ Present only when `.flow.json` contains a `skills` key (i.e., after running `/fl
 "skills": {
   "flow-start": {"continue": "manual"},
   "flow-code": {"commit": "manual", "continue": "manual"},
-  "flow-code-review": {"commit": "auto", "continue": "auto"},
+  "flow-code-review": {"commit": "auto", "continue": "auto", "code_review_plugin": "always"},
   "flow-learn": {"commit": "auto", "continue": "auto"},
   "flow-abort": "auto",
   "flow-complete": "auto"
@@ -268,40 +268,13 @@ via `bin/flow issue`. Surfaced in the Complete phase PR body and Done banner.
 
 ## Plan File
 
-The plan lives outside the state file at `~/.claude/plans/<name>.md` (Claude Code's native plan file location). The state file stores only the path in `plan_file`. The plan file includes:
+The plan lives at `.flow-states/<branch>-plan.md` alongside other feature artifacts. The state file stores the relative path in `files.plan`. The plan file includes:
 
 - **Context** — what the user wants to build and why
 - **Exploration** — what exists in the codebase, affected files, patterns
 - **Risks** — what could go wrong, edge cases, constraints
 - **Approach** — the chosen approach and rationale
 - **Tasks** — ordered implementation tasks with files and TDD notes
-
----
-
-## Security Object
-
-Added to the state file when the Security step of Phase 4: Code Review completes its scan.
-
-```json
-"security": {
-  "findings": [
-    {
-      "id": 1,
-      "check": "authorization_gaps",
-      "description": "PaymentController#show has no before_action auth check",
-      "file": "app/controllers/payment_controller.rb",
-      "line": 15,
-      "status": "pending"
-    }
-  ],
-  "clean_checks": ["sql_injection", "csrf_bypass", "open_redirects"],
-  "scanned_at": "2026-02-20T15:00:00-08:00"
-}
-```
-
-Finding statuses: `pending`, `fixed`
-
-`clean_checks` lists the check keys that found no issues. `scanned_at` is when the scan completed.
 
 ---
 

@@ -2490,6 +2490,62 @@ def test_plan_skill_does_not_use_plan_mode():
     )
 
 
+def test_plan_has_self_invocation_check():
+    """Plan must have a Self-Invocation Check section for --continue-step."""
+    content = _read_skill("flow-plan")
+    assert "## Self-Invocation Check" in content, (
+        "flow-plan must have a '## Self-Invocation Check' section"
+    )
+    si_match = re.search(
+        r"## Self-Invocation Check\n(.*?)(?=\n## )", content, re.DOTALL
+    )
+    assert si_match, "Could not find Self-Invocation Check section content"
+    assert "--continue-step" in si_match.group(1), (
+        "Self-Invocation Check must reference --continue-step flag"
+    )
+
+
+def test_plan_has_continue_pending_for_decompose():
+    """Plan must set _continue_pending before decompose invocation."""
+    content = _read_skill("flow-plan")
+    assert "_continue_pending" in content, (
+        "flow-plan/SKILL.md must set _continue_pending before decompose"
+    )
+    assert "_continue_context" in content, (
+        "flow-plan/SKILL.md must set _continue_context before decompose"
+    )
+
+
+def test_done_hardgates_reread_state_file():
+    """Phases 1-5 Done HARD-GATEs must re-read continue mode from state file."""
+    phase_skills = _phase_skills()
+    for key in PHASE_ORDER[:-1]:  # Exclude flow-complete (terminal)
+        skill_name = phase_skills[key]
+        content = _read_skill(skill_name)
+
+        hard_gates = re.findall(
+            r"<HARD-GATE>(.*?)</HARD-GATE>", content, re.DOTALL
+        )
+
+        continue_gates = [
+            gate for gate in hard_gates
+            if "continue=manual" in gate and "continue=auto" in gate
+        ]
+        assert continue_gates, (
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) has no continue-mode "
+            f"HARD-GATE (prerequisite for re-read check)"
+        )
+
+        has_reread = any(
+            "Re-read" in gate or "re-read" in gate
+            for gate in continue_gates
+        )
+        assert has_reread, (
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) Done HARD-GATE must "
+            f"re-read continue mode from state file (contain 'Re-read')"
+        )
+
+
 def test_plan_skill_has_dag_mode_resolution():
     """Plan SKILL.md Mode Resolution must reference dag config."""
     content = _read_skill("flow-plan")
@@ -2592,3 +2648,32 @@ def test_flow_abort_removes_labels():
     assert "--remove" in content, (
         "flow-abort/SKILL.md must use --remove flag for label-issues"
     )
+
+
+# --- code_review_plugin config axis ---
+
+
+def test_code_review_skill_has_plugin_mode_resolution():
+    """Code Review SKILL.md must reference code_review_plugin config."""
+    content = _read_skill("flow-code-review")
+    assert "skills.flow-code-review.code_review_plugin" in content, (
+        "flow-code-review/SKILL.md Mode Resolution must reference "
+        "'skills.flow-code-review.code_review_plugin' key"
+    )
+
+
+def test_prime_presets_include_code_review_plugin_config():
+    """All 3 prime presets must include 'code_review_plugin' in flow-code-review."""
+    content = _read_skill("flow-prime")
+    json_blocks = re.findall(r"```json\n(\{.*?\})\n```", content, re.DOTALL)
+    assert len(json_blocks) >= 3, (
+        f"Expected at least 3 JSON preset blocks, found {len(json_blocks)}"
+    )
+    preset_names = ["fully autonomous", "fully manual", "recommended"]
+    for i, preset_name in enumerate(preset_names):
+        parsed = json.loads(json_blocks[i])
+        cr_config = parsed.get("flow-code-review", {})
+        assert "code_review_plugin" in cr_config, (
+            f"'code_review_plugin' key missing from flow-code-review config "
+            f"in {preset_name} preset"
+        )

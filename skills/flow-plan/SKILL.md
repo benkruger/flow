@@ -11,11 +11,13 @@ description: "Phase 2: Plan — invoke DAG decomposition, explore the codebase, 
 /flow:flow-plan
 /flow:flow-plan --auto
 /flow:flow-plan --manual
+/flow:flow-plan --continue-step
 ```
 
 - `/flow:flow-plan` — uses configured mode from the state file (default: manual)
 - `/flow:flow-plan --auto` — auto-advance to Code without asking
 - `/flow:flow-plan --manual` — requires explicit approval before advancing
+- `/flow:flow-plan --continue-step` — self-invocation: skip Announce and Update State, dispatch via Resume Check
 
 <HARD-GATE>
 Run this phase entry check as your very first action. If any check fails,
@@ -52,6 +54,13 @@ to the project root — `bin/flow` commands find paths internally.
 1. Read `skills.flow-plan.dag` from the state file.
 2. Valid values: `"auto"` (default), `"always"`, `"never"`.
 3. If the key does not exist → use built-in default: `"auto"`.
+
+## Self-Invocation Check
+
+If `--continue-step` was passed, this is a self-invocation from Step 2
+after the decompose plugin returned. Skip the Announce banner and the
+Update State section (do not call `phase-transition --action enter` again).
+Proceed directly to the Resume Check section.
 
 ## Announce
 
@@ -159,6 +168,17 @@ Check the DAG mode from DAG Mode Resolution:
 - If dag=`"never"` → skip to Step 3.
 - If dag=`"auto"` or `"always"` → invoke the decompose plugin.
 
+Before invoking the decompose plugin, set the continuation flags so the
+stop-continue hook forces continuation after decompose returns:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Decompose returned. Save the complete DAG output verbatim to the DAG file, store the path in state, clear _continue_pending, then self-invoke flow:flow-plan --continue-step."
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=decompose
+```
+
 Invoke `/decompose:decompose` using the Skill tool. Pass the feature
 description (the `prompt` from Step 1, plus any issue context fetched)
 as the task argument.
@@ -191,7 +211,14 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.dag=<dag_file_path
 
 Replace `<dag_file_path>` with the relative path `.flow-states/<branch>-dag.md`.
 
-Proceed to Step 3.
+Then clear the continuation flag:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
+```
+
+Self-invoke `flow:flow-plan --continue-step` using the Skill tool as your
+final action. Do not output anything else after this invocation.
 
 ---
 
@@ -288,10 +315,14 @@ Output in your response (not via Bash) inside a fenced code block:
 ````
 
 <HARD-GATE>
-Before advancing to the next phase, you MUST check the continue mode:
+STOP. Re-read `skills.flow-plan.continue` from the state file at
+`<project_root>/.flow-states/<branch>.json` before advancing.
+The previous phase's continue mode does NOT carry over — each phase
+has its own mode.
 
-1. Use the continue mode resolved in Mode Resolution above (auto or manual).
-   If no mode was resolved → default to manual.
+1. If `--auto` was passed to this skill invocation → continue=auto.
+   If `--manual` was passed → continue=manual.
+   Otherwise, use the value from the state file. If absent → default to manual.
 2. If continue=auto → invoke `flow:flow-code` directly.
    Do NOT invoke `flow:flow-status`. Do NOT use AskUserQuestion.
 3. If continue=manual → you MUST do all of the following before proceeding:

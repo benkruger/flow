@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — four lenses on the same diff: clarity, correctness, safety, and CLAUDE.md compliance. Invokes /simplify, /review, /security-review, and code-review:code-review with a commit after each step."
+description: "Phase 4: Code Review — three built-in lenses (clarity, correctness, safety) plus an optional fourth (CLAUDE.md compliance via code-review:code-review plugin, configurable). Invokes /simplify, /review, /security-review, and optionally code-review:code-review with a commit after each step."
 ---
 
 # FLOW Code Review — Phase 4: Code Review
@@ -48,6 +48,17 @@ to the project root — `bin/flow` commands find paths internally.
 2. If `--manual` was passed → commit=manual, continue=manual
 3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-code-review.commit` and `skills.flow-code-review.continue`.
 4. If the state file has no `skills` key → use built-in defaults: commit=manual, continue=manual
+
+## Code Review Plugin Mode Resolution
+
+1. Read `skills.flow-code-review.code_review_plugin` from the state file at `<project_root>/.flow-states/<branch>.json`.
+2. Valid values: `"always"` (default), `"auto"`, `"never"`.
+3. If the key does not exist → use built-in default: `"always"`.
+
+When `code_review_plugin` is `"never"`, Step 4 (the code-review:code-review plugin) is
+skipped entirely and the phase completes after Step 3.
+
+When `code_review_plugin` is `"auto"` or `"always"`, Step 4 runs as normal.
 
 ## Self-Invocation Check
 
@@ -99,16 +110,18 @@ Read `code_review_step` from the state file (default `0` if absent).
 
 - If `1` — Step 1 is done. Skip to Step 2.
 - If `2` — Steps 1-2 are done. Skip to Step 3.
-- If `3` — Steps 1-3 are done. Skip to Step 4.
+- If `3` — Steps 1-3 are done. Check Code Review Plugin Mode Resolution:
+  if `code_review_plugin` is `"never"`, skip to Done.
+  Otherwise, skip to Step 4.
 - If `4` — All steps are done. Skip to Done.
 
 ## Framework Conventions
 
 Read the project's CLAUDE.md for framework-specific conventions. The
 first three review steps use Claude's built-in commands which apply
-language-aware checks automatically. The fourth step uses the
-code-review plugin for multi-agent validation. The CLAUDE.md conventions
-inform fix decisions.
+language-aware checks automatically. When enabled via Code Review Plugin
+Mode Resolution, a fourth step uses the code-review plugin for
+multi-agent validation. The CLAUDE.md conventions inform fix decisions.
 
 ---
 
@@ -483,9 +496,17 @@ Clear the continuation flag before self-invoking:
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
 ```
 
-To continue to Step 4, invoke `flow:flow-code-review --continue-step` using
-the Skill tool as your final action. If commit=auto was resolved, pass
-`--auto` as well. Do not output anything else after this invocation.
+Check Code Review Plugin Mode Resolution:
+
+- If `code_review_plugin` is `"never"` — the plugin is skipped. Invoke
+  `flow:flow-code-review --continue-step` using the Skill tool as your
+  final action. The Resume Check will route to Done.
+- If `code_review_plugin` is `"always"` or `"auto"` — invoke
+  `flow:flow-code-review --continue-step` using the Skill tool as your
+  final action. The Resume Check will route to Step 4.
+
+If commit=auto was resolved, pass `--auto` as well. Do not output
+anything else after this invocation.
 
 ---
 
@@ -623,10 +644,14 @@ Output in your response (not via Bash) inside a fenced code block:
 ````
 
 <HARD-GATE>
-Before advancing to the next phase, you MUST check the continue mode:
+STOP. Re-read `skills.flow-code-review.continue` from the state file at
+`<project_root>/.flow-states/<branch>.json` before advancing.
+The previous phase's continue mode does NOT carry over — each phase
+has its own mode.
 
-1. Use the continue mode resolved in Mode Resolution above (auto or manual).
-   If no mode was resolved → default to manual.
+1. If `--auto` was passed to this skill invocation → continue=auto.
+   If `--manual` was passed → continue=manual.
+   Otherwise, use the value from the state file. If absent → default to manual.
 2. If continue=auto → invoke `flow:flow-learn` directly.
    Do NOT invoke `flow:flow-status`. Do NOT use AskUserQuestion.
 3. If continue=manual → you MUST do all of the following before proceeding:
@@ -663,11 +688,11 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
 - Always run `bin/flow ci` after any fix made during Code Review
 - Never transition to Learn unless `bin/flow ci` is green
-- Fix every finding from `/review`, `/security-review`, and `code-review:code-review` — do not leave findings unaddressed
+- Fix every finding from `/review`, `/security-review`, and (when enabled) `code-review:code-review` — do not leave findings unaddressed
 - Follow the project CLAUDE.md conventions when fixing
-- Each step (Simplify, Review, Security, Code Review Plugin) gets its own commit when changes are made
+- Each active step (Simplify, Review, Security, and Code Review Plugin when enabled) gets its own commit when changes are made
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories
 - Never cd before running `bin/flow` — it detects the project root internally
-- After each step (Simplify, Review, Security, Code Review Plugin) completes, advance to the next step via self-invocation — never pause or wait for user input between steps
+- After each active step completes, advance to the next step via self-invocation — never pause or wait for user input between steps
