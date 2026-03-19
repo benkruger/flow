@@ -149,6 +149,33 @@ def test_dag_always_text_format(tmp_path):
     assert '<dag goal="test">' in body
 
 
+def test_nested_fences_preserve_subsequent_sections(tmp_path):
+    """DAG content with inner fenced code blocks does not break later sections."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete"},
+    )
+    dag_file = tmp_path / "dag.md"
+    dag_file.write_text(
+        "# DAG Analysis\n\n"
+        "```xml\n<dag goal='test'><node id='1'/></dag>\n```\n\n"
+        "```python\nprint('hello')\n```"
+    )
+    state["dag_file"] = str(dag_file)
+    state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
+    state["phases"]["flow-plan"]["started_at"] = "2026-01-01T00:01:00Z"
+
+    body = _mod.render_body(state, tmp_path)
+
+    # Sections after DAG Analysis must still be present
+    assert "## Phase Timings" in body
+    assert "## State File" in body
+    # The outer fence for DAG must be longer than triple backticks
+    dag_section_start = body.index("## DAG Analysis")
+    dag_section = body[dag_section_start:]
+    assert "````" in dag_section
+
+
 def test_with_transcript(tmp_path):
     """Transcript path set — transcript appears in Artifacts table."""
     state = make_state(
@@ -500,7 +527,7 @@ def test_cli_missing_state_file(tmp_path):
 
 def test_gh_set_body_success():
     """_gh_set_body calls gh pr edit with correct args."""
-    with patch.object(_mod.subprocess, "run") as mock_run:
+    with patch.object(_mod._upb_mod.subprocess, "run") as mock_run:
         mock_run.return_value = MagicMock(returncode=0)
         _mod._gh_set_body(42, "body text")
     mock_run.assert_called_once_with(
@@ -511,7 +538,7 @@ def test_gh_set_body_success():
 
 def test_gh_set_body_failure():
     """_gh_set_body raises RuntimeError on failure."""
-    with patch.object(_mod.subprocess, "run") as mock_run:
+    with patch.object(_mod._upb_mod.subprocess, "run") as mock_run:
         mock_run.return_value = MagicMock(returncode=1, stderr="auth failed", stdout="")
         with pytest.raises(RuntimeError, match="auth failed"):
             _mod._gh_set_body(42, "body")

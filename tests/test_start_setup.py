@@ -99,7 +99,8 @@ def _write_flow_json(repo, version, framework="rails", skills=None):
     (repo / ".flow.json").write_text(json.dumps(data))
 
 
-def _run_no_gh(cwd, feature_name, framework="rails", prompt=None):
+def _run_no_gh(cwd, feature_name, framework="rails", prompt=None,
+               prompt_file=None):
     """Run start-setup.py with gh stubbed out and flow.json initialized."""
     # Ensure flow.json exists with correct version for the version gate
     _write_flow_json(cwd, _current_plugin_version(), framework)
@@ -118,6 +119,8 @@ def _run_no_gh(cwd, feature_name, framework="rails", prompt=None):
     cmd = [sys.executable, SCRIPT, feature_name]
     if prompt is not None:
         cmd.extend(["--prompt", prompt])
+    if prompt_file is not None:
+        cmd.extend(["--prompt-file", prompt_file])
     result = subprocess.run(
         cmd,
         capture_output=True, text=True, cwd=str(cwd), env=env,
@@ -581,6 +584,89 @@ def test_prompt_flag_omitted_falls_back_to_feature_words(git_repo_with_remote):
     )
     state = json.loads(state_path.read_text())
     assert state["prompt"] == "some feature"
+
+
+# --- Prompt file support (--prompt-file flag) ---
+
+
+def test_read_prompt_file_reads_and_deletes(tmp_path):
+    """_read_prompt_file reads content and deletes the file."""
+    prompt_path = tmp_path / ".flow-start-prompt"
+    prompt_path.write_text("fix issue #42 with special chars: && | ;")
+    content, error = _mod._read_prompt_file(str(prompt_path))
+    assert error is None
+    assert content == "fix issue #42 with special chars: && | ;"
+    assert not prompt_path.exists()
+
+
+def test_read_prompt_file_missing_returns_error(tmp_path):
+    """_read_prompt_file returns error for nonexistent file."""
+    content, error = _mod._read_prompt_file(str(tmp_path / "nonexistent"))
+    assert content is None
+    assert "Could not read" in error
+
+
+def test_read_prompt_file_delete_failure_still_returns_content(tmp_path, monkeypatch):
+    """_read_prompt_file returns content even when file deletion fails."""
+    prompt_path = tmp_path / ".flow-start-prompt"
+    prompt_path.write_text("some prompt text")
+    original_remove = os.remove
+
+    def _fail_remove(path):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(os, "remove", _fail_remove)
+    content, error = _mod._read_prompt_file(str(prompt_path))
+    assert error is None
+    assert content == "some prompt text"
+    monkeypatch.setattr(os, "remove", original_remove)
+
+
+def test_prompt_file_not_found_returns_error_json(git_repo_with_remote):
+    """--prompt-file with nonexistent path returns error JSON."""
+    result = _run_no_gh(
+        git_repo_with_remote, "error test",
+        prompt_file="/nonexistent/path/.flow-start-prompt",
+    )
+    assert result.returncode == 1
+    data = json.loads(result.stdout)
+    assert data["status"] == "error"
+    assert data["step"] == "prompt_file"
+    assert "Could not read" in data["message"]
+
+
+def test_prompt_file_stores_content_in_state(git_repo_with_remote):
+    """--prompt-file reads file content into state and deletes file."""
+    prompt_path = git_repo_with_remote / ".flow-start-prompt"
+    prompt_path.write_text("fix issue #228 with URLs https://github.com/org/repo")
+    result = _run_no_gh(
+        git_repo_with_remote, "prompt file test",
+        prompt_file=str(prompt_path),
+    )
+    assert result.returncode == 0, result.stderr
+    state_path = (
+        git_repo_with_remote / ".flow-states" / "prompt-file-test.json"
+    )
+    state = json.loads(state_path.read_text())
+    assert state["prompt"] == "fix issue #228 with URLs https://github.com/org/repo"
+    assert not prompt_path.exists()
+
+
+def test_prompt_file_takes_precedence_over_prompt(git_repo_with_remote):
+    """When both --prompt-file and --prompt given, file wins."""
+    prompt_path = git_repo_with_remote / ".flow-start-prompt"
+    prompt_path.write_text("from file")
+    result = _run_no_gh(
+        git_repo_with_remote, "precedence test",
+        prompt="from flag",
+        prompt_file=str(prompt_path),
+    )
+    assert result.returncode == 0, result.stderr
+    state_path = (
+        git_repo_with_remote / ".flow-states" / "precedence-test.json"
+    )
+    state = json.loads(state_path.read_text())
+    assert state["prompt"] == "from file"
 
 
 # --- Pre-commit hook compatibility (#108) ---
