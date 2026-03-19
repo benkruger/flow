@@ -8,8 +8,6 @@ and back navigation rules. All parseable with regex.
 import json
 import re
 
-import pytest
-
 from conftest import DOCS_DIR, LIB_DIR, REPO_ROOT, SKILLS_DIR, PHASE_ORDER
 from flow_utils import PHASE_NAMES, PHASE_NUMBER
 
@@ -2470,7 +2468,6 @@ def test_plan_has_continue_pending_for_decompose():
     )
 
 
-@pytest.mark.xfail(reason="Task 3 implements Done HARD-GATE strengthening")
 def test_done_hardgates_reread_state_file():
     """Phases 1-5 Done HARD-GATEs must re-read continue mode from state file."""
     phase_skills = _phase_skills()

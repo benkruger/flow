@@ -312,10 +312,14 @@ Output in your response (not via Bash) inside a fenced code block:
 ````
 
 <HARD-GATE>
-Before advancing to the next phase, you MUST check the continue mode:
+STOP. Re-read `skills.flow-plan.continue` from the state file at
+`<project_root>/.flow-states/<branch>.json` before advancing.
+The previous phase's continue mode does NOT carry over — each phase
+has its own mode.
 
-1. Use the continue mode resolved in Mode Resolution above (auto or manual).
-   If no mode was resolved → default to manual.
+1. If `--auto` was passed to this skill invocation → continue=auto.
+   If `--manual` was passed → continue=manual.
+   Otherwise, use the value from the state file. If absent → default to manual.
 2. If continue=auto → invoke `flow:flow-code` directly.
    Do NOT invoke `flow:flow-status`. Do NOT use AskUserQuestion.
 3. If continue=manual → you MUST do all of the following before proceeding:
