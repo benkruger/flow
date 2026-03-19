@@ -105,7 +105,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `pr_url` | string | Full GitHub PR URL |
 | `started_at` | ISO 8601 | When the feature was started (Phase 1 entry) |
 | `current_phase` | string | The currently active phase key (e.g. `"flow-code"`) |
-| `framework` | string | `"rails"` or `"python"` — set during `/flow-prime`, copied to state by `/flow-start` |
+| `framework` | string | `"rails"`, `"python"`, or `"ios"` — set during `/flow-prime`, copied to state by `/flow-start` |
 | `files` | object | Structured artifact file paths — see [Files Object](#files-object) |
 | `plan_file` | string / null | Legacy: absolute path to the plan file. Superseded by `files.plan` — kept for backward compatibility |
 | `session_id` | string / null | Claude Code session UUID — set by Stop hook from hook stdin |
