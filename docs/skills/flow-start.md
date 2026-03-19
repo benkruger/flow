@@ -46,6 +46,8 @@ The derived name is hyphenated and used for the branch, worktree (`.worktrees/<n
 
 Mode is configurable via `.flow.json` (default: manual) and cached in the state file during setup. The Done section reads the resolved mode from the state file, not `.flow.json` directly. In auto mode, the phase transition advances to Plan without asking.
 
+When `--auto` is passed to `/flow-start`, it overrides ALL skill autonomy settings to fully autonomous for this feature — not just flow-start's own continue mode. Every phase will auto-commit and auto-continue, and the code review plugin step is skipped. The override is written to the state file by `lib/start-setup.py` and propagates to all downstream phases automatically. This is equivalent to the "Fully autonomous" preset from `/flow-prime`, applied per-feature without changing `.flow.json`.
+
 ---
 
 ## Gates
