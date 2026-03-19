@@ -35,7 +35,9 @@ the Resume Check.
    pattern to loop back and re-check CI
 5. Confirms with the user (only when `--manual` is passed)
 6. Archives artifacts to the PR body: session log link (from transcript path),
-   phase timings table (non-collapsible), state file, and session log dump
+   phase timings table (non-collapsible), state file, and session log dump.
+   Generates a business-friendly summary via `format-complete-summary`
+   showing feature name, prompt, per-phase timeline, and artifact counts
 7. Squash-merges the PR via `gh pr merge --squash`
 8. Removes the "Flow In-Progress" label from any issues referenced in the start prompt
 9. Closes any GitHub issues referenced in the start prompt (`#N` patterns)

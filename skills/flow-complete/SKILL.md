@@ -326,6 +326,15 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-issues-summary --state-file <project_
 Parse the JSON output. Keep the `banner_line` — use it in the Done
 banner below. If `has_issues` is `false`, there is no banner line.
 
+**Generate the summary** while the state file still exists:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-complete-summary --state-file <project_root>/.flow-states/<branch>.json
+```
+
+Parse the JSON output. Keep the `summary` field — use it in the Done
+banner below.
+
 ### Step 7 — Merge PR
 
 Merge the PR via squash merge:
@@ -389,18 +398,8 @@ If the pull fails, warn the user but do not block — cleanup succeeded.
 
 ### Done — Print banner
 
-For each phase row, format its `cumulative_seconds` (from the SOFT-GATE
-data) as: `Xh Ym` if >= 3600, `Xm` if >= 60, `<1m` if < 60. For the
-Complete row, use `formatted_time` from the `phase-transition --complete`
-output in Step 6 (the SOFT-GATE data predates Complete's timing).
-
-Compute the total by summing all phase `cumulative_seconds` values
-(including Complete's `cumulative_seconds` from the Step 6 output)
-and formatting the result the same way.
-
-Use `<feature>` and `<branch>` from the SOFT-GATE data.
-
-Output the following banner in your response (not via Bash) inside a fenced code block:
+Output the COMPLETE banner line, the summary from Step 6, and cleanup
+status in your response (not via Bash) inside a single fenced code block:
 
 ````markdown
 ```text
@@ -408,31 +407,18 @@ Output the following banner in your response (not via Bash) inside a fenced code
   ✓ FLOW v0.32.4 — Phase 6: Complete — COMPLETE (<formatted_time>)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  Feature:      <feature>
-  Branch:       <branch>
-  PR:           <pr_url>
-
-  ┌─────────────────────────┐
-  │ Start:         <time>   │
-  │ Plan:          <time>   │
-  │ Code:          <time>   │
-  │ Code Review:   <time>   │
-  │ Learn:         <time>   │
-  │ Complete:      <time>   │
-  ├─────────────────────────┤
-  │ Total:         <time>   │
-  └─────────────────────────┘
+<summary text from format-complete-summary>
 
   ✓ Worktree removed
   ✓ state file and log deleted
-  <banner_line>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
-Only include the `<banner_line>` line if `has_issues` was `true` in the
-`format-issues-summary` output from Step 6. Use the `banner_line` value
-exactly as returned — do not recompute it.
+The summary already includes the feature name, prompt, PR: <pr_url>,
+per-phase timeline (Start:, Plan:, Code:, Code Review:, Learn:,
+Complete:, Total:), and artifact counts (issues filed, notes captured).
+Do not add a separate PR line — it is part of the summary.
 
 ## Rules
 

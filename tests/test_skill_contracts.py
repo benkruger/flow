@@ -2316,6 +2316,23 @@ def test_complete_has_self_invocation_check():
     )
 
 
+def test_complete_done_uses_format_complete_summary():
+    """Complete Done section must call format-complete-summary script."""
+    content = _read_skill("flow-complete")
+    in_done = False
+    found_script_call = False
+    for line in content.splitlines():
+        if "Done" in line and "Print banner" in line:
+            in_done = True
+        if in_done and "format-complete-summary" in line:
+            found_script_call = True
+            break
+    assert found_script_call, (
+        "flow-complete/SKILL.md Done section must call "
+        "format-complete-summary to generate the summary banner"
+    )
+
+
 def test_complete_has_resume_check():
     """Complete must have a Resume Check section that reads complete_step."""
     content = _read_skill("flow-complete")
