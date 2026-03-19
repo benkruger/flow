@@ -121,6 +121,17 @@ The state file (`.flow-states/<branch>.json`) is the backbone. Schema reference:
 
 ### Local vs Shared State
 
+FLOW's primary use case is N engineers running N flows on N boxes simultaneously. Every feature must work under these conditions:
+
+- Multiple worktrees active on the same machine
+- Multiple engineers working the same repo from different machines
+- Multiple flows touching overlapping issues or files
+
+| Domain | Scope | Examples | Coordination |
+|--------|-------|----------|--------------|
+| Local | Per-machine | `.flow-states/`, worktrees, `.flow.json` | None needed — each machine has its own |
+| Shared | All engineers | PRs, issues, labels, branches | GitHub is the API — never assume local knowledge of other engineers' state |
+
 State files (`.flow-states/`) are local to each machine. In a multi-engineer team, each engineer's `.flow-states/` only contains their own features. GitHub (issues, PRs, labels) is the shared coordination layer. The "Flow In-Progress" label on issues is the mechanism for cross-engineer WIP detection: Start adds it, Complete and Abort remove it, and `flow-issues` reads it from the existing label fetch.
 
 ### Sub-Agents

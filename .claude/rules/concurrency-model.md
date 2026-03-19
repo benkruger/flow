@@ -1,14 +1,8 @@
 # Concurrency Model
 
-## The Core Invariant
-
-FLOW's primary use case is N engineers running N flows on N boxes
-simultaneously. This is not an edge case — it is the default
-operating mode. Every feature must work under these conditions:
-
-- Multiple worktrees active on the same machine
-- Multiple engineers working the same repo from different machines
-- Multiple flows touching overlapping issues or files
+Architectural principles (core invariant, two state domains) are in
+CLAUDE.md under "Local vs Shared State". This file is the developer
+checklist for applying those principles when writing code.
 
 ## Before Writing Any Code
 
@@ -30,13 +24,6 @@ Ask: "What happens when two flows hit this at the same time?"
 - **Main branch** — is the only shared local resource. Any
   operation on main (pull, commit, push) must be serialized
   via the start lock or avoided entirely.
-
-## The Two State Domains
-
-| Domain | Scope | Examples | Coordination |
-|--------|-------|----------|--------------|
-| Local | Per-machine | `.flow-states/`, worktrees, `.flow.json` | None needed — each machine has its own |
-| Shared | All engineers | PRs, issues, labels, branches | GitHub is the API — never assume local knowledge of other engineers' state |
 
 ## Common Mistakes
 
