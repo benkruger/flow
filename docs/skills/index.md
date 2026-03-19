@@ -40,4 +40,5 @@ These skills are available at any point in the workflow, regardless of phase.
 | [`/flow-abort`](flow-abort.md) | Abandon the current feature — close PR, delete branch, remove worktree |
 | [`/flow-config`](flow-config.md) | Display current configuration — version, framework, per-skill autonomy |
 | [`/flow-issues`](flow-issues.md) | Fetch open issues, categorize, prioritize, detect batchable issues, and display a dashboard with recommended work order |
+| [`/create-issue`](create-issue.md) | Decompose a problem via DAG analysis, iterate until work-ready, then file it |
 | [`/flow-local-permission`](flow-local-permission.md) | Promote permissions from settings.local.json into settings.json |

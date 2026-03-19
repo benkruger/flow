@@ -144,6 +144,7 @@ Available at any point in the workflow:
 | `/flow-abort` | Abandon feature — close PR, delete remote branch, remove worktree, delete state |
 | `/flow-config` | Display current configuration — version, framework, per-skill autonomy |
 | `/flow-issues` | Fetch open issues, categorize, prioritize, and display a dashboard |
+| `/create-issue` | Decompose a problem via DAG analysis, iterate until work-ready, then file it |
 | `/flow-local-permission` | Promote permissions from settings.local.json into settings.json |
 
 ---
