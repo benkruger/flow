@@ -17,12 +17,13 @@ with four ordered steps, each with its own commit checkpoint.
 
 ### Step 1 — Simplify (clarity)
 
-Invokes Claude Code's built-in `/simplify` on the committed code from the
-Code phase. Refactors for clarity: removes unnecessary abstractions, simplifies
-conditionals, improves naming. Never changes what the code does, only how.
+Launches three foreground review agents in parallel against the branch diff:
+code reuse, code quality, and efficiency. Refactors for clarity: removes
+unnecessary abstractions, simplifies conditionals, improves naming. Never
+changes what the code does, only how.
 
-Waits for all background agents to complete before evaluating results. If
-`/simplify` proposes changes, they are shown as a diff, committed via
+All three agents complete within the response turn — no background agents.
+If changes are proposed, they are shown as a diff, committed via
 `/flow-commit`, and `bin/flow ci` is run. If no changes are proposed, this
 step is skipped.
 
@@ -69,10 +70,10 @@ when the model treats a built-in skill return as a conversation turn
 boundary. The Resume Check section dispatches to the correct step on
 re-entry.
 
-Before advancing, each step waits for all background agents launched by
-the child skill to complete. Built-in skills and plugins may launch
-background review agents whose findings arrive asynchronously. No step
-evaluates "no changes" or "no findings" until every agent has reported.
+Step 1 uses foreground agents that complete within the response turn.
+Steps 2-4 invoke built-in skills or plugins that may launch background
+review agents — each of those steps waits for all background agents to
+complete before evaluating findings.
 
 ---
 
