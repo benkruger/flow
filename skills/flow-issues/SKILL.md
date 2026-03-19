@@ -80,17 +80,9 @@ the title and body:
 - **Enhancement** — new feature or improvement to existing behavior
 - **Other** — does not fit any category above
 
-## Step 4 — Prioritize
+## Step 4 — Batch Detection and Analysis
 
-Within each category, assign High, Medium, or Low priority based on:
-
-- **High** — older than 30 days, blocks workflow, or affects correctness
-- **Medium** — older than 7 days, or affects developer experience
-- **Low** — recent, cosmetic, or nice-to-have
-
-## Step 5 — Batch Detection and Analysis
-
-### 5a. Batch Detection
+### 4a. Batch Detection
 
 Scan each issue's body for file path references. File paths are strings
 containing `/` with recognizable patterns: directory prefixes like `lib/`,
@@ -111,7 +103,7 @@ Record:
 If no batches are found (all issues are solo), omit the batch section
 from the Step 6 display.
 
-### 5b. Dependency Detection
+### 4b. Dependency Detection
 
 Scan each issue's body for `#N` patterns where N matches the number of
 another open issue in the fetched list. If issue A's body mentions `#B`,
@@ -121,7 +113,7 @@ Build a dependency map recording which issues depend on which. Only
 record dependencies between issues that are both in the current open
 issue list — references to closed or non-existent issues are ignored.
 
-### 5c. Stale Detection
+### 4c. Stale Detection
 
 For issues older than 60 days that have file path references and are not
 marked in-progress, check whether each referenced file still exists using
@@ -129,6 +121,58 @@ the Glob tool. Run Glob calls for all qualifying issues in parallel.
 Count the number of missing files per issue. Mark issues with one or more
 missing files as stale. Record the missing file count for display in
 Step 6.
+
+### 4d. Impact Analysis
+
+For each issue, compute an impact score from four signals:
+
+- **Cross-area scope** — count distinct top-level directories (`lib/`,
+  `skills/`, `hooks/`, `tests/`, `docs/`, `frameworks/`, `.claude/`)
+  from file paths already extracted in 4a. 4 or more areas = 1 point.
+- **Force-multiplier language** — scan the body for keywords: "automate",
+  "batch processing", "overnight", "processes issues", "all issues",
+  "each issue", "enables", "force multiplier", "unattended". Any match
+  = 1 point.
+- **Acceptance criteria density** — count `- [ ]` patterns in the body.
+  10 or more = 1 point.
+- **Reverse reference count** — count how many other open issues reference
+  `#N` where N is this issue's number. 2 or more = 1 point.
+
+Impact tier: 3-4 points = High, 1-2 points = Medium, 0 points = Low.
+
+### 4e. Blocking Score
+
+Using the dependency map from 4b, compute the reverse dependency count
+(in-degree) for each issue — how many other open issues depend on it.
+An issue blocking 1 or more other issues triggers the blocking modifier
+in Step 5.
+
+## Step 5 — Prioritize
+
+Assign each issue a priority tier using category-based defaults, then
+apply impact and blocking modifiers.
+
+### Default tier by category
+
+- **High** — Bug, Flaky Test
+- **Medium** — Tech Debt, Rule, Flow, Documentation Drift
+- **Low** — Enhancement, Other
+
+### Modifiers
+
+- **Impact modifier** — if the impact tier from 4d is High (3-4 of 4
+  signals), promote the issue one tier (Low → Medium, Medium → High,
+  High stays High).
+- **Blocking modifier** — if the issue blocks 1 or more other open
+  issues (from 4e), promote one tier.
+- Modifiers stack: an issue at Low with both High impact and blocking
+  promotes to High (Low → Medium → High).
+
+### Tiebreaking
+
+- Age is used only as a tiebreaker within the same tier — it never
+  promotes across tiers.
+- Decomposed issues sort before non-decomposed within the same tier.
 
 ## Step 6 — Display
 
@@ -144,12 +188,12 @@ its number and title. If no issues have the label, skip this section.
 
 For each non-empty category, print a markdown table with columns: `#`, `Title`, `Files`, `Age`, `Priority`. Sort by priority (High first), then by age (oldest first).
 
-The `Files` column shows the file path count from Step 5a (e.g., `~3`).
+The `Files` column shows the file path count from Step 4a (e.g., `~3`).
 If an issue has no file path references, show `—` in the Files column.
 
 For in-progress issues, append `[In Progress]` to the title in the table.
 For decomposed issues, append `[Decomposed]` to the title in the table.
-For stale issues (from Step 5c), append `[Stale: N files missing]` to the
+For stale issues (from Step 4c), append `[Stale: N files missing]` to the
 title where N is the count of missing files.
 An issue can display multiple annotations: `[In Progress] [Decomposed] [Stale: 2 files missing]`.
 Never remove in-progress issues from the table — always display all issues.
@@ -162,7 +206,7 @@ through the issues. Exclude issues with the "Flow In-Progress" label
 from the work order — they are already being worked on by another
 engineer.
 
-- **Explicit dependencies first** — if issue A depends on B (from Step 5b),
+- **Explicit dependencies first** — if issue A depends on B (from Step 4b),
   B must appear before A regardless of priority. Use topological sort to
   respect the full dependency chain. If a cycle exists, note it and fall
   back to priority ordering for the cycle members.

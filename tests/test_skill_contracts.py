@@ -2684,6 +2684,23 @@ def test_flow_issues_has_start_commands():
     )
 
 
+# --- flow-issues impact analysis ---
+
+
+def test_flow_issues_has_impact_analysis():
+    """flow-issues SKILL.md must have impact analysis with cross-area and force-multiplier signals."""
+    content = _read_skill("flow-issues")
+    assert "impact" in content.lower(), (
+        "flow-issues/SKILL.md must contain impact analysis logic"
+    )
+    assert "cross-area" in content.lower() or "directory" in content.lower(), (
+        "flow-issues/SKILL.md must reference cross-area scope or directory counting"
+    )
+    assert "force-multiplier" in content.lower() or "force multiplier" in content.lower(), (
+        "flow-issues/SKILL.md must reference force-multiplier language detection"
+    )
+
+
 # --- label-issues integration in Start, Complete, Abort ---
 
 
