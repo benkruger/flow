@@ -1,5 +1,21 @@
 # Release Notes
 
+## v0.36.0 — Enhanced flow-issues dashboard and foreground simplify review
+
+### New Features
+
+- **flow-issues dependency detection** — scans issue bodies for `#N` cross-references to build an explicit dependency graph; work order respects topological ordering.
+- **flow-issues file count column** — displays per-issue file path count as a complexity signal in category tables.
+- **flow-issues stale detection** — flags issues older than 60 days with missing referenced files.
+- **flow-issues quick-start commands** — each work order entry includes a copy-paste `/flow:flow-start` command.
+- **flow-issues url field** — `gh issue list` now fetches `url` for linking.
+
+### Improvements
+
+- Replace `/simplify` background agents with foreground review agents in Code Review Step 1 for reliable processing before PR merge.
+- Fold file count sub-step into batch detection to eliminate empty instruction step.
+- Add `code_task` single-increment rule to CLAUDE.md State Mutations section.
+
 ## v0.35.0 — Decomposed label awareness, terminal tab titles, and skill rename
 
 ### New Features
