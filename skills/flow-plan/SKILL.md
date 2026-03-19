@@ -150,13 +150,22 @@ Check the prompt for `#N` patterns (e.g., `#107`, `#42`). For each unique
 issue number found, fetch the issue body:
 
 ```bash
-gh issue view <issue_number> --json number,title,body
+gh issue view <issue_number> --json number,title,body,labels
 ```
 
 Use the issue body as primary planning context — it contains the detailed
 problem description, acceptance criteria, and context that the short prompt
 cannot convey. The prompt words alone may be ambiguous; the issue body is
 the authoritative source.
+
+### Detect pre-decomposed issues
+
+After fetching each issue, check the `labels` array for an entry with
+`name` equal to `"decomposed"`. If any referenced issue has this label,
+note it as a pre-decomposed issue and keep the issue body for Step 2.
+Issues with the "decomposed" label were filed by `/create-issue` and
+already contain verified file paths, acceptance criteria, scope
+boundaries, and architectural context from a prior decompose run.
 
 If the prompt contains no `#N` patterns, skip this step and use the prompt
 as-is.
@@ -171,7 +180,38 @@ Proceed to Step 2.
 
 ## Step 2 — DAG decomposition
 
-Check the DAG mode from DAG Mode Resolution:
+### Pre-decomposed issue skip
+
+If any referenced issue from Step 1 has the "decomposed" label, skip the
+decompose plugin entirely — regardless of the configured DAG mode. The
+issue body already contains a thorough analysis from a prior decompose run.
+
+Write the pre-decomposed issue body to
+`<project_root>/.flow-states/<branch>-dag.md` using the Write tool,
+wrapped with a markdown heading:
+
+```text
+# Pre-Decomposed Analysis: <feature description>
+
+<issue body>
+```
+
+Store the path in the state file:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.dag=<dag_file_path>
+```
+
+Replace `<dag_file_path>` with the relative path `.flow-states/<branch>-dag.md`.
+
+Proceed directly to Step 3. Do not set `_continue_pending` or
+`_continue_context`. Do not self-invoke. Execution continues in the
+same turn.
+
+### Standard DAG decomposition
+
+If no referenced issue has the "decomposed" label, check the DAG mode
+from DAG Mode Resolution:
 
 - If dag=`"never"` → skip to Step 3.
 - If dag=`"auto"` or `"always"` → invoke the decompose plugin.
@@ -239,6 +279,17 @@ If a DAG was produced in Step 2, use it as the foundation:
 - Validate that the files and patterns the DAG references actually exist
 - Check whether the dependencies the DAG identified make sense
 - Look for patterns or constraints the DAG missed
+
+If the DAG file contains a pre-decomposed issue analysis (from an issue
+with the "decomposed" label), use it as a head start for plan writing:
+- Acceptance criteria inform task definitions — each criterion maps to
+  one or more implementation tasks
+- Files-to-investigate inform exploration starting points — read those
+  files first
+- Out-of-scope boundaries constrain the plan — do not add tasks outside
+  the stated scope
+- The issue body has already been validated by the user — do not
+  re-evaluate the problem statement
 
 ### Framework Conventions
 
