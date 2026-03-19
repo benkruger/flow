@@ -8,6 +8,7 @@ import sys
 import pytest
 
 from conftest import LIB_DIR, make_state, write_state
+from flow_utils import format_tab_title
 
 SCRIPT = LIB_DIR / "stop-continue.py"
 
@@ -467,3 +468,75 @@ class TestSessionIsolation:
         updated = json.loads((state_dir / f"{branch}.json").read_text())
         assert updated["_continue_pending"] == ""
         assert updated["session_id"] == "new-session"
+
+
+# --- format_tab_title tests ---
+
+
+class TestFormatTabTitle:
+    def _state(self, phase, **kwargs):
+        """Build a minimal state dict for title testing."""
+        state = {"current_phase": phase, "branch": "test-feature"}
+        state.update(kwargs)
+        return state
+
+    def test_phase_1_start(self):
+        title = format_tab_title(self._state("flow-start"))
+        assert title == "Flow: Phase 1: Start \u2014 Test Feature"
+
+    def test_phase_2_plan(self):
+        title = format_tab_title(self._state("flow-plan"))
+        assert title == "Flow: Phase 2: Plan \u2014 Test Feature"
+
+    def test_phase_3_code(self):
+        title = format_tab_title(self._state("flow-code"))
+        assert title == "Flow: Phase 3: Code \u2014 Test Feature"
+
+    def test_phase_4_code_review(self):
+        title = format_tab_title(self._state("flow-code-review"))
+        assert title == "Flow: Phase 4: Code Review \u2014 Test Feature"
+
+    def test_phase_5_learn(self):
+        title = format_tab_title(self._state("flow-learn"))
+        assert title == "Flow: Phase 5: Learn \u2014 Test Feature"
+
+    def test_phase_6_complete(self):
+        title = format_tab_title(self._state("flow-complete"))
+        assert title == "Flow: Phase 6: Complete \u2014 Test Feature"
+
+    def test_code_with_task(self):
+        title = format_tab_title(self._state("flow-code", code_task=2))
+        assert title == "Flow: Phase 3: Code (task 2) \u2014 Test Feature"
+
+    def test_code_with_task_zero(self):
+        """code_task=0 means no task started — no step info."""
+        title = format_tab_title(self._state("flow-code", code_task=0))
+        assert title == "Flow: Phase 3: Code \u2014 Test Feature"
+
+    def test_code_review_with_step(self):
+        title = format_tab_title(self._state("flow-code-review", code_review_step=2))
+        assert title == "Flow: Phase 4: Code Review (step 2/4) \u2014 Test Feature"
+
+    def test_code_review_with_step_zero(self):
+        """code_review_step=0 means not started — no step info."""
+        title = format_tab_title(self._state("flow-code-review", code_review_step=0))
+        assert title == "Flow: Phase 4: Code Review \u2014 Test Feature"
+
+    def test_code_review_with_step_four(self):
+        """code_review_step=4 means all done — no step info."""
+        title = format_tab_title(self._state("flow-code-review", code_review_step=4))
+        assert title == "Flow: Phase 4: Code Review \u2014 Test Feature"
+
+    def test_missing_current_phase(self):
+        assert format_tab_title({"branch": "test-feature"}) is None
+
+    def test_missing_branch(self):
+        assert format_tab_title({"current_phase": "flow-code"}) is None
+
+    def test_unknown_phase_key(self):
+        assert format_tab_title(self._state("flow-unknown")) is None
+
+    def test_feature_name_from_branch(self):
+        """Branch name is title-cased into the feature name."""
+        title = format_tab_title(self._state("flow-start", branch="invoice-pdf-export"))
+        assert title == "Flow: Phase 1: Start \u2014 Invoice Pdf Export"
