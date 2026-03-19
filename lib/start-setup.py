@@ -1,12 +1,11 @@
 """Consolidated setup for FLOW Start phase.
 
-Runs git pull, creates worktree, makes initial commit + push + PR,
-creates state file, and logs all operations. The version gate
+Creates worktree, makes initial commit + push + PR, creates state
+file, and logs all operations. Optionally pulls main first (skipped
+via --skip-pull when the caller already pulled). The version gate
 (prime-check) runs as a separate step before this script.
 
-Usage: bin/flow start-setup "<feature name>" [--prompt "<full prompt>"]
-       bin/flow start-setup "<feature name>" --prompt-file <path>
-       bin/flow start-setup "<feature name>" --skip-pull
+Usage: bin/flow start-setup "<feature name>" [--prompt "<full prompt>"] [--prompt-file <path>] [--skip-pull]
 
 Output (JSON to stdout):
   Success: {"status": "ok", "worktree": "...", "pr_url": "...", "pr_number": N, "feature": "...", "branch": "..."}

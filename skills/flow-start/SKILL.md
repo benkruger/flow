@@ -281,7 +281,7 @@ in later steps — it would look for a nested `.worktrees/` that doesn't exist.
 **On failure** — stdout is error JSON, details on stderr:
 
 ```json
-{"status": "error", "step": "git_pull", "message": "..."}
+{"status": "error", "step": "worktree", "message": "..."}
 ```
 
 If the script returns an error, read the stderr output for details, report
