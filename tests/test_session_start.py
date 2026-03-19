@@ -871,3 +871,29 @@ def test_detached_head_multiple_files_fallback(git_repo):
     assert "Multiple FLOW features" in ctx
     assert "Feature One" in ctx
     assert "Feature Two" in ctx
+
+
+# --- Tab title does not pollute stdout ---
+
+
+def test_tab_title_does_not_appear_in_stdout(git_repo):
+    """Tab title escape sequence must not appear in stdout (it goes to /dev/tty)."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["branch"] = "tab-title-test"
+    write_state(state_dir, "tab-title-test", state)
+
+    _switch(git_repo, "tab-title-test")
+    result = _run(git_repo)
+    assert result.returncode == 0
+
+    # stdout must be valid JSON — no escape sequence bytes mixed in
+    output = json.loads(result.stdout)
+    assert "additional_context" in output
+
+    # The OSC title escape sequence must not appear in stdout
+    assert "\033]0;" not in result.stdout
+    assert "\007" not in result.stdout
