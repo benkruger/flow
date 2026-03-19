@@ -791,6 +791,15 @@ def test_plan_dag_capture_is_explicit():
         "flow-plan/SKILL.md Step 2 must instruct capturing the complete "
         "decompose output (XML plan + node executions + synthesis)"
     )
+    step2_lower = step2.lower()
+    assert (
+        "do not summarize" in step2_lower
+        or "do not condense" in step2_lower
+        or "never rewrite" in step2_lower
+    ), (
+        "flow-plan/SKILL.md Step 2 must explicitly prohibit summarizing, "
+        "condensing, or rewriting the decompose output"
+    )
 
 
 def test_start_references_setup_script():
