@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — three built-in lenses (clarity, correctness, safety) plus an optional fourth (CLAUDE.md compliance via code-review:code-review plugin, configurable). Invokes /simplify, /review, /security-review, and optionally code-review:code-review with a commit after each step."
+description: "Phase 4: Code Review — three review lenses (clarity via foreground agents, correctness via /review, safety via /security-review) plus an optional fourth (CLAUDE.md compliance via code-review:code-review plugin, configurable). Commits after each step."
 ---
 
 # FLOW Code Review — Phase 4: Code Review
@@ -137,37 +137,40 @@ multi-agent validation. The CLAUDE.md conventions inform fix decisions.
 
 ## Step 1 — Simplify
 
-Set the continuation context and flag before invoking the child skill:
+Get the full branch diff to use as review context:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Wait for all pending background agents to complete. Then process simplify output, review diff, fix out-of-scope findings, then commit if changes were made."
+git diff origin/main..HEAD
 ```
 
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=simplify
-```
+Launch three foreground review agents in parallel (one response, three
+Agent tool calls). Each agent receives the diff output as context. Do
+not use `run_in_background` — foreground agents complete within the
+response turn, guaranteeing their findings are available immediately.
 
-Invoke Claude Code's built-in `/simplify` skill using the Skill tool.
-`/simplify` refactors code for clarity, reduces complexity, and improves
-naming while preserving exact functionality. It is safe to run here
-because Phase 3 (Code) tests already verified all behavior.
+**Agent 1 — Code Reuse:** Review the diff for duplicated logic, missed
+abstractions, and opportunities to consolidate. Identify patterns that
+appear in multiple locations and suggest how to share them.
 
-Wait for `/simplify` to complete and report its changes.
+**Agent 2 — Code Quality:** Review the diff for naming clarity,
+structural simplicity, readability improvements, and unnecessary
+complexity. Identify conditionals that could be simplified, names that
+could be clearer, and abstractions that add complexity without value.
 
-### Background agent check
+**Agent 3 — Efficiency:** Review the diff for unnecessary allocations,
+redundant operations, and performance patterns. Identify operations that
+could be avoided or simplified without changing behavior.
 
-Built-in skills may launch background review agents that run
-asynchronously. After the child skill returns and the stop-continue hook
-resumes you, check for any pending background agent notifications. Wait
-for ALL background agents to complete before proceeding. Do not evaluate
-"no changes" or process findings until every agent has reported. Treat
-agent findings the same as direct findings from the child skill.
+After all three agents complete, aggregate their findings. Apply fixes
+for any valid findings that improve the code without changing behavior.
+It is safe to refactor here because Phase 3 (Code) tests already
+verified all behavior.
 
 ### Out-of-scope findings
 
-Review `/simplify`'s output for any findings it identified but did not fix
-because they are pre-existing (not introduced by the current PR). For each
-out-of-scope finding, classify as Tech Debt and file an issue.
+Review the review agents' output for any findings that are pre-existing
+(not introduced by the current PR). For each out-of-scope finding,
+classify as Tech Debt and file an issue.
 
 Write the issue body to `.flow-issue-body` in the project root using the
 Write tool, then file:
@@ -186,7 +189,7 @@ Repeat for each out-of-scope finding. Then continue to the diff review below.
 
 ### Diff review
 
-Show the user what `/simplify` changed:
+Show the user what the review agents changed:
 
 ```bash
 git diff HEAD
@@ -202,7 +205,7 @@ proceed directly to commit. The diff is still shown for visibility.
 
 **If there are changes and commit=manual**, use AskUserQuestion:
 
-> "Accept /simplify refactoring?"
+> "Accept Simplify refactoring?"
 >
 > - **Yes, commit these changes** — accept and proceed to commit
 > - **No, revert** — undo the simplifications

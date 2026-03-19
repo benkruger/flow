@@ -1904,8 +1904,10 @@ def test_code_review_steps_self_invoke():
 
 
 def test_code_review_steps_await_background_agents():
-    """Each Code Review step must instruct waiting for background agents."""
+    """Steps 2-4 must instruct waiting for background agents (Step 1 uses foreground agents)."""
     for step_num, step_text in _code_review_steps():
+        if step_num == 1:
+            continue
         assert "background agent" in step_text.lower(), (
             f"Step {step_num} must contain background agent wait instructions"
         )
@@ -2041,7 +2043,6 @@ def test_code_review_sets_continue_pending_before_child_skills():
     """Each Code Review step must set _continue_pending before child skill."""
     content = _read_skill("flow-code-review")
     child_skills = [
-        ("simplify", "/simplify"),
         ("review", "/review"),
         ("security-review", "/security-review"),
         ("code-review:code-review", "code-review:code-review"),
