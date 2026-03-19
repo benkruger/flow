@@ -828,6 +828,19 @@ def test_learn_step3_requires_output_for_mistakes():
     )
 
 
+def test_anti_patterns_has_inline_output_rule():
+    """Project .claude/rules/anti-patterns.md must have inline output rule.
+
+    When a phase produces output the user needs to review, Claude must render
+    it inline — never redirect to a file path."""
+    anti_patterns = (REPO_ROOT / ".claude" / "rules" / "anti-patterns.md").read_text()
+    lower = anti_patterns.lower()
+    assert "inline" in lower and ("file path" in lower or "render" in lower), (
+        ".claude/rules/anti-patterns.md must contain an inline output rule "
+        "that prohibits redirecting users to file paths"
+    )
+
+
 def test_start_references_setup_script():
     """Start SKILL.md must reference start-setup.py for consolidated setup."""
     content = _read_skill("flow-start")
