@@ -1,5 +1,19 @@
 # Release Notes
 
+## v0.35.0 — Decomposed label awareness, terminal tab titles, and skill rename
+
+### New Features
+
+- **Terminal tab title** — the terminal tab now shows the current FLOW phase and feature name, updated after every response via the Stop hook and at session start.
+- **Decomposed label in flow-issues** — the dashboard now detects the "decomposed" label, annotates issues with `[Decomposed]` in category tables, and boosts them in the recommended work order as a tie-breaker.
+- **Plan skip decompose** — `dag: "never"` in `.flow.json` skips the decompose plugin invocation during the Plan phase.
+- **Start auto/manual override** — `--auto` and `--manual` flags on `/flow:flow-start` override the `.flow.json` autonomy preset for the entire flow.
+
+### Improvements
+
+- **Skill renamed** — `/create-issue` renamed to `/flow-create-issue` for namespace consistency.
+- **Start setup log dedup** — eliminated duplicate log entries during the Start phase setup.
+
 ## v0.34.0 — Create Issue skill, Start optimization, Code Review config
 
 - **New skill:** `/flow-create-issue` decomposes problems into work-ready GitHub issues, giving flow-start fully detailed issues to run autonomously.

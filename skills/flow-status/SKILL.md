@@ -23,7 +23,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v0.34.0 — flow:flow-status — STARTING
+  FLOW v0.35.0 — flow:flow-status — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
