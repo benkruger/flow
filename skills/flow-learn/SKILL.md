@@ -205,6 +205,16 @@ without asking the user.
 | Process rule or architecture | Project CLAUDE.md (`CLAUDE.md`) | Edit on disk |
 | Coding anti-pattern or gotcha | `.claude/rules/<topic>.md` | File a "Rule" issue |
 
+### Mandatory output constraint
+
+If Step 2 identified Claude mistakes, every mistake must produce at least
+one concrete artifact — a CLAUDE.md edit, a Rule issue, or a Flow issue.
+A rule that existed but failed to prevent the mistake is not sufficient
+coverage. When an existing rule failed to prevent the mistake, either
+strengthen the rule (CLAUDE.md edit) or file a more specific Rule or
+Flow issue. Zero artifacts from Step 3 when Step 2 found mistakes is a
+skill failure.
+
 CLAUDE.md edits are direct — committed in Step 5.
 
 Rules edits are deferred — filed as GitHub issues with all context needed

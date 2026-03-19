@@ -791,6 +791,54 @@ def test_plan_dag_capture_is_explicit():
         "flow-plan/SKILL.md Step 2 must instruct capturing the complete "
         "decompose output (XML plan + node executions + synthesis)"
     )
+    step2_lower = step2.lower()
+    assert (
+        "do not summarize" in step2_lower
+        or "do not condense" in step2_lower
+        or "never rewrite" in step2_lower
+    ), (
+        "flow-plan/SKILL.md Step 2 must explicitly prohibit summarizing, "
+        "condensing, or rewriting the decompose output"
+    )
+
+
+def test_learn_step3_requires_output_for_mistakes():
+    """Learn SKILL.md Step 3 must require concrete output for every mistake.
+
+    When Learn identifies Claude mistakes in Step 2, Step 3 must not allow
+    'existing rules cover it' as an escape hatch. Every mistake must produce
+    at least one artifact (CLAUDE.md edit, Rule issue, or Flow issue)."""
+    content = _read_skill("flow-learn")
+    step3_match = re.search(
+        r"## Step 3.*?\n(.*?)(?=\n## Step 4|\Z)", content, re.DOTALL
+    )
+    assert step3_match, "flow-learn/SKILL.md has no Step 3 section"
+    step3_lower = step3_match.group(1).lower()
+
+    assert (
+        "every mistake must produce" in step3_lower
+        or "must produce at least one" in step3_lower
+    ), (
+        "flow-learn/SKILL.md Step 3 must require every identified mistake "
+        "to produce at least one concrete artifact"
+    )
+    assert "failed to prevent" in step3_lower, (
+        "flow-learn/SKILL.md Step 3 must state that a rule which failed "
+        "to prevent a mistake is not sufficient coverage"
+    )
+
+
+def test_anti_patterns_has_inline_output_rule():
+    """Project .claude/rules/anti-patterns.md must have inline output rule.
+
+    When a phase produces output the user needs to review, Claude must render
+    it inline — never redirect to a file path."""
+    anti_patterns = (REPO_ROOT / ".claude" / "rules" / "anti-patterns.md").read_text()
+    lower = anti_patterns.lower()
+    assert "inline" in lower and ("file path" in lower or "render" in lower), (
+        ".claude/rules/anti-patterns.md must contain an inline output rule "
+        "that prohibits redirecting users to file paths"
+    )
 
 
 def test_start_references_setup_script():

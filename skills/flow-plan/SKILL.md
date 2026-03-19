@@ -191,6 +191,9 @@ After the decompose plugin returns, save the complete decompose output:
 
 1. Capture everything the decompose plugin produced — the XML DAG plan,
    all node executions with quality scores, and the synthesis block.
+   Do not summarize, condense, reorganize, or rewrite any part of the
+   decompose output. The saved file must contain the full response
+   exactly as the plugin produced it.
    Write it verbatim to `<project_root>/.flow-states/<branch>-dag.md`
    using the Write tool, wrapped with a markdown heading:
 
