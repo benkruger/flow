@@ -261,6 +261,34 @@ else:
         "</flow-session-context>"
     )
 
+PHASE_NUMBERS = {
+    "flow-start": 1, "flow-plan": 2, "flow-code": 3,
+    "flow-code-review": 4, "flow-learn": 5, "flow-complete": 6,
+}
+
+try:
+    ts = states[0]
+    tcp = ts.get("current_phase", "")
+    tnum = PHASE_NUMBERS.get(tcp)
+    tbranch = ts.get("branch", "")
+    if tnum and tbranch:
+        tname = ts.get("phases", {}).get(tcp, {}).get("name", "")
+        tstep = ""
+        if tcp == "flow-code":
+            ttask = ts.get("code_task", 0)
+            if isinstance(ttask, int) and ttask > 0:
+                tstep = f" (task {ttask})"
+        elif tcp == "flow-code-review":
+            trstep = ts.get("code_review_step", 0)
+            if isinstance(trstep, int) and 0 < trstep < 4:
+                tstep = f" (step {trstep}/4)"
+        tfeature = _feature(ts)
+        ttitle = f"Flow: Phase {tnum}: {tname}{tstep} \u2014 {tfeature}"
+        with open("/dev/tty", "w") as tty:
+            tty.write(f"\033]0;{ttitle}\007")
+except Exception:
+    pass
+
 output = {
     "additional_context": context,
     "hookSpecificOutput": {

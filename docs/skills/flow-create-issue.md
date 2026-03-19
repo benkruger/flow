@@ -1,14 +1,14 @@
 ---
-title: /create-issue
+title: /flow-create-issue
 nav_order: 16
 parent: Skills
 ---
 
-# /create-issue
+# /flow-create-issue
 
 **Phase:** Any (standalone)
 
-**Usage:** `/flow:create-issue <problem description>`
+**Usage:** `/flow:flow-create-issue <problem description>`
 
 Decomposes a problem via DAG analysis with deep codebase exploration, iterates with the user until the issue is fully detailed, then files it as a "decomposed" issue ready for autonomous execution via `/flow-start`.
 

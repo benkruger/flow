@@ -2614,6 +2614,17 @@ def test_flow_issues_has_wip_detection():
     )
 
 
+# --- flow-issues decomposed detection ---
+
+
+def test_flow_issues_has_decomposed_detection():
+    """flow-issues SKILL.md must reference 'decomposed' for decomposed label detection."""
+    content = _read_skill("flow-issues")
+    assert "decomposed" in content, (
+        "flow-issues/SKILL.md must contain 'decomposed' for decomposed label detection"
+    )
+
+
 # --- label-issues integration in Start, Complete, Abort ---
 
 

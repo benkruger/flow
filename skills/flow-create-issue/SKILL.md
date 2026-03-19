@@ -1,16 +1,16 @@
 ---
-name: create-issue
+name: flow-create-issue
 description: "Decompose a problem via DAG analysis with deep codebase exploration, iterate with the user until the issue is 100% ready for autonomous execution, then file it."
 ---
 
-# Create Issue
+# Flow Create Issue
 
 Decompose a problem into a fully detailed, work-ready GitHub issue. Uses the `decompose:decompose` plugin for DAG-based analysis with deep codebase exploration. Iterates with the user until the issue is comprehensive enough for `/flow:flow-start` to execute it fully autonomously — no human clarification needed.
 
 ## Usage
 
 ```text
-/flow:create-issue <problem description>
+/flow:flow-create-issue <problem description>
 ```
 
 ## Concurrency
@@ -26,7 +26,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v0.34.0 — flow:create-issue — STARTING
+  FLOW v0.34.0 — flow:flow-create-issue — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -111,7 +111,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .f
 Record the issue in the state file (no-op if no FLOW feature is active):
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<issue_title>" --url "<issue_url>" --phase create-issue
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
 ```
 
 Display the issue URL to the user, then output the COMPLETE banner:
@@ -119,7 +119,7 @@ Display the issue URL to the user, then output the COMPLETE banner:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v0.34.0 — flow:create-issue — COMPLETE
+  ✓ FLOW v0.34.0 — flow:flow-create-issue — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
