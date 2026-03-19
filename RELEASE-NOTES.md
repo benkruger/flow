@@ -1,5 +1,11 @@
 # Release Notes
 
+## v0.34.0 — Create Issue skill, Start optimization, Code Review config
+
+- **New skill:** `/create-issue` decomposes problems into work-ready GitHub issues, giving flow-start fully detailed issues to run autonomously.
+- **Improvement:** Optimize Flow Start phase for faster worktree setup and PR creation.
+- **Improvement:** Prime Code Review plugin config into `.flow.json` during flow-prime, so the code review plugin axis is pre-configured.
+
 ## v0.33.1 — Concurrency awareness and safety guards
 
 ### Improvements
