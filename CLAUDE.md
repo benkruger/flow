@@ -83,6 +83,7 @@ CI will fail if these are missing:
 - `lib/label-issues.py` — adds or removes the "Flow In-Progress" label on GitHub issues referenced by `#N` in the start prompt; used by Start (add), Complete (remove), and Abort (remove) for multi-engineer WIP detection
 - `lib/issue.py` — creates GitHub issues via `gh` subprocess (wraps `gh issue create`; resolves repo via `--state-file` cached value, then `--repo` flag, then git remote detection)
 - `lib/add-issue.py` — records filed issues in the state file's `issues_filed` array (follows `append-note.py` pattern)
+- `lib/format-complete-summary.py` — generates the business-friendly Done banner for Complete phase (feature name, prompt, per-phase timeline, artifact counts)
 - `lib/format-issues-summary.py` — formats `issues_filed` as a markdown table and banner line for Complete phase
 - `lib/format-pr-timings.py` — reads state file, formats phase durations as a markdown table for PR body
 - `lib/render-pr-body.py` — idempotent PR body renderer: reads state file + artifact files, generates complete body in canonical section order (What, Artifacts, Plan, DAG Analysis, Phase Timings, State File, Session Log, Issues Filed)
@@ -179,6 +180,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_structural.py` | Config invariants: phases 1-6 exist, versions match across 3 locations, commands unique, hooks reference existing files |
 | `test_skill_contracts.py` | SKILL.md content: HARD-GATE presence, announce banners, state updates, ci-fixer agent, logging sections, note-capture options. Uses glob-based discovery — new skills are automatically covered |
 | `test_add_issue.py` | Issue recording: append to empty/existing array, missing state file, CLI integration |
+| `test_format_complete_summary.py` | Complete phase summary: basic summary, issues, notes, prompt truncation, format_time usage, borders, version fallback, CLI |
 | `test_format_issues_summary.py` | Issues summary formatting: empty/missing/single/multiple issues, label grouping, table output, CLI |
 | `test_close_issues.py` | Issue closing: extraction of `#N` patterns from prompt, deduplication, partial failure, CLI integration |
 | `test_label_issues.py` | Issue labeling: add/remove Flow In-Progress label, partial failure, deduplication, missing prompt, CLI integration |
