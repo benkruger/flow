@@ -137,8 +137,8 @@ gh pr view <branch> --json state --jq .state
 
 **If `MERGED`** — the PR is already merged. Skip directly to Step 6
 (archive artifacts to PR). After Step 6, continue to Step 8 (remove
-labels), then Step 9 (close issues) — skip Step 7 (merge) since the
-PR is already merged.
+labels), then Step 9 (close issues), then continue through cleanup
+(Steps 10-11) — skip Step 7 (merge) since the PR is already merged.
 
 **If `OPEN`** — continue to Step 3 to merge.
 
