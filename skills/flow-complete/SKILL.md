@@ -441,3 +441,4 @@ Do not add a separate PR line — it is part of the summary.
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories
 - Never cd before running `bin/flow` — it detects the project root internally
+- Never discard uncommitted changes to unblock a workflow step — if any git command fails due to uncommitted changes, show `git diff` to the user and ask how to proceed

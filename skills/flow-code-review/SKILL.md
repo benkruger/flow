@@ -220,9 +220,10 @@ restore each file individually:
 git restore <file>
 ```
 
-Repeat for each changed file. Never use `git restore .` — it discards
-all changes without review. After restoring, skip the commit and proceed
-to Step 2.
+Repeat for each changed file. Never use `git restore .`, `git reset HEAD`,
+or `git clean` — these discard changes without review. Restore files one
+at a time so each revert is deliberate. After restoring, skip the commit
+and proceed to Step 2.
 
 **If "Go back to Code"**: Restore each changed file individually (same
 process as "No, revert" above), then follow the back-navigation
@@ -706,3 +707,4 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories
 - Never cd before running `bin/flow` — it detects the project root internally
 - After each active step completes, advance to the next step via self-invocation — never pause or wait for user input between steps
+- Never discard uncommitted changes to unblock a workflow step — if any git command fails due to uncommitted changes, show `git diff` to the user and ask how to proceed

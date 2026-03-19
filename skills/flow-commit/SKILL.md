@@ -322,6 +322,7 @@ will make fixes and re-invoke the commit skill when ready.
 - Never add Co-Authored-By trailers or attribution lines — commits are authored by the user alone
 - Always pull before pushing — other sessions may have merged changes
 - **Never rebase — ever.** Always merge. `git rebase` is forbidden.
+- Never discard uncommitted or staged changes — if unexpected changes exist, show `git diff` to the user and ask how to proceed before taking any action
 
 ## Additional Rules
 
