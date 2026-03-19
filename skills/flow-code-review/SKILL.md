@@ -49,6 +49,17 @@ to the project root — `bin/flow` commands find paths internally.
 3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-code-review.commit` and `skills.flow-code-review.continue`.
 4. If the state file has no `skills` key → use built-in defaults: commit=manual, continue=manual
 
+## Code Review Plugin Mode Resolution
+
+1. Read `skills.flow-code-review.code_review_plugin` from the state file at `<project_root>/.flow-states/<branch>.json`.
+2. Valid values: `"always"` (default), `"auto"`, `"never"`.
+3. If the key does not exist → use built-in default: `"always"`.
+
+When `code_review_plugin` is `"never"`, Step 4 (the code-review:code-review plugin) is
+skipped entirely and the phase completes after Step 3.
+
+When `code_review_plugin` is `"auto"` or `"always"`, Step 4 runs as normal.
+
 ## Self-Invocation Check
 
 If `--continue-step` was passed, this is a self-invocation from a
@@ -99,7 +110,9 @@ Read `code_review_step` from the state file (default `0` if absent).
 
 - If `1` — Step 1 is done. Skip to Step 2.
 - If `2` — Steps 1-2 are done. Skip to Step 3.
-- If `3` — Steps 1-3 are done. Skip to Step 4.
+- If `3` — Steps 1-3 are done. Check Code Review Plugin Mode Resolution:
+  if `code_review_plugin` is `"never"`, skip to Done.
+  Otherwise, skip to Step 4.
 - If `4` — All steps are done. Skip to Done.
 
 ## Framework Conventions
@@ -483,9 +496,17 @@ Clear the continuation flag before self-invoking:
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
 ```
 
-To continue to Step 4, invoke `flow:flow-code-review --continue-step` using
-the Skill tool as your final action. If commit=auto was resolved, pass
-`--auto` as well. Do not output anything else after this invocation.
+Check Code Review Plugin Mode Resolution:
+
+- If `code_review_plugin` is `"never"` — the plugin is skipped. Invoke
+  `flow:flow-code-review --continue-step` using the Skill tool as your
+  final action. The Resume Check will route to Done.
+- If `code_review_plugin` is `"always"` or `"auto"` — invoke
+  `flow:flow-code-review --continue-step` using the Skill tool as your
+  final action. The Resume Check will route to Step 4.
+
+If commit=auto was resolved, pass `--auto` as well. Do not output
+anything else after this invocation.
 
 ---
 
