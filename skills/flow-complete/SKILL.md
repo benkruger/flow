@@ -434,7 +434,7 @@ exactly as returned — do not recompute it.
 
 ## Rules
 
-- Never run from inside the worktree — the SOFT-GATE navigates to project root
+- Steps 1-9 run from the worktree (feature branch); Steps 10-11 run from the project root after an explicit cd before Step 10
 - If the merge fails, never retry with additional flags or elevated privileges — report to the user and stop
 - Confirm with the user only when mode is **manual**
 - State file deletion is what resets the session hook — do not skip it
