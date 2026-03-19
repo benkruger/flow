@@ -622,24 +622,29 @@ Output in your response (not via Bash) inside a fenced code block:
 ```
 ````
 
-Invoke `flow:flow-status`.
+<HARD-GATE>
+Before advancing to the next phase, you MUST check the continue mode:
 
-**If continue=auto**, skip the transition question and invoke `flow:flow-learn` directly.
+1. Use the continue mode resolved in Mode Resolution above (auto or manual).
+   If no mode was resolved → default to manual.
+2. If continue=auto → invoke `flow:flow-learn` directly.
+   Do NOT invoke `flow:flow-status`. Do NOT use AskUserQuestion.
+3. If continue=manual → you MUST do all of the following before proceeding:
+   a. Invoke `flow:flow-status`
+   b. Use AskUserQuestion:
+      "Phase 4: Code Review is complete. Ready to begin Phase 5: Learn?"
+      Options: "Yes, start Phase 5 now", "Not yet",
+      "I have a correction or learning to capture"
+   c. If "I have a correction or learning to capture":
+      ask what to capture, invoke `/flow:flow-note`, then re-ask with
+      only "Yes, start Phase 5 now" and "Not yet"
+   d. If Yes → invoke `flow:flow-learn` using the Skill tool
+   e. If Not yet → print the paused banner below
+   f. Do NOT invoke `flow:flow-learn` until the user responds
 
-**If continue=manual**, use AskUserQuestion:
+Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
-> "Phase 4: Code Review is complete. Ready to begin Phase 5: Learn?"
->
-> - **Yes, start Phase 5 now** — invoke `flow:flow-learn`
-> - **Not yet** — print paused banner
-> - **I have a correction or learning to capture**
-
-**If "I have a correction or learning to capture":**
-1. Ask the user what they want to capture
-2. Invoke `/flow:flow-note` with their message
-3. Re-ask with only "Yes, start Phase 5 now" and "Not yet"
-
-**If Yes** — invoke `flow:flow-learn` using the Skill tool.
+</HARD-GATE>
 
 **If Not yet**, output in your response (not via Bash) inside a fenced code block:
 
