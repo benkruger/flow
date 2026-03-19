@@ -11,6 +11,15 @@ when building new phase skills.
 
 ---
 
+## Naming Convention
+
+All skill directories must use the `flow-` prefix: `skills/flow-<name>/`.
+This ensures consistent invocation as `/flow:flow-<name>` across the
+entire plugin namespace. `test_structural.py` enforces this convention —
+CI will fail if a skill directory does not start with `flow-`.
+
+---
+
 ## Standard Structure
 
 ```text

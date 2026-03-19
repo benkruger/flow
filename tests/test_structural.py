@@ -74,6 +74,14 @@ def test_every_skill_dir_has_skill_md():
             assert skill_md.exists(), f"skills/{d.name}/ has no SKILL.md"
 
 
+def test_every_skill_dir_starts_with_flow_prefix():
+    for d in sorted(SKILLS_DIR.iterdir()):
+        if d.is_dir():
+            assert d.name.startswith("flow-"), (
+                f"skills/{d.name}/ does not start with 'flow-' prefix"
+            )
+
+
 def test_phase_names_in_flow_utils_match_flow_phases():
     """PHASE_NAMES in flow_utils.py must match flow-phases.json."""
     from flow_utils import PHASE_NAMES
