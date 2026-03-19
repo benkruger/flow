@@ -91,19 +91,19 @@ Ask the user how much autonomy FLOW should have using AskUserQuestion:
 **Fully autonomous** — all auto:
 
 ```json
-{"flow-start": {"continue": "auto"}, "flow-plan": {"continue": "auto", "dag": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}
+{"flow-start": {"continue": "auto"}, "flow-plan": {"continue": "auto", "dag": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-code-review": {"commit": "auto", "continue": "auto", "code_review_plugin": "always"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}
 ```
 
 **Fully manual** — all manual:
 
 ```json
-{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "manual", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "manual", "continue": "manual"}, "flow-learn": {"commit": "manual", "continue": "manual"}, "flow-abort": "manual", "flow-complete": "manual"}
+{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "manual", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "manual", "continue": "manual", "code_review_plugin": "always"}, "flow-learn": {"commit": "manual", "continue": "manual"}, "flow-abort": "manual", "flow-complete": "manual"}
 ```
 
 **Recommended** — safe defaults for all frameworks:
 
 ```json
-{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "auto", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}
+{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "auto", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto", "code_review_plugin": "always"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}
 ```
 
 **Customize** — ask per skill, in this order: start, plan, code, code-review, learn, abort, complete. For each skill, ask about only the applicable axes. List the recommended option first with "(Recommended)" in the label:
@@ -124,18 +124,42 @@ Second question:
 > - **Manual (Recommended)** — "Prompt before advancing"
 > - **Auto** — "Auto-advance to next phase"
 
-For **code-review** and **learning** (commit and continue), ask two AskUserQuestions each:
+For **code-review** (commit, continue, and code\_review\_plugin), ask three AskUserQuestions:
 
 First question:
 
-> "Commit mode for /flow:flow-<skill>? (controls diff approval and per-task approval)"
+> "Commit mode for /flow:flow-code-review? (controls diff approval and per-task approval)"
 >
 > - **Auto (Recommended)** — "Skip approval prompts"
 > - **Manual** — "Require explicit approval"
 
 Second question:
 
-> "Continue mode for /flow:flow-<skill>? (controls phase advancement)"
+> "Continue mode for /flow:flow-code-review? (controls phase advancement)"
+>
+> - **Auto (Recommended)** — "Auto-advance to next phase"
+> - **Manual** — "Prompt before advancing"
+
+Third question:
+
+> "Code Review Plugin mode? (multi-agent validation via code-review:code-review)"
+>
+> - **Always (Default)** — "Always run the code-review plugin (Step 4)"
+> - **Auto** — "Run plugin based on change complexity"
+> - **Never** — "Skip the code-review plugin, complete after Step 3"
+
+For **learning** (commit and continue), ask two AskUserQuestions:
+
+First question:
+
+> "Commit mode for /flow:flow-learn? (controls diff approval and per-task approval)"
+>
+> - **Auto (Recommended)** — "Skip approval prompts"
+> - **Manual** — "Require explicit approval"
+
+Second question:
+
+> "Continue mode for /flow:flow-learn? (controls phase advancement)"
 >
 > - **Auto (Recommended)** — "Auto-advance to next phase"
 > - **Manual** — "Prompt before advancing"

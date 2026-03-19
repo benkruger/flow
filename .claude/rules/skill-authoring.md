@@ -97,6 +97,12 @@ The `git worktree remove` call deletes the entire directory tree —
 any step that reads or removes worktree-internal files must precede
 it or the target path will not exist.
 
+Similarly, any SKILL.md command that reads `.flow-states/` files
+(state file, log, CI sentinel) must be placed in a numbered step
+BEFORE the cleanup step. The Done section runs after cleanup — by
+that point, `.flow-states/<branch>.json` has been deleted and any
+command that reads it will fail.
+
 ## Fenced Code Blocks Before Closing Tags
 
 When a bash block ends immediately before a closing XML-like tag
@@ -104,6 +110,18 @@ When a bash block ends immediately before a closing XML-like tag
 closing ` ``` ` and the tag. pymarkdown MD031 requires a blank line
 after every fenced code block, including when the next line is a
 closing tag rather than prose.
+
+## Contract Test Atomicity in Plan Dependencies
+
+When a plan removes content that a contract test asserts exists, and a
+later task re-adds it at a different location, the plan must mark those
+tasks as atomically dependent — they must be in the same commit. Otherwise
+CI fails in the intermediate state when the content is absent.
+
+Before finalizing the dependency graph, check every removal task against
+`test_skill_contracts.py` assertions. If any assertion validates the
+presence of the removed content, pair the removal with the re-addition
+task.
 
 ## Destination Renumbering
 
