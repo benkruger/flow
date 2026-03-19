@@ -272,3 +272,33 @@ def permission_to_regex(perm):
     pattern = match.group(1)
     escaped = re.escape(pattern).replace(r"\*", ".*")
     return re.compile("^" + escaped + "$")
+
+
+def format_tab_title(state):
+    """Format a terminal tab title from FLOW state.
+
+    Returns a string like "Flow: Phase 3: Code (task 2) — Feature Name",
+    or None if the state lacks required fields.
+    """
+    phase = state.get("current_phase")
+    branch = state.get("branch")
+    if not phase or not branch:
+        return None
+
+    number = PHASE_NUMBER.get(phase)
+    name = PHASE_NAMES.get(phase)
+    if number is None or name is None:
+        return None
+
+    step = ""
+    if phase == "flow-code":
+        task = state.get("code_task", 0)
+        if isinstance(task, int) and task > 0:
+            step = f" (task {task})"
+    elif phase == "flow-code-review":
+        review_step = state.get("code_review_step", 0)
+        if isinstance(review_step, int) and 0 < review_step < 4:
+            step = f" (step {review_step}/4)"
+
+    feature = derive_feature(branch)
+    return f"Flow: Phase {number}: {name}{step} \u2014 {feature}"

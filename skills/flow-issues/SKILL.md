@@ -45,13 +45,19 @@ gh issue list --state open --json number,title,labels,createdAt,body --limit 100
 
 Parse the JSON output. If there are no open issues, print the COMPLETE banner and stop.
 
-## Step 2 — Detect In-Progress Issues
+## Step 2 — Detect In-Progress and Decomposed Issues
 
 Check each issue's labels for "Flow In-Progress". Issues with this label
 are actively being worked on by another FLOW feature (possibly on a
 different engineer's machine). Mark these issues as in-progress for use
 in later steps. Still include them in categorization and display — the
 label is an annotation, not a filter.
+
+Also check each issue's labels for "decomposed". Issues with this label
+were filed via `/create-issue` with DAG analysis and deep codebase
+exploration — they are work-ready for autonomous execution. Mark these
+issues as decomposed for use in later steps. Still include them in
+categorization and display — the label is an annotation, not a filter.
 
 ## Step 3 — Categorize
 
@@ -116,6 +122,8 @@ its number and title. If no issues have the label, skip this section.
 For each non-empty category, print a markdown table with columns: `#`, `Title`, `Age`, `Priority`. Sort by priority (High first), then by age (oldest first).
 
 For in-progress issues, append `[In Progress]` to the title in the table.
+For decomposed issues, append `[Decomposed]` to the title in the table.
+An issue can display both annotations: `[In Progress] [Decomposed]`.
 Never remove in-progress issues from the table — always display all issues.
 
 ### Recommended Work Order
@@ -132,6 +140,9 @@ engineer.
 - **Dependencies** — if one issue refactors files that another issue
   adds features to (based on category: Tech Debt, Rule, or Flow issues
   that touch shared files), place the refactoring issue first
+- **Decomposed boost** — issues with the "decomposed" label sort before
+  non-decomposed issues at the same priority/batch/dependency level. For
+  batches, a batch containing any decomposed member is treated as decomposed.
 - **Ties** — broken by age (oldest first)
 
 For each entry in the work order, show:
@@ -159,6 +170,7 @@ After the work order is displayed, output the following banner in your response 
 
 - Read-only — never create, edit, or close issues
 - Display all open issues in category tables — annotate in-progress issues, never remove rows
+- Annotate decomposed issues with [Decomposed] in category tables
 - Exclude in-progress issues from the Recommended Work Order
 - No AskUserQuestion — this is a display-only skill
 - Never use Bash to print banners — output them as text in your response
