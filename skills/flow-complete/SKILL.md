@@ -62,13 +62,6 @@ Carry any warnings forward to the confirmation step in Step 5.
 
 Resolve the mode using the Mode Resolution rules above.
 
-Navigate to the project root now — all subsequent steps must run from
-the project root, not from inside the worktree:
-
-```bash
-cd <project_root>
-```
-
 </SOFT-GATE>
 
 ## Announce
@@ -93,7 +86,7 @@ operation — writing log entries that are immediately deleted is pointless.
 Record phase entry in the state file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-complete --action enter
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-complete --action enter --branch <branch>
 ```
 
 Parse the JSON output and confirm `status` is `"ok"`.
@@ -295,7 +288,7 @@ Record phase completion in the state file so Phase Timings includes
 the Complete row:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-complete --action complete --next-phase flow-complete
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-complete --action complete --next-phase flow-complete --branch <branch>
 ```
 
 Parse the JSON output. Keep `formatted_time` and `cumulative_seconds`
@@ -355,6 +348,16 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow close-issues --state-file <project_root>/.fl
 
 Parse the JSON output. Report which issues were closed and which failed.
 If no issues were referenced, proceed silently.
+
+### Navigate to project root
+
+The worktree is about to be removed — you cannot be inside it when that
+happens. Navigate to the project root now. All subsequent steps (cleanup
+and pull) run from the project root on main.
+
+```bash
+cd <project_root>
+```
 
 ### Step 10 — Run cleanup script
 
