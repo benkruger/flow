@@ -527,14 +527,6 @@
         <p class="cool-desc">No containers. Native tools only &mdash; git, gh, linter, test runner. Every command pre-approved. Worktree isolation protects main. No permission prompts.</p>
       </div>
     </div>
-
-    <div class="cool-card">
-      <div class="cool-card-front">
-        <span class="cool-mono">#_</span>
-        <div class="cool-headline">Slack Notifications</div>
-        <p class="cool-desc">Optional thread-per-feature notifications. Each feature gets one Slack thread &mdash; every phase posts a reply, building a narrative from start to merge. Two env vars, one prime, done.</p>
-      </div>
-    </div>
   </section>
 
   <!-- HOW -->
@@ -667,6 +659,84 @@
       <div class="feature">
         <h4>Project Rules</h4>
         <p>Coding anti-patterns and gotchas. &ldquo;Never use update_column in tests.&rdquo;</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- BEYOND THE PHASES -->
+  <section>
+    <h2>Beyond the Phases</h2>
+
+    <h3>Batch Orchestration</h3>
+    <p>Queue up decomposed issues and let FLOW process them overnight. Each issue runs through all 6 phases autonomously via <code>/flow-start --auto</code>. Wake up to a morning report.</p>
+
+    <div class="pipeline">
+      <div class="pipeline-step">
+        <div class="step-num">1</div>
+        <span class="step-label">Decompose</span>
+        <span class="step-detail"><code>/flow-create-issue</code> files work-ready issues with DAG analysis</span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">2</div>
+        <span class="step-label">Queue</span>
+        <span class="step-detail"><code>/flow-orchestrate</code> fetches decomposed issues, filters in-progress, builds queue</span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">3</div>
+        <span class="step-label">Process</span>
+        <span class="step-detail">Each issue runs Start &rarr; Plan &rarr; Code &rarr; Code Review &rarr; Learn &rarr; Complete</span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">4</div>
+        <span class="step-label">Report</span>
+        <span class="step-detail">Morning report delivered on next session start &mdash; what completed, what failed, PR links</span>
+      </div>
+    </div>
+
+    <div class="terminal">
+      <div class="terminal-bar">
+        <span class="t-close"></span>
+        <span class="t-min"></span>
+        <span class="t-max"></span>
+      </div>
+      <div class="terminal-body">
+<span class="t-bold"># FLOW Orchestration Report</span>
+
+Started: 2026-03-19T23:14:07-07:00
+Completed: 2026-03-20T05:41:33-07:00
+Duration: <span class="t-accent">6h 27m</span>
+
+<span class="t-bold">## Results</span>
+
+| #  | Issue                        | Outcome   | PR    |
+|----|------------------------------|-----------|-------|
+| 1  | <span class="t-green">#42 Add PDF export</span>            | <span class="t-green">completed</span> | PR #58 |
+| 2  | <span class="t-green">#44 Refactor auth module</span>      | <span class="t-green">completed</span> | PR #60 |
+| 3  | <span class="t-accent">#43 Fix login timeout</span>        | <span class="t-accent">failed</span>    | &mdash;    |
+| 4  | <span class="t-green">#45 Update payment hooks</span>      | <span class="t-green">completed</span> | PR #61 |
+| 5  | <span class="t-green">#46 Add rate limiting</span>         | <span class="t-green">completed</span> | PR #62 |</div>
+    </div>
+
+    <h3>Slack Notifications</h3>
+    <p>Optional thread-per-feature notifications give your team passive awareness of feature progress without any active monitoring.</p>
+
+    <div class="cool-grid">
+      <div class="cool-card-front">
+        <span class="cool-mono">#_</span>
+        <div class="cool-headline">Thread per Feature</div>
+        <p class="cool-desc">Each feature gets one Slack thread. Every phase posts a reply, building a narrative from start to merge.</p>
+      </div>
+
+      <div class="cool-card-front">
+        <span class="cool-icon">&#9654;</span>
+        <div class="cool-headline">Phase Updates</div>
+        <p class="cool-desc">Start, Plan, Code, Code Review, Learn, Complete &mdash; each phase posts its outcome and timing as a thread reply.</p>
+      </div>
+
+      <div class="cool-card-front">
+        <span class="cool-icon">&#9881;</span>
+        <div class="cool-headline">Zero Config</div>
+        <p class="cool-desc">Two env vars and one <code>/flow-prime</code>. No webhook servers, no bot infrastructure. Uses Slack&rsquo;s <code>chat.postMessage</code> API directly.</p>
       </div>
     </div>
   </section>

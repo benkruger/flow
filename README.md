@@ -159,6 +159,29 @@ Available at any point in the workflow:
 |---------|-------------|
 | `bin/flow tui` | Interactive terminal UI — view active flows, open worktrees, tail logs, abort features (no Claude session needed) |
 
+### Terminal Dashboard
+
+Monitor every active flow from your terminal — no Claude session needed. `bin/flow tui` reads state files directly and auto-refreshes every 2 seconds, so phase transitions and code task progress appear as they happen.
+
+| Key | Action |
+|-----|--------|
+| Up/Down | Navigate flow list |
+| Enter | Open worktree in new Terminal tab |
+| p | Open PR in browser |
+| l | Show session log |
+| a | Abort flow (with Y/N confirmation) |
+| r | Force refresh |
+| Esc | Return from log view to list view |
+| q | Quit |
+
+The detail panel shows the full phase timeline with per-phase cumulative time, code task progress, diff stats, notes count, and issues filed. Runs standalone on macOS and Linux using the Python standard library `curses` module.
+
+### Batch Orchestration
+
+Queue up decomposed issues and let FLOW process them overnight. `/flow-orchestrate` fetches open issues labeled "Decomposed", filters out any marked "Flow In-Progress", and runs each sequentially through all 6 phases via `flow-start --auto`.
+
+The next time you open a Claude Code session, the session-start hook delivers a morning report: which issues completed (with PR links), which failed (with reasons), and total elapsed time. One command to start, zero intervention overnight, full accountability in the morning.
+
 ---
 
 ## Architecture
