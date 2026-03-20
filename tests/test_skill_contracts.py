@@ -342,6 +342,14 @@ def test_ci_fixer_agent_exists():
     assert "validate-ci-bash" in content, (
         "agents/ci-fixer.md missing reference to validate-ci-bash"
     )
+    # CI re-run must use an explicit bash block with plugin root prefix
+    assert "```bash" in content, (
+        "agents/ci-fixer.md missing explicit bash block for bin/flow ci"
+    )
+    assert "${CLAUDE_PLUGIN_ROOT}/bin/flow ci" in content, (
+        "agents/ci-fixer.md must use ${CLAUDE_PLUGIN_ROOT}/bin/flow ci "
+        "in a bash block — bare bin/flow fails in target projects"
+    )
 
 
 def test_code_review_delegates_to_builtin_review():

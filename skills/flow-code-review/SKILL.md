@@ -232,7 +232,13 @@ and proceed to Step 2.
 process as "No, revert" above), then follow the back-navigation
 instructions below.
 
-**Commit**: Run `bin/flow ci` first. If green, set the continuation context and flag:
+**Commit**: Run CI first:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+```
+
+If green, set the continuation context and flag:
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_review_step=1, then self-invoke flow:flow-code-review --continue-step."
@@ -454,15 +460,33 @@ same as direct findings from the child skill.
 
 ### Fix every finding
 
-For each finding from the security review:
+For each finding from the security review, fix the issue in code, then
+run CI:
 
-1. Fix the issue in code
-2. Run `bin/flow ci`
-3. Set `bin/flow set-timestamp --set "_continue_context=Clear _continue_pending and continue fixing remaining security findings."`
-4. Set `bin/flow set-timestamp --set _continue_pending=commit`
-5. If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise invoke `/flow:flow-commit`.
-6. After the commit completes, clear with `bin/flow set-timestamp --set _continue_pending=`
-7. Move to the next finding
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+```
+
+Set the continuation context and flag:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Clear _continue_pending and continue fixing remaining security findings."
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+```
+
+If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise
+invoke `/flow:flow-commit`.
+
+After the commit completes, clear the continuation flag:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
+```
+
+Move to the next finding.
 
 <HARD-GATE>
 `bin/flow ci` must be green after every fix. Do not move to the next
@@ -561,15 +585,33 @@ Plugin summary with zero findings, then without pausing continue to Done.
 
 ### Fix every finding
 
-For each finding from the code-review plugin:
+For each finding from the code-review plugin, fix the issue in code, then
+run CI:
 
-1. Fix the issue in code
-2. Run `bin/flow ci`
-3. Set `bin/flow set-timestamp --set "_continue_context=Clear _continue_pending and continue fixing remaining code-review findings."`
-4. Set `bin/flow set-timestamp --set _continue_pending=commit`
-5. If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise invoke `/flow:flow-commit`.
-6. After the commit completes, clear with `bin/flow set-timestamp --set _continue_pending=`
-7. Move to the next finding
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+```
+
+Set the continuation context and flag:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Clear _continue_pending and continue fixing remaining code-review findings."
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+```
+
+If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise
+invoke `/flow:flow-commit`.
+
+After the commit completes, clear the continuation flag:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
+```
+
+Move to the next finding.
 
 <HARD-GATE>
 `bin/flow ci` must be green after every fix. Do not move to the next

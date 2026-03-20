@@ -1,6 +1,6 @@
 ---
 name: flow-code
-description: "Phase 3: Code — execute plan tasks one at a time with TDD. Review diff before each commit. bin/ci must pass before moving to the next task. Framework architecture standards enforced."
+description: "Phase 3: Code — execute plan tasks one at a time with TDD. Review diff before each commit. bin/flow ci must pass before moving to the next task. Framework architecture standards enforced."
 ---
 
 # FLOW Code — Phase 3: Code
@@ -256,13 +256,22 @@ user visibility, but skip the AskUserQuestion and proceed directly to
 
 ### bin/flow ci Gate
 
-Run `bin/flow ci`. This must be green before committing.
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+```
+
+This must be green before committing.
 
 **If `bin/flow ci` fails:**
 
 - Read the output carefully
 - Fix each failure following the **CI Failure Fix Order** from the project CLAUDE.md
-- Re-run `bin/flow ci` after each fix
+- Re-run CI after each fix:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+```
+
 - Max 3 attempts — if still failing after 3, stop and report exactly what is failing
 
 **Flaky test detection:** If a test fails on one attempt but passes on a
@@ -354,10 +363,14 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 
 Then check coverage — Read `coverage/uncovered.txt`.
 
-If there are uncovered lines:
-- Write tests for each uncovered line
-- Run `bin/flow ci` again
-- Repeat until `coverage/uncovered.txt` is empty
+If there are uncovered lines, write tests for each uncovered line, then
+run CI again:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+```
+
+Repeat until `coverage/uncovered.txt` is empty.
 
 <HARD-GATE>
 Do NOT transition to Code Review until `bin/flow ci` is green AND coverage/uncovered.txt
