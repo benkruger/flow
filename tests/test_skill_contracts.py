@@ -1400,15 +1400,15 @@ def test_learning_files_flow_issues_not_learning():
         r"## Step 5.*?\n(.*?)(?:\n## Step 6|\n---)", content, re.DOTALL
     )
     assert step5_match, "Learn skill has no Step 5 section"
-    step6_text = step5_match.group(1)
-    assert "--label" in step6_text, (
-        "Learn Step 6 must specify a --label for issue filing"
+    step5_text = step5_match.group(1)
+    assert "--label" in step5_text, (
+        "Learn Step 5 must specify a --label for issue filing"
     )
-    assert "Flow" in step6_text, (
-        "Learn Step 6 must use label 'Flow' for process gap issues"
+    assert "Flow" in step5_text, (
+        "Learn Step 5 must use label 'Flow' for process gap issues"
     )
-    assert 'learning' not in step6_text.split("--label")[1].split("\n")[0].lower(), (
-        "Learn Step 6 must not use label 'learning' — use 'Flow' instead"
+    assert 'learning' not in step5_text.split("--label")[1].split("\n")[0].lower(), (
+        "Learn Step 5 must not use label 'learning' — use 'Flow' instead"
     )
 
 
