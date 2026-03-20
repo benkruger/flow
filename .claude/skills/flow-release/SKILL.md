@@ -45,9 +45,9 @@ If `git status` shows uncommitted changes, stop:
 
 If `git pull` produced changes, warn the user that new commits were pulled.
 
-## Step 2 — Verify CI and find last release
+## Step 2 — Verify CI, find last release, and gather inputs
 
-Run all three in parallel (one response, three Bash calls):
+Run all five in parallel (one response, three Bash calls + two Reads):
 
 ```bash
 gh run list --branch main --limit 1 --json conclusion,headSha,status
@@ -61,6 +61,8 @@ git rev-parse HEAD
 git describe --tags --abbrev=0
 ```
 
+Also use the Read tool to read `.claude-plugin/plugin.json` and `RELEASE-NOTES.md`.
+
 First verify the run's `headSha` matches `git rev-parse HEAD`.
 If not, CI hasn't run on the latest commit — tell the user and stop.
 
@@ -72,15 +74,11 @@ Then check `conclusion`:
 
 If `git describe` fails (no tags exist), set `<last_tag>` to `HEAD~20`.
 
-## Step 3 — Show what changed and read version
-
-Run both in parallel (one response, one Bash call + one Read):
+## Step 3 — Show what changed
 
 ```bash
 git log --oneline <last_tag>..HEAD
 ```
-
-Also use the Read tool to read `.claude-plugin/plugin.json`.
 
 Display the commit list. This is what goes into the release.
 
@@ -127,15 +125,16 @@ Present the recommendation and the draft release notes in your response.
 
 **Unless `--manual` was explicitly passed**, proceed directly to Step 5.
 
-## Step 5 — Bump version and prepare release notes
+## Step 5 — Bump version and update release notes
 
-Run both in parallel (one response, one Bash call + one Read):
+Run both in parallel (one response, one Bash call + one Edit):
 
 ```bash
 make bump NEW=<new_version>
 ```
 
-Also use the Read tool to read `RELEASE-NOTES.md`.
+Also Edit `RELEASE-NOTES.md` — add the release notes section from Step 4 at the
+top (below the `# Release Notes` heading).
 
 The bump updates `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
 and all skill banners in one step.
@@ -145,12 +144,7 @@ dynamically by `compute_config_hash()` and `compute_setup_hash()` in
 `lib/prime-setup.py` at prime time and compared at start time by
 `lib/prime-check.py`. No manual hash updates are needed during releases.
 
-## Step 6 — Update release notes and stage
-
-Edit `RELEASE-NOTES.md` — add the release notes section from Step 4 at the
-top (below the `# Release Notes` heading).
-
-Then stage all changes:
+## Step 6 — Stage all changes
 
 ```bash
 git add -A
@@ -172,9 +166,9 @@ bin/flow finalize-commit .flow-commit-msg main
 No diff review. No `bin/ci`. No approval prompt — CI was verified in
 Step 2, changes were shown in Step 3, and version was confirmed in Step 4.
 
-## Step 8 — Tag and extract release notes
+## Step 8 — Tag, release, and publish
 
-Run both in parallel (one response, two Bash calls):
+First, run both in parallel (one response, two Bash calls):
 
 ```bash
 git tag v<new_version>
@@ -186,15 +180,7 @@ bin/flow extract-release-notes v<new_version>
 
 The extract writes `tmp/release-notes-v<new_version>.md`.
 
-## Step 9 — Push tag
-
-```bash
-git push origin v<new_version>
-```
-
-## Step 10 — Publish release and update marketplace
-
-Run both in parallel (one response, two Bash calls):
+Then run both in parallel (one response, two Bash calls):
 
 ```bash
 gh release create v<new_version> --title "v<new_version>" --notes-file tmp/release-notes-v<new_version>.md
@@ -203,6 +189,9 @@ gh release create v<new_version> --title "v<new_version>" --notes-file tmp/relea
 ```bash
 claude plugin marketplace update flow-marketplace
 ```
+
+`gh release create` pushes the tag to the remote automatically — no separate
+`git push origin` needed.
 
 If the marketplace update fails, print the command for the user to run manually.
 
