@@ -1106,3 +1106,69 @@ def test_prime_setup_lists_match_skill_md_reference():
         f"source) and skills/prime/SKILL.md (reference docs):\n"
         + "\n".join(f"  - {e}" for e in errors)
     )
+
+
+# Category ordering for .claude/settings.json allow list.
+# Each tuple is (category_name, prefix_patterns) where prefix_patterns
+# determine which entries belong to the category.
+SETTINGS_ALLOW_CATEGORIES = [
+    ("git", ["Bash(git "]),
+    ("github-cli", ["Bash(gh "]),
+    ("bin", ["Bash(bin/", "Bash(*bin/"]),
+    ("plugins", ["Bash(claude plugin"]),
+    ("cleanup", ["Bash(rm "]),
+    ("build", ["Bash(make ", "Bash(diff ", "Bash(.venv/"]),
+    ("read", ["Read("]),
+    ("skills", ["Skill("]),
+    ("agents", ["Agent("]),
+]
+
+
+def _categorize_entry(entry):
+    """Return the category name for a settings.json allow entry."""
+    for category, prefixes in SETTINGS_ALLOW_CATEGORIES:
+        for prefix in prefixes:
+            if entry.startswith(prefix):
+                return category
+    return None
+
+
+def test_settings_allow_list_ordered_by_category():
+    """Allow list in .claude/settings.json must be ordered by logical category.
+
+    Categories (in order): git, github-cli, bin, plugins, cleanup, build,
+    read, skills, agents. Entries within a category can be in any order,
+    but no entry from an earlier category may appear after an entry from
+    a later category."""
+    permissions = _load_settings_permissions()
+    category_index = {cat: i for i, (cat, _) in enumerate(SETTINGS_ALLOW_CATEGORIES)}
+    category_names = [cat for cat, _ in SETTINGS_ALLOW_CATEGORIES]
+
+    errors = []
+    last_category_index = -1
+    last_category_name = None
+
+    for entry in permissions:
+        category = _categorize_entry(entry)
+        if category is None:
+            errors.append(
+                f"Entry '{entry}' does not match any known category. "
+                f"Add a prefix pattern to SETTINGS_ALLOW_CATEGORIES."
+            )
+            continue
+
+        index = category_index[category]
+        if index < last_category_index:
+            errors.append(
+                f"Entry '{entry}' (category: {category}) appears after "
+                f"'{last_category_name}' entries. Expected order: "
+                f"{' → '.join(category_names)}"
+            )
+        else:
+            last_category_index = index
+            last_category_name = category
+
+    assert not errors, (
+        f"Allow list in .claude/settings.json is not ordered by category:\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
