@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import derive_feature, derive_worktree, find_state_files, project_root, resolve_branch, COMMANDS, PHASE_NAMES
+from flow_utils import derive_feature, derive_worktree, find_state_files, project_root, read_version, resolve_branch, COMMANDS, PHASE_NAMES
 
 # Import format_panel from format-status.py (same pattern as tests)
 _spec = importlib.util.spec_from_file_location(
@@ -78,7 +78,7 @@ def main():
 
     state_path, state, matched_branch = results[0]
 
-    version = _fs_mod._read_version()
+    version = read_version()
     panel = format_panel(state, version)
 
     current_phase = state.get("current_phase", "flow-start")

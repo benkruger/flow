@@ -274,6 +274,30 @@ def permission_to_regex(perm):
     return re.compile("^" + escaped + "$")
 
 
+def elapsed_since(started_at, now=None):
+    """Calculate elapsed seconds from an ISO timestamp to now."""
+    if not started_at:
+        return 0
+    if now is None:
+        now = datetime.now(PACIFIC)
+    start = datetime.fromisoformat(started_at)
+    return max(0, int((now - start).total_seconds()))
+
+
+def read_version_from(plugin_json_path):
+    """Read plugin version from a specific plugin.json path."""
+    try:
+        return json.loads(Path(plugin_json_path).read_text())["version"]
+    except Exception:
+        return "?"
+
+
+def read_version():
+    """Read plugin version from plugin.json next to this script."""
+    plugin_json = _plugin_root / ".claude-plugin" / "plugin.json"
+    return read_version_from(plugin_json)
+
+
 def format_tab_title(state):
     """Format a terminal tab title from FLOW state.
 

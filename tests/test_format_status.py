@@ -7,6 +7,7 @@ import sys
 from datetime import datetime, timezone
 
 from conftest import LIB_DIR, PHASE_ORDER, make_state, write_state
+from flow_utils import elapsed_since, read_version, read_version_from
 
 SCRIPT = str(LIB_DIR / "format-status.py")
 
@@ -269,18 +270,17 @@ def test_panel_has_all_6_phases():
 
 
 def test_elapsed_since_with_no_started_at():
-    assert _mod._elapsed_since(None) == 0
+    assert elapsed_since(None) == 0
 
 
 def test_elapsed_since_with_no_now_uses_current_time():
-    """_elapsed_since with a valid started_at and now=None computes live elapsed."""
-    result = _mod._elapsed_since("2026-01-01T00:00:00Z")
+    """elapsed_since with a valid started_at and now=None computes live elapsed."""
+    result = elapsed_since("2026-01-01T00:00:00Z")
     assert result > 0
 
 
-def test_read_version_returns_fallback_when_missing(tmp_path, monkeypatch):
-    monkeypatch.setattr(_mod, "__file__", str(tmp_path / "lib" / "format-status.py"))
-    assert _mod._read_version() == "?"
+def test_read_version_returns_fallback_when_missing(tmp_path):
+    assert read_version_from(tmp_path / "nonexistent.json") == "?"
 
 
 # --- Fallback behavior (wrong branch) ---
@@ -302,7 +302,7 @@ def test_wrong_branch_single_feature_returns_ok(tmp_path):
     assert len(results) == 1
     _, matched_state, matched_branch = results[0]
     assert matched_branch == "feature-xyz"
-    panel = _mod.format_panel(matched_state, _mod._read_version())
+    panel = _mod.format_panel(matched_state, read_version())
     assert isinstance(panel, str) and len(panel) > 0
 
 

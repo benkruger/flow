@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 from conftest import LIB_DIR, PHASE_ORDER, make_state, write_state
+from flow_utils import read_version
 
 SCRIPT = str(LIB_DIR / "continue-context.py")
 
@@ -116,7 +117,7 @@ def test_panel_matches_format_status_output():
     state["phases"]["flow-code"]["cumulative_seconds"] = 600
     state["notes"] = [{"text": "note 1"}, {"text": "note 2"}]
 
-    version = _mod._fs_mod._read_version()
+    version = read_version()
     panel = _mod.format_panel(state, version)
     assert isinstance(panel, str) and len(panel) > 0
     assert "Phase 4" in panel

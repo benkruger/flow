@@ -13,8 +13,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import project_root
-from tui_data import load_all_flows, parse_log_entries, phase_timeline, read_version
+from flow_utils import project_root, read_version
+from tui_data import load_all_flows, parse_log_entries, phase_timeline
 
 # Auto-refresh interval in milliseconds
 REFRESH_MS = 2000

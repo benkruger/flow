@@ -14,18 +14,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import derive_feature, format_time, PHASE_NAMES, PHASE_ORDER
+from flow_utils import derive_feature, format_time, read_version, PHASE_NAMES, PHASE_ORDER
 
 MAX_PROMPT_LENGTH = 80
-
-
-def _read_version():
-    """Read plugin version from plugin.json next to this script."""
-    plugin_json = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
-    try:
-        return json.loads(plugin_json.read_text())["version"]
-    except Exception:
-        return "?"
 
 
 def _truncate_prompt(prompt):
@@ -47,7 +38,7 @@ def format_complete_summary(state):
     phases = state.get("phases", {})
     issues = state.get("issues_filed", [])
     notes = state.get("notes", [])
-    version = _read_version()
+    version = read_version()
 
     # Build phase timing rows and total
     total_seconds = 0
