@@ -262,12 +262,6 @@ Record step completion:
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=1
 ```
 
-Clear the continuation flag before self-invoking:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
-```
-
 To continue to Step 2, invoke `flow:flow-code-review --continue-step` using
 the Skill tool as your final action. If commit=auto was resolved, pass
 `--auto` as well. Do not output anything else after this invocation.
