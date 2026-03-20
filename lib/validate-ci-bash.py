@@ -55,6 +55,17 @@ def _build_allow_regexes(settings):
     return regexes
 
 
+def _build_deny_regexes(settings):
+    """Extract Bash(...) deny patterns from settings and compile to regexes."""
+    deny = settings.get("permissions", {}).get("deny", [])
+    regexes = []
+    for entry in deny:
+        regex = permission_to_regex(entry)
+        if regex is not None:
+            regexes.append(regex)
+    return regexes
+
+
 def validate(command, settings=None):
     """Validate a Bash command string.
 
@@ -77,6 +88,16 @@ def validate(command, settings=None):
                 "BLOCKED: 'git restore .' discards ALL changes without review. "
                 "Use 'git restore <file>' for each file individually. "
                 "Before restoring, run 'git diff' to capture what will be lost.")
+
+    # Deny-list check — deny always wins over allow
+    if settings is not None:
+        deny_regexes = _build_deny_regexes(settings)
+        if deny_regexes:
+            for regex in deny_regexes:
+                if regex.match(stripped):
+                    return (False,
+                            f"BLOCKED: Command matches deny list: '{command}'. "
+                            f"This operation is explicitly forbidden.")
 
     # Block file-read commands
     first_word = stripped.split()[0] if stripped else ""
