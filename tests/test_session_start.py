@@ -897,3 +897,152 @@ def test_tab_title_does_not_appear_in_stdout(git_repo):
     # The OSC title escape sequence must not appear in stdout
     assert "\033]0;" not in result.stdout
     assert "\007" not in result.stdout
+
+
+# --- Orchestrator state detection ---
+
+
+def _make_orchestrate_state(completed_at=None, queue=None, current_index=None):
+    """Build a minimal orchestrate state dict."""
+    return {
+        "started_at": "2026-03-20T22:00:00-07:00",
+        "completed_at": completed_at,
+        "queue": queue or [],
+        "current_index": current_index,
+    }
+
+
+def test_orchestrate_in_progress_injects_resume(git_repo):
+    """In-progress orchestrate.json → context mentions orchestration and resume."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    orch_state = _make_orchestrate_state(
+        current_index=1,
+        queue=[
+            {"issue_number": 42, "title": "Add PDF export", "status": "completed",
+             "outcome": "completed"},
+            {"issue_number": 43, "title": "Fix login timeout", "status": "in_progress",
+             "outcome": None},
+            {"issue_number": 44, "title": "Refactor auth", "status": "pending",
+             "outcome": None},
+        ],
+    )
+    (state_dir / "orchestrate.json").write_text(json.dumps(orch_state))
+
+    result = _run(git_repo)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "orchestrat" in ctx.lower()
+    assert "#43" in ctx
+    assert "flow-orchestrate" in ctx.lower()
+
+
+def test_orchestrate_completed_injects_report(git_repo):
+    """Completed orchestrate.json → context includes morning report content."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    orch_state = _make_orchestrate_state(
+        completed_at="2026-03-21T06:00:00-07:00",
+        queue=[
+            {"issue_number": 42, "title": "Add PDF export", "status": "completed",
+             "outcome": "completed"},
+        ],
+    )
+    (state_dir / "orchestrate.json").write_text(json.dumps(orch_state))
+
+    summary_content = "# FLOW Orchestration Report\n\nCompleted: 1, Failed: 0"
+    (state_dir / "orchestrate-summary.md").write_text(summary_content)
+
+    result = _run(git_repo)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "orchestrat" in ctx.lower()
+    assert "Orchestration Report" in ctx
+
+
+def test_orchestrate_completed_cleans_up(git_repo):
+    """After detecting completed orchestration, files are deleted."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    orch_state = _make_orchestrate_state(
+        completed_at="2026-03-21T06:00:00-07:00",
+        queue=[],
+    )
+    (state_dir / "orchestrate.json").write_text(json.dumps(orch_state))
+    (state_dir / "orchestrate-summary.md").write_text("# Report")
+    (state_dir / "orchestrate.log").write_text("log line")
+
+    _run(git_repo)
+
+    assert not (state_dir / "orchestrate.json").exists()
+    assert not (state_dir / "orchestrate-summary.md").exists()
+    assert not (state_dir / "orchestrate.log").exists()
+
+
+def test_orchestrate_coexists_with_feature(git_repo):
+    """Orchestrate state alongside branch-scoped feature → both contexts injected."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+
+    # Orchestrate state (in progress)
+    orch_state = _make_orchestrate_state(
+        current_index=0,
+        queue=[
+            {"issue_number": 42, "title": "Add PDF export", "status": "in_progress",
+             "outcome": None},
+        ],
+    )
+    (state_dir / "orchestrate.json").write_text(json.dumps(orch_state))
+
+    # Feature state
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["branch"] = "some-feature"
+    write_state(state_dir, "some-feature", state)
+
+    _switch(git_repo, "some-feature")
+    result = _run(git_repo)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "orchestrat" in ctx.lower()
+    assert "Some Feature" in ctx
+
+
+def test_orchestrate_missing_summary(git_repo):
+    """Completed orchestration without summary file → graceful, still cleans up."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    orch_state = _make_orchestrate_state(
+        completed_at="2026-03-21T06:00:00-07:00",
+        queue=[],
+    )
+    (state_dir / "orchestrate.json").write_text(json.dumps(orch_state))
+    # No summary file — should not crash
+
+    result = _run(git_repo)
+    assert result.returncode == 0
+    # orchestrate.json should still be cleaned up
+    assert not (state_dir / "orchestrate.json").exists()
+
+
+def test_no_orchestrate_file_existing_behavior(git_repo):
+    """No orchestrate.json → existing behavior unchanged, no orchestration context."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["branch"] = "normal-feature"
+    write_state(state_dir, "normal-feature", state)
+
+    _switch(git_repo, "normal-feature")
+    result = _run(git_repo)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "Normal Feature" in ctx
+    assert "orchestrat" not in ctx.lower()

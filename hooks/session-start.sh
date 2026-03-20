@@ -28,6 +28,67 @@ state_dir = Path(".flow-states")
 files = sorted(state_dir.glob("*.json"))
 files = [f for f in files if not f.name.endswith("-phases.json")]
 
+
+def detect_orchestrate():
+    """Detect orchestrate.json and return context block + cleanup flag."""
+    orch_path = state_dir / "orchestrate.json"
+    if not orch_path.exists():
+        return "", False
+
+    try:
+        with open(orch_path) as f:
+            orch = json.load(f)
+    except Exception:
+        return "", False
+
+    if orch.get("completed_at") is not None:
+        # Completed: inject morning report, then clean up
+        summary = ""
+        summary_path = state_dir / "orchestrate-summary.md"
+        if summary_path.exists():
+            summary = summary_path.read_text()
+
+        block = (
+            "<flow-orchestrate-report>\n"
+            "FLOW orchestration completed. Present this report to the user:\n\n"
+            f"{summary}\n"
+            "</flow-orchestrate-report>\n"
+        )
+
+        # Clean up orchestrator files
+        for name in ["orchestrate.json", "orchestrate-summary.md", "orchestrate.log"]:
+            p = state_dir / name
+            if p.exists():
+                p.unlink()
+
+        return block, True
+
+    # In-progress: inject resume context with queue position
+    queue = orch.get("queue", [])
+    current_index = orch.get("current_index")
+    current_issue = ""
+    if current_index is not None and 0 <= current_index < len(queue):
+        item = queue[current_index]
+        current_issue = f"#{item.get('issue_number', '?')} ({item.get('title', '')})"
+
+    completed = sum(1 for item in queue if item.get("outcome") == "completed")
+    total = len(queue)
+
+    block = (
+        "<flow-orchestrate-context>\n"
+        f"FLOW orchestration in progress. Processing issue {current_issue}.\n"
+        f"Progress: {completed}/{total} completed.\n"
+        "Resume the orchestrator by invoking flow:flow-orchestrate --continue-step.\n"
+        "</flow-orchestrate-context>\n"
+    )
+    return block, False
+
+
+orchestrate_block, _orch_cleaned = detect_orchestrate()
+
+# Exclude orchestrate.json from normal feature state processing
+files = [f for f in files if f.name != "orchestrate.json"]
+
 # Branch isolation: only process state files matching the current branch.
 # Fail-open: if branch detection fails (detached HEAD, non-git), scan all.
 try:
@@ -42,7 +103,7 @@ except Exception:
 if _current:
     files = [f for f in files if f.stem == _current]
 
-if not files:
+if not files and not orchestrate_block:
     sys.exit(0)
 
 
@@ -111,7 +172,7 @@ for path in files:
     except Exception:
         continue
 
-if not states:
+if not states and not orchestrate_block:
     sys.exit(0)
 
 dev_mode = (state_dir / ".dev-mode").exists()
@@ -288,6 +349,13 @@ try:
             tty.write(f"\033]0;{ttitle}\007")
 except Exception:
     pass
+
+if orchestrate_block and not states:
+    # Only orchestrate context, no feature states
+    context = orchestrate_block
+elif orchestrate_block:
+    # Both orchestrate and feature context
+    context = orchestrate_block + "\n" + context
 
 output = {
     "additional_context": context,
