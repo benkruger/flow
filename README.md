@@ -147,6 +147,12 @@ Available at any point in the workflow:
 | `/flow-create-issue` | Explore a design question or decompose a concrete problem, iterate until work-ready, then file it |
 | `/flow-local-permission` | Promote permissions from settings.local.json into settings.json |
 
+### Standalone Tools
+
+| Command | What it does |
+|---------|-------------|
+| `bin/flow tui` | Interactive terminal UI — view active flows, open worktrees, tail logs, abort features (no Claude session needed) |
+
 ---
 
 ## Architecture
