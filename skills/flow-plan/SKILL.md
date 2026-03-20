@@ -259,12 +259,6 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.dag=<dag_file_path
 
 Replace `<dag_file_path>` with the relative path `.flow-states/<branch>-dag.md`.
 
-Then clear the continuation flag:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
-```
-
 Self-invoke `flow:flow-plan --continue-step` using the Skill tool as your
 final action. Do not output anything else after this invocation.
 
