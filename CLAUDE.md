@@ -79,6 +79,8 @@ CI will fail if these are missing:
 - `agents/ci-fixer.md` — custom plugin sub-agent for CI failure diagnosis and fix
 - `lib/finalize-commit.py` — consolidates commit + message-file cleanup + pull + push into one subprocess chain
 - `lib/log.py` — appends timestamped entries to `.flow-states/<branch>.log` via Python file append
+- `lib/orchestrate-state.py` — manages `.flow-states/orchestrate.json` (create, start-issue, record-outcome, complete, read, next); uses `mutate_state` for atomic writes
+- `lib/orchestrate-report.py` — generates morning report from orchestration state; writes `.flow-states/orchestrate-summary.md`
 - `lib/close-issues.py` — closes GitHub issues referenced in the start prompt (`#N` patterns) via `gh issue close`
 - `lib/label-issues.py` — adds or removes the "Flow In-Progress" label on GitHub issues referenced by `#N` in the start prompt; used by Start (add), Complete (remove), and Abort (remove) for multi-engineer WIP detection
 - `lib/issue.py` — creates GitHub issues via `gh` subprocess (wraps `gh issue create`; resolves repo via `--state-file` cached value, then `--repo` flag, then git remote detection)
@@ -141,6 +143,10 @@ State files (`.flow-states/`) are local to each machine. In a multi-engineer tea
 FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Step 2) and Complete (Step 4). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands and file-read commands in all Bash calls — including those from built-in skills' sub-agents. The ci-fixer also retains its own hook declaration for defense in depth.
 
 Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition — no plan mode. Code Review uses three foreground review agents for clarity (code reuse, quality, efficiency), then delegates to built-in `/review`, `/security-review`, and optionally the `code-review:code-review` plugin for multi-agent validation (controlled by the `code_review_plugin` config axis: `"always"`, `"auto"`, or `"never"`). Code and Learn have no sub-agents. Complete uses ci-fixer for CI failures.
+
+### Orchestration
+
+`/flow:flow-orchestrate` is a meta-skill that processes decomposed issues overnight. It fetches open issues labeled "Decomposed", filters out "Flow In-Progress" issues, and runs each sequentially via `flow-start --auto`. State is tracked in `.flow-states/orchestrate.json` (a machine-level singleton, not branch-scoped). The session-start hook detects orchestrator state for both in-progress resume and completed morning report delivery. Only one orchestration runs per machine at a time.
 
 ### Memory and Learning System
 
@@ -219,12 +225,13 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_tui_data.py` | TUI data layer: load_all_flows (0/1/N files, corrupt JSON, phases exclusion), flow_summary (all fields), phase_timeline (statuses, annotations), parse_log_entries (parsing, limits, malformed), read_version |
 | `test_tui.py` | TUI curses app: drawing (list/log/detail views), keyboard input (navigation, open worktree/PR, abort with confirm, refresh, quit), run loop (timeout, resize), edge cases (no flows, small terminal) |
 | `test_update_pr_body.py` | PR body management: artifact lines, section insertion, collapsible sections, add-artifact/append-section modes, idempotent replacement, content-file reading, CLI integration |
+| `test_orchestrate_state.py` | Orchestrate state: create, start-issue, record-outcome, complete, read, next, queue filtering, error paths, CLI |
+| `test_orchestrate_report.py` | Orchestrate report: all completed, mixed, all failed, empty queue, timing, PR URLs, failure reasons, summary file, CLI |
 
 ## Maintainer Skills (private to this repo)
 
 - `/flow-qa` — `.claude/skills/flow-qa/SKILL.md` — `--start`/`--stop` dev mode: uninstall marketplace plugin for local `--plugin-dir` testing, reinstall when done. **Always run `/flow-qa --start` before `/flow:flow-start` when developing FLOW.** The installed marketplace plugin enforces its own phase count and skill gates, which conflict with the source being developed and break the workflow mid-feature.
 - `/flow-release` — `.claude/skills/flow-release/SKILL.md` — bump version, tag, push, create GitHub Release
-- `/flow-reset` — `.claude/skills/flow-reset/SKILL.md` — remove all FLOW artifacts (worktrees, branches, PRs, state files)
 
 ## Conventions
 

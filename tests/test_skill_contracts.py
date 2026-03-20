@@ -877,7 +877,7 @@ def test_release_complete_banner_confirms_marketplace_update():
 def test_utility_skill_banners_include_version():
     """Utility skill STARTING and COMPLETE banners must include the version."""
     version = _plugin_version()
-    utility_with_banners = ["flow-commit", "flow-abort", "flow-status", "flow-issues", "flow-create-issue"]
+    utility_with_banners = ["flow-commit", "flow-abort", "flow-status", "flow-issues", "flow-create-issue", "flow-orchestrate"]
 
     for name in utility_with_banners:
         content = _read_skill(name)
@@ -1089,12 +1089,12 @@ def test_commit_tri_modal_detection():
     )
 
 
-# --- Reset skill (maintainer) ---
+# --- Reset skill (plugin) ---
 
 
 def test_reset_guard_requires_main_branch():
     """Reset SKILL.md must guard against running outside main branch."""
-    content = (REPO_ROOT / ".claude" / "skills" / "flow-reset" / "SKILL.md").read_text()
+    content = (SKILLS_DIR / "flow-reset" / "SKILL.md").read_text()
     assert "main" in content, (
         "Reset SKILL.md must reference the main branch"
     )
@@ -1105,7 +1105,7 @@ def test_reset_guard_requires_main_branch():
 
 def test_reset_has_inventory_step():
     """Reset SKILL.md must inventory artifacts before destroying them."""
-    content = (REPO_ROOT / ".claude" / "skills" / "flow-reset" / "SKILL.md").read_text()
+    content = (SKILLS_DIR / "flow-reset" / "SKILL.md").read_text()
     assert "git worktree list" in content, (
         "Reset must inventory worktrees"
     )
@@ -1119,7 +1119,7 @@ def test_reset_has_inventory_step():
 
 def test_reset_has_confirmation():
     """Reset SKILL.md must confirm before destroying artifacts."""
-    content = (REPO_ROOT / ".claude" / "skills" / "flow-reset" / "SKILL.md").read_text()
+    content = (SKILLS_DIR / "flow-reset" / "SKILL.md").read_text()
     assert "AskUserQuestion" in content, (
         "Reset SKILL.md must use AskUserQuestion to confirm before destroying"
     )
