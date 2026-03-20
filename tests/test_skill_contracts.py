@@ -2238,6 +2238,15 @@ def test_plan_skill_uses_render_pr_body():
     )
 
 
+def test_plan_skill_renders_plan_inline():
+    """Plan Done section must render plan content inline before the COMPLETE banner."""
+    content = _read_skill("flow-plan")
+    assert "### Render Plan" in content, (
+        "flow-plan/SKILL.md must have a '### Render Plan' subsection "
+        "in the Done section to render the plan inline"
+    )
+
+
 def test_complete_done_banner_includes_pr_url():
     """Complete Done banner must include the PR URL for quick access."""
     content = _read_skill("flow-complete")

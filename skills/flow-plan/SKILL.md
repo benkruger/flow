@@ -357,6 +357,15 @@ the timing calculation.
 
 ## Done — Banner and transition
 
+### Render Plan
+
+Use the Read tool to read the plan file at
+`<project_root>/.flow-states/<branch>-plan.md`. Render the full plan
+content inline in your response text — the complete Context, Exploration,
+Risks, Approach, Dependency Graph, and Tasks sections. Do not summarize
+or truncate. The user must be able to review the plan before the phase
+completes.
+
 Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
