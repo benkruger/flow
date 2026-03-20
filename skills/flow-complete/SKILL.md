@@ -358,6 +358,22 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow close-issues --state-file <project_root>/.fl
 Parse the JSON output. Report which issues were closed and which failed.
 If no issues were referenced, proceed silently.
 
+### Slack Notification
+
+Read `slack_thread_ts` from the state file. If present, post the final thread reply with end-to-end timeline before cleanup deletes the state file. Best-effort — skip silently on failure.
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-complete --message "<message_text>" --thread-ts <thread_ts>
+```
+
+If `"status": "ok"`, record the notification:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-complete --ts <ts> --thread-ts <thread_ts> --message "<message_text>"
+```
+
+If `"status": "skipped"` or `"status": "error"`, continue without error.
+
 ### Navigate to project root
 
 The worktree is about to be removed — you cannot be inside it when that
