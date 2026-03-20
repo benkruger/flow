@@ -22,6 +22,7 @@
       "Bash(rm .flow-*)",
       "Bash(rm .claude/settings.local.json)",
 
+      "Bash(cd *)",
       "Bash(make *)",
       "Bash(diff *)",
       "Bash(.venv/bin/pip install *)",
