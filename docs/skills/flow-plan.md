@@ -31,7 +31,8 @@ an ordered implementation plan with a dependency graph.
    the turn boundary
 4. Explores the codebase to validate the DAG against reality
 5. Writes the plan file with a Dependency Graph section and ordered tasks
-6. Stores the plan file path in state and transitions to Code
+6. Renders the full plan content inline in the conversation for review
+7. Stores the plan file path in state and transitions to Code
 
 ---
 
