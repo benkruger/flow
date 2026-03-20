@@ -1970,6 +1970,19 @@ def test_start_derives_branch_name_from_prompt():
     )
 
 
+def test_flow_start_issue_aware_branch_naming():
+    """flow-start must fetch issue titles for branch naming when prompt has #N refs."""
+    content = _read_skill("flow-start")
+    assert "gh issue view" in content, (
+        "flow-start/SKILL.md must reference gh issue view for "
+        "issue-aware branch naming"
+    )
+    assert "fall back" in content.lower() and "prompt words" in content.lower(), (
+        "flow-start/SKILL.md must instruct fallback to prompt words "
+        "when issue fetch fails"
+    )
+
+
 def test_prime_commit_step_enforces_flow_commit_exclusively():
     """flow-prime commit step must use /flow:flow-commit and not raw git commands."""
     content = _read_skill("flow-prime")
