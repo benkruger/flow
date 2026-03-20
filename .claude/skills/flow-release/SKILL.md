@@ -45,9 +45,9 @@ If `git status` shows uncommitted changes, stop:
 
 If `git pull` produced changes, warn the user that new commits were pulled.
 
-## Step 2 — Verify CI and find last release
+## Step 2 — Verify CI, find last release, and gather inputs
 
-Run all three in parallel (one response, three Bash calls):
+Run all five in parallel (one response, three Bash calls + two Reads):
 
 ```bash
 gh run list --branch main --limit 1 --json conclusion,headSha,status
@@ -61,6 +61,8 @@ git rev-parse HEAD
 git describe --tags --abbrev=0
 ```
 
+Also use the Read tool to read `.claude-plugin/plugin.json` and `RELEASE-NOTES.md`.
+
 First verify the run's `headSha` matches `git rev-parse HEAD`.
 If not, CI hasn't run on the latest commit — tell the user and stop.
 
@@ -72,15 +74,11 @@ Then check `conclusion`:
 
 If `git describe` fails (no tags exist), set `<last_tag>` to `HEAD~20`.
 
-## Step 3 — Show what changed and read version
-
-Run both in parallel (one response, one Bash call + one Read):
+## Step 3 — Show what changed
 
 ```bash
 git log --oneline <last_tag>..HEAD
 ```
-
-Also use the Read tool to read `.claude-plugin/plugin.json`.
 
 Display the commit list. This is what goes into the release.
 
@@ -127,15 +125,11 @@ Present the recommendation and the draft release notes in your response.
 
 **Unless `--manual` was explicitly passed**, proceed directly to Step 5.
 
-## Step 5 — Bump version and prepare release notes
-
-Run both in parallel (one response, one Bash call + one Read):
+## Step 5 — Bump version
 
 ```bash
 make bump NEW=<new_version>
 ```
-
-Also use the Read tool to read `RELEASE-NOTES.md`.
 
 The bump updates `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
 and all skill banners in one step.
