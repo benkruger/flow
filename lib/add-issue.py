@@ -53,17 +53,14 @@ def main():
 
     if branch is None:
         if candidates:
-            print(json.dumps({
-                "status": "error",
-                "message": "Multiple active features. Pass --branch.",
-                "candidates": candidates,
-            }))
+            print(json.dumps({"status": "no_state"}))
+            sys.exit(0)
         else:
             print(json.dumps({
                 "status": "error",
                 "message": "Could not determine current branch",
             }))
-        sys.exit(1)
+            sys.exit(1)
 
     state_path = root / ".flow-states" / f"{branch}.json"
 
