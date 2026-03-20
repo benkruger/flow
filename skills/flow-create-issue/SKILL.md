@@ -72,18 +72,13 @@ whether it describes a concrete problem or an exploratory design question.
 - No specific failure or symptom described
 - Asks about possibilities or design options rather than problems
 
-**If the input is clearly concrete** — skip Exploration Mode and proceed
-directly to Step 1 below.
-
-**If the input is clearly exploratory** — proceed to Exploration Mode below.
-
 **If ambiguous** — ask the user which mode they prefer using AskUserQuestion:
 
 > "This could be explored as a design question or decomposed as a concrete
 > issue. Which would you prefer?"
 >
 > - **Design exploration** — discuss the topic before filing
-> - **File an issue** — decompose and draft an issue now
+> - **Decompose and file an issue** — enter the 4-step pipeline now
 
 Route based on the user's choice.
 

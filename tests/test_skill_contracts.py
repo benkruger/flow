@@ -2871,3 +2871,7 @@ def test_create_issue_has_input_classification():
     assert "concrete" in section_text.lower(), (
         "Input Classification must describe the concrete path"
     )
+    assert "## Exploration Mode" in content, (
+        "flow-create-issue must have an '## Exploration Mode' section "
+        "for interactive design discussion"
+    )
