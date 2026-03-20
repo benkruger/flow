@@ -166,9 +166,9 @@ bin/flow finalize-commit .flow-commit-msg main
 No diff review. No `bin/ci`. No approval prompt — CI was verified in
 Step 2, changes were shown in Step 3, and version was confirmed in Step 4.
 
-## Step 8 — Tag and extract release notes
+## Step 8 — Tag, release, and publish
 
-Run both in parallel (one response, two Bash calls):
+First, run both in parallel (one response, two Bash calls):
 
 ```bash
 git tag v<new_version>
@@ -180,15 +180,7 @@ bin/flow extract-release-notes v<new_version>
 
 The extract writes `tmp/release-notes-v<new_version>.md`.
 
-## Step 9 — Push tag
-
-```bash
-git push origin v<new_version>
-```
-
-## Step 10 — Publish release and update marketplace
-
-Run both in parallel (one response, two Bash calls):
+Then run both in parallel (one response, two Bash calls):
 
 ```bash
 gh release create v<new_version> --title "v<new_version>" --notes-file tmp/release-notes-v<new_version>.md
@@ -197,6 +189,9 @@ gh release create v<new_version> --title "v<new_version>" --notes-file tmp/relea
 ```bash
 claude plugin marketplace update flow-marketplace
 ```
+
+`gh release create` pushes the tag to the remote automatically — no separate
+`git push origin` needed.
 
 If the marketplace update fails, print the command for the user to run manually.
 
