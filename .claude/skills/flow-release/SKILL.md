@@ -125,11 +125,16 @@ Present the recommendation and the draft release notes in your response.
 
 **Unless `--manual` was explicitly passed**, proceed directly to Step 5.
 
-## Step 5 — Bump version
+## Step 5 — Bump version and update release notes
+
+Run both in parallel (one response, one Bash call + one Edit):
 
 ```bash
 make bump NEW=<new_version>
 ```
+
+Also Edit `RELEASE-NOTES.md` — add the release notes section from Step 4 at the
+top (below the `# Release Notes` heading).
 
 The bump updates `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
 and all skill banners in one step.
@@ -139,12 +144,7 @@ dynamically by `compute_config_hash()` and `compute_setup_hash()` in
 `lib/prime-setup.py` at prime time and compared at start time by
 `lib/prime-check.py`. No manual hash updates are needed during releases.
 
-## Step 6 — Update release notes and stage
-
-Edit `RELEASE-NOTES.md` — add the release notes section from Step 4 at the
-top (below the `# Release Notes` heading).
-
-Then stage all changes:
+## Step 6 — Stage all changes
 
 ```bash
 git add -A
