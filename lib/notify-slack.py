@@ -126,13 +126,13 @@ def notify(parsed, root):
                         thread_ts=parsed.thread_ts)
 
 
-def main_with_args(args, project_root=None):
+def main_with_args(args, root_override=None):
     """Run the notify-slack logic with explicit args and project root.
 
     Used by tests to avoid subprocess overhead while testing the full flow.
     """
     parsed = _parse_args(args)
-    root = project_root or project_root()
+    root = root_override or project_root()
     return notify(parsed, root)
 
 

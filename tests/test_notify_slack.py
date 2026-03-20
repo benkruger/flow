@@ -212,7 +212,7 @@ def test_cli_with_config_posts_message(tmp_path):
         mod = _import_module()
         result = mod.main_with_args(
             ["--phase", "flow-start", "--message", "test"],
-            project_root=tmp_path,
+            root_override=tmp_path,
         )
     assert result["status"] == "ok"
     assert result["ts"] == "1234567890.123456"
@@ -231,13 +231,13 @@ def test_cli_with_thread_ts(tmp_path):
         result = mod.main_with_args(
             ["--phase", "flow-plan", "--message", "Plan complete",
              "--thread-ts", "1234567890.123456"],
-            project_root=tmp_path,
+            root_override=tmp_path,
         )
     assert result["status"] == "ok"
 
 
-def test_cli_subprocess_returns_json(tmp_path):
-    """CLI subprocess produces valid JSON on stdout."""
+def test_cli_returns_valid_json(tmp_path):
+    """CLI produces valid JSON on stdout."""
     result = _run(["--phase", "flow-start", "--message", "test"], cwd=tmp_path)
     assert result.returncode == 0
     data = json.loads(result.stdout)
@@ -249,7 +249,7 @@ def test_main_with_args_no_config_returns_skipped(tmp_path):
     mod = _import_module()
     result = mod.main_with_args(
         ["--phase", "flow-start", "--message", "test"],
-        project_root=tmp_path,
+        root_override=tmp_path,
     )
     assert result["status"] == "skipped"
 
