@@ -446,7 +446,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 Set the continuation context and flag:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Clear _continue_pending and continue fixing remaining security findings."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Continue fixing remaining security findings."
 ```
 
 ```bash
@@ -559,7 +559,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 Set the continuation context and flag:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Clear _continue_pending and continue fixing remaining code-review findings."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Continue fixing remaining code-review findings."
 ```
 
 ```bash
