@@ -3,44 +3,39 @@
     "defaultMode": "acceptEdits",
     "allow": [
       "Bash(git *)",
-      "Bash(gh pr create *)",
-      "Bash(gh pr edit *)",
+
+      "Bash(gh pr *)",
+      "Bash(gh pr:*)",
       "Bash(gh release create *)",
       "Bash(gh run list *)",
-      "Bash(bin/flow *)",
-      "Bash(rm .flow-*)",
-      "Bash(rm .flow-states/.dev-mode)",
-      "Bash(bin/ci)",
+      "Bash(gh issue *)",
+
+      "Bash(bin/*)",
+      "Bash(*bin/flow *)",
+
       "Bash(claude plugin marketplace add *)",
       "Bash(claude plugin marketplace update *)",
       "Bash(claude plugin uninstall *)",
       "Bash(claude plugin install *)",
       "Bash(claude plugin list)",
-      "Bash(diff *)",
-      "Bash(bin/test *)",
-      "Bash(make *)",
-      "Bash(gh pr close *)",
-      "Bash(*bin/flow *)",
-      "Bash(.venv/bin/pip install *)",
-      "Bash(gh issue *)",
-      "Bash(gh pr list *)",
-      "Bash(gh pr view *)",
-      "Bash(rm .flow-states/*)",
+
+      "Bash(rm .flow-*)",
       "Bash(rm .claude/settings.local.json)",
+
+      "Bash(make *)",
+      "Bash(diff *)",
+      "Bash(.venv/bin/pip install *)",
+
       "Read(~/Desktop/*.png)",
       "Read(~/Desktop/*.jpg)",
       "Read(~/Desktop/*.jpeg)",
-      "Bash(bin/dependencies)",
-      "Bash(gh pr checks *)",
-      "Bash(gh pr merge *)",
-      "Bash(gh pr:*)",
-      "Skill(code-review:code-review)",
-      "Skill(decompose:decompose)",
       "Read(~/.claude/rules/*)",
       "Read(//tmp/*.txt)",
       "Read(//tmp/*.diff)",
-      "Bash(cd *)",
-      "Bash(bin/*)",
+
+      "Skill(code-review:code-review)",
+      "Skill(decompose:decompose)",
+
       "Agent(flow:ci-fixer)"
     ],
     "deny": [
