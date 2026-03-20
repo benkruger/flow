@@ -288,6 +288,7 @@ All permissions (universal + all framework sets) for reference:
       "Bash(gh pr create *)",
       "Bash(gh pr edit *)",
       "Bash(gh pr close *)",
+      "Bash(gh pr list *)",
       "Bash(bin/*)",
       "Bash(rm .flow-*)",
       "Bash(*bin/flow *)",
