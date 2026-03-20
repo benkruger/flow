@@ -168,3 +168,18 @@ def write_state(state_dir, branch, state_dict):
     path = state_dir / f"{branch}.json"
     path.write_text(json.dumps(state_dict, indent=2))
     return path
+
+
+def make_orchestrate_state(
+    queue=None,
+    started_at="2026-03-20T22:00:00-07:00",
+    completed_at=None,
+    current_index=None,
+):
+    """Build a minimal orchestrate state dict."""
+    return {
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "queue": queue or [],
+        "current_index": current_index,
+    }

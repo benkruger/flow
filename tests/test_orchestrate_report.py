@@ -5,7 +5,7 @@ import json
 import subprocess
 import sys
 
-from conftest import LIB_DIR
+from conftest import LIB_DIR, make_orchestrate_state
 
 SCRIPT = str(LIB_DIR / "orchestrate-report.py")
 
@@ -20,20 +20,10 @@ def _import_module():
     return mod
 
 
-def _make_orchestrate_state(
-    queue_items=None,
-    started_at="2026-03-20T22:00:00-07:00",
-    completed_at="2026-03-21T06:00:00-07:00",
-):
-    """Build a sample orchestrate state dict."""
-    if queue_items is None:
-        queue_items = []
-    return {
-        "started_at": started_at,
-        "completed_at": completed_at,
-        "queue": queue_items,
-        "current_index": None,
-    }
+def _make_report_state(queue_items=None, **kwargs):
+    """Build an orchestrate state for report tests (defaults completed_at)."""
+    kwargs.setdefault("completed_at", "2026-03-21T06:00:00-07:00")
+    return make_orchestrate_state(queue=queue_items, **kwargs)
 
 
 def _completed_item(issue_number, title, pr_url=None, branch=None):
@@ -72,7 +62,7 @@ def _failed_item(issue_number, title, reason="CI failed after 3 attempts"):
 def test_report_all_completed():
     """Report shows all issues as completed."""
     mod = _import_module()
-    state = _make_orchestrate_state(queue_items=[
+    state = _make_report_state(queue_items=[
         _completed_item(42, "Add PDF export"),
         _completed_item(43, "Fix login timeout"),
     ])
@@ -90,7 +80,7 @@ def test_report_all_completed():
 def test_report_mixed_results():
     """Report shows both completed and failed issues."""
     mod = _import_module()
-    state = _make_orchestrate_state(queue_items=[
+    state = _make_report_state(queue_items=[
         _completed_item(42, "Add PDF export"),
         _failed_item(43, "Fix login timeout"),
     ])
@@ -107,7 +97,7 @@ def test_report_mixed_results():
 def test_report_all_failed():
     """Report shows all issues as failed."""
     mod = _import_module()
-    state = _make_orchestrate_state(queue_items=[
+    state = _make_report_state(queue_items=[
         _failed_item(42, "Add PDF export"),
         _failed_item(43, "Fix login timeout"),
     ])
@@ -122,7 +112,7 @@ def test_report_all_failed():
 def test_report_empty_queue():
     """Report handles empty queue gracefully."""
     mod = _import_module()
-    state = _make_orchestrate_state(queue_items=[])
+    state = _make_report_state(queue_items=[])
 
     result = mod.generate_report(state)
 
@@ -134,7 +124,7 @@ def test_report_empty_queue():
 def test_report_single_issue():
     """Report works with a single completed issue."""
     mod = _import_module()
-    state = _make_orchestrate_state(queue_items=[
+    state = _make_report_state(queue_items=[
         _completed_item(42, "Add PDF export"),
     ])
 
@@ -149,7 +139,7 @@ def test_report_single_issue():
 def test_report_includes_timing():
     """Report includes duration based on started_at and completed_at."""
     mod = _import_module()
-    state = _make_orchestrate_state(
+    state = _make_report_state(
         queue_items=[_completed_item(42, "Add PDF export")],
         started_at="2026-03-20T22:00:00-07:00",
         completed_at="2026-03-21T06:00:00-07:00",
@@ -163,7 +153,7 @@ def test_report_includes_timing():
 def test_report_includes_pr_urls():
     """Report includes PR URLs for completed issues."""
     mod = _import_module()
-    state = _make_orchestrate_state(queue_items=[
+    state = _make_report_state(queue_items=[
         _completed_item(42, "Add PDF export",
                         pr_url="https://github.com/test/test/pull/100"),
     ])
@@ -176,7 +166,7 @@ def test_report_includes_pr_urls():
 def test_report_includes_failure_reasons():
     """Report includes failure reasons for failed issues."""
     mod = _import_module()
-    state = _make_orchestrate_state(queue_items=[
+    state = _make_report_state(queue_items=[
         _failed_item(43, "Fix login timeout", reason="CI failed after 3 attempts"),
     ])
 
@@ -188,7 +178,7 @@ def test_report_includes_failure_reasons():
 def test_report_writes_summary_file(tmp_path):
     """Report writes summary to .flow-states/orchestrate-summary.md."""
     mod = _import_module()
-    state = _make_orchestrate_state(queue_items=[
+    state = _make_report_state(queue_items=[
         _completed_item(42, "Add PDF export"),
     ])
     state_path = tmp_path / "orchestrate.json"
@@ -207,7 +197,7 @@ def test_report_writes_summary_file(tmp_path):
 def test_report_bad_timestamps():
     """Report handles invalid timestamps gracefully (duration shows <1m)."""
     mod = _import_module()
-    state = _make_orchestrate_state(
+    state = _make_report_state(
         queue_items=[_completed_item(42, "Add PDF export")],
         started_at="not-a-timestamp",
         completed_at="also-not-a-timestamp",
@@ -221,7 +211,7 @@ def test_report_bad_timestamps():
 def test_report_results_table_format():
     """Report results table has the expected column headers."""
     mod = _import_module()
-    state = _make_orchestrate_state(queue_items=[
+    state = _make_report_state(queue_items=[
         _completed_item(42, "Add PDF export"),
         _failed_item(43, "Fix login"),
     ])
@@ -238,7 +228,7 @@ def test_report_results_table_format():
 
 def test_cli_happy_path(tmp_path):
     """CLI generates report from state file."""
-    state = _make_orchestrate_state(queue_items=[
+    state = _make_report_state(queue_items=[
         _completed_item(42, "Add PDF export"),
         _failed_item(43, "Fix login"),
     ])

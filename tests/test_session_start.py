@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from conftest import HOOKS_DIR, make_state, write_state
+from conftest import HOOKS_DIR, make_orchestrate_state, make_state, write_state
 
 SCRIPT = str(HOOKS_DIR / "session-start.sh")
 
@@ -902,21 +902,16 @@ def test_tab_title_does_not_appear_in_stdout(git_repo):
 # --- Orchestrator state detection ---
 
 
-def _make_orchestrate_state(completed_at=None, queue=None, current_index=None):
-    """Build a minimal orchestrate state dict."""
-    return {
-        "started_at": "2026-03-20T22:00:00-07:00",
-        "completed_at": completed_at,
-        "queue": queue or [],
-        "current_index": current_index,
-    }
+def _make_orch_state(**kwargs):
+    """Shorthand for make_orchestrate_state in session-start tests."""
+    return make_orchestrate_state(**kwargs)
 
 
 def test_orchestrate_in_progress_injects_resume(git_repo):
     """In-progress orchestrate.json → context mentions orchestration and resume."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    orch_state = _make_orchestrate_state(
+    orch_state = _make_orch_state(
         current_index=1,
         queue=[
             {"issue_number": 42, "title": "Add PDF export", "status": "completed",
@@ -942,7 +937,7 @@ def test_orchestrate_completed_injects_report(git_repo):
     """Completed orchestrate.json → context includes morning report content."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    orch_state = _make_orchestrate_state(
+    orch_state = _make_orch_state(
         completed_at="2026-03-21T06:00:00-07:00",
         queue=[
             {"issue_number": 42, "title": "Add PDF export", "status": "completed",
@@ -966,7 +961,7 @@ def test_orchestrate_completed_cleans_up(git_repo):
     """After detecting completed orchestration, files are deleted."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    orch_state = _make_orchestrate_state(
+    orch_state = _make_orch_state(
         completed_at="2026-03-21T06:00:00-07:00",
         queue=[],
     )
@@ -987,7 +982,7 @@ def test_orchestrate_coexists_with_feature(git_repo):
     state_dir.mkdir(parents=True)
 
     # Orchestrate state (in progress)
-    orch_state = _make_orchestrate_state(
+    orch_state = _make_orch_state(
         current_index=0,
         queue=[
             {"issue_number": 42, "title": "Add PDF export", "status": "in_progress",
@@ -1016,7 +1011,7 @@ def test_orchestrate_missing_summary(git_repo):
     """Completed orchestration without summary file → graceful, still cleans up."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    orch_state = _make_orchestrate_state(
+    orch_state = _make_orch_state(
         completed_at="2026-03-21T06:00:00-07:00",
         queue=[],
     )

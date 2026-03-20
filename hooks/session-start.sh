@@ -30,16 +30,16 @@ files = [f for f in files if not f.name.endswith("-phases.json")]
 
 
 def detect_orchestrate():
-    """Detect orchestrate.json and return context block + cleanup flag."""
+    """Detect orchestrate.json, return context block. Cleans up completed runs."""
     orch_path = state_dir / "orchestrate.json"
     if not orch_path.exists():
-        return "", False
+        return ""
 
     try:
         with open(orch_path) as f:
             orch = json.load(f)
     except Exception:
-        return "", False
+        return ""
 
     if orch.get("completed_at") is not None:
         # Completed: inject morning report, then clean up
@@ -61,12 +61,12 @@ def detect_orchestrate():
             if p.exists():
                 p.unlink()
 
-        return block, True
+        return block
 
     # In-progress: inject resume context with queue position
     queue = orch.get("queue", [])
     current_index = orch.get("current_index")
-    current_issue = ""
+    current_issue = "(unknown)"
     if current_index is not None and 0 <= current_index < len(queue):
         item = queue[current_index]
         current_issue = f"#{item.get('issue_number', '?')} ({item.get('title', '')})"
@@ -74,17 +74,16 @@ def detect_orchestrate():
     completed = sum(1 for item in queue if item.get("outcome") == "completed")
     total = len(queue)
 
-    block = (
+    return (
         "<flow-orchestrate-context>\n"
         f"FLOW orchestration in progress. Processing issue {current_issue}.\n"
         f"Progress: {completed}/{total} completed.\n"
         "Resume the orchestrator by invoking flow:flow-orchestrate --continue-step.\n"
         "</flow-orchestrate-context>\n"
     )
-    return block, False
 
 
-orchestrate_block, _orch_cleaned = detect_orchestrate()
+orchestrate_block = detect_orchestrate()
 
 # Exclude orchestrate.json from normal feature state processing
 files = [f for f in files if f.name != "orchestrate.json"]

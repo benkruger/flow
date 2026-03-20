@@ -73,22 +73,20 @@ def start_issue(state_path, index):
     if not path.exists():
         return {"status": "error", "message": f"State file not found: {state_path}"}
 
-    state = json.loads(path.read_text())
-    queue = state.get("queue", [])
-
-    if index < 0 or index >= len(queue):
-        return {
-            "status": "error",
-            "message": f"Index {index} out of range (queue has {len(queue)} items)",
-        }
+    result = {"status": "ok"}
 
     def transform(s):
+        queue = s.get("queue", [])
+        if index < 0 or index >= len(queue):
+            result["status"] = "error"
+            result["message"] = f"Index {index} out of range (queue has {len(queue)} items)"
+            return
         s["current_index"] = index
         s["queue"][index]["status"] = "in_progress"
         s["queue"][index]["started_at"] = now()
 
     mutate_state(state_path, transform)
-    return {"status": "ok"}
+    return result
 
 
 def record_outcome(state_path, index, outcome, pr_url=None, branch=None, reason=None):
@@ -97,16 +95,14 @@ def record_outcome(state_path, index, outcome, pr_url=None, branch=None, reason=
     if not path.exists():
         return {"status": "error", "message": f"State file not found: {state_path}"}
 
-    state = json.loads(path.read_text())
-    queue = state.get("queue", [])
-
-    if index < 0 or index >= len(queue):
-        return {
-            "status": "error",
-            "message": f"Index {index} out of range (queue has {len(queue)} items)",
-        }
+    result = {"status": "ok"}
 
     def transform(s):
+        queue = s.get("queue", [])
+        if index < 0 or index >= len(queue):
+            result["status"] = "error"
+            result["message"] = f"Index {index} out of range (queue has {len(queue)} items)"
+            return
         item = s["queue"][index]
         item["status"] = outcome
         item["outcome"] = outcome
@@ -119,7 +115,7 @@ def record_outcome(state_path, index, outcome, pr_url=None, branch=None, reason=
             item["reason"] = reason
 
     mutate_state(state_path, transform)
-    return {"status": "ok"}
+    return result
 
 
 def complete_orchestration(state_path):

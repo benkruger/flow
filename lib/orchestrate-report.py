@@ -110,13 +110,7 @@ def generate_and_write_report(state_file, output_dir):
     output_path = Path(output_dir) / "orchestrate-summary.md"
     output_path.write_text(result["summary"])
 
-    return {
-        "status": "ok",
-        "summary": result["summary"],
-        "completed": result["completed"],
-        "failed": result["failed"],
-        "total": result["total"],
-    }
+    return {"status": "ok", **result}
 
 
 def main():
