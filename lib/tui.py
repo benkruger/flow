@@ -95,7 +95,7 @@ class TuiApp:
         self._safe_addstr(2, 2, count_label, curses.A_BOLD)
         self._safe_addstr(3, 2, "\u2500" * min(54, max_x - 4), curses.A_DIM)
 
-        # Flow list
+        # Flow list — reserve ~16 lines for header, separator, detail panel, and footer
         list_end = min(len(self.flows), max_y - 16)
         for i in range(list_end):
             flow = self.flows[i]
@@ -133,9 +133,9 @@ class TuiApp:
         row += 2
 
         # Phase timeline
+        max_y, _ = self.stdscr.getmaxyx()
         timeline = phase_timeline(state)
         for entry in timeline:
-            max_y, _ = self.stdscr.getmaxyx()
             if row >= max_y - 3:
                 break
             if entry["status"] == "complete":
@@ -154,7 +154,6 @@ class TuiApp:
             row += 1
 
         row += 1
-        max_y, _ = self.stdscr.getmaxyx()
         if row < max_y - 2:
             parts = []
             if flow["notes_count"] > 0:
@@ -208,13 +207,10 @@ class TuiApp:
         """Dispatch keyboard input."""
         if self.confirming_abort:
             self._handle_abort_confirm(key)
-            return
-
-        if key == ord("q"):
+        elif key == ord("q"):
             self.running = False
-        elif key == 27:  # Escape
-            if self.view == "log":
-                self.view = "list"
+        elif key == 27 and self.view == "log":
+            self.view = "list"
         elif self.view == "list":
             self._handle_list_input(key)
 

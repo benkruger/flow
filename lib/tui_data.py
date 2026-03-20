@@ -109,6 +109,11 @@ def phase_timeline(state):
     return entries
 
 
+_LOG_LINE_PATTERN = re.compile(
+    r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[^\s]*)\s+(.+)$"
+)
+
+
 def parse_log_entries(log_content, limit=20):
     """Parse log file content into display entries.
 
@@ -118,16 +123,12 @@ def parse_log_entries(log_content, limit=20):
     if not log_content:
         return []
 
-    iso_pattern = re.compile(
-        r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[^\s]*)\s+(.+)$"
-    )
-
     entries = []
     for line in log_content.strip().split("\n"):
         line = line.strip()
         if not line:
             continue
-        match = iso_pattern.match(line)
+        match = _LOG_LINE_PATTERN.match(line)
         if not match:
             continue
         timestamp_str = match.group(1)
