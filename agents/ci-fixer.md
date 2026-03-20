@@ -22,7 +22,12 @@ the fix.
 1. Read the CI output provided in your prompt
 1. Diagnose the root cause — read the failing files with the Read tool
 1. Fix the issue with Edit or Write
-1. Re-run CI to verify with `bin/flow ci`
+1. Re-run CI to verify:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+```
+
 1. If still failing, repeat (max 3 attempts total)
 1. Report what was fixed and what files were changed
 
