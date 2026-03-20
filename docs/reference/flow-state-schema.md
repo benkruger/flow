@@ -88,7 +88,9 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
     }
   },
   "phase_transitions": [],
-  "issues_filed": []
+  "issues_filed": [],
+  "slack_thread_ts": null,
+  "slack_notifications": []
 }
 ```
 
@@ -122,6 +124,8 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `compact_summary` | string / null | Conversation summary from last compaction. Written by PostCompact hook, consumed and cleared by SessionStart hook. Transient. |
 | `compact_cwd` | string / null | CWD at last compaction time. Written by PostCompact hook, consumed and cleared by SessionStart hook. Transient. |
 | `compact_count` | integer | Total number of context compactions during this feature. Incremented by PostCompact hook. Permanent. |
+| `slack_thread_ts` | string / null | Slack message timestamp of the initial thread message. Set by Start phase after first `notify-slack` call. Used by subsequent phases as `thread_ts` to reply in the same thread. Null or absent if Slack is not configured. |
+| `slack_notifications` | array | Slack notifications sent during the feature — see [Slack Notifications Array](#slack-notifications-array) |
 
 ---
 
@@ -263,6 +267,34 @@ via `bin/flow issue`. Surfaced in the Complete phase PR body and Done banner.
 | `phase` | string | Phase key where the issue was filed (e.g. `"flow-learn"`) |
 | `phase_name` | string | Human-readable phase name |
 | `timestamp` | ISO 8601 | When the issue was filed |
+
+---
+
+## Slack Notifications Array
+
+Populated by `bin/flow add-notification` when a phase skill sends a Slack message via `bin/flow notify-slack`. Only present when Slack is configured via `/flow:flow-prime`. Surfaced in the Complete phase PR body.
+
+```json
+"slack_notifications": [
+  {
+    "phase": "flow-start",
+    "phase_name": "Start",
+    "ts": "1234567890.123456",
+    "thread_ts": "1234567890.123456",
+    "message_preview": "Feature started",
+    "timestamp": "2026-03-20T10:00:00-07:00"
+  }
+]
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `phase` | string | Phase key that sent the notification (e.g. `"flow-start"`) |
+| `phase_name` | string | Human-readable phase name |
+| `ts` | string | Slack message timestamp (unique ID for the posted message) |
+| `thread_ts` | string | Slack thread timestamp (matches `slack_thread_ts` for thread replies) |
+| `message_preview` | string | First 100 characters of the message text |
+| `timestamp` | ISO 8601 | When the notification was sent |
 
 ---
 

@@ -243,6 +243,7 @@ The script handles everything in a single call:
 - Writing `.flow.json` with version marker, framework, config hash, skills config, and commit format
 - Adding `.flow-states/`, `.worktrees/`, `.flow.json`, and `bin/dependencies` to `.git/info/exclude`
 - Installing a pre-commit hook at `.git/hooks/pre-commit` that blocks direct `git commit` during active FLOW features and requires commits to go through `/flow:flow-commit`
+- Configuring Slack notifications: if `FLOW_SLACK_TOKEN` and `FLOW_SLACK_CHANNEL` env vars are both set, writes `slack.bot_token` and `slack.channel` to `.flow.json` and sets `notify` to `auto`; validates the token with Slack `auth.test` (warns on failure, does not block); if either env var is absent, removes the `slack` key and sets `notify` to `never`
 - Priming the project CLAUDE.md with framework conventions (if CLAUDE.md exists)
 - Creating `bin/dependencies` from the framework template (skips if already exists)
 
@@ -314,6 +315,7 @@ All permissions (universal + all framework sets) for reference:
       "Bash(claude plugin marketplace add *)",
       "Bash(claude plugin install *)",
       "Bash(gh issue *)",
+      "Bash(curl *)",
       "Read(~/.claude/rules/*)",
       "Read(//tmp/*.txt)",
       "Read(//tmp/*.diff)",
@@ -396,6 +398,7 @@ Report:
 - Version marker written to `.flow.json` (git-excluded)
 - Git excludes configured for `.flow-states/`, `.worktrees/`, `.flow.json`, and `bin/dependencies`
 - Pre-commit hook installed — blocks direct `git commit`, requires `/flow:flow-commit`
+- Slack notifications: configured (if env vars set) or disabled (if absent)
 - Changes committed
 
 Display the skills configuration as a pipe-delimited markdown table with exactly this format (not a bullet list):

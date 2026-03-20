@@ -170,6 +170,24 @@ def write_state(state_dir, branch, state_dict):
     return path
 
 
+def make_flow_json(project_root, bot_token=None, channel=None, notify="auto",
+                   version="0.36.2", framework="rails", skills=None):
+    """Write a .flow.json file with optional Slack config.
+
+    If bot_token and channel are both provided, writes a slack config block.
+    If either is None, omits the slack block entirely (simulating unconfigured).
+    """
+    data = {"flow_version": version, "framework": framework}
+    if bot_token is not None and channel is not None:
+        data["slack"] = {"bot_token": bot_token, "channel": channel}
+        data["notify"] = notify
+    if skills is not None:
+        data["skills"] = skills
+    path = project_root / ".flow.json"
+    path.write_text(json.dumps(data) + "\n")
+    return path
+
+
 def make_orchestrate_state(
     queue=None,
     started_at="2026-03-20T22:00:00-07:00",

@@ -329,6 +329,26 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ```
 ````
 
+### Slack Notification
+
+Post the initial Slack thread message (creates the thread). Best-effort — skip silently on failure.
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-start --message "<message_text>" --pr-url <pr_url>
+```
+
+Parse the JSON output. If `"status": "ok"`, store the thread timestamp and record the notification:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set slack_thread_ts=<ts>
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-start --ts <ts> --thread-ts <ts> --message "<message_text>"
+```
+
+If `"status": "skipped"` or `"status": "error"`, continue without error.
+
 <HARD-GATE>
 STOP. Re-read `skills.flow-start.continue` from the state file at
 `<project_root>/.flow-states/<branch>.json` before advancing.
