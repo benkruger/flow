@@ -8,7 +8,14 @@ parent: Skills
 
 **Phase:** Any (standalone)
 
-**Usage:** `/flow:flow-create-issue <problem description>`
+**Usage:**
+
+```text
+/flow:flow-create-issue <problem description>
+/flow:flow-create-issue --step 2 <problem description>
+/flow:flow-create-issue --step 3 <problem description>
+/flow:flow-create-issue --step 4 <problem description>
+```
 
 Decomposes a problem via DAG analysis with deep codebase exploration, iterates with the user until the issue is fully detailed, then files it as a "decomposed" issue ready for autonomous execution via `/flow-start`.
 
@@ -16,11 +23,19 @@ Decomposes a problem via DAG analysis with deep codebase exploration, iterates w
 
 ## What It Does
 
-1. Invokes the `decompose:decompose` plugin for DAG-based problem breakdown with codebase exploration (Glob, Grep, Read)
-2. Drafts a comprehensive issue with five sections: Problem, Acceptance Criteria, Files to Investigate, Out of Scope, and Context
-3. Presents the full draft inline for user review — mandatory approval gate
-4. Iterates on feedback until the user approves
-5. Files the issue via `bin/flow issue` with the `decomposed` label
+Each step is enforced via self-invocation — the skill re-invokes itself with `--step N` after each gate, forcing the model to re-read the full skill instructions at every step boundary.
+
+| Step | Name | Gate |
+|------|------|------|
+| 1 | Decompose | AskUserQuestion: proceed, iterate, or cancel |
+| 2 | Draft | AskUserQuestion: file, revise, or re-decompose |
+| 3 | Review | HARD-GATE: approve or iterate |
+| 4 | File | Files the issue, shows COMPLETE banner |
+
+1. **Step 1 — Decompose:** Invokes `decompose:decompose` for DAG-based problem breakdown with codebase exploration (Glob, Grep, Read). Presents the synthesis and asks the user to approve, iterate, or cancel.
+2. **Step 2 — Draft:** Crafts a comprehensive issue with five sections (Problem, Acceptance Criteria, Files to Investigate, Out of Scope, Context). Presents the full draft inline and asks the user to file, revise, or re-decompose.
+3. **Step 3 — Review:** Mandatory approval gate. Presents the draft for final review. User can approve or provide feedback for iteration.
+4. **Step 4 — File:** Files the issue via `bin/flow issue` with the `decomposed` label.
 
 ---
 
@@ -38,6 +53,9 @@ The filed issue contains enough detail for `/flow-start` to execute fully autono
 
 ## Gates
 
-- Mandatory user approval before filing — no shortcut
+- Step banners shown at entry to each step (`── Step N of 4: Name ──`)
+- AskUserQuestion gates at Steps 1 and 2 — user controls the flow
+- Mandatory HARD-GATE approval at Step 3 before filing — no shortcut
 - All file paths verified via codebase exploration
 - Issues labeled `decomposed` for tracking
+- Self-invocation enforcement prevents step skipping
