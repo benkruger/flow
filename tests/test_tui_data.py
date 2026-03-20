@@ -6,7 +6,7 @@ from datetime import datetime
 from conftest import make_state, write_state
 
 import tui_data
-from flow_utils import PACIFIC, PHASE_ORDER
+from flow_utils import PACIFIC, PHASE_ORDER, elapsed_since, read_version, read_version_from
 
 
 # --- load_all_flows ---
@@ -310,13 +310,13 @@ def test_parse_log_entries_invalid_timestamp():
 
 def test_elapsed_since_no_started_at():
     """Returns 0 when started_at is falsy."""
-    assert tui_data._elapsed_since(None) == 0
-    assert tui_data._elapsed_since("") == 0
+    assert elapsed_since(None) == 0
+    assert elapsed_since("") == 0
 
 
 def test_elapsed_since_default_now():
     """Uses current time when now is not passed."""
-    result = tui_data._elapsed_since("2026-01-01T00:00:00-08:00")
+    result = elapsed_since("2026-01-01T00:00:00-08:00")
     assert isinstance(result, int)
     assert result >= 0
 
@@ -326,7 +326,7 @@ def test_elapsed_since_default_now():
 
 def test_read_version_returns_string():
     """read_version returns a version string."""
-    version = tui_data.read_version()
+    version = read_version()
     assert isinstance(version, str)
     assert version != ""
     # Should be a semver-like string or "?"
@@ -335,7 +335,7 @@ def test_read_version_returns_string():
 
 def test_read_version_missing_file(tmp_path):
     """Returns '?' when plugin.json is missing."""
-    result = tui_data._read_version_from(tmp_path / "nonexistent.json")
+    result = read_version_from(tmp_path / "nonexistent.json")
     assert result == "?"
 
 

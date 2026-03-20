@@ -16,32 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
     PACIFIC, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER,
-    derive_feature, derive_worktree, format_time,
+    derive_feature, derive_worktree, elapsed_since, format_time, read_version,
 )
-
-
-def _elapsed_since(started_at, now=None):
-    """Calculate elapsed seconds from an ISO timestamp to now."""
-    if not started_at:
-        return 0
-    if now is None:
-        now = datetime.now(PACIFIC)
-    start = datetime.fromisoformat(started_at)
-    return max(0, int((now - start).total_seconds()))
-
-
-def _read_version_from(plugin_json_path):
-    """Read plugin version from a specific plugin.json path."""
-    try:
-        return json.loads(Path(plugin_json_path).read_text())["version"]
-    except Exception:
-        return "?"
-
-
-def read_version():
-    """Read plugin version from plugin.json next to this script."""
-    plugin_json = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
-    return _read_version_from(plugin_json)
 
 
 def flow_summary(state, now=None):
@@ -52,7 +28,7 @@ def flow_summary(state, now=None):
     branch = state["branch"]
     current_phase = state.get("current_phase", "flow-start")
 
-    elapsed_seconds = _elapsed_since(state.get("started_at"), now)
+    elapsed_seconds = elapsed_since(state.get("started_at"), now)
 
     return {
         "feature": derive_feature(branch),
