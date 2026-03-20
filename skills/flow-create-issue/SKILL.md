@@ -1,11 +1,11 @@
 ---
 name: flow-create-issue
-description: "Decompose a problem via DAG analysis with deep codebase exploration, iterate with the user until the issue is 100% ready for autonomous execution, then file it."
+description: "Explore a design question or decompose a concrete problem via DAG analysis, iterate with the user, then file a work-ready issue."
 ---
 
 # Flow Create Issue
 
-Decompose a problem into a fully detailed, work-ready GitHub issue. Uses the `decompose:decompose` plugin for DAG-based analysis with deep codebase exploration. Iterates with the user until the issue is comprehensive enough for `/flow:flow-start` to execute it fully autonomously — no human clarification needed.
+Explore a design question or decompose a concrete problem into a fully detailed, work-ready GitHub issue. Classifies the user's input first: exploratory questions get an interactive design discussion grounded in the codebase, while concrete problems go straight to the `decompose:decompose` plugin for DAG-based analysis. Both paths iterate with the user until the issue is comprehensive enough for `/flow:flow-start` to execute fully autonomously.
 
 ## Usage
 
