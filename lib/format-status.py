@@ -11,7 +11,6 @@ Output:
   Exit 2: stderr = error message
 """
 
-import json
 import sys
 from datetime import datetime
 from pathlib import Path

@@ -284,9 +284,6 @@ def test_parse_log_entries_malformed_lines():
     assert entries[1]["message"] == "another valid entry"
 
 
-# --- read_version ---
-
-
 def test_parse_log_entries_blank_lines():
     """Blank lines in log content are skipped."""
     log = (
@@ -305,7 +302,7 @@ def test_parse_log_entries_invalid_timestamp():
     assert entries == []
 
 
-# --- _elapsed_since ---
+# --- elapsed_since ---
 
 
 def test_elapsed_since_no_started_at():

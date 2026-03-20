@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
     PACIFIC, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER,
-    derive_feature, derive_worktree, elapsed_since, format_time, read_version,
+    derive_feature, derive_worktree, elapsed_since, format_time,
 )
 
 
