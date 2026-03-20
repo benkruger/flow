@@ -326,12 +326,6 @@ The commit message subject should reference the task:
 Add <what was built> — Task <n> of <total>
 ```
 
-After the commit completes, clear the continuation flag:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
-```
-
 To continue to the next task, invoke `flow:flow-code --continue-step`
 using the Skill tool as your final action. If commit=auto was resolved,
 pass `--auto` as well. Do not output anything else after this
