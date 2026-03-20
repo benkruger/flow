@@ -41,4 +41,3 @@ These skills are available at any point in the workflow, regardless of phase.
 | [`/flow-config`](flow-config.md) | Display current configuration — version, framework, per-skill autonomy |
 | [`/flow-issues`](flow-issues.md) | Fetch open issues, categorize, prioritize, detect batchable issues, and display a dashboard with recommended work order |
 | [`/flow-create-issue`](flow-create-issue.md) | Decompose a problem via DAG analysis, iterate until work-ready, then file it |
-| [`/flow-local-permission`](flow-local-permission.md) | Promote permissions from settings.local.json into settings.json |
