@@ -39,7 +39,7 @@ prompt words as usual.
 | Prompt | Issue title | Derived branch name |
 |--------|-------------|-------------------|
 | `work on issue #309` | "Organize settings.json allow list" | `organize-settings-allow-list` |
-| `fix #42 please` | "Login timeout when session expires" | `fix-login-timeout` |
+| `fix #42 please` | "Add dark mode toggle to settings page" | `dark-mode-settings-toggle` |
 
 The derived name is joined with hyphens:
 

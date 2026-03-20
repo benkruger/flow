@@ -1961,7 +1961,7 @@ def test_flow_start_issue_aware_branch_naming():
         "flow-start/SKILL.md must reference gh issue view for "
         "issue-aware branch naming"
     )
-    assert "fall back" in content.lower(), (
+    assert "fall back" in content.lower() and "prompt words" in content.lower(), (
         "flow-start/SKILL.md must instruct fallback to prompt words "
         "when issue fetch fails"
     )
