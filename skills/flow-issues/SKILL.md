@@ -97,8 +97,8 @@ Record:
 
 - **Batches** — groups of 2+ issues with their shared file paths
 - **Solo issues** — issues that do not share 2+ files with any other issue
-- **File count** — the number of file path references per issue, displayed
-  as a complexity signal in the category tables
+- **File count** — the number of file path references per issue, used for
+  batch detection
 
 If no batches are found (all issues are solo), omit the batch section
 from the Step 6 display.
@@ -176,33 +176,31 @@ apply impact and blocking modifiers.
 
 Print a summary line with total count and per-category counts.
 
-### In Progress Section
+### In Progress Table
 
 If any issues have the "Flow In-Progress" label, print an "In Progress"
-section before the category tables listing each in-progress issue with
-its number and title. If no issues have the label, skip this section.
-
-### Category Tables
-
-For each non-empty category, print a markdown table with columns: `#`, `Title`, `Files`, `Age`, `Priority`. Sort by priority (High first), then by age (oldest first).
-
-The `Files` column shows the file path count from Step 4a (e.g., `~3`).
-If an issue has no file path references, show `—` in the Files column.
-
-For in-progress issues, append `[In Progress]` to the title in the table.
-For decomposed issues, append `[Decomposed]` to the title in the table.
-For stale issues (from Step 4c), append `[Stale: N files missing]` to the
-title where N is the count of missing files.
-An issue can display multiple annotations: `[In Progress] [Decomposed] [Stale: 2 files missing]`.
-Never remove in-progress issues from the table — always display all issues.
+table before the work order. Columns: `#`, `Title`. The `#` column
+shows a markdown link: `[#N](issue_url)`. If no issues have the label,
+skip this section.
 
 ### Recommended Work Order
 
-After the category tables, print a "Recommended Work Order" section.
-This is a numbered list showing the recommended sequence for working
-through the issues. Exclude issues with the "Flow In-Progress" label
-from the work order — they are already being worked on by another
-engineer.
+Print a "Recommended Work Order" section as a single markdown table.
+Columns: `Order`, `Priority`, `Labels`, `#`, `Title`, `Rationale`.
+
+The `#` column shows a markdown link: `[#N](issue_url)`.
+
+The `Labels` column shows the issue's actual GitHub labels as a
+comma-separated list.
+
+Exclude issues with the "Flow In-Progress" label from the work order —
+they are already being worked on by another engineer and appear only in
+the In Progress table above.
+
+For stale issues (from Step 4c), append `[Stale: N files missing]` to
+the title where N is the count of missing files.
+
+**Sorting algorithm** (determines the `Order` column):
 
 - **Explicit dependencies first** — if issue A depends on B (from Step 4b),
   B must appear before A regardless of priority. Use topological sort to
@@ -219,19 +217,24 @@ engineer.
   batches, a batch containing any decomposed member is treated as decomposed.
 - **Ties** — broken by age (oldest first)
 
-For each entry in the work order, show:
+The `Rationale` column explains why this issue is at this position.
+Use the first matching condition (highest priority first):
 
-- Issue number(s) and title(s)
-- Effective priority
-- If batched: the shared files that link them
-- If dependency-ordered: brief rationale (e.g., "prerequisite for #264")
-- A copy-paste start command: `/flow:flow-start work on issue #N`
+- If dependency-ordered: "prerequisite for #N" or "depends on #N"
+- If batched: "batch with #N (shared: file1, file2)"
+- If decomposed: "decomposed — ready for autonomous execution"
+- Otherwise: brief reason (e.g., "default High tier" or "blocking 2 issues")
 
-If there are no batches and no dependency relationships, the work order
-is simply the priority-then-age sort from the category tables. List each
-entry with its start command but omit batch and dependency detail.
+If batches exist, add a note above the table listing each batch and
+the shared files that link its members.
 
-After the work order is displayed, output the following banner in your response (not via Bash) inside a fenced code block:
+### Start Commands
+
+After the work order table, list a copy-paste start command for each
+issue (one command per issue, even when issues are batched together):
+`/flow:flow-start work on issue #N`
+
+After the start commands are displayed, output the following banner in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
@@ -244,8 +247,7 @@ After the work order is displayed, output the following banner in your response 
 ## Hard Rules
 
 - Read-only — never create, edit, or close issues
-- Display all open issues in category tables — annotate in-progress issues, never remove rows
-- Annotate decomposed issues with [Decomposed] in category tables
+- Display all open issues — in-progress issues appear in the In Progress table, all others in the work order table
 - Exclude in-progress issues from the Recommended Work Order
 - No AskUserQuestion — this is a display-only skill
 - Never use Bash to print banners — output them as text in your response
