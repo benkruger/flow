@@ -199,12 +199,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 Commit the resolution via `/flow:flow-commit` — the commit skill handles
 staging, diff review, and push.
 
-After the commit completes, clear the continuation flag and record the
-resume step:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
-```
+After the commit completes, record the resume step:
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
@@ -253,12 +248,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 
 Commit the fixes via `/flow:flow-commit`.
 
-After the commit completes, clear the continuation flag and record the
-resume step:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
-```
+After the commit completes, record the resume step:
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
