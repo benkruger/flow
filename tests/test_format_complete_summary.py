@@ -87,6 +87,50 @@ def test_summary_with_issues():
     result = mod.format_complete_summary(state)
 
     assert "Issues filed: 2" in result["summary"]
+    assert "[Rule] #1: Test rule" in result["summary"]
+    assert "[Tech Debt] #2: Refactor X" in result["summary"]
+
+
+def test_summary_with_single_issue():
+    """Summary lists a single issue with label, number, and title."""
+    mod = _import_module()
+    state = _all_complete_state()
+    state["issues_filed"] = [
+        {
+            "label": "Flow",
+            "title": "Fix routing logic",
+            "url": "https://github.com/test/test/issues/42",
+            "phase": "flow-learn",
+            "phase_name": "Learn",
+            "timestamp": "2026-01-01T00:00:00-08:00",
+        },
+    ]
+
+    result = mod.format_complete_summary(state)
+
+    assert "Issues filed: 1" in result["summary"]
+    assert "[Flow] #42: Fix routing logic" in result["summary"]
+
+
+def test_summary_with_issues_url_without_number():
+    """Issues with non-standard URLs fall back to full URL."""
+    mod = _import_module()
+    state = _all_complete_state()
+    state["issues_filed"] = [
+        {
+            "label": "Rule",
+            "title": "Some rule",
+            "url": "https://example.com/custom-path",
+            "phase": "flow-learn",
+            "phase_name": "Learn",
+            "timestamp": "2026-01-01T00:00:00-08:00",
+        },
+    ]
+
+    result = mod.format_complete_summary(state)
+
+    assert "Issues filed: 1" in result["summary"]
+    assert "[Rule] https://example.com/custom-path: Some rule" in result["summary"]
 
 
 def test_summary_with_notes():
