@@ -1,5 +1,13 @@
 # Release Notes
 
+## v0.36.1 — Issues category tiers
+
+- Improved flow-issues categorization with two-tier system: label-based
+  categories (Rule, Flow, Flaky Test, Tech Debt, Documentation Drift) take
+  precedence, with content-based analysis (Bug, Enhancement, Other) as
+  fallback. Ensures issues with FLOW-specific labels are categorized
+  consistently.
+
 ## v0.36.0 — Enhanced flow-issues dashboard and foreground simplify review
 
 ### New Features

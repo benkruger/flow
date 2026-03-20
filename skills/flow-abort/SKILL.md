@@ -71,7 +71,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v0.36.0 — Abort — STARTING
+  FLOW v0.36.1 — Abort — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -124,7 +124,7 @@ Then output the following banner in your response (not via Bash) inside a fenced
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v0.36.0 — Abort — COMPLETE
+  ✓ FLOW v0.36.1 — Abort — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Feature '<feature>' has been abandoned.
