@@ -12,9 +12,9 @@ parent: Skills
 
 ```text
 /flow:flow-create-issue <problem description>
-/flow:flow-create-issue --step 2 <problem description>
-/flow:flow-create-issue --step 3 <problem description>
-/flow:flow-create-issue --step 4 <problem description>
+/flow:flow-create-issue --step 2
+/flow:flow-create-issue --step 3
+/flow:flow-create-issue --step 4
 ```
 
 Decomposes a problem via DAG analysis with deep codebase exploration, iterates with the user until the issue is fully detailed, then files it as a "decomposed" issue ready for autonomous execution via `/flow-start`.

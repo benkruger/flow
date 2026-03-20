@@ -11,9 +11,9 @@ Decompose a problem into a fully detailed, work-ready GitHub issue. Uses the `de
 
 ```text
 /flow:flow-create-issue <problem description>
-/flow:flow-create-issue --step 2 <problem description>
-/flow:flow-create-issue --step 3 <problem description>
-/flow:flow-create-issue --step 4 <problem description>
+/flow:flow-create-issue --step 2
+/flow:flow-create-issue --step 3
+/flow:flow-create-issue --step 4
 ```
 
 - `/flow:flow-create-issue <problem description>` — start from Step 1 (Decompose)
@@ -138,7 +138,7 @@ Present the full draft inline in the response — both title and body. Do not te
 
 Ask the user to review the draft using AskUserQuestion:
 
-- **"File it"** / **"Looks good"** / **"Ship it"** → invoke `flow:flow-create-issue --step 4` using the Skill tool as your final action. Do not output anything else after this invocation.
+- **"File it"** / **"Looks good"** / **"Ship it"** → invoke `flow:flow-create-issue --step 3` using the Skill tool as your final action. Do not output anything else after this invocation.
 - **"Revise the draft"** / **Any feedback or change request** → revise the draft based on feedback and re-present. After revision, ask again with the same options.
 - **"Re-decompose"** → invoke `flow:flow-create-issue --step 1` using the Skill tool as your final action. Do not output anything else after this invocation.
 

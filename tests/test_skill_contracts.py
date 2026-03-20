@@ -2812,6 +2812,9 @@ def test_create_issue_usage_documents_step_flag():
     assert "--step 2" in usage_text, (
         "Usage must document --step 2 form"
     )
+    assert "--step 3" in usage_text, (
+        "Usage must document --step 3 form"
+    )
     assert "--step 4" in usage_text, (
         "Usage must document --step 4 form"
     )
