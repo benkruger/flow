@@ -877,7 +877,7 @@ def test_release_complete_banner_confirms_marketplace_update():
 def test_utility_skill_banners_include_version():
     """Utility skill STARTING and COMPLETE banners must include the version."""
     version = _plugin_version()
-    utility_with_banners = ["flow-commit", "flow-abort", "flow-status", "flow-issues"]
+    utility_with_banners = ["flow-commit", "flow-abort", "flow-status", "flow-issues", "flow-create-issue"]
 
     for name in utility_with_banners:
         content = _read_skill(name)
@@ -2771,3 +2771,80 @@ def test_prime_has_independent_code_review_plugin_question():
             f"'code_review_plugin' must NOT be in {name} preset — "
             f"it is now an independent question"
         )
+
+
+# --- flow-create-issue self-invocation and step gates ---
+
+
+def _create_issue_steps():
+    """Parse flow-create-issue SKILL.md into numbered steps."""
+    content = _read_skill("flow-create-issue")
+    steps = re.findall(
+        r"## Step (\d+)\b.*?\n(.*?)(?=\n## Step \d|\n## Hard Rules|\Z)",
+        content, re.DOTALL,
+    )
+    return [(int(num), text) for num, text in steps]
+
+
+def test_create_issue_has_step_dispatch():
+    """flow-create-issue must have a Step Dispatch section with --step flag."""
+    content = _read_skill("flow-create-issue")
+    assert "## Step Dispatch" in content, (
+        "flow-create-issue must have a '## Step Dispatch' section"
+    )
+    dispatch_match = re.search(
+        r"## Step Dispatch\n(.*?)(?=\n## )", content, re.DOTALL
+    )
+    assert dispatch_match, "Could not find Step Dispatch section content"
+    assert "--step" in dispatch_match.group(1), (
+        "Step Dispatch must reference --step flag"
+    )
+
+
+def test_create_issue_usage_documents_step_flag():
+    """flow-create-issue Usage must document --step forms."""
+    content = _read_skill("flow-create-issue")
+    usage_match = re.search(
+        r"## Usage\n(.*?)(?=\n## )", content, re.DOTALL
+    )
+    assert usage_match, "Could not find Usage section"
+    usage_text = usage_match.group(1)
+    assert "--step 2" in usage_text, (
+        "Usage must document --step 2 form"
+    )
+    assert "--step 4" in usage_text, (
+        "Usage must document --step 4 form"
+    )
+
+
+def test_create_issue_steps_have_banners():
+    """Each flow-create-issue step must have a step banner."""
+    steps = _create_issue_steps()
+    assert len(steps) == 4, f"Expected 4 steps, found {len(steps)}"
+    for step_num, step_text in steps:
+        assert re.search(rf"Step {step_num} of 4", step_text), (
+            f"Step {step_num} must have a banner containing 'Step {step_num} of 4'"
+        )
+
+
+def test_create_issue_steps_1_2_have_ask_user():
+    """Steps 1 and 2 must have AskUserQuestion gates."""
+    steps = _create_issue_steps()
+    for step_num, step_text in steps:
+        if step_num in (1, 2):
+            assert "AskUserQuestion" in step_text, (
+                f"Step {step_num} must contain AskUserQuestion"
+            )
+
+
+def test_create_issue_steps_1_2_3_self_invoke():
+    """Steps 1-3 must self-invoke flow:flow-create-issue with --step flag."""
+    steps = _create_issue_steps()
+    for step_num, step_text in steps:
+        if step_num <= 3:
+            assert "flow:flow-create-issue" in step_text, (
+                f"Step {step_num} must self-invoke flow:flow-create-issue"
+            )
+            assert "--step" in step_text, (
+                f"Step {step_num} must use --step flag for self-invocation"
+            )

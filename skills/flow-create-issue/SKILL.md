@@ -11,7 +11,15 @@ Decompose a problem into a fully detailed, work-ready GitHub issue. Uses the `de
 
 ```text
 /flow:flow-create-issue <problem description>
+/flow:flow-create-issue --step 2 <problem description>
+/flow:flow-create-issue --step 3 <problem description>
+/flow:flow-create-issue --step 4 <problem description>
 ```
+
+- `/flow:flow-create-issue <problem description>` — start from Step 1 (Decompose)
+- `/flow:flow-create-issue --step 2` — self-invocation: skip to Step 2 (Draft)
+- `/flow:flow-create-issue --step 3` — self-invocation: skip to Step 3 (Review)
+- `/flow:flow-create-issue --step 4` — self-invocation: skip to Step 4 (File)
 
 ## Concurrency
 
@@ -31,7 +39,28 @@ At the very start, output the following banner in your response (not via Bash) i
 ```
 ````
 
+## Step Dispatch
+
+If `--step N` was passed, this is a self-invocation from a previous step.
+Skip the Announce banner and jump directly to Step N.
+
+- `--step 2` → jump to Step 2
+- `--step 3` → jump to Step 3
+- `--step 4` → jump to Step 4
+
+If no `--step` flag was passed, proceed to Step 1.
+
+---
+
 ## Step 1 — Decompose
+
+Output in your response (not via Bash) inside a fenced code block:
+
+````markdown
+```text
+  ── Step 1 of 4: Decompose ──
+```
+````
 
 Invoke the `decompose:decompose` plugin with the user's problem description via the Skill tool.
 
@@ -47,7 +76,29 @@ The decomposition is the foundation. Every claim in the final issue must be grou
 
 Present the full DAG synthesis to the user.
 
+<HARD-GATE>
+
+Ask the user to review the decomposition using AskUserQuestion:
+
+- **"Proceed to draft"** → invoke `flow:flow-create-issue --step 2` using the Skill tool as your final action. Do not output anything else after this invocation.
+- **"Iterate on decomposition"** → re-invoke `decompose:decompose` with the user's feedback, present the updated synthesis, and ask again.
+- **"Cancel"** → stop. Do not file an issue.
+
+Do not proceed to Step 2 without explicit user approval.
+
+</HARD-GATE>
+
+---
+
 ## Step 2 — Draft Issue
+
+Output in your response (not via Bash) inside a fenced code block:
+
+````markdown
+```text
+  ── Step 2 of 4: Draft ──
+```
+````
 
 Take the decompose synthesis and craft a single GitHub issue. The issue must contain enough detail that a fresh Claude session running `/flow:flow-start work on issue #N` can execute it fully autonomously — no questions asked.
 
@@ -83,24 +134,54 @@ Example:
 
 Present the full draft inline in the response — both title and body. Do not tell the user to look at a file. Render it as a formatted markdown block so the user can review every detail.
 
+<HARD-GATE>
+
+Ask the user to review the draft using AskUserQuestion:
+
+- **"File it"** / **"Looks good"** / **"Ship it"** → invoke `flow:flow-create-issue --step 4` using the Skill tool as your final action. Do not output anything else after this invocation.
+- **"Revise the draft"** / **Any feedback or change request** → revise the draft based on feedback and re-present. After revision, ask again with the same options.
+- **"Re-decompose"** → invoke `flow:flow-create-issue --step 1` using the Skill tool as your final action. Do not output anything else after this invocation.
+
+The issue must not be filed without explicit user approval.
+
+</HARD-GATE>
+
+---
+
 ## Step 3 — Review
+
+Output in your response (not via Bash) inside a fenced code block:
+
+````markdown
+```text
+  ── Step 3 of 4: Review ──
+```
+````
 
 <HARD-GATE>
 
 This is a mandatory approval gate. The issue must not be filed without explicit user approval.
 
-Ask the user to review the draft using AskUserQuestion:
+Present the full draft inline in the response. Ask the user to review the draft using AskUserQuestion:
 
-- **"File it"** / **"Looks good"** / **"Ship it"** → Proceed to Step 4
+- **"File it"** / **"Looks good"** / **"Ship it"** → invoke `flow:flow-create-issue --step 4` using the Skill tool as your final action. Do not output anything else after this invocation.
 - **Any feedback or change request** → Revise the draft and re-present. If the feedback is substantial (changes the problem understanding or approach), re-run `decompose:decompose` with the updated understanding. If the feedback is editorial (wording, scope adjustments), revise the draft directly. After revision, ask again.
 
 Iterate as many times as needed. There is no shortcut. The issue is not filed until the user explicitly approves.
 
 </HARD-GATE>
 
+---
+
 ## Step 4 — File
 
-Once the user approves:
+Output in your response (not via Bash) inside a fenced code block:
+
+````markdown
+```text
+  ── Step 4 of 4: File ──
+```
+````
 
 Write the issue body to `.flow-issue-body` in the project root using the Write tool, then file it:
 
@@ -126,7 +207,7 @@ Display the issue URL to the user, then output the COMPLETE banner:
 
 ## Hard Rules
 
-- Never file an issue without explicit user approval — Step 3 is mandatory
+- Never file an issue without explicit user approval — Step 2 and Step 3 are mandatory gates
 - Never skip codebase exploration — every file path and code reference must be verified
 - Never tell the user to "look at" a file — render all content inline
 - Never use Bash to print banners — output them as text in your response
@@ -134,3 +215,4 @@ Display the issue URL to the user, then output the COMPLETE banner:
 - Never create sub-issues or linked issues — file a single comprehensive issue
 - Always use the Write tool to create `.flow-issue-body` — never pass body text as a CLI argument
 - Never delete `.flow-issue-body` — the `bin/flow issue` script handles cleanup
+- Each step ends by invoking the skill itself as the final action — never continue to the next step in the same invocation
