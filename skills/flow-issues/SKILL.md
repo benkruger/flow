@@ -217,20 +217,22 @@ the title where N is the count of missing files.
   batches, a batch containing any decomposed member is treated as decomposed.
 - **Ties** — broken by age (oldest first)
 
-The `Rationale` column explains why this issue is at this position:
+The `Rationale` column explains why this issue is at this position.
+Use the first matching condition (highest priority first):
 
 - If dependency-ordered: "prerequisite for #N" or "depends on #N"
 - If batched: "batch with #N (shared: file1, file2)"
 - If decomposed: "decomposed — ready for autonomous execution"
-- Otherwise: the priority tier and category
+- Otherwise: brief reason (e.g., "default High tier" or "blocking 2 issues")
 
-If batches exist, add a note above or below the table listing each
-batch and the shared files that link its members.
+If batches exist, add a note above the table listing each batch and
+the shared files that link its members.
 
 ### Start Commands
 
 After the work order table, list a copy-paste start command for each
-entry: `/flow:flow-start work on issue #N`
+issue (one command per issue, even when issues are batched together):
+`/flow:flow-start work on issue #N`
 
 After the start commands are displayed, output the following banner in your response (not via Bash) inside a fenced code block:
 
