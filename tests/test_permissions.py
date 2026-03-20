@@ -152,6 +152,9 @@ PLACEHOLDER_SUBS = {
     "<pr_url>": "https://github.com/test/test/pull/1",
     "<title>": "Test title",
     "<reason>": "CI failed",
+    "<ts>": "1234567890.123456",
+    "<thread_ts>": "1234567890.123456",
+    "<message_text>": "Phase complete",
 }
 
 

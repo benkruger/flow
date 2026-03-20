@@ -651,6 +651,22 @@ Output in your response (not via Bash) inside a fenced code block:
 ```
 ````
 
+### Slack Notification
+
+Read `slack_thread_ts` from the state file. If present, post a thread reply. Best-effort — skip silently on failure.
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-code-review --message "<message_text>" --thread-ts <thread_ts>
+```
+
+If `"status": "ok"`, record the notification:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-code-review --ts <ts> --thread-ts <thread_ts> --message "<message_text>"
+```
+
+If `"status": "skipped"` or `"status": "error"`, continue without error.
+
 <HARD-GATE>
 STOP. Re-read `skills.flow-code-review.continue` from the state file at
 `<project_root>/.flow-states/<branch>.json` before advancing.
