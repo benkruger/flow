@@ -17,13 +17,27 @@ parent: Skills
 /flow:flow-create-issue --step 4
 ```
 
-Decomposes a problem via DAG analysis with deep codebase exploration, iterates with the user until the issue is fully detailed, then files it as a "decomposed" issue ready for autonomous execution via `/flow-start`.
+Explores a design question or decomposes a concrete problem via DAG analysis with deep codebase exploration, iterates with the user until the issue is fully detailed, then files it as a "decomposed" issue ready for autonomous execution via `/flow-start`.
+
+---
+
+## Input Classification
+
+Before entering the filing pipeline, the skill classifies the user's input:
+
+- **Concrete problem** (bug reports, specific failures, action requests, `#N` issue references) — proceeds directly to the 4-step pipeline below
+- **Exploratory question** (design questions like "what could we do with X?", brainstorming, open-ended exploration) — enters Exploration Mode for an interactive design discussion grounded in the codebase
+- **Ambiguous** — asks the user which mode they prefer
+
+### Exploration Mode
+
+When the input is exploratory, the skill facilitates a design discussion instead of immediately decomposing. It explores the codebase for relevant context, presents findings and design options, and iterates interactively with the user. When the discussion produces a concrete problem to file, the skill transitions into the standard 4-step pipeline. The user can also end the exploration without filing.
 
 ---
 
 ## What It Does
 
-Each step is enforced via self-invocation — the skill re-invokes itself with `--step N` after each gate, forcing the model to re-read the full skill instructions at every step boundary.
+Once a concrete problem is identified (either directly or after exploration), each step is enforced via self-invocation — the skill re-invokes itself with `--step N` after each gate, forcing the model to re-read the full skill instructions at every step boundary.
 
 | Step | Name | Gate |
 |------|------|------|

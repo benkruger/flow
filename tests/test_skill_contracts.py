@@ -2803,3 +2803,27 @@ def test_create_issue_steps_1_2_3_self_invoke():
             assert "--step" in step_text, (
                 f"Step {step_num} must use --step flag for self-invocation"
             )
+
+
+def test_create_issue_has_input_classification():
+    """flow-create-issue must classify input before entering the step pipeline."""
+    content = _read_skill("flow-create-issue")
+    assert "## Input Classification" in content, (
+        "flow-create-issue must have an '## Input Classification' section "
+        "that routes exploratory questions to design discussion"
+    )
+    classification_match = re.search(
+        r"## Input Classification\n(.*?)(?=\n## )", content, re.DOTALL
+    )
+    assert classification_match, "Could not find Input Classification section content"
+    section_text = classification_match.group(1)
+    assert "exploratory" in section_text.lower(), (
+        "Input Classification must describe the exploratory path"
+    )
+    assert "concrete" in section_text.lower(), (
+        "Input Classification must describe the concrete path"
+    )
+    assert "## Exploration Mode" in content, (
+        "flow-create-issue must have an '## Exploration Mode' section "
+        "for interactive design discussion"
+    )

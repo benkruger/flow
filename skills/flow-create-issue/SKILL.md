@@ -1,11 +1,11 @@
 ---
 name: flow-create-issue
-description: "Decompose a problem via DAG analysis with deep codebase exploration, iterate with the user until the issue is 100% ready for autonomous execution, then file it."
+description: "Explore a design question or decompose a concrete problem via DAG analysis, iterate with the user, then file a work-ready issue."
 ---
 
 # Flow Create Issue
 
-Decompose a problem into a fully detailed, work-ready GitHub issue. Uses the `decompose:decompose` plugin for DAG-based analysis with deep codebase exploration. Iterates with the user until the issue is comprehensive enough for `/flow:flow-start` to execute it fully autonomously — no human clarification needed.
+Explore a design question or decompose a concrete problem into a fully detailed, work-ready GitHub issue. Classifies the user's input first: exploratory questions get an interactive design discussion grounded in the codebase, while concrete problems go straight to the `decompose:decompose` plugin for DAG-based analysis. Both paths iterate with the user until the issue is comprehensive enough for `/flow:flow-start` to execute fully autonomously.
 
 ## Usage
 
@@ -48,7 +48,72 @@ Skip the Announce banner and jump directly to Step N.
 - `--step 3` → jump to Step 3
 - `--step 4` → jump to Step 4
 
-If no `--step` flag was passed, proceed to Step 1.
+If no `--step` flag was passed, proceed to Input Classification.
+
+---
+
+## Input Classification
+
+Before entering the 4-step pipeline, evaluate the user's input to determine
+whether it describes a concrete problem or an exploratory design question.
+
+**Concrete problem signals** — proceed to Step 1:
+
+- Bug or failure language: "fails", "broken", "error", "crashes", "wrong"
+- Specific symptoms: error messages, stack traces, reproduction steps
+- Issue references: `#N` patterns pointing to existing issues
+- Action verbs: "fix", "add", "implement", "update", "change"
+- A clear description of what is wrong and what should be different
+
+**Exploratory question signals** — proceed to Exploration Mode:
+
+- Question form: "what could we", "how might we", "what if", "should we"
+- Brainstorming language: "ideas for", "thoughts on", "explore", "investigate"
+- No specific failure or symptom described
+- Asks about possibilities or design options rather than problems
+
+**If ambiguous** — ask the user which mode they prefer using AskUserQuestion:
+
+> "This could be explored as a design question or decomposed as a concrete
+> issue. Which would you prefer?"
+>
+> - **Design exploration** — discuss the topic before filing
+> - **Decompose and file an issue** — enter the 4-step pipeline now
+
+Route based on the user's choice.
+
+---
+
+## Exploration Mode
+
+This mode facilitates a design discussion grounded in the codebase. The goal
+is to help the user think through a problem space, not to file an issue
+immediately.
+
+1. Acknowledge that this is a design exploration, not an issue filing pipeline
+2. Explore the codebase relevant to the topic using Glob, Grep, and Read to
+   ground the discussion in what actually exists
+3. Present findings and design options to the user
+4. Discuss interactively — use AskUserQuestion to gather the user's
+   perspective, iterate on ideas, and refine the direction
+
+**Exit paths:**
+
+When the discussion produces a concrete problem the user wants to file:
+
+- Ask "Ready to file this as an issue?" using AskUserQuestion
+- If yes — proceed to Step 1 below with the refined problem statement
+- If the user identifies multiple issues — ask which to start with, then
+  proceed to Step 1 for the chosen issue
+
+When the user is satisfied with the exploration:
+
+- The user may say "that's enough", "thanks", or indicate they are done
+- Stop without filing — no issue is required
+
+When the user wants to cancel:
+
+- Stop without filing
 
 ---
 
