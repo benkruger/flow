@@ -250,12 +250,6 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 
 If commit=auto, use `/flow:flow-commit --auto`; otherwise use `/flow:flow-commit`.
 
-After the commit completes, clear the continuation flag:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
-```
-
 Record step completion:
 
 ```bash
@@ -377,12 +371,6 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 If commit=auto use `/flow:flow-commit --auto`,
 otherwise use `/flow:flow-commit` for the Review fixes.
 
-After the commit completes, clear the continuation flag:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
-```
-
 ### Review summary
 
 Show a summary of what was found and fixed inside a fenced code block:
@@ -408,12 +396,6 @@ Record step completion:
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=2
-```
-
-Clear the continuation flag before self-invoking:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
 ```
 
 To continue to Step 3, invoke `flow:flow-code-review --continue-step` using
@@ -474,12 +456,6 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise
 invoke `/flow:flow-commit`.
 
-After the commit completes, clear the continuation flag:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
-```
-
 Move to the next finding.
 
 <HARD-GATE>
@@ -520,12 +496,6 @@ Record step completion:
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=3
-```
-
-Clear the continuation flag before self-invoking:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
 ```
 
 Check Code Review Plugin Mode Resolution:
@@ -599,12 +569,6 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise
 invoke `/flow:flow-commit`.
 
-After the commit completes, clear the continuation flag:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
-```
-
 Move to the next finding.
 
 <HARD-GATE>
@@ -642,12 +606,6 @@ Record step completion:
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=4
-```
-
-Clear the continuation flag before self-invoking:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
 ```
 
 To continue to Done, invoke `flow:flow-code-review --continue-step` using
