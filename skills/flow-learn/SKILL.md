@@ -319,12 +319,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 If commit=auto, use `/flow:flow-commit --auto`. Otherwise, use
 `/flow:flow-commit`.
 
-After the commit completes, clear the continuation flag and record step
-completion:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
-```
+After the commit completes, record step completion:
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=4

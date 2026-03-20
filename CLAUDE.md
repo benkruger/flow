@@ -92,6 +92,8 @@ CI will fail if these are missing:
 - `lib/update-pr-body.py` — updates PR body: `--add-artifact` for list items, `--append-section` for collapsible/plain sections
 - `lib/stop-continue.py` — Stop hook script that forces continuation when `_continue_pending` flag is set in the state file; reads `_continue_context` for specific next-step instructions in the block reason
 - `lib/post-compact.py` — PostCompact hook that captures `compact_summary`, `compact_cwd`, and `compact_count` in the state file for SessionStart to inject
+- `lib/tui_data.py` — pure data layer for TUI: loads state files, computes flow summaries, phase timelines, parses log entries
+- `lib/tui.py` — curses-based interactive TUI for viewing and managing active flows (`bin/flow tui`)
 - `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands and file-read commands in all Bash calls)
 - `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (blocks prompts when `_auto_continue` is set in state file)
 - `bin/flow` — dispatcher script routing subcommands to `lib/*.py`
@@ -220,6 +222,8 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_post_compact.py` | PostCompact hook: compact_summary/cwd/count written to state, fail-open on errors, subprocess integration |
 | `test_finalize_commit.py` | Commit finalization: happy path, commit/pull/push failures, merge conflict detection, message file cleanup, CLI |
 | `test_log.py` | Log append: existing file, new file, directory creation, multiple appends, CLI integration |
+| `test_tui_data.py` | TUI data layer: load_all_flows (0/1/N files, corrupt JSON, phases exclusion), flow_summary (all fields), phase_timeline (statuses, annotations), parse_log_entries (parsing, limits, malformed), read_version |
+| `test_tui.py` | TUI curses app: drawing (list/log/detail views), keyboard input (navigation, open worktree/PR, abort with confirm, refresh, quit), run loop (timeout, resize), edge cases (no flows, small terminal) |
 | `test_update_pr_body.py` | PR body management: artifact lines, section insertion, collapsible sections, add-artifact/append-section modes, idempotent replacement, content-file reading, CLI integration |
 | `test_orchestrate_state.py` | Orchestrate state: create, start-issue, record-outcome, complete, read, next, queue filtering, error paths, CLI |
 | `test_orchestrate_report.py` | Orchestrate report: all completed, mixed, all failed, empty queue, timing, PR URLs, failure reasons, summary file, CLI |

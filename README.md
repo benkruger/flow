@@ -148,6 +148,12 @@ Available at any point in the workflow:
 | `/flow-orchestrate` | Process decomposed issues overnight — batch orchestration via flow-start --auto |
 | `/flow-local-permission` | Promote permissions from settings.local.json into settings.json |
 
+### Standalone Tools
+
+| Command | What it does |
+|---------|-------------|
+| `bin/flow tui` | Interactive terminal UI — view active flows, open worktrees, tail logs, abort features (no Claude session needed) |
+
 ---
 
 ## Architecture
