@@ -21,6 +21,7 @@ REQUIRED_FEATURES = {
     "Minimal repo artifacts": [".flow-states"],
     "Multi-language": ["rails"],
     "Issue auto-close": ["close issues"],
+    "Batch orchestration": ["orchestrat"],
 }
 
 

@@ -147,6 +147,11 @@ PLACEHOLDER_SUBS = {
     "<file>": "lib/foo.py",
     "<skills_dict_json>": '{"flow-start":{"continue":"manual"}}',
     "<commit_format>": "full",
+    "<index>": "0",
+    "<outcome>": "completed",
+    "<pr_url>": "https://github.com/test/test/pull/1",
+    "<title>": "Test title",
+    "<reason>": "CI failed",
 }
 
 
