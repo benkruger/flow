@@ -1,5 +1,26 @@
 # Release Notes
 
+## v0.37.0 — Orchestration, Slack notifications, interactive TUI, and allow-list cleanup
+
+### New Features
+
+- **Flow Orchestration** — `/flow:flow-orchestrate` processes decomposed issues overnight, running each sequentially via `flow-start --auto`. Tracks state in `.flow-states/orchestrate.json` with morning report delivery (#300).
+- **Slack Thread Notifications** — optional thread-per-feature notifications. Each feature gets one Slack thread; every phase posts a reply. Two env vars + `/flow-prime` to configure (#308).
+- **Interactive TUI** — `bin/flow tui` launches a curses-based interface for viewing and managing active flows across worktrees (#299).
+- **Issues Impact Column** — `/flow:flow-issues` dashboard now shows issue impact for better prioritization (#307).
+
+### Improvements
+
+- Consolidate shared utilities into `flow_utils.py` — `PHASE_NAMES`, `COMMANDS`, and other constants centralized (#304).
+- Move flow reset logic to plugin for cleaner separation (#305).
+- Fix remaining continue-flag clears across phase transitions (#306).
+- Organize `.claude/settings.json` allow list — remove 13 redundant entries, consolidate `gh pr` entries, group by category (#312).
+- Support `.direnv` for environment management.
+
+### Fixes
+
+- Restore `Bash(cd *)` to settings.json allow list — the `validate-ci-bash.py` hook uses it as an independent whitelist.
+
 ## v0.36.2 — Release skill optimization and skill instruction cleanup
 
 ### Improvements
