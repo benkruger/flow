@@ -19,31 +19,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    derive_feature, find_state_files, format_time, load_phase_config, PACIFIC,
-    project_root, resolve_branch, COMMANDS, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER,
+    derive_feature, elapsed_since, find_state_files, format_time, load_phase_config,
+    PACIFIC, project_root, read_version, resolve_branch, COMMANDS, PHASE_NAMES,
+    PHASE_NUMBER, PHASE_ORDER,
 )
 
 # Column width for phase name alignment
 NAME_WIDTH = 12
-
-
-def _elapsed_since(started_at, now=None):
-    """Calculate elapsed seconds from an ISO timestamp to now."""
-    if not started_at:
-        return 0
-    if now is None:
-        now = datetime.now(PACIFIC)
-    start = datetime.fromisoformat(started_at)
-    return max(0, int((now - start).total_seconds()))
-
-
-def _read_version():
-    """Read plugin version from plugin.json next to this script."""
-    plugin_json = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
-    try:
-        return json.loads(plugin_json.read_text())["version"]
-    except Exception:
-        return "?"
 
 
 def format_panel(state, version, now=None, dev_mode=False, phase_config=None):
@@ -79,7 +61,7 @@ def format_panel(state, version, now=None, dev_mode=False, phase_config=None):
     lines.append(f"  PR      : {state.get('pr_url', 'N/A')}")
 
     # Elapsed time
-    elapsed = _elapsed_since(state.get("started_at"), now)
+    elapsed = elapsed_since(state.get("started_at"), now)
     lines.append(f"  Elapsed : {format_time(elapsed)}")
 
     # Notes count (omit if zero)
@@ -120,7 +102,7 @@ def format_panel(state, version, now=None, dev_mode=False, phase_config=None):
         seconds = current_phase_data.get("cumulative_seconds", 0)
         session_started = current_phase_data.get("session_started_at")
         if session_started:
-            seconds += _elapsed_since(session_started, now)
+            seconds += elapsed_since(session_started, now)
         visits = current_phase_data.get("visit_count", 0)
         lines.append(f"  Time in current phase : {format_time(seconds)}")
         lines.append(f"  Times visited         : {visits}")
@@ -233,7 +215,7 @@ def main():
     if not results:
         sys.exit(1)
 
-    version = _read_version()
+    version = read_version()
     dev_mode = (root / ".flow-states" / ".dev-mode").exists()
 
     if len(results) > 1:
