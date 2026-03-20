@@ -68,6 +68,7 @@ UNIVERSAL_ALLOW = [
     "Bash(claude plugin marketplace add *)",
     "Bash(claude plugin install *)",
     "Bash(gh issue *)",
+    "Bash(curl *)",
     "Read(~/.claude/rules/*)",
     "Read(//tmp/*.txt)",
     "Read(//tmp/*.diff)",
