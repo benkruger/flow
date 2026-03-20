@@ -9,6 +9,7 @@ Output (JSON to stdout):
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -76,6 +77,11 @@ def format_complete_summary(state):
         lines.append("  " + "─" * 28)
         if issues:
             lines.append(f"  Issues filed: {len(issues)}")
+            for issue in issues:
+                url = issue.get("url", "")
+                match = re.search(r"/issues/(\d+)$", url)
+                ref = f"#{match.group(1)}" if match else url
+                lines.append(f"    [{issue['label']}] {ref}: {issue['title']}")
         if notes:
             lines.append(f"  Notes captured: {len(notes)}")
         lines.append("")
