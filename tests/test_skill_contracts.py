@@ -1393,22 +1393,22 @@ def test_learning_files_rule_issues():
 
 
 def test_learning_files_flow_issues_not_learning():
-    """Learn Step 6 must use label 'Flow', not 'learning'."""
+    """Learn Step 5 must use label 'Flow', not 'learning'."""
     content = _read_skill("flow-learn")
-    # Step 6 section
-    step6_match = re.search(
-        r"## Step 6.*?\n(.*?)(?:\n## Step 7|\n---)", content, re.DOTALL
+    # Step 5 section
+    step5_match = re.search(
+        r"## Step 5.*?\n(.*?)(?:\n## Step 6|\n---)", content, re.DOTALL
     )
-    assert step6_match, "Learn skill has no Step 6 section"
-    step6_text = step6_match.group(1)
-    assert "--label" in step6_text, (
-        "Learn Step 6 must specify a --label for issue filing"
+    assert step5_match, "Learn skill has no Step 5 section"
+    step5_text = step5_match.group(1)
+    assert "--label" in step5_text, (
+        "Learn Step 5 must specify a --label for issue filing"
     )
-    assert "Flow" in step6_text, (
-        "Learn Step 6 must use label 'Flow' for process gap issues"
+    assert "Flow" in step5_text, (
+        "Learn Step 5 must use label 'Flow' for process gap issues"
     )
-    assert 'learning' not in step6_text.split("--label")[1].split("\n")[0].lower(), (
-        "Learn Step 6 must not use label 'learning' — use 'Flow' instead"
+    assert 'learning' not in step5_text.split("--label")[1].split("\n")[0].lower(), (
+        "Learn Step 5 must not use label 'learning' — use 'Flow' instead"
     )
 
 
@@ -1596,31 +1596,6 @@ def test_prime_presets_cover_all_configurable_skills():
             )
 
 
-# --- Local permission skill contracts ---
-
-
-def test_local_permission_skill_has_delete_command():
-    """flow-local-permission SKILL.md must contain the rm command
-    for deleting .claude/settings.local.json."""
-    content = _read_skill("flow-local-permission")
-    assert "rm .claude/settings.local.json" in content, (
-        "skills/flow-local-permission/SKILL.md missing "
-        "'rm .claude/settings.local.json' delete command"
-    )
-
-
-def test_local_permission_skill_uses_read_and_edit_tools():
-    """flow-local-permission SKILL.md must reference Read and Edit tools
-    for the permission merge workflow."""
-    content = _read_skill("flow-local-permission")
-    assert "Read" in content, (
-        "skills/flow-local-permission/SKILL.md missing 'Read' tool reference"
-    )
-    assert "Edit" in content, (
-        "skills/flow-local-permission/SKILL.md missing 'Edit' tool reference"
-    )
-
-
 def test_quadruple_fenced_blocks_use_markdown_and_text():
     """All ````-fenced blocks in skills must use ````markdown as the outer
     fence and ```text as the inner fence.
@@ -1680,22 +1655,6 @@ def test_quadruple_fenced_blocks_use_markdown_and_text():
     assert not errors, (
         f"Quadruple-fenced blocks with wrong pattern:\n"
         + "\n".join(f"  - {e}" for e in errors)
-    )
-
-
-def test_learning_step_4_invokes_local_permission():
-    """Learn SKILL.md Step 4 must invoke /flow:flow-local-permission."""
-    content = _read_skill("flow-learn")
-    step4_match = re.search(
-        r"## Step 4.*?\n(.*?)(?:\n## Step 5|\n---)", content, re.DOTALL
-    )
-    assert step4_match, (
-        "skills/flow-learn/SKILL.md has no Step 4 section"
-    )
-    step4_text = step4_match.group(1)
-    assert "/flow:flow-local-permission" in step4_text, (
-        "skills/flow-learn/SKILL.md Step 4 does not invoke "
-        "/flow:flow-local-permission"
     )
 
 
@@ -2201,7 +2160,7 @@ def test_learn_has_self_invocation_check():
 def _learn_step_text(step_num):
     """Extract Learn step section text by number."""
     content = _read_skill("flow-learn")
-    if step_num < 7:
+    if step_num < 6:
         next_header = f"## Step {step_num + 1}"
     else:
         next_header = "## Done"
@@ -2216,18 +2175,10 @@ def _learn_step_text(step_num):
 
 
 def test_learn_step_4_self_invokes():
-    """Learn Step 4 must self-invoke flow:flow-learn --continue-step."""
+    """Learn Step 4 (commit) must self-invoke flow:flow-learn --continue-step."""
     step_text = _learn_step_text(4)
     assert "flow:flow-learn --continue-step" in step_text, (
         "Step 4 must self-invoke via 'flow:flow-learn --continue-step'"
-    )
-
-
-def test_learn_step_5_self_invokes():
-    """Learn Step 5 must self-invoke flow:flow-learn --continue-step."""
-    step_text = _learn_step_text(5)
-    assert "flow:flow-learn --continue-step" in step_text, (
-        "Step 5 must self-invoke via 'flow:flow-learn --continue-step'"
     )
 
 
@@ -2235,7 +2186,6 @@ def test_learn_sets_continue_pending_before_child_skills():
     """Learn must set _continue_pending before each child skill invocation."""
     content = _read_skill("flow-learn")
     child_skills = [
-        ("local-permission", "/flow:flow-local-permission"),
         ("commit", "/flow:flow-commit"),
     ]
     for flag_value, skill_ref in child_skills:
@@ -2253,12 +2203,14 @@ def test_learn_sets_continue_pending_before_child_skills():
 
 
 def test_learn_steps_record_completion():
-    """Learn Steps 4 and 5 must record completion via set-timestamp."""
-    for step_num in [4, 5]:
-        step_text = _learn_step_text(step_num)
-        assert f"learn_step={step_num}" in step_text, (
-            f"Step {step_num} must contain 'learn_step={step_num}' marker"
-        )
+    """Learn Step 4 (commit) must record completion via set-timestamp."""
+    step_text = _learn_step_text(4)
+    assert "learn_step=4" in step_text, (
+        "Step 4 must contain 'learn_step=4' marker"
+    )
+    assert "learn_step=3" in step_text, (
+        "Step 4 must contain 'learn_step=3' for the skip-commit path"
+    )
 
 
 def test_plan_skill_does_not_reference_transcript_path():

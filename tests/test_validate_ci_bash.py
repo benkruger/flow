@@ -416,3 +416,153 @@ def test_hook_subprocess_no_settings(tmp_path):
     code, stderr = _run_hook("curl http://example.com", cwd=str(tmp_path))
     assert code == 0
     assert stderr == ""
+
+
+# --- Deny-list validation tests ---
+
+
+DENY_SETTINGS = {
+    "permissions": {
+        "allow": [
+            "Bash(git *)",
+        ],
+        "deny": [
+            "Bash(git rebase *)",
+            "Bash(git push --force *)",
+            "Bash(git push -f *)",
+            "Bash(git reset --hard *)",
+            "Bash(git stash *)",
+            "Bash(git checkout *)",
+            "Bash(git clean *)",
+        ],
+    }
+}
+
+
+def test_deny_blocks_matching_command():
+    """Command matching a deny pattern is blocked."""
+    mod = _load_module()
+    allowed, message = mod.validate("git rebase main", settings=DENY_SETTINGS)
+    assert allowed is False
+    assert "deny" in message.lower()
+
+
+def test_deny_overrides_allow():
+    """Command matching both allow and deny is blocked — deny wins."""
+    mod = _load_module()
+    allowed, message = mod.validate(
+        "git checkout feature-branch", settings=DENY_SETTINGS
+    )
+    assert allowed is False
+    assert "deny" in message.lower()
+
+
+def test_deny_blocks_force_push():
+    """git push --force matches deny pattern."""
+    mod = _load_module()
+    allowed, message = mod.validate(
+        "git push --force origin main", settings=DENY_SETTINGS
+    )
+    assert allowed is False
+    assert "deny" in message.lower()
+
+
+def test_deny_blocks_hard_reset():
+    """git reset --hard matches deny pattern."""
+    mod = _load_module()
+    allowed, message = mod.validate(
+        "git reset --hard HEAD~1", settings=DENY_SETTINGS
+    )
+    assert allowed is False
+    assert "deny" in message.lower()
+
+
+def test_deny_allows_non_matching_command():
+    """Command matching allow but not deny passes through."""
+    mod = _load_module()
+    allowed, message = mod.validate("git status", settings=DENY_SETTINGS)
+    assert allowed is True
+    assert message == ""
+
+
+def test_deny_skipped_when_no_settings():
+    """When settings=None, deny check is skipped."""
+    mod = _load_module()
+    allowed, message = mod.validate("git rebase main", settings=None)
+    assert allowed is True
+    assert message == ""
+
+
+def test_deny_skipped_when_empty_deny():
+    """When deny list is empty, no deny blocking occurs."""
+    mod = _load_module()
+    settings = {
+        "permissions": {
+            "allow": ["Bash(git status)"],
+            "deny": [],
+        }
+    }
+    allowed, message = mod.validate("git status", settings=settings)
+    assert allowed is True
+    assert message == ""
+
+
+def test_deny_skipped_when_no_deny_key():
+    """When permissions has no deny key, deny check is skipped."""
+    mod = _load_module()
+    settings = {
+        "permissions": {
+            "allow": ["Bash(git status)"],
+        }
+    }
+    allowed, message = mod.validate("git status", settings=settings)
+    assert allowed is True
+    assert message == ""
+
+
+def test_deny_runs_before_allow():
+    """Deny check runs before allow check — denied command never reaches allow."""
+    mod = _load_module()
+    settings = {
+        "permissions": {
+            "allow": ["Bash(git stash *)"],
+            "deny": ["Bash(git stash *)"],
+        }
+    }
+    allowed, message = mod.validate("git stash save", settings=settings)
+    assert allowed is False
+    assert "deny" in message.lower()
+
+
+def test_hook_subprocess_deny_block(tmp_path):
+    """Full subprocess test: command blocked by deny list."""
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    settings = {
+        "permissions": {
+            "allow": ["Bash(git *)"],
+            "deny": ["Bash(git rebase *)"],
+        }
+    }
+    (claude_dir / "settings.json").write_text(json.dumps(settings))
+
+    code, stderr = _run_hook("git rebase main", cwd=str(tmp_path))
+    assert code == 2
+    assert "deny" in stderr.lower()
+
+
+def test_hook_subprocess_deny_allows_safe_command(tmp_path):
+    """Full subprocess test: safe command passes when deny list is present."""
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    settings = {
+        "permissions": {
+            "allow": ["Bash(git *)"],
+            "deny": ["Bash(git rebase *)"],
+        }
+    }
+    (claude_dir / "settings.json").write_text(json.dumps(settings))
+
+    code, stderr = _run_hook("git status", cwd=str(tmp_path))
+    assert code == 0
+    assert stderr == ""

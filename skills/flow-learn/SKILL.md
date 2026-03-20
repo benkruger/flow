@@ -123,8 +123,8 @@ gate — there is nothing to log.
 
 Read `learn_step` from the state file (default `0` if absent).
 
-- If `4` → Step 4 is done. Skip to Step 5.
-- If `5` → Steps 4-5 are done. Skip to Step 6.
+- If `3` → Step 3 is done. Skip to Step 4.
+- If `4` → Steps 3-4 are done. Skip to Step 5.
 
 ---
 
@@ -225,7 +225,7 @@ strengthen the rule (CLAUDE.md edit) or file a more specific Rule or
 Flow issue. Zero artifacts from Step 3 when Step 2 found mistakes is a
 skill failure.
 
-CLAUDE.md edits are direct — committed in Step 5.
+CLAUDE.md edits are direct — committed in Step 4.
 
 Rules edits are deferred — filed as GitHub issues with all context needed
 for a future session to apply them.
@@ -285,48 +285,13 @@ remaining items.
 
 ---
 
-## Step 4 — Promote local permissions (all modes)
+## Step 4 — Commit (conditional)
 
-Set the continuation context and flag before invoking the child skill:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_step=4, clear _continue_pending, then self-invoke flow:flow-learn --continue-step."
-```
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=local-permission
-```
-
-Invoke `/flow:flow-local-permission`.
-
-If it reports promoted entries, count `.claude/settings.json` as a
-repo-destination change for Step 5's commit decision.
-
-Record step completion:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=4
-```
-
-Clear the continuation flag:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
-```
-
-To continue to Step 5, invoke `flow:flow-learn --continue-step` using
-the Skill tool as your final action. If commit=auto was resolved, pass
-`--auto` as well. Do not output anything else after this invocation.
-
----
-
-## Step 5 — Commit (conditional)
-
-If no changes were made in Steps 3-4, record step completion and
+If no changes were made in Step 3, record step completion and
 self-invoke to skip the commit:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=5
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=3
 ```
 
 Then invoke `flow:flow-learn --continue-step` using the Skill tool as
@@ -344,7 +309,7 @@ user with excluded files), skip the commit gracefully — do not error.
 Set the continuation context and flag before committing:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_step=5, then self-invoke flow:flow-learn --continue-step."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_step=4, then self-invoke flow:flow-learn --continue-step."
 ```
 
 ```bash
@@ -362,16 +327,16 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=5
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=4
 ```
 
-To continue to Step 6, invoke `flow:flow-learn --continue-step` using
+To continue to Step 5, invoke `flow:flow-learn --continue-step` using
 the Skill tool as your final action. If commit=auto was resolved, pass
 `--auto` as well. Do not output anything else after this invocation.
 
 ---
 
-## Step 6 — File GitHub issues (Phase 5 only)
+## Step 5 — File GitHub issues (Phase 5 only)
 
 Skip for Maintainer and Standalone.
 
@@ -422,7 +387,7 @@ If there are no process gap or documentation drift items, skip this step.
 
 ---
 
-## Step 7 — Present report
+## Step 6 — Present report
 
 Present the full report to the user:
 
@@ -475,7 +440,7 @@ Omit "Changes applied" if no CLAUDE.md changes were made. Omit "Issues
 filed" if no issues were filed or not in Phase 5 mode.
 
 In the "Changes applied" section, show "(committed)" or "(uncommitted)"
-next to each file to indicate whether Step 5 committed it. Show
+next to each file to indicate whether Step 4 committed it. Show
 "(skipped — user denied)" next to any destination where the user denied
 the Edit tool call during Step 3.
 
@@ -570,10 +535,10 @@ No phase transition, no transition question.
 - Never commit application code in Learn — only CLAUDE.md and .claude/
 - Always read CLAUDE.md and conversation context before synthesizing findings
 - In Phase 5, read all three sources before synthesizing findings
-- Follow the learning process (Steps 1 through 7) exactly — do not skip or reorder steps
+- Follow the learning process (Steps 1 through 6) exactly — do not skip or reorder steps
 - Decisions on destinations and wording are autonomous — do not ask the user for approval mid-process
 - If the user denies an Edit tool call during Step 3, skip that learning and continue — a denied edit means "skip this one," not "stop the phase"
-- The report in Step 7 is the user's review point — make it comprehensive
+- The report in Step 6 is the user's review point — make it comprehensive
 - CLAUDE.md learnings are edited on disk and committed via `/flow:flow-commit --auto` (Phase 5 and Maintainer)
 - Rules learnings (`.claude/rules/`) are filed as GitHub issues with label "Rule" — never edited directly, to avoid permission prompts
 - Plugin process gaps are filed as GitHub issues on the plugin repo with label "Flow"
