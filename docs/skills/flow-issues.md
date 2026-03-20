@@ -29,7 +29,7 @@ Fetches all open issues for the current repository, categorizes them, prioritize
 5. Prioritizes using category-based default tiers (Bug/Flaky Test=High, Tech Debt/Rule/Flow/Documentation Drift=Medium, Enhancement/Other=Low), then applies impact and blocking modifiers that can promote one tier each — age is only a tiebreaker within the same tier
 6. Displays a summary line with total and per-category counts
 7. Prints an In Progress table for WIP issues (linked `[#N](url)`, Title columns)
-8. Prints a single Recommended Work Order table with columns: Order, Priority, Labels, # (linked), Title, Rationale — excluding in-progress issues. Sorting: explicit dependencies (topological sort) → priority → batches → implicit dependencies → decomposed boost → age. Each entry gets a copy-paste `/flow:flow-start` command listed after the table
+8. Prints a single Recommended Work Order table with columns: Order, Priority, Impact, Labels, # (linked), Title, Rationale — excluding in-progress issues. Sorting: explicit dependencies (topological sort) → priority → batches → implicit dependencies → decomposed boost → age. Each entry gets a copy-paste `/flow:flow-start` command listed after the table
 
 ---
 
