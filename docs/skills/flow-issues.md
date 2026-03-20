@@ -22,14 +22,14 @@ Fetches all open issues for the current repository, categorizes them, prioritize
 4. Analyzes issues across six dimensions:
    - **Batch detection** — scans bodies for shared file paths (2+ shared files groups issues into a batch via transitive closure)
    - **Dependency detection** — scans bodies for `#N` cross-references to build an explicit dependency graph between open issues
-   - **File count** — counts file path references per issue as a complexity signal
+   - **File count** — counts file path references per issue for batch detection
    - **Stale detection** — for issues older than 60 days, checks whether referenced files still exist via Glob and flags missing files
    - **Impact analysis** — scores each issue on cross-area scope, force-multiplier language, acceptance criteria density, and reverse reference count (4 signals, tier: High/Medium/Low)
    - **Blocking score** — computes reverse dependency count per issue to identify blockers
 5. Prioritizes using category-based default tiers (Bug/Flaky Test=High, Tech Debt/Rule/Flow/Documentation Drift=Medium, Enhancement/Other=Low), then applies impact and blocking modifiers that can promote one tier each — age is only a tiebreaker within the same tier
-6. Displays a summary line with total and per-category counts, plus an "In Progress" section for WIP issues
-7. Prints a markdown table per category with columns: #, Title, Files, Age, Priority — sorted by priority then age. Annotations: `[In Progress]`, `[Decomposed]`, `[Stale: N files missing]`
-8. Prints a Recommended Work Order excluding in-progress issues. Explicit dependencies (from `#N` cross-references) are resolved first via topological sort, then priority, batches, implicit dependencies, decomposed boost, and age. Each entry includes a copy-paste `/flow:flow-start` command
+6. Displays a summary line with total and per-category counts
+7. Prints an In Progress table for WIP issues (linked `[#N](url)`, Title columns)
+8. Prints a single Recommended Work Order table with columns: Order, Priority, Labels, # (linked), Title, Rationale — excluding in-progress issues. Sorting: explicit dependencies (topological sort) → priority → batches → implicit dependencies → decomposed boost → age. Each entry gets a copy-paste `/flow:flow-start` command listed after the table
 
 ---
 
