@@ -266,7 +266,12 @@ This must be green before committing.
 
 - Read the output carefully
 - Fix each failure following the **CI Failure Fix Order** from the project CLAUDE.md
-- Re-run `bin/flow ci` after each fix
+- Re-run CI after each fix:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+```
+
 - Max 3 attempts — if still failing after 3, stop and report exactly what is failing
 
 **Flaky test detection:** If a test fails on one attempt but passes on a
