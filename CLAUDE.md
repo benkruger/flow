@@ -224,7 +224,6 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 
 - `/flow-qa` — `.claude/skills/flow-qa/SKILL.md` — `--start`/`--stop` dev mode: uninstall marketplace plugin for local `--plugin-dir` testing, reinstall when done. **Always run `/flow-qa --start` before `/flow:flow-start` when developing FLOW.** The installed marketplace plugin enforces its own phase count and skill gates, which conflict with the source being developed and break the workflow mid-feature.
 - `/flow-release` — `.claude/skills/flow-release/SKILL.md` — bump version, tag, push, create GitHub Release
-- `/flow-reset` — `.claude/skills/flow-reset/SKILL.md` — remove all FLOW artifacts (worktrees, branches, PRs, state files)
 
 ## Conventions
 

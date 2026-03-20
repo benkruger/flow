@@ -56,6 +56,7 @@ UNIVERSAL_ALLOW = [
     "Bash(gh pr create *)",
     "Bash(gh pr edit *)",
     "Bash(gh pr close *)",
+    "Bash(gh pr list *)",
     "Bash(bin/*)",
     "Bash(rm .flow-*)",
     "Bash(*bin/flow *)",
