@@ -435,6 +435,49 @@
       color: var(--accent);
       font-weight: 700;
     }
+
+    .terminal {
+      background: #13111c;
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 24px 0;
+      border: 1px solid #2d2844;
+    }
+
+    .terminal-bar {
+      background: #1c1929;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .terminal-bar span {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .terminal-bar .t-close { background: #ff5f57; }
+    .terminal-bar .t-min { background: #febc2e; }
+    .terminal-bar .t-max { background: #28c840; }
+
+    .terminal-body {
+      padding: 16px 20px;
+      font-family: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.55;
+      color: #b8b0d0;
+      white-space: pre;
+      overflow-x: auto;
+    }
+
+    .t-bold { color: #ede9fe; font-weight: 600; }
+    .t-accent { color: #a78bfa; }
+    .t-green { color: #34d399; }
+    .t-dim { color: #64607a; }
+    .t-footer { color: #7c7594; }
   </style>
 </head>
 <body>
@@ -667,13 +710,78 @@
       </tbody>
     </table>
 
-    <h3>Standalone Tools</h3>
+  </section>
+
+  <!-- TERMINAL UI -->
+  <section>
+    <h2>Terminal Dashboard</h2>
+    <p>Monitor every active flow from your terminal. No Claude session needed &mdash; <code>bin/flow tui</code> reads state files directly and auto-refreshes every 2 seconds.</p>
+
+    <div class="terminal">
+      <div class="terminal-bar">
+        <span class="t-close"></span>
+        <span class="t-min"></span>
+        <span class="t-max"></span>
+      </div>
+      <div class="terminal-body">
+<span class="t-dim">────</span> <span class="t-bold">FLOW v0.37.0</span> <span class="t-dim">──────────────────────────────────────────────</span>
+
+  <span class="t-bold">Active Flows (2)</span>
+  <span class="t-dim">──────────────────────────────────────────────────────</span>
+  <span class="t-bold">&#9656; invoice-pdf-export          3: Code         12m      PR #42</span>
+    slack-thread-replies        2: Plan          5m      PR #41
+  <span class="t-dim">──────────────────────────────────────────────────────</span>
+
+  <span class="t-bold">invoice-pdf-export</span>
+  Branch: <span class="t-accent">flow/invoice-pdf-export</span>
+  Worktree: <span class="t-accent">.worktrees/invoice-pdf-export</span>
+
+  <span class="t-green">[x]</span> Start          &lt;1m
+  <span class="t-green">[x]</span> Plan           3m
+  <span class="t-accent">[&gt;]</span> Code           <span class="t-dim">(task 2/5)</span>
+  <span class="t-dim">[ ]</span> Code Review
+  <span class="t-dim">[ ]</span> Learn
+  <span class="t-dim">[ ]</span> Complete
+
+  Notes: 1  <span class="t-dim">&#9474;</span>  Issues: 2 filed
+
+  <span class="t-footer">[&#8593;&#8595;] Navigate  [Enter] Worktree  [p] PR  [l] Log  [a] Abort  [r] Refresh  [q] Quit</span></div>
+    </div>
+
+    <div class="cool-grid">
+      <div class="cool-card-front">
+        <span class="cool-icon">&#9618;</span>
+        <div class="cool-headline">No Claude Needed</div>
+        <p class="cool-desc">Runs standalone in your terminal. Check on flows while Claude is busy, between sessions, or from another machine.</p>
+      </div>
+
+      <div class="cool-card-front">
+        <span class="cool-icon">&#8635;</span>
+        <div class="cool-headline">Live Refresh</div>
+        <p class="cool-desc">Auto-reads state files every 2 seconds. Phase transitions, code task progress, and log entries appear as they happen.</p>
+      </div>
+
+      <div class="cool-card-front">
+        <span class="cool-icon">&#9000;</span>
+        <div class="cool-headline">Full Control</div>
+        <p class="cool-desc">Open worktrees in a new tab, jump to PRs in your browser, tail session logs, abort features &mdash; all from the keyboard.</p>
+      </div>
+    </div>
+
+    <h3>Keyboard Actions</h3>
     <table>
       <thead>
-        <tr><th>Command</th><th>What it does</th></tr>
+        <tr><th>Key</th><th>Action</th></tr>
       </thead>
       <tbody>
-        <tr><td><code>bin/flow tui</code></td><td>Interactive terminal UI &mdash; view active flows, open worktrees, tail logs, abort features (no Claude session needed)</td></tr>
+        <tr><td><code>&#8593;</code> <code>&#8595;</code></td><td>Navigate flow list</td></tr>
+        <tr><td><code>Enter</code></td><td>Open worktree in new Terminal tab</td></tr>
+        <tr><td><code>p</code></td><td>Open PR in browser</td></tr>
+        <tr><td><code>l</code></td><td>Show session log</td></tr>
+        <tr><td><code>a</code></td><td>Abort flow (with Y/N confirmation)</td></tr>
+        <tr><td><code>r</code></td><td>Force refresh</td></tr>
+        <tr><td><code>Esc</code></td><td>Back to list view</td></tr>
+        <tr><td><code>q</code></td><td>Quit</td></tr>
       </tbody>
     </table>
   </section>
