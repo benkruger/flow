@@ -44,22 +44,16 @@ def _find_settings_json():
     return None
 
 
-def _build_allow_regexes(settings):
-    """Extract Bash(...) allow patterns from settings and compile to regexes."""
-    allow = settings.get("permissions", {}).get("allow", [])
-    regexes = []
-    for entry in allow:
-        regex = permission_to_regex(entry)
-        if regex is not None:
-            regexes.append(regex)
-    return regexes
+def _build_permission_regexes(settings, list_key):
+    """Extract Bash(...) patterns from settings and compile to regexes.
 
-
-def _build_deny_regexes(settings):
-    """Extract Bash(...) deny patterns from settings and compile to regexes."""
-    deny = settings.get("permissions", {}).get("deny", [])
+    Args:
+        settings: The parsed .claude/settings.json dict.
+        list_key: Either "allow" or "deny".
+    """
+    entries = settings.get("permissions", {}).get(list_key, [])
     regexes = []
-    for entry in deny:
+    for entry in entries:
         regex = permission_to_regex(entry)
         if regex is not None:
             regexes.append(regex)
@@ -91,7 +85,7 @@ def validate(command, settings=None):
 
     # Deny-list check — deny always wins over allow
     if settings is not None:
-        deny_regexes = _build_deny_regexes(settings)
+        deny_regexes = _build_permission_regexes(settings, "deny")
         if deny_regexes:
             for regex in deny_regexes:
                 if regex.match(stripped):
@@ -110,7 +104,7 @@ def validate(command, settings=None):
 
     # Whitelist check — only if settings are available
     if settings is not None:
-        regexes = _build_allow_regexes(settings)
+        regexes = _build_permission_regexes(settings, "allow")
         if regexes:
             matched = any(r.match(command) for r in regexes)
             if not matched:
