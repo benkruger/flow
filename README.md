@@ -28,6 +28,10 @@ Every skill has two independent axes — **commit** (show diffs or auto-commit) 
 
 No containers. No external dependencies. Native tools only — git, gh, your linter, your test runner. Every command is pre-approved in `.claude/settings.json` so you never see a permission prompt. Worktree isolation protects main — multiple features run in parallel without touching your working branch.
 
+### Slack Notifications
+
+Optional thread-per-feature notifications give your team passive awareness of feature progress. Each feature gets one Slack thread — every phase posts a reply, building a narrative from start to merge. Set two env vars, run `/flow-prime`, done. See [Slack Integration](docs/integrations/slack.md).
+
 ---
 
 ## The Workflow
