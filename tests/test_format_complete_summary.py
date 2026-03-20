@@ -162,13 +162,10 @@ def test_summary_uses_format_time():
     assert "5m" in result["summary"]
 
 
-def test_read_version_fallback_on_error():
-    """_read_version returns '?' when plugin.json cannot be read."""
-    from unittest.mock import patch
-    mod = _import_module()
-    with patch("pathlib.Path.read_text", side_effect=FileNotFoundError("no file")):
-        result = mod._read_version()
-    assert result == "?"
+def test_read_version_fallback_on_error(tmp_path):
+    """read_version_from returns '?' when plugin.json cannot be read."""
+    from flow_utils import read_version_from
+    assert read_version_from(tmp_path / "nonexistent.json") == "?"
 
 
 def test_summary_heavy_borders():
