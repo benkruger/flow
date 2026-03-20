@@ -1138,11 +1138,12 @@ def test_settings_allow_list_ordered_by_category():
     but no entry from an earlier category may appear after an entry from
     a later category."""
     permissions = _load_settings_permissions()
-    category_order = [cat for cat, _ in SETTINGS_ALLOW_CATEGORIES]
+    category_index = {cat: i for i, (cat, _) in enumerate(SETTINGS_ALLOW_CATEGORIES)}
+    category_names = [cat for cat, _ in SETTINGS_ALLOW_CATEGORIES]
 
     errors = []
-    max_category_index = -1
-    max_category_name = None
+    last_category_index = -1
+    last_category_name = None
 
     for entry in permissions:
         category = _categorize_entry(entry)
@@ -1153,16 +1154,16 @@ def test_settings_allow_list_ordered_by_category():
             )
             continue
 
-        index = category_order.index(category)
-        if index < max_category_index:
+        index = category_index[category]
+        if index < last_category_index:
             errors.append(
                 f"Entry '{entry}' (category: {category}) appears after "
-                f"'{max_category_name}' entries. Expected order: "
-                f"{' → '.join(category_order)}"
+                f"'{last_category_name}' entries. Expected order: "
+                f"{' → '.join(category_names)}"
             )
         else:
-            max_category_index = index
-            max_category_name = category
+            last_category_index = index
+            last_category_name = category
 
     assert not errors, (
         f"Allow list in .claude/settings.json is not ordered by category:\n"
