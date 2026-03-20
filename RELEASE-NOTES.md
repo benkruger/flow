@@ -1,5 +1,23 @@
 # Release Notes
 
+## v0.36.2 — Release skill optimization and skill instruction cleanup
+
+### Improvements
+
+- Speed up flow-release skill from ~12 to ~10 LLM round trips by
+  batching independent Read operations into Step 2, parallelizing
+  make bump with Edit RELEASE-NOTES.md, and eliminating the
+  redundant git push tag step (#276).
+- Convert prose tool instructions to explicit bash blocks across
+  flow-start, flow-plan, flow-code, and flow-code-review skills
+  for consistent permission matching (#286).
+- Simplify flow-issues display by removing redundant status column
+  and streamlining category table output (#284).
+
+### Housekeeping
+
+- Remove accidentally committed cost tracking files.
+
 ## v0.36.1 — Issues category tiers
 
 - Improved flow-issues categorization with two-tier system: label-based
