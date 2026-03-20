@@ -44,11 +44,16 @@ def _find_settings_json():
     return None
 
 
-def _build_allow_regexes(settings):
-    """Extract Bash(...) allow patterns from settings and compile to regexes."""
-    allow = settings.get("permissions", {}).get("allow", [])
+def _build_permission_regexes(settings, list_key):
+    """Extract Bash(...) patterns from settings and compile to regexes.
+
+    Args:
+        settings: The parsed .claude/settings.json dict.
+        list_key: Either "allow" or "deny".
+    """
+    entries = settings.get("permissions", {}).get(list_key, [])
     regexes = []
-    for entry in allow:
+    for entry in entries:
         regex = permission_to_regex(entry)
         if regex is not None:
             regexes.append(regex)
@@ -78,6 +83,16 @@ def validate(command, settings=None):
                 "Use 'git restore <file>' for each file individually. "
                 "Before restoring, run 'git diff' to capture what will be lost.")
 
+    # Deny-list check — deny always wins over allow
+    if settings is not None:
+        deny_regexes = _build_permission_regexes(settings, "deny")
+        if deny_regexes:
+            for regex in deny_regexes:
+                if regex.match(stripped):
+                    return (False,
+                            f"BLOCKED: Command matches deny list: '{command}'. "
+                            f"This operation is explicitly forbidden.")
+
     # Block file-read commands
     first_word = stripped.split()[0] if stripped else ""
     if first_word in FILE_READ_COMMANDS:
@@ -89,7 +104,7 @@ def validate(command, settings=None):
 
     # Whitelist check — only if settings are available
     if settings is not None:
-        regexes = _build_allow_regexes(settings)
+        regexes = _build_permission_regexes(settings, "allow")
         if regexes:
             matched = any(r.match(command) for r in regexes)
             if not matched:
