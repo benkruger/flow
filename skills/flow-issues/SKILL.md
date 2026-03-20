@@ -186,7 +186,10 @@ skip this section.
 ### Recommended Work Order
 
 Print a "Recommended Work Order" section as a single markdown table.
-Columns: `Order`, `Priority`, `Labels`, `#`, `Title`, `Rationale`.
+Columns: `Order`, `Priority`, `Impact`, `Labels`, `#`, `Title`, `Rationale`.
+
+The `Impact` column shows the impact tier from Step 4d: `High`, `Medium`,
+or `Low`.
 
 The `#` column shows a markdown link: `[#N](issue_url)`.
 
