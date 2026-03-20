@@ -48,7 +48,77 @@ Skip the Announce banner and jump directly to Step N.
 - `--step 3` → jump to Step 3
 - `--step 4` → jump to Step 4
 
-If no `--step` flag was passed, proceed to Step 1.
+If no `--step` flag was passed, proceed to Input Classification.
+
+---
+
+## Input Classification
+
+Before entering the 4-step pipeline, evaluate the user's input to determine
+whether it describes a concrete problem or an exploratory design question.
+
+**Concrete problem signals** — proceed to Step 1:
+
+- Bug or failure language: "fails", "broken", "error", "crashes", "wrong"
+- Specific symptoms: error messages, stack traces, reproduction steps
+- Issue references: `#N` patterns pointing to existing issues
+- Action verbs: "fix", "add", "implement", "update", "change"
+- A clear description of what is wrong and what should be different
+
+**Exploratory question signals** — proceed to Exploration Mode:
+
+- Question form: "what could we", "how might we", "what if", "should we"
+- Brainstorming language: "ideas for", "thoughts on", "explore", "investigate"
+- No specific failure or symptom described
+- Asks about possibilities or design options rather than problems
+
+**If the input is clearly concrete** — skip Exploration Mode and proceed
+directly to Step 1 below.
+
+**If the input is clearly exploratory** — proceed to Exploration Mode below.
+
+**If ambiguous** — ask the user which mode they prefer using AskUserQuestion:
+
+> "This could be explored as a design question or decomposed as a concrete
+> issue. Which would you prefer?"
+>
+> - **Design exploration** — discuss the topic before filing
+> - **File an issue** — decompose and draft an issue now
+
+Route based on the user's choice.
+
+---
+
+## Exploration Mode
+
+This mode facilitates a design discussion grounded in the codebase. The goal
+is to help the user think through a problem space, not to file an issue
+immediately.
+
+1. Acknowledge that this is a design exploration, not an issue filing pipeline
+2. Explore the codebase relevant to the topic using Glob, Grep, and Read to
+   ground the discussion in what actually exists
+3. Present findings and design options to the user
+4. Discuss interactively — use AskUserQuestion to gather the user's
+   perspective, iterate on ideas, and refine the direction
+
+**Exit paths:**
+
+When the discussion produces a concrete problem the user wants to file:
+
+- Ask "Ready to file this as an issue?" using AskUserQuestion
+- If yes — proceed to Step 1 below with the refined problem statement
+- If the user identifies multiple issues — ask which to start with, then
+  proceed to Step 1 for the chosen issue
+
+When the user is satisfied with the exploration:
+
+- The user may say "that's enough", "thanks", or indicate they are done
+- Stop without filing — no issue is required
+
+When the user wants to cancel:
+
+- Stop without filing
 
 ---
 
