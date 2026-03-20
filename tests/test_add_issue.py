@@ -218,8 +218,8 @@ def test_write_failure_returns_error(state_dir, git_repo):
     assert "Failed to add" in data["message"]
 
 
-def test_error_ambiguous_multiple_state_files(state_dir, git_repo):
-    """Multiple state files with no exact match returns ambiguity error."""
+def test_noop_ambiguous_multiple_state_files(state_dir, git_repo):
+    """Multiple state files with no exact match returns no_state (silent no-op)."""
     for name in ["feat-a", "feat-b"]:
         state = make_state(current_phase="flow-code", phase_statuses={
             "flow-start": "complete", "flow-plan": "complete",
@@ -229,8 +229,6 @@ def test_error_ambiguous_multiple_state_files(state_dir, git_repo):
 
     result = _run("Rule", "test", "https://example.com", "flow-learn", cwd=git_repo)
 
-    assert result.returncode == 1
+    assert result.returncode == 0
     data = json.loads(result.stdout)
-    assert data["status"] == "error"
-    assert "Multiple" in data["message"]
-    assert sorted(data["candidates"]) == ["feat-a", "feat-b"]
+    assert data["status"] == "no_state"
