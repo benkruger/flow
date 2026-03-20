@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import extract_issue_numbers, project_root, read_version
+from flow_utils import project_root, read_version
 from tui_data import (
     load_all_flows, load_orchestration, orchestration_summary,
     parse_log_entries, phase_timeline,
@@ -101,8 +101,6 @@ class TuiApp:
         if self.orch_data and self.orch_data["is_running"]:
             processed = self.orch_data["completed_count"] + self.orch_data["failed_count"]
             orch_label = f"Orchestration ({processed}/{self.orch_data['total']})"
-        elif self.orch_data:
-            orch_label = "Orchestration"
         else:
             orch_label = "Orchestration"
 
@@ -116,19 +114,20 @@ class TuiApp:
         col += 2
         self._safe_addstr(row, col, orch_label, orch_attr)
 
+    def _draw_header(self):
+        """Draw the shared version header, tab bar, and separator."""
+        _, max_x = self.stdscr.getmaxyx()
+        border = "\u2500" * max_x
+        self._safe_addstr(0, 0, border, curses.A_DIM)
+        self._safe_addstr(0, 2, f" FLOW v{self.version} ", curses.A_BOLD)
+        self._draw_tab_bar(2)
+        self._safe_addstr(3, 2, "\u2500" * min(54, max_x - 4), curses.A_DIM)
+
     def _draw_list_view(self):
         """Draw the flow list and detail panel."""
         max_y, max_x = self.stdscr.getmaxyx()
 
-        # Header
-        header = f" FLOW v{self.version} "
-        border = "\u2500" * max_x
-        self._safe_addstr(0, 0, border, curses.A_DIM)
-        self._safe_addstr(0, 2, header, curses.A_BOLD)
-
-        # Tab bar
-        self._draw_tab_bar(2)
-        self._safe_addstr(3, 2, "\u2500" * min(54, max_x - 4), curses.A_DIM)
+        self._draw_header()
 
         if not self.flows:
             self._safe_addstr(4, 2, "No active flows.")
@@ -370,15 +369,7 @@ class TuiApp:
         """Draw the orchestration queue view."""
         max_y, max_x = self.stdscr.getmaxyx()
 
-        # Header
-        header = f" FLOW v{self.version} "
-        border = "\u2500" * max_x
-        self._safe_addstr(0, 0, border, curses.A_DIM)
-        self._safe_addstr(0, 2, header, curses.A_BOLD)
-
-        # Tab bar
-        self._draw_tab_bar(2)
-        self._safe_addstr(3, 2, "\u2500" * min(54, max_x - 4), curses.A_DIM)
+        self._draw_header()
 
         if not self.orch_data:
             self._safe_addstr(5, 2, "No orchestration running.")
@@ -456,10 +447,7 @@ class TuiApp:
 
 def _flow_matches_issue(flow, issue_number):
     """Check if a flow's prompt references the given issue number."""
-    state = flow.get("state", {})
-    prompt = state.get("prompt", "")
-    issue_nums = extract_issue_numbers(prompt)
-    return issue_number in issue_nums
+    return issue_number in flow.get("issue_numbers", set())
 
 
 def _main(stdscr):

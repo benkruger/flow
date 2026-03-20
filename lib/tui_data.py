@@ -16,7 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
     PACIFIC, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER,
-    derive_feature, derive_worktree, elapsed_since, format_time,
+    derive_feature, derive_worktree, elapsed_since,
+    extract_issue_numbers, format_time,
 )
 
 
@@ -43,6 +44,7 @@ def flow_summary(state, now=None):
         "diff_stats": state.get("diff_stats"),
         "notes_count": len(state.get("notes", [])),
         "issues_count": len(state.get("issues_filed", [])),
+        "issue_numbers": set(extract_issue_numbers(state.get("prompt", ""))),
         "phases": state.get("phases", {}),
         "state": state,
     }
