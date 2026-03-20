@@ -44,7 +44,7 @@ requires explicit confirmation.
 | **Scope** | Single feature | All features |
 | **When** | Abandon one feature | Clean everything |
 | **State file** | Required (warns if missing) | Not required |
-| **Phase gate** | None | Must be on `main` |
+| **Prerequisite** | Active FLOW feature | Must be on `main` |
 
 Use `/flow-abort` to walk away from one feature.
 Use `/flow-reset` to start completely fresh.
