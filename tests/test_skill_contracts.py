@@ -816,12 +816,7 @@ def test_learn_step3_requires_output_for_mistakes():
     When Learn identifies Claude mistakes in Step 2, Step 3 must not allow
     'existing rules cover it' as an escape hatch. Every mistake must produce
     at least one artifact (CLAUDE.md edit, Rule issue, or Flow issue)."""
-    content = _read_skill("flow-learn")
-    step3_match = re.search(
-        r"## Step 3.*?\n(.*?)(?=\n## Step 4|\Z)", content, re.DOTALL
-    )
-    assert step3_match, "flow-learn/SKILL.md has no Step 3 section"
-    step3_lower = step3_match.group(1).lower()
+    step3_lower = _learn_step_text(3).lower()
 
     assert (
         "every mistake must produce" in step3_lower
@@ -1394,13 +1389,7 @@ def test_learning_files_rule_issues():
 
 def test_learning_files_flow_issues_not_learning():
     """Learn Step 5 must use label 'Flow', not 'learning'."""
-    content = _read_skill("flow-learn")
-    # Step 5 section
-    step5_match = re.search(
-        r"## Step 5.*?\n(.*?)(?:\n## Step 6|\n---)", content, re.DOTALL
-    )
-    assert step5_match, "Learn skill has no Step 5 section"
-    step5_text = step5_match.group(1)
+    step5_text = _learn_step_text(5)
     assert "--label" in step5_text, (
         "Learn Step 5 must specify a --label for issue filing"
     )
