@@ -3,7 +3,7 @@
 import json
 from datetime import datetime
 
-from conftest import make_state, write_state
+from conftest import make_orchestrate_state, make_state, write_state
 
 import tui_data
 from flow_utils import PACIFIC, PHASE_ORDER, elapsed_since, read_version, read_version_from
@@ -349,3 +349,196 @@ def test_load_all_flows_skips_json_without_branch(state_dir):
     result = tui_data.load_all_flows(state_dir.parent)
     assert len(result) == 1
     assert result[0]["branch"] == "real-feature"
+
+
+# --- load_orchestration ---
+
+
+def test_load_orchestration_no_file(state_dir):
+    """Returns None when orchestrate.json does not exist."""
+    result = tui_data.load_orchestration(state_dir.parent)
+    assert result is None
+
+
+def test_load_orchestration_with_state(state_dir):
+    """Returns parsed state dict when orchestrate.json exists."""
+    orch = make_orchestrate_state(queue=[
+        {"issue_number": 42, "title": "Add PDF export", "status": "pending",
+         "started_at": None, "completed_at": None, "outcome": None,
+         "pr_url": None, "branch": None, "reason": None},
+    ])
+    (state_dir / "orchestrate.json").write_text(json.dumps(orch))
+
+    result = tui_data.load_orchestration(state_dir.parent)
+    assert result is not None
+    assert result["started_at"] == "2026-03-20T22:00:00-07:00"
+    assert len(result["queue"]) == 1
+
+
+def test_load_orchestration_corrupt_json(state_dir):
+    """Returns None on corrupt JSON."""
+    (state_dir / "orchestrate.json").write_text("{corrupt json")
+    result = tui_data.load_orchestration(state_dir.parent)
+    assert result is None
+
+
+def test_load_orchestration_no_state_dir(git_repo):
+    """Returns None when .flow-states/ does not exist."""
+    result = tui_data.load_orchestration(git_repo)
+    assert result is None
+
+
+# --- orchestration_summary ---
+
+
+STATUS_ICONS = {
+    "completed": "\u2713",
+    "failed": "\u2717",
+    "in_progress": "\u25b6",
+    "pending": "\u00b7",
+}
+
+
+def _make_queue_item(issue_number, title, status="pending",
+                     started_at=None, completed_at=None,
+                     outcome=None, pr_url=None, branch=None, reason=None):
+    """Build a queue item dict for tests."""
+    return {
+        "issue_number": issue_number,
+        "title": title,
+        "status": status,
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "outcome": outcome,
+        "pr_url": pr_url,
+        "branch": branch,
+        "reason": reason,
+    }
+
+
+def test_orchestration_summary_no_state():
+    """Returns None when state is None."""
+    result = tui_data.orchestration_summary(None)
+    assert result is None
+
+
+def test_orchestration_summary_default_now():
+    """Uses current time when now is not passed."""
+    orch = make_orchestrate_state(queue=[])
+    summary = tui_data.orchestration_summary(orch)
+    assert summary is not None
+    assert summary["total"] == 0
+
+
+def test_orchestration_summary_basic():
+    """Extracts queue items with status icons, elapsed, and counts."""
+    now = datetime(2026, 3, 21, 0, 0, 0, tzinfo=PACIFIC)
+    orch = make_orchestrate_state(queue=[
+        _make_queue_item(42, "Add PDF export", status="completed",
+                         outcome="completed",
+                         started_at="2026-03-20T22:00:00-07:00",
+                         completed_at="2026-03-20T23:24:00-07:00",
+                         pr_url="https://github.com/test/test/pull/58"),
+        _make_queue_item(43, "Fix login timeout", status="pending"),
+    ])
+
+    summary = tui_data.orchestration_summary(orch, now=now)
+
+    assert summary["total"] == 2
+    assert summary["completed_count"] == 1
+    assert summary["failed_count"] == 0
+    assert summary["is_running"] is True
+    assert len(summary["items"]) == 2
+    assert summary["items"][0]["icon"] == "\u2713"
+    assert summary["items"][0]["issue_number"] == 42
+    assert summary["items"][1]["icon"] == "\u00b7"
+
+
+def test_orchestration_summary_with_completed_and_failed():
+    """Correct counts for mixed outcomes."""
+    now = datetime(2026, 3, 21, 2, 0, 0, tzinfo=PACIFIC)
+    orch = make_orchestrate_state(queue=[
+        _make_queue_item(42, "A", status="completed", outcome="completed",
+                         started_at="2026-03-20T22:00:00-07:00",
+                         completed_at="2026-03-20T23:00:00-07:00"),
+        _make_queue_item(43, "B", status="failed", outcome="failed",
+                         started_at="2026-03-20T23:00:00-07:00",
+                         completed_at="2026-03-21T00:00:00-07:00",
+                         reason="CI failed after 3 attempts"),
+        _make_queue_item(44, "C", status="pending"),
+    ])
+
+    summary = tui_data.orchestration_summary(orch, now=now)
+
+    assert summary["completed_count"] == 1
+    assert summary["failed_count"] == 1
+    assert summary["total"] == 3
+    assert summary["items"][1]["icon"] == "\u2717"
+    assert summary["items"][1]["reason"] == "CI failed after 3 attempts"
+
+
+def test_orchestration_summary_in_progress_elapsed():
+    """Live elapsed time for in-progress item."""
+    now = datetime(2026, 3, 21, 0, 38, 0, tzinfo=PACIFIC)
+    orch = make_orchestrate_state(queue=[
+        _make_queue_item(45, "Update hooks", status="in_progress",
+                         started_at="2026-03-21T00:00:00-07:00"),
+    ], current_index=0)
+
+    summary = tui_data.orchestration_summary(orch, now=now)
+
+    assert summary["items"][0]["icon"] == "\u25b6"
+    assert summary["items"][0]["elapsed"] == "38m"
+
+
+def test_orchestration_summary_no_queue():
+    """Handles empty queue."""
+    now = datetime(2026, 3, 21, 0, 0, 0, tzinfo=PACIFIC)
+    orch = make_orchestrate_state(queue=[])
+
+    summary = tui_data.orchestration_summary(orch, now=now)
+
+    assert summary["total"] == 0
+    assert summary["items"] == []
+    assert summary["is_running"] is True
+
+
+def test_orchestration_summary_not_running():
+    """Completed orchestration with completed_at set."""
+    now = datetime(2026, 3, 21, 6, 0, 0, tzinfo=PACIFIC)
+    orch = make_orchestrate_state(
+        queue=[
+            _make_queue_item(42, "Done", status="completed", outcome="completed",
+                             started_at="2026-03-20T22:00:00-07:00",
+                             completed_at="2026-03-20T23:00:00-07:00"),
+        ],
+        completed_at="2026-03-20T23:00:00-07:00",
+    )
+
+    summary = tui_data.orchestration_summary(orch, now=now)
+
+    assert summary["is_running"] is False
+    assert summary["elapsed"] == "1h 0m"
+
+
+def test_queue_item_display_icons():
+    """Each status maps to the correct icon."""
+    now = datetime(2026, 3, 21, 0, 0, 0, tzinfo=PACIFIC)
+    orch = make_orchestrate_state(queue=[
+        _make_queue_item(1, "A", status="completed", outcome="completed",
+                         started_at="2026-03-20T22:00:00-07:00",
+                         completed_at="2026-03-20T23:00:00-07:00"),
+        _make_queue_item(2, "B", status="failed", outcome="failed",
+                         started_at="2026-03-20T22:00:00-07:00",
+                         completed_at="2026-03-20T23:00:00-07:00"),
+        _make_queue_item(3, "C", status="in_progress",
+                         started_at="2026-03-20T23:00:00-07:00"),
+        _make_queue_item(4, "D", status="pending"),
+    ], current_index=2)
+
+    summary = tui_data.orchestration_summary(orch, now=now)
+
+    assert summary["items"][0]["icon"] == "\u2713"
+    assert summary["items"][1]["icon"] == "\u2717"
+    assert summary["items"][2]["icon"] == "\u25b6"
+    assert summary["items"][3]["icon"] == "\u00b7"

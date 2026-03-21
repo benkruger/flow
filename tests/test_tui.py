@@ -27,7 +27,7 @@ def _make_stdscr(rows=40, cols=80):
     return mock
 
 
-def _make_app(stdscr=None, root=None, flows=None):
+def _make_app(stdscr=None, root=None, flows=None, orch_data=None):
     """Create a TuiApp with mocked dependencies."""
     if stdscr is None:
         stdscr = _make_stdscr()
@@ -37,6 +37,8 @@ def _make_app(stdscr=None, root=None, flows=None):
     app.version = "0.36.2"
     if flows is not None:
         app.flows = flows
+    if orch_data is not None:
+        app.orch_data = orch_data
     return app
 
 
@@ -155,6 +157,32 @@ def test_draw_list_view_with_flows():
     text = " ".join(calls)
     assert "Test Feature" in text
     assert "Code" in text
+
+
+def test_draw_list_view_multiple_flows_unselected_marker():
+    """Non-selected flows get a plain marker (no arrow, no diamond)."""
+    state1 = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    state2 = make_state(
+        current_phase="flow-plan",
+        phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
+    )
+    state2["branch"] = "second-feature"
+    flow1 = _flow_from_state(state1)
+    flow2 = _flow_from_state(state2)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow1, flow2])
+    app.selected = 0
+    app._draw_list_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    # Selected flow gets arrow marker, second flow gets plain space marker
+    assert "Second Feature" in text
+    assert "\u25b8 " in text  # arrow for selected
+    assert "  Second Feature" in text  # plain marker for unselected
 
 
 def test_draw_list_view_with_notes_and_issues():
@@ -708,3 +736,404 @@ def test_handle_input_dispatches_to_list_in_list_view():
     with patch.object(app, "_handle_list_input") as mock_list:
         app._handle_input(curses.KEY_UP)
         mock_list.assert_called_once_with(curses.KEY_UP)
+
+
+# --- Tab bar and orchestration view ---
+
+
+def _make_orch_data(items=None, elapsed="4h 12m", completed_count=0,
+                    failed_count=0, total=0, is_running=True):
+    """Build a minimal orchestration summary dict for tests."""
+    return {
+        "elapsed": elapsed,
+        "completed_count": completed_count,
+        "failed_count": failed_count,
+        "total": total if total else len(items or []),
+        "is_running": is_running,
+        "items": items or [],
+    }
+
+
+def _make_orch_item(issue_number, title, icon="\u00b7", status="pending",
+                    elapsed="", pr_url=None, reason=None):
+    """Build a minimal orchestration queue item dict for tests."""
+    return {
+        "icon": icon,
+        "issue_number": issue_number,
+        "title": title,
+        "elapsed": elapsed,
+        "pr_url": pr_url,
+        "reason": reason,
+        "status": status,
+    }
+
+
+def test_tui_app_init_has_tab_state():
+    """TuiApp initializes with tab-related state."""
+    stdscr = _make_stdscr()
+    with patch("tui.project_root", return_value=Path("/tmp/test")):
+        app = tui.TuiApp(stdscr)
+    assert app.active_tab == 0
+    assert app.orch_data is None
+    assert app.orch_selected == 0
+
+
+def test_draw_list_view_shows_tab_bar():
+    """Tab bar text appears in the list view output."""
+    state = make_state()
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "Active Flows" in text
+
+
+def test_tab_switch_right():
+    """Right arrow moves to orchestration tab."""
+    app = _make_app(flows=[])
+    app.active_tab = 0
+    app._handle_input(curses.KEY_RIGHT)
+    assert app.active_tab == 1
+
+
+def test_tab_switch_left():
+    """Left arrow returns to flows tab."""
+    app = _make_app(flows=[])
+    app.active_tab = 1
+    app._handle_input(curses.KEY_LEFT)
+    assert app.active_tab == 0
+
+
+def test_tab_switch_right_at_max():
+    """Right arrow at tab 1 stays at 1."""
+    app = _make_app(flows=[])
+    app.active_tab = 1
+    app._handle_input(curses.KEY_RIGHT)
+    assert app.active_tab == 1
+
+
+def test_tab_switch_left_at_min():
+    """Left arrow at tab 0 stays at 0."""
+    app = _make_app(flows=[])
+    app.active_tab = 0
+    app._handle_input(curses.KEY_LEFT)
+    assert app.active_tab == 0
+
+
+def test_draw_orchestration_view_no_state():
+    """Shows 'No orchestration running' when orch_data is None."""
+    stdscr = _make_stdscr(rows=20, cols=80)
+    app = _make_app(stdscr, flows=[])
+    app.active_tab = 1
+    app._draw_orchestration_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "No orchestration running" in text
+
+
+def test_draw_orchestration_view_with_queue():
+    """Shows queue items with status icons."""
+    items = [
+        _make_orch_item(42, "Add PDF export", icon="\u2713",
+                        status="completed", elapsed="1h 24m"),
+        _make_orch_item(43, "Fix login", icon="\u2717",
+                        status="failed", elapsed="1h 2m"),
+        _make_orch_item(45, "Update hooks", icon="\u25b6",
+                        status="in_progress", elapsed="38m"),
+        _make_orch_item(46, "Add rate limiting", icon="\u00b7"),
+    ]
+    orch = _make_orch_data(items=items, completed_count=1, failed_count=1,
+                           is_running=True)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app.active_tab = 1
+    app._draw_orchestration_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "\u2713" in text
+    assert "\u2717" in text
+    assert "\u25b6" in text
+    assert "#42" in text
+    assert "Add PDF export" in text
+
+
+def test_draw_orchestration_view_shows_elapsed():
+    """Shows total elapsed time."""
+    orch = _make_orch_data(items=[], elapsed="4h 12m", is_running=True)
+    stdscr = _make_stdscr(rows=20, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app.active_tab = 1
+    app._draw_orchestration_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "4h 12m" in text
+
+
+def test_flow_list_cross_tab_indicator():
+    """Shows diamond indicator on flow matching in-progress orchestration issue."""
+    state1 = make_state()
+    state1["branch"] = "alpha-feature"
+    state1["prompt"] = "unrelated work"
+    flow1 = _flow_from_state(state1)
+    state2 = make_state()
+    state2["branch"] = "bravo-feature"
+    state2["prompt"] = "work on issue #42"
+    flow2 = _flow_from_state(state2)
+    items = [
+        _make_orch_item(42, "Add PDF export", icon="\u25b6",
+                        status="in_progress", elapsed="38m"),
+    ]
+    orch = _make_orch_data(items=items, is_running=True)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow1, flow2], orch_data=orch)
+    app.selected = 0
+    app._draw_list_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "\u25c6" in text
+
+
+def test_orchestration_tab_up_down_navigation():
+    """Up/down keys navigate the orchestration queue."""
+    items = [
+        _make_orch_item(42, "A"),
+        _make_orch_item(43, "B"),
+        _make_orch_item(44, "C"),
+    ]
+    orch = _make_orch_data(items=items)
+    app = _make_app(flows=[], orch_data=orch)
+    app.active_tab = 1
+    app.orch_selected = 0
+    app._handle_orch_input(curses.KEY_DOWN)
+    assert app.orch_selected == 1
+    app._handle_orch_input(curses.KEY_UP)
+    assert app.orch_selected == 0
+    app._handle_orch_input(curses.KEY_UP)
+    assert app.orch_selected == 0
+
+
+def test_run_loop_draws_orchestration_view():
+    """Run loop draws orchestration view when active_tab is 1."""
+    stdscr = _make_stdscr()
+    stdscr.getch.side_effect = [ord("q")]
+    app = _make_app(stdscr, flows=[])
+    app.active_tab = 1
+    with patch("tui.curses.curs_set"), \
+         patch.object(app, "_draw_orchestration_view") as mock_draw:
+        app.run()
+        mock_draw.assert_called()
+
+
+def test_orchestration_tab_count_in_tab_bar():
+    """Tab bar shows Orchestration (N/M) when running."""
+    items = [
+        _make_orch_item(42, "A", icon="\u2713", status="completed"),
+        _make_orch_item(43, "B", icon="\u2717", status="failed"),
+        _make_orch_item(44, "C"),
+    ]
+    orch = _make_orch_data(items=items, completed_count=1, failed_count=1,
+                           is_running=True)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app._draw_list_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "2/3" in text
+
+
+def test_handle_input_dispatches_to_orch_in_orch_tab():
+    """Input dispatches to _handle_orch_input when on orchestration tab."""
+    app = _make_app(flows=[])
+    app.active_tab = 1
+    app.view = "list"
+    with patch.object(app, "_handle_orch_input") as mock_orch:
+        app._handle_input(curses.KEY_DOWN)
+        mock_orch.assert_called_once_with(curses.KEY_DOWN)
+
+
+# --- Orchestration view detail panel and keyboard ---
+
+
+def test_orch_i_key_opens_issue():
+    """'i' key opens issue URL in browser."""
+    state = make_state()
+    state["repo"] = "test/repo"
+    flow = _flow_from_state(state)
+    items = [_make_orch_item(42, "Add PDF export")]
+    orch = _make_orch_data(items=items)
+    app = _make_app(flows=[flow], orch_data=orch)
+    app.active_tab = 1
+    app.orch_selected = 0
+    with patch("tui.subprocess.Popen") as mock_popen:
+        app._handle_orch_input(ord("i"))
+        mock_popen.assert_called_once()
+        args = mock_popen.call_args[0][0]
+        assert args[0] == "open"
+        assert "test/repo" in args[1]
+        assert "/issues/42" in args[1]
+
+
+def test_orch_i_key_no_flows():
+    """'i' key does nothing when no flows to get repo from."""
+    items = [_make_orch_item(42, "Add PDF export")]
+    orch = _make_orch_data(items=items)
+    app = _make_app(flows=[], orch_data=orch)
+    app.active_tab = 1
+    with patch("tui.subprocess.Popen") as mock_popen:
+        app._handle_orch_input(ord("i"))
+        mock_popen.assert_not_called()
+
+
+def test_orch_i_key_no_items():
+    """'i' key does nothing when orch_data has no items."""
+    orch = _make_orch_data(items=[])
+    app = _make_app(flows=[], orch_data=orch)
+    app.active_tab = 1
+    with patch("tui.subprocess.Popen") as mock_popen:
+        app._handle_orch_input(ord("i"))
+        mock_popen.assert_not_called()
+
+
+def test_orch_r_key_refreshes():
+    """'r' key triggers refresh in orchestration tab."""
+    items = [_make_orch_item(42, "A")]
+    orch = _make_orch_data(items=items)
+    app = _make_app(flows=[], orch_data=orch)
+    app.active_tab = 1
+    with patch.object(app, "refresh_data") as mock_refresh:
+        app._handle_orch_input(ord("r"))
+        mock_refresh.assert_called_once()
+
+
+def test_orch_r_key_refreshes_no_items():
+    """'r' key triggers refresh even with no orch items."""
+    orch = _make_orch_data(items=[])
+    app = _make_app(flows=[], orch_data=orch)
+    app.active_tab = 1
+    with patch.object(app, "refresh_data") as mock_refresh:
+        app._handle_orch_input(ord("r"))
+        mock_refresh.assert_called_once()
+
+
+def test_orch_detail_panel_failed_shows_reason():
+    """Detail panel shows failure reason for failed items."""
+    items = [
+        _make_orch_item(43, "Fix login", icon="\u2717", status="failed",
+                        reason="CI failed after 3 attempts"),
+    ]
+    orch = _make_orch_data(items=items, failed_count=1)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app.active_tab = 1
+    app.orch_selected = 0
+    app._draw_orchestration_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "Reason:" in text
+    assert "CI failed after 3 attempts" in text
+
+
+def test_orch_detail_panel_completed_shows_pr():
+    """Detail panel shows PR URL for completed items."""
+    items = [
+        _make_orch_item(42, "Add PDF export", icon="\u2713", status="completed",
+                        elapsed="1h 24m",
+                        pr_url="https://github.com/test/test/pull/58"),
+    ]
+    orch = _make_orch_data(items=items, completed_count=1)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app.active_tab = 1
+    app.orch_selected = 0
+    app._draw_orchestration_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "PR:" in text
+    assert "pull/58" in text
+
+
+def test_orch_view_item_with_pr_url():
+    """Queue item line includes PR number when pr_url is set."""
+    items = [
+        _make_orch_item(42, "Done", icon="\u2713", status="completed",
+                        elapsed="1h 24m",
+                        pr_url="https://github.com/test/test/pull/58"),
+    ]
+    orch = _make_orch_data(items=items, completed_count=1)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app.active_tab = 1
+    app._draw_orchestration_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "PR 58" in text
+
+
+def test_refresh_data_clamps_orch_selected(state_dir):
+    """refresh_data clamps orch_selected when items shrink."""
+    app = _make_app(root=state_dir.parent)
+    app.orch_selected = 5
+    # Write a valid orchestrate.json with 1 item
+    orch = {
+        "started_at": "2026-03-20T22:00:00-07:00",
+        "completed_at": None,
+        "queue": [{"issue_number": 42, "title": "A", "status": "pending",
+                    "started_at": None, "completed_at": None, "outcome": None,
+                    "pr_url": None, "branch": None, "reason": None}],
+        "current_index": None,
+    }
+    (state_dir / "orchestrate.json").write_text(json.dumps(orch))
+    app.refresh_data()
+    assert app.orch_selected == 0
+
+
+def test_get_orch_issue_in_progress_none_when_all_pending():
+    """Returns None when no item is in_progress."""
+    items = [_make_orch_item(42, "A"), _make_orch_item(43, "B")]
+    orch = _make_orch_data(items=items)
+    app = _make_app(flows=[], orch_data=orch)
+    assert app._get_orch_issue_in_progress() is None
+
+
+def test_draw_tab_bar_orch_not_running():
+    """Tab bar shows 'Orchestration' without count when not running."""
+    orch = _make_orch_data(items=[], is_running=False)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app._draw_tab_bar(2)
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "Orchestration" in text
+    assert "/" not in text
+
+
+def test_detail_panel_small_terminal():
+    """Detail panel timeline breaks early on small terminal."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=12, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_detail_panel(4)
+
+
+def test_orch_input_no_data():
+    """Orch input handler does nothing when orch_data is None."""
+    app = _make_app(flows=[])
+    app.active_tab = 1
+    app.orch_data = None
+    app._handle_orch_input(curses.KEY_DOWN)
+
+
+def test_open_issue_no_orch_data():
+    """_open_issue does nothing when orch_data is None."""
+    app = _make_app(flows=[])
+    app.orch_data = None
+    with patch("tui.subprocess.Popen") as mock_popen:
+        app._open_issue()
+        mock_popen.assert_not_called()
