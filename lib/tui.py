@@ -22,6 +22,13 @@ from tui_data import (
 # Auto-refresh interval in milliseconds
 REFRESH_MS = 2000
 
+# Color pair IDs for curses.init_pair / curses.color_pair
+COLOR_COMPLETE = 1
+COLOR_ACTIVE = 2
+COLOR_FAILED = 3
+COLOR_HEADER = 4
+COLOR_LINK = 5
+
 
 class TuiApp:
     """Curses-based TUI application for FLOW."""
@@ -38,6 +45,7 @@ class TuiApp:
         self.active_tab = 0
         self.orch_data = None
         self.orch_selected = 0
+        self.use_color = False
 
     def refresh_data(self):
         """Re-read all state files and orchestration state."""
@@ -49,9 +57,29 @@ class TuiApp:
         if self.orch_data and self.orch_selected >= len(self.orch_data["items"]):
             self.orch_selected = max(0, len(self.orch_data["items"]) - 1)
 
+    def _init_colors(self):
+        """Initialize color pairs if the terminal supports color."""
+        if curses.has_colors():
+            curses.start_color()
+            curses.init_pair(COLOR_COMPLETE, curses.COLOR_GREEN, -1)
+            curses.init_pair(COLOR_ACTIVE, curses.COLOR_YELLOW, -1)
+            curses.init_pair(COLOR_FAILED, curses.COLOR_RED, -1)
+            curses.init_pair(COLOR_HEADER, curses.COLOR_CYAN, -1)
+            curses.init_pair(COLOR_LINK, curses.COLOR_BLUE, -1)
+            self.use_color = True
+        else:
+            self.use_color = False
+
+    def _color(self, pair_id):
+        """Return the color pair attribute, or 0 if colors are unavailable."""
+        if self.use_color:
+            return curses.color_pair(pair_id)
+        return 0
+
     def run(self):
         """Main loop."""
         curses.curs_set(0)
+        self._init_colors()
         self.stdscr.timeout(REFRESH_MS)
         self.refresh_data()
 
@@ -401,6 +429,7 @@ class TuiApp:
         curses.cbreak()
         self.stdscr.keypad(True)
         curses.curs_set(0)
+        self._init_colors()
         self.stdscr.timeout(REFRESH_MS)
         self.refresh_data()
 

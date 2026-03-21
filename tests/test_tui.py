@@ -35,6 +35,7 @@ def _make_app(stdscr=None, root=None, flows=None, orch_data=None):
     if root is not None:
         app.root = Path(root)
     app.version = "0.36.2"
+    app.use_color = False
     if flows is not None:
         app.flows = flows
     if orch_data is not None:
@@ -60,6 +61,57 @@ def test_tui_app_init():
     assert app.view == "list"
     assert app.running is True
     assert app.confirming_abort is False
+
+
+def test_make_app_sets_use_color_false():
+    """_make_app helper always sets use_color to False."""
+    app = _make_app()
+    assert app.use_color is False
+
+
+# --- _init_colors ---
+
+
+def test_init_colors_with_color_support():
+    """_init_colors initializes color pairs when terminal supports color."""
+    app = _make_app()
+    with patch("tui.curses.has_colors", return_value=True), \
+         patch("tui.curses.start_color") as mock_start, \
+         patch("tui.curses.init_pair") as mock_init_pair:
+        app._init_colors()
+        mock_start.assert_called_once()
+        assert mock_init_pair.call_count == 5
+        assert app.use_color is True
+
+
+def test_init_colors_without_color_support():
+    """_init_colors skips color setup when terminal has no color."""
+    app = _make_app()
+    with patch("tui.curses.has_colors", return_value=False), \
+         patch("tui.curses.init_pair") as mock_init_pair:
+        app._init_colors()
+        mock_init_pair.assert_not_called()
+        assert app.use_color is False
+
+
+# --- _color ---
+
+
+def test_color_helper_with_color():
+    """_color returns color_pair value when colors are enabled."""
+    app = _make_app()
+    app.use_color = True
+    with patch("tui.curses.color_pair", return_value=256) as mock_cp:
+        result = app._color(tui.COLOR_COMPLETE)
+        mock_cp.assert_called_once_with(tui.COLOR_COMPLETE)
+        assert result == 256
+
+
+def test_color_helper_without_color():
+    """_color returns 0 when colors are disabled."""
+    app = _make_app()
+    app.use_color = False
+    assert app._color(tui.COLOR_COMPLETE) == 0
 
 
 # --- _safe_addstr ---
@@ -598,6 +650,7 @@ def test_abort_flow_calls_cleanup():
          patch("tui.curses.noecho"), \
          patch("tui.curses.cbreak"), \
          patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
          patch("tui.subprocess.run") as mock_run, \
          patch.object(app, "refresh_data"):
         mock_new_scr = _make_stdscr()
@@ -620,6 +673,7 @@ def test_abort_flow_no_pr():
          patch("tui.curses.noecho"), \
          patch("tui.curses.cbreak"), \
          patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
          patch("tui.subprocess.run") as mock_run, \
          patch.object(app, "refresh_data"):
         mock_new_scr = _make_stdscr()
@@ -635,6 +689,24 @@ def test_abort_flow_no_flows():
     with patch("tui.subprocess.run") as mock_run:
         app._abort_flow()
         mock_run.assert_not_called()
+
+
+def test_abort_flow_calls_init_colors():
+    """_abort_flow re-initializes colors after curses re-init."""
+    state = make_state()
+    app = _make_app(flows=[_flow_from_state(state)])
+    with patch("tui.curses.endwin"), \
+         patch("tui.curses.initscr") as mock_initscr, \
+         patch("tui.curses.noecho"), \
+         patch("tui.curses.cbreak"), \
+         patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors") as mock_init_colors, \
+         patch("tui.subprocess.run"), \
+         patch.object(app, "refresh_data"):
+        mock_new_scr = _make_stdscr()
+        mock_initscr.return_value = mock_new_scr
+        app._abort_flow()
+        mock_init_colors.assert_called_once()
 
 
 # --- refresh_data ---
@@ -662,12 +734,24 @@ def test_refresh_data_clamps_selected(state_dir):
 # --- run loop ---
 
 
+def test_run_calls_init_colors():
+    """run() calls _init_colors before the main loop."""
+    stdscr = _make_stdscr()
+    stdscr.getch.side_effect = [ord("q")]
+    app = _make_app(stdscr, flows=[])
+    with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors") as mock_init:
+        app.run()
+        mock_init.assert_called_once()
+
+
 def test_run_loop_quit():
     """Run loop exits on 'q' key."""
     stdscr = _make_stdscr()
     stdscr.getch.side_effect = [ord("q")]
     app = _make_app(stdscr, flows=[])
-    with patch("tui.curses.curs_set"):
+    with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"):
         app.run()
     assert app.running is False
 
@@ -678,6 +762,7 @@ def test_run_loop_refresh_on_timeout():
     stdscr.getch.side_effect = [-1, ord("q")]
     app = _make_app(stdscr, flows=[])
     with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
          patch.object(app, "refresh_data"):
         app.run()
 
@@ -688,6 +773,7 @@ def test_run_loop_resize():
     stdscr.getch.side_effect = [curses.KEY_RESIZE, ord("q")]
     app = _make_app(stdscr, flows=[])
     with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
          patch.object(app, "refresh_data"):
         app.run()
 
@@ -701,6 +787,7 @@ def test_run_loop_draws_log_view():
     app = _make_app(stdscr, flows=[flow])
     app.view = "log"
     with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
          patch.object(app, "_draw_log_view") as mock_draw:
         app.run()
         mock_draw.assert_called()
@@ -757,7 +844,8 @@ def test_main_function_creates_app():
     stdscr = _make_stdscr()
     stdscr.getch.side_effect = [ord("q")]
     with patch("tui.project_root", return_value=Path("/tmp/test")), \
-         patch("tui.curses.curs_set"):
+         patch("tui.curses.curs_set"), \
+         patch("tui.curses.has_colors", return_value=False):
         tui._main(stdscr)
 
 
@@ -1128,6 +1216,7 @@ def test_run_loop_draws_orchestration_view():
     app = _make_app(stdscr, flows=[])
     app.active_tab = 1
     with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
          patch.object(app, "_draw_orchestration_view") as mock_draw:
         app.run()
         mock_draw.assert_called()
