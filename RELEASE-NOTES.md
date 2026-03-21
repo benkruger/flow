@@ -1,5 +1,21 @@
 # Release Notes
 
+## v0.38.0 — TUI enhancements and bug fixes
+
+### New features
+
+- **TUI Color Support** — color rendering in the TUI with per-repo tab coloring for visual differentiation across flows (#359, #360).
+- **TUI Issue Numbers** — issue numbers displayed in the TUI flow list and used as tab title prefixes (#344, #350).
+- **TUI Orchestration Docs** — documentation for TUI orchestration workflows (#346).
+
+### Fixes
+
+- Fix issue number reuse in TUI when flows are removed (#355).
+- Create-issue consistency across all entry points (#354).
+- Label ordering in Complete phase (#353).
+- Stop-continue error reporting (#341).
+- Plan resume heading format (#343).
+
 ## v0.37.0 — Orchestration, Slack notifications, interactive TUI, and allow-list cleanup
 
 ### New Features

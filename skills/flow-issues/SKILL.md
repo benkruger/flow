@@ -30,7 +30,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v0.37.0 — flow:flow-issues — STARTING
+  FLOW v0.38.0 — flow:flow-issues — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -242,7 +242,7 @@ After the start commands are displayed, output the following banner in your resp
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v0.37.0 — flow:flow-issues — COMPLETE
+  ✓ FLOW v0.38.0 — flow:flow-issues — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
