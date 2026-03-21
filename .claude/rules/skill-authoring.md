@@ -111,6 +111,21 @@ closing ` ``` ` and the tag. pymarkdown MD031 requires a blank line
 after every fenced code block, including when the next line is a
 closing tag rather than prose.
 
+## Decision Point Gates
+
+Every user decision point in every skill — phase or utility — must be
+wrapped in `<HARD-GATE>` tags with explicit enforcement language. Prose
+instructions like "ask the user" or "use AskUserQuestion" are
+insufficient on their own. Without the HARD-GATE wrapper, Claude treats
+approval prompts as suggestions that can be bypassed when the answer
+seems obvious — especially after extended discussion where a solution
+has already been explored.
+
+The HARD-GATE must prohibit all action without explicit user approval:
+proceeding to the next step, proposing direct edits, committing changes,
+or taking any action outside the active skill flow. The enforcement
+language is what distinguishes a gate from a suggestion.
+
 ## Contract Test Atomicity in Plan Dependencies
 
 When a plan removes content that a contract test asserts exists, and a
