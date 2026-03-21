@@ -347,7 +347,8 @@ try:
             if isinstance(trstep, int) and 0 < trstep < 4:
                 tstep = f" (step {trstep}/4)"
         tfeature = _feature(ts)
-        tissue_nums = re.findall(r"#(\d+)", ts.get("prompt", ""))
+        tprompt = ts.get("prompt", "")
+        tissue_nums = re.findall(r"#(\d+)", tprompt) + re.findall(r"/issues/(\d+)", tprompt)
         if tissue_nums:
             seen = set()
             unique = []
