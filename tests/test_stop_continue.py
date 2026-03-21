@@ -8,7 +8,7 @@ import sys
 import pytest
 
 from conftest import LIB_DIR, make_state, write_state
-from flow_utils import format_tab_title
+from flow_utils import format_tab_color, format_tab_title
 
 SCRIPT = LIB_DIR / "stop-continue.py"
 
@@ -670,6 +670,53 @@ class TestFormatTabTitle:
         assert title == "Flow: Phase 3: Code \u2014 Test Feature"
 
 
+# --- format_tab_color tests ---
+
+
+class TestFormatTabColor:
+    def _state(self, repo="test/test"):
+        """Build a minimal state dict for color testing."""
+        state = {"current_phase": "flow-code", "branch": "test-feature"}
+        if repo is not None:
+            state["repo"] = repo
+        return state
+
+    def test_returns_tuple_for_known_repo(self):
+        result = format_tab_color(self._state())
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+        assert all(0 <= v <= 255 for v in result)
+
+    def test_deterministic(self):
+        state = self._state()
+        assert format_tab_color(state) == format_tab_color(state)
+
+    def test_different_repos_can_differ(self):
+        """These two repo strings are verified to hash to different palette indices."""
+        color_a = format_tab_color(self._state("test/test"))
+        color_b = format_tab_color(self._state("other/project"))
+        assert color_a != color_b
+
+    def test_override_replaces_hash(self):
+        result = format_tab_color(self._state(), override=[10, 20, 30])
+        assert result == (10, 20, 30)
+
+    def test_missing_repo_returns_none(self):
+        assert format_tab_color(self._state(repo=None)) is None
+
+    def test_empty_repo_returns_none(self):
+        assert format_tab_color(self._state(repo="")) is None
+
+    def test_override_with_missing_repo(self):
+        result = format_tab_color(self._state(repo=None), override=[5, 10, 15])
+        assert result == (5, 10, 15)
+
+    def test_override_invalid_length_ignored(self):
+        result = format_tab_color(self._state(), override=[10, 20])
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+
+
 # --- set_tab_title tests ---
 
 
@@ -696,7 +743,48 @@ class TestSetTabTitle:
         original_open = open
 
         def mock_open(path, *args, **kwargs):
-            if path == "/dev/tty":
+            if str(path) == "/dev/tty":
+                return fake_tty
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+        _mod.set_tab_title()
+
+        r, g, b = format_tab_color(state)
+        assert len(written) == 1
+        expected = (
+            f"\033]6;1;bg;red;brightness;{r}\007"
+            f"\033]6;1;bg;green;brightness;{g}\007"
+            f"\033]6;1;bg;blue;brightness;{b}\007"
+            f"\033]0;Flow: Phase 3: Code \u2014 Test Feature\007"
+        )
+        assert written[0] == expected
+
+    def test_color_override_from_flow_json(self, git_repo, state_dir, branch, monkeypatch):
+        """When .flow.json has tab_color, use override instead of hash."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
+        write_state(state_dir, branch, state)
+        (git_repo / ".flow.json").write_text(json.dumps({"tab_color": [99, 88, 77]}))
+
+        written = []
+        fake_tty = type("FakeTTY", (), {
+            "write": lambda self, data: written.append(data),
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if str(path) == "/dev/tty":
                 return fake_tty
             return original_open(path, *args, **kwargs)
 
@@ -704,7 +792,47 @@ class TestSetTabTitle:
         _mod.set_tab_title()
 
         assert len(written) == 1
-        assert written[0] == "\033]0;Flow: Phase 3: Code \u2014 Test Feature\007"
+        assert "\033]6;1;bg;red;brightness;99\007" in written[0]
+        assert "\033]6;1;bg;green;brightness;88\007" in written[0]
+        assert "\033]6;1;bg;blue;brightness;77\007" in written[0]
+
+    def test_color_write_failure_silent(self, git_repo, state_dir, branch, monkeypatch):
+        """If tty write raises mid-sequence, no exception propagates."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
+        write_state(state_dir, branch, state)
+
+        call_count = 0
+
+        class FailingTTY:
+            def write(self_tty, data):
+                nonlocal call_count
+                call_count += 1
+                raise OSError("tty write failed")
+
+            def __enter__(self_tty):
+                return self_tty
+
+            def __exit__(self_tty, *a):
+                return None
+
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if path == "/dev/tty":
+                return FailingTTY()
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+        _mod.set_tab_title()
+        assert call_count >= 1
 
     def test_oserror_silently_caught(self, git_repo, state_dir, branch, monkeypatch):
         """OSError from /dev/tty is caught silently."""

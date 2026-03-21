@@ -18,7 +18,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import current_branch, format_tab_title, mutate_state, now, project_root
+from flow_utils import (
+    current_branch, format_tab_color, format_tab_title,
+    mutate_state, now, project_root,
+)
 
 
 def capture_session_id(hook_input):
@@ -116,7 +119,7 @@ def check_continue(hook_input=None):
 
 
 def set_tab_title():
-    """Write the current FLOW phase to the terminal tab title via /dev/tty.
+    """Write the current FLOW phase and repo color to the terminal tab via /dev/tty.
 
     Fail-open: any error is caught silently — this is cosmetic only.
     """
@@ -135,8 +138,26 @@ def set_tab_title():
         if not title:
             return
 
+        override = None
+        try:
+            flow_json = json.loads((root / ".flow.json").read_text())
+            override = flow_json.get("tab_color")
+        except Exception:
+            pass
+
+        color = format_tab_color(state, override=override)
+
         with open("/dev/tty", "w") as tty:
-            tty.write(f"\033]0;{title}\007")
+            sequences = ""
+            if color:
+                r, g, b = color
+                sequences += (
+                    f"\033]6;1;bg;red;brightness;{r}\007"
+                    f"\033]6;1;bg;green;brightness;{g}\007"
+                    f"\033]6;1;bg;blue;brightness;{b}\007"
+                )
+            sequences += f"\033]0;{title}\007"
+            tty.write(sequences)
     except Exception:
         pass
 
