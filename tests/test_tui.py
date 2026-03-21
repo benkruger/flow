@@ -867,6 +867,16 @@ def test_main_function_creates_app():
         tui._main(stdscr)
 
 
+def test_main_handles_keyboard_interrupt():
+    """_main catches KeyboardInterrupt so Ctrl+C exits cleanly."""
+    stdscr = _make_stdscr()
+    stdscr.getch.side_effect = KeyboardInterrupt
+    with patch("tui.project_root", return_value=Path("/tmp/test")), \
+         patch("tui.curses.curs_set"), \
+         patch("tui.curses.has_colors", return_value=False):
+        tui._main(stdscr)
+
+
 # --- _draw_detail_panel ---
 
 
