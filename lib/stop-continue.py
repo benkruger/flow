@@ -148,12 +148,16 @@ def set_tab_title():
         color = format_tab_color(state, override=override)
 
         with open("/dev/tty", "w") as tty:
+            sequences = ""
             if color:
                 r, g, b = color
-                tty.write(f"\033]6;1;bg;red;brightness;{r}\007")
-                tty.write(f"\033]6;1;bg;green;brightness;{g}\007")
-                tty.write(f"\033]6;1;bg;blue;brightness;{b}\007")
-            tty.write(f"\033]0;{title}\007")
+                sequences += (
+                    f"\033]6;1;bg;red;brightness;{r}\007"
+                    f"\033]6;1;bg;green;brightness;{g}\007"
+                    f"\033]6;1;bg;blue;brightness;{b}\007"
+                )
+            sequences += f"\033]0;{title}\007"
+            tty.write(sequences)
     except Exception:
         pass
 

@@ -692,6 +692,7 @@ class TestFormatTabColor:
         assert format_tab_color(state) == format_tab_color(state)
 
     def test_different_repos_can_differ(self):
+        """These two repo strings are verified to hash to different palette indices."""
         color_a = format_tab_color(self._state("test/test"))
         color_b = format_tab_color(self._state("other/project"))
         assert color_a != color_b
@@ -742,7 +743,7 @@ class TestSetTabTitle:
         original_open = open
 
         def mock_open(path, *args, **kwargs):
-            if path == "/dev/tty":
+            if str(path) == "/dev/tty":
                 return fake_tty
             return original_open(path, *args, **kwargs)
 
@@ -750,11 +751,14 @@ class TestSetTabTitle:
         _mod.set_tab_title()
 
         r, g, b = format_tab_color(state)
-        assert len(written) == 4
-        assert written[0] == f"\033]6;1;bg;red;brightness;{r}\007"
-        assert written[1] == f"\033]6;1;bg;green;brightness;{g}\007"
-        assert written[2] == f"\033]6;1;bg;blue;brightness;{b}\007"
-        assert written[3] == "\033]0;Flow: Phase 3: Code \u2014 Test Feature\007"
+        assert len(written) == 1
+        expected = (
+            f"\033]6;1;bg;red;brightness;{r}\007"
+            f"\033]6;1;bg;green;brightness;{g}\007"
+            f"\033]6;1;bg;blue;brightness;{b}\007"
+            f"\033]0;Flow: Phase 3: Code \u2014 Test Feature\007"
+        )
+        assert written[0] == expected
 
     def test_color_override_from_flow_json(self, git_repo, state_dir, branch, monkeypatch):
         """When .flow.json has tab_color, use override instead of hash."""
@@ -787,10 +791,10 @@ class TestSetTabTitle:
         monkeypatch.setattr("builtins.open", mock_open)
         _mod.set_tab_title()
 
-        assert len(written) == 4
-        assert written[0] == "\033]6;1;bg;red;brightness;99\007"
-        assert written[1] == "\033]6;1;bg;green;brightness;88\007"
-        assert written[2] == "\033]6;1;bg;blue;brightness;77\007"
+        assert len(written) == 1
+        assert "\033]6;1;bg;red;brightness;99\007" in written[0]
+        assert "\033]6;1;bg;green;brightness;88\007" in written[0]
+        assert "\033]6;1;bg;blue;brightness;77\007" in written[0]
 
     def test_color_write_failure_silent(self, git_repo, state_dir, branch, monkeypatch):
         """If tty write raises mid-sequence, no exception propagates."""
