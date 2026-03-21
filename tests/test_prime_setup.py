@@ -162,6 +162,97 @@ def test_settings_no_duplicate_entries(tmp_path):
     assert len(deny_list) == len(set(deny_list))
 
 
+# --- Pattern subsumption (in-process) ---
+
+
+def test_broad_pattern_subsumes_narrow(tmp_path):
+    """Bash(git *) should prevent appending Bash(git add *) etc."""
+    _write_settings(tmp_path, {"permissions": {"allow": ["Bash(git *)"]}})
+    _mod.merge_settings(tmp_path, "rails")
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+    allow = settings["permissions"]["allow"]
+    # Specific git entries should NOT appear because Bash(git *) subsumes them
+    assert "Bash(git add *)" not in allow
+    assert "Bash(git commit *)" not in allow
+    assert "Bash(git diff *)" not in allow
+    assert "Bash(git push *)" not in allow
+    # Non-git entries should still appear
+    assert "Bash(cd *)" in allow
+    assert "Agent(flow:ci-fixer)" in allow
+
+
+def test_broad_gh_pattern_subsumes_narrow(tmp_path):
+    """Bash(gh pr *) should prevent appending Bash(gh pr create *) etc."""
+    _write_settings(tmp_path, {"permissions": {"allow": ["Bash(gh pr *)"]}})
+    _mod.merge_settings(tmp_path, "rails")
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+    allow = settings["permissions"]["allow"]
+    assert "Bash(gh pr create *)" not in allow
+    assert "Bash(gh pr edit *)" not in allow
+    # gh issue entries are NOT subsumed by gh pr *
+    assert "Bash(gh issue *)" in allow
+
+
+def test_narrow_does_not_subsume_broad(tmp_path):
+    """Bash(git add *) should NOT prevent appending Bash(git *)."""
+    _write_settings(tmp_path, {"permissions": {"allow": ["Bash(git add *)"]}})
+    _mod.merge_settings(tmp_path, "rails")
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+    allow = settings["permissions"]["allow"]
+    # The broad pattern from UNIVERSAL_ALLOW is not subsumed by the narrow one
+    assert "Bash(git *)" not in _mod.UNIVERSAL_ALLOW  # git * isn't in UNIVERSAL
+    # But git add * IS in UNIVERSAL_ALLOW and should be deduped by exact match
+    assert allow.count("Bash(git add *)") == 1
+
+
+def test_cross_type_no_subsumption(tmp_path):
+    """Non-Bash entries should not subsume Bash entries."""
+    _write_settings(tmp_path, {"permissions": {"allow": ["Agent(*)"]}})
+    _mod.merge_settings(tmp_path, "rails")
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+    allow = settings["permissions"]["allow"]
+    # Bash entries should still be added despite Agent(*)
+    assert "Bash(git add *)" in allow
+
+
+def test_non_wildcard_no_subsumption(tmp_path):
+    """Bash(git status) should not subsume Bash(git add *)."""
+    _write_settings(tmp_path, {"permissions": {"allow": ["Bash(git status)"]}})
+    _mod.merge_settings(tmp_path, "rails")
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+    allow = settings["permissions"]["allow"]
+    assert "Bash(git add *)" in allow
+
+
+def test_derived_permissions_subsumed(tmp_path):
+    """Broad pattern should subsume derived permissions too."""
+    (tmp_path / "MyApp.xcodeproj").mkdir()
+    # Bash(killall *) would subsume Bash(killall MyApp)
+    _write_settings(tmp_path, {"permissions": {"allow": ["Bash(killall *)"]}})
+    _mod.merge_settings(tmp_path, "ios")
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+    allow = settings["permissions"]["allow"]
+    assert "Bash(killall MyApp)" not in allow
+
+
+def test_is_subsumed_malformed_candidate():
+    """Non-permission-format strings return False (not subsumed)."""
+    assert not _mod._is_subsumed("plain-string", {"Bash(git *)"})
+
+
+def test_is_subsumed_skips_exact_match():
+    """Exact match is handled by set membership, not subsumption."""
+    # Entry present in both candidate and existing — skip self-comparison
+    assert not _mod._is_subsumed("Bash(git add *)", {"Bash(git add *)"})
+
+
+def _write_settings(tmp_path, settings):
+    """Write a settings.json file with the given content."""
+    settings_dir = tmp_path / ".claude"
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    (settings_dir / "settings.json").write_text(json.dumps(settings))
+
+
 # --- Version marker (in-process) ---
 
 

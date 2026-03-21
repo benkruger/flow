@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 import importlib.util
-from flow_utils import frameworks_dir as _frameworks_dir
+from flow_utils import frameworks_dir as _frameworks_dir, permission_to_regex
 
 
 def _import_sibling(name, filename):
@@ -175,6 +175,31 @@ def _derive_permissions(project_root, framework):
     return results
 
 
+def _is_subsumed(candidate, existing_set):
+    """Check if any entry in existing_set pattern-subsumes candidate.
+
+    Uses permission_to_regex() to test whether an existing broader pattern
+    (e.g. Bash(git *)) matches the candidate's concrete form (e.g. git add X).
+    Only checks same-type entries (Bash vs Bash, not Agent vs Bash).
+    """
+    import re as _re
+    match = _re.match(r"(\w+)\((.+)\)", candidate)
+    if not match:
+        return False
+    cand_type, cand_inner = match.group(1), match.group(2)
+    test_string = cand_inner.replace("*", "XXXPLACEHOLDERXXX")
+    for existing in existing_set:
+        if existing == candidate:
+            continue
+        ex_match = _re.match(r"(\w+)\(", existing)
+        if not ex_match or ex_match.group(1) != cand_type:
+            continue
+        regex = permission_to_regex(existing)
+        if regex and regex.match(test_string):
+            return True
+    return False
+
+
 def merge_settings(project_root, framework):
     """Merge FLOW permissions into .claude/settings.json. Returns merged dict."""
     settings_dir = project_root / ".claude"
@@ -193,15 +218,15 @@ def merge_settings(project_root, framework):
     if "deny" not in settings["permissions"]:
         settings["permissions"]["deny"] = []
 
-    # Additive merge — only add entries not already present
+    # Additive merge — only add entries not already present or subsumed
     existing_allow = set(settings["permissions"]["allow"])
     for entry in _allow_list(framework):
-        if entry not in existing_allow:
+        if entry not in existing_allow and not _is_subsumed(entry, existing_allow):
             settings["permissions"]["allow"].append(entry)
 
     # Merge derived permissions (project-specific, from glob detection)
     for entry in _derive_permissions(project_root, framework):
-        if entry not in existing_allow:
+        if entry not in existing_allow and not _is_subsumed(entry, existing_allow):
             settings["permissions"]["allow"].append(entry)
             existing_allow.add(entry)
 
