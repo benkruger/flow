@@ -376,7 +376,7 @@ If all plugins are already present, skip silently.
 
 ### Step 7 — Commit and push
 
-Check if anything is staged by running `git status`. If the output contains "nothing to commit", skip the commit and push — go straight to Done.
+Check if the working tree has changes by running `git status`. If the output contains "working tree clean", skip the commit — go straight to Done.
 
 Otherwise, commit via `/flow:flow-commit`.
 
