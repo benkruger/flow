@@ -553,6 +553,24 @@ def test_happy_path_stores_setup_hash(git_repo):
     assert len(data["setup_hash"]) == 12
 
 
+# --- Plugin root in version marker ---
+
+
+def test_version_marker_with_plugin_root(tmp_path):
+    _mod.write_version_marker(
+        tmp_path, _mod._plugin_version(), "rails",
+        plugin_root="/some/cache/path",
+    )
+    data = json.loads((tmp_path / ".flow.json").read_text())
+    assert data["plugin_root"] == "/some/cache/path"
+
+
+def test_version_marker_without_plugin_root_has_no_key(tmp_path):
+    _mod.write_version_marker(tmp_path, _mod._plugin_version(), "rails")
+    data = json.loads((tmp_path / ".flow.json").read_text())
+    assert "plugin_root" not in data
+
+
 # --- Pre-commit hook installation ---
 
 
@@ -699,6 +717,68 @@ def test_pre_commit_hook_allows_commit_on_different_branch(git_repo):
         cwd=git_repo, capture_output=True, text=True,
     )
     assert result.returncode == 0
+
+
+# --- Global launcher ---
+
+
+def test_install_launcher_creates_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _mod.install_launcher()
+    launcher = tmp_path / ".local" / "bin" / "flow"
+    assert launcher.exists()
+
+
+def test_install_launcher_executable(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _mod.install_launcher()
+    launcher = tmp_path / ".local" / "bin" / "flow"
+    assert os.access(launcher, os.X_OK)
+
+
+def test_install_launcher_content(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _mod.install_launcher()
+    content = (tmp_path / ".local" / "bin" / "flow").read_text()
+    assert "git rev-parse --show-toplevel" in content
+    assert ".flow.json" in content
+    assert "plugin_root" in content
+    assert "exec" in content
+    assert "#!/usr/bin/env bash" in content
+
+
+def test_install_launcher_idempotent(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _mod.install_launcher()
+    content_first = (tmp_path / ".local" / "bin" / "flow").read_text()
+    _mod.install_launcher()
+    content_second = (tmp_path / ".local" / "bin" / "flow").read_text()
+    assert content_first == content_second
+
+
+def test_install_launcher_creates_directory(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert not (tmp_path / ".local" / "bin").exists()
+    _mod.install_launcher()
+    assert (tmp_path / ".local" / "bin" / "flow").exists()
+
+
+def test_check_launcher_path_in_path(tmp_path, monkeypatch, capsys):
+    local_bin = str(tmp_path / ".local" / "bin")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", f"{local_bin}:/usr/bin")
+    _mod.check_launcher_path()
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_check_launcher_path_not_in_path(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", "/usr/bin:/usr/local/bin")
+    _mod.check_launcher_path()
+    captured = capsys.readouterr()
+    assert "export PATH" in captured.err
+    assert ".local/bin" in captured.err
 
 
 # --- commit_format in version marker ---
