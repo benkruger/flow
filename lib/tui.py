@@ -14,7 +14,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import detect_repo, extract_issue_numbers, project_root, read_version
-from tui_data import load_all_flows, parse_log_entries, phase_timeline
+from tui_data import (
+    load_all_flows, load_orchestration, orchestration_summary,
+    parse_log_entries, phase_timeline,
+)
 
 # Auto-refresh interval in milliseconds
 REFRESH_MS = 2000
@@ -32,12 +35,19 @@ class TuiApp:
         self.view = "list"
         self.running = True
         self.confirming_abort = False
+        self.active_tab = 0
+        self.orch_data = None
+        self.orch_selected = 0
 
     def refresh_data(self):
-        """Re-read all state files."""
+        """Re-read all state files and orchestration state."""
         self.flows = load_all_flows(self.root)
         if self.selected >= len(self.flows):
             self.selected = max(0, len(self.flows) - 1)
+        orch_state = load_orchestration(self.root)
+        self.orch_data = orchestration_summary(orch_state)
+        if self.orch_data and self.orch_selected >= len(self.orch_data["items"]):
+            self.orch_selected = max(0, len(self.orch_data["items"]) - 1)
 
     def run(self):
         """Main loop."""
@@ -47,7 +57,9 @@ class TuiApp:
 
         while self.running:
             self.stdscr.erase()
-            if self.view == "list":
+            if self.active_tab == 1:
+                self._draw_orchestration_view()
+            elif self.view == "list":
                 self._draw_list_view()
             elif self.view == "log":
                 self._draw_log_view()
@@ -74,33 +86,69 @@ class TuiApp:
         except curses.error:
             pass
 
+    def _get_orch_issue_in_progress(self):
+        """Return the issue_number of the in-progress orchestration item, or None."""
+        if not self.orch_data:
+            return None
+        for item in self.orch_data["items"]:
+            if item["status"] == "in_progress":
+                return item["issue_number"]
+        return None
+
+    def _draw_tab_bar(self, row):
+        """Draw the tab bar showing Active Flows and Orchestration tabs."""
+        flows_label = f"Active Flows ({len(self.flows)})"
+        if self.orch_data and self.orch_data["is_running"]:
+            processed = self.orch_data["completed_count"] + self.orch_data["failed_count"]
+            orch_label = f"Orchestration ({processed}/{self.orch_data['total']})"
+        else:
+            orch_label = "Orchestration"
+
+        flows_attr = curses.A_BOLD if self.active_tab == 0 else curses.A_DIM
+        orch_attr = curses.A_BOLD if self.active_tab == 1 else curses.A_DIM
+
+        col = 2
+        self._safe_addstr(row, col, flows_label, flows_attr)
+        col += len(flows_label) + 2
+        self._safe_addstr(row, col, "\u2502", curses.A_DIM)
+        col += 2
+        self._safe_addstr(row, col, orch_label, orch_attr)
+
+    def _draw_header(self):
+        """Draw the shared version header, tab bar, and separator."""
+        _, max_x = self.stdscr.getmaxyx()
+        border = "\u2500" * max_x
+        self._safe_addstr(0, 0, border, curses.A_DIM)
+        self._safe_addstr(0, 2, f" FLOW v{self.version} ", curses.A_BOLD)
+        self._draw_tab_bar(2)
+        self._safe_addstr(3, 2, "\u2500" * min(54, max_x - 4), curses.A_DIM)
+
     def _draw_list_view(self):
         """Draw the flow list and detail panel."""
         max_y, max_x = self.stdscr.getmaxyx()
 
-        # Header
-        header = f" FLOW v{self.version} "
-        border = "\u2500" * max_x
-        self._safe_addstr(0, 0, border, curses.A_DIM)
-        self._safe_addstr(0, 2, header, curses.A_BOLD)
+        self._draw_header()
 
         if not self.flows:
-            self._safe_addstr(2, 2, "No active flows.")
-            self._safe_addstr(4, 2, "Start a flow with: /flow:flow-start <feature>")
+            self._safe_addstr(4, 2, "No active flows.")
+            self._safe_addstr(6, 2, "Start a flow with: /flow:flow-start <feature>")
             self._safe_addstr(max_y - 1, 0, " [q] Quit", curses.A_DIM)
             return
 
-        # Flow list header
-        count_label = f"Active Flows ({len(self.flows)})"
-        self._safe_addstr(2, 2, count_label, curses.A_BOLD)
-        self._safe_addstr(3, 2, "\u2500" * min(54, max_x - 4), curses.A_DIM)
+        # Cross-tab indicator: find flow matching in-progress orchestration issue
+        orch_issue = self._get_orch_issue_in_progress()
 
         # Flow list — reserve ~16 lines for header, separator, detail panel, and footer
-        list_end = min(len(self.flows), max_y - 16)
+        list_end = min(len(self.flows), max_y - 18)
         for i in range(list_end):
             flow = self.flows[i]
             row = 4 + i
-            marker = "\u25b8 " if i == self.selected else "  "
+            if i == self.selected:
+                marker = "\u25b8 "
+            elif orch_issue and _flow_matches_issue(flow, orch_issue):
+                marker = "\u25c6 "
+            else:
+                marker = "  "
             attr = curses.A_BOLD if i == self.selected else 0
             phase_info = f"{flow['phase_number']}: {flow['phase_name']}"
             pr_info = f"PR #{flow['pr_number']}" if flow["pr_number"] else ""
@@ -116,7 +164,7 @@ class TuiApp:
             self._draw_detail_panel(detail_start)
 
         # Footer
-        footer = " [\u2191\u2193] Navigate  [Enter] Worktree  [p] PR  [i] Issue  [l] Log  [a] Abort  [r] Refresh  [q] Quit"
+        footer = " [\u2190\u2192] Tab  [\u2191\u2193] Navigate  [Enter] Worktree  [p] PR  [i] Issue  [l] Log  [a] Abort  [r] Refresh  [q] Quit"
         self._safe_addstr(max_y - 1, 0, footer, curses.A_DIM)
 
     def _draw_detail_panel(self, start_row):
@@ -209,8 +257,14 @@ class TuiApp:
             self._handle_abort_confirm(key)
         elif key == ord("q"):
             self.running = False
+        elif key == curses.KEY_RIGHT:
+            self.active_tab = min(1, self.active_tab + 1)
+        elif key == curses.KEY_LEFT:
+            self.active_tab = max(0, self.active_tab - 1)
         elif key == 27 and self.view == "log":
             self.view = "list"
+        elif self.active_tab == 1:
+            self._handle_orch_input(key)
         elif self.view == "list":
             self._handle_list_input(key)
 
@@ -344,6 +398,77 @@ class TuiApp:
         curses.curs_set(0)
         self.stdscr.timeout(REFRESH_MS)
         self.refresh_data()
+
+    def _draw_orchestration_view(self):
+        """Draw the orchestration queue view."""
+        max_y, max_x = self.stdscr.getmaxyx()
+
+        self._draw_header()
+
+        if not self.orch_data:
+            self._safe_addstr(5, 2, "No orchestration running.")
+            self._safe_addstr(max_y - 1, 0, " [\u2190\u2192] Tab  [r] Refresh  [q] Quit", curses.A_DIM)
+            return
+
+        # Elapsed time
+        self._safe_addstr(5, 2, f"Elapsed: {self.orch_data['elapsed']}")
+
+        # Queue items
+        items = self.orch_data["items"]
+        list_start = 7
+        list_end = min(len(items), max_y - 6)
+        for i in range(list_end):
+            item = items[i]
+            row = list_start + i
+            marker = "\u25b8 " if i == self.orch_selected else "  "
+            attr = curses.A_BOLD if i == self.orch_selected else 0
+            elapsed_str = f"  {item['elapsed']}" if item["elapsed"] else ""
+            pr_str = ""
+            if item["pr_url"]:
+                pr_str = f"  PR {item['pr_url'].rsplit('/', 1)[-1]}"
+            line = f"{marker}{item['icon']} #{item['issue_number']}  {item['title']:<30s}{elapsed_str}{pr_str}"
+            self._safe_addstr(row, 2, line, attr)
+
+        # Detail panel for selected item
+        detail_row = list_start + list_end + 1
+        if items and self.orch_selected < len(items):
+            selected_item = items[self.orch_selected]
+            if selected_item["status"] == "failed" and selected_item["reason"]:
+                self._safe_addstr(detail_row, 4, f"Reason: {selected_item['reason']}")
+            elif selected_item["status"] == "completed" and selected_item["pr_url"]:
+                self._safe_addstr(detail_row, 4, f"PR: {selected_item['pr_url']}")
+
+        # Footer
+        footer = " [\u2190\u2192] Tab  [\u2191\u2193] Navigate  [i] Issue  [r] Refresh  [q] Quit"
+        self._safe_addstr(max_y - 1, 0, footer, curses.A_DIM)
+
+    def _handle_orch_input(self, key):
+        """Handle input in orchestration tab."""
+        if not self.orch_data or not self.orch_data["items"]:
+            if key == ord("r"):
+                self.refresh_data()
+            return
+
+        if key == curses.KEY_UP:
+            self.orch_selected = max(0, self.orch_selected - 1)
+        elif key == curses.KEY_DOWN:
+            self.orch_selected = min(len(self.orch_data["items"]) - 1, self.orch_selected + 1)
+        elif key == ord("i"):
+            self._open_orch_issue()
+        elif key == ord("r"):
+            self.refresh_data()
+
+    def _open_orch_issue(self):
+        """Open the selected orchestration issue in a browser."""
+        if not self.orch_data or not self.orch_data["items"]:
+            return
+        item = self.orch_data["items"][self.orch_selected]
+        self._open_issue(item["issue_number"])
+
+
+def _flow_matches_issue(flow, issue_number):
+    """Check if a flow's prompt references the given issue number."""
+    return issue_number in flow.get("issue_numbers", set())
 
 
 def _main(stdscr):
