@@ -546,6 +546,24 @@ class TestFormatTabTitle:
         title = format_tab_title(self._state("flow-start", branch="invoice-pdf-export"))
         assert title == "Flow: Phase 1: Start \u2014 Invoice Pdf Export"
 
+    def test_prompt_with_one_issue(self):
+        title = format_tab_title(self._state("flow-code", prompt="work on issue #342"))
+        assert title == "Flow: Phase 3: Code \u2014 #342 Test Feature"
+
+    def test_prompt_with_multiple_issues(self):
+        title = format_tab_title(self._state("flow-code", prompt="work on #83 and #89"))
+        assert title == "Flow: Phase 3: Code \u2014 #83 #89 Test Feature"
+
+    def test_prompt_with_no_issue_numbers(self):
+        title = format_tab_title(self._state("flow-code", prompt="fix login timeout"))
+        assert title == "Flow: Phase 3: Code \u2014 Test Feature"
+
+    def test_prompt_missing(self):
+        """No prompt key in state — no issue prefix."""
+        state = {"current_phase": "flow-code", "branch": "test-feature"}
+        title = format_tab_title(state)
+        assert title == "Flow: Phase 3: Code \u2014 Test Feature"
+
 
 # --- set_tab_title tests ---
 

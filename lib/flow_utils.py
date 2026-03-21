@@ -307,8 +307,9 @@ def read_version():
 def format_tab_title(state):
     """Format a terminal tab title from FLOW state.
 
-    Returns a string like "Flow: Phase 3: Code (task 2) — Feature Name",
-    or None if the state lacks required fields.
+    Returns a string like "Flow: Phase 3: Code (task 2) — #342 Feature Name",
+    or None if the state lacks required fields. Issue numbers from the prompt
+    are prefixed to the feature name when present.
     """
     phase = state.get("current_phase")
     branch = state.get("branch")
@@ -331,4 +332,8 @@ def format_tab_title(state):
             step = f" (step {review_step}/4)"
 
     feature = derive_feature(branch)
+    issue_numbers = extract_issue_numbers(state.get("prompt", ""))
+    if issue_numbers:
+        issue_prefix = " ".join(f"#{n}" for n in issue_numbers)
+        feature = f"{issue_prefix} {feature}"
     return f"Flow: Phase {number}: {name}{step} \u2014 {feature}"
