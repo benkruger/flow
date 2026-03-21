@@ -2305,6 +2305,23 @@ def test_complete_done_banner_includes_phase_timings():
         )
 
 
+def test_complete_done_banner_includes_session_summary():
+    """Complete Done section must instruct Claude to write a session summary."""
+    content = _read_skill("flow-complete")
+    in_done = False
+    found_summary_instruction = False
+    for line in content.splitlines():
+        if "Done" in line and "Print banner" in line:
+            in_done = True
+        if in_done and "session summary" in line.lower():
+            found_summary_instruction = True
+            break
+    assert found_summary_instruction, (
+        "flow-complete/SKILL.md Done section must instruct Claude to write "
+        "a prose session summary after the banner"
+    )
+
+
 def test_complete_step6_archives_all_pr_sections():
     """Complete Step 6 must reference all required PR body section headings."""
     content = _read_skill("flow-complete")
