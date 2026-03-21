@@ -7,7 +7,9 @@ end its turn. If the flag is non-empty, the hook clears it and blocks
 the stop, forcing Claude to continue generating and follow the parent
 skill's remaining instructions.
 
-Fail-open: any error silently allows the stop (exit 0, no output).
+Fail-open with error reporting: any error allows the stop (exit 0, no
+block output), but writes a diagnostic to stderr and attempts to log
+to .flow-states/<branch>.log for post-mortem visibility.
 """
 
 import json
@@ -16,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import current_branch, format_tab_title, mutate_state, project_root
+from flow_utils import current_branch, format_tab_title, mutate_state, now, project_root
 
 
 def capture_session_id(hook_input):
@@ -59,7 +61,13 @@ def check_continue(hook_input=None):
     hook input's session_id, the flag is stale (set by a previous session).
     Clear it and allow stop. Backward compatible: if either session_id is
     missing, skip the check and fire the flag as before.
+
+    Fail-open with diagnostics: on any exception, writes a one-line error
+    to stderr and attempts to log to .flow-states/<branch>.log if the
+    branch is known.
     """
+    root = None
+    branch = None
     try:
         root = project_root()
         branch = current_branch()
@@ -93,7 +101,17 @@ def check_continue(hook_input=None):
 
         mutate_state(state_path, transform)
         return (result["should_block"], result["skill"], result["context"])
-    except Exception:
+    except Exception as exc:
+        sys.stderr.write(
+            f"[FLOW stop-continue] check_continue error: {exc}\n"
+        )
+        try:
+            if root and branch:
+                log_path = root / ".flow-states" / f"{branch}.log"
+                with open(log_path, "a") as log_file:
+                    log_file.write(f"{now()} [stop-continue] ERROR: {exc}\n")
+        except Exception:
+            pass
         return (False, None, None)
 
 
