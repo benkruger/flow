@@ -2581,7 +2581,7 @@ def test_plan_validates_target_file_paths():
     assert "working tree" in section, (
         "Target Path Validation must reference the repo working tree"
     )
-    assert "Risks" in section, (
+    assert "Risks section" in section, (
         "Target Path Validation must instruct flagging in the Risks section"
     )
 

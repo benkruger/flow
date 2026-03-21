@@ -30,9 +30,9 @@ an ordered implementation plan with a dependency graph.
    self-invokes with `--continue-step` to ensure continuation after
    the turn boundary
 4. Explores the codebase to validate the DAG against reality
-5. Validates that file targets are inside the repo working tree — flags
-   out-of-repo paths in the Risks section when the prompt contains
-   repo-related keywords
+5. Validates that file targets are inside the repo working tree — notes
+   out-of-repo paths in the Risks section, defaulting to repo-local
+   equivalents when the prompt contains repo-related keywords
 6. Writes the plan file with a Dependency Graph section and ordered tasks
 7. Renders the full plan content inline in the conversation for review
 8. Stores the plan file path in state and transitions to Code
