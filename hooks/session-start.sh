@@ -9,24 +9,70 @@
 set -euo pipefail
 
 STATE_DIR=".flow-states"
+FLOW_PLUGIN_LIB="$(cd "$(dirname "$0")/../lib" 2>/dev/null && pwd)" || true
+export FLOW_PLUGIN_LIB
 
-# No state directory or no state files — exit silently
-if [ ! -d "$STATE_DIR" ]; then
+# No state directory or no state files — exit silently unless FLOW-enabled
+if [ ! -d "$STATE_DIR" ] && [ ! -f ".flow.json" ]; then
   exit 0
 fi
 
-if [ -z "$(ls "$STATE_DIR"/*.json 2>/dev/null)" ]; then
+if [ -d "$STATE_DIR" ] && [ -z "$(ls "$STATE_DIR"/*.json 2>/dev/null)" ] && [ ! -f ".flow.json" ]; then
   exit 0
+fi
+
+if [ ! -d "$STATE_DIR" ] && [ -f ".flow.json" ]; then
+  # FLOW-enabled but no state dir — color-only path handled in Python
+  :
 fi
 
 # Reset any interrupted session timing, build context, and emit JSON output
 python3 - << 'PYTHON'
-import json, re, subprocess, sys
+import json, os, re, subprocess, sys
 from pathlib import Path
 
+# Import flow_utils from the plugin lib directory
+_flow_lib = os.environ.get("FLOW_PLUGIN_LIB", "")
+_has_flow_utils = False
+if _flow_lib:
+    sys.path.insert(0, _flow_lib)
+    try:
+        from flow_utils import format_tab_title, format_tab_color, detect_repo
+        _has_flow_utils = True
+    except ImportError:
+        pass
+
+
+def _write_tab_color_only():
+    """Apply tab color without a title (no active flow)."""
+    if not _has_flow_utils:
+        return
+    try:
+        override = None
+        try:
+            flow_json = json.loads(Path(".flow.json").read_text())
+            override = flow_json.get("tab_color")
+        except Exception:
+            pass
+        repo = detect_repo()
+        color = format_tab_color(repo=repo, override=override)
+        if color:
+            r, g, b = color
+            with open("/dev/tty", "w") as tty:
+                tty.write(
+                    f"\033]6;1;bg;red;brightness;{r}\007"
+                    f"\033]6;1;bg;green;brightness;{g}\007"
+                    f"\033]6;1;bg;blue;brightness;{b}\007"
+                )
+    except Exception:
+        pass
+
 state_dir = Path(".flow-states")
-files = sorted(state_dir.glob("*.json"))
-files = [f for f in files if not f.name.endswith("-phases.json")]
+if state_dir.is_dir():
+    files = sorted(state_dir.glob("*.json"))
+    files = [f for f in files if not f.name.endswith("-phases.json")]
+else:
+    files = []
 
 
 def detect_orchestrate():
@@ -107,6 +153,7 @@ if _current:
     files = [f for f in files if f.stem == _current]
 
 if not files and not orchestrate_block:
+    _write_tab_color_only()
     sys.exit(0)
 
 
@@ -176,6 +223,7 @@ for path in files:
         continue
 
 if not states and not orchestrate_block:
+    _write_tab_color_only()
     sys.exit(0)
 
 dev_mode = (state_dir / ".dev-mode").exists()
@@ -325,42 +373,34 @@ else:
         "</flow-session-context>"
     )
 
-PHASE_NUMBERS = {
-    "flow-start": 1, "flow-plan": 2, "flow-code": 3,
-    "flow-code-review": 4, "flow-learn": 5, "flow-complete": 6,
-}
-
 try:
-    ts = states[0]
-    tcp = ts.get("current_phase", "")
-    tnum = PHASE_NUMBERS.get(tcp)
-    tbranch = ts.get("branch", "")
-    if tnum and tbranch:
-        tname = ts.get("phases", {}).get(tcp, {}).get("name", "")
-        tstep = ""
-        if tcp == "flow-code":
-            ttask = ts.get("code_task", 0)
-            if isinstance(ttask, int) and ttask > 0:
-                tstep = f" (task {ttask})"
-        elif tcp == "flow-code-review":
-            trstep = ts.get("code_review_step", 0)
-            if isinstance(trstep, int) and 0 < trstep < 4:
-                tstep = f" (step {trstep}/4)"
-        tfeature = _feature(ts)
-        tprompt = ts.get("prompt", "")
-        tissue_nums = re.findall(r"#(\d+)", tprompt) + re.findall(r"/issues/(\d+)", tprompt)
-        if tissue_nums:
-            seen = set()
-            unique = []
-            for n in tissue_nums:
-                if n not in seen:
-                    seen.add(n)
-                    unique.append(n)
-            tissue_prefix = " ".join(f"#{n}" for n in unique)
-            tfeature = f"{tissue_prefix} {tfeature}"
-        ttitle = f"Flow: Phase {tnum}: {tname}{tstep} \u2014 {tfeature}"
+    if _has_flow_utils and states:
+        ts = states[0]
+        title = format_tab_title(ts)
+
+        override = None
+        try:
+            flow_json = json.loads(Path(".flow.json").read_text())
+            override = flow_json.get("tab_color")
+        except Exception:
+            pass
+
+        color = format_tab_color(ts, override=override)
+
         with open("/dev/tty", "w") as tty:
-            tty.write(f"\033]0;{ttitle}\007")
+            sequences = ""
+            if color:
+                r, g, b = color
+                sequences += (
+                    f"\033]6;1;bg;red;brightness;{r}\007"
+                    f"\033]6;1;bg;green;brightness;{g}\007"
+                    f"\033]6;1;bg;blue;brightness;{b}\007"
+                )
+            if title:
+                sequences += f"\033]0;{title}\007"
+            tty.write(sequences)
+    elif _has_flow_utils:
+        _write_tab_color_only()
 except Exception:
     pass
 
