@@ -49,7 +49,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ## Step 1 — Fetch decomposed issues
 
 ```bash
-gh issue list --state open --label Decomposed --json number,title,labels --limit 100
+gh issue list --state open --label Decomposed --json number,title,labels,body,url --limit 100
 ```
 
 Parse the JSON output. Filter out any issues that have the "Flow In-Progress" label — these are already being worked by another FLOW feature.
@@ -85,19 +85,21 @@ Log the queue:
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log orchestrate "[Orchestrate] Started — N issues queued"
 ```
 
-Output the queue summary inline:
+Display the queue as a rich markdown table matching the `flow-issues` format.
+Use the `body` and `labels` fields from Step 1 to categorize, assess impact,
+and prioritize each issue using the same logic as `flow-issues`:
 
-````markdown
-```text
-──────────────────────────────────────────────────
-  FLOW Orchestrate — Queue
-──────────────────────────────────────────────────
-  1. #42 — Add PDF export
-  2. #43 — Fix login timeout
-  ...
-──────────────────────────────────────────────────
-```
-````
+- **Categorize** by label (Rule, Flow, Flaky Test, Tech Debt, Documentation
+  Drift) with content-based fallback (Bug, Enhancement, Other)
+- **Impact** from cross-area scope, force-multiplier keywords, acceptance
+  criteria density, and dependency count (High/Medium/Low)
+- **Priority** from category defaults with impact and blocking modifiers
+- **Sort** by priority (High first), then decomposed before non-decomposed,
+  then oldest first
+
+Output the table inline with columns: `Order`, `Priority`, `Impact`,
+`Labels`, `#`, `Title`, `Rationale`. The `#` column uses a markdown link
+`[#N](issue_url)`.
 
 ---
 
@@ -181,16 +183,16 @@ Self-invoke to process the next issue. Invoke `flow:flow-orchestrate --continue-
 
 All issues have been processed.
 
-### Generate report
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-report --state-file .flow-states/orchestrate.json --output-dir .flow-states
-```
-
 ### Mark complete
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --complete --state-file .flow-states/orchestrate.json
+```
+
+### Generate report
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-report --state-file .flow-states/orchestrate.json --output-dir .flow-states
 ```
 
 ### Present report
