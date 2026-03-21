@@ -8,7 +8,7 @@ import sys
 import pytest
 
 from conftest import LIB_DIR, make_state, write_state
-from flow_utils import format_tab_title
+from flow_utils import format_tab_color, format_tab_title
 
 SCRIPT = LIB_DIR / "stop-continue.py"
 
@@ -668,6 +668,52 @@ class TestFormatTabTitle:
         state = {"current_phase": "flow-code", "branch": "test-feature"}
         title = format_tab_title(state)
         assert title == "Flow: Phase 3: Code \u2014 Test Feature"
+
+
+# --- format_tab_color tests ---
+
+
+class TestFormatTabColor:
+    def _state(self, repo="test/test"):
+        """Build a minimal state dict for color testing."""
+        state = {"current_phase": "flow-code", "branch": "test-feature"}
+        if repo is not None:
+            state["repo"] = repo
+        return state
+
+    def test_returns_tuple_for_known_repo(self):
+        result = format_tab_color(self._state())
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+        assert all(0 <= v <= 255 for v in result)
+
+    def test_deterministic(self):
+        state = self._state()
+        assert format_tab_color(state) == format_tab_color(state)
+
+    def test_different_repos_can_differ(self):
+        color_a = format_tab_color(self._state("test/test"))
+        color_b = format_tab_color(self._state("other/project"))
+        assert color_a != color_b
+
+    def test_override_replaces_hash(self):
+        result = format_tab_color(self._state(), override=[10, 20, 30])
+        assert result == (10, 20, 30)
+
+    def test_missing_repo_returns_none(self):
+        assert format_tab_color(self._state(repo=None)) is None
+
+    def test_empty_repo_returns_none(self):
+        assert format_tab_color(self._state(repo="")) is None
+
+    def test_override_with_missing_repo(self):
+        result = format_tab_color(self._state(repo=None), override=[5, 10, 15])
+        assert result == (5, 10, 15)
+
+    def test_override_invalid_length_ignored(self):
+        result = format_tab_color(self._state(), override=[10, 20])
+        assert isinstance(result, tuple)
+        assert len(result) == 3
 
 
 # --- set_tab_title tests ---

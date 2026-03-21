@@ -8,6 +8,7 @@ Provides common functions used across multiple hook scripts:
 """
 
 import fcntl
+import hashlib
 import json
 import re
 import subprocess
@@ -337,3 +338,38 @@ def format_tab_title(state):
         issue_prefix = " ".join(f"#{n}" for n in issue_numbers)
         feature = f"{issue_prefix} {feature}"
     return f"Flow: Phase {number}: {name}{step} \u2014 {feature}"
+
+
+TAB_COLORS = (
+    (178, 34, 34),    # firebrick
+    (0, 128, 128),    # teal
+    (75, 0, 130),     # indigo
+    (184, 134, 11),   # dark goldenrod
+    (0, 100, 0),      # dark green
+    (128, 0, 0),      # maroon
+    (70, 130, 180),   # steel blue
+    (139, 69, 19),    # saddle brown
+    (72, 61, 139),    # dark slate blue
+    (0, 139, 139),    # dark cyan
+    (160, 82, 45),    # sienna
+    (25, 25, 112),    # midnight blue
+)
+
+
+def format_tab_color(state, override=None):
+    """Return an (r, g, b) tuple for the terminal tab color.
+
+    Hashes state["repo"] against TAB_COLORS for deterministic color.
+    If override is a 3-element list/tuple, it is used instead.
+    Returns None if repo is missing/empty and no valid override.
+    """
+    if isinstance(override, (list, tuple)) and len(override) == 3:
+        return tuple(override)
+
+    repo = state.get("repo", "")
+    if not repo:
+        return None
+
+    digest = hashlib.sha256(repo.encode()).digest()
+    index = int.from_bytes(digest[:4], "big") % len(TAB_COLORS)
+    return TAB_COLORS[index]
