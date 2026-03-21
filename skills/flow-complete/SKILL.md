@@ -434,6 +434,11 @@ per-phase timeline (Start:, Plan:, Code:, Code Review:, Learn:,
 Complete:, Total:), and artifact counts (issues filed, notes captured).
 Do not add a separate PR line — it is part of the summary.
 
+After the banner, write a brief session summary in natural prose (2-3
+sentences). Describe what was built or fixed, the approach taken, and the
+outcome. Use your conversation context — do not fetch additional data or
+run any commands. This is a narrative recap, not a structured template.
+
 ## Rules
 
 - Steps 1-9 run from the worktree (feature branch); Steps 10-11 run from the project root after an explicit cd before Step 10
