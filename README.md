@@ -157,11 +157,11 @@ Available at any point in the workflow:
 
 | Command | What it does |
 |---------|-------------|
-| `bin/flow tui` | Interactive terminal UI — view active flows, open worktrees, tail logs, abort features (no Claude session needed) |
+| `flow tui` | Interactive terminal UI — view active flows, open worktrees, tail logs, abort features (no Claude session needed) |
 
 ### Terminal Dashboard
 
-Monitor every active flow from your terminal — no Claude session needed. `bin/flow tui` reads state files directly and auto-refreshes every 2 seconds, so phase transitions and code task progress appear as they happen.
+Monitor every active flow from your terminal — no Claude session needed. `flow tui` reads state files directly and auto-refreshes every 2 seconds, so phase transitions and code task progress appear as they happen.
 
 | Key | Action |
 |-----|--------|

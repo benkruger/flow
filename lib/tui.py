@@ -3,7 +3,7 @@
 A curses-based terminal application that reads local state files and
 provides keyboard-driven navigation. No Claude session required.
 
-Usage: bin/flow tui
+Usage: flow tui
 """
 
 import curses
@@ -525,7 +525,7 @@ def _main(stdscr):
 
 
 def main():
-    """Entry point for bin/flow tui."""
+    """Entry point for flow tui."""
     curses.wrapper(_main)
 
 

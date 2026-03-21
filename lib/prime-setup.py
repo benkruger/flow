@@ -224,7 +224,7 @@ def merge_settings(project_root, framework):
 
 def write_version_marker(project_root, version, framework, skills=None,
                          config_hash=None, setup_hash=None,
-                         commit_format=None):
+                         commit_format=None, plugin_root=None):
     """Write .flow.json with the plugin version, framework, and optional fields.
 
     If skills is provided, it is included as a top-level key mapping skill
@@ -241,6 +241,8 @@ def write_version_marker(project_root, version, framework, skills=None,
         data["setup_hash"] = setup_hash
     if commit_format is not None:
         data["commit_format"] = commit_format
+    if plugin_root is not None:
+        data["plugin_root"] = plugin_root
     if skills is not None:
         data["skills"] = skills
     flow_json.write_text(json.dumps(data) + "\n")
@@ -311,6 +313,70 @@ def install_pre_commit_hook(project_root):
     hook_path = hooks_dir / "pre-commit"
     hook_path.write_text(PRE_COMMIT_HOOK)
     hook_path.chmod(0o755)
+
+
+LAUNCHER_SCRIPT = """\
+#!/usr/bin/env bash
+# Global FLOW launcher — installed by /flow:flow-prime
+# Reads plugin_root from .flow.json in the current git repo
+set -euo pipefail
+
+project_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
+  echo "Error: not inside a git repository" >&2
+  exit 1
+}
+
+flow_json="$project_root/.flow.json"
+if [ ! -f "$flow_json" ]; then
+  echo "Error: $flow_json not found — run /flow:flow-prime in this project first" >&2
+  exit 1
+fi
+
+plugin_root=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('plugin_root',''))" "$flow_json" 2>/dev/null) || plugin_root=""
+if [ -z "$plugin_root" ]; then
+  echo "Error: plugin_root not found in $flow_json — run /flow:flow-prime to update" >&2
+  exit 1
+fi
+
+if [ ! -d "$plugin_root" ]; then
+  echo "Error: plugin path $plugin_root does not exist — run /flow:flow-prime to update" >&2
+  exit 1
+fi
+
+exec "$plugin_root/bin/flow" "$@"
+"""
+
+
+def _home_dir():
+    """Resolve the user's home directory, preferring $HOME for testability."""
+    env_home = os.environ.get("HOME")
+    return Path(env_home) if env_home else Path.home()
+
+
+def install_launcher():
+    """Install a global flow launcher at ~/.local/bin/flow.
+
+    Creates ~/.local/bin/ if it does not exist. Idempotent: overwrites
+    any existing launcher with the current version.
+    """
+    launcher_dir = _home_dir() / ".local" / "bin"
+    launcher_dir.mkdir(parents=True, exist_ok=True)
+    launcher_path = launcher_dir / "flow"
+    launcher_path.write_text(LAUNCHER_SCRIPT)
+    launcher_path.chmod(0o755)
+
+
+def check_launcher_path():
+    """Warn if ~/.local/bin is not in PATH."""
+    local_bin = str(_home_dir() / ".local" / "bin")
+    path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+    if local_bin not in path_dirs:
+        print(
+            f"Warning: {local_bin} is not in your PATH. "
+            f"Add this to your shell profile:\n"
+            f'  export PATH="$HOME/.local/bin:$PATH"',
+            file=sys.stderr,
+        )
 
 
 SLACK_AUTH_URL = "https://slack.com/api/auth.test"
@@ -409,6 +475,7 @@ def main():
     framework = None
     skills_json = None
     commit_format = None
+    plugin_root = None
     i = 2
     while i < len(sys.argv):
         if sys.argv[i] == "--framework" and i + 1 < len(sys.argv):
@@ -419,6 +486,9 @@ def main():
             i += 2
         elif sys.argv[i] == "--commit-format" and i + 1 < len(sys.argv):
             commit_format = sys.argv[i + 1]
+            i += 2
+        elif sys.argv[i] == "--plugin-root" and i + 1 < len(sys.argv):
+            plugin_root = sys.argv[i + 1]
             i += 2
         else:
             i += 1
@@ -450,10 +520,17 @@ def main():
         write_version_marker(project_root, version, framework,
                              skills=skills, config_hash=config_hash,
                              setup_hash=setup_hash,
-                             commit_format=commit_format)
+                             commit_format=commit_format,
+                             plugin_root=plugin_root)
         exclude_updated = update_git_exclude(project_root)
         install_pre_commit_hook(project_root)
         write_slack_config(project_root)
+
+        launcher_installed = False
+        if plugin_root is not None:
+            install_launcher()
+            check_launcher_path()
+            launcher_installed = True
 
         _prime_project = _import_sibling("prime_project", "prime-project.py")
         _create_deps = _import_sibling("create_deps", "create-dependencies.py")
@@ -466,6 +543,7 @@ def main():
             "exclude_updated": exclude_updated,
             "version_marker": True,
             "hook_installed": True,
+            "launcher_installed": launcher_installed,
             "framework": framework,
             "prime_project": prime_result["status"],
             "dependencies": deps_result["status"],

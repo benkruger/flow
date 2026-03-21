@@ -19,7 +19,8 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
-def _run(project_root, framework="rails", skills_json=None, commit_format=None):
+def _run(project_root, framework="rails", skills_json=None, commit_format=None,
+         plugin_root=None, env=None):
     """Run prime-setup.py via subprocess."""
     cmd = [sys.executable, SCRIPT, str(project_root)]
     if framework:
@@ -28,7 +29,9 @@ def _run(project_root, framework="rails", skills_json=None, commit_format=None):
         cmd.extend(["--skills-json", skills_json])
     if commit_format is not None:
         cmd.extend(["--commit-format", commit_format])
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    if plugin_root is not None:
+        cmd.extend(["--plugin-root", plugin_root])
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
     return result
 
 
@@ -553,6 +556,24 @@ def test_happy_path_stores_setup_hash(git_repo):
     assert len(data["setup_hash"]) == 12
 
 
+# --- Plugin root in version marker ---
+
+
+def test_version_marker_with_plugin_root(tmp_path):
+    _mod.write_version_marker(
+        tmp_path, _mod._plugin_version(), "rails",
+        plugin_root="/some/cache/path",
+    )
+    data = json.loads((tmp_path / ".flow.json").read_text())
+    assert data["plugin_root"] == "/some/cache/path"
+
+
+def test_version_marker_without_plugin_root_has_no_key(tmp_path):
+    _mod.write_version_marker(tmp_path, _mod._plugin_version(), "rails")
+    data = json.loads((tmp_path / ".flow.json").read_text())
+    assert "plugin_root" not in data
+
+
 # --- Pre-commit hook installation ---
 
 
@@ -701,6 +722,68 @@ def test_pre_commit_hook_allows_commit_on_different_branch(git_repo):
     assert result.returncode == 0
 
 
+# --- Global launcher ---
+
+
+def test_install_launcher_creates_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _mod.install_launcher()
+    launcher = tmp_path / ".local" / "bin" / "flow"
+    assert launcher.exists()
+
+
+def test_install_launcher_executable(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _mod.install_launcher()
+    launcher = tmp_path / ".local" / "bin" / "flow"
+    assert os.access(launcher, os.X_OK)
+
+
+def test_install_launcher_content(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _mod.install_launcher()
+    content = (tmp_path / ".local" / "bin" / "flow").read_text()
+    assert "git rev-parse --show-toplevel" in content
+    assert ".flow.json" in content
+    assert "plugin_root" in content
+    assert 'exec "$plugin_root/bin/flow"' in content
+    assert "#!/usr/bin/env bash" in content
+
+
+def test_install_launcher_idempotent(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _mod.install_launcher()
+    content_first = (tmp_path / ".local" / "bin" / "flow").read_text()
+    _mod.install_launcher()
+    content_second = (tmp_path / ".local" / "bin" / "flow").read_text()
+    assert content_first == content_second
+
+
+def test_install_launcher_creates_directory(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert not (tmp_path / ".local" / "bin").exists()
+    _mod.install_launcher()
+    assert (tmp_path / ".local" / "bin" / "flow").exists()
+
+
+def test_check_launcher_path_in_path(tmp_path, monkeypatch, capsys):
+    local_bin = str(tmp_path / ".local" / "bin")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", f"{local_bin}:/usr/bin")
+    _mod.check_launcher_path()
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_check_launcher_path_not_in_path(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", "/usr/bin:/usr/local/bin")
+    _mod.check_launcher_path()
+    captured = capsys.readouterr()
+    assert "export PATH" in captured.err
+    assert ".local/bin" in captured.err
+
+
 # --- commit_format in version marker ---
 
 
@@ -769,6 +852,38 @@ def test_cli_ignores_unknown_args(git_repo):
     assert result.returncode == 0
     data = json.loads(result.stdout)
     assert data["status"] == "ok"
+
+
+# --- CLI --plugin-root ---
+
+
+def test_cli_plugin_root_written_to_flow_json(git_repo, tmp_path):
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    env = {**os.environ, "HOME": str(fake_home)}
+    result = _run(git_repo, plugin_root="/some/cache/path", env=env)
+    assert result.returncode == 0
+    data = json.loads((git_repo / ".flow.json").read_text())
+    assert data["plugin_root"] == "/some/cache/path"
+
+
+def test_cli_launcher_installed_in_output(git_repo, tmp_path):
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    env = {**os.environ, "HOME": str(fake_home)}
+    result = _run(git_repo, plugin_root="/some/cache/path", env=env)
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["launcher_installed"] is True
+
+
+def test_cli_no_plugin_root_no_launcher(git_repo):
+    result = _run(git_repo)
+    assert result.returncode == 0
+    data = json.loads((git_repo / ".flow.json").read_text())
+    assert "plugin_root" not in data
+    output = json.loads(result.stdout)
+    assert output["launcher_installed"] is False
 
 
 # --- Consolidated prime-project and create-dependencies ---

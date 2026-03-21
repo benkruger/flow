@@ -97,7 +97,7 @@ CI will fail if these are missing:
 - `lib/stop-continue.py` — Stop hook script that forces continuation when `_continue_pending` flag is set in the state file; reads `_continue_context` for specific next-step instructions in the block reason
 - `lib/post-compact.py` — PostCompact hook that captures `compact_summary`, `compact_cwd`, and `compact_count` in the state file for SessionStart to inject
 - `lib/tui_data.py` — pure data layer for TUI: loads state files, computes flow summaries, phase timelines, parses log entries
-- `lib/tui.py` — curses-based interactive TUI for viewing and managing active flows (`bin/flow tui`)
+- `lib/tui.py` — curses-based interactive TUI for viewing and managing active flows (`flow tui`)
 - `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands and file-read commands in all Bash calls)
 - `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (blocks prompts when `_auto_continue` is set in state file)
 - `bin/flow` — dispatcher script routing subcommands to `lib/*.py`

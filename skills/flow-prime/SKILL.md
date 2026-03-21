@@ -232,7 +232,7 @@ Serialize `skills_dict` from Step 2 as a JSON string for the `--skills-json` arg
 Pass the `commit_format` value from Step 4 via `--commit-format`.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --framework <framework> --skills-json '<skills_dict_json>' --commit-format <commit_format>
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --framework <framework> --skills-json '<skills_dict_json>' --commit-format <commit_format> --plugin-root ${CLAUDE_PLUGIN_ROOT}
 ```
 
 The script handles everything in a single call:
@@ -244,10 +244,11 @@ The script handles everything in a single call:
 - Adding `.flow-states/`, `.worktrees/`, `.flow.json`, and `bin/dependencies` to `.git/info/exclude`
 - Installing a pre-commit hook at `.git/hooks/pre-commit` that blocks direct `git commit` during active FLOW features and requires commits to go through `/flow:flow-commit`
 - Configuring Slack notifications: if `FLOW_SLACK_TOKEN` and `FLOW_SLACK_CHANNEL` env vars are both set, writes `slack.bot_token` and `slack.channel` to `.flow.json` and sets `notify` to `auto`; validates the token with Slack `auth.test` (warns on failure, does not block); if either env var is absent, removes the `slack` key and sets `notify` to `never`
+- Installing a global `flow` launcher at `~/.local/bin/flow` that delegates to the plugin cache, and warning if `~/.local/bin` is not in PATH
 - Priming the project CLAUDE.md with framework conventions (if CLAUDE.md exists)
 - Creating `bin/dependencies` from the framework template (skips if already exists)
 
-Output JSON: `{"status": "ok", "settings_merged": true, "exclude_updated": true, "version_marker": true, "hook_installed": true, "framework": "rails|python|ios", "prime_project": "ok|error", "dependencies": "ok|skipped"}`
+Output JSON: `{"status": "ok", "settings_merged": true, "exclude_updated": true, "version_marker": true, "hook_installed": true, "launcher_installed": true, "framework": "rails|python|ios", "prime_project": "ok|error", "dependencies": "ok|skipped"}`
 
 If the script returns an error, show the message and stop.
 
@@ -398,6 +399,7 @@ Report:
 - Version marker written to `.flow.json` (git-excluded)
 - Git excludes configured for `.flow-states/`, `.worktrees/`, `.flow.json`, and `bin/dependencies`
 - Pre-commit hook installed — blocks direct `git commit`, requires `/flow:flow-commit`
+- Global launcher installed at `~/.local/bin/flow` — run `flow tui` from any primed project
 - Slack notifications: configured (if env vars set) or disabled (if absent)
 - Changes committed
 
