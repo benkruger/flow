@@ -899,6 +899,28 @@ def test_tab_title_does_not_appear_in_stdout(git_repo):
     assert "\007" not in result.stdout
 
 
+def test_tab_title_with_issue_numbers_does_not_appear_in_stdout(git_repo):
+    """Tab title with issue prefix from prompt must not appear in stdout."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["branch"] = "tab-issue-test"
+    state["prompt"] = "work on issue #342"
+    write_state(state_dir, "tab-issue-test", state)
+
+    _switch(git_repo, "tab-issue-test")
+    result = _run(git_repo)
+    assert result.returncode == 0
+
+    output = json.loads(result.stdout)
+    assert "additional_context" in output
+
+    assert "\033]0;" not in result.stdout
+    assert "\007" not in result.stdout
+
+
 # --- Orchestrator state detection ---
 
 
