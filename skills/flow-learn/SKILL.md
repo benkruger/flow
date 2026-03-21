@@ -1,6 +1,6 @@
 ---
 name: flow-learn
-description: "Phase 5: Learn — review what went wrong, capture learnings, route to CLAUDE.md or file issues. CLAUDE.md edits committed directly; rules filed as Rule issues to avoid permission prompts."
+description: "Phase 5: Learn — review what went wrong, capture learnings, route to CLAUDE.md and .claude/rules/. Both destinations edited directly on disk and committed via PR."
 ---
 
 # Learn
@@ -213,29 +213,25 @@ without asking the user.
 | Learning type | Destination | Method |
 |---|---|---|
 | Process rule or architecture | Project CLAUDE.md (`CLAUDE.md`) | Edit on disk |
-| Coding anti-pattern or gotcha | `.claude/rules/<topic>.md` | File a "Rule" issue |
+| Coding anti-pattern or gotcha | `.claude/rules/<topic>.md` | Edit on disk |
 
 **Process gap routing:** Learnings about FLOW skill or process behavior
 (e.g. how a phase skill should present output, when a skill should
 prompt the user) are process gaps — they belong in Step 5, which files
-them on the plugin repo with the "Flow" label. Process gaps are never
-coding anti-patterns and are never filed as Rule issues here. Skip them
-in this step and let Step 5 handle them.
+them on the plugin repo with the "Flow" label. Process gaps are not
+coding anti-patterns. Skip them in this step and let Step 5 handle them.
 
 ### Mandatory output constraint
 
 If Step 2 identified Claude mistakes, every mistake must produce at least
-one concrete artifact — a CLAUDE.md edit, a Rule issue, or a Flow issue.
-A rule that existed but failed to prevent the mistake is not sufficient
-coverage. When an existing rule failed to prevent the mistake, either
-strengthen the rule (CLAUDE.md edit) or file a more specific Rule or
-Flow issue. Zero artifacts from Step 3 when Step 2 found mistakes is a
-skill failure.
+one concrete artifact — a CLAUDE.md edit, a `.claude/rules/` edit, or a
+Flow issue. A rule that existed but failed to prevent the mistake is not
+sufficient coverage. When an existing rule failed to prevent the mistake,
+either strengthen the rule (CLAUDE.md edit) or add a more specific rule
+(`.claude/rules/` edit) or file a Flow issue. Zero artifacts from Step 3
+when Step 2 found mistakes is a skill failure.
 
-CLAUDE.md edits are direct — committed in Step 4.
-
-Rules edits are deferred — filed as GitHub issues with all context needed
-for a future session to apply them.
+Both CLAUDE.md and `.claude/rules/` edits are direct — committed in Step 4.
 
 ### Writing rules
 
@@ -260,35 +256,19 @@ If the user denies an Edit tool call, treat it as "skip this learning"
 continue with the remaining learnings. A denied edit does not block
 subsequent destinations, steps, or the phase completion.
 
-### File Rule issues
+### Apply rules changes
 
 For each item routed to `.claude/rules/` (coding anti-patterns, gotchas):
 
 1. Compose the rule text following the writing rules above
-2. Determine the target file (`.claude/rules/<topic>.md`) and whether
-   it is a new rule or an update to an existing rule
-3. File a GitHub issue on the target project and record it
-
-The issue body must contain the full rule text, the target file path
-(e.g. `.claude/rules/testing-gotchas.md`), whether this is a new rule
-or an update, and the section to place it in (if updating an existing
-file).
-
-Write the issue body to `.flow-issue-body` in the project root using the
-Write tool, then file:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Rule" --title "<issue_title>" --body-file .flow-issue-body
-```
-
-Parse the JSON output. If `"status": "ok"`, record the issue:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Rule" --title "<issue_title>" --url "<issue_url>" --phase "flow-learn"
-```
-
-If `bin/flow issue` fails, note the failure and continue with
-remaining items.
+2. Determine the target file (`<worktree_path>/.claude/rules/<topic>.md`)
+   and whether it is a new rule or an update to an existing rule
+3. Use the Glob tool to check if the file exists at
+   `<worktree_path>/.claude/rules/<topic>.md`
+4. If the file exists, use the Read tool to read it, then use the Edit
+   tool to add or update the rule in the appropriate section
+5. If the file does not exist, use the Write tool to create it with a
+   markdown heading matching the topic name
 
 ---
 
@@ -557,11 +537,11 @@ No phase transition, no transition question.
 - Decisions on destinations and wording are autonomous — do not ask the user for approval mid-process
 - If the user denies an Edit tool call during Step 3, skip that learning and continue — a denied edit means "skip this one," not "stop the phase"
 - The report in Step 6 is the user's review point — make it comprehensive
-- CLAUDE.md learnings are edited on disk and committed via `/flow:flow-commit --auto` (Phase 5 and Maintainer)
-- Rules learnings (`.claude/rules/`) are filed as GitHub issues with label "Rule" — never edited directly, to avoid permission prompts
+- CLAUDE.md and `.claude/rules/` learnings are edited on disk and committed via `/flow:flow-commit --auto` (Phase 5 and Maintainer)
+- All edits target the project repo — never user-level `~/.claude/` paths
 - Plugin process gaps are filed as GitHub issues on the plugin repo with label "Flow"
 - Documentation drift is filed as GitHub issues on the target project with label "Documentation Drift"
-- Only CLAUDE.md and `.claude/settings.json` files are modified on disk — never application code or `.claude/rules/`
+- CLAUDE.md, `.claude/settings.json`, and `.claude/rules/` files are modified on disk — never application code
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories

@@ -293,15 +293,17 @@ starting with `~/`, `/Users/`, or any absolute path not under the
 working directory — are not tracked by git. Changes to those files will
 not appear in `git status` or the PR diff.
 
-If a target path is outside the repo and the prompt or issue body
-contains keywords like "repo", "version-controlled", "shared",
-"committed", or "tracked", note the ambiguity in the plan's Risks
-section and default to the repo-local equivalent path (e.g.
-`.claude/rules/` instead of `~/.claude/rules/`).
+**Hard rule for `.claude/rules/` and `CLAUDE.md`:** These paths are
+ALWAYS repo-level during any FLOW phase. If a target resolves to
+`~/.claude/rules/` or `~/.claude/CLAUDE.md`, override it to the
+repo-local equivalent (`.claude/rules/` or `CLAUDE.md` in the working
+tree). There is no "may be intentional" exception — user-level paths
+are never valid write targets during FLOW phases.
 
-If the prompt does not contain repo-related keywords, the out-of-repo
-path may be intentional. Still note it in the plan's Risks section so
-the user is aware, but do not override the target.
+For other out-of-repo paths: if the prompt or issue body contains
+keywords like "repo", "version-controlled", "shared", "committed", or
+"tracked", default to the repo-local equivalent. Otherwise, note the
+out-of-repo path in the plan's Risks section so the user is aware.
 
 ### Framework Conventions
 

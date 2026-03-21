@@ -163,9 +163,9 @@ Learn is a unified tri-modal skill. It auto-detects Phase 5 (state file with Cod
 The 2 destinations:
 
 - **Project CLAUDE.md** (`CLAUDE.md` in project) — process rules, architecture, and conventions. Edited on disk, committed via PR.
-- **Project rules** (`.claude/rules/<topic>.md` in project) — coding anti-patterns and gotchas. Filed as "Rule" GitHub issues (not edited directly) to avoid permission prompts that break autonomous flow.
+- **Project rules** (`.claude/rules/<topic>.md` in project) — coding anti-patterns and gotchas. Edited on disk, committed via PR.
 
-Learn also files GitHub issues for process gaps ("Flow" label on the plugin repo), documentation drift ("Documentation Drift" label), and rule additions ("Rule" label). All filed issues are recorded in the state file via `bin/flow add-issue` and surfaced in the Complete phase.
+Learn also files GitHub issues for process gaps ("Flow" label on the plugin repo) and documentation drift ("Documentation Drift" label). All filed issues are recorded in the state file via `bin/flow add-issue` and surfaced in the Complete phase.
 
 Code files "Flaky Test" issues when tests fail intermittently during the CI gate. Code Review files "Tech Debt" and "Documentation Drift" issues for out-of-scope findings. All issue filing uses `bin/flow issue` and `bin/flow add-issue`.
 
@@ -255,6 +255,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 - **All timestamps use Pacific Time** — `lib/flow_utils.py` provides `now()` which returns `datetime.now(ZoneInfo("America/Los_Angeles")).isoformat(timespec="seconds")`. All scripts import `now` from `flow_utils` — never generate timestamps locally. Existing state files with UTC timestamps (`Z` suffix) are handled by `datetime.fromisoformat()` which parses both formats.
 - **Prefer dedicated tools over Bash for all non-execution tasks** — Read files with the Read tool, search with Glob and Grep, create with Write, modify with Edit. Bash should only be used for commands that genuinely require shell execution: `bin/ci`, `bin/test`, `bin/flow`, `make`, and `git`. In this project's strict permission environment (`defaultMode: "plan"`), every Bash command not in the allow list triggers a permission prompt. When you need to explore, understand, or modify files, use dedicated tools — they never prompt.
 - **Always use `bin/flow issue` to file GitHub issues** — never use `gh issue create` directly. `bin/flow issue` auto-detects the repo from git remote when `--repo` is omitted; pass `--repo` only when filing against a different repo. Direct `gh` calls trigger permission prompts.
+- **All FLOW-produced rules and instructions target the project repo** — `CLAUDE.md` and `.claude/rules/` are always repo-level paths, never user-level `~/.claude/` paths. Reading user-level files is fine; writing to them is never valid during any FLOW phase.
 
 <!-- FLOW:BEGIN -->
 
