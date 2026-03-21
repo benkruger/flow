@@ -282,6 +282,8 @@ class TestCheckContinueErrorReporting:
         """When current_branch raises (extreme edge case), stderr is written but no log crash."""
         monkeypatch.chdir(tmp_path)
 
+        monkeypatch.setattr(_mod, "project_root", lambda: tmp_path)
+
         def raise_error():
             raise OSError("git binary missing")
 
@@ -320,8 +322,8 @@ class TestCheckContinueErrorReporting:
         assert "original error" in captured.err
 
         log_path = state_dir / f"{branch}.log"
-        if log_path.exists():
-            assert "[stop-continue] ERROR:" not in log_path.read_text()
+        log_content = log_path.read_text() if log_path.exists() else ""
+        assert "[stop-continue] ERROR:" not in log_content
 
     def test_subprocess_corrupt_state_produces_stderr(self, git_repo, state_dir, branch):
         """Subprocess: corrupt state file with _continue_pending produces stderr diagnostic."""

@@ -106,11 +106,10 @@ def check_continue(hook_input=None):
             f"[FLOW stop-continue] check_continue error: {exc}\n"
         )
         try:
-            if branch and root:
+            if root and branch:
                 log_path = root / ".flow-states" / f"{branch}.log"
-                if log_path.parent.exists():
-                    with open(log_path, "a") as f:
-                        f.write(f"{now()} [stop-continue] ERROR: {exc}\n")
+                with open(log_path, "a") as log_file:
+                    log_file.write(f"{now()} [stop-continue] ERROR: {exc}\n")
         except Exception:
             pass
         return (False, None, None)
