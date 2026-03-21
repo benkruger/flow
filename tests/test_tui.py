@@ -159,6 +159,32 @@ def test_draw_list_view_with_flows():
     assert "Code" in text
 
 
+def test_draw_list_view_multiple_flows_unselected_marker():
+    """Non-selected flows get a plain marker (no arrow, no diamond)."""
+    state1 = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    state2 = make_state(
+        current_phase="flow-plan",
+        phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
+    )
+    state2["branch"] = "second-feature"
+    flow1 = _flow_from_state(state1)
+    flow2 = _flow_from_state(state2)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow1, flow2])
+    app.selected = 0
+    app._draw_list_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    # Selected flow gets arrow marker, second flow gets plain space marker
+    assert "Second Feature" in text
+    assert "\u25b8 " in text  # arrow for selected
+    assert "  Second Feature" in text  # plain marker for unselected
+
+
 def test_draw_list_view_with_notes_and_issues():
     """Shows notes and issues counts in detail panel."""
     state = make_state(
