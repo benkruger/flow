@@ -21,7 +21,7 @@ fi
 
 # Reset any interrupted session timing, build context, and emit JSON output
 python3 - << 'PYTHON'
-import json, subprocess, sys
+import json, re, subprocess, sys
 from pathlib import Path
 
 state_dir = Path(".flow-states")
@@ -347,6 +347,17 @@ try:
             if isinstance(trstep, int) and 0 < trstep < 4:
                 tstep = f" (step {trstep}/4)"
         tfeature = _feature(ts)
+        tprompt = ts.get("prompt", "")
+        tissue_nums = re.findall(r"#(\d+)", tprompt) + re.findall(r"/issues/(\d+)", tprompt)
+        if tissue_nums:
+            seen = set()
+            unique = []
+            for n in tissue_nums:
+                if n not in seen:
+                    seen.add(n)
+                    unique.append(n)
+            tissue_prefix = " ".join(f"#{n}" for n in unique)
+            tfeature = f"{tissue_prefix} {tfeature}"
         ttitle = f"Flow: Phase {tnum}: {tname}{tstep} \u2014 {tfeature}"
         with open("/dev/tty", "w") as tty:
             tty.write(f"\033]0;{ttitle}\007")
