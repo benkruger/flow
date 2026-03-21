@@ -1331,7 +1331,8 @@ def test_learning_has_no_private_destination_paths():
 def test_learning_destinations_are_repo_only():
     """Learn skill must define repo-local destinations with correct routing.
 
-    CLAUDE.md edits are direct (on disk). Rules edits are filed as issues."""
+    Both destinations are direct (on disk). CLAUDE.md and .claude/rules/
+    are both edited using dedicated tools and committed in Step 4."""
     content = _read_skill("flow-learn")
     assert "Destinations and routing" in content, (
         "Learn skill must have a 'Destinations and routing' section"
@@ -1339,11 +1340,15 @@ def test_learning_destinations_are_repo_only():
     assert "Project CLAUDE.md" in content, (
         "Learn skill must include 'Project CLAUDE.md' as a destination"
     )
-    assert "Edit on disk" in content, (
-        "Learn skill must route CLAUDE.md edits to disk"
+    routing_match = re.search(
+        r"Destinations and routing.*?\n\n(.*?)(?:\n###|\n---)",
+        content, re.DOTALL,
     )
-    assert "Rule" in content, (
-        "Learn skill must route .claude/rules/ changes as Rule issues"
+    assert routing_match, "Could not extract routing table"
+    routing_text = routing_match.group(1)
+    edit_count = routing_text.count("Edit on disk")
+    assert edit_count >= 2, (
+        f"Both destinations must use 'Edit on disk' method, found {edit_count}"
     )
 
 
@@ -1370,14 +1375,21 @@ def test_learning_detects_dangling_async_operations():
     )
 
 
-def test_learning_files_rule_issues():
-    """Learn skill must file Rule issues for .claude/rules/ learnings."""
+def test_learning_edits_rules_directly():
+    """Learn skill must edit .claude/rules/ directly using dedicated tools.
+
+    Issue #381: rules were previously filed as GitHub issues, deferring
+    them indefinitely. Now both destinations (CLAUDE.md and .claude/rules/)
+    are edited on disk and committed in Step 4."""
     step3_text = _learn_step_text(3)
-    assert '--label' in step3_text and 'Rule' in step3_text, (
-        "Learn Step 3 must instruct filing issues with label 'Rule'"
+    assert "<worktree_path>" in step3_text, (
+        "Learn Step 3 must reference <worktree_path> for .claude/rules/ edits"
     )
-    assert "bin/flow issue" in step3_text, (
-        "Learn Step 3 must use 'bin/flow issue' to file Rule issues"
+    assert ".claude/rules/" in step3_text, (
+        "Learn Step 3 must mention .claude/rules/ as an edit target"
+    )
+    assert "bin/flow issue" not in step3_text, (
+        "Learn Step 3 must not file issues — rules are edited directly on disk"
     )
 
 
