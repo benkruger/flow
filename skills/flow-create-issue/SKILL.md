@@ -256,7 +256,8 @@ Before filing, determine where this issue belongs. Use AskUserQuestion:
 > - **FLOW plugin (benkruger/flow)** — this is a bug in the FLOW process itself
 
 Do not proceed to file the issue, propose direct edits, commit changes,
-or take any action outside this skill without the user's response.
+or take any action outside this skill without explicit user approval via
+AskUserQuestion — even if the answer appears obvious from context.
 
 </HARD-GATE>
 
@@ -280,7 +281,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<issue
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo benkruger/flow --title "<issue_title>" --body-file .flow-issue-body-<id> --label "Flow"
 ```
 
-Record the issue:
+Record the issue in the state file (no-op if no FLOW feature is active):
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
