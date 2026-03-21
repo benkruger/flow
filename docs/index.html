@@ -796,7 +796,7 @@ Duration: <span class="t-accent">6h 27m</span>
       <div class="terminal-body">
 <span class="t-dim">────</span> <span class="t-bold">FLOW v0.37.0</span> <span class="t-dim">──────────────────────────────────────────────</span>
 
-  <span class="t-bold">Active Flows (2)</span>
+  <span class="t-bold">Active Flows (2)</span>  <span class="t-dim">&#9474;</span>  <span class="t-dim">Orchestration</span>
   <span class="t-dim">──────────────────────────────────────────────────────</span>
   <span class="t-bold">&#9656; invoice-pdf-export          3: Code         12m      PR #42</span>
     slack-thread-replies        2: Plan          5m      PR #41
@@ -815,7 +815,33 @@ Duration: <span class="t-accent">6h 27m</span>
 
   Notes: 1  <span class="t-dim">&#9474;</span>  Issues: 2 filed
 
-  <span class="t-footer">[&#8593;&#8595;] Navigate  [Enter] Worktree  [p] PR  [l] Log  [a] Abort  [r] Refresh  [q] Quit</span></div>
+  <span class="t-footer">[&#8592;&#8594;] Tab  [&#8593;&#8595;] Navigate  [Enter] Worktree  [p] PR  [i] Issue  [l] Log  [a] Abort  [r] Refresh  [q] Quit</span></div>
+    </div>
+
+    <div class="terminal">
+      <div class="terminal-bar">
+        <span class="t-close"></span>
+        <span class="t-min"></span>
+        <span class="t-max"></span>
+      </div>
+      <div class="terminal-body">
+<span class="t-dim">────</span> <span class="t-bold">FLOW v0.37.0</span> <span class="t-dim">──────────────────────────────────────────────</span>
+
+  <span class="t-dim">Active Flows (2)</span>  <span class="t-dim">&#9474;</span>  <span class="t-bold">Orchestration (4/5)</span>
+  <span class="t-dim">──────────────────────────────────────────────────────</span>
+
+  Elapsed: <span class="t-accent">6h 27m</span>
+  <span class="t-dim">──────────────────────────────────────────────────────</span>
+  <span class="t-bold">&#9656; <span class="t-green">&#10003;</span> #42  Add PDF export                6h 12m   PR #58</span>
+    <span class="t-green">&#10003;</span> #44  Refactor auth module          1h 45m   PR #60
+    <span class="t-accent">&#10007;</span> #43  Fix login timeout             42m
+    <span class="t-green">&#10003;</span> #45  Update payment hooks          2h 18m   PR #61
+    <span class="t-green">&#10003;</span> #46  Add rate limiting             1h 30m   PR #62
+  <span class="t-dim">──────────────────────────────────────────────────────</span>
+
+  PR: <span class="t-accent">https://github.com/acme/app/pull/58</span>
+
+  <span class="t-footer">[&#8592;&#8594;] Tab  [&#8593;&#8595;] Navigate  [i] Issue  [r] Refresh  [q] Quit</span></div>
     </div>
 
     <div class="cool-grid">
@@ -845,8 +871,10 @@ Duration: <span class="t-accent">6h 27m</span>
       </thead>
       <tbody>
         <tr><td><code>&#8593;</code> <code>&#8595;</code></td><td>Navigate flow list</td></tr>
+        <tr><td><code>&#8592;</code> <code>&#8594;</code></td><td>Switch tab</td></tr>
         <tr><td><code>Enter</code></td><td>Open worktree in new Terminal tab</td></tr>
         <tr><td><code>p</code></td><td>Open PR in browser</td></tr>
+        <tr><td><code>i</code></td><td>Open issue in browser</td></tr>
         <tr><td><code>l</code></td><td>Show session log</td></tr>
         <tr><td><code>a</code></td><td>Abort flow (with Y/N confirmation)</td></tr>
         <tr><td><code>r</code></td><td>Force refresh</td></tr>

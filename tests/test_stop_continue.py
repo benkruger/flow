@@ -232,13 +232,118 @@ class TestCheckContinue:
         assert context is None
 
 
+# --- Error reporting tests ---
+
+
+class TestCheckContinueErrorReporting:
+    def test_stderr_on_mutate_state_error(self, git_repo, state_dir, branch, monkeypatch, capsys):
+        """When mutate_state raises, stderr contains the error diagnostic."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_continue_pending"] = "commit"
+        write_state(state_dir, branch, state)
+
+        def raise_error(*args, **kwargs):
+            raise json.JSONDecodeError("Expecting value", "", 0)
+
+        monkeypatch.setattr(_mod, "mutate_state", raise_error)
+
+        should_block, skill_name, context = _mod.check_continue()
+
+        assert should_block is False
+        assert skill_name is None
+        assert context is None
+
+        captured = capsys.readouterr()
+        assert "[FLOW stop-continue] check_continue error:" in captured.err
+        assert "Expecting value" in captured.err
+
+    def test_log_file_written_on_error(self, git_repo, state_dir, branch, monkeypatch, capsys):
+        """When mutate_state raises and branch is known, error is logged to the log file."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_continue_pending"] = "commit"
+        write_state(state_dir, branch, state)
+
+        def raise_error(*args, **kwargs):
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr(_mod, "mutate_state", raise_error)
+
+        _mod.check_continue()
+
+        log_path = state_dir / f"{branch}.log"
+        assert log_path.exists()
+        log_content = log_path.read_text()
+        assert "[stop-continue] ERROR:" in log_content
+        assert "disk full" in log_content
+
+    def test_no_crash_when_branch_unknown(self, tmp_path, monkeypatch, capsys):
+        """When current_branch raises (extreme edge case), stderr is written but no log crash."""
+        monkeypatch.chdir(tmp_path)
+
+        monkeypatch.setattr(_mod, "project_root", lambda: tmp_path)
+
+        def raise_error():
+            raise OSError("git binary missing")
+
+        monkeypatch.setattr(_mod, "current_branch", raise_error)
+
+        should_block, skill_name, context = _mod.check_continue()
+
+        assert should_block is False
+        assert skill_name is None
+        assert context is None
+
+        captured = capsys.readouterr()
+        assert "[FLOW stop-continue] check_continue error:" in captured.err
+        assert "git binary missing" in captured.err
+
+    def test_log_failure_does_not_mask_original_error(self, git_repo, state_dir, branch, monkeypatch, capsys):
+        """When file logging itself fails, the original stderr diagnostic still appears."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_continue_pending"] = "commit"
+        write_state(state_dir, branch, state)
+
+        def raise_mutate(*args, **kwargs):
+            raise RuntimeError("original error")
+
+        def raise_now():
+            raise OSError("clock broken")
+
+        monkeypatch.setattr(_mod, "mutate_state", raise_mutate)
+        monkeypatch.setattr(_mod, "now", raise_now)
+
+        should_block, skill_name, context = _mod.check_continue()
+
+        assert should_block is False
+        captured = capsys.readouterr()
+        assert "original error" in captured.err
+
+        log_path = state_dir / f"{branch}.log"
+        log_content = log_path.read_text() if log_path.exists() else ""
+        assert "[stop-continue] ERROR:" not in log_content
+
+    def test_subprocess_corrupt_state_produces_stderr(self, git_repo, state_dir, branch):
+        """Subprocess: corrupt state file with _continue_pending produces stderr diagnostic."""
+        (state_dir / f"{branch}.json").write_text("{bad json")
+
+        stdin = json.dumps({})
+        exit_code, stdout, stderr = _run_hook(stdin, cwd=git_repo)
+
+        assert exit_code == 0
+        assert stdout == ""
+        assert "[FLOW stop-continue] check_continue error:" in stderr
+
+
 # --- Subprocess integration tests ---
 
 
 def _run_hook(stdin_data, cwd=None):
     """Run the Stop hook script as a subprocess.
 
-    Returns (exit_code, stdout).
+    Returns (exit_code, stdout, stderr).
     """
     result = subprocess.run(
         [sys.executable, str(SCRIPT)],
@@ -247,7 +352,7 @@ def _run_hook(stdin_data, cwd=None):
         text=True,
         cwd=str(cwd) if cwd else None,
     )
-    return result.returncode, result.stdout.strip()
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
 class TestSubprocess:
@@ -265,7 +370,7 @@ class TestSubprocess:
         write_state(state_dir, branch, state)
 
         stdin = json.dumps({})
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         output = json.loads(stdout)
@@ -278,20 +383,20 @@ class TestSubprocess:
         write_state(state_dir, branch, state)
 
         stdin = json.dumps({})
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         assert stdout == ""
 
     def test_malformed_stdin_no_output(self, git_repo):
-        exit_code, stdout = _run_hook("not json at all", cwd=git_repo)
+        exit_code, stdout, _ = _run_hook("not json at all", cwd=git_repo)
 
         assert exit_code == 0
         assert stdout == ""
 
     def test_no_state_dir_no_output(self, git_repo):
         stdin = json.dumps({})
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         assert stdout == ""
@@ -312,7 +417,7 @@ class TestSubprocess:
         write_state(state_dir, branch, state)
 
         stdin = json.dumps({})
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         output = json.loads(stdout)
@@ -333,7 +438,7 @@ class TestSubprocess:
         write_state(state_dir, branch, state)
 
         stdin = json.dumps({})
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         output = json.loads(stdout)
@@ -348,7 +453,7 @@ class TestSubprocess:
             "session_id": "from-stdin-test",
             "transcript_path": "/path/to/from-stdin.jsonl",
         })
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         updated = json.loads((state_dir / f"{branch}.json").read_text())
@@ -446,7 +551,7 @@ class TestSessionIsolation:
         write_state(state_dir, branch, state)
 
         stdin = json.dumps({"session_id": "new-session"})
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         assert stdout == ""
@@ -462,7 +567,7 @@ class TestSessionIsolation:
         write_state(state_dir, branch, state)
 
         stdin = json.dumps({"session_id": "new-session"})
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         updated = json.loads((state_dir / f"{branch}.json").read_text())

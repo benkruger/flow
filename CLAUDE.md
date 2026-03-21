@@ -37,6 +37,8 @@ Phase gates are enforced by `lib/check-phase.py` — there is no instruction pat
 
 ## When You Must Update Docs and Tests
 
+"Marketing docs" refers to `docs/index.html` — the GitHub Pages landing page.
+
 ### Structural sync (CI-enforced by `test_docs_sync.py`)
 
 CI will fail if these are missing:
