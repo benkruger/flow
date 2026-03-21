@@ -2562,6 +2562,30 @@ def test_plan_skill_has_dag_mode_resolution():
     )
 
 
+def test_plan_validates_target_file_paths():
+    """Plan SKILL.md must have a Target Path Validation subsection."""
+    content = _read_skill("flow-plan")
+    assert "### Target Path Validation" in content, (
+        "flow-plan/SKILL.md must have a '### Target Path Validation' "
+        "subsection in Step 3"
+    )
+    section_match = re.search(
+        r"### Target Path Validation\n(.*?)(?=\n### |\n## )",
+        content,
+        re.DOTALL,
+    )
+    assert section_match, (
+        "Could not extract Target Path Validation section content"
+    )
+    section = section_match.group(1)
+    assert "working tree" in section, (
+        "Target Path Validation must reference the repo working tree"
+    )
+    assert "Risks" in section, (
+        "Target Path Validation must instruct flagging in the Risks section"
+    )
+
+
 def test_prime_presets_include_dag_config():
     """All 3 prime presets must include 'dag' key in flow-plan config."""
     content = _read_skill("flow-prime")
