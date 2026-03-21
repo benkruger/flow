@@ -204,6 +204,48 @@ def test_draw_list_view_with_notes_and_issues():
     assert "Issues: 1" in text
 
 
+def test_draw_list_view_with_issue_numbers():
+    """Draws issue numbers in list view when prompt contains #N references."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    state["prompt"] = "work on #83 and #89"
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "#83" in text
+    assert "#89" in text
+
+
+def test_draw_list_view_no_issue_numbers():
+    """No issue text appears when prompt has no #N references."""
+    import re
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    # Find the flow list row — contains both "Test Feature" and "Code" (phase info)
+    flow_row_calls = [c for c in calls if "Test Feature" in c and "Code" in c]
+    assert len(flow_row_calls) == 1
+    flow_row_text = flow_row_calls[0]
+    # PR #1 should appear, but no other #N pattern before it
+    assert "PR #1" in flow_row_text
+    # Remove "PR #1" and check no other #<digit> remains
+    stripped = flow_row_text.replace("PR #1", "")
+    assert not re.search(r"#\d", stripped)
+
+
 def test_draw_list_view_no_pr():
     """Handles flow with no PR number."""
     state = make_state()
@@ -222,6 +264,46 @@ def test_draw_list_view_small_terminal():
     stdscr = _make_stdscr(rows=10, cols=40)
     app = _make_app(stdscr, flows=[flow])
     app._draw_list_view()
+
+
+def test_draw_list_view_long_feature_name_truncated():
+    """Truncates feature names longer than 26 chars with '...' in list view."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    # Branch name that produces a feature name > 26 chars
+    # "Showcase Slack Orchestrate Tui" = 30 chars
+    state["branch"] = "showcase-slack-orchestrate-tui"
+    flow = _flow_from_state(state)
+    full_name = flow["feature"]
+    assert len(full_name) > 26, f"Test setup: need >26 chars, got {len(full_name)}"
+
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+
+    # Find the list row (row 4 for the first flow)
+    list_row_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if c[0][0] == 4  # row 4 = first flow entry
+    ]
+    assert list_row_calls, "Expected a call at row 4 for the flow list entry"
+    list_row_text = list_row_calls[0][0][2]
+
+    # List row should have truncated name with "..." and fit within 26 chars
+    assert "..." in list_row_text
+    assert full_name not in list_row_text
+
+    # Detail panel (rendered within _draw_list_view) should show the full name
+    detail_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if c[0][0] == 6  # detail panel first line (feature name bold)
+    ]
+    assert detail_calls, "Expected a detail panel call at row 6"
+    detail_text = detail_calls[0][0][2]
+    assert detail_text == full_name
 
 
 # --- _draw_log_view ---
