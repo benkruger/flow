@@ -1412,6 +1412,22 @@ def test_learning_files_flow_issues_not_learning():
     )
 
 
+def test_learn_step3_excludes_flow_process_gaps():
+    """Learn Step 3 must direct FLOW process gaps to Step 5, not file them here.
+
+    Issue #311: learnings about FLOW skill behavior were misrouted as Rule
+    issues on the user's project repo. Step 3 must contain explicit routing
+    guidance that FLOW process gaps belong in Step 5."""
+    step3_text = _learn_step_text(3)
+    step3_lower = step3_text.lower()
+    assert "process gap" in step3_lower, (
+        "Learn Step 3 must mention 'process gap' to guide routing"
+    )
+    assert "step 5" in step3_lower, (
+        "Learn Step 3 must reference Step 5 as the destination for process gaps"
+    )
+
+
 def test_code_files_flaky_test_issues():
     """Code skill CI Gate must file Flaky Test issues for intermittent failures."""
     content = _read_skill("flow-code")
@@ -1951,6 +1967,19 @@ def test_start_derives_branch_name_from_prompt():
     assert conversation_gate, (
         "flow-start SKILL.md must have a HARD-GATE that prohibits treating "
         "the prompt as a conversation"
+    )
+
+
+def test_flow_start_issue_aware_branch_naming():
+    """flow-start must fetch issue titles for branch naming when prompt has #N refs."""
+    content = _read_skill("flow-start")
+    assert "gh issue view" in content, (
+        "flow-start/SKILL.md must reference gh issue view for "
+        "issue-aware branch naming"
+    )
+    assert "fall back" in content.lower() and "prompt words" in content.lower(), (
+        "flow-start/SKILL.md must instruct fallback to prompt words "
+        "when issue fetch fails"
     )
 
 

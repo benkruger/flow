@@ -215,6 +215,13 @@ without asking the user.
 | Process rule or architecture | Project CLAUDE.md (`CLAUDE.md`) | Edit on disk |
 | Coding anti-pattern or gotcha | `.claude/rules/<topic>.md` | File a "Rule" issue |
 
+**Process gap routing:** Learnings about FLOW skill or process behavior
+(e.g. how a phase skill should present output, when a skill should
+prompt the user) are process gaps — they belong in Step 5, which files
+them on the plugin repo with the "Flow" label. Process gaps are never
+coding anti-patterns and are never filed as Rule issues here. Skip them
+in this step and let Step 5 handle them.
+
 ### Mandatory output constraint
 
 If Step 2 identified Claude mistakes, every mistake must produce at least

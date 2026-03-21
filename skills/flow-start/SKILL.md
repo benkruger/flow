@@ -21,7 +21,25 @@ Examples:
 |--------|-------------------|
 | `invoice pdf export` | `invoice-pdf-export` |
 | `fix login timeout when session expires after 30 minutes` | `fix-login-timeout` |
-| `there is a bug where flow-start treats arguments as conversation #182` | `flow-start-arg-handling` |
+| `there is a bug where flow-start treats arguments as conversation` | `flow-start-arg-handling` |
+
+**Issue-aware branch naming:** If the prompt contains `#N` issue references
+(e.g., `work on issue #309`, `fix #42`), extract the first issue number
+and fetch the issue title:
+
+```bash
+gh issue view <issue_number> --json title --jq .title
+```
+
+Derive the branch name from the **issue title** instead of the prompt words.
+Apply the same 2-5 word concise derivation rules to the title. If the fetch
+fails (issue does not exist, network error), fall back to deriving from the
+prompt words as usual.
+
+| Prompt | Issue title | Derived branch name |
+|--------|-------------|-------------------|
+| `work on issue #309` | "Organize settings.json allow list" | `organize-settings-allow-list` |
+| `fix #42 please` | "Add dark mode toggle to settings page" | `dark-mode-settings-toggle` |
 
 The derived name is joined with hyphens:
 
