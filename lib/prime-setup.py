@@ -301,6 +301,14 @@ fi
 """
 
 
+def _install_script(directory, filename, content):
+    """Create a directory, write a script file, and make it executable."""
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / filename
+    target.write_text(content)
+    target.chmod(0o755)
+
+
 def install_pre_commit_hook(project_root):
     """Install a pre-commit hook that blocks direct git commits.
 
@@ -308,11 +316,7 @@ def install_pre_commit_hook(project_root):
     /flow:flow-commit. If the file is missing, the commit is blocked.
     Idempotent: overwrites any existing pre-commit hook.
     """
-    hooks_dir = project_root / ".git" / "hooks"
-    hooks_dir.mkdir(parents=True, exist_ok=True)
-    hook_path = hooks_dir / "pre-commit"
-    hook_path.write_text(PRE_COMMIT_HOOK)
-    hook_path.chmod(0o755)
+    _install_script(project_root / ".git" / "hooks", "pre-commit", PRE_COMMIT_HOOK)
 
 
 LAUNCHER_SCRIPT = """\
@@ -359,11 +363,7 @@ def install_launcher():
     Creates ~/.local/bin/ if it does not exist. Idempotent: overwrites
     any existing launcher with the current version.
     """
-    launcher_dir = _home_dir() / ".local" / "bin"
-    launcher_dir.mkdir(parents=True, exist_ok=True)
-    launcher_path = launcher_dir / "flow"
-    launcher_path.write_text(LAUNCHER_SCRIPT)
-    launcher_path.chmod(0o755)
+    _install_script(_home_dir() / ".local" / "bin", "flow", LAUNCHER_SCRIPT)
 
 
 def check_launcher_path():
