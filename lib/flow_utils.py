@@ -356,17 +356,21 @@ TAB_COLORS = (
 )
 
 
-def format_tab_color(state, override=None):
+def format_tab_color(state=None, *, repo=None, override=None):
     """Return an (r, g, b) tuple for the terminal tab color.
 
-    Hashes state["repo"] against TAB_COLORS for deterministic color.
+    Hashes repo against TAB_COLORS for deterministic color.
     If override is a 3-element list/tuple, it is used instead.
     Returns None if repo is missing/empty and no valid override.
+
+    repo can be provided directly via the keyword argument, or extracted
+    from state["repo"]. The repo keyword takes precedence over state.
     """
     if isinstance(override, (list, tuple)) and len(override) == 3:
         return tuple(override)
 
-    repo = state.get("repo", "")
+    if not repo and state is not None:
+        repo = state.get("repo", "")
     if not repo:
         return None
 

@@ -716,6 +716,34 @@ class TestFormatTabColor:
         assert isinstance(result, tuple)
         assert len(result) == 3
 
+    def test_repo_kwarg_returns_color(self):
+        """repo kwarg returns same color as the equivalent state dict."""
+        via_state = format_tab_color(self._state("test/test"))
+        via_kwarg = format_tab_color(repo="test/test")
+        assert via_kwarg == via_state
+        assert isinstance(via_kwarg, tuple)
+        assert len(via_kwarg) == 3
+
+    def test_repo_kwarg_empty_returns_none(self):
+        assert format_tab_color(repo="") is None
+
+    def test_repo_kwarg_none_returns_none(self):
+        assert format_tab_color(repo=None) is None
+
+    def test_repo_kwarg_with_override(self):
+        result = format_tab_color(repo="x/y", override=[1, 2, 3])
+        assert result == (1, 2, 3)
+
+    def test_state_and_repo_kwarg_prefers_repo(self):
+        """When both state and repo kwarg are provided, repo kwarg wins."""
+        color_a = format_tab_color(self._state("test/test"))
+        color_b = format_tab_color(self._state("test/test"), repo="other/project")
+        assert color_b != color_a
+        assert color_b == format_tab_color(repo="other/project")
+
+    def test_no_args_returns_none(self):
+        assert format_tab_color() is None
+
 
 # --- set_tab_title tests ---
 
