@@ -190,10 +190,12 @@ def main():
 
     try:
         root = project_root()
+        branch = current_branch()
     except Exception:
         return
 
-    branch = current_branch()
+    if not branch:
+        return
 
     should_block, skill_name, context = check_continue(
         hook_input, root=root, branch=branch

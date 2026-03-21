@@ -4,6 +4,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -1164,8 +1165,8 @@ class TestSetTabTitleWithParams:
         _mod.set_tab_title(root=git_repo, branch=None)
 
 
-class TestMainProjectRootFailure:
-    """Tests that main() handles project_root() failure gracefully."""
+class TestMainErrorHandling:
+    """Tests that main() handles project_root/current_branch failures gracefully."""
 
     def test_project_root_failure_allows_stop(self, monkeypatch):
         """When project_root raises, main exits 0 with no output (fail-open)."""
@@ -1179,3 +1180,16 @@ class TestMainProjectRootFailure:
 
         _mod.main()
         # If we get here without exception, fail-open works
+
+    def test_no_branch_allows_stop(self, monkeypatch, capsys):
+        """When current_branch returns None, main exits with no output."""
+        monkeypatch.setattr(_mod, "project_root", lambda: Path("/tmp"))
+        monkeypatch.setattr(_mod, "current_branch", lambda: None)
+
+        import io
+        monkeypatch.setattr("sys.stdin", io.StringIO("{}"))
+
+        _mod.main()
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
