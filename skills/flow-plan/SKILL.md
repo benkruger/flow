@@ -126,7 +126,7 @@ Check `files.plan` and `files.dag` in the state file:
 ```
 ````
 
-  Skip to "Done — Update state and complete phase" to finish the phase.
+  Skip to "Done — Banner and transition" to finish the phase.
 
 - If `files.dag` is set (not null) but `files.plan` is null, the DAG was
   produced but the plan was not yet written. Read the DAG output file
