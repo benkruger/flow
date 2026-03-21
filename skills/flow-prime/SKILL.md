@@ -320,6 +320,7 @@ All permissions (universal + all framework sets) for reference:
       "Read(~/.claude/rules/*)",
       "Read(//tmp/*.txt)",
       "Read(//tmp/*.diff)",
+      "Read(//tmp/*.patch)",
       "Agent(flow:ci-fixer)",
       "Skill(decompose:decompose)"
     ],

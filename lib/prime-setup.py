@@ -73,6 +73,7 @@ UNIVERSAL_ALLOW = [
     "Read(~/.claude/rules/*)",
     "Read(//tmp/*.txt)",
     "Read(//tmp/*.diff)",
+    "Read(//tmp/*.patch)",
     "Agent(flow:ci-fixer)",
     "Skill(decompose:decompose)",
 ]
