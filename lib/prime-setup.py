@@ -347,14 +347,19 @@ exec "$plugin_root/bin/flow" "$@"
 """
 
 
+def _home_dir():
+    """Resolve the user's home directory, preferring $HOME for testability."""
+    env_home = os.environ.get("HOME")
+    return Path(env_home) if env_home else Path.home()
+
+
 def install_launcher():
     """Install a global flow launcher at ~/.local/bin/flow.
 
     Creates ~/.local/bin/ if it does not exist. Idempotent: overwrites
     any existing launcher with the current version.
     """
-    home = Path(os.environ.get("HOME", Path.home()))
-    launcher_dir = home / ".local" / "bin"
+    launcher_dir = _home_dir() / ".local" / "bin"
     launcher_dir.mkdir(parents=True, exist_ok=True)
     launcher_path = launcher_dir / "flow"
     launcher_path.write_text(LAUNCHER_SCRIPT)
@@ -363,8 +368,7 @@ def install_launcher():
 
 def check_launcher_path():
     """Warn if ~/.local/bin is not in PATH."""
-    home = Path(os.environ.get("HOME", Path.home()))
-    local_bin = str(home / ".local" / "bin")
+    local_bin = str(_home_dir() / ".local" / "bin")
     path_dirs = os.environ.get("PATH", "").split(os.pathsep)
     if local_bin not in path_dirs:
         print(

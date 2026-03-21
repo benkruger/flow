@@ -746,7 +746,7 @@ def test_install_launcher_content(tmp_path, monkeypatch):
     assert "git rev-parse --show-toplevel" in content
     assert ".flow.json" in content
     assert "plugin_root" in content
-    assert "exec" in content
+    assert 'exec "$plugin_root/bin/flow"' in content
     assert "#!/usr/bin/env bash" in content
 
 
