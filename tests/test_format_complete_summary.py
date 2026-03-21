@@ -87,8 +87,13 @@ def test_summary_with_issues():
     result = mod.format_complete_summary(state)
 
     assert "Issues filed: 2" in result["summary"]
-    assert "[Rule] #1: Test rule" in result["summary"]
-    assert "[Tech Debt] #2: Refactor X" in result["summary"]
+    assert "[Rule] Test rule" in result["summary"]
+    assert "https://github.com/test/test/issues/1" in result["summary"]
+    assert "[Tech Debt] Refactor X" in result["summary"]
+    assert "https://github.com/test/test/issues/2" in result["summary"]
+    # Old #N: format must not appear
+    assert "#1:" not in result["summary"]
+    assert "#2:" not in result["summary"]
 
 
 def test_summary_with_single_issue():
@@ -109,7 +114,10 @@ def test_summary_with_single_issue():
     result = mod.format_complete_summary(state)
 
     assert "Issues filed: 1" in result["summary"]
-    assert "[Flow] #42: Fix routing logic" in result["summary"]
+    assert "[Flow] Fix routing logic" in result["summary"]
+    assert "https://github.com/test/test/issues/42" in result["summary"]
+    # Old #N: format must not appear
+    assert "#42:" not in result["summary"]
 
 
 def test_summary_with_issues_url_without_number():
@@ -130,7 +138,10 @@ def test_summary_with_issues_url_without_number():
     result = mod.format_complete_summary(state)
 
     assert "Issues filed: 1" in result["summary"]
-    assert "[Rule] https://example.com/custom-path: Some rule" in result["summary"]
+    assert "[Rule] Some rule" in result["summary"]
+    assert "https://example.com/custom-path" in result["summary"]
+    # Old colon-joined format must not appear
+    assert "https://example.com/custom-path: Some rule" not in result["summary"]
 
 
 def test_summary_with_notes():
