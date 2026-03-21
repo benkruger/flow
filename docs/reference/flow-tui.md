@@ -13,7 +13,7 @@ session.
 ## Usage
 
 ```text
-bin/flow tui
+flow tui
 ```
 
 ## Views
