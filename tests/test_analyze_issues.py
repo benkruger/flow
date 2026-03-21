@@ -145,88 +145,72 @@ def test_empty_labels():
 
 def test_categorize_by_label():
     """Label-based categories take precedence."""
-    labels = [{"name": "Flaky Test"}]
-    assert _mod.categorize(labels, "Some title", "body") == "Flaky Test"
+    assert _mod.categorize({"Flaky Test"}, "Some title", "body") == "Flaky Test"
 
 
 def test_categorize_rule_label():
     """Rule label maps to Rule category."""
-    labels = [{"name": "Rule"}]
-    assert _mod.categorize(labels, "title", "body") == "Rule"
+    assert _mod.categorize({"Rule"}, "title", "body") == "Rule"
 
 
 def test_categorize_flow_label():
     """Flow label maps to Flow category."""
-    labels = [{"name": "Flow"}]
-    assert _mod.categorize(labels, "title", "body") == "Flow"
+    assert _mod.categorize({"Flow"}, "title", "body") == "Flow"
 
 
 def test_categorize_tech_debt_label():
     """Tech Debt label maps to Tech Debt category."""
-    labels = [{"name": "Tech Debt"}]
-    assert _mod.categorize(labels, "title", "body") == "Tech Debt"
+    assert _mod.categorize({"Tech Debt"}, "title", "body") == "Tech Debt"
 
 
 def test_categorize_documentation_drift_label():
     """Documentation Drift label maps to Documentation Drift category."""
-    labels = [{"name": "Documentation Drift"}]
-    assert _mod.categorize(labels, "title", "body") == "Documentation Drift"
+    assert _mod.categorize({"Documentation Drift"}, "title", "body") == "Documentation Drift"
 
 
 def test_categorize_bug_by_content():
     """Content fallback detects bug keywords."""
-    labels = []
-    assert _mod.categorize(labels, "Fix crash on login", "error when") == "Bug"
+    assert _mod.categorize(set(), "Fix crash on login", "error when") == "Bug"
 
 
 def test_categorize_enhancement_by_content():
     """Content fallback detects enhancement keywords."""
-    labels = []
-    assert _mod.categorize(labels, "Add dark mode", "new feature") == "Enhancement"
+    assert _mod.categorize(set(), "Add dark mode", "new feature") == "Enhancement"
 
 
 def test_categorize_other_fallback():
     """Falls back to Other when no match."""
-    labels = []
-    assert _mod.categorize(labels, "Misc cleanup", "tidy up") == "Other"
+    assert _mod.categorize(set(), "Misc cleanup", "tidy up") == "Other"
 
 
 # --- stale detection ---
 
 
-def test_stale_issue_with_missing_files(tmp_path):
+def test_stale_issue_with_missing_files():
     """Issue >60 days old with missing file refs is marked stale."""
-    old_date = (datetime.now() - timedelta(days=90)).isoformat()
-    issue = _make_issue(1, body="Check lib/missing.py", created_at=old_date)
     with patch("os.path.exists", return_value=False):
-        result = _mod.check_stale(issue, ["lib/missing.py"], 90)
+        result = _mod.check_stale(["lib/missing.py"], 90)
     assert result["stale"] is True
     assert result["stale_missing"] == 1
 
 
 def test_not_stale_when_files_exist():
     """Issue >60 days old with all files present is not stale."""
-    old_date = (datetime.now() - timedelta(days=90)).isoformat()
-    issue = _make_issue(1, body="Check lib/exists.py", created_at=old_date)
     with patch("os.path.exists", return_value=True):
-        result = _mod.check_stale(issue, ["lib/exists.py"], 90)
+        result = _mod.check_stale(["lib/exists.py"], 90)
     assert result["stale"] is False
     assert result["stale_missing"] == 0
 
 
 def test_not_stale_when_recent():
     """Issue <60 days old is never stale regardless of files."""
-    recent_date = (datetime.now() - timedelta(days=10)).isoformat()
-    issue = _make_issue(1, body="Check lib/missing.py", created_at=recent_date)
-    result = _mod.check_stale(issue, ["lib/missing.py"], 10)
+    result = _mod.check_stale(["lib/missing.py"], 10)
     assert result["stale"] is False
 
 
 def test_not_stale_when_no_file_paths():
     """Issue >60 days old but without file refs is not stale."""
-    old_date = (datetime.now() - timedelta(days=90)).isoformat()
-    issue = _make_issue(1, created_at=old_date)
-    result = _mod.check_stale(issue, [], 90)
+    result = _mod.check_stale([], 90)
     assert result["stale"] is False
 
 

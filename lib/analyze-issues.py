@@ -23,6 +23,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from flow_utils import extract_issue_numbers
+
 
 # File path patterns: known directory prefixes or paths with file extensions
 _DIR_PREFIXES = (
@@ -63,17 +65,12 @@ def extract_dependencies(body, open_numbers, own_number=None):
     """Extract #N issue references that exist in the open set.
 
     Returns list of issue numbers this issue depends on.
-    Excludes self-references.
+    Excludes self-references. Reuses extract_issue_numbers from flow_utils
+    for the raw #N and URL pattern extraction.
     """
-    matches = re.findall(r"#(\d+)", body)
-    deps = []
-    seen = set()
-    for match in matches:
-        num = int(match)
-        if num in open_numbers and num not in seen and num != own_number:
-            deps.append(num)
-            seen.add(num)
-    return deps
+    all_refs = extract_issue_numbers(body)
+    return [num for num in all_refs
+            if num in open_numbers and num != own_number]
 
 
 def detect_labels(labels):
@@ -88,13 +85,7 @@ def detect_labels(labels):
     }
 
 
-_LABEL_CATEGORIES = {
-    "Rule": "Rule",
-    "Flow": "Flow",
-    "Flaky Test": "Flaky Test",
-    "Tech Debt": "Tech Debt",
-    "Documentation Drift": "Documentation Drift",
-}
+_LABEL_CATEGORIES = {"Rule", "Flow", "Flaky Test", "Tech Debt", "Documentation Drift"}
 
 _BUG_KEYWORDS = re.compile(
     r"\b(bug|fix|crash|error|broken|fail|wrong|incorrect)\b", re.IGNORECASE
@@ -104,12 +95,11 @@ _ENHANCEMENT_KEYWORDS = re.compile(
 )
 
 
-def categorize(labels, title, body):
-    """Assign a category based on labels first, then content fallback."""
-    label_names = {label["name"] for label in labels}
-    for label, category in _LABEL_CATEGORIES.items():
+def categorize(label_names, title, body):
+    """Assign a category based on label names first, then content fallback."""
+    for label in _LABEL_CATEGORIES:
         if label in label_names:
-            return category
+            return label
 
     combined = f"{title} {body}"
     if _BUG_KEYWORDS.search(combined):
@@ -119,7 +109,7 @@ def categorize(labels, title, body):
     return "Other"
 
 
-def check_stale(issue, file_paths, age_days):
+def check_stale(file_paths, age_days):
     """Check if an issue is stale (>60 days old with missing file refs).
 
     Returns dict with stale boolean and stale_missing count.
@@ -163,15 +153,25 @@ def analyze_issues(issues):
     in_progress = []
     available = []
 
-    # First pass: extract file paths and dependencies
+    # First pass: extract data and route in-progress vs available
     dependency_map = {}
-    issue_data = {}
+    available_data = {}
 
     for issue in issues:
         number = issue["number"]
         body = issue.get("body") or ""
-        labels = issue.get("labels", [])
-        label_flags = detect_labels(labels)
+        label_names = {label["name"] for label in issue.get("labels", [])}
+        label_list = sorted(label_names)
+        label_flags = detect_labels(issue.get("labels", []))
+
+        if label_flags["in_progress"]:
+            in_progress.append({
+                "number": number,
+                "title": issue["title"],
+                "url": issue.get("url", ""),
+            })
+            continue
+
         file_paths = extract_file_paths(body)
         deps = extract_dependencies(body, open_numbers, own_number=number)
         dependency_map[number] = deps
@@ -179,16 +179,14 @@ def analyze_issues(issues):
         created_at = datetime.fromisoformat(issue["createdAt"].replace("Z", "+00:00"))
         age_days = (datetime.now(created_at.tzinfo) - created_at).days
 
-        stale_info = check_stale(issue, file_paths, age_days)
-        category = categorize(labels, issue["title"], body)
+        stale_info = check_stale(file_paths, age_days)
+        category = categorize(label_names, issue["title"], body)
 
-        label_names = [label["name"] for label in labels]
-
-        issue_data[number] = {
+        available_data[number] = {
             "number": number,
             "title": issue["title"],
             "url": issue.get("url", ""),
-            "labels": label_names,
+            "labels": label_list,
             "category": category,
             "age_days": age_days,
             "decomposed": label_flags["decomposed"],
@@ -198,27 +196,15 @@ def analyze_issues(issues):
             "dependents": [],
             "file_paths": file_paths,
             "brief": truncate_body(body),
-            "in_progress": label_flags["in_progress"],
         }
 
     # Second pass: build dependents
     dependents_map = build_dependents(dependency_map)
     for number, dependents in dependents_map.items():
-        if number in issue_data:
-            issue_data[number]["dependents"] = dependents
+        if number in available_data:
+            available_data[number]["dependents"] = dependents
 
-    # Separate in-progress from available
-    for number, data in issue_data.items():
-        if data["in_progress"]:
-            in_progress.append({
-                "number": data["number"],
-                "title": data["title"],
-                "url": data["url"],
-            })
-        else:
-            entry = dict(data)
-            del entry["in_progress"]
-            available.append(entry)
+    available = list(available_data.values())
 
     return {
         "status": "ok",
