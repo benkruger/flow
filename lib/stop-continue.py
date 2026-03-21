@@ -24,15 +24,17 @@ from flow_utils import (
 )
 
 
-def capture_session_id(hook_input):
+def capture_session_id(hook_input, root=None, branch=None):
     """Update session_id and transcript_path in active state file."""
     session_id = hook_input.get("session_id")
     if not session_id:
         return
 
     try:
-        root = project_root()
-        branch = current_branch()
+        if root is None:
+            root = project_root()
+        if branch is None:
+            branch = current_branch()
         if not branch:
             return
 
@@ -53,7 +55,7 @@ def capture_session_id(hook_input):
         pass
 
 
-def check_continue(hook_input=None):
+def check_continue(hook_input=None, root=None, branch=None):
     """Check if _continue_pending flag is set in the active state file.
 
     Returns (should_block: bool, skill_name: str|None, context: str|None).
@@ -69,11 +71,11 @@ def check_continue(hook_input=None):
     to stderr and attempts to log to .flow-states/<branch>.log if the
     branch is known.
     """
-    root = None
-    branch = None
     try:
-        root = project_root()
-        branch = current_branch()
+        if root is None:
+            root = project_root()
+        if branch is None:
+            branch = current_branch()
 
         if not branch:
             return (False, None, None)
@@ -118,17 +120,17 @@ def check_continue(hook_input=None):
         return (False, None, None)
 
 
-def set_tab_title():
+def set_tab_title(root=None, branch=None):
     """Write the current FLOW phase and repo color to the terminal tab via /dev/tty.
 
     Fail-open with diagnostics: any error is logged to stderr and
     .flow-states/<branch>.log, but never blocks the hook.
     """
-    root = None
-    branch = None
     try:
-        root = project_root()
-        branch = current_branch()
+        if root is None:
+            root = project_root()
+        if branch is None:
+            branch = current_branch()
         if not branch:
             return
 
@@ -162,7 +164,7 @@ def set_tab_title():
                     f"\033]6;1;bg;blue;brightness;{b}\007"
                 )
             if title:
-                sequences += f"\033]0;{title}\007"
+                sequences += f"\033]1;{title}\007"
             tty.write(sequences)
     except Exception as exc:
         sys.stderr.write(
@@ -186,11 +188,22 @@ def main():
     except Exception:
         pass
 
-    should_block, skill_name, context = check_continue(hook_input)
+    try:
+        root = project_root()
+        branch = current_branch()
+    except Exception:
+        return
 
-    capture_session_id(hook_input)
+    if not branch:
+        return
 
-    set_tab_title()
+    should_block, skill_name, context = check_continue(
+        hook_input, root=root, branch=branch
+    )
+
+    capture_session_id(hook_input, root=root, branch=branch)
+
+    set_tab_title(root=root, branch=branch)
 
     if should_block:
         reason = (

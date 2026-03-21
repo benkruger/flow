@@ -39,6 +39,22 @@ exploration.
   `.flow-issue-body-2`) and launch all Write + `bin/flow
   issue` calls concurrently.
 
+## Repo Routing
+
+Most issue-filing paths target the current project (omit `--repo`):
+Tech Debt, Flaky Test, Documentation Drift, and decomposed work items
+all describe problems in the user's code.
+
+FLOW process bugs — problems with the plugin itself — must target
+`benkruger/flow`. Pass `--repo benkruger/flow --label "Flow"` when
+filing against the plugin repo. Two skills support this:
+
+- `flow-learn` (Phase 5) — files process gap issues with `--repo`
+- `flow-create-issue` — asks the user which repo before filing
+
+When in doubt, ask the user. Filing against the wrong repo is
+worse than one extra question.
+
 ## Never Include
 
 - Root cause analysis — a guess is not analysis

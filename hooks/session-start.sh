@@ -392,7 +392,7 @@ try:
                     f"\033]6;1;bg;blue;brightness;{b}\007"
                 )
             if title:
-                sequences += f"\033]0;{title}\007"
+                sequences += f"\033]1;{title}\007"
             tty.write(sequences)
     elif _has_flow_utils:
         _write_tab_color_only()

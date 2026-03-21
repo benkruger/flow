@@ -895,7 +895,7 @@ def test_tab_title_does_not_appear_in_stdout(git_repo):
     assert "additional_context" in output
 
     # The OSC title escape sequence must not appear in stdout
-    assert "\033]0;" not in result.stdout
+    assert "\033]1;" not in result.stdout
     assert "\007" not in result.stdout
 
 
@@ -917,7 +917,7 @@ def test_tab_title_with_issue_numbers_does_not_appear_in_stdout(git_repo):
     output = json.loads(result.stdout)
     assert "additional_context" in output
 
-    assert "\033]0;" not in result.stdout
+    assert "\033]1;" not in result.stdout
     assert "\007" not in result.stdout
 
 

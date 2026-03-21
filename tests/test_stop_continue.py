@@ -4,6 +4,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -587,55 +588,55 @@ class TestFormatTabTitle:
 
     def test_phase_1_start(self):
         title = format_tab_title(self._state("flow-start"))
-        assert title == "Flow: Phase 1: Start \u2014 Test Feature"
+        assert title == "Test Feature \u2014 P1: Start"
 
     def test_phase_2_plan(self):
         title = format_tab_title(self._state("flow-plan"))
-        assert title == "Flow: Phase 2: Plan \u2014 Test Feature"
+        assert title == "Test Feature \u2014 P2: Plan"
 
     def test_phase_3_code(self):
         title = format_tab_title(self._state("flow-code"))
-        assert title == "Flow: Phase 3: Code \u2014 Test Feature"
+        assert title == "Test Feature \u2014 P3: Code"
 
     def test_phase_4_code_review(self):
         title = format_tab_title(self._state("flow-code-review"))
-        assert title == "Flow: Phase 4: Code Review \u2014 Test Feature"
+        assert title == "Test Feature \u2014 P4: Code Review"
 
     def test_phase_5_learn(self):
         title = format_tab_title(self._state("flow-learn"))
-        assert title == "Flow: Phase 5: Learn \u2014 Test Feature"
+        assert title == "Test Feature \u2014 P5: Learn"
 
     def test_phase_6_complete(self):
         title = format_tab_title(self._state("flow-complete"))
-        assert title == "Flow: Phase 6: Complete \u2014 Test Feature"
+        assert title == "Test Feature \u2014 P6: Complete"
 
     def test_code_with_task(self):
         title = format_tab_title(self._state("flow-code", code_task=2))
-        assert title == "Flow: Phase 3: Code (task 2) \u2014 Test Feature"
+        assert title == "Test Feature \u2014 P3: Code (2)"
 
     def test_code_with_task_zero(self):
         """code_task=0 means no task started — no step info."""
         title = format_tab_title(self._state("flow-code", code_task=0))
-        assert title == "Flow: Phase 3: Code \u2014 Test Feature"
+        assert title == "Test Feature \u2014 P3: Code"
 
     def test_code_with_string_task(self):
         """Non-integer code_task is ignored — no step info."""
         title = format_tab_title(self._state("flow-code", code_task="2"))
-        assert title == "Flow: Phase 3: Code \u2014 Test Feature"
+        assert title == "Test Feature \u2014 P3: Code"
 
     def test_code_review_with_step(self):
         title = format_tab_title(self._state("flow-code-review", code_review_step=2))
-        assert title == "Flow: Phase 4: Code Review (step 2/4) \u2014 Test Feature"
+        assert title == "Test Feature \u2014 P4: Code Review (2/4)"
 
     def test_code_review_with_step_zero(self):
         """code_review_step=0 means not started — no step info."""
         title = format_tab_title(self._state("flow-code-review", code_review_step=0))
-        assert title == "Flow: Phase 4: Code Review \u2014 Test Feature"
+        assert title == "Test Feature \u2014 P4: Code Review"
 
     def test_code_review_with_step_four(self):
         """code_review_step=4 means all done — no step info."""
         title = format_tab_title(self._state("flow-code-review", code_review_step=4))
-        assert title == "Flow: Phase 4: Code Review \u2014 Test Feature"
+        assert title == "Test Feature \u2014 P4: Code Review"
 
     def test_missing_current_phase(self):
         assert format_tab_title({"branch": "test-feature"}) is None
@@ -649,25 +650,25 @@ class TestFormatTabTitle:
     def test_feature_name_from_branch(self):
         """Branch name is title-cased into the feature name."""
         title = format_tab_title(self._state("flow-start", branch="invoice-pdf-export"))
-        assert title == "Flow: Phase 1: Start \u2014 Invoice Pdf Export"
+        assert title == "Invoice Pdf Export \u2014 P1: Start"
 
     def test_prompt_with_one_issue(self):
         title = format_tab_title(self._state("flow-code", prompt="work on issue #342"))
-        assert title == "Flow: Phase 3: Code \u2014 #342 Test Feature"
+        assert title == "#342 Test Feature \u2014 P3: Code"
 
     def test_prompt_with_multiple_issues(self):
         title = format_tab_title(self._state("flow-code", prompt="work on #83 and #89"))
-        assert title == "Flow: Phase 3: Code \u2014 #83 #89 Test Feature"
+        assert title == "#83 #89 Test Feature \u2014 P3: Code"
 
     def test_prompt_with_no_issue_numbers(self):
         title = format_tab_title(self._state("flow-code", prompt="fix login timeout"))
-        assert title == "Flow: Phase 3: Code \u2014 Test Feature"
+        assert title == "Test Feature \u2014 P3: Code"
 
     def test_prompt_missing(self):
         """No prompt key in state — no issue prefix."""
         state = {"current_phase": "flow-code", "branch": "test-feature"}
         title = format_tab_title(state)
-        assert title == "Flow: Phase 3: Code \u2014 Test Feature"
+        assert title == "Test Feature \u2014 P3: Code"
 
 
 # --- format_tab_color tests ---
@@ -784,7 +785,7 @@ class TestSetTabTitle:
             f"\033]6;1;bg;red;brightness;{r}\007"
             f"\033]6;1;bg;green;brightness;{g}\007"
             f"\033]6;1;bg;blue;brightness;{b}\007"
-            f"\033]0;Flow: Phase 3: Code \u2014 Test Feature\007"
+            f"\033]1;Test Feature \u2014 P3: Code\007"
         )
         assert written[0] == expected
 
@@ -917,7 +918,7 @@ class TestSetTabTitle:
         )
         assert written[0] == expected
         # No title escape in the output
-        assert "\033]0;" not in written[0]
+        assert "\033]1;" not in written[0]
 
     def test_no_state_file_no_repo_no_override_no_write(self, git_repo, state_dir, monkeypatch):
         """No state file, no repo, no override — no tty write."""
@@ -1008,7 +1009,7 @@ class TestSetTabTitle:
             f"\033]6;1;bg;blue;brightness;{b}\007"
         )
         assert written[0] == expected
-        assert "\033]0;" not in written[0]
+        assert "\033]1;" not in written[0]
 
 
 # --- set_tab_title error logging tests ---
@@ -1052,3 +1053,143 @@ class TestSetTabTitleErrorLogging:
 
         captured = capsys.readouterr()
         assert "[FLOW stop-continue] set_tab_title error:" in captured.err
+
+
+# --- Hoisted root/branch parameter tests ---
+
+
+class TestCheckContinueWithParams:
+    """Tests that check_continue accepts root and branch params directly."""
+
+    def test_uses_passed_root_and_branch(self, git_repo, state_dir, branch):
+        """When root and branch are passed, function uses them without subprocess."""
+        state = make_state(current_phase="flow-code")
+        state["_continue_pending"] = "commit"
+        write_state(state_dir, branch, state)
+
+        # Call from tmp_path (not git_repo) to prove no subprocess is used
+        should_block, skill_name, context = _mod.check_continue(
+            hook_input=None, root=git_repo, branch=branch
+        )
+
+        assert should_block is True
+        assert skill_name == "commit"
+
+    def test_no_state_file_with_params(self, git_repo, branch):
+        """When root/branch point to nonexistent state file, allows stop."""
+        should_block, skill_name, context = _mod.check_continue(
+            hook_input=None, root=git_repo, branch=branch
+        )
+
+        assert should_block is False
+        assert skill_name is None
+
+    def test_none_branch_param_allows(self, git_repo):
+        """When branch param is None, allows stop."""
+        should_block, skill_name, context = _mod.check_continue(
+            hook_input=None, root=git_repo, branch=None
+        )
+
+        assert should_block is False
+
+
+class TestCaptureSessionIdWithParams:
+    """Tests that capture_session_id accepts root and branch params directly."""
+
+    def test_uses_passed_root_and_branch(self, git_repo, state_dir, branch):
+        """When root and branch are passed, function uses them without subprocess."""
+        state = make_state(current_phase="flow-start")
+        write_state(state_dir, branch, state)
+
+        _mod.capture_session_id(
+            {"session_id": "via-params", "transcript_path": "/p.jsonl"},
+            root=git_repo, branch=branch,
+        )
+
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert updated["session_id"] == "via-params"
+        assert updated["transcript_path"] == "/p.jsonl"
+
+    def test_none_branch_param_skips(self, git_repo, state_dir, branch):
+        """When branch param is None, function returns without error."""
+        state = make_state(current_phase="flow-start")
+        write_state(state_dir, branch, state)
+        original = (state_dir / f"{branch}.json").read_text()
+
+        _mod.capture_session_id(
+            {"session_id": "via-params"},
+            root=git_repo, branch=None,
+        )
+
+        assert (state_dir / f"{branch}.json").read_text() == original
+
+
+class TestSetTabTitleWithParams:
+    """Tests that set_tab_title accepts root and branch params directly."""
+
+    def test_uses_passed_root_and_branch(self, git_repo, state_dir, branch, monkeypatch):
+        """When root and branch are passed, function uses them without subprocess."""
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
+        write_state(state_dir, branch, state)
+
+        written = []
+        fake_tty = type("FakeTTY", (), {
+            "write": lambda self, data: written.append(data),
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if str(path) == "/dev/tty":
+                return fake_tty
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+        _mod.set_tab_title(root=git_repo, branch=branch)
+
+        assert len(written) == 1
+        assert "\033]0;" in written[0]
+
+    def test_none_branch_returns_silently(self, git_repo, monkeypatch):
+        """When branch param is None, function returns without error."""
+        monkeypatch.setattr(_mod, "detect_repo", lambda: None)
+        _mod.set_tab_title(root=git_repo, branch=None)
+
+
+class TestMainErrorHandling:
+    """Tests that main() handles project_root/current_branch failures gracefully."""
+
+    def test_project_root_failure_allows_stop(self, monkeypatch):
+        """When project_root raises, main exits 0 with no output (fail-open)."""
+        def raise_error():
+            raise OSError("git not found")
+
+        monkeypatch.setattr(_mod, "project_root", raise_error)
+
+        import io
+        monkeypatch.setattr("sys.stdin", io.StringIO("{}"))
+
+        _mod.main()
+        # If we get here without exception, fail-open works
+
+    def test_no_branch_allows_stop(self, monkeypatch, capsys):
+        """When current_branch returns None, main exits with no output."""
+        monkeypatch.setattr(_mod, "project_root", lambda: Path("/tmp"))
+        monkeypatch.setattr(_mod, "current_branch", lambda: None)
+
+        import io
+        monkeypatch.setattr("sys.stdin", io.StringIO("{}"))
+
+        _mod.main()
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
