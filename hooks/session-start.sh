@@ -21,11 +21,6 @@ if [ -d "$STATE_DIR" ] && [ -z "$(ls "$STATE_DIR"/*.json 2>/dev/null)" ] && [ ! 
   exit 0
 fi
 
-if [ ! -d "$STATE_DIR" ] && [ -f ".flow.json" ]; then
-  # FLOW-enabled but no state dir — color-only path handled in Python
-  :
-fi
-
 # Reset any interrupted session timing, build context, and emit JSON output
 python3 - << 'PYTHON'
 import json, os, re, subprocess, sys

@@ -369,7 +369,7 @@ def format_tab_color(state=None, *, repo=None, override=None):
     if isinstance(override, (list, tuple)) and len(override) == 3:
         return tuple(override)
 
-    if not repo and state is not None:
+    if repo is None and state is not None:
         repo = state.get("repo", "")
     if not repo:
         return None
