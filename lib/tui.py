@@ -147,7 +147,7 @@ class TuiApp:
         _, max_x = self.stdscr.getmaxyx()
         border = "\u2500" * max_x
         self._safe_addstr(0, 0, border, curses.A_DIM)
-        self._safe_addstr(0, 2, f" FLOW v{self.version} ", curses.A_BOLD)
+        self._safe_addstr(0, 2, f" FLOW v{self.version} ", self._color(COLOR_HEADER) | curses.A_BOLD)
         self._draw_tab_bar(2)
         self._safe_addstr(3, 2, "\u2500" * min(54, max_x - 4), curses.A_DIM)
 
@@ -222,16 +222,19 @@ class TuiApp:
             if entry["status"] == "complete":
                 marker = "[x]"
                 suffix = f"  {entry['time']}" if entry["time"] else ""
+                attr = self._color(COLOR_COMPLETE)
             elif entry["status"] == "in_progress":
                 marker = "[>]"
                 suffix = ""
                 if entry["annotation"]:
                     suffix = f"  ({entry['annotation']})"
+                attr = self._color(COLOR_ACTIVE) | curses.A_BOLD
             else:
                 marker = "[ ]"
                 suffix = ""
+                attr = curses.A_DIM
             line = f"{marker} {entry['name']}{suffix}"
-            self._safe_addstr(row, 2, line)
+            self._safe_addstr(row, 2, line, attr)
             row += 1
 
         row += 1
@@ -391,7 +394,7 @@ class TuiApp:
         self._safe_addstr(
             max_y - 1, 0,
             f" Abort '{flow['feature']}'? [y/N] " + " " * 40,
-            curses.A_BOLD,
+            self._color(COLOR_FAILED) | curses.A_BOLD,
         )
         self.stdscr.refresh()
 
@@ -455,7 +458,17 @@ class TuiApp:
             item = items[i]
             row = list_start + i
             marker = "\u25b8 " if i == self.orch_selected else "  "
-            attr = curses.A_BOLD if i == self.orch_selected else 0
+            status = item["status"]
+            if status == "completed":
+                attr = self._color(COLOR_COMPLETE)
+            elif status == "failed":
+                attr = self._color(COLOR_FAILED)
+            elif status == "in_progress":
+                attr = self._color(COLOR_ACTIVE)
+            else:
+                attr = curses.A_DIM
+            if i == self.orch_selected:
+                attr = attr | curses.A_BOLD
             elapsed_str = f"  {item['elapsed']}" if item["elapsed"] else ""
             pr_str = ""
             if item["pr_url"]:

@@ -598,6 +598,22 @@ def test_start_abort_no_flows():
     assert app.confirming_abort is False
 
 
+def test_abort_prompt_red_bold():
+    """Abort confirmation prompt renders with red color pair OR'd with A_BOLD."""
+    state = make_state()
+    stdscr = _make_stdscr()
+    app = _make_app(stdscr, flows=[_flow_from_state(state)])
+    app.use_color = True
+    with patch("tui.curses.color_pair", return_value=768):
+        app._start_abort()
+    prompt_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "Abort" in str(c[0][2])
+    ]
+    assert len(prompt_calls) == 1
+    assert prompt_calls[0][0][3] == 768 | curses.A_BOLD
+
+
 def test_abort_confirm_yes():
     """'y' confirms abort and calls _abort_flow."""
     state = make_state()
@@ -852,6 +868,71 @@ def test_main_function_creates_app():
 # --- _draw_detail_panel ---
 
 
+def test_detail_panel_complete_phase_green():
+    """Phase timeline [x] markers render with green color pair."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app.use_color = True
+    with patch("tui.curses.color_pair", return_value=256):
+        app._draw_detail_panel(10)
+    # Find [x] lines (complete phases) — they should have green attr (256)
+    complete_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "[x]" in str(c[0][2])
+    ]
+    assert len(complete_calls) >= 1
+    for call in complete_calls:
+        assert call[0][3] == 256
+
+
+def test_detail_panel_in_progress_phase_yellow_bold():
+    """Phase timeline [>] markers render with yellow color pair OR'd with A_BOLD."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app.use_color = True
+    with patch("tui.curses.color_pair", return_value=512):
+        app._draw_detail_panel(10)
+    in_progress_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "[>]" in str(c[0][2])
+    ]
+    assert len(in_progress_calls) >= 1
+    for call in in_progress_calls:
+        assert call[0][3] == 512 | curses.A_BOLD
+
+
+def test_detail_panel_pending_phase_dim():
+    """Phase timeline [ ] markers render with A_DIM."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_detail_panel(10)
+    pending_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "[ ]" in str(c[0][2])
+    ]
+    assert len(pending_calls) >= 1
+    for call in pending_calls:
+        assert call[0][3] == curses.A_DIM
+
+
 def test_draw_detail_panel_code_in_progress():
     """Detail panel shows annotation for in-progress code phase."""
     state = make_state(
@@ -1073,6 +1154,21 @@ def test_tui_app_init_has_tab_state():
     assert app.orch_selected == 0
 
 
+def test_header_branding_cyan_bold():
+    """Header branding renders with cyan color pair OR'd with A_BOLD."""
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[])
+    app.use_color = True
+    with patch("tui.curses.color_pair", return_value=1024):
+        app._draw_header()
+    branding_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "FLOW v" in str(c[0][2])
+    ]
+    assert len(branding_calls) == 1
+    assert branding_calls[0][0][3] == 1024 | curses.A_BOLD
+
+
 def test_draw_list_view_shows_tab_bar():
     """Tab bar text appears in the list view output."""
     state = make_state()
@@ -1152,6 +1248,83 @@ def test_draw_orchestration_view_with_queue():
     assert "\u25b6" in text
     assert "#42" in text
     assert "Add PDF export" in text
+
+
+def test_orch_completed_item_green():
+    """Completed orchestration item renders with green color pair."""
+    items = [_make_orch_item(42, "Done task", icon="\u2713", status="completed")]
+    orch = _make_orch_data(items=items, completed_count=1)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app.active_tab = 1
+    app.use_color = True
+    with patch("tui.curses.color_pair", return_value=256):
+        app._draw_orchestration_view()
+    item_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "#42" in str(c[0][2])
+    ]
+    assert len(item_calls) == 1
+    attr = item_calls[0][0][3]
+    assert attr & 256 == 256
+
+
+def test_orch_failed_item_red():
+    """Failed orchestration item renders with red color pair."""
+    items = [_make_orch_item(43, "Broken task", icon="\u2717", status="failed")]
+    orch = _make_orch_data(items=items, failed_count=1)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app.active_tab = 1
+    app.use_color = True
+    with patch("tui.curses.color_pair", return_value=768):
+        app._draw_orchestration_view()
+    item_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "#43" in str(c[0][2])
+    ]
+    assert len(item_calls) == 1
+    attr = item_calls[0][0][3]
+    assert attr & 768 == 768
+
+
+def test_orch_in_progress_item_yellow():
+    """In-progress orchestration item renders with yellow color pair."""
+    items = [_make_orch_item(45, "Active task", icon="\u25b6", status="in_progress")]
+    orch = _make_orch_data(items=items)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app.active_tab = 1
+    app.use_color = True
+    with patch("tui.curses.color_pair", return_value=512):
+        app._draw_orchestration_view()
+    item_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "#45" in str(c[0][2])
+    ]
+    assert len(item_calls) == 1
+    attr = item_calls[0][0][3]
+    assert attr & 512 == 512
+
+
+def test_orch_pending_item_dim():
+    """Pending orchestration item renders with A_DIM."""
+    items = [
+        _make_orch_item(45, "Active task", icon="\u25b6", status="in_progress"),
+        _make_orch_item(46, "Waiting task"),
+    ]
+    orch = _make_orch_data(items=items)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app.active_tab = 1
+    app.orch_selected = 0
+    app._draw_orchestration_view()
+    item_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "#46" in str(c[0][2])
+    ]
+    assert len(item_calls) == 1
+    assert item_calls[0][0][3] == curses.A_DIM
 
 
 def test_draw_orchestration_view_shows_elapsed():
