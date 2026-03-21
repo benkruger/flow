@@ -1050,13 +1050,8 @@ def test_orchestrate_all_processed_no_resume(git_repo):
 
     result = _run(git_repo)
     assert result.returncode == 0
-    # Should produce no output (no context to inject) or output without
-    # orchestration resume instructions
-    if result.stdout.strip():
-        output = json.loads(result.stdout)
-        ctx = output.get("additional_context", "")
-        assert "flow-orchestrate" not in ctx.lower()
-    # No resume context injected — other sessions can work freely
+    # Hook should exit silently — no context injected for other sessions
+    assert result.stdout.strip() == ""
 
 
 def test_no_orchestrate_file_existing_behavior(git_repo):
