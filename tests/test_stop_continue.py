@@ -784,7 +784,7 @@ class TestSetTabTitle:
             f"\033]6;1;bg;red;brightness;{r}\007"
             f"\033]6;1;bg;green;brightness;{g}\007"
             f"\033]6;1;bg;blue;brightness;{b}\007"
-            f"\033]0;Test Feature \u2014 P3: Code\007"
+            f"\033]1;Test Feature \u2014 P3: Code\007"
         )
         assert written[0] == expected
 
@@ -917,7 +917,7 @@ class TestSetTabTitle:
         )
         assert written[0] == expected
         # No title escape in the output
-        assert "\033]0;" not in written[0]
+        assert "\033]1;" not in written[0]
 
     def test_no_state_file_no_repo_no_override_no_write(self, git_repo, state_dir, monkeypatch):
         """No state file, no repo, no override — no tty write."""
@@ -1008,7 +1008,7 @@ class TestSetTabTitle:
             f"\033]6;1;bg;blue;brightness;{b}\007"
         )
         assert written[0] == expected
-        assert "\033]0;" not in written[0]
+        assert "\033]1;" not in written[0]
 
 
 # --- set_tab_title error logging tests ---
