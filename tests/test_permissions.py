@@ -155,6 +155,7 @@ PLACEHOLDER_SUBS = {
     "<ts>": "1234567890.123456",
     "<thread_ts>": "1234567890.123456",
     "<message_text>": "Phase complete",
+    "<id>": "abc12345",
 }
 
 
