@@ -37,7 +37,7 @@ SOFT-GATE and dispatches via the Resume Check.
    phase timings table (non-collapsible), state file, and session log dump.
    Generates a business-friendly summary via `format-complete-summary`
    showing feature name, prompt, per-phase timeline, and artifact counts.
-   After cleanup, writes a brief prose session summary describing what was accomplished
+   After the Done banner, writes a brief prose session summary describing what was accomplished
 7. Squash-merges the PR via `gh pr merge --squash`
 8. Removes the "Flow In-Progress" label from any issues referenced in the start prompt
 9. Closes any GitHub issues referenced in the start prompt (`#N` patterns)
