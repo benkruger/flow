@@ -238,7 +238,7 @@ class TestCheckContinue:
 def _run_hook(stdin_data, cwd=None):
     """Run the Stop hook script as a subprocess.
 
-    Returns (exit_code, stdout).
+    Returns (exit_code, stdout, stderr).
     """
     result = subprocess.run(
         [sys.executable, str(SCRIPT)],
@@ -247,7 +247,7 @@ def _run_hook(stdin_data, cwd=None):
         text=True,
         cwd=str(cwd) if cwd else None,
     )
-    return result.returncode, result.stdout.strip()
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
 class TestSubprocess:
@@ -265,7 +265,7 @@ class TestSubprocess:
         write_state(state_dir, branch, state)
 
         stdin = json.dumps({})
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         output = json.loads(stdout)
@@ -278,20 +278,20 @@ class TestSubprocess:
         write_state(state_dir, branch, state)
 
         stdin = json.dumps({})
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         assert stdout == ""
 
     def test_malformed_stdin_no_output(self, git_repo):
-        exit_code, stdout = _run_hook("not json at all", cwd=git_repo)
+        exit_code, stdout, _ = _run_hook("not json at all", cwd=git_repo)
 
         assert exit_code == 0
         assert stdout == ""
 
     def test_no_state_dir_no_output(self, git_repo):
         stdin = json.dumps({})
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         assert stdout == ""
@@ -312,7 +312,7 @@ class TestSubprocess:
         write_state(state_dir, branch, state)
 
         stdin = json.dumps({})
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         output = json.loads(stdout)
@@ -333,7 +333,7 @@ class TestSubprocess:
         write_state(state_dir, branch, state)
 
         stdin = json.dumps({})
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         output = json.loads(stdout)
@@ -348,7 +348,7 @@ class TestSubprocess:
             "session_id": "from-stdin-test",
             "transcript_path": "/path/to/from-stdin.jsonl",
         })
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         updated = json.loads((state_dir / f"{branch}.json").read_text())
@@ -446,7 +446,7 @@ class TestSessionIsolation:
         write_state(state_dir, branch, state)
 
         stdin = json.dumps({"session_id": "new-session"})
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         assert stdout == ""
@@ -462,7 +462,7 @@ class TestSessionIsolation:
         write_state(state_dir, branch, state)
 
         stdin = json.dumps({"session_id": "new-session"})
-        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
         updated = json.loads((state_dir / f"{branch}.json").read_text())
