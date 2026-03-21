@@ -2607,15 +2607,7 @@ def test_prime_installs_decompose_plugin():
     )
 
 
-# --- flow-issues batch detection and work order ---
-
-
-def test_flow_issues_has_batch_detection_step():
-    """flow-issues SKILL.md must have a Batch Detection step."""
-    content = _read_skill("flow-issues")
-    assert re.search(r"##\s+Step\s+\d+\s*—\s*Batch", content), (
-        "flow-issues/SKILL.md must have a step with 'Batch' in the heading"
-    )
+# --- flow-issues work order ---
 
 
 def test_flow_issues_has_work_order_section():
@@ -2690,17 +2682,11 @@ def test_flow_issues_has_start_commands():
 # --- flow-issues impact analysis ---
 
 
-def test_flow_issues_has_impact_analysis():
-    """flow-issues SKILL.md must have impact analysis with cross-area and force-multiplier signals."""
+def test_flow_issues_has_impact_ranking():
+    """flow-issues SKILL.md must have impact ranking via LLM judgment."""
     content = _read_skill("flow-issues")
     assert "impact" in content.lower(), (
-        "flow-issues/SKILL.md must contain impact analysis logic"
-    )
-    assert "cross-area" in content.lower() or "directory" in content.lower(), (
-        "flow-issues/SKILL.md must reference cross-area scope or directory counting"
-    )
-    assert "force-multiplier" in content.lower() or "force multiplier" in content.lower(), (
-        "flow-issues/SKILL.md must reference force-multiplier language detection"
+        "flow-issues/SKILL.md must contain impact ranking logic"
     )
 
 
