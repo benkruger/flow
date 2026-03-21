@@ -241,7 +241,7 @@ The script handles everything in a single call:
 - Merging FLOW permissions (additive only — preserves existing entries)
 - Setting `defaultMode` to `acceptEdits` (overrides existing values — FLOW requires this for state file writes without prompts)
 - Writing `.flow.json` with version marker, framework, config hash, skills config, and commit format
-- Adding `.flow-states/`, `.worktrees/`, `.flow.json`, and `bin/dependencies` to `.git/info/exclude`
+- Adding `.flow-states/`, `.worktrees/`, `.flow.json`, `bin/dependencies`, and `.claude/scheduled_tasks.lock` to `.git/info/exclude`
 - Installing a pre-commit hook at `.git/hooks/pre-commit` that blocks direct `git commit` during active FLOW features and requires commits to go through `/flow:flow-commit`
 - Configuring Slack notifications: if `FLOW_SLACK_TOKEN` and `FLOW_SLACK_CHANNEL` env vars are both set, writes `slack.bot_token` and `slack.channel` to `.flow.json` and sets `notify` to `auto`; validates the token with Slack `auth.test` (warns on failure, does not block); if either env var is absent, removes the `slack` key and sets `notify` to `never`
 - Installing a global `flow` launcher at `~/.local/bin/flow` that delegates to the plugin cache, and warning if `~/.local/bin` is not in PATH
@@ -397,7 +397,7 @@ Report:
 - Framework: `<framework>`
 - Settings written to `.claude/settings.json`
 - Version marker written to `.flow.json` (git-excluded)
-- Git excludes configured for `.flow-states/`, `.worktrees/`, `.flow.json`, and `bin/dependencies`
+- Git excludes configured for `.flow-states/`, `.worktrees/`, `.flow.json`, `bin/dependencies`, and `.claude/scheduled_tasks.lock`
 - Pre-commit hook installed — blocks direct `git commit`, requires `/flow:flow-commit`
 - Global launcher installed at `~/.local/bin/flow` — run `flow tui` from any primed project
 - Slack notifications: configured (if env vars set) or disabled (if absent)

@@ -233,6 +233,7 @@ def test_git_exclude_not_updated_when_already_present(git_repo):
     info_dir.mkdir(parents=True, exist_ok=True)
     (info_dir / "exclude").write_text(
         ".flow-states/\n.worktrees/\n.flow.json\nbin/dependencies\n"
+        ".claude/scheduled_tasks.lock\n"
     )
 
     updated = _mod.update_git_exclude(git_repo)

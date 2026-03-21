@@ -89,7 +89,13 @@ FLOW_DENY = [
     "Bash(* | *)",
 ]
 
-EXCLUDE_ENTRIES = [".flow-states/", ".worktrees/", ".flow.json", "bin/dependencies"]
+EXCLUDE_ENTRIES = [
+    ".flow-states/",
+    ".worktrees/",
+    ".flow.json",
+    "bin/dependencies",
+    ".claude/scheduled_tasks.lock",
+]
 
 
 def _load_framework_permissions(framework):
