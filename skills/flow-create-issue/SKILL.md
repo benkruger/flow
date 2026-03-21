@@ -244,7 +244,25 @@ Output in your response (not via Bash) inside a fenced code block:
 
 Use the Read tool to read the approved draft from `.flow-states/create-issue-<id>-draft.md`. Parse the title from the first line (strip the heading prefix). The remainder is the issue body.
 
-Write the issue body to `.flow-issue-body-<id>` in the project root using the Write tool, then file it:
+### Repo Routing
+
+<HARD-GATE>
+
+Before filing, determine where this issue belongs. Use AskUserQuestion:
+
+> "Where should this issue be filed?"
+>
+> - **Target project** — this is a bug or feature in your project
+> - **FLOW plugin (benkruger/flow)** — this is a bug in the FLOW process itself
+
+Do not proceed to file the issue, propose direct edits, commit changes,
+or take any action outside this skill without the user's response.
+
+</HARD-GATE>
+
+Write the issue body to `.flow-issue-body-<id>` in the project root using the Write tool.
+
+**If target project:**
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id> --label decomposed
@@ -254,6 +272,18 @@ Record the issue in the state file (no-op if no FLOW feature is active):
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
+```
+
+**If FLOW plugin bug:**
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo benkruger/flow --title "<issue_title>" --body-file .flow-issue-body-<id> --label "Flow"
+```
+
+Record the issue:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
 ```
 
 Clean up the state and draft files. Use the Bash tool to remove both:

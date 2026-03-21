@@ -2893,3 +2893,24 @@ def test_create_issue_has_input_classification():
         "flow-create-issue must have an '## Exploration Mode' section "
         "for interactive design discussion"
     )
+
+
+def test_create_issue_has_repo_routing():
+    """flow-create-issue must route plugin bugs to benkruger/flow."""
+    content = _read_skill("flow-create-issue")
+    # Must contain a bash block with --repo benkruger/flow for plugin bugs
+    bash_blocks = re.findall(r"```bash\s*\n(.*?)```", content, re.DOTALL)
+    has_repo_flag = any("--repo benkruger/flow" in block for block in bash_blocks)
+    assert has_repo_flag, (
+        "flow-create-issue must have a bash block with '--repo benkruger/flow' "
+        "for filing FLOW plugin bugs against the plugin repo"
+    )
+    # The repo routing decision must be wrapped in a HARD-GATE
+    step3_match = re.search(
+        r"## Step 3.*?(?=\n## |\Z)", content, re.DOTALL
+    )
+    assert step3_match, "flow-create-issue must have a Step 3 section"
+    step3_text = step3_match.group(0)
+    assert "<HARD-GATE>" in step3_text and "AskUserQuestion" in step3_text, (
+        "Step 3 must have a HARD-GATE with AskUserQuestion for repo routing"
+    )
