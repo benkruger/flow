@@ -1157,7 +1157,7 @@ class TestSetTabTitleWithParams:
         _mod.set_tab_title(root=git_repo, branch=branch)
 
         assert len(written) == 1
-        assert "\033]0;" in written[0]
+        assert "\033]1;" in written[0]
 
     def test_none_branch_returns_silently(self, git_repo, monkeypatch):
         """When branch param is None, function returns without error."""

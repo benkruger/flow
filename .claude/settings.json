@@ -28,6 +28,7 @@
       "Read(~/.claude/rules/*)",
       "Read(//tmp/*.txt)",
       "Read(//tmp/*.diff)",
+      "Read(//tmp/*.patch)",
       "Skill(code-review:code-review)",
       "Skill(decompose:decompose)",
       "Agent(flow:ci-fixer)"
