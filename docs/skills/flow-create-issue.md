@@ -30,7 +30,7 @@ Before entering the filing pipeline, the skill classifies the user's input:
 
 ### Exploration Mode
 
-When the input is exploratory, the skill facilitates a design discussion instead of immediately decomposing. It explores the codebase for relevant context, presents findings and design options, and iterates interactively with the user. When the discussion produces a concrete problem to file, the skill transitions into the standard 3-step pipeline. The user can also end the exploration without filing.
+When the input is exploratory, the skill facilitates a design discussion instead of immediately decomposing. It explores the codebase for relevant context, presents findings and design options, and iterates interactively with the user. Exit paths are wrapped in a HARD-GATE — transitioning to the filing pipeline, ending the exploration, or canceling all require explicit user approval via AskUserQuestion. The user can also end the exploration without filing.
 
 ---
 
@@ -65,6 +65,7 @@ The filed issue contains enough detail for `/flow-start` to execute fully autono
 ## Gates
 
 - Step banners shown at entry to each step (`── Step N of 3: Name ──`)
+- HARD-GATE on Exploration Mode exit paths — prevents flow breakouts during design discussion
 - AskUserQuestion gates at Steps 1 and 2 — user controls the flow
 - Draft persisted to disk after approval in Step 2 — survives context loss
 - All file paths verified via codebase exploration
