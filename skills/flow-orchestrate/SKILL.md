@@ -181,16 +181,16 @@ Self-invoke to process the next issue. Invoke `flow:flow-orchestrate --continue-
 
 All issues have been processed.
 
-### Generate report
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-report --state-file .flow-states/orchestrate.json --output-dir .flow-states
-```
-
 ### Mark complete
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --complete --state-file .flow-states/orchestrate.json
+```
+
+### Generate report
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-report --state-file .flow-states/orchestrate.json --output-dir .flow-states
 ```
 
 ### Present report
