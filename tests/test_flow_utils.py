@@ -581,3 +581,30 @@ class TestExtractIssueNumbersUrls:
             "https://github.com/owner/repo/issues/200 and #100"
         )
         assert result == [100, 200]
+
+
+# --- short_issue_ref ---
+
+
+class TestShortIssueRef:
+    """Tests for URL-to-display-reference extraction."""
+
+    def test_github_issue_url_returns_hash_number(self):
+        assert _mod.short_issue_ref(
+            "https://github.com/owner/repo/issues/42"
+        ) == "#42"
+
+    def test_empty_string_returns_empty(self):
+        assert _mod.short_issue_ref("") == ""
+
+    def test_non_github_url_returns_full_url(self):
+        url = "https://example.com/custom-path"
+        assert _mod.short_issue_ref(url) == url
+
+    def test_url_without_trailing_number_returns_full_url(self):
+        url = "https://github.com/owner/repo/issues/"
+        assert _mod.short_issue_ref(url) == url
+
+    def test_url_with_path_after_number_returns_full_url(self):
+        url = "https://github.com/owner/repo/issues/42/comments"
+        assert _mod.short_issue_ref(url) == url

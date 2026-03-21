@@ -200,6 +200,12 @@ def extract_issue_numbers(prompt):
     return result
 
 
+def short_issue_ref(url):
+    """Extract '#N' from a GitHub issue URL, falling back to the full URL."""
+    match = re.search(r"/issues/(\d+)$", url)
+    return f"#{match.group(1)}" if match else url
+
+
 def derive_feature(branch):
     """Derive the human-readable feature name from a branch name.
 
