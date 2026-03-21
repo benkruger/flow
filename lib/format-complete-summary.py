@@ -9,13 +9,15 @@ Output (JSON to stdout):
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import derive_feature, format_time, read_version, PHASE_NAMES, PHASE_ORDER
+from flow_utils import (
+    derive_feature, format_time, read_version, short_issue_ref,
+    PHASE_NAMES, PHASE_ORDER,
+)
 
 MAX_PROMPT_LENGTH = 80
 
@@ -79,8 +81,7 @@ def format_complete_summary(state):
             lines.append(f"  Issues filed: {len(issues)}")
             for issue in issues:
                 url = issue.get("url", "")
-                match = re.search(r"/issues/(\d+)$", url)
-                ref = f"#{match.group(1)}" if match else url
+                ref = short_issue_ref(url)
                 lines.append(f"    [{issue['label']}] {ref}: {issue['title']}")
         if notes:
             lines.append(f"  Notes captured: {len(notes)}")

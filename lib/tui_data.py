@@ -16,7 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
     PACIFIC, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER,
-    derive_feature, derive_worktree, elapsed_since, format_time,
+    derive_feature, derive_worktree, elapsed_since,
+    extract_issue_numbers, format_time,
 )
 
 
@@ -43,6 +44,7 @@ def flow_summary(state, now=None):
         "diff_stats": state.get("diff_stats"),
         "notes_count": len(state.get("notes", [])),
         "issues_count": len(state.get("issues_filed", [])),
+        "issue_numbers": set(extract_issue_numbers(state.get("prompt", ""))),
         "phases": state.get("phases", {}),
         "state": state,
     }
@@ -144,3 +146,93 @@ def load_all_flows(root):
 
     flows.sort(key=lambda f: f["feature"])
     return flows
+
+
+_STATUS_ICONS = {
+    "completed": "\u2713",
+    "failed": "\u2717",
+    "in_progress": "\u25b6",
+    "pending": "\u00b7",
+}
+
+
+def load_orchestration(root):
+    """Read .flow-states/orchestrate.json and return the state dict.
+
+    Returns None if the file does not exist, is corrupt, or the state
+    directory does not exist.
+    """
+    root = Path(root)
+    state_dir = root / ".flow-states"
+    if not state_dir.is_dir():
+        return None
+
+    path = state_dir / "orchestrate.json"
+    if not path.exists():
+        return None
+
+    try:
+        return json.loads(path.read_text())
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
+def orchestration_summary(state, now=None):
+    """Convert an orchestrate state dict to a display-ready summary.
+
+    Returns None if state is None. Otherwise returns a dict with:
+    - elapsed: formatted total elapsed time
+    - completed_count, failed_count, total: queue counts
+    - is_running: True if completed_at is None
+    - items: list of per-item display dicts
+    """
+    if state is None:
+        return None
+
+    if now is None:
+        now = datetime.now(PACIFIC)
+
+    started_at = state.get("started_at")
+    completed_at = state.get("completed_at")
+
+    if completed_at:
+        elapsed_seconds = elapsed_since(started_at, datetime.fromisoformat(completed_at))
+    else:
+        elapsed_seconds = elapsed_since(started_at, now)
+
+    queue = state.get("queue", [])
+    completed_count = sum(1 for item in queue if item.get("outcome") == "completed")
+    failed_count = sum(1 for item in queue if item.get("outcome") == "failed")
+
+    items = []
+    for item in queue:
+        status = item.get("status", "pending")
+        icon = _STATUS_ICONS.get(status, "\u00b7")
+
+        item_started = item.get("started_at")
+        item_completed = item.get("completed_at")
+        if item_completed and item_started:
+            item_elapsed = format_time(elapsed_since(item_started, datetime.fromisoformat(item_completed)))
+        elif item_started and status == "in_progress":
+            item_elapsed = format_time(elapsed_since(item_started, now))
+        else:
+            item_elapsed = ""
+
+        items.append({
+            "icon": icon,
+            "issue_number": item.get("issue_number"),
+            "title": item.get("title", ""),
+            "elapsed": item_elapsed,
+            "pr_url": item.get("pr_url"),
+            "reason": item.get("reason"),
+            "status": status,
+        })
+
+    return {
+        "elapsed": format_time(elapsed_seconds),
+        "completed_count": completed_count,
+        "failed_count": failed_count,
+        "total": len(queue),
+        "is_running": completed_at is None,
+        "items": items,
+    }
