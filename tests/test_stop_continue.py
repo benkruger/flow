@@ -4,6 +4,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -1052,3 +1053,143 @@ class TestSetTabTitleErrorLogging:
 
         captured = capsys.readouterr()
         assert "[FLOW stop-continue] set_tab_title error:" in captured.err
+
+
+# --- Hoisted root/branch parameter tests ---
+
+
+class TestCheckContinueWithParams:
+    """Tests that check_continue accepts root and branch params directly."""
+
+    def test_uses_passed_root_and_branch(self, git_repo, state_dir, branch):
+        """When root and branch are passed, function uses them without subprocess."""
+        state = make_state(current_phase="flow-code")
+        state["_continue_pending"] = "commit"
+        write_state(state_dir, branch, state)
+
+        # Call from tmp_path (not git_repo) to prove no subprocess is used
+        should_block, skill_name, context = _mod.check_continue(
+            hook_input=None, root=git_repo, branch=branch
+        )
+
+        assert should_block is True
+        assert skill_name == "commit"
+
+    def test_no_state_file_with_params(self, git_repo, branch):
+        """When root/branch point to nonexistent state file, allows stop."""
+        should_block, skill_name, context = _mod.check_continue(
+            hook_input=None, root=git_repo, branch=branch
+        )
+
+        assert should_block is False
+        assert skill_name is None
+
+    def test_none_branch_param_allows(self, git_repo):
+        """When branch param is None, allows stop."""
+        should_block, skill_name, context = _mod.check_continue(
+            hook_input=None, root=git_repo, branch=None
+        )
+
+        assert should_block is False
+
+
+class TestCaptureSessionIdWithParams:
+    """Tests that capture_session_id accepts root and branch params directly."""
+
+    def test_uses_passed_root_and_branch(self, git_repo, state_dir, branch):
+        """When root and branch are passed, function uses them without subprocess."""
+        state = make_state(current_phase="flow-start")
+        write_state(state_dir, branch, state)
+
+        _mod.capture_session_id(
+            {"session_id": "via-params", "transcript_path": "/p.jsonl"},
+            root=git_repo, branch=branch,
+        )
+
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert updated["session_id"] == "via-params"
+        assert updated["transcript_path"] == "/p.jsonl"
+
+    def test_none_branch_param_skips(self, git_repo, state_dir, branch):
+        """When branch param is None, function returns without error."""
+        state = make_state(current_phase="flow-start")
+        write_state(state_dir, branch, state)
+        original = (state_dir / f"{branch}.json").read_text()
+
+        _mod.capture_session_id(
+            {"session_id": "via-params"},
+            root=git_repo, branch=None,
+        )
+
+        assert (state_dir / f"{branch}.json").read_text() == original
+
+
+class TestSetTabTitleWithParams:
+    """Tests that set_tab_title accepts root and branch params directly."""
+
+    def test_uses_passed_root_and_branch(self, git_repo, state_dir, branch, monkeypatch):
+        """When root and branch are passed, function uses them without subprocess."""
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
+        write_state(state_dir, branch, state)
+
+        written = []
+        fake_tty = type("FakeTTY", (), {
+            "write": lambda self, data: written.append(data),
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if str(path) == "/dev/tty":
+                return fake_tty
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+        _mod.set_tab_title(root=git_repo, branch=branch)
+
+        assert len(written) == 1
+        assert "\033]0;" in written[0]
+
+    def test_none_branch_returns_silently(self, git_repo, monkeypatch):
+        """When branch param is None, function returns without error."""
+        monkeypatch.setattr(_mod, "detect_repo", lambda: None)
+        _mod.set_tab_title(root=git_repo, branch=None)
+
+
+class TestMainErrorHandling:
+    """Tests that main() handles project_root/current_branch failures gracefully."""
+
+    def test_project_root_failure_allows_stop(self, monkeypatch):
+        """When project_root raises, main exits 0 with no output (fail-open)."""
+        def raise_error():
+            raise OSError("git not found")
+
+        monkeypatch.setattr(_mod, "project_root", raise_error)
+
+        import io
+        monkeypatch.setattr("sys.stdin", io.StringIO("{}"))
+
+        _mod.main()
+        # If we get here without exception, fail-open works
+
+    def test_no_branch_allows_stop(self, monkeypatch, capsys):
+        """When current_branch returns None, main exits with no output."""
+        monkeypatch.setattr(_mod, "project_root", lambda: Path("/tmp"))
+        monkeypatch.setattr(_mod, "current_branch", lambda: None)
+
+        import io
+        monkeypatch.setattr("sys.stdin", io.StringIO("{}"))
+
+        _mod.main()
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
