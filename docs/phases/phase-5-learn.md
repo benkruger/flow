@@ -34,16 +34,14 @@ Claude decides destinations autonomously using content-type heuristics:
 | Destination | What goes here | Write method |
 |---|---|---|
 | Project CLAUDE.md | Process rules and project architecture | Edit on disk, committed via PR |
-| `.claude/rules/` | Coding anti-patterns and gotchas | Filed as "Rule" issue (not edited directly) |
+| `.claude/rules/` | Coding anti-patterns and gotchas | Edit on disk, committed via PR |
 
-Rules that would previously be written to `.claude/rules/` are now filed as
-GitHub issues with the "Rule" label. The issue body contains the full rule
-text, target file path, and whether it is new or an update. This prevents
-permission prompts that break autonomous flow.
+Both CLAUDE.md and `.claude/rules/` are edited directly on disk using
+dedicated tools (Edit/Write) and committed to the feature branch. All edits
+target the project repo — never user-level `~/.claude/` paths.
 
 **GitHub issues** — filed during Learn:
 
-- **Rule** issues — rule additions/updates for `.claude/rules/`, deferred to a future session
 - **Flow** issues — FLOW process gaps, filed on the plugin repo (`benkruger/flow`)
 - **Documentation Drift** issues — docs out of sync with actual behavior
 

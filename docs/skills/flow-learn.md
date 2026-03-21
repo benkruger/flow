@@ -34,16 +34,14 @@ Learnings are routed autonomously based on destination:
 | # | Destination | Path | Method |
 |---|-------------|------|--------|
 | 1 | Project CLAUDE.md | `CLAUDE.md` in worktree | Edit on disk |
-| 2 | `.claude/rules/` | `.claude/rules/<topic>.md` in worktree | File "Rule" issue |
+| 2 | `.claude/rules/` | `.claude/rules/<topic>.md` in worktree | Edit on disk |
 
-CLAUDE.md edits are committed to the feature branch via `/flow-commit --auto`.
-Rules that would previously be edited directly are now filed as GitHub issues
-with the "Rule" label — the issue body contains the full rule text and target
-file path, deferring the edit to a future session.
+Both CLAUDE.md and `.claude/rules/` edits are committed to the feature branch
+via `/flow-commit --auto`. All edits target the project repo — never
+user-level `~/.claude/` paths.
 
 **GitHub issues** — filed during Learn:
 
-- **Rule** — rule additions/updates for `.claude/rules/`, on the target project repo
 - **Flow** — FLOW process gaps, on the plugin repo (`benkruger/flow`)
 - **Documentation Drift** — docs out of sync with actual behavior, on the target project repo
 
@@ -67,8 +65,8 @@ Learn auto-detects its context:
 | Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow-commit --auto` | No |
 | Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | No |
 
-All three modes route CLAUDE.md edits to the project. Rules are filed as
-GitHub issues (Phase 5 only) rather than edited directly.
+All three modes route both CLAUDE.md and `.claude/rules/` edits directly
+to the project repo. Both destinations are edited on disk and committed.
 
 Standalone mode lets any project use `/flow-learn` without a FLOW
 feature in progress — just review the current session and apply
