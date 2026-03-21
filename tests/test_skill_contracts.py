@@ -2288,6 +2288,15 @@ def test_complete_done_banner_includes_phase_timings():
         )
 
 
+def test_complete_done_banner_includes_session_summary():
+    """Complete Done section must instruct Claude to write a session summary."""
+    content = _read_skill("flow-complete")
+    assert re.search(r"### Done.*session summary", content, re.DOTALL | re.IGNORECASE), (
+        "flow-complete/SKILL.md Done section must instruct Claude to write "
+        "a prose session summary after the banner"
+    )
+
+
 def test_complete_step6_archives_all_pr_sections():
     """Complete Step 6 must reference all required PR body section headings."""
     content = _read_skill("flow-complete")
@@ -2542,6 +2551,30 @@ def test_plan_skill_has_dag_mode_resolution():
     assert "skills.flow-plan.dag" in content, (
         "flow-plan/SKILL.md Mode Resolution must reference "
         "'skills.flow-plan.dag' key"
+    )
+
+
+def test_plan_validates_target_file_paths():
+    """Plan SKILL.md must have a Target Path Validation subsection."""
+    content = _read_skill("flow-plan")
+    assert "### Target Path Validation" in content, (
+        "flow-plan/SKILL.md must have a '### Target Path Validation' "
+        "subsection in Step 3"
+    )
+    section_match = re.search(
+        r"### Target Path Validation\n(.*?)(?=\n### |\n## )",
+        content,
+        re.DOTALL,
+    )
+    assert section_match, (
+        "Could not extract Target Path Validation section content"
+    )
+    section = section_match.group(1)
+    assert "working tree" in section, (
+        "Target Path Validation must reference the repo working tree"
+    )
+    assert "Risks section" in section, (
+        "Target Path Validation must instruct flagging in the Risks section"
     )
 
 

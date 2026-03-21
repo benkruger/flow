@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import project_root, read_version
+from flow_utils import detect_repo, extract_issue_numbers, project_root, read_version
 from tui_data import (
     load_all_flows, load_orchestration, orchestration_summary,
     parse_log_entries, phase_timeline,
@@ -152,7 +152,10 @@ class TuiApp:
             attr = curses.A_BOLD if i == self.selected else 0
             phase_info = f"{flow['phase_number']}: {flow['phase_name']}"
             pr_info = f"PR #{flow['pr_number']}" if flow["pr_number"] else ""
-            line = f"{marker}{flow['feature']:<26s} {phase_info:<14s} {flow['elapsed']:<8s} {pr_info}"
+            feature_display = flow['feature']
+            if len(feature_display) > 26:
+                feature_display = feature_display[:23] + "..."
+            line = f"{marker}{feature_display:<26s} {phase_info:<14s} {flow['elapsed']:<8s} {pr_info}"
             self._safe_addstr(row, 2, line, attr)
 
         # Separator
@@ -164,7 +167,7 @@ class TuiApp:
             self._draw_detail_panel(detail_start)
 
         # Footer
-        footer = " [\u2190\u2192] Tab  [\u2191\u2193] Navigate  [Enter] Worktree  [p] PR  [l] Log  [a] Abort  [r] Refresh  [q] Quit"
+        footer = " [\u2190\u2192] Tab  [\u2191\u2193] Navigate  [Enter] Worktree  [p] PR  [i] Issue  [l] Log  [a] Abort  [r] Refresh  [q] Quit"
         self._safe_addstr(max_y - 1, 0, footer, curses.A_DIM)
 
     def _draw_detail_panel(self, start_row):
@@ -283,10 +286,44 @@ class TuiApp:
             self._open_pr()
         elif key == ord("l"):
             self.view = "log"
+        elif key == ord("i"):
+            self._open_flow_issue()
         elif key == ord("a"):
             self._start_abort()
         elif key == ord("r"):
             self.refresh_data()
+
+    def _get_repo(self):
+        """Get repo 'owner/repo' from flows or git remote fallback."""
+        for flow in self.flows:
+            repo = flow.get("state", {}).get("repo")
+            if repo:
+                return repo
+        return detect_repo(cwd=str(self.root))
+
+    def _open_flow_issue(self):
+        """Open the GitHub issue referenced in the selected flow's prompt."""
+        if not self.flows:
+            return
+        flow = self.flows[self.selected]
+        prompt = flow["state"].get("prompt", "")
+        issues = extract_issue_numbers(prompt)
+        if issues:
+            repo = flow["state"].get("repo")
+            self._open_issue(issues[0], repo=repo)
+
+    def _open_issue(self, issue_number, repo=None):
+        """Open a GitHub issue by number in the browser."""
+        if repo is None:
+            repo = self._get_repo()
+        if not repo:
+            return
+        url = f"https://github.com/{repo}/issues/{issue_number}"
+        subprocess.Popen(
+            ["open", url],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     def _open_worktree(self):
         """Open the selected flow's worktree in a new terminal tab."""
@@ -420,29 +457,16 @@ class TuiApp:
         elif key == curses.KEY_DOWN:
             self.orch_selected = min(len(self.orch_data["items"]) - 1, self.orch_selected + 1)
         elif key == ord("i"):
-            self._open_issue()
+            self._open_orch_issue()
         elif key == ord("r"):
             self.refresh_data()
 
-    def _open_issue(self):
+    def _open_orch_issue(self):
         """Open the selected orchestration issue in a browser."""
         if not self.orch_data or not self.orch_data["items"]:
             return
         item = self.orch_data["items"][self.orch_selected]
-        issue_number = item["issue_number"]
-        repo = None
-        for flow in self.flows:
-            repo = flow.get("state", {}).get("repo")
-            if repo:
-                break
-        if not repo:
-            return
-        url = f"https://github.com/{repo}/issues/{issue_number}"
-        subprocess.Popen(
-            ["open", url],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        self._open_issue(item["issue_number"])
 
 
 def _flow_matches_issue(flow, issue_number):
