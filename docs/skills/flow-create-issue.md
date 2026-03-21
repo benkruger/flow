@@ -46,7 +46,7 @@ Once a concrete problem is identified (either directly or after exploration), ea
 
 1. **Step 1 — Decompose:** Invokes `decompose:decompose` for DAG-based problem breakdown with codebase exploration (Glob, Grep, Read). Presents the synthesis and asks the user to approve, iterate, or cancel. Generates a session ID and writes step counter to `.flow-states/create-issue-<id>.json`.
 2. **Step 2 — Draft + Review:** Crafts a comprehensive issue with five sections (Problem, Acceptance Criteria, Files to Investigate, Out of Scope, Context). Presents the full draft inline with an iteration loop — user can revise as many times as needed before approving. On approval, persists the draft to `.flow-states/create-issue-<id>-draft.md`.
-3. **Step 3 — File:** Reads the approved draft from disk, files the issue via `bin/flow issue` with the `decomposed` label, then cleans up the session-scoped state and draft files.
+3. **Step 3 — File:** Asks the user whether to file against the target project or the FLOW plugin repo (`benkruger/flow`). Reads the approved draft from disk, files the issue via `bin/flow issue` with the appropriate label and repo flag, then cleans up the session-scoped state and draft files.
 
 ---
 
@@ -69,5 +69,6 @@ The filed issue contains enough detail for `/flow-start` to execute fully autono
 - AskUserQuestion gates at Steps 1 and 2 — user controls the flow
 - Draft persisted to disk after approval in Step 2 — survives context loss
 - All file paths verified via codebase exploration
-- Issues labeled `decomposed` for tracking
+- Issues labeled `decomposed` for tracking (or `Flow` when filed against the plugin repo)
+- Repo routing HARD-GATE in Step 3 — user chooses target project or FLOW plugin
 - Self-invocation enforcement prevents step skipping
