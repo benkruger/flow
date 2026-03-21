@@ -249,14 +249,16 @@ class TuiApp:
         if not self.flows:
             return
         flow = self.flows[self.selected]
-        prompt = flow.get("state", {}).get("prompt", "")
+        prompt = flow["state"].get("prompt", "")
         issues = extract_issue_numbers(prompt)
         if issues:
-            self._open_issue(issues[0])
+            repo = flow["state"].get("repo")
+            self._open_issue(issues[0], repo=repo)
 
-    def _open_issue(self, issue_number):
+    def _open_issue(self, issue_number, repo=None):
         """Open a GitHub issue by number in the browser."""
-        repo = self._get_repo()
+        if repo is None:
+            repo = self._get_repo()
         if not repo:
             return
         url = f"https://github.com/{repo}/issues/{issue_number}"

@@ -782,6 +782,16 @@ def test_open_issue_no_flows_with_detect():
         assert args[1] == "https://github.com/owner/repo/issues/99"
 
 
+def test_open_issue_with_explicit_repo():
+    """Uses explicit repo parameter instead of _get_repo fallback."""
+    app = _make_app(flows=[])
+    with patch("tui.subprocess.Popen") as mock_popen:
+        app._open_issue(42, repo="explicit/repo")
+        mock_popen.assert_called_once()
+        args = mock_popen.call_args[0][0]
+        assert args[1] == "https://github.com/explicit/repo/issues/42"
+
+
 # --- 'i' key ---
 
 
@@ -792,7 +802,7 @@ def test_i_key_opens_issue():
     app = _make_app(flows=[_flow_from_state(state)])
     with patch.object(app, "_open_issue") as mock_open:
         app._handle_list_input(ord("i"))
-        mock_open.assert_called_once_with(42)
+        mock_open.assert_called_once_with(42, repo="test/test")
 
 
 def test_i_key_no_issue_in_prompt():
