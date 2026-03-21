@@ -285,6 +285,24 @@ with the "decomposed" label), use it as a head start for plan writing:
 - The issue body has already been validated by the user — do not
   re-evaluate the problem statement
 
+### Target Path Validation
+
+During exploration, verify that each file target identified for editing
+is inside the repo working tree. Files outside the repo — such as paths
+starting with `~/`, `/Users/`, or any absolute path not under the
+working directory — are not tracked by git. Changes to those files will
+not appear in `git status` or the PR diff.
+
+If a target path is outside the repo and the prompt or issue body
+contains keywords like "repo", "version-controlled", "shared",
+"committed", or "tracked", note the ambiguity in the plan's Risks
+section and default to the repo-local equivalent path (e.g.
+`.claude/rules/` instead of `~/.claude/rules/`).
+
+If the prompt does not contain repo-related keywords, the out-of-repo
+path may be intentional. Still note it in the plan's Risks section so
+the user is aware, but do not override the target.
+
 ### Framework Conventions
 
 Read the project's CLAUDE.md for framework-specific conventions (architecture
