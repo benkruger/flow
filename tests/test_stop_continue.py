@@ -716,6 +716,34 @@ class TestFormatTabColor:
         assert isinstance(result, tuple)
         assert len(result) == 3
 
+    def test_repo_kwarg_returns_color(self):
+        """repo kwarg returns same color as the equivalent state dict."""
+        via_state = format_tab_color(self._state("test/test"))
+        via_kwarg = format_tab_color(repo="test/test")
+        assert via_kwarg == via_state
+        assert isinstance(via_kwarg, tuple)
+        assert len(via_kwarg) == 3
+
+    def test_repo_kwarg_empty_returns_none(self):
+        assert format_tab_color(repo="") is None
+
+    def test_repo_kwarg_none_returns_none(self):
+        assert format_tab_color(repo=None) is None
+
+    def test_repo_kwarg_with_override(self):
+        result = format_tab_color(repo="x/y", override=[1, 2, 3])
+        assert result == (1, 2, 3)
+
+    def test_state_and_repo_kwarg_prefers_repo(self):
+        """When both state and repo kwarg are provided, repo kwarg wins."""
+        color_a = format_tab_color(self._state("test/test"))
+        color_b = format_tab_color(self._state("test/test"), repo="other/project")
+        assert color_b != color_a
+        assert color_b == format_tab_color(repo="other/project")
+
+    def test_no_args_returns_none(self):
+        assert format_tab_color() is None
+
 
 # --- set_tab_title tests ---
 
@@ -858,28 +886,49 @@ class TestSetTabTitle:
         # Should not raise
         _mod.set_tab_title()
 
-    def test_no_state_file_no_error(self, git_repo, monkeypatch):
-        """No state file — function returns silently."""
+    def test_no_state_file_writes_color_only(self, git_repo, state_dir, monkeypatch):
+        """No state file but detect_repo returns a repo — write color only, no title."""
         monkeypatch.chdir(git_repo)
+        monkeypatch.setattr(_mod, "detect_repo", lambda: "test/test")
+
+        written = []
+        fake_tty = type("FakeTTY", (), {
+            "write": lambda self, data: written.append(data),
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if str(path) == "/dev/tty":
+                return fake_tty
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
         _mod.set_tab_title()
 
-    def test_no_branch_no_error(self, tmp_path, monkeypatch):
-        """Not in a git repo — function returns silently."""
-        monkeypatch.chdir(tmp_path)
-        _mod.set_tab_title()
+        assert len(written) == 1
+        r, g, b = format_tab_color(repo="test/test")
+        expected = (
+            f"\033]6;1;bg;red;brightness;{r}\007"
+            f"\033]6;1;bg;green;brightness;{g}\007"
+            f"\033]6;1;bg;blue;brightness;{b}\007"
+        )
+        assert written[0] == expected
+        # No title escape in the output
+        assert "\033]0;" not in written[0]
 
-    def test_unknown_phase_no_write(self, git_repo, state_dir, branch, monkeypatch):
-        """State file with unknown phase — format_tab_title returns None, no tty write."""
+    def test_no_state_file_no_repo_no_override_no_write(self, git_repo, state_dir, monkeypatch):
+        """No state file, no repo, no override — no tty write."""
         monkeypatch.chdir(git_repo)
-        state = make_state(current_phase="flow-code")
-        state["current_phase"] = "flow-unknown"
-        write_state(state_dir, branch, state)
+        monkeypatch.setattr(_mod, "detect_repo", lambda: None)
 
         written = []
         original_open = open
 
         def mock_open(path, *args, **kwargs):
-            if path == "/dev/tty":
+            if str(path) == "/dev/tty":
                 written.append("opened")
                 raise AssertionError("Should not open /dev/tty")
             return original_open(path, *args, **kwargs)
@@ -887,3 +936,119 @@ class TestSetTabTitle:
         monkeypatch.setattr("builtins.open", mock_open)
         _mod.set_tab_title()
         assert len(written) == 0
+
+    def test_no_state_file_with_flow_json_override(self, git_repo, state_dir, monkeypatch):
+        """No state file but .flow.json has tab_color — use override color."""
+        monkeypatch.chdir(git_repo)
+        monkeypatch.setattr(_mod, "detect_repo", lambda: None)
+        (git_repo / ".flow.json").write_text(json.dumps({"tab_color": [50, 60, 70]}))
+
+        written = []
+        fake_tty = type("FakeTTY", (), {
+            "write": lambda self, data: written.append(data),
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if str(path) == "/dev/tty":
+                return fake_tty
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+        _mod.set_tab_title()
+
+        assert len(written) == 1
+        assert "\033]6;1;bg;red;brightness;50\007" in written[0]
+        assert "\033]6;1;bg;green;brightness;60\007" in written[0]
+        assert "\033]6;1;bg;blue;brightness;70\007" in written[0]
+
+    def test_no_state_file_no_error(self, git_repo, monkeypatch):
+        """No state file, no repo — function returns silently."""
+        monkeypatch.chdir(git_repo)
+        monkeypatch.setattr(_mod, "detect_repo", lambda: None)
+        _mod.set_tab_title()
+
+    def test_no_branch_no_error(self, tmp_path, monkeypatch):
+        """Not in a git repo — function returns silently."""
+        monkeypatch.chdir(tmp_path)
+        _mod.set_tab_title()
+
+    def test_unknown_phase_color_still_written(self, git_repo, state_dir, branch, monkeypatch):
+        """State file with unknown phase — no title, but color still written."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["current_phase"] = "flow-unknown"
+        write_state(state_dir, branch, state)
+
+        written = []
+        fake_tty = type("FakeTTY", (), {
+            "write": lambda self, data: written.append(data),
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if str(path) == "/dev/tty":
+                return fake_tty
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+        _mod.set_tab_title()
+
+        assert len(written) == 1
+        r, g, b = format_tab_color(state)
+        expected = (
+            f"\033]6;1;bg;red;brightness;{r}\007"
+            f"\033]6;1;bg;green;brightness;{g}\007"
+            f"\033]6;1;bg;blue;brightness;{b}\007"
+        )
+        assert written[0] == expected
+        assert "\033]0;" not in written[0]
+
+
+# --- set_tab_title error logging tests ---
+
+
+class TestSetTabTitleErrorLogging:
+    def test_error_logged_to_stderr(self, git_repo, state_dir, branch, monkeypatch, capsys):
+        """Corrupt state file → stderr contains error diagnostic."""
+        monkeypatch.chdir(git_repo)
+        (state_dir / f"{branch}.json").write_text("{bad json")
+
+        _mod.set_tab_title()
+
+        captured = capsys.readouterr()
+        assert "[FLOW stop-continue] set_tab_title error:" in captured.err
+
+    def test_error_logged_to_log_file(self, git_repo, state_dir, branch, monkeypatch, capsys):
+        """Corrupt state file → error logged to .flow-states/<branch>.log."""
+        monkeypatch.chdir(git_repo)
+        (state_dir / f"{branch}.json").write_text("{bad json")
+
+        _mod.set_tab_title()
+
+        log_path = state_dir / f"{branch}.log"
+        assert log_path.exists()
+        log_content = log_path.read_text()
+        assert "[stop-continue] TAB ERROR:" in log_content
+
+    def test_log_failure_does_not_propagate(self, git_repo, state_dir, branch, monkeypatch, capsys):
+        """When both the main operation and log writing fail, no exception propagates."""
+        monkeypatch.chdir(git_repo)
+        (state_dir / f"{branch}.json").write_text("{bad json")
+
+        def raise_now():
+            raise OSError("clock broken")
+
+        monkeypatch.setattr(_mod, "now", raise_now)
+
+        # Should not raise
+        _mod.set_tab_title()
+
+        captured = capsys.readouterr()
+        assert "[FLOW stop-continue] set_tab_title error:" in captured.err
