@@ -1,5 +1,29 @@
 # Release Notes
 
+## v0.39.0 — Direct rule editing, flow-issues redesign, and decision point gates
+
+### New features
+
+- **Direct `.claude/rules/` editing** — Learn phase edits rules directly on disk instead of filing GitHub issues, eliminating indefinite deferral of coding anti-patterns (#382).
+- **Flow-issues redesign** — improved categorization, batch detection, dependency analysis, and impact scoring for the issues dashboard (#384).
+- **TUI global flow launcher** — launch flows from the TUI interface (#363).
+- **Clickable URLs in Done banner** — PR and issue URLs are now clickable in terminal output (#374).
+
+### Improvements
+
+- **HARD-GATE enforcement** — all user decision points across all skills wrapped in HARD-GATE tags to prevent bypassing approval prompts (#370).
+- **Plugin User Reachability rule** — new skill-authoring rule requiring all features to have a clear user access path (#375).
+- **Plan skill hardened path guard** — `.claude/rules/` and `CLAUDE.md` are always repo-level with no "may be intentional" escape hatch (#382).
+- **Repo-level-only principle** — explicit rule and CLAUDE.md convention stating FLOW never writes to `~/.claude/` (#382).
+
+### Fixes
+
+- Fix tab title and color not applied across Stop and SessionStart hooks (#379).
+- Fix create-issue singleton file paths violating N×N×N concurrency (#380).
+- Fix prime-setup missing `.claude/scheduled_tasks.lock` exclusion (#376).
+- Fix TUI Ctrl+C crash (#377).
+- Extract write+chmod pattern into shared utility (#378).
+
 ## v0.38.0 — TUI enhancements and bug fixes
 
 ### New features
