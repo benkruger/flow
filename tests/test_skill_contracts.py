@@ -1982,22 +1982,22 @@ def test_prime_commit_step_enforces_flow_commit_exclusively():
     """flow-prime commit step must use /flow:flow-commit and not raw git commands."""
     content = _read_skill("flow-prime")
     step_match = re.search(
-        r"### Step 6.*?\n(.*?)(?=\n### Done)", content, re.DOTALL
+        r"### Step 7.*?\n(.*?)(?=\n### Done)", content, re.DOTALL
     )
-    assert step_match, "Could not find Step 6 (commit) in flow-prime/SKILL.md"
+    assert step_match, "Could not find Step 7 (commit) in flow-prime/SKILL.md"
     step_text = step_match.group(1)
     assert "/flow:flow-commit" in step_text, (
-        "flow-prime Step 6 must reference /flow:flow-commit"
+        "flow-prime Step 7 must reference /flow:flow-commit"
     )
     for line in step_text.splitlines():
         if "git commit" in line:
             assert re.search(r"[Nn]ever", line), (
-                f"flow-prime Step 6 mentions 'git commit' outside a "
+                f"flow-prime Step 7 mentions 'git commit' outside a "
                 f"prohibition: {line.strip()}"
             )
         if "git add" in line:
             assert re.search(r"[Nn]ever", line), (
-                f"flow-prime Step 6 mentions 'git add' outside a "
+                f"flow-prime Step 7 mentions 'git add' outside a "
                 f"prohibition: {line.strip()}"
             )
 
