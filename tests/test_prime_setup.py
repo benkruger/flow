@@ -19,7 +19,8 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
-def _run(project_root, framework="rails", skills_json=None, commit_format=None):
+def _run(project_root, framework="rails", skills_json=None, commit_format=None,
+         plugin_root=None, env=None):
     """Run prime-setup.py via subprocess."""
     cmd = [sys.executable, SCRIPT, str(project_root)]
     if framework:
@@ -28,7 +29,9 @@ def _run(project_root, framework="rails", skills_json=None, commit_format=None):
         cmd.extend(["--skills-json", skills_json])
     if commit_format is not None:
         cmd.extend(["--commit-format", commit_format])
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    if plugin_root is not None:
+        cmd.extend(["--plugin-root", plugin_root])
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
     return result
 
 
@@ -849,6 +852,38 @@ def test_cli_ignores_unknown_args(git_repo):
     assert result.returncode == 0
     data = json.loads(result.stdout)
     assert data["status"] == "ok"
+
+
+# --- CLI --plugin-root ---
+
+
+def test_cli_plugin_root_written_to_flow_json(git_repo, tmp_path):
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    env = {**os.environ, "HOME": str(fake_home)}
+    result = _run(git_repo, plugin_root="/some/cache/path", env=env)
+    assert result.returncode == 0
+    data = json.loads((git_repo / ".flow.json").read_text())
+    assert data["plugin_root"] == "/some/cache/path"
+
+
+def test_cli_launcher_installed_in_output(git_repo, tmp_path):
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    env = {**os.environ, "HOME": str(fake_home)}
+    result = _run(git_repo, plugin_root="/some/cache/path", env=env)
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["launcher_installed"] is True
+
+
+def test_cli_no_plugin_root_no_launcher(git_repo):
+    result = _run(git_repo)
+    assert result.returncode == 0
+    data = json.loads((git_repo / ".flow.json").read_text())
+    assert "plugin_root" not in data
+    output = json.loads(result.stdout)
+    assert output["launcher_installed"] is False
 
 
 # --- Consolidated prime-project and create-dependencies ---

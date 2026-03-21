@@ -471,6 +471,7 @@ def main():
     framework = None
     skills_json = None
     commit_format = None
+    plugin_root = None
     i = 2
     while i < len(sys.argv):
         if sys.argv[i] == "--framework" and i + 1 < len(sys.argv):
@@ -481,6 +482,9 @@ def main():
             i += 2
         elif sys.argv[i] == "--commit-format" and i + 1 < len(sys.argv):
             commit_format = sys.argv[i + 1]
+            i += 2
+        elif sys.argv[i] == "--plugin-root" and i + 1 < len(sys.argv):
+            plugin_root = sys.argv[i + 1]
             i += 2
         else:
             i += 1
@@ -512,10 +516,17 @@ def main():
         write_version_marker(project_root, version, framework,
                              skills=skills, config_hash=config_hash,
                              setup_hash=setup_hash,
-                             commit_format=commit_format)
+                             commit_format=commit_format,
+                             plugin_root=plugin_root)
         exclude_updated = update_git_exclude(project_root)
         install_pre_commit_hook(project_root)
         write_slack_config(project_root)
+
+        launcher_installed = False
+        if plugin_root is not None:
+            install_launcher()
+            check_launcher_path()
+            launcher_installed = True
 
         _prime_project = _import_sibling("prime_project", "prime-project.py")
         _create_deps = _import_sibling("create_deps", "create-dependencies.py")
@@ -528,6 +539,7 @@ def main():
             "exclude_updated": exclude_updated,
             "version_marker": True,
             "hook_installed": True,
+            "launcher_installed": launcher_installed,
             "framework": framework,
             "prime_project": prime_result["status"],
             "dependencies": deps_result["status"],
