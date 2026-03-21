@@ -749,8 +749,86 @@ class TestSetTabTitle:
         monkeypatch.setattr("builtins.open", mock_open)
         _mod.set_tab_title()
 
-        assert len(written) == 1
-        assert written[0] == "\033]0;Flow: Phase 3: Code \u2014 Test Feature\007"
+        r, g, b = format_tab_color(state)
+        assert len(written) == 4
+        assert written[0] == f"\033]6;1;bg;red;brightness;{r}\007"
+        assert written[1] == f"\033]6;1;bg;green;brightness;{g}\007"
+        assert written[2] == f"\033]6;1;bg;blue;brightness;{b}\007"
+        assert written[3] == "\033]0;Flow: Phase 3: Code \u2014 Test Feature\007"
+
+    def test_color_override_from_flow_json(self, git_repo, state_dir, branch, monkeypatch):
+        """When .flow.json has tab_color, use override instead of hash."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
+        write_state(state_dir, branch, state)
+        (git_repo / ".flow.json").write_text(json.dumps({"tab_color": [99, 88, 77]}))
+
+        written = []
+        fake_tty = type("FakeTTY", (), {
+            "write": lambda self, data: written.append(data),
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if str(path) == "/dev/tty":
+                return fake_tty
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+        _mod.set_tab_title()
+
+        assert len(written) == 4
+        assert written[0] == "\033]6;1;bg;red;brightness;99\007"
+        assert written[1] == "\033]6;1;bg;green;brightness;88\007"
+        assert written[2] == "\033]6;1;bg;blue;brightness;77\007"
+
+    def test_color_write_failure_silent(self, git_repo, state_dir, branch, monkeypatch):
+        """If tty write raises mid-sequence, no exception propagates."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
+        write_state(state_dir, branch, state)
+
+        call_count = 0
+
+        class FailingTTY:
+            def write(self_tty, data):
+                nonlocal call_count
+                call_count += 1
+                raise OSError("tty write failed")
+
+            def __enter__(self_tty):
+                return self_tty
+
+            def __exit__(self_tty, *a):
+                return None
+
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if path == "/dev/tty":
+                return FailingTTY()
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+        _mod.set_tab_title()
+        assert call_count >= 1
 
     def test_oserror_silently_caught(self, git_repo, state_dir, branch, monkeypatch):
         """OSError from /dev/tty is caught silently."""
