@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import project_root, read_version
+from flow_utils import detect_repo, extract_issue_numbers, project_root, read_version
 from tui_data import load_all_flows, parse_log_entries, phase_timeline
 
 # Auto-refresh interval in milliseconds
@@ -116,7 +116,7 @@ class TuiApp:
             self._draw_detail_panel(detail_start)
 
         # Footer
-        footer = " [\u2191\u2193] Navigate  [Enter] Worktree  [p] PR  [l] Log  [a] Abort  [r] Refresh  [q] Quit"
+        footer = " [\u2191\u2193] Navigate  [Enter] Worktree  [p] PR  [i] Issue  [l] Log  [a] Abort  [r] Refresh  [q] Quit"
         self._safe_addstr(max_y - 1, 0, footer, curses.A_DIM)
 
     def _draw_detail_panel(self, start_row):
@@ -229,10 +229,42 @@ class TuiApp:
             self._open_pr()
         elif key == ord("l"):
             self.view = "log"
+        elif key == ord("i"):
+            self._open_flow_issue()
         elif key == ord("a"):
             self._start_abort()
         elif key == ord("r"):
             self.refresh_data()
+
+    def _get_repo(self):
+        """Get repo 'owner/repo' from flows or git remote fallback."""
+        for flow in self.flows:
+            repo = flow.get("state", {}).get("repo")
+            if repo:
+                return repo
+        return detect_repo(cwd=str(self.root))
+
+    def _open_flow_issue(self):
+        """Open the GitHub issue referenced in the selected flow's prompt."""
+        if not self.flows:
+            return
+        flow = self.flows[self.selected]
+        prompt = flow.get("state", {}).get("prompt", "")
+        issues = extract_issue_numbers(prompt)
+        if issues:
+            self._open_issue(issues[0])
+
+    def _open_issue(self, issue_number):
+        """Open a GitHub issue by number in the browser."""
+        repo = self._get_repo()
+        if not repo:
+            return
+        url = f"https://github.com/{repo}/issues/{issue_number}"
+        subprocess.Popen(
+            ["open", url],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     def _open_worktree(self):
         """Open the selected flow's worktree in a new terminal tab."""
