@@ -162,6 +162,13 @@ def test_settings_no_duplicate_entries(tmp_path):
     assert len(deny_list) == len(set(deny_list))
 
 
+def _write_settings(tmp_path, settings):
+    """Write a settings.json file with the given content."""
+    settings_dir = tmp_path / ".claude"
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    (settings_dir / "settings.json").write_text(json.dumps(settings))
+
+
 # --- Pattern subsumption (in-process) ---
 
 
@@ -244,13 +251,6 @@ def test_is_subsumed_skips_exact_match():
     """Exact match is handled by set membership, not subsumption."""
     # Entry present in both candidate and existing — skip self-comparison
     assert not _mod._is_subsumed("Bash(git add *)", {"Bash(git add *)"})
-
-
-def _write_settings(tmp_path, settings):
-    """Write a settings.json file with the given content."""
-    settings_dir = tmp_path / ".claude"
-    settings_dir.mkdir(parents=True, exist_ok=True)
-    (settings_dir / "settings.json").write_text(json.dumps(settings))
 
 
 # --- Version marker (in-process) ---

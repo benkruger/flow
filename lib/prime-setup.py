@@ -14,6 +14,7 @@ Output (JSON to stdout):
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -182,16 +183,16 @@ def _is_subsumed(candidate, existing_set):
     (e.g. Bash(git *)) matches the candidate's concrete form (e.g. git add X).
     Only checks same-type entries (Bash vs Bash, not Agent vs Bash).
     """
-    import re as _re
-    match = _re.match(r"(\w+)\((.+)\)", candidate)
-    if not match:
+    cand_match = re.match(r"(\w+)\((.+)\)", candidate)
+    if not cand_match:
         return False
-    cand_type, cand_inner = match.group(1), match.group(2)
+    cand_type, cand_inner = cand_match.group(1), cand_match.group(2)
+    # Replace wildcards with literal text so regex tests structural coverage
     test_string = cand_inner.replace("*", "XXXPLACEHOLDERXXX")
     for existing in existing_set:
         if existing == candidate:
             continue
-        ex_match = _re.match(r"(\w+)\(", existing)
+        ex_match = re.match(r"(\w+)\(", existing)
         if not ex_match or ex_match.group(1) != cand_type:
             continue
         regex = permission_to_regex(existing)
