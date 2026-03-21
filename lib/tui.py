@@ -521,7 +521,10 @@ def _flow_matches_issue(flow, issue_number):
 def _main(stdscr):
     """Curses wrapper entry point."""
     app = TuiApp(stdscr)
-    app.run()
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        pass
 
 
 def main():
