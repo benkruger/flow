@@ -1372,13 +1372,7 @@ def test_learning_detects_dangling_async_operations():
 
 def test_learning_files_rule_issues():
     """Learn skill must file Rule issues for .claude/rules/ learnings."""
-    content = _read_skill("flow-learn")
-    # Step 3 must instruct filing issues with --label containing "Rule"
-    step3_match = re.search(
-        r"## Step 3.*?\n(.*?)(?:\n## Step 4|\n---)", content, re.DOTALL
-    )
-    assert step3_match, "Learn skill has no Step 3 section"
-    step3_text = step3_match.group(1)
+    step3_text = _learn_step_text(3)
     assert '--label' in step3_text and 'Rule' in step3_text, (
         "Learn Step 3 must instruct filing issues with label 'Rule'"
     )
