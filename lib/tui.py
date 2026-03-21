@@ -22,6 +22,13 @@ from tui_data import (
 # Auto-refresh interval in milliseconds
 REFRESH_MS = 2000
 
+# Color pair IDs for curses.init_pair / curses.color_pair
+COLOR_COMPLETE = 1
+COLOR_ACTIVE = 2
+COLOR_FAILED = 3
+COLOR_HEADER = 4
+COLOR_LINK = 5
+
 
 class TuiApp:
     """Curses-based TUI application for FLOW."""
@@ -38,6 +45,7 @@ class TuiApp:
         self.active_tab = 0
         self.orch_data = None
         self.orch_selected = 0
+        self.use_color = False
 
     def refresh_data(self):
         """Re-read all state files and orchestration state."""
@@ -49,9 +57,30 @@ class TuiApp:
         if self.orch_data and self.orch_selected >= len(self.orch_data["items"]):
             self.orch_selected = max(0, len(self.orch_data["items"]) - 1)
 
+    def _init_colors(self):
+        """Initialize color pairs if the terminal supports color."""
+        if curses.has_colors():
+            curses.start_color()
+            curses.use_default_colors()
+            curses.init_pair(COLOR_COMPLETE, curses.COLOR_GREEN, -1)
+            curses.init_pair(COLOR_ACTIVE, curses.COLOR_YELLOW, -1)
+            curses.init_pair(COLOR_FAILED, curses.COLOR_RED, -1)
+            curses.init_pair(COLOR_HEADER, curses.COLOR_CYAN, -1)
+            curses.init_pair(COLOR_LINK, curses.COLOR_BLUE, -1)
+            self.use_color = True
+        else:
+            self.use_color = False
+
+    def _color(self, pair_id):
+        """Return the color pair attribute, or 0 if colors are unavailable."""
+        if self.use_color:
+            return curses.color_pair(pair_id)
+        return 0
+
     def run(self):
         """Main loop."""
         curses.curs_set(0)
+        self._init_colors()
         self.stdscr.timeout(REFRESH_MS)
         self.refresh_data()
 
@@ -119,7 +148,7 @@ class TuiApp:
         _, max_x = self.stdscr.getmaxyx()
         border = "\u2500" * max_x
         self._safe_addstr(0, 0, border, curses.A_DIM)
-        self._safe_addstr(0, 2, f" FLOW v{self.version} ", curses.A_BOLD)
+        self._safe_addstr(0, 2, f" FLOW v{self.version} ", self._color(COLOR_HEADER) | curses.A_BOLD)
         self._draw_tab_bar(2)
         self._safe_addstr(3, 2, "\u2500" * min(54, max_x - 4), curses.A_DIM)
 
@@ -194,16 +223,19 @@ class TuiApp:
             if entry["status"] == "complete":
                 marker = "[x]"
                 suffix = f"  {entry['time']}" if entry["time"] else ""
+                attr = self._color(COLOR_COMPLETE)
             elif entry["status"] == "in_progress":
                 marker = "[>]"
                 suffix = ""
                 if entry["annotation"]:
                     suffix = f"  ({entry['annotation']})"
+                attr = self._color(COLOR_ACTIVE) | curses.A_BOLD
             else:
                 marker = "[ ]"
                 suffix = ""
+                attr = curses.A_DIM
             line = f"{marker} {entry['name']}{suffix}"
-            self._safe_addstr(row, 2, line)
+            self._safe_addstr(row, 2, line, attr)
             row += 1
 
         row += 1
@@ -362,7 +394,7 @@ class TuiApp:
         self._safe_addstr(
             max_y - 1, 0,
             f" Abort '{flow['feature']}'? [y/N] " + " " * 40,
-            curses.A_BOLD,
+            self._color(COLOR_FAILED) | curses.A_BOLD,
         )
         self.stdscr.refresh()
 
@@ -400,6 +432,7 @@ class TuiApp:
         curses.cbreak()
         self.stdscr.keypad(True)
         curses.curs_set(0)
+        self._init_colors()
         self.stdscr.timeout(REFRESH_MS)
         self.refresh_data()
 
@@ -425,7 +458,17 @@ class TuiApp:
             item = items[i]
             row = list_start + i
             marker = "\u25b8 " if i == self.orch_selected else "  "
-            attr = curses.A_BOLD if i == self.orch_selected else 0
+            status = item["status"]
+            if status == "completed":
+                attr = self._color(COLOR_COMPLETE)
+            elif status == "failed":
+                attr = self._color(COLOR_FAILED)
+            elif status == "in_progress":
+                attr = self._color(COLOR_ACTIVE)
+            else:
+                attr = curses.A_DIM
+            if i == self.orch_selected:
+                attr = attr | curses.A_BOLD
             elapsed_str = f"  {item['elapsed']}" if item["elapsed"] else ""
             pr_str = ""
             if item["pr_url"]:

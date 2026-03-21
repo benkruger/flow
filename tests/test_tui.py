@@ -35,6 +35,7 @@ def _make_app(stdscr=None, root=None, flows=None, orch_data=None):
     if root is not None:
         app.root = Path(root)
     app.version = "0.36.2"
+    app.use_color = False
     if flows is not None:
         app.flows = flows
     if orch_data is not None:
@@ -60,6 +61,59 @@ def test_tui_app_init():
     assert app.view == "list"
     assert app.running is True
     assert app.confirming_abort is False
+
+
+def test_make_app_sets_use_color_false():
+    """_make_app helper always sets use_color to False."""
+    app = _make_app()
+    assert app.use_color is False
+
+
+# --- _init_colors ---
+
+
+def test_init_colors_with_color_support():
+    """_init_colors initializes color pairs when terminal supports color."""
+    app = _make_app()
+    with patch("tui.curses.has_colors", return_value=True), \
+         patch("tui.curses.start_color") as mock_start, \
+         patch("tui.curses.use_default_colors") as mock_defaults, \
+         patch("tui.curses.init_pair") as mock_init_pair:
+        app._init_colors()
+        mock_start.assert_called_once()
+        mock_defaults.assert_called_once()
+        assert mock_init_pair.call_count == 5
+        assert app.use_color is True
+
+
+def test_init_colors_without_color_support():
+    """_init_colors skips color setup when terminal has no color."""
+    app = _make_app()
+    with patch("tui.curses.has_colors", return_value=False), \
+         patch("tui.curses.init_pair") as mock_init_pair:
+        app._init_colors()
+        mock_init_pair.assert_not_called()
+        assert app.use_color is False
+
+
+# --- _color ---
+
+
+def test_color_helper_with_color():
+    """_color returns color_pair value when colors are enabled."""
+    app = _make_app()
+    app.use_color = True
+    with patch("tui.curses.color_pair", side_effect=lambda p: p * 100) as mock_cp:
+        result = app._color(tui.COLOR_COMPLETE)
+        mock_cp.assert_called_once_with(tui.COLOR_COMPLETE)
+        assert result == tui.COLOR_COMPLETE * 100
+
+
+def test_color_helper_without_color():
+    """_color returns 0 when colors are disabled."""
+    app = _make_app()
+    app.use_color = False
+    assert app._color(tui.COLOR_COMPLETE) == 0
 
 
 # --- _safe_addstr ---
@@ -546,6 +600,22 @@ def test_start_abort_no_flows():
     assert app.confirming_abort is False
 
 
+def test_abort_prompt_red_bold():
+    """Abort confirmation prompt renders with red color pair OR'd with A_BOLD."""
+    state = make_state()
+    stdscr = _make_stdscr()
+    app = _make_app(stdscr, flows=[_flow_from_state(state)])
+    app.use_color = True
+    with patch("tui.curses.color_pair", side_effect=lambda p: p * 100):
+        app._start_abort()
+    prompt_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "Abort" in str(c[0][2])
+    ]
+    assert len(prompt_calls) == 1
+    assert prompt_calls[0][0][3] == tui.COLOR_FAILED * 100 | curses.A_BOLD
+
+
 def test_abort_confirm_yes():
     """'y' confirms abort and calls _abort_flow."""
     state = make_state()
@@ -598,6 +668,7 @@ def test_abort_flow_calls_cleanup():
          patch("tui.curses.noecho"), \
          patch("tui.curses.cbreak"), \
          patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
          patch("tui.subprocess.run") as mock_run, \
          patch.object(app, "refresh_data"):
         mock_new_scr = _make_stdscr()
@@ -620,6 +691,7 @@ def test_abort_flow_no_pr():
          patch("tui.curses.noecho"), \
          patch("tui.curses.cbreak"), \
          patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
          patch("tui.subprocess.run") as mock_run, \
          patch.object(app, "refresh_data"):
         mock_new_scr = _make_stdscr()
@@ -635,6 +707,24 @@ def test_abort_flow_no_flows():
     with patch("tui.subprocess.run") as mock_run:
         app._abort_flow()
         mock_run.assert_not_called()
+
+
+def test_abort_flow_calls_init_colors():
+    """_abort_flow re-initializes colors after curses re-init."""
+    state = make_state()
+    app = _make_app(flows=[_flow_from_state(state)])
+    with patch("tui.curses.endwin"), \
+         patch("tui.curses.initscr") as mock_initscr, \
+         patch("tui.curses.noecho"), \
+         patch("tui.curses.cbreak"), \
+         patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors") as mock_init_colors, \
+         patch("tui.subprocess.run"), \
+         patch.object(app, "refresh_data"):
+        mock_new_scr = _make_stdscr()
+        mock_initscr.return_value = mock_new_scr
+        app._abort_flow()
+        mock_init_colors.assert_called_once()
 
 
 # --- refresh_data ---
@@ -662,12 +752,24 @@ def test_refresh_data_clamps_selected(state_dir):
 # --- run loop ---
 
 
+def test_run_calls_init_colors():
+    """run() calls _init_colors before the main loop."""
+    stdscr = _make_stdscr()
+    stdscr.getch.side_effect = [ord("q")]
+    app = _make_app(stdscr, flows=[])
+    with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors") as mock_init:
+        app.run()
+        mock_init.assert_called_once()
+
+
 def test_run_loop_quit():
     """Run loop exits on 'q' key."""
     stdscr = _make_stdscr()
     stdscr.getch.side_effect = [ord("q")]
     app = _make_app(stdscr, flows=[])
-    with patch("tui.curses.curs_set"):
+    with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"):
         app.run()
     assert app.running is False
 
@@ -678,6 +780,7 @@ def test_run_loop_refresh_on_timeout():
     stdscr.getch.side_effect = [-1, ord("q")]
     app = _make_app(stdscr, flows=[])
     with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
          patch.object(app, "refresh_data"):
         app.run()
 
@@ -688,6 +791,7 @@ def test_run_loop_resize():
     stdscr.getch.side_effect = [curses.KEY_RESIZE, ord("q")]
     app = _make_app(stdscr, flows=[])
     with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
          patch.object(app, "refresh_data"):
         app.run()
 
@@ -701,6 +805,7 @@ def test_run_loop_draws_log_view():
     app = _make_app(stdscr, flows=[flow])
     app.view = "log"
     with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
          patch.object(app, "_draw_log_view") as mock_draw:
         app.run()
         mock_draw.assert_called()
@@ -757,11 +862,76 @@ def test_main_function_creates_app():
     stdscr = _make_stdscr()
     stdscr.getch.side_effect = [ord("q")]
     with patch("tui.project_root", return_value=Path("/tmp/test")), \
-         patch("tui.curses.curs_set"):
+         patch("tui.curses.curs_set"), \
+         patch("tui.curses.has_colors", return_value=False):
         tui._main(stdscr)
 
 
 # --- _draw_detail_panel ---
+
+
+def test_detail_panel_complete_phase_green():
+    """Phase timeline [x] markers render with green color pair."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app.use_color = True
+    with patch("tui.curses.color_pair", side_effect=lambda p: p * 100):
+        app._draw_detail_panel(10)
+    complete_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "[x]" in str(c[0][2])
+    ]
+    assert len(complete_calls) >= 1
+    for call in complete_calls:
+        assert call[0][3] == tui.COLOR_COMPLETE * 100
+
+
+def test_detail_panel_in_progress_phase_yellow_bold():
+    """Phase timeline [>] markers render with yellow color pair OR'd with A_BOLD."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app.use_color = True
+    with patch("tui.curses.color_pair", side_effect=lambda p: p * 100):
+        app._draw_detail_panel(10)
+    in_progress_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "[>]" in str(c[0][2])
+    ]
+    assert len(in_progress_calls) >= 1
+    for call in in_progress_calls:
+        assert call[0][3] == tui.COLOR_ACTIVE * 100 | curses.A_BOLD
+
+
+def test_detail_panel_pending_phase_dim():
+    """Phase timeline [ ] markers render with A_DIM."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_detail_panel(10)
+    pending_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "[ ]" in str(c[0][2])
+    ]
+    assert len(pending_calls) >= 1
+    for call in pending_calls:
+        assert call[0][3] == curses.A_DIM
 
 
 def test_draw_detail_panel_code_in_progress():
@@ -985,6 +1155,21 @@ def test_tui_app_init_has_tab_state():
     assert app.orch_selected == 0
 
 
+def test_header_branding_cyan_bold():
+    """Header branding renders with cyan color pair OR'd with A_BOLD."""
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[])
+    app.use_color = True
+    with patch("tui.curses.color_pair", side_effect=lambda p: p * 100):
+        app._draw_header()
+    branding_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "FLOW v" in str(c[0][2])
+    ]
+    assert len(branding_calls) == 1
+    assert branding_calls[0][0][3] == tui.COLOR_HEADER * 100 | curses.A_BOLD
+
+
 def test_draw_list_view_shows_tab_bar():
     """Tab bar text appears in the list view output."""
     state = make_state()
@@ -1066,6 +1251,86 @@ def test_draw_orchestration_view_with_queue():
     assert "Add PDF export" in text
 
 
+def test_orch_completed_item_green():
+    """Completed orchestration item renders with green color pair."""
+    items = [_make_orch_item(42, "Done task", icon="\u2713", status="completed")]
+    orch = _make_orch_data(items=items, completed_count=1)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app.active_tab = 1
+    app.use_color = True
+    with patch("tui.curses.color_pair", side_effect=lambda p: p * 100):
+        app._draw_orchestration_view()
+    item_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "#42" in str(c[0][2])
+    ]
+    assert len(item_calls) == 1
+    attr = item_calls[0][0][3]
+    expected = tui.COLOR_COMPLETE * 100 | curses.A_BOLD
+    assert attr == expected
+
+
+def test_orch_failed_item_red():
+    """Failed orchestration item renders with red color pair."""
+    items = [_make_orch_item(43, "Broken task", icon="\u2717", status="failed")]
+    orch = _make_orch_data(items=items, failed_count=1)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app.active_tab = 1
+    app.use_color = True
+    with patch("tui.curses.color_pair", side_effect=lambda p: p * 100):
+        app._draw_orchestration_view()
+    item_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "#43" in str(c[0][2])
+    ]
+    assert len(item_calls) == 1
+    attr = item_calls[0][0][3]
+    expected = tui.COLOR_FAILED * 100 | curses.A_BOLD
+    assert attr == expected
+
+
+def test_orch_in_progress_item_yellow():
+    """In-progress orchestration item renders with yellow color pair."""
+    items = [_make_orch_item(45, "Active task", icon="\u25b6", status="in_progress")]
+    orch = _make_orch_data(items=items)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app.active_tab = 1
+    app.use_color = True
+    with patch("tui.curses.color_pair", side_effect=lambda p: p * 100):
+        app._draw_orchestration_view()
+    item_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "#45" in str(c[0][2])
+    ]
+    assert len(item_calls) == 1
+    attr = item_calls[0][0][3]
+    expected = tui.COLOR_ACTIVE * 100 | curses.A_BOLD
+    assert attr == expected
+
+
+def test_orch_pending_item_dim():
+    """Pending orchestration item renders with A_DIM."""
+    items = [
+        _make_orch_item(45, "Active task", icon="\u25b6", status="in_progress"),
+        _make_orch_item(46, "Waiting task"),
+    ]
+    orch = _make_orch_data(items=items)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app.active_tab = 1
+    app.orch_selected = 0
+    app._draw_orchestration_view()
+    item_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "#46" in str(c[0][2])
+    ]
+    assert len(item_calls) == 1
+    assert item_calls[0][0][3] == curses.A_DIM
+
+
 def test_draw_orchestration_view_shows_elapsed():
     """Shows total elapsed time."""
     orch = _make_orch_data(items=[], elapsed="4h 12m", is_running=True)
@@ -1128,6 +1393,7 @@ def test_run_loop_draws_orchestration_view():
     app = _make_app(stdscr, flows=[])
     app.active_tab = 1
     with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
          patch.object(app, "_draw_orchestration_view") as mock_draw:
         app.run()
         mock_draw.assert_called()
