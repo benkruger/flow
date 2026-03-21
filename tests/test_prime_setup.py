@@ -574,6 +574,20 @@ def test_version_marker_without_plugin_root_has_no_key(tmp_path):
     assert "plugin_root" not in data
 
 
+# --- Shared script installation helper ---
+
+
+def test_install_script_creates_executable_file(tmp_path):
+    target_dir = tmp_path / "subdir"
+    content = "#!/bin/bash\necho hi\n"
+    _mod._install_script(target_dir, "my-script", content)
+    script = target_dir / "my-script"
+    assert target_dir.is_dir()
+    assert script.exists()
+    assert script.read_text() == content
+    assert os.access(script, os.X_OK)
+
+
 # --- Pre-commit hook installation ---
 
 
