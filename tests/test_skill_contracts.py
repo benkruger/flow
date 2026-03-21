@@ -816,12 +816,7 @@ def test_learn_step3_requires_output_for_mistakes():
     When Learn identifies Claude mistakes in Step 2, Step 3 must not allow
     'existing rules cover it' as an escape hatch. Every mistake must produce
     at least one artifact (CLAUDE.md edit, Rule issue, or Flow issue)."""
-    content = _read_skill("flow-learn")
-    step3_match = re.search(
-        r"## Step 3.*?\n(.*?)(?=\n## Step 4|\Z)", content, re.DOTALL
-    )
-    assert step3_match, "flow-learn/SKILL.md has no Step 3 section"
-    step3_lower = step3_match.group(1).lower()
+    step3_lower = _learn_step_text(3).lower()
 
     assert (
         "every mistake must produce" in step3_lower
@@ -1377,13 +1372,7 @@ def test_learning_detects_dangling_async_operations():
 
 def test_learning_files_rule_issues():
     """Learn skill must file Rule issues for .claude/rules/ learnings."""
-    content = _read_skill("flow-learn")
-    # Step 3 must instruct filing issues with --label containing "Rule"
-    step3_match = re.search(
-        r"## Step 3.*?\n(.*?)(?:\n## Step 4|\n---)", content, re.DOTALL
-    )
-    assert step3_match, "Learn skill has no Step 3 section"
-    step3_text = step3_match.group(1)
+    step3_text = _learn_step_text(3)
     assert '--label' in step3_text and 'Rule' in step3_text, (
         "Learn Step 3 must instruct filing issues with label 'Rule'"
     )
@@ -1394,13 +1383,7 @@ def test_learning_files_rule_issues():
 
 def test_learning_files_flow_issues_not_learning():
     """Learn Step 5 must use label 'Flow', not 'learning'."""
-    content = _read_skill("flow-learn")
-    # Step 5 section
-    step5_match = re.search(
-        r"## Step 5.*?\n(.*?)(?:\n## Step 6|\n---)", content, re.DOTALL
-    )
-    assert step5_match, "Learn skill has no Step 5 section"
-    step5_text = step5_match.group(1)
+    step5_text = _learn_step_text(5)
     assert "--label" in step5_text, (
         "Learn Step 5 must specify a --label for issue filing"
     )
@@ -2568,6 +2551,30 @@ def test_plan_skill_has_dag_mode_resolution():
     assert "skills.flow-plan.dag" in content, (
         "flow-plan/SKILL.md Mode Resolution must reference "
         "'skills.flow-plan.dag' key"
+    )
+
+
+def test_plan_validates_target_file_paths():
+    """Plan SKILL.md must have a Target Path Validation subsection."""
+    content = _read_skill("flow-plan")
+    assert "### Target Path Validation" in content, (
+        "flow-plan/SKILL.md must have a '### Target Path Validation' "
+        "subsection in Step 3"
+    )
+    section_match = re.search(
+        r"### Target Path Validation\n(.*?)(?=\n### |\n## )",
+        content,
+        re.DOTALL,
+    )
+    assert section_match, (
+        "Could not extract Target Path Validation section content"
+    )
+    section = section_match.group(1)
+    assert "working tree" in section, (
+        "Target Path Validation must reference the repo working tree"
+    )
+    assert "Risks section" in section, (
+        "Target Path Validation must instruct flagging in the Risks section"
     )
 
 
