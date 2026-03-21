@@ -2821,18 +2821,18 @@ def test_create_issue_usage_documents_step_flag():
     assert "--step 3" in usage_text, (
         "Usage must document --step 3 form"
     )
-    assert "--step 4" in usage_text, (
-        "Usage must document --step 4 form"
+    assert "--step 4" not in usage_text, (
+        "Usage must not document --step 4 (skill has 3 steps)"
     )
 
 
 def test_create_issue_steps_have_banners():
     """Each flow-create-issue step must have a step banner."""
     steps = _create_issue_steps()
-    assert len(steps) == 4, f"Expected 4 steps, found {len(steps)}"
+    assert len(steps) == 3, f"Expected 3 steps, found {len(steps)}"
     for step_num, step_text in steps:
-        assert re.search(rf"Step {step_num} of 4", step_text), (
-            f"Step {step_num} must have a banner containing 'Step {step_num} of 4'"
+        assert re.search(rf"Step {step_num} of 3", step_text), (
+            f"Step {step_num} must have a banner containing 'Step {step_num} of 3'"
         )
 
 
@@ -2846,17 +2846,31 @@ def test_create_issue_steps_1_2_have_ask_user():
             )
 
 
-def test_create_issue_steps_1_2_3_self_invoke():
-    """Steps 1-3 must self-invoke flow:flow-create-issue with --step flag."""
+def test_create_issue_steps_1_2_self_invoke():
+    """Steps 1-2 must self-invoke flow:flow-create-issue with --step flag."""
     steps = _create_issue_steps()
     for step_num, step_text in steps:
-        if step_num <= 3:
+        if step_num <= 2:
             assert "flow:flow-create-issue" in step_text, (
                 f"Step {step_num} must self-invoke flow:flow-create-issue"
             )
             assert "--step" in step_text, (
                 f"Step {step_num} must use --step flag for self-invocation"
             )
+
+
+def test_create_issue_has_resume_check():
+    """flow-create-issue must have a Resume Check section that reads create_issue_step."""
+    content = _read_skill("flow-create-issue")
+    rc_match = re.search(
+        r"## Resume Check\n(.*?)(?=\n## )", content, re.DOTALL
+    )
+    assert rc_match, (
+        "flow-create-issue must have a Resume Check section"
+    )
+    assert "create_issue_step" in rc_match.group(1), (
+        "Resume Check must reference create_issue_step field"
+    )
 
 
 def test_create_issue_has_input_classification():
