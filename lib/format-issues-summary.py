@@ -12,9 +12,13 @@ Output (JSON to stdout):
 
 import argparse
 import json
-import re
+import sys
 from collections import OrderedDict
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from flow_utils import short_issue_ref
 
 
 def format_issues_summary(state):
@@ -44,8 +48,7 @@ def format_issues_summary(state):
     ]
     for issue in issues:
         url = issue["url"]
-        match = re.search(r"/issues/(\d+)$", url)
-        short_url = f"#{match.group(1)}" if match else url
+        short_url = short_issue_ref(url)
         lines.append(
             f"| {issue['label']} | {issue['title']} "
             f"| {issue.get('phase_name', issue.get('phase', ''))} "
