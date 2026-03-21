@@ -152,7 +152,9 @@ class TuiApp:
             attr = curses.A_BOLD if i == self.selected else 0
             phase_info = f"{flow['phase_number']}: {flow['phase_name']}"
             pr_info = f"PR #{flow['pr_number']}" if flow["pr_number"] else ""
-            line = f"{marker}{flow['feature']:<26s} {phase_info:<14s} {flow['elapsed']:<8s} {pr_info}"
+            issue_nums = flow.get("issue_numbers", set())
+            issue_info = " ".join(f"#{n}" for n in sorted(issue_nums)) if issue_nums else ""
+            line = f"{marker}{flow['feature']:<26s} {phase_info:<14s} {flow['elapsed']:<8s} {issue_info + '  ' if issue_info else ''}{pr_info}"
             self._safe_addstr(row, 2, line, attr)
 
         # Separator
