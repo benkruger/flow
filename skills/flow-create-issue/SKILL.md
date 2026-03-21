@@ -103,7 +103,13 @@ immediately.
 4. Discuss interactively — use AskUserQuestion to gather the user's
    perspective, iterate on ideas, and refine the direction
 
+<HARD-GATE>
+
 **Exit paths:**
+
+Do not proceed to Step 1, propose direct edits, commit changes, or take
+any action outside this skill without explicit user approval via
+AskUserQuestion.
 
 When the discussion produces a concrete problem the user wants to file:
 
@@ -120,6 +126,8 @@ When the user is satisfied with the exploration:
 When the user wants to cancel:
 
 - Stop without filing
+
+</HARD-GATE>
 
 ---
 
