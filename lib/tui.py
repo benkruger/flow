@@ -61,6 +61,7 @@ class TuiApp:
         """Initialize color pairs if the terminal supports color."""
         if curses.has_colors():
             curses.start_color()
+            curses.use_default_colors()
             curses.init_pair(COLOR_COMPLETE, curses.COLOR_GREEN, -1)
             curses.init_pair(COLOR_ACTIVE, curses.COLOR_YELLOW, -1)
             curses.init_pair(COLOR_FAILED, curses.COLOR_RED, -1)
