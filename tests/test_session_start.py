@@ -1093,3 +1093,50 @@ def test_no_orchestrate_file_existing_behavior(git_repo):
     ctx = output["additional_context"]
     assert "Normal Feature" in ctx
     assert "orchestrat" not in ctx.lower()
+
+
+# --- Tab color tests ---
+
+
+def test_flow_json_no_state_files_exits_0_no_stdout(git_repo):
+    """.flow.json exists but no state files → exit 0, no stdout (color goes to tty)."""
+    (git_repo / ".flow.json").write_text(json.dumps({"flow_version": "0.38.0"}))
+    result = _run(git_repo)
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
+def test_flow_json_empty_state_dir_exits_0_no_stdout(git_repo):
+    """.flow.json + empty .flow-states/ → exit 0, no stdout."""
+    (git_repo / ".flow.json").write_text(json.dumps({"flow_version": "0.38.0"}))
+    (git_repo / ".flow-states").mkdir(parents=True)
+    result = _run(git_repo)
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
+def test_active_flow_color_sequences_not_in_stdout(git_repo):
+    """Color escape sequences must not appear in stdout (they go to /dev/tty)."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["branch"] = "color-test"
+    write_state(state_dir, "color-test", state)
+
+    _switch(git_repo, "color-test")
+    result = _run(git_repo)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert "additional_context" in output
+
+    # iTerm2 color escape sequences must not be in stdout
+    assert "\033]6;1;bg;" not in result.stdout
+
+
+def test_no_flow_json_no_state_files_exits_silently(git_repo):
+    """No .flow.json and no state files → exit 0, no stdout (existing behavior)."""
+    result = _run(git_repo)
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""

@@ -11,13 +11,13 @@ Explore a design question or decompose a concrete problem into a fully detailed,
 
 ```text
 /flow:flow-create-issue <problem description>
-/flow:flow-create-issue --step 2
-/flow:flow-create-issue --step 3
+/flow:flow-create-issue --step 2 --id <id>
+/flow:flow-create-issue --step 3 --id <id>
 ```
 
 - `/flow:flow-create-issue <problem description>` — start from Step 1 (Decompose)
-- `/flow:flow-create-issue --step 2` — self-invocation: skip to Step 2 (Draft + Review)
-- `/flow:flow-create-issue --step 3` — self-invocation: skip to Step 3 (File)
+- `/flow:flow-create-issue --step 2 --id <id>` — self-invocation: skip to Step 2 (Draft + Review)
+- `/flow:flow-create-issue --step 3 --id <id>` — self-invocation: skip to Step 3 (File)
 
 ## Concurrency
 
@@ -39,17 +39,22 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ## Step Dispatch
 
-If `--step N` was passed, this is a self-invocation from a previous step.
-Skip the Announce banner and jump directly to the Resume Check.
+If `--step N --id <id>` was passed, this is a self-invocation from a
+previous step. The `--id` flag carries the session-scoped identifier
+generated in Step 1. Skip the Announce banner and jump directly to the
+Resume Check, using the provided `<id>` for all file paths.
 
-- `--step 2` → Resume Check dispatches to Step 2
-- `--step 3` → Resume Check dispatches to Step 3
+- `--step 2 --id <id>` → Resume Check dispatches to Step 2
+- `--step 3 --id <id>` → Resume Check dispatches to Step 3
 
 If no `--step` flag was passed, proceed to Input Classification.
 
 ## Resume Check
 
-Use the Read tool to read `.flow-states/create-issue.json`.
+Use the Read tool to read `.flow-states/create-issue-<id>.json`, where
+`<id>` is the session identifier from the `--id` flag. If no `--id` flag
+was passed (first run), there is no file to read — proceed to Input
+Classification.
 
 - If the file does not exist or `create_issue_step` is `0`, proceed to
   Input Classification (first run).
@@ -159,7 +164,7 @@ Present the full DAG synthesis to the user.
 
 Ask the user to review the decomposition using AskUserQuestion:
 
-- **"Proceed to draft"** → write `{"create_issue_step": 1}` to `.flow-states/create-issue.json` using the Write tool, then invoke `flow:flow-create-issue --step 2` using the Skill tool as your final action. Do not output anything else after this invocation.
+- **"Proceed to draft"** → generate a short session ID by running `uuidgen | cut -c1-8` via the Bash tool (this ID scopes all file paths for this session). Write `{"create_issue_step": 1}` to `.flow-states/create-issue-<id>.json` using the Write tool, then invoke `flow:flow-create-issue --step 2 --id <id>` using the Skill tool as your final action. Do not output anything else after this invocation.
 - **"Iterate on decomposition"** → re-invoke `decompose:decompose` with the user's feedback, present the updated synthesis, and ask again.
 - **"Cancel"** → stop. Do not file an issue.
 
@@ -217,9 +222,9 @@ Present the full draft inline in the response — both title and body. Do not te
 
 Ask the user to review the draft using AskUserQuestion:
 
-- **"File it"** / **"Looks good"** / **"Ship it"** → persist the approved draft to `.flow-states/create-issue-draft.md` using the Write tool (title on the first line as a markdown heading, body below). Then write `{"create_issue_step": 2}` to `.flow-states/create-issue.json` using the Write tool. Then invoke `flow:flow-create-issue --step 3` using the Skill tool as your final action. Do not output anything else after this invocation.
+- **"File it"** / **"Looks good"** / **"Ship it"** → persist the approved draft to `.flow-states/create-issue-<id>-draft.md` using the Write tool (title on the first line as a markdown heading, body below). Then write `{"create_issue_step": 2}` to `.flow-states/create-issue-<id>.json` using the Write tool. Then invoke `flow:flow-create-issue --step 3 --id <id>` using the Skill tool as your final action. Do not output anything else after this invocation.
 - **"Revise the draft"** / **Any feedback or change request** → revise the draft based on feedback and re-present. If the feedback is substantial (changes the problem understanding or approach), re-run `decompose:decompose` with the updated understanding. If the feedback is editorial (wording, scope adjustments), revise the draft directly. After revision, ask again with the same options.
-- **"Re-decompose"** → invoke `flow:flow-create-issue --step 1` using the Skill tool as your final action. Do not output anything else after this invocation.
+- **"Re-decompose"** → invoke `flow:flow-create-issue` using the Skill tool as your final action (no `--step` or `--id` flags — restart from scratch). Do not output anything else after this invocation.
 
 Iterate as many times as needed. The issue is not filed until the user explicitly approves.
 
@@ -237,12 +242,12 @@ Output in your response (not via Bash) inside a fenced code block:
 ```
 ````
 
-Use the Read tool to read the approved draft from `.flow-states/create-issue-draft.md`. Parse the title from the first line (strip the heading prefix). The remainder is the issue body.
+Use the Read tool to read the approved draft from `.flow-states/create-issue-<id>-draft.md`. Parse the title from the first line (strip the heading prefix). The remainder is the issue body.
 
-Write the issue body to `.flow-issue-body` in the project root using the Write tool, then file it:
+Write the issue body to `.flow-issue-body-<id>` in the project root using the Write tool, then file it:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body --label decomposed
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id> --label decomposed
 ```
 
 Record the issue in the state file (no-op if no FLOW feature is active):
@@ -254,7 +259,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<issue
 Clean up the state and draft files. Use the Bash tool to remove both:
 
 ```bash
-rm .flow-states/create-issue.json .flow-states/create-issue-draft.md
+rm .flow-states/create-issue-<id>.json .flow-states/create-issue-<id>-draft.md
 ```
 
 Display the issue URL to the user, then output the COMPLETE banner:
@@ -275,6 +280,6 @@ Display the issue URL to the user, then output the COMPLETE banner:
 - Never use Bash to print banners — output them as text in your response
 - The issue body must be self-contained — a fresh session with no memory of this conversation must be able to execute it
 - Never create sub-issues or linked issues — file a single comprehensive issue
-- Always use the Write tool to create `.flow-issue-body` — never pass body text as a CLI argument
-- Never delete `.flow-issue-body` — the `bin/flow issue` script handles cleanup
+- Always use the Write tool to create the body file (`.flow-issue-body-<id>`) — never pass body text as a CLI argument
+- Never delete the body file — the `bin/flow issue` script handles cleanup
 - Each step ends by invoking the skill itself as the final action — never continue to the next step in the same invocation

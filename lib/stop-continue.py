@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    current_branch, format_tab_color, format_tab_title,
+    current_branch, detect_repo, format_tab_color, format_tab_title,
     mutate_state, now, project_root,
 )
 
@@ -121,21 +121,15 @@ def check_continue(hook_input=None):
 def set_tab_title():
     """Write the current FLOW phase and repo color to the terminal tab via /dev/tty.
 
-    Fail-open: any error is caught silently — this is cosmetic only.
+    Fail-open with diagnostics: any error is logged to stderr and
+    .flow-states/<branch>.log, but never blocks the hook.
     """
+    root = None
+    branch = None
     try:
         root = project_root()
         branch = current_branch()
         if not branch:
-            return
-
-        state_path = root / ".flow-states" / f"{branch}.json"
-        if not state_path.exists():
-            return
-
-        state = json.loads(state_path.read_text())
-        title = format_tab_title(state)
-        if not title:
             return
 
         override = None
@@ -145,7 +139,18 @@ def set_tab_title():
         except Exception:
             pass
 
-        color = format_tab_color(state, override=override)
+        state_path = root / ".flow-states" / f"{branch}.json"
+        if state_path.exists():
+            state = json.loads(state_path.read_text())
+            title = format_tab_title(state)
+            color = format_tab_color(state, override=override)
+        else:
+            title = None
+            repo = detect_repo()
+            color = format_tab_color(repo=repo, override=override)
+
+        if not title and not color:
+            return
 
         with open("/dev/tty", "w") as tty:
             sequences = ""
@@ -156,10 +161,22 @@ def set_tab_title():
                     f"\033]6;1;bg;green;brightness;{g}\007"
                     f"\033]6;1;bg;blue;brightness;{b}\007"
                 )
-            sequences += f"\033]0;{title}\007"
+            if title:
+                sequences += f"\033]0;{title}\007"
             tty.write(sequences)
-    except Exception:
-        pass
+    except Exception as exc:
+        sys.stderr.write(
+            f"[FLOW stop-continue] set_tab_title error: {exc}\n"
+        )
+        try:
+            if root and branch:
+                log_path = root / ".flow-states" / f"{branch}.log"
+                with open(log_path, "a") as log_file:
+                    log_file.write(
+                        f"{now()} [stop-continue] TAB ERROR: {exc}\n"
+                    )
+        except Exception:
+            pass
 
 
 def main():
