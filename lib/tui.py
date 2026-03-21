@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import detect_repo, extract_issue_numbers, project_root, read_version
+from flow_utils import detect_repo, project_root, read_version
 from tui_data import (
     load_all_flows, load_orchestration, orchestration_summary,
     parse_log_entries, phase_timeline,
@@ -340,11 +340,10 @@ class TuiApp:
         if not self.flows:
             return
         flow = self.flows[self.selected]
-        prompt = flow["state"].get("prompt", "")
-        issues = extract_issue_numbers(prompt)
-        if issues:
+        issue_numbers = flow.get("issue_numbers", set())
+        if issue_numbers:
             repo = flow["state"].get("repo")
-            self._open_issue(issues[0], repo=repo)
+            self._open_issue(min(issue_numbers), repo=repo)
 
     def _open_issue(self, issue_number, repo=None):
         """Open a GitHub issue by number in the browser."""
