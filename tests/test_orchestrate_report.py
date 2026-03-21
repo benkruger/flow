@@ -194,6 +194,36 @@ def test_report_writes_summary_file(tmp_path):
     assert "Add PDF export" in content
 
 
+def test_compute_duration_none_completed_at():
+    """_compute_duration_seconds returns 0 when completed_at is None.
+
+    Documents the failure mode when orchestrate-report runs before
+    orchestrate-state --complete (Bug 1 from #323).
+    """
+    mod = _import_module()
+
+    assert mod._compute_duration_seconds("2026-03-20T22:00:00-07:00", None) == 0
+
+
+def test_report_none_completed_at():
+    """Report with None completed_at shows <1m duration (pre-fix behavior).
+
+    When the report generates before --complete sets completed_at, the
+    duration field falls back to <1m. This test documents the observable
+    bug behavior from #323.
+    """
+    mod = _import_module()
+    state = _make_report_state(
+        queue_items=[_completed_item(42, "Add PDF export")],
+        started_at="2026-03-20T22:00:00-07:00",
+        completed_at=None,
+    )
+
+    result = mod.generate_report(state)
+
+    assert "<1m" in result["summary"]
+
+
 def test_report_bad_timestamps():
     """Report handles invalid timestamps gracefully (duration shows <1m)."""
     mod = _import_module()

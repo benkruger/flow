@@ -738,6 +738,131 @@ def test_handle_input_dispatches_to_list_in_list_view():
         mock_list.assert_called_once_with(curses.KEY_UP)
 
 
+# --- _get_repo ---
+
+
+def test_get_repo_from_flows():
+    """Returns repo from the first flow's state dict."""
+    state = make_state()
+    app = _make_app(flows=[_flow_from_state(state)])
+    assert app._get_repo() == "test/test"
+
+
+def test_get_repo_fallback_detect_repo():
+    """Falls back to detect_repo when no flows exist."""
+    app = _make_app(flows=[])
+    with patch("tui.detect_repo", return_value="owner/repo") as mock_detect:
+        result = app._get_repo()
+        assert result == "owner/repo"
+        mock_detect.assert_called_once_with(cwd=str(app.root))
+
+
+def test_get_repo_no_source():
+    """Returns None when no flows and detect_repo fails."""
+    app = _make_app(flows=[])
+    with patch("tui.detect_repo", return_value=None):
+        assert app._get_repo() is None
+
+
+def test_get_repo_flow_missing_repo():
+    """Falls back to detect_repo when flow state has no repo key."""
+    state = make_state()
+    del state["repo"]
+    app = _make_app(flows=[_flow_from_state(state)])
+    with patch("tui.detect_repo", return_value="fallback/repo") as mock_detect:
+        result = app._get_repo()
+        assert result == "fallback/repo"
+        mock_detect.assert_called_once()
+
+
+# --- _open_issue ---
+
+
+def test_open_issue_with_repo():
+    """Opens issue URL in browser when repo is available."""
+    state = make_state()
+    app = _make_app(flows=[_flow_from_state(state)])
+    with patch("tui.subprocess.Popen") as mock_popen:
+        app._open_issue(42)
+        mock_popen.assert_called_once()
+        args = mock_popen.call_args[0][0]
+        assert args[0] == "open"
+        assert args[1] == "https://github.com/test/test/issues/42"
+
+
+def test_open_issue_no_repo():
+    """Does nothing when repo is unavailable."""
+    app = _make_app(flows=[])
+    with patch("tui.detect_repo", return_value=None), \
+         patch("tui.subprocess.Popen") as mock_popen:
+        app._open_issue(42)
+        mock_popen.assert_not_called()
+
+
+def test_open_issue_no_flows_with_detect():
+    """Opens issue URL via detect_repo fallback when no flows exist."""
+    app = _make_app(flows=[])
+    with patch("tui.detect_repo", return_value="owner/repo"), \
+         patch("tui.subprocess.Popen") as mock_popen:
+        app._open_issue(99)
+        mock_popen.assert_called_once()
+        args = mock_popen.call_args[0][0]
+        assert args[1] == "https://github.com/owner/repo/issues/99"
+
+
+def test_open_issue_with_explicit_repo():
+    """Uses explicit repo parameter instead of _get_repo fallback."""
+    app = _make_app(flows=[])
+    with patch("tui.subprocess.Popen") as mock_popen:
+        app._open_issue(42, repo="explicit/repo")
+        mock_popen.assert_called_once()
+        args = mock_popen.call_args[0][0]
+        assert args[1] == "https://github.com/explicit/repo/issues/42"
+
+
+# --- 'i' key ---
+
+
+def test_i_key_opens_issue():
+    """'i' key extracts issue number from prompt and opens it."""
+    state = make_state()
+    state["prompt"] = "fix issue #42"
+    app = _make_app(flows=[_flow_from_state(state)])
+    with patch.object(app, "_open_issue") as mock_open:
+        app._handle_list_input(ord("i"))
+        mock_open.assert_called_once_with(42, repo="test/test")
+
+
+def test_i_key_no_issue_in_prompt():
+    """'i' key does nothing when prompt has no issue reference."""
+    state = make_state()
+    state["prompt"] = "add new feature"
+    app = _make_app(flows=[_flow_from_state(state)])
+    with patch.object(app, "_open_issue") as mock_open:
+        app._handle_list_input(ord("i"))
+        mock_open.assert_not_called()
+
+
+def test_open_flow_issue_no_flows():
+    """_open_flow_issue does nothing when no flows exist."""
+    app = _make_app(flows=[])
+    with patch.object(app, "_open_issue") as mock_open:
+        app._open_flow_issue()
+        mock_open.assert_not_called()
+
+
+def test_draw_list_view_footer_includes_issue():
+    """Footer includes [i] Issue hint."""
+    state = make_state()
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=120)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "[i] Issue" in text
+
+
 # --- Tab bar and orchestration view ---
 
 
@@ -975,13 +1100,14 @@ def test_orch_i_key_opens_issue():
         assert "/issues/42" in args[1]
 
 
-def test_orch_i_key_no_flows():
-    """'i' key does nothing when no flows to get repo from."""
+def test_orch_i_key_no_flows_uses_detect_repo():
+    """'i' key falls back to detect_repo when no flows exist."""
     items = [_make_orch_item(42, "Add PDF export")]
     orch = _make_orch_data(items=items)
     app = _make_app(flows=[], orch_data=orch)
     app.active_tab = 1
-    with patch("tui.subprocess.Popen") as mock_popen:
+    with patch("tui.detect_repo", return_value=None), \
+         patch("tui.subprocess.Popen") as mock_popen:
         app._handle_orch_input(ord("i"))
         mock_popen.assert_not_called()
 
@@ -1130,10 +1256,10 @@ def test_orch_input_no_data():
     app._handle_orch_input(curses.KEY_DOWN)
 
 
-def test_open_issue_no_orch_data():
-    """_open_issue does nothing when orch_data is None."""
+def test_open_orch_issue_no_orch_data():
+    """_open_orch_issue does nothing when orch_data is None."""
     app = _make_app(flows=[])
     app.orch_data = None
-    with patch("tui.subprocess.Popen") as mock_popen:
-        app._open_issue()
-        mock_popen.assert_not_called()
+    with patch.object(app, "_open_issue") as mock_open:
+        app._open_orch_issue()
+        mock_open.assert_not_called()
