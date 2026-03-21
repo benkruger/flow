@@ -155,7 +155,9 @@ class TuiApp:
             feature_display = flow['feature']
             if len(feature_display) > 26:
                 feature_display = feature_display[:23] + "..."
-            line = f"{marker}{feature_display:<26s} {phase_info:<14s} {flow['elapsed']:<8s} {pr_info}"
+            issue_nums = flow.get("issue_numbers", set())
+            issue_info = " ".join(f"#{n}" for n in sorted(issue_nums)) + "  " if issue_nums else ""
+            line = f"{marker}{feature_display:<26s} {phase_info:<14s} {flow['elapsed']:<8s} {issue_info}{pr_info}"
             self._safe_addstr(row, 2, line, attr)
 
         # Separator

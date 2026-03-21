@@ -204,6 +204,48 @@ def test_draw_list_view_with_notes_and_issues():
     assert "Issues: 1" in text
 
 
+def test_draw_list_view_with_issue_numbers():
+    """Draws issue numbers in list view when prompt contains #N references."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    state["prompt"] = "work on #83 and #89"
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "#83" in text
+    assert "#89" in text
+
+
+def test_draw_list_view_no_issue_numbers():
+    """No issue text appears when prompt has no #N references."""
+    import re
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    # Find the flow list row — contains both "Test Feature" and "Code" (phase info)
+    flow_row_calls = [c for c in calls if "Test Feature" in c and "Code" in c]
+    assert len(flow_row_calls) == 1
+    flow_row_text = flow_row_calls[0]
+    # PR #1 should appear, but no other #N pattern before it
+    assert "PR #1" in flow_row_text
+    # Remove "PR #1" and check no other #<digit> remains
+    stripped = flow_row_text.replace("PR #1", "")
+    assert not re.search(r"#\d", stripped)
+
+
 def test_draw_list_view_no_pr():
     """Handles flow with no PR number."""
     state = make_state()
