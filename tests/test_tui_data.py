@@ -165,6 +165,14 @@ def test_flow_summary_no_notes_or_issues():
     assert summary["issues_count"] == 0
 
 
+def test_flow_summary_issue_numbers():
+    """Extracts issue numbers from prompt."""
+    state = make_state()
+    state["prompt"] = "work on #83 and #89"
+    summary = tui_data.flow_summary(state)
+    assert summary["issue_numbers"] == {83, 89}
+
+
 # --- phase_timeline ---
 
 
