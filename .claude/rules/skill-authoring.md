@@ -184,6 +184,26 @@ repo is Python with bash scripts — it is the worst possible test
 environment for a multi-framework plugin. Integration tests for
 lib scripts must use the `target_project` fixture, not `git_repo`.
 
+## Plugin User Reachability
+
+Every new feature — not just skill bash blocks — must have a clear
+answer to: "How does a plugin user in a target project access this?"
+before implementation begins. If the answer is unclear, the feature
+will ship unreachable. Issue #362 is the cautionary example: 27+
+commits built a TUI that no plugin user could launch.
+
+There are exactly three valid access paths for plugin users:
+
+1. **Skill** — a slash command (`/flow:flow-xxx`) the user invokes
+2. **Hook** — auto-triggered by Claude Code events (SessionStart,
+   PreToolUse, etc.)
+3. **Global launcher** — a `flow <subcommand>` routed through
+   `bin/flow`
+
+If a feature does not fit one of these three paths, it is unreachable
+from a target project and must not proceed past planning without a
+design that makes it reachable.
+
 ## Plugin Root for bin/flow
 
 Every `bin/flow` call in a plugin skill bash block must use

@@ -233,6 +233,7 @@ def test_git_exclude_not_updated_when_already_present(git_repo):
     info_dir.mkdir(parents=True, exist_ok=True)
     (info_dir / "exclude").write_text(
         ".flow-states/\n.worktrees/\n.flow.json\nbin/dependencies\n"
+        ".claude/scheduled_tasks.lock\n"
     )
 
     updated = _mod.update_git_exclude(git_repo)
@@ -572,6 +573,20 @@ def test_version_marker_without_plugin_root_has_no_key(tmp_path):
     _mod.write_version_marker(tmp_path, _mod._plugin_version(), "rails")
     data = json.loads((tmp_path / ".flow.json").read_text())
     assert "plugin_root" not in data
+
+
+# --- Shared script installation helper ---
+
+
+def test_install_script_creates_executable_file(tmp_path):
+    target_dir = tmp_path / "subdir"
+    content = "#!/bin/bash\necho hi\n"
+    _mod._install_script(target_dir, "my-script", content)
+    script = target_dir / "my-script"
+    assert target_dir.is_dir()
+    assert script.exists()
+    assert script.read_text() == content
+    assert os.access(script, os.X_OK)
 
 
 # --- Pre-commit hook installation ---

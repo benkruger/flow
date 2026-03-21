@@ -12,8 +12,8 @@ parent: Skills
 
 ```text
 /flow:flow-create-issue <problem description>
-/flow:flow-create-issue --step 2
-/flow:flow-create-issue --step 3
+/flow:flow-create-issue --step 2 --id <id>
+/flow:flow-create-issue --step 3 --id <id>
 ```
 
 Explores a design question or decomposes a concrete problem via DAG analysis with deep codebase exploration, iterates with the user until the issue is fully detailed, then files it as a "decomposed" issue ready for autonomous execution via `/flow-start`.
@@ -36,7 +36,7 @@ When the input is exploratory, the skill facilitates a design discussion instead
 
 ## What It Does
 
-Once a concrete problem is identified (either directly or after exploration), each step is enforced via self-invocation — the skill re-invokes itself with `--step N` after each gate, forcing the model to re-read the full skill instructions at every step boundary. A Resume Check reads the step counter from `.flow-states/create-issue.json` to dispatch correctly on re-entry.
+Once a concrete problem is identified (either directly or after exploration), each step is enforced via self-invocation — the skill re-invokes itself with `--step N --id <id>` after each gate, forcing the model to re-read the full skill instructions at every step boundary. The `<id>` is a short UUID generated in Step 1 that scopes all file paths to prevent concurrent session collisions. A Resume Check reads the step counter from `.flow-states/create-issue-<id>.json` to dispatch correctly on re-entry.
 
 | Step | Name | Gate |
 |------|------|------|
@@ -44,9 +44,9 @@ Once a concrete problem is identified (either directly or after exploration), ea
 | 2 | Draft + Review | AskUserQuestion: file, revise, or re-decompose (iteration loop) |
 | 3 | File | Files the issue, shows COMPLETE banner |
 
-1. **Step 1 — Decompose:** Invokes `decompose:decompose` for DAG-based problem breakdown with codebase exploration (Glob, Grep, Read). Presents the synthesis and asks the user to approve, iterate, or cancel. Writes step counter to `.flow-states/create-issue.json`.
-2. **Step 2 — Draft + Review:** Crafts a comprehensive issue with five sections (Problem, Acceptance Criteria, Files to Investigate, Out of Scope, Context). Presents the full draft inline with an iteration loop — user can revise as many times as needed before approving. On approval, persists the draft to `.flow-states/create-issue-draft.md`.
-3. **Step 3 — File:** Reads the approved draft from disk, files the issue via `bin/flow issue` with the `decomposed` label, then cleans up the state and draft files.
+1. **Step 1 — Decompose:** Invokes `decompose:decompose` for DAG-based problem breakdown with codebase exploration (Glob, Grep, Read). Presents the synthesis and asks the user to approve, iterate, or cancel. Generates a session ID and writes step counter to `.flow-states/create-issue-<id>.json`.
+2. **Step 2 — Draft + Review:** Crafts a comprehensive issue with five sections (Problem, Acceptance Criteria, Files to Investigate, Out of Scope, Context). Presents the full draft inline with an iteration loop — user can revise as many times as needed before approving. On approval, persists the draft to `.flow-states/create-issue-<id>-draft.md`.
+3. **Step 3 — File:** Reads the approved draft from disk, files the issue via `bin/flow issue` with the `decomposed` label, then cleans up the session-scoped state and draft files.
 
 ---
 
