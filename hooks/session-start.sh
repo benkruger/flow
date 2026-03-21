@@ -56,15 +56,19 @@ def detect_orchestrate():
         )
 
         # Clean up orchestrator files
-        for name in ["orchestrate.json", "orchestrate-summary.md", "orchestrate.log"]:
+        for name in ["orchestrate.json", "orchestrate-summary.md", "orchestrate.log", "orchestrate-queue.json"]:
             p = state_dir / name
             if p.exists():
                 p.unlink()
 
         return block
 
-    # In-progress: inject resume context with queue position
+    # All items processed — orchestrator finishing, no resume needed
     queue = orch.get("queue", [])
+    if queue and all(item.get("outcome") is not None for item in queue):
+        return ""
+
+    # In-progress: inject resume context with queue position
     current_index = orch.get("current_index")
     current_issue = "(unknown)"
     if current_index is not None and 0 <= current_index < len(queue):

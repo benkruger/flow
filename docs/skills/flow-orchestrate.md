@@ -17,14 +17,14 @@ Processes decomposed issues sequentially overnight via `flow-start --auto`. Fetc
 ## What It Does
 
 1. Fetches open issues with the "Decomposed" label, excludes those with "Flow In-Progress"
-2. Creates an orchestration state file at `.flow-states/orchestrate.json` to track the queue
-3. For each issue in the queue (sorted by issue number ascending):
+2. Displays a prioritized queue table (same format as `flow-issues`) and creates an orchestration state file at `.flow-states/orchestrate.json`
+3. For each issue in the queue:
    - Invokes `flow-start --auto` with the issue title and number
    - The full 6-phase lifecycle runs autonomously
    - Detects the outcome from GitHub PR state (merged = completed, closed = failed)
    - Cleans up stuck features via `flow-abort --auto` if needed
-4. Generates a summary report at `.flow-states/orchestrate-summary.md`
-5. Marks the orchestration complete
+4. Marks the orchestration complete
+5. Generates a summary report at `.flow-states/orchestrate-summary.md`
 
 ---
 

@@ -968,12 +968,14 @@ def test_orchestrate_completed_cleans_up(git_repo):
     (state_dir / "orchestrate.json").write_text(json.dumps(orch_state))
     (state_dir / "orchestrate-summary.md").write_text("# Report")
     (state_dir / "orchestrate.log").write_text("log line")
+    (state_dir / "orchestrate-queue.json").write_text('[{"issue_number": 42}]')
 
     _run(git_repo)
 
     assert not (state_dir / "orchestrate.json").exists()
     assert not (state_dir / "orchestrate-summary.md").exists()
     assert not (state_dir / "orchestrate.log").exists()
+    assert not (state_dir / "orchestrate-queue.json").exists()
 
 
 def test_orchestrate_coexists_with_feature(git_repo):
@@ -1022,6 +1024,34 @@ def test_orchestrate_missing_summary(git_repo):
     assert result.returncode == 0
     # orchestrate.json should still be cleaned up
     assert not (state_dir / "orchestrate.json").exists()
+
+
+def test_orchestrate_all_processed_no_resume(git_repo):
+    """All queue items have outcomes but completed_at is None → no resume injection.
+
+    When the orchestrator has processed all items but hasn't called --complete
+    yet, the session-start hook should not inject resume context into other
+    sessions. The orchestrator will self-invoke --continue-step to reach Done.
+    """
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    orch_state = _make_orch_state(
+        current_index=2,
+        queue=[
+            {"issue_number": 42, "title": "Add PDF export", "status": "completed",
+             "outcome": "completed"},
+            {"issue_number": 43, "title": "Fix login timeout", "status": "failed",
+             "outcome": "failed"},
+            {"issue_number": 44, "title": "Refactor auth", "status": "completed",
+             "outcome": "completed"},
+        ],
+    )
+    (state_dir / "orchestrate.json").write_text(json.dumps(orch_state))
+
+    result = _run(git_repo)
+    assert result.returncode == 0
+    # Hook should exit silently — no context injected for other sessions
+    assert result.stdout.strip() == ""
 
 
 def test_no_orchestrate_file_existing_behavior(git_repo):
