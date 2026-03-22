@@ -1,0 +1,22 @@
+[
+  {
+    "title": "Add input validation to Calculator",
+    "body": "The Calculator class accepts any input without validation. Add type checking and raise ArgumentError for non-numeric inputs.\n\nFiles to investigate:\n- app/models/calculator.rb\n- test/models/calculator_test.rb",
+    "labels": []
+  },
+  {
+    "title": "Add subtraction support to Calculator",
+    "body": "The Calculator only supports addition. Add a subtract method that returns the difference of two numbers.\n\nFiles to investigate:\n- app/models/calculator.rb\n- test/models/calculator_test.rb",
+    "labels": []
+  },
+  {
+    "title": "Add multiplication support to Calculator",
+    "body": "The Calculator needs a multiply method. Should handle zero and negative numbers correctly.\n\nFiles to investigate:\n- app/models/calculator.rb\n- test/models/calculator_test.rb",
+    "labels": []
+  },
+  {
+    "title": "Add division support with zero-division handling",
+    "body": "Add a divide method to Calculator. Must raise ZeroDivisionError when dividing by zero and return a Float for non-integer results.\n\nFiles to investigate:\n- app/models/calculator.rb\n- test/models/calculator_test.rb",
+    "labels": []
+  }
+]

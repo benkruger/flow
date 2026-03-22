@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+import subprocess
+import sys
+
+result = subprocess.run(
+    [sys.executable, "-m", "pytest", "tests/", "-v"],
+    cwd=str(__import__("pathlib").Path(__file__).resolve().parent.parent),
+)
+sys.exit(result.returncode)

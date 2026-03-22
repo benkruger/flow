@@ -1,0 +1,7 @@
+#!/usr/bin/env ruby
+require "open3"
+
+stdout, stderr, status = Open3.capture3("ruby", "-Itest", *Dir["test/**/*_test.rb"])
+puts stdout
+$stderr.puts stderr unless stderr.empty?
+exit status.exitstatus
