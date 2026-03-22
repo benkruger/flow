@@ -20,8 +20,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from flow_utils import extract_issue_numbers
 
 
-def close_issues(issue_numbers):
-    """Close each issue via gh CLI. Returns dict with closed and failed lists."""
+def close_issues(issue_numbers, repo=None):
+    """Close each issue via gh CLI. Returns dict with closed and failed lists.
+
+    When repo is provided (e.g. "owner/repo"), closed items include URLs.
+    """
     closed = []
     failed = []
     for num in issue_numbers:
@@ -31,7 +34,10 @@ def close_issues(issue_numbers):
                 capture_output=True, text=True, timeout=30,
             )
             if result.returncode == 0:
-                closed.append(num)
+                entry = {"number": num}
+                if repo:
+                    entry["url"] = f"https://github.com/{repo}/issues/{num}"
+                closed.append(entry)
             else:
                 failed.append(num)
         except subprocess.TimeoutExpired:
@@ -53,8 +59,9 @@ def main():
         }))
         sys.exit(1)
     prompt = state.get("prompt", "")
+    repo = state.get("repo")
     issue_numbers = extract_issue_numbers(prompt)
-    result = close_issues(issue_numbers)
+    result = close_issues(issue_numbers, repo=repo)
 
     output = {"status": "ok", **result}
     print(json.dumps(output))

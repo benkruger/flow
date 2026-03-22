@@ -163,6 +163,17 @@ def cleanup(project_root, branch, worktree, pr_number=None):
     else:
         steps["timings_file"] = "skipped"
 
+    # Delete closed issues file
+    closed_issues_file = root / ".flow-states" / f"{branch}-closed-issues.json"
+    if closed_issues_file.exists():
+        try:
+            closed_issues_file.unlink()
+            steps["closed_issues_file"] = "deleted"
+        except Exception as e:
+            steps["closed_issues_file"] = f"failed: {e}"
+    else:
+        steps["closed_issues_file"] = "skipped"
+
     # Delete issues file
     issues_file = root / ".flow-states" / f"{branch}-issues.md"
     if issues_file.exists():

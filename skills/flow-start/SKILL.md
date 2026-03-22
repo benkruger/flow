@@ -77,9 +77,9 @@ shared state must be idempotent.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → continue=auto AND override ALL skills to fully autonomous (all commits auto, all continues auto, code review plugin skipped). The `--auto` flag is passed through to `start-setup` in Step 3, which writes the autonomous preset to the state file. All downstream phases inherit the override automatically.
+1. If `--auto` was passed → continue=auto AND override ALL skills to fully autonomous (all commits auto, all continues auto, code review plugin skipped). The `--auto` flag is passed through to `start-setup` in Step 10, which writes the autonomous preset to the state file. All downstream phases inherit the override automatically.
 2. If `--manual` was passed → continue=manual
-3. Otherwise → resolved in the Done section by reading `skills.flow-start.continue` from `.flow-states/<branch>.json` (which exists after Step 3)
+3. Otherwise → resolved in the Done section by reading `skills.flow-start.continue` from `.flow-states/<branch>.json` (which exists after Step 10)
 
 ## Announce
 
@@ -95,8 +95,8 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ## Logging
 
-After every Bash command in Steps 2–4, log it to `.flow-states/<branch>.log`
-using `bin/flow log`. Step 4 handles its own logging internally via start-setup.
+After every Bash command in Steps 2–11, log it to `.flow-states/<branch>.log`
+using `bin/flow log`. Step 10 handles its own logging internally via start-setup.
 
 Run the command first, then log the result. Pipeline the log call with the
 next command where possible (run both in parallel in one response).
@@ -125,7 +125,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow upgrade-check
 
 Process the results in this order:
 
-**1a. Version gate (prime-check):**
+**Version gate (prime-check):**
 
 - If `"status": "error"` — show the error message from the JSON (it suggests `/flow:flow-prime --reprime` or `/flow:flow-prime`) and stop. Do not proceed to any further steps.
 - If `"status": "ok"` and `"auto_upgraded": true` — show this notice using the `old_version` and `new_version` fields from the JSON, then continue:
@@ -142,7 +142,7 @@ FLOW auto-upgraded from v{old_version} to v{new_version} (config unchanged).
 Do NOT proceed if version check fails. Show the error message and stop.
 </HARD-GATE>
 
-**1b. Upgrade check:**
+**Upgrade check:**
 
 - `"status": "current"` — proceed silently
 - `"status": "unknown"` — proceed silently (best-effort check)
@@ -165,7 +165,7 @@ Do NOT proceed if version check fails. Show the error message and stop.
 ### Step 2 — Create early state file
 
 Create the state file immediately so the TUI can see this flow during
-the locked main operations in Step 3. The state file has null PR fields
+the locked main operations in Steps 3–9. The state file has null PR fields
 at this point — start-setup backfills them after PR creation.
 
 ```bash
@@ -180,35 +180,37 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --auto
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
 
-### Step 3 — Prepare main (locked)
-
-This step serializes all main-branch work behind a lock. Only one
+Steps 3–9 serialize all main-branch work behind a lock. Only one
 flow-start runs this section at a time. Concurrent starts wait until
 the lock is released.
 
-**2a. Acquire the lock:**
+### Step 3 — Acquire start lock
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --acquire --wait --feature <feature-name>
 ```
 
+Do not run this command in the background. The `--wait` flag blocks until
+the lock is acquired or times out. Running it in the background causes a
+stale notification after the workflow completes.
+
 - If `"status": "acquired"` — continue. If `stale_broken` is true, log it.
 - If `"status": "timeout"` — stop and report to the user that another start
   holds the lock (show the feature name and PID from the response).
 
-**2b. Pull latest main:**
+### Step 4 — Pull latest main
 
 ```bash
 git pull origin main
 ```
 
-**2c. CI baseline gate:**
+### Step 5 — CI baseline gate
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 ```
 
-If CI passes, continue to 2d.
+If CI passes, continue to Step 6.
 
 If it fails, launch the `ci-fixer` sub-agent to diagnose and fix. Use the Agent tool:
 
@@ -220,14 +222,14 @@ knows what failed.
 
 Wait for the sub-agent to return.
 
-- **Fixed** — commit the fixes via `/flow:flow-commit --auto`, then continue to 2d
+- **Fixed** — commit the fixes via `/flow:flow-commit --auto`, then continue to Step 6
 - **Not fixed** — release the lock and stop. Report to the user.
 
-**2d. Update dependencies:**
+### Step 6 — Update dependencies
 
 Use the Read tool to check if `bin/dependencies` exists at `<project_root>/bin/dependencies`.
 
-If it does not exist, skip to 2g (release lock).
+If it does not exist, skip to Step 9 (release lock).
 
 If it exists, run it:
 
@@ -241,9 +243,9 @@ Then check if anything changed:
 git status
 ```
 
-If `git status` shows no changes, skip to 2g (release lock).
+If `git status` shows no changes, skip to Step 9 (release lock).
 
-**2e. CI post-deps gate:**
+### Step 7 — CI post-deps gate
 
 If dependencies changed anything, run CI again to catch dep-induced breakage
 (rubocop violations, breaking changes, etc.):
@@ -252,33 +254,33 @@ If dependencies changed anything, run CI again to catch dep-induced breakage
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 ```
 
-If CI passes, continue to 2f.
+If CI passes, continue to Step 8.
 
 If it fails, launch the `ci-fixer` sub-agent:
 
 - `subagent_type`: `"flow:ci-fixer"`
 - `description`: `"Fix bin/flow ci failures after dependency update"`
 
-- **Fixed** — continue to 2f
+- **Fixed** — continue to Step 8
 - **Not fixed** — release the lock and stop. Report to the user.
 
-**2f. Commit to main:**
+### Step 8 — Commit to main
 
 If there are any uncommitted changes (dependency updates + CI fixes),
 commit them to main via `/flow:flow-commit --auto`.
 
-**2g. Release the lock:**
+### Step 9 — Release start lock
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release
 ```
 
 <HARD-GATE>
-Do NOT proceed to Step 4 until the lock is released and `bin/flow ci` is green.
+Do NOT proceed to Step 10 until the lock is released and `bin/flow ci` is green.
 Uncommitted fixes on main will not appear in the worktree.
 </HARD-GATE>
 
-### Step 4 — Set up workspace
+### Step 10 — Set up workspace
 
 Write the user's original start prompt (verbatim, including `#N` issue references
 and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
@@ -331,7 +333,7 @@ in later steps — it would look for a nested `.worktrees/` that doesn't exist.
 If the script returns an error, read the stderr output for details, report
 the failure to the user, and stop.
 
-### Step 5 — Label referenced issues
+### Step 11 — Label referenced issues
 
 If the start prompt contains `#N` issue references, add the "Flow In-Progress"
 label so other engineers can see these issues are being worked on:
