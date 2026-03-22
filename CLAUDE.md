@@ -81,7 +81,7 @@ CI will fail if these are missing:
 - `lib/create-dependencies.py` — copies framework dependency template to `bin/dependencies`
 - `agents/ci-fixer.md` — custom plugin sub-agent for CI failure diagnosis and fix
 - `lib/finalize-commit.py` — consolidates commit + message-file cleanup + pull + push into one subprocess chain
-- `lib/log.py` — appends timestamped entries to `.flow-states/<branch>.log` via Python file append
+- `lib/log.py` — appends timestamped entries to `.flow-states/<branch>.log` via Python file append with `fcntl.LOCK_EX` locking
 - `lib/orchestrate-state.py` — manages `.flow-states/orchestrate.json` (create, start-issue, record-outcome, complete, read, next); uses `mutate_state` for atomic writes
 - `lib/orchestrate-report.py` — generates morning report from orchestration state; writes `.flow-states/orchestrate-summary.md`
 - `lib/analyze-issues.py` — mechanical analysis of open GitHub issues for the flow-issues skill: calls `gh issue list`, parses JSON, extracts file paths, detects `#N` dependencies, detects labels (Flow In-Progress, Decomposed), checks stale files, outputs condensed per-issue briefs as JSON
@@ -103,6 +103,10 @@ CI will fail if these are missing:
 - `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands, shell redirection, and file-read commands in all Bash calls)
 - `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (blocks prompts when `_auto_continue` is set in state file; writes `_blocked` timestamp when allowing through)
 - `lib/clear-blocked.py` — PostToolUse hook on AskUserQuestion that clears `_blocked` from the state file after the user responds; fail-open
+- `lib/scaffold-qa.py` — creates QA repos from per-framework templates (`qa/templates/`); CLI: `bin/flow scaffold-qa --framework <name> --repo <owner/repo>`
+- `lib/qa-reset.py` — resets QA repos to seed state (git reset, close PRs, delete branches, recreate issues); CLI: `bin/flow qa-reset --repo <owner/repo> [--local-path <path>]`
+- `lib/qa-verify.py` — verifies QA assertions per tier (state files, phase completion, lock cleanliness, orphan detection); CLI: `bin/flow qa-verify --tier <N> --framework <name> --repo <owner/repo>`
+- `qa/templates/<framework>/` — per-framework QA repo templates (rails, python, ios) with Calculator class, tests, bin/ci, and .qa/issues.json
 - `bin/flow` — dispatcher script routing subcommands to `lib/*.py`
 - `docs/reference/flow-state-schema.md` — state file schema reference
 - `docs/reference/skill-pattern.md` — template pattern for building new phase skills
@@ -235,16 +239,20 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_post_compact.py` | PostCompact hook: compact_summary/cwd/count written to state, fail-open on errors, subprocess integration |
 | `test_finalize_commit.py` | Commit finalization: happy path, commit/pull/push failures, merge conflict detection, message file cleanup, CLI |
 | `test_flow_utils.py` | flow_utils functions: format_time, project_root, current_branch, find_state_files, resolve_branch, derive_feature, derive_worktree, detect_repo, mutate_state, extract_issue_numbers, short_issue_ref, tab color/title/sequence formatting |
-| `test_log.py` | Log append: existing file, new file, directory creation, multiple appends, CLI integration |
+| `test_log.py` | Log append: existing file, new file, directory creation, multiple appends, file locking verification, CLI integration |
 | `test_tui_data.py` | TUI data layer: load_all_flows (0/1/N files, corrupt JSON, phases exclusion), flow_summary (all fields), phase_timeline (statuses, annotations), parse_log_entries (parsing, limits, malformed), read_version |
 | `test_tui.py` | TUI curses app: drawing (list/log/detail views), keyboard input (navigation, open worktree/PR, abort with confirm, refresh, quit), run loop (timeout, resize), edge cases (no flows, small terminal) |
 | `test_update_pr_body.py` | PR body management: artifact lines, section insertion, collapsible sections, add-artifact/append-section modes, idempotent replacement, content-file reading, CLI integration |
 | `test_orchestrate_state.py` | Orchestrate state: create, start-issue, record-outcome, complete, read, next, queue filtering, error paths, CLI |
 | `test_orchestrate_report.py` | Orchestrate report: all completed, mixed, all failed, empty queue, timing, PR URLs, failure reasons, summary file, CLI |
+| `test_concurrency.py` | Real-process concurrency: mutate_state counter integrity (20 workers), log append line integrity (20 workers), start-lock serialization (3 workers), parallel state file creation (5 workers), cleanup isolation (concurrent cleanup + mutation) |
+| `test_scaffold_qa.py` | QA repo scaffolding: template discovery per framework, file writing, subprocess mocking for gh/git, bin/ci executable bit, error paths, CLI main() |
+| `test_qa_reset.py` | QA repo reset: git reset, PR closing, branch deletion, issue template loading/recreation, local cleanup, error paths, CLI main() |
+| `test_qa_verify.py` | QA verification: tier 1 (lifecycle checks, phase completion, PR merge), tier 2 (concurrent flow isolation, branch uniqueness), tier 3 (stale lock, orphan state files), error paths, CLI main() |
 
 ## Maintainer Skills (private to this repo)
 
-- `/flow-qa` — `.claude/skills/flow-qa/SKILL.md` — `--start`/`--stop` dev mode: uninstall marketplace plugin for local `--plugin-dir` testing, reinstall when done. **Always run `/flow-qa --start` before `/flow:flow-start` when developing FLOW.** The installed marketplace plugin enforces its own phase count and skill gates, which conflict with the source being developed and break the workflow mid-feature.
+- `/flow-qa` — `.claude/skills/flow-qa/SKILL.md` — `--start`/`--stop` dev mode, `--run`/`--reset`/`--tier` 3-tier QA protocol against per-framework repos. **Always run `/flow-qa --start` before `/flow:flow-start` when developing FLOW.** The installed marketplace plugin enforces its own phase count and skill gates, which conflict with the source being developed and break the workflow mid-feature.
 - `/flow-release` — `.claude/skills/flow-release/SKILL.md` — bump version, tag, push, create GitHub Release
 
 ## Conventions
