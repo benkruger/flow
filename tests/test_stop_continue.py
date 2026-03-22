@@ -1173,14 +1173,10 @@ class TestSetTabTitleWithParams:
 class TestWriteTabSequences:
     """Tests for flow_utils.write_tab_sequences — shared tab escape writer."""
 
-    def _mock_tty(self, monkeypatch):
-        """Set up a fake /dev/tty and return the list that captures writes."""
-        return _mock_tty(monkeypatch)
-
     def test_writes_color_and_title_with_state(self, tmp_path, monkeypatch):
         """State dict with phase/branch/repo writes color + title to /dev/tty."""
         monkeypatch.chdir(tmp_path)
-        written = self._mock_tty(monkeypatch)
+        written = _mock_tty(monkeypatch)
 
         state = {
             "current_phase": "flow-code",
@@ -1201,7 +1197,7 @@ class TestWriteTabSequences:
     def test_writes_color_only_with_repo(self, tmp_path, monkeypatch):
         """repo kwarg without state writes only color sequences, no title."""
         monkeypatch.chdir(tmp_path)
-        written = self._mock_tty(monkeypatch)
+        written = _mock_tty(monkeypatch)
 
         write_tab_sequences(repo="test/test")
 
@@ -1214,7 +1210,7 @@ class TestWriteTabSequences:
         """.flow.json with tab_color uses the override color."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".flow.json").write_text(json.dumps({"tab_color": [99, 88, 77]}))
-        written = self._mock_tty(monkeypatch)
+        written = _mock_tty(monkeypatch)
 
         state = {
             "current_phase": "flow-code",
@@ -1235,7 +1231,7 @@ class TestWriteTabSequences:
         subdir = tmp_path / "subdir"
         subdir.mkdir()
         (subdir / ".flow.json").write_text(json.dumps({"tab_color": [10, 20, 30]}))
-        written = self._mock_tty(monkeypatch)
+        written = _mock_tty(monkeypatch)
 
         write_tab_sequences(repo="test/test", root=subdir)
 
@@ -1261,7 +1257,7 @@ class TestWriteTabSequences:
     def test_state_with_unknown_phase_writes_color_only(self, tmp_path, monkeypatch):
         """State with unrecognized phase writes color, no title."""
         monkeypatch.chdir(tmp_path)
-        written = self._mock_tty(monkeypatch)
+        written = _mock_tty(monkeypatch)
 
         state = {
             "current_phase": "flow-unknown",
@@ -1278,7 +1274,7 @@ class TestWriteTabSequences:
     def test_missing_flow_json_uses_hash_color(self, tmp_path, monkeypatch):
         """No .flow.json file — uses hash-based color, no override."""
         monkeypatch.chdir(tmp_path)
-        written = self._mock_tty(monkeypatch)
+        written = _mock_tty(monkeypatch)
 
         write_tab_sequences(repo="test/test")
 
