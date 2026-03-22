@@ -57,7 +57,8 @@ def _flow_from_state(state):
 def test_tui_app_init():
     """TuiApp initializes with default state."""
     stdscr = _make_stdscr()
-    with patch("tui.project_root", return_value=Path("/tmp/test")):
+    with patch("tui.project_root", return_value=Path("/tmp/test")), \
+         patch("tui.detect_repo", return_value=None):
         app = tui.TuiApp(stdscr)
     assert app.selected == 0
     assert app.view == "list"
