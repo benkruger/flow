@@ -827,7 +827,7 @@ def test_backfill_updates_pr_fields(git_repo_with_remote):
     post_state = json.loads(state_path.read_text())
     assert post_state["pr_number"] == 42
     assert post_state["pr_url"] == "https://github.com/test/repo/pull/42"
-    assert post_state["repo"] is not None or post_state["repo"] is None
+    assert "repo" in post_state
 
 
 def test_backfill_preserves_existing_fields(git_repo_with_remote):
