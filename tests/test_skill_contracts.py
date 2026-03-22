@@ -2468,6 +2468,21 @@ def test_complete_commit_points_record_step():
     )
 
 
+def test_complete_continue_context_includes_mode_flag():
+    """Every _continue_context with --continue-step must include --auto or --manual."""
+    content = _read_skill("flow-complete")
+    contexts = re.findall(r'"_continue_context=([^"]+)"', content)
+    assert len(contexts) >= 4, (
+        f"Expected at least 4 _continue_context values, found {len(contexts)}"
+    )
+    for ctx in contexts:
+        if "--continue-step" in ctx:
+            assert "--auto" in ctx or "--manual" in ctx, (
+                f"_continue_context with --continue-step must include "
+                f"--auto or --manual, got: {ctx}"
+            )
+
+
 # --- DAG decomposition contracts ---
 
 
