@@ -1137,8 +1137,16 @@ class TestCaptureSessionIdWithParams:
         assert updated["session_id"] == "via-params"
         assert updated["transcript_path"] == "/p.jsonl"
 
-    def test_none_branch_param_skips(self, git_repo, state_dir, branch):
-        """When branch param is None, function returns without error."""
+    def test_none_branch_param_skips(
+        self, git_repo, state_dir, branch, monkeypatch,
+    ):
+        """When branch param is None, function returns without error.
+
+        Uses monkeypatch.chdir so current_branch() would resolve to the
+        fixture branch if accidentally called — catches regressions
+        regardless of host branch.
+        """
+        monkeypatch.chdir(git_repo)
         state = make_state(current_phase="flow-start")
         write_state(state_dir, branch, state)
         original = (state_dir / f"{branch}.json").read_text()
