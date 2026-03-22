@@ -63,7 +63,7 @@ CI will fail if these are missing:
 
 - `flow-phases.json` — state machine: phase names, commands, valid back-transitions
 - `skills/<name>/SKILL.md` — each skill's instructions
-- `hooks/hooks.json` — hook registration (SessionStart, PreToolUse)
+- `hooks/hooks.json` — hook registration (SessionStart, PreToolUse, PostToolUse, PostCompact, Stop)
 - `hooks/session-start.sh` — detects in-progress features, injects awareness context
 - `lib/check-phase.py` — reusable phase entry guard
 - `.claude/settings.json` — project permissions (git rebase denied)
@@ -72,7 +72,7 @@ CI will fail if these are missing:
 - `lib/start-lock.py` — serializes concurrent flow-start operations using a file lock at `.flow-states/start.lock` (PID-based stale detection + 30-min timeout)
 - `lib/init-state.py` — early state file creation with null PR fields for TUI visibility during Start; called before locked main operations
 - `lib/start-setup.py` — consolidated Start phase setup (worktree, PR, state file backfill, repo detection; optional git pull via `--skip-pull`)
-- `lib/flow_utils.py` — shared utilities: `now()` (Pacific Time timestamps), `PACIFIC` timezone, `format_time()`, `elapsed_since()`, `read_version()`, `read_version_from()`, `current_branch()`, `project_root()`, `extract_issue_numbers()`, `short_issue_ref()`, `detect_repo()`, `mutate_state()`, `derive_feature()`, `derive_worktree()`, `PHASE_NAMES`, `COMMANDS`
+- `lib/flow_utils.py` — shared utilities: `now()` (Pacific Time timestamps), `PACIFIC` timezone, `format_time()`, `elapsed_since()`, `read_version()`, `read_version_from()`, `current_branch()`, `project_root()`, `extract_issue_numbers()`, `short_issue_ref()`, `detect_repo()`, `mutate_state()`, `derive_feature()`, `derive_worktree()`, `freeze_phases()`, `build_initial_phases()`, `AUTO_SKILLS`, `PHASE_NAMES`, `COMMANDS`
 - `lib/phase-transition.py` — phase entry/completion (timing, counters, status, formatted_time, phase_transitions recording, diff_stats capture)
 - `lib/set-timestamp.py` — mid-phase timestamp fields via dot-path notation, code_task increment validation (prevents task batching)
 - `frameworks/<name>/` — per-framework data: `detect.json`, `permissions.json`, `dependencies`, `priming.md`
@@ -101,7 +101,8 @@ CI will fail if these are missing:
 - `lib/tui_data.py` — pure data layer for TUI: loads state files, computes flow summaries, phase timelines, parses log entries
 - `lib/tui.py` — curses-based interactive TUI for viewing and managing active flows (`flow tui`)
 - `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands, shell redirection, and file-read commands in all Bash calls)
-- `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (blocks prompts when `_auto_continue` is set in state file)
+- `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (blocks prompts when `_auto_continue` is set in state file; writes `_blocked` timestamp when allowing through)
+- `lib/clear-blocked.py` — PostToolUse hook on AskUserQuestion that clears `_blocked` from the state file after the user responds; fail-open
 - `bin/flow` — dispatcher script routing subcommands to `lib/*.py`
 - `docs/reference/flow-state-schema.md` — state file schema reference
 - `docs/reference/skill-pattern.md` — template pattern for building new phase skills
@@ -229,7 +230,8 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_prime_project.py` | CLAUDE.md priming: marker insertion, idempotent replacement, framework switching |
 | `test_create_dependencies.py` | Dependency template: file creation, skip-if-exists, chmod, CLI |
 | `test_prime_setup.py` | Prime setup: data-driven permissions, settings merge, version marker, git exclude, pre-commit hook |
-| `test_validate_ask_user.py` | AskUserQuestion hook: blocks prompts when `_auto_continue` set, allows when absent/empty, subprocess integration |
+| `test_validate_ask_user.py` | AskUserQuestion hook: blocks prompts when `_auto_continue` set, allows when absent/empty, `_blocked` write on allow, subprocess integration |
+| `test_clear_blocked.py` | PostToolUse hook: clears `_blocked` from state, noop when absent, fail-open on errors, subprocess integration |
 | `test_post_compact.py` | PostCompact hook: compact_summary/cwd/count written to state, fail-open on errors, subprocess integration |
 | `test_finalize_commit.py` | Commit finalization: happy path, commit/pull/push failures, merge conflict detection, message file cleanup, CLI |
 | `test_flow_utils.py` | flow_utils functions: format_time, project_root, current_branch, find_state_files, resolve_branch, derive_feature, derive_worktree, detect_repo, mutate_state, extract_issue_numbers, short_issue_ref, tab color/title/sequence formatting |

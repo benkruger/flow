@@ -975,6 +975,53 @@ def test_draw_detail_panel_no_notes_no_issues():
     assert "Issues:" not in text
 
 
+def test_draw_list_view_blocked_shows_blocked_text():
+    """Flow with blocked=True shows 'Blocked' in list row instead of elapsed time."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    state["_blocked"] = "2026-01-01T10:00:00-08:00"
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    # Find the flow list row (row 4)
+    list_row_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if c[0][0] == 4
+    ]
+    assert list_row_calls, "Expected a call at row 4 for the flow list entry"
+    list_row_text = list_row_calls[0][0][2]
+    assert "Blocked" in list_row_text
+
+
+def test_draw_detail_panel_blocked_uses_red():
+    """Flow with blocked=True renders in-progress phase [>] in red."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    state["_blocked"] = "2026-01-01T10:00:00-08:00"
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app.use_color = True
+    with patch("tui.curses.color_pair", side_effect=lambda p: p * 100):
+        app._draw_detail_panel(10)
+    in_progress_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "[>]" in str(c[0][2])
+    ]
+    assert len(in_progress_calls) >= 1
+    for call in in_progress_calls:
+        # Should use COLOR_FAILED (red) instead of COLOR_ACTIVE (yellow)
+        assert call[0][3] == tui.COLOR_FAILED * 100 | curses.A_BOLD
+
+
 # --- edge case coverage ---
 
 

@@ -140,6 +140,31 @@ def check_continue(hook_input=None, root=None, branch=_UNSET):
         return (False, None, None)
 
 
+def clear_blocked(root=None, branch=_UNSET):
+    """Clear _blocked flag from the active state file.
+
+    Defense-in-depth counterpart to clear-blocked.py (PostToolUse hook).
+    The PostToolUse hook clears _blocked on the normal path (user responds).
+    This Stop hook clears it as a safety net for crashed sessions or
+    session endings where PostToolUse did not fire.
+    """
+    try:
+        root, branch = _resolve(root, branch)
+        if not branch:
+            return
+
+        state_path = root / ".flow-states" / f"{branch}.json"
+        if not state_path.exists():
+            return
+
+        def transform(state):
+            state.pop("_blocked", None)
+
+        mutate_state(state_path, transform)
+    except Exception as exc:
+        _log_error(root, branch, "clear_blocked", exc)
+
+
 def set_tab_title(root=None, branch=_UNSET):
     """Write the current FLOW phase and repo color to the terminal tab via /dev/tty.
 
@@ -183,6 +208,8 @@ def main():
     )
 
     capture_session_id(hook_input, root=root, branch=branch)
+
+    clear_blocked(root=root, branch=branch)
 
     set_tab_title(root=root, branch=branch)
 

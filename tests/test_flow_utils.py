@@ -617,6 +617,128 @@ class TestShortIssueRef:
         assert _mod.short_issue_ref(url) == url
 
 
+# --- AUTO_SKILLS constant ---
+
+
+def test_auto_skills_has_7_keys():
+    """AUTO_SKILLS must have one entry per phase-level skill plus abort and complete."""
+    assert len(_mod.AUTO_SKILLS) == 7
+
+
+def test_auto_skills_all_commits_auto():
+    """Every phase with a commit axis must be set to auto."""
+    for key in ("flow-code", "flow-code-review", "flow-learn"):
+        assert _mod.AUTO_SKILLS[key]["commit"] == "auto"
+
+
+def test_auto_skills_all_continues_auto():
+    """Every phase with a continue axis must be set to auto."""
+    for key in ("flow-start", "flow-plan", "flow-code",
+                "flow-code-review", "flow-learn"):
+        assert _mod.AUTO_SKILLS[key]["continue"] == "auto"
+
+
+def test_auto_skills_abort_and_complete_are_strings():
+    """flow-abort and flow-complete are simple string values, not dicts."""
+    assert _mod.AUTO_SKILLS["flow-abort"] == "auto"
+    assert _mod.AUTO_SKILLS["flow-complete"] == "auto"
+
+
+def test_auto_skills_code_review_plugin_never():
+    """Auto mode skips the code review plugin."""
+    assert _mod.AUTO_SKILLS["flow-code-review"]["code_review_plugin"] == "never"
+
+
+# --- freeze_phases ---
+
+
+def test_freeze_phases_copies_file(tmp_path):
+    """freeze_phases copies flow-phases.json to .flow-states/<branch>-phases.json."""
+    _mod.freeze_phases(tmp_path, "my-feature")
+    dest = tmp_path / ".flow-states" / "my-feature-phases.json"
+    assert dest.exists()
+    data = json.loads(dest.read_text())
+    assert "order" in data
+    assert "phases" in data
+
+
+def test_freeze_phases_creates_state_dir(tmp_path):
+    """freeze_phases creates .flow-states/ if it does not exist."""
+    state_dir = tmp_path / ".flow-states"
+    assert not state_dir.exists()
+    _mod.freeze_phases(tmp_path, "new-feature")
+    assert state_dir.is_dir()
+
+
+def test_freeze_phases_matches_source(tmp_path):
+    """Frozen file content must match the canonical flow-phases.json."""
+    _mod.freeze_phases(tmp_path, "test-branch")
+    dest = tmp_path / ".flow-states" / "test-branch-phases.json"
+    source = Path(__file__).resolve().parent.parent / "flow-phases.json"
+    assert json.loads(dest.read_text()) == json.loads(source.read_text())
+
+
+# --- build_initial_phases ---
+
+
+def test_build_initial_phases_has_6_phases():
+    """build_initial_phases returns a dict with all 6 phases."""
+    phases = _mod.build_initial_phases("2026-01-01T00:00:00-08:00")
+    assert len(phases) == 6
+    for key in _mod.PHASE_ORDER:
+        assert key in phases
+
+
+def test_build_initial_phases_first_phase_in_progress():
+    """First phase is in_progress with timestamps and visit_count=1."""
+    ts = "2026-01-01T00:00:00-08:00"
+    phases = _mod.build_initial_phases(ts)
+    first = phases[_mod.PHASE_ORDER[0]]
+    assert first["status"] == "in_progress"
+    assert first["started_at"] == ts
+    assert first["session_started_at"] == ts
+    assert first["visit_count"] == 1
+    assert first["cumulative_seconds"] == 0
+
+
+def test_build_initial_phases_other_phases_pending():
+    """Non-first phases are pending with null timestamps and visit_count=0."""
+    ts = "2026-01-01T00:00:00-08:00"
+    phases = _mod.build_initial_phases(ts)
+    for key in _mod.PHASE_ORDER[1:]:
+        phase = phases[key]
+        assert phase["status"] == "pending"
+        assert phase["started_at"] is None
+        assert phase["completed_at"] is None
+        assert phase["session_started_at"] is None
+        assert phase["visit_count"] == 0
+        assert phase["cumulative_seconds"] == 0
+
+
+def test_build_initial_phases_has_correct_names():
+    """Phase names must match PHASE_NAMES from flow-phases.json."""
+    phases = _mod.build_initial_phases("2026-01-01T00:00:00-08:00")
+    expected = {
+        "flow-start": "Start", "flow-plan": "Plan", "flow-code": "Code",
+        "flow-code-review": "Code Review", "flow-learn": "Learn",
+        "flow-complete": "Complete",
+    }
+    for key, name in expected.items():
+        assert phases[key]["name"] == name
+
+
+def test_build_initial_phases_required_fields():
+    """Each phase must have all 7 required fields."""
+    phases = _mod.build_initial_phases("2026-01-01T00:00:00-08:00")
+    required = [
+        "name", "status", "started_at", "completed_at",
+        "session_started_at", "cumulative_seconds", "visit_count",
+    ]
+    for key in _mod.PHASE_ORDER:
+        for field in required:
+            assert field in phases[key], f"Phase {key} missing field {field}"
+
+
 # --- format_tab_title tests ---
 
 

@@ -165,6 +165,29 @@ def test_flow_summary_no_notes_or_issues():
     assert summary["issues_count"] == 0
 
 
+def test_flow_summary_blocked_true():
+    """State with _blocked set returns blocked: True."""
+    state = make_state(current_phase="flow-code")
+    state["_blocked"] = "2026-01-01T10:00:00-08:00"
+    summary = tui_data.flow_summary(state)
+    assert summary["blocked"] is True
+
+
+def test_flow_summary_blocked_false():
+    """State without _blocked returns blocked: False."""
+    state = make_state(current_phase="flow-code")
+    summary = tui_data.flow_summary(state)
+    assert summary["blocked"] is False
+
+
+def test_flow_summary_blocked_empty_string():
+    """Empty string _blocked returns blocked: False."""
+    state = make_state(current_phase="flow-code")
+    state["_blocked"] = ""
+    summary = tui_data.flow_summary(state)
+    assert summary["blocked"] is False
+
+
 def test_flow_summary_issue_numbers():
     """Extracts issue numbers from prompt."""
     state = make_state()
