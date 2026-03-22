@@ -34,15 +34,19 @@ SOFT-GATE and dispatches via the Resume Check.
    GitHub CI via `gh pr checks` (waits for checks to pass, suggests `/loop`
    for pending). If CI fails at either stage, ci-fixer commits a fix and
    self-invokes to re-check
-5. Confirms with the user (only when `--manual` is passed)
+5. Confirms with the user (only when `--manual` is passed). Offers three
+   options: approve merge, decline, or provide feedback on the code. If the
+   user gives feedback, processes the fix, commits via `/flow:flow-commit`,
+   then self-invokes with `--continue-step --manual` to re-prompt for
+   merge approval
 6. Archives artifacts to the PR body: session log link (from transcript path),
    phase timings table (non-collapsible), state file, and session log dump.
    Generates a business-friendly summary via `format-complete-summary`
    showing feature name, prompt, per-phase timeline, and artifact counts.
    After the Done banner, writes a brief prose session summary describing what was accomplished
 7. Squash-merges the PR via `gh pr merge --squash`
-8. Removes the "Flow In-Progress" label from any issues referenced in the start prompt
-9. Closes any GitHub issues referenced in the start prompt (`#N` patterns)
+8. Closes any GitHub issues referenced in the start prompt (`#N` patterns)
+9. Removes the "Flow In-Progress" label from any issues referenced in the start prompt
 10. Runs the cleanup process: remove worktree, delete branches, delete state file, log, and CI sentinel
 11. Pulls `origin main` so local main has the merged feature code
 

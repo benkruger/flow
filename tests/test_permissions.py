@@ -156,6 +156,12 @@ PLACEHOLDER_SUBS = {
     "<thread_ts>": "1234567890.123456",
     "<message_text>": "Phase complete",
     "<id>": "abc12345",
+    "<repo>": "owner/repo",
+    "<project_name>": "My Project",
+    "<due_date>": "2026-06-01",
+    "<child_number>": "5",
+    "<epic_number>": "1",
+    "<dep_number>": "3",
 }
 
 

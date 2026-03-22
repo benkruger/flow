@@ -87,7 +87,11 @@ CI will fail if these are missing:
 - `lib/analyze-issues.py` — mechanical analysis of open GitHub issues for the flow-issues skill: calls `gh issue list`, parses JSON, extracts file paths, detects `#N` dependencies, detects labels (Flow In-Progress, Decomposed), checks stale files, outputs condensed per-issue briefs as JSON
 - `lib/close-issues.py` — closes GitHub issues referenced in the start prompt (`#N` patterns) via `gh issue close`
 - `lib/label-issues.py` — adds or removes the "Flow In-Progress" label on GitHub issues referenced by `#N` in the start prompt; used by Start (add), Complete (remove), and Abort (remove) for multi-engineer WIP detection
-- `lib/issue.py` — creates GitHub issues via `gh` subprocess (wraps `gh issue create`; resolves repo via `--state-file` cached value, then `--repo` flag, then git remote detection)
+- `lib/issue.py` — creates GitHub issues via `gh` subprocess (wraps `gh issue create`; resolves repo via `--state-file` cached value, then `--repo` flag, then git remote detection); returns `url`, `number`, and REST API `id` (database ID) for sub-issue linking
+- `lib/create-milestone.py` — creates GitHub milestones via `gh api` (wraps `POST /repos/O/R/milestones`)
+- `lib/create-sub-issue.py` — sets sub-issue parent/child relationships via `gh api` (resolves database IDs internally)
+- `lib/link-blocked-by.py` — sets blocked-by dependency relationships via `gh api` (resolves database IDs internally)
+- `lib/auto-close-parent.py` — checks if parent epic and milestone should be auto-closed when all children are done; best-effort throughout
 - `lib/add-issue.py` — records filed issues in the state file's `issues_filed` array (follows `append-note.py` pattern)
 - `lib/notify-slack.py` — posts messages to Slack via curl to `chat.postMessage`; reads config from `.flow.json`; supports threading via `thread_ts`; fails open on any error
 - `lib/add-notification.py` — records sent Slack notifications in the state file's `slack_notifications` array (follows `add-issue.py` pattern)
