@@ -8,13 +8,14 @@ with special characters (|, &&, ;) that trigger the Bash hook validator.
 The file is read and deleted before the gh call.
 
 Output (JSON to stdout):
-  Success: {"status": "ok", "url": "<issue_url>"}
+  Success: {"status": "ok", "url": "<issue_url>", "number": N, "id": N}
   Error:   {"status": "error", "message": "..."}
 """
 
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -43,8 +44,49 @@ def read_body_file(path):
     return body, None
 
 
+def parse_issue_number(url):
+    """Extract issue number from a GitHub issue URL.
+
+    Returns the integer issue number, or None if the URL doesn't match.
+    """
+    match = re.search(r"/issues/(\d+)", url)
+    return int(match.group(1)) if match else None
+
+
+def fetch_database_id(repo, number):
+    """Fetch the REST API database ID for an issue.
+
+    The database ID is the integer ID used by REST API endpoints for
+    sub-issues and dependencies. This is NOT the GraphQL node_id.
+
+    Returns (id, error). id is an integer or None.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "api", f"repos/{repo}/issues/{number}", "--jq", ".id"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return None, "gh api timed out after 30 seconds"
+
+    if result.returncode != 0:
+        error = result.stderr.strip() or "Unknown error"
+        return None, error
+
+    try:
+        return int(result.stdout.strip()), None
+    except (ValueError, TypeError):
+        return None, f"Invalid ID from API: {result.stdout.strip()}"
+
+
 def create_issue(repo, title, label=None, body=None):
-    """Run gh issue create and return the issue URL."""
+    """Run gh issue create and return issue details.
+
+    Returns (result_dict, error). On success result_dict contains:
+      url: the issue URL
+      number: the issue number (int or None)
+      id: the REST API database ID (int or None, non-blocking)
+    """
     cmd = ["gh", "issue", "create", "--repo", repo, "--title", title]
     if label:
         cmd.extend(["--label", label])
@@ -61,7 +103,12 @@ def create_issue(repo, title, label=None, body=None):
         return None, error
 
     url = result.stdout.strip()
-    return url, None
+    number = parse_issue_number(url)
+    db_id = None
+    if number is not None:
+        db_id, _ = fetch_database_id(repo, number)
+
+    return {"url": url, "number": number, "id": db_id}, None
 
 
 def main():
@@ -78,8 +125,7 @@ def main():
     repo = args.repo
     if repo is None and args.state_file:
         try:
-            from pathlib import Path as _Path
-            state = json.loads(_Path(args.state_file).read_text())
+            state = json.loads(Path(args.state_file).read_text())
             repo = state.get("repo")
         except (OSError, json.JSONDecodeError):
             pass
@@ -99,13 +145,18 @@ def main():
             print(json.dumps({"status": "error", "message": read_error}))
             sys.exit(1)
 
-    url, error = create_issue(repo, args.title, args.label, body)
+    result, error = create_issue(repo, args.title, args.label, body)
 
     if error:
         print(json.dumps({"status": "error", "message": error}))
         sys.exit(1)
 
-    print(json.dumps({"status": "ok", "url": url}))
+    print(json.dumps({
+        "status": "ok",
+        "url": result["url"],
+        "number": result["number"],
+        "id": result["id"],
+    }))
 
 
 if __name__ == "__main__":

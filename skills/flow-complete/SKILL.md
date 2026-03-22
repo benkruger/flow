@@ -148,7 +148,7 @@ gh pr view <branch> --json state --jq .state
 **If `MERGED`** — the PR is already merged. Skip directly to Step 6
 (archive artifacts to PR). After Step 6, continue to Step 8 (close
 issues), then Step 9 (remove labels), then continue through cleanup
-(Steps 10-11) — skip Step 7 (merge) since the PR is already merged.
+(Steps 11-12) — skip Step 7 (merge) since the PR is already merged.
 
 **If `OPEN`** — continue to Step 3 to merge.
 
@@ -412,6 +412,23 @@ prompt. This is best-effort — continue to cleanup even if removal fails.
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --remove
 ```
 
+### Step 10 — Auto-close parent issues and milestones
+
+For each closed issue from Step 8, check if its parent epic or milestone
+should be auto-closed. Best-effort — report closures in the Done banner,
+continue silently on failure.
+
+If Step 8 closed any issues (the `closed` array was non-empty), run for
+each closed issue number:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow auto-close-parent --repo <repo> --issue-number <N>
+```
+
+Parse the JSON output. If `parent_closed` or `milestone_closed` is true,
+note it for the Done banner. If the command fails, continue to the next
+issue.
+
 ### Slack Notification
 
 Read `slack_thread_ts` from the state file. If present, post the final thread reply with end-to-end timeline before cleanup deletes the state file. Best-effort — skip silently on failure.
@@ -438,7 +455,7 @@ and pull) run from the project root on main.
 cd <project_root>
 ```
 
-### Step 10 — Run cleanup script
+### Step 11 — Run cleanup script
 
 Run the cleanup script from the project root:
 
@@ -453,7 +470,7 @@ resource (worktree, state\_file, log\_file, ci\_sentinel). Each step reports
 Report the results to the user: what was cleaned, what was already gone,
 and what failed.
 
-### Step 11 — Pull merged changes
+### Step 12 — Pull merged changes
 
 The worktree is removed and you are on main. Pull to get the merged
 feature code:
@@ -495,11 +512,11 @@ run any commands. This is a narrative recap, not a structured template.
 
 ## Rules
 
-- Steps 1-9 run from the worktree (feature branch); Steps 10-11 run from the project root after an explicit cd before Step 10
+- Steps 1-10 run from the worktree (feature branch); Steps 11-12 run from the project root after an explicit cd before Step 11
 - If the merge fails, never retry with additional flags or elevated privileges — report to the user and stop
 - Confirm with the user only when mode is **manual**
 - State file deletion is what resets the session hook — do not skip it
-- Every step after the merge (Steps 8-10) is best-effort — if one fails, continue to the next
+- Every step after the merge (Steps 8-11) is best-effort — if one fails, continue to the next
 - The skill is idempotent: safe to re-invoke via `/loop` after a "pending CI" stop
 - Never use `general-purpose` sub-agents — use `"flow:ci-fixer"` for CI failures
 - Never use Bash to print banners — output them as text in your response
