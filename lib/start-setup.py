@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import derive_feature, detect_repo, now, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER
+from flow_utils import derive_feature, detect_repo, mutate_state, now, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER
 from log import append_log
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
@@ -292,15 +292,26 @@ def main():
         # Detect GitHub repo for caching
         repo = detect_repo(cwd=str(project_root))
 
-        # Create state file
-        _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                           framework=framework, skills=skills, prompt=raw_prompt,
-                           repo=repo)
-        append_log(branch, f"[Phase 1] create .flow-states/{branch}.json (exit 0)")
+        # Update or create state file
+        state_path = project_root / ".flow-states" / f"{branch}.json"
+        if state_path.exists():
+            # Backfill PR fields into existing state file (created by init-state)
+            def _backfill(state):
+                state["pr_number"] = pr_number
+                state["pr_url"] = pr_url
+                state["repo"] = repo
+            mutate_state(state_path, _backfill)
+            append_log(branch, f"[Phase 1] backfill .flow-states/{branch}.json (exit 0)")
+        else:
+            # Fallback: create state file from scratch (no init-state)
+            _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
+                               framework=framework, skills=skills, prompt=raw_prompt,
+                               repo=repo)
+            append_log(branch, f"[Phase 1] create .flow-states/{branch}.json (exit 0)")
 
-        # Freeze phase config for this feature
-        _freeze_phases(project_root, branch)
-        append_log(branch, f"[Phase 1] freeze .flow-states/{branch}-phases.json (exit 0)")
+            # Freeze phase config (only needed when init-state didn't run)
+            _freeze_phases(project_root, branch)
+            append_log(branch, f"[Phase 1] freeze .flow-states/{branch}-phases.json (exit 0)")
 
         output = {
             "status": "ok",
