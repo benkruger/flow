@@ -108,6 +108,7 @@ Parse the JSON output and confirm `status` is `"ok"`.
 Read `complete_step` from the state file (default `0` if absent).
 
 - If `complete_step` is `4`: skip to Step 4 (Check CI status).
+- If `complete_step` is `5`: skip to Step 5 (Confirm with user).
 - If `complete_step` is `0` or absent: proceed normally to Step 1.
 
 ---
@@ -308,21 +309,60 @@ If still failing after 3 attempts, stop and report.
 
 Skip this step if mode is **auto** — proceed directly to Step 6.
 
+<HARD-GATE>
 If mode is **manual**, use AskUserQuestion. If the SOFT-GATE recorded
 warnings, include them:
 
 > "PR is green and ready to merge. Squash-merge '<feature>' into main?"
 > ⚠ <any warnings from the gate>
 
-- **Yes, merge and clean up** — proceed
-- **No, not yet** — stop here
-
 If no warnings:
 
 > "PR is green and ready to merge. Squash-merge '<feature>' into main?"
 
-- **Yes, merge and clean up** — proceed
+Options:
+
+- **Yes, merge and clean up** — proceed to Step 6
 - **No, not yet** — stop here
+- **I have feedback on the code** — describe the issue
+
+Do NOT proceed to Step 6, do NOT merge, do NOT take any action outside
+this step until the user explicitly selects an option. Freeform text
+that is not one of the listed options is feedback — treat it the same
+as selecting "I have feedback on the code".
+
+**If "Yes, merge and clean up"** — proceed to Step 6.
+
+**If "No, not yet"** — stop here.
+
+**If "I have feedback on the code"** (or freeform feedback):
+
+Ask the user to describe the issue if they have not already. Fix the
+code to address the feedback.
+
+Set the continuation context and flag before committing:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set complete_step=5, then self-invoke flow:flow-complete --continue-step --manual."
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+```
+
+Commit the fixes via `/flow:flow-commit`.
+
+After the commit completes, record the resume step:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=5
+```
+
+To loop back to Step 5, invoke `flow:flow-complete --continue-step --manual`
+using the Skill tool as your final action. Do not output anything else
+after this invocation.
+
+</HARD-GATE>
 
 ### Step 6 — Archive artifacts to PR
 

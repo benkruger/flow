@@ -522,14 +522,18 @@ def test_phase_transition_names_current_phase():
 
 
 def test_phase_6_has_soft_gate_not_hard_gate():
-    """Phase 6 (complete) should have a SOFT-GATE, not a HARD-GATE.
-    Complete warns but never blocks — it's the final escape hatch."""
+    """Phase 6 (complete) entry gate should be SOFT-GATE, not HARD-GATE.
+    Complete warns but never blocks at entry — it's the final escape hatch.
+    HARD-GATE is allowed for decision points (e.g., merge approval)."""
     content = _read_skill("flow-complete")
     assert "<SOFT-GATE>" in content, (
         "Phase 6 (complete) should have <SOFT-GATE> — complete warns but never blocks"
     )
-    assert "<HARD-GATE>" not in content, (
-        "Phase 6 (complete) should NOT have <HARD-GATE> — complete must never block"
+    # Entry section is everything before ## Announce
+    entry_section = content.split("## Announce")[0]
+    assert "<HARD-GATE>" not in entry_section, (
+        "Phase 6 (complete) entry gate should NOT use <HARD-GATE> — "
+        "complete must never block at entry"
     )
 
 
@@ -2425,7 +2429,7 @@ def test_complete_sets_continue_pending_before_commit():
 
 
 def test_complete_commit_points_self_invoke():
-    """Complete Steps 3 and 4 must self-invoke via --continue-step."""
+    """Complete Steps 3, 4, and 5 must self-invoke via --continue-step."""
     content = _read_skill("flow-complete")
     # Step 3 section (merge conflicts)
     step3_match = re.search(
@@ -2443,13 +2447,24 @@ def test_complete_commit_points_self_invoke():
     assert "flow:flow-complete --continue-step" in step4_match.group(1), (
         "Step 4 must self-invoke via 'flow:flow-complete --continue-step'"
     )
+    # Step 5 section (feedback loop)
+    step5_match = re.search(
+        r"### Step 5.*?\n(.*?)(?=\n### Step 6)", content, re.DOTALL
+    )
+    assert step5_match, "Could not find Step 5 section"
+    assert "flow:flow-complete --continue-step" in step5_match.group(1), (
+        "Step 5 must self-invoke via 'flow:flow-complete --continue-step'"
+    )
 
 
 def test_complete_commit_points_record_step():
-    """Complete Steps 3 and 4 must record complete_step via set-timestamp."""
+    """Complete Steps 3, 4, and 5 must record complete_step via set-timestamp."""
     content = _read_skill("flow-complete")
     assert "complete_step=4" in content, (
         "Complete must record complete_step=4 after Step 3 commit"
+    )
+    assert "complete_step=5" in content, (
+        "Complete must record complete_step=5 after Step 5 feedback commit"
     )
 
 
