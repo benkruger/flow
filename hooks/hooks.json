@@ -77,6 +77,17 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/lib/clear-blocked.py"
+          }
+        ]
+      }
+    ],
     "PostCompact": [
       {
         "hooks": [

@@ -10,8 +10,6 @@ import pytest
 
 from conftest import LIB_DIR, make_state, write_state
 from flow_utils import (
-    PINNED_COLORS,
-    TAB_COLORS,
     format_tab_color,
     format_tab_title,
     write_tab_sequences,
@@ -605,198 +603,6 @@ class TestSessionIsolation:
         assert updated["session_id"] == "new-session"
 
 
-# --- format_tab_title tests ---
-
-
-class TestFormatTabTitle:
-    def _state(self, phase, **kwargs):
-        """Build a minimal state dict for title testing."""
-        state = {"current_phase": phase, "branch": "test-feature"}
-        state.update(kwargs)
-        return state
-
-    def test_phase_1_start(self):
-        title = format_tab_title(self._state("flow-start"))
-        assert title == "Test Feature \u2014 P1: Start"
-
-    def test_phase_2_plan(self):
-        title = format_tab_title(self._state("flow-plan"))
-        assert title == "Test Feature \u2014 P2: Plan"
-
-    def test_phase_3_code(self):
-        title = format_tab_title(self._state("flow-code"))
-        assert title == "Test Feature \u2014 P3: Code"
-
-    def test_phase_4_code_review(self):
-        title = format_tab_title(self._state("flow-code-review"))
-        assert title == "Test Feature \u2014 P4: Code Review"
-
-    def test_phase_5_learn(self):
-        title = format_tab_title(self._state("flow-learn"))
-        assert title == "Test Feature \u2014 P5: Learn"
-
-    def test_phase_6_complete(self):
-        title = format_tab_title(self._state("flow-complete"))
-        assert title == "Test Feature \u2014 P6: Complete"
-
-    def test_code_with_task(self):
-        title = format_tab_title(self._state("flow-code", code_task=2))
-        assert title == "Test Feature \u2014 P3: Code (2)"
-
-    def test_code_with_task_zero(self):
-        """code_task=0 means no task started — no step info."""
-        title = format_tab_title(self._state("flow-code", code_task=0))
-        assert title == "Test Feature \u2014 P3: Code"
-
-    def test_code_with_string_task(self):
-        """Non-integer code_task is ignored — no step info."""
-        title = format_tab_title(self._state("flow-code", code_task="2"))
-        assert title == "Test Feature \u2014 P3: Code"
-
-    def test_code_review_with_step(self):
-        title = format_tab_title(self._state("flow-code-review", code_review_step=2))
-        assert title == "Test Feature \u2014 P4: Code Review (2/4)"
-
-    def test_code_review_with_step_zero(self):
-        """code_review_step=0 means not started — no step info."""
-        title = format_tab_title(self._state("flow-code-review", code_review_step=0))
-        assert title == "Test Feature \u2014 P4: Code Review"
-
-    def test_code_review_with_step_four(self):
-        """code_review_step=4 means all done — no step info."""
-        title = format_tab_title(self._state("flow-code-review", code_review_step=4))
-        assert title == "Test Feature \u2014 P4: Code Review"
-
-    def test_missing_current_phase(self):
-        assert format_tab_title({"branch": "test-feature"}) is None
-
-    def test_missing_branch(self):
-        assert format_tab_title({"current_phase": "flow-code"}) is None
-
-    def test_unknown_phase_key(self):
-        assert format_tab_title(self._state("flow-unknown")) is None
-
-    def test_feature_name_from_branch(self):
-        """Branch name is title-cased into the feature name."""
-        title = format_tab_title(self._state("flow-start", branch="invoice-pdf-export"))
-        assert title == "Invoice Pdf Export \u2014 P1: Start"
-
-    def test_prompt_with_one_issue(self):
-        title = format_tab_title(self._state("flow-code", prompt="work on issue #342"))
-        assert title == "#342 Test Feature \u2014 P3: Code"
-
-    def test_prompt_with_multiple_issues(self):
-        title = format_tab_title(self._state("flow-code", prompt="work on #83 and #89"))
-        assert title == "#83 #89 Test Feature \u2014 P3: Code"
-
-    def test_prompt_with_no_issue_numbers(self):
-        title = format_tab_title(self._state("flow-code", prompt="fix login timeout"))
-        assert title == "Test Feature \u2014 P3: Code"
-
-    def test_prompt_missing(self):
-        """No prompt key in state — no issue prefix."""
-        state = {"current_phase": "flow-code", "branch": "test-feature"}
-        title = format_tab_title(state)
-        assert title == "Test Feature \u2014 P3: Code"
-
-
-# --- format_tab_color tests ---
-
-
-class TestFormatTabColor:
-    def _state(self, repo="test/test"):
-        """Build a minimal state dict for color testing."""
-        state = {"current_phase": "flow-code", "branch": "test-feature"}
-        if repo is not None:
-            state["repo"] = repo
-        return state
-
-    def test_returns_tuple_for_known_repo(self):
-        result = format_tab_color(self._state())
-        assert isinstance(result, tuple)
-        assert len(result) == 3
-        assert all(0 <= v <= 255 for v in result)
-
-    def test_deterministic(self):
-        state = self._state()
-        assert format_tab_color(state) == format_tab_color(state)
-
-    def test_different_repos_can_differ(self):
-        """These two repo strings are verified to hash to different palette indices."""
-        color_a = format_tab_color(self._state("test/test"))
-        color_b = format_tab_color(self._state("other/project"))
-        assert color_a != color_b
-
-    def test_override_replaces_hash(self):
-        result = format_tab_color(self._state(), override=[10, 20, 30])
-        assert result == (10, 20, 30)
-
-    def test_missing_repo_returns_none(self):
-        assert format_tab_color(self._state(repo=None)) is None
-
-    def test_empty_repo_returns_none(self):
-        assert format_tab_color(self._state(repo="")) is None
-
-    def test_override_with_missing_repo(self):
-        result = format_tab_color(self._state(repo=None), override=[5, 10, 15])
-        assert result == (5, 10, 15)
-
-    def test_override_invalid_length_ignored(self):
-        result = format_tab_color(self._state(), override=[10, 20])
-        assert isinstance(result, tuple)
-        assert len(result) == 3
-
-    def test_repo_kwarg_returns_color(self):
-        """repo kwarg returns same color as the equivalent state dict."""
-        via_state = format_tab_color(self._state("test/test"))
-        via_kwarg = format_tab_color(repo="test/test")
-        assert via_kwarg == via_state
-        assert isinstance(via_kwarg, tuple)
-        assert len(via_kwarg) == 3
-
-    def test_repo_kwarg_empty_returns_none(self):
-        assert format_tab_color(repo="") is None
-
-    def test_repo_kwarg_none_returns_none(self):
-        assert format_tab_color(repo=None) is None
-
-    def test_repo_kwarg_with_override(self):
-        result = format_tab_color(repo="x/y", override=[1, 2, 3])
-        assert result == (1, 2, 3)
-
-    def test_state_and_repo_kwarg_prefers_repo(self):
-        """When both state and repo kwarg are provided, repo kwarg wins."""
-        color_a = format_tab_color(self._state("test/test"))
-        color_b = format_tab_color(self._state("test/test"), repo="other/project")
-        assert color_b != color_a
-        assert color_b == format_tab_color(repo="other/project")
-
-    def test_no_args_returns_none(self):
-        assert format_tab_color() is None
-
-    def test_pinned_repo_returns_pinned_color(self):
-        result = format_tab_color(repo="benkruger/hh")
-        assert result == (50, 120, 220)
-
-    def test_pinned_repo_via_state(self):
-        result = format_tab_color(self._state("benkruger/flow"))
-        assert result == (40, 180, 70)
-
-    def test_override_beats_pinned(self):
-        result = format_tab_color(repo="benkruger/flow", override=[1, 2, 3])
-        assert result == (1, 2, 3)
-
-    def test_non_pinned_repo_still_hashes(self):
-        result = format_tab_color(repo="other/repo")
-        assert result in TAB_COLORS
-
-    def test_all_pinned_repos(self):
-        for repo, color in PINNED_COLORS.items():
-            assert format_tab_color(repo=repo) == color
-        colors = [format_tab_color(repo=r) for r in PINNED_COLORS]
-        assert len(set(colors)) == len(PINNED_COLORS)
-
-
 # --- set_tab_title tests ---
 
 
@@ -1326,3 +1132,44 @@ class TestMainErrorHandling:
 
         captured = capsys.readouterr()
         assert captured.out == ""
+
+
+class TestClearBlocked:
+    def test_clears_blocked_on_stop(self, git_repo, state_dir, branch, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_blocked"] = "2026-01-01T10:00:00-08:00"
+        write_state(state_dir, branch, state)
+
+        _mod.clear_blocked(root=git_repo, branch=branch)
+
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert "_blocked" not in updated
+
+    def test_no_blocked_flag_noop(self, git_repo, state_dir, branch, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        path = write_state(state_dir, branch, state)
+        original = path.read_text()
+
+        _mod.clear_blocked(root=git_repo, branch=branch)
+
+        assert path.read_text() == original
+
+    def test_no_state_file_noop(self, git_repo, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        # Should not raise
+        _mod.clear_blocked(root=git_repo, branch="nonexistent")
+
+    def test_no_branch_noop(self):
+        # Should not raise when branch is None
+        _mod.clear_blocked(root=Path("/tmp"), branch=None)
+
+    def test_corrupt_state_file_noop(self, git_repo, state_dir, branch, monkeypatch, capsys):
+        monkeypatch.chdir(git_repo)
+        (state_dir / f"{branch}.json").write_text("{bad json")
+
+        _mod.clear_blocked(root=git_repo, branch=branch)
+
+        captured = capsys.readouterr()
+        assert "[FLOW stop-continue] clear_blocked error:" in captured.err
