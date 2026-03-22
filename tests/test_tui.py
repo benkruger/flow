@@ -35,6 +35,8 @@ def _make_app(stdscr=None, root=None, flows=None, orch_data=None):
     if root is not None:
         app.root = Path(root)
     app.version = "0.36.2"
+    app.repo = "test/test"
+    app.repo_name = "test"
     app.use_color = False
     if flows is not None:
         app.flows = flows
@@ -55,7 +57,8 @@ def _flow_from_state(state):
 def test_tui_app_init():
     """TuiApp initializes with default state."""
     stdscr = _make_stdscr()
-    with patch("tui.project_root", return_value=Path("/tmp/test")):
+    with patch("tui.project_root", return_value=Path("/tmp/test")), \
+         patch("tui.detect_repo", return_value=None):
         app = tui.TuiApp(stdscr)
     assert app.selected == 0
     assert app.view == "list"
@@ -63,10 +66,59 @@ def test_tui_app_init():
     assert app.confirming_abort is False
 
 
+def test_tui_app_init_sets_repo_name():
+    """TuiApp.__init__ sets repo_name from detect_repo."""
+    stdscr = _make_stdscr()
+    with patch("tui.project_root", return_value=Path("/tmp/test")), \
+         patch("tui.detect_repo", return_value="owner/myrepo"):
+        app = tui.TuiApp(stdscr)
+    assert app.repo == "owner/myrepo"
+    assert app.repo_name == "myrepo"
+
+
+def test_tui_app_init_repo_name_none():
+    """TuiApp.__init__ sets repo_name to None when detect_repo returns None."""
+    stdscr = _make_stdscr()
+    with patch("tui.project_root", return_value=Path("/tmp/test")), \
+         patch("tui.detect_repo", return_value=None):
+        app = tui.TuiApp(stdscr)
+    assert app.repo is None
+    assert app.repo_name is None
+
+
 def test_make_app_sets_use_color_false():
     """_make_app helper always sets use_color to False."""
     app = _make_app()
     assert app.use_color is False
+
+
+# --- _draw_header ---
+
+
+def test_draw_header_shows_repo_name():
+    """Header renders repo name uppercased with yellow bold attribute."""
+    stdscr = _make_stdscr(rows=10, cols=80)
+    app = _make_app(stdscr)
+    app.repo_name = "myrepo"
+    app.use_color = True
+    with patch("tui.curses.color_pair", side_effect=lambda p: p * 100):
+        app._draw_header()
+    calls = [c for c in stdscr.addstr.call_args_list]
+    repo_calls = [c for c in calls if "MYREPO" in str(c[0][2])]
+    assert len(repo_calls) >= 1
+    # Should use COLOR_ACTIVE (yellow) | A_BOLD
+    assert repo_calls[0][0][3] == tui.COLOR_ACTIVE * 100 | curses.A_BOLD
+
+
+def test_draw_header_no_repo_name():
+    """Header still renders version when repo_name is None."""
+    stdscr = _make_stdscr(rows=10, cols=80)
+    app = _make_app(stdscr)
+    app.repo_name = None
+    app._draw_header()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "FLOW" in text
 
 
 # --- _init_colors ---
@@ -761,6 +813,30 @@ def test_run_calls_init_colors():
          patch.object(app, "_init_colors") as mock_init:
         app.run()
         mock_init.assert_called_once()
+
+
+def test_run_calls_write_tab_sequences():
+    """run() calls write_tab_sequences on startup."""
+    stdscr = _make_stdscr()
+    stdscr.getch.side_effect = [ord("q")]
+    app = _make_app(stdscr, flows=[])
+    with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
+         patch("tui.write_tab_sequences") as mock_tabs:
+        app.run()
+        mock_tabs.assert_called_once_with(repo=app.repo, root=str(app.root))
+
+
+def test_run_write_tab_sequences_failure_ignored():
+    """run() continues if write_tab_sequences raises an error."""
+    stdscr = _make_stdscr()
+    stdscr.getch.side_effect = [ord("q")]
+    app = _make_app(stdscr, flows=[])
+    with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
+         patch("tui.write_tab_sequences", side_effect=OSError("no tty")):
+        app.run()
+    assert app.running is False
 
 
 def test_run_loop_quit():
