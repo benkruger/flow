@@ -24,7 +24,10 @@ from flow_utils import (
 )
 
 
-def capture_session_id(hook_input, root=None, branch=None):
+_UNSET = object()
+
+
+def capture_session_id(hook_input, root=None, branch=_UNSET):
     """Update session_id and transcript_path in active state file."""
     session_id = hook_input.get("session_id")
     if not session_id:
@@ -33,7 +36,7 @@ def capture_session_id(hook_input, root=None, branch=None):
     try:
         if root is None:
             root = project_root()
-        if branch is None:
+        if branch is _UNSET:
             branch = current_branch()
         if not branch:
             return
