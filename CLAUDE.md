@@ -99,7 +99,7 @@ CI will fail if these are missing:
 - `lib/post-compact.py` — PostCompact hook that captures `compact_summary`, `compact_cwd`, and `compact_count` in the state file for SessionStart to inject
 - `lib/tui_data.py` — pure data layer for TUI: loads state files, computes flow summaries, phase timelines, parses log entries
 - `lib/tui.py` — curses-based interactive TUI for viewing and managing active flows (`flow tui`)
-- `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands and file-read commands in all Bash calls)
+- `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands, shell redirection, and file-read commands in all Bash calls)
 - `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (blocks prompts when `_auto_continue` is set in state file)
 - `bin/flow` — dispatcher script routing subcommands to `lib/*.py`
 - `docs/reference/flow-state-schema.md` — state file schema reference
@@ -146,7 +146,7 @@ State files (`.flow-states/`) are local to each machine. In a multi-engineer tea
 
 ### Sub-Agents
 
-FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Step 2) and Complete (Step 4). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands and file-read commands in all Bash calls — including those from built-in skills' sub-agents. The ci-fixer also retains its own hook declaration for defense in depth.
+FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Step 2) and Complete (Step 4). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands, shell redirection, and file-read commands in all Bash calls — including those from built-in skills' sub-agents. The ci-fixer also retains its own hook declaration for defense in depth.
 
 Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition — no plan mode. Code Review uses three foreground review agents for clarity (code reuse, quality, efficiency), then delegates to built-in `/review`, `/security-review`, and optionally the `code-review:code-review` plugin for multi-agent validation (controlled by the `code_review_plugin` config axis: `"always"`, `"auto"`, or `"never"`). Code and Learn have no sub-agents. Complete uses ci-fixer for CI failures.
 
@@ -194,7 +194,7 @@ Claude never computes timestamps, time differences, or counter increments. All s
 Every `` ```bash `` block in every skill and docs file must run without triggering a Claude Code permission prompt. Two layers enforce this:
 
 - **Test time** — `test_permissions.py` extracts every bash block, substitutes placeholders with concrete values, and verifies each command matches an allow-list pattern and does not match a deny-list pattern. New bash commands require a matching permission entry. New placeholders require a `PLACEHOLDER_SUBS` entry. Unrecognized placeholders fail the test — they are never silently skipped.
-- **Runtime** — `validate-ci-bash.py` runs as a global `PreToolUse` hook on every Bash call. It blocks compound commands and file-read commands via fast-path checks, then enforces the `.claude/settings.json` allow list as a whitelist. Commands not matching any `Bash(...)` allow pattern are blocked with exit code 2 and a helpful error message. If `settings.json` is missing (non-FLOW project), the whitelist check is skipped.
+- **Runtime** — `validate-ci-bash.py` runs as a global `PreToolUse` hook on every Bash call. It blocks compound commands, shell redirection, and file-read commands via fast-path checks, then enforces the `.claude/settings.json` allow list as a whitelist. Commands not matching any `Bash(...)` allow pattern are blocked with exit code 2 and a helpful error message. If `settings.json` is missing (non-FLOW project), the whitelist check is skipped.
 
 ## Test Architecture
 
