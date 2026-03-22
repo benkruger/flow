@@ -34,7 +34,11 @@ SOFT-GATE and dispatches via the Resume Check.
    GitHub CI via `gh pr checks` (waits for checks to pass, suggests `/loop`
    for pending). If CI fails at either stage, ci-fixer commits a fix and
    self-invokes to re-check
-5. Confirms with the user (only when `--manual` is passed)
+5. Confirms with the user (only when `--manual` is passed). Offers three
+   options: approve merge, decline, or provide feedback on the code. If the
+   user gives feedback, processes the fix, commits via `/flow:flow-commit`,
+   then self-invokes with `--continue-step --manual` to re-prompt for
+   merge approval
 6. Archives artifacts to the PR body: session log link (from transcript path),
    phase timings table (non-collapsible), state file, and session log dump.
    Generates a business-friendly summary via `format-complete-summary`
