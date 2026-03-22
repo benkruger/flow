@@ -34,6 +34,7 @@ PHASE_NAMES = {key: _config["phases"][key]["name"] for key in PHASE_ORDER}
 COMMANDS = {key: _config["phases"][key]["command"] for key in PHASE_ORDER}
 PHASE_NUMBER = {key: i + 1 for i, key in enumerate(PHASE_ORDER)}
 
+# Phase skills use per-axis dicts; simple skills use a plain "auto" string.
 AUTO_SKILLS = {
     "flow-start": {"continue": "auto"},
     "flow-plan": {"continue": "auto", "dag": "auto"},
@@ -61,9 +62,8 @@ def build_initial_phases(current_time):
     timestamps and visit_count=0.
     """
     phases = {}
-    first_phase = PHASE_ORDER[0]
-    for key in PHASE_ORDER:
-        if key == first_phase:
+    for i, key in enumerate(PHASE_ORDER):
+        if i == 0:
             phases[key] = {
                 "name": PHASE_NAMES[key],
                 "status": "in_progress",
