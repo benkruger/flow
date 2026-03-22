@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
     AUTO_SKILLS, build_initial_phases, derive_feature, detect_repo,
-    freeze_phases, now,
+    freeze_phases, mutate_state, now,
 )
 from log import append_log
 
@@ -250,15 +250,27 @@ def main():
         # Detect GitHub repo for caching
         repo = detect_repo(cwd=str(project_root))
 
-        # Create state file
-        _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                           framework=framework, skills=skills, prompt=raw_prompt,
-                           repo=repo)
-        append_log(branch, f"[Phase 1] create .flow-states/{branch}.json (exit 0)")
+        # Update or create state file
+        state_path = project_root / ".flow-states" / f"{branch}.json"
+        if state_path.exists():
+            # Backfill PR fields and prompt into existing state file (created by init-state)
+            def _backfill(state):
+                state["pr_number"] = pr_number
+                state["pr_url"] = pr_url
+                state["repo"] = repo
+                state["prompt"] = raw_prompt
+            mutate_state(state_path, _backfill)
+            append_log(branch, f"[Phase 1] backfill .flow-states/{branch}.json (exit 0)")
+        else:
+            # Fallback: create state file from scratch (no init-state)
+            _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
+                               framework=framework, skills=skills, prompt=raw_prompt,
+                               repo=repo)
+            append_log(branch, f"[Phase 1] create .flow-states/{branch}.json (exit 0)")
 
-        # Freeze phase config for this feature
-        freeze_phases(project_root, branch)
-        append_log(branch, f"[Phase 1] freeze .flow-states/{branch}-phases.json (exit 0)")
+            # Freeze phase config (only needed when init-state didn't run)
+            freeze_phases(project_root, branch)
+            append_log(branch, f"[Phase 1] freeze .flow-states/{branch}-phases.json (exit 0)")
 
         output = {
             "status": "ok",

@@ -791,3 +791,75 @@ def test_skip_pull_still_creates_worktree_and_state(git_repo_with_remote):
     assert state_path.exists()
     state = json.loads(state_path.read_text())
     assert state["branch"] == "skip-pull-full"
+
+
+# --- Backfill mode (pre-existing state file from init-state) ---
+
+
+INIT_SCRIPT = str(LIB_DIR / "init-state.py")
+
+
+def _pre_seed_state(cwd, feature_name, framework="rails", auto=False):
+    """Run init-state.py to create a pre-existing state file."""
+    _write_flow_json(cwd, _current_plugin_version(), framework)
+    cmd = [sys.executable, INIT_SCRIPT, feature_name]
+    if auto:
+        cmd.append("--auto")
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, cwd=str(cwd),
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+def test_backfill_updates_pr_fields(git_repo_with_remote):
+    """start-setup backfills pr_number, pr_url, repo into existing state."""
+    _pre_seed_state(git_repo_with_remote, "backfill test")
+    state_path = git_repo_with_remote / ".flow-states" / "backfill-test.json"
+    pre_state = json.loads(state_path.read_text())
+    assert pre_state["pr_number"] is None
+    assert pre_state["pr_url"] is None
+    assert pre_state["repo"] is None
+
+    result = _run_no_gh(git_repo_with_remote, "backfill test", skip_pull=True)
+    assert result.returncode == 0, result.stderr
+
+    post_state = json.loads(state_path.read_text())
+    assert post_state["pr_number"] == 42
+    assert post_state["pr_url"] == "https://github.com/test/repo/pull/42"
+    assert "repo" in post_state
+
+
+def test_backfill_preserves_existing_fields(git_repo_with_remote):
+    """start-setup backfill does not overwrite phases, prompt, or other fields."""
+    _pre_seed_state(git_repo_with_remote, "preserve fields")
+    state_path = git_repo_with_remote / ".flow-states" / "preserve-fields.json"
+    pre_state = json.loads(state_path.read_text())
+    original_started_at = pre_state["started_at"]
+    original_prompt = pre_state["prompt"]
+
+    result = _run_no_gh(git_repo_with_remote, "preserve fields", skip_pull=True)
+    assert result.returncode == 0, result.stderr
+
+    post_state = json.loads(state_path.read_text())
+    assert post_state["started_at"] == original_started_at
+    assert post_state["prompt"] == original_prompt
+    assert post_state["phases"]["flow-start"]["status"] == "in_progress"
+    assert len(post_state["phases"]) == 6
+
+
+def test_backfill_skips_frozen_phases(git_repo_with_remote):
+    """start-setup does not overwrite frozen phases created by init-state."""
+    _pre_seed_state(git_repo_with_remote, "frozen skip test")
+    frozen_path = (git_repo_with_remote / ".flow-states"
+                   / "frozen-skip-test-phases.json")
+    assert frozen_path.exists()
+    original_mtime = frozen_path.stat().st_mtime
+
+    import time
+    time.sleep(0.05)
+
+    result = _run_no_gh(git_repo_with_remote, "frozen skip test",
+                        skip_pull=True)
+    assert result.returncode == 0, result.stderr
+    assert frozen_path.stat().st_mtime == original_mtime
