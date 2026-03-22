@@ -213,6 +213,48 @@ the Skill tool as your final action. If mode was resolved to auto, pass
 
 ### Step 4 — Check CI status
 
+**4a. Local simulated-branch CI gate:**
+
+Run CI locally with the branch name simulated as "main" to catch
+branch-dependent test failures before merge:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --force --simulate-branch main
+```
+
+If it passes, continue to 4b.
+
+If it fails, the failure is likely a branch-dependent test that passes
+on the feature branch but would fail on main. Launch the `ci-fixer`
+sub-agent to diagnose and fix. Use the Agent tool:
+
+- `subagent_type`: `"flow:ci-fixer"`
+- `description`: `"Fix branch-dependent test failures"`
+
+If fixed, set continuation flags, commit, and self-invoke to re-check:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set complete_step=4, then self-invoke flow:flow-complete --continue-step."
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+```
+
+Commit the fixes via `/flow:flow-commit`.
+
+After the commit completes, record the resume step:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+```
+
+Self-invoke `flow:flow-complete --continue-step` to re-run Step 4.
+
+If not fixed after 3 attempts, stop and report.
+
+**4b. GitHub CI status:**
+
 Check the CI status on the PR:
 
 ```bash

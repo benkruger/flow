@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from conftest import LIB_DIR, make_state, write_state
-from flow_utils import format_tab_color, format_tab_title
+from flow_utils import format_tab_color, format_tab_title, write_tab_sequences
 
 SCRIPT = LIB_DIR / "stop-continue.py"
 
@@ -1201,6 +1201,156 @@ class TestSetTabTitleWithParams:
         """When branch param is None, function returns without error."""
         monkeypatch.setattr(_mod, "detect_repo", lambda: None)
         _mod.set_tab_title(root=git_repo, branch=None)
+
+
+# --- write_tab_sequences tests ---
+
+
+class TestWriteTabSequences:
+    """Tests for flow_utils.write_tab_sequences — shared tab escape writer."""
+
+    def _mock_tty(self, monkeypatch):
+        """Set up a fake /dev/tty and return the list that captures writes."""
+        written = []
+        fake_tty = type("FakeTTY", (), {
+            "write": lambda self, data: written.append(data),
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if str(path) == "/dev/tty":
+                return fake_tty
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+        return written
+
+    def test_writes_color_and_title_with_state(self, tmp_path, monkeypatch):
+        """State dict with phase/branch/repo writes color + title to /dev/tty."""
+        monkeypatch.chdir(tmp_path)
+        written = self._mock_tty(monkeypatch)
+
+        state = {
+            "current_phase": "flow-code",
+            "branch": "test-feature",
+            "repo": "test/test",
+            "prompt": "test feature",
+        }
+        write_tab_sequences(state)
+
+        assert len(written) == 1
+        r, g, b = format_tab_color(state)
+        assert f"\033]6;1;bg;red;brightness;{r}\007" in written[0]
+        assert f"\033]6;1;bg;green;brightness;{g}\007" in written[0]
+        assert f"\033]6;1;bg;blue;brightness;{b}\007" in written[0]
+        title = format_tab_title(state)
+        assert f"\033]1;{title}\007" in written[0]
+
+    def test_writes_color_only_with_repo(self, tmp_path, monkeypatch):
+        """repo kwarg without state writes only color sequences, no title."""
+        monkeypatch.chdir(tmp_path)
+        written = self._mock_tty(monkeypatch)
+
+        write_tab_sequences(repo="test/test")
+
+        assert len(written) == 1
+        r, g, b = format_tab_color(repo="test/test")
+        assert f"\033]6;1;bg;red;brightness;{r}\007" in written[0]
+        assert "\033]1;" not in written[0]
+
+    def test_reads_flow_json_override(self, tmp_path, monkeypatch):
+        """.flow.json with tab_color uses the override color."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".flow.json").write_text(json.dumps({"tab_color": [99, 88, 77]}))
+        written = self._mock_tty(monkeypatch)
+
+        state = {
+            "current_phase": "flow-code",
+            "branch": "test-feature",
+            "repo": "test/test",
+            "prompt": "test feature",
+        }
+        write_tab_sequences(state)
+
+        assert len(written) == 1
+        assert "\033]6;1;bg;red;brightness;99\007" in written[0]
+        assert "\033]6;1;bg;green;brightness;88\007" in written[0]
+        assert "\033]6;1;bg;blue;brightness;77\007" in written[0]
+
+    def test_reads_flow_json_from_root(self, tmp_path, monkeypatch):
+        """root kwarg directs .flow.json reading to the root path."""
+        monkeypatch.chdir(tmp_path)
+        subdir = tmp_path / "subdir"
+        subdir.mkdir()
+        (subdir / ".flow.json").write_text(json.dumps({"tab_color": [10, 20, 30]}))
+        written = self._mock_tty(monkeypatch)
+
+        write_tab_sequences(repo="test/test", root=subdir)
+
+        assert len(written) == 1
+        assert "\033]6;1;bg;red;brightness;10\007" in written[0]
+
+    def test_no_state_no_repo_no_write(self, tmp_path, monkeypatch):
+        """No state, no repo — no /dev/tty open at all."""
+        monkeypatch.chdir(tmp_path)
+        opened = []
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if str(path) == "/dev/tty":
+                opened.append("tty")
+                raise AssertionError("Should not open /dev/tty")
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+        write_tab_sequences()
+        assert len(opened) == 0
+
+    def test_state_with_unknown_phase_writes_color_only(self, tmp_path, monkeypatch):
+        """State with unrecognized phase writes color, no title."""
+        monkeypatch.chdir(tmp_path)
+        written = self._mock_tty(monkeypatch)
+
+        state = {
+            "current_phase": "flow-unknown",
+            "branch": "test-feature",
+            "repo": "test/test",
+        }
+        write_tab_sequences(state)
+
+        assert len(written) == 1
+        assert "\033]1;" not in written[0]
+        r, g, b = format_tab_color(state)
+        assert f"\033]6;1;bg;red;brightness;{r}\007" in written[0]
+
+    def test_missing_flow_json_uses_hash_color(self, tmp_path, monkeypatch):
+        """No .flow.json file — uses hash-based color, no override."""
+        monkeypatch.chdir(tmp_path)
+        written = self._mock_tty(monkeypatch)
+
+        write_tab_sequences(repo="test/test")
+
+        assert len(written) == 1
+        r, g, b = format_tab_color(repo="test/test")
+        assert f"\033]6;1;bg;red;brightness;{r}\007" in written[0]
+
+    def test_raises_on_tty_error(self, tmp_path, monkeypatch):
+        """OSError from /dev/tty propagates — callers handle errors."""
+        monkeypatch.chdir(tmp_path)
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if str(path) == "/dev/tty":
+                raise OSError("No tty available")
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+
+        with pytest.raises(OSError, match="No tty available"):
+            write_tab_sequences(repo="test/test")
 
 
 class TestMainErrorHandling:

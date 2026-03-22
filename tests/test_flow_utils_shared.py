@@ -1,9 +1,9 @@
-"""Tests for shared utility functions in flow_utils: elapsed_since, read_version_from, read_version."""
+"""Tests for shared utility functions in flow_utils: elapsed_since, read_version_from, read_version, current_branch."""
 
 import json
 from datetime import datetime
 
-from flow_utils import PACIFIC, elapsed_since, read_version, read_version_from
+from flow_utils import PACIFIC, current_branch, elapsed_since, read_version, read_version_from
 
 
 # --- elapsed_since ---
@@ -86,3 +86,21 @@ def test_read_version_returns_string():
     assert isinstance(version, str)
     assert version != ""
     assert "." in version or version == "?"
+
+
+# --- current_branch ---
+
+
+def test_current_branch_simulate_env_var(monkeypatch):
+    """FLOW_SIMULATE_BRANCH overrides git branch detection."""
+    monkeypatch.setenv("FLOW_SIMULATE_BRANCH", "main")
+    assert current_branch() == "main"
+
+
+def test_current_branch_simulate_empty_string_falls_through(monkeypatch, git_repo):
+    """Empty FLOW_SIMULATE_BRANCH falls through to git detection."""
+    monkeypatch.setenv("FLOW_SIMULATE_BRANCH", "")
+    monkeypatch.chdir(git_repo)
+    result = current_branch()
+    assert result is not None
+    assert result != ""
