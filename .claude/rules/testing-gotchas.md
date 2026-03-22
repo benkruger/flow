@@ -32,3 +32,13 @@ executables, mentally trace every subsequent operation. If any
 operation could follow a reference back to the real resource and
 mutate it, the fixture is unsafe. Replace indirect references with
 self-contained fakes that cannot escape the temp directory.
+
+## Ambiguous Check Name Filters
+
+When filtering a list of check results by name substring (e.g.
+`[c for c in checks if "completed" in c["name"]]`), verify the
+substring is unique across all check names. A broad substring like
+`"completed"` can match multiple checks (e.g. "Two or more flows
+completed" and "All flows completed all phases"), causing assertions
+to validate the wrong check. Use the most specific distinguishing
+substring.
