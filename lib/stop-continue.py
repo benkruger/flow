@@ -27,6 +27,25 @@ from flow_utils import (
 _UNSET = object()
 
 
+def _log_error(root, branch, tag, exc):
+    """Write a fail-open diagnostic to stderr and (best-effort) the flow log.
+
+    Always writes to stderr first. Then attempts to append to
+    .flow-states/<branch>.log if root and branch are known. If logging
+    itself fails, the original stderr diagnostic is preserved.
+    """
+    sys.stderr.write(f"[FLOW stop-continue] {tag} error: {exc}\n")
+    try:
+        if root and branch:
+            log_path = root / ".flow-states" / f"{branch}.log"
+            with open(log_path, "a") as log_file:
+                log_file.write(
+                    f"{now()} [stop-continue] {tag} error: {exc}\n"
+                )
+    except Exception:
+        pass
+
+
 def _resolve(root, branch):
     """Resolve root and branch defaults from environment.
 
@@ -64,8 +83,8 @@ def capture_session_id(hook_input, root=None, branch=_UNSET):
                 state["transcript_path"] = transcript_path
 
         mutate_state(state_path, transform)
-    except Exception:
-        pass
+    except Exception as exc:
+        _log_error(root, branch, "capture_session_id", exc)
 
 
 def check_continue(hook_input=None, root=None, branch=_UNSET):
@@ -117,16 +136,7 @@ def check_continue(hook_input=None, root=None, branch=_UNSET):
         mutate_state(state_path, transform)
         return (result["should_block"], result["skill"], result["context"])
     except Exception as exc:
-        sys.stderr.write(
-            f"[FLOW stop-continue] check_continue error: {exc}\n"
-        )
-        try:
-            if root and branch:
-                log_path = root / ".flow-states" / f"{branch}.log"
-                with open(log_path, "a") as log_file:
-                    log_file.write(f"{now()} [stop-continue] ERROR: {exc}\n")
-        except Exception:
-            pass
+        _log_error(root, branch, "check_continue", exc)
         return (False, None, None)
 
 
@@ -174,18 +184,7 @@ def set_tab_title(root=None, branch=_UNSET):
                 sequences += f"\033]1;{title}\007"
             tty.write(sequences)
     except Exception as exc:
-        sys.stderr.write(
-            f"[FLOW stop-continue] set_tab_title error: {exc}\n"
-        )
-        try:
-            if root and branch:
-                log_path = root / ".flow-states" / f"{branch}.log"
-                with open(log_path, "a") as log_file:
-                    log_file.write(
-                        f"{now()} [stop-continue] TAB ERROR: {exc}\n"
-                    )
-        except Exception:
-            pass
+        _log_error(root, branch, "set_tab_title", exc)
 
 
 def main():
