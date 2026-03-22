@@ -2468,18 +2468,27 @@ def test_complete_commit_points_record_step():
     )
 
 
-def test_complete_continue_context_includes_mode_flag():
+def test_continue_context_includes_mode_flag():
     """Every _continue_context with --continue-step must include --auto or --manual."""
-    content = _read_skill("flow-complete")
-    contexts = re.findall(r'"_continue_context=([^"]+)"', content)
-    assert len(contexts) >= 4, (
-        f"Expected at least 4 _continue_context values, found {len(contexts)}"
-    )
-    for ctx in contexts:
-        if "--continue-step" in ctx:
+    skills_with_min = {
+        "flow-code": 2,
+        "flow-code-review": 4,
+        "flow-complete": 4,
+        "flow-learn": 2,
+    }
+    for skill_name, min_step_contexts in skills_with_min.items():
+        content = _read_skill(skill_name)
+        contexts = re.findall(r'"_continue_context=([^"]+)"', content)
+        step_contexts = [c for c in contexts if "--continue-step" in c]
+        assert len(step_contexts) >= min_step_contexts, (
+            f"Expected at least {min_step_contexts} _continue_context values "
+            f"with --continue-step in {skill_name}, "
+            f"found {len(step_contexts)}"
+        )
+        for ctx in step_contexts:
             assert "--auto" in ctx or "--manual" in ctx, (
-                f"_continue_context with --continue-step must include "
-                f"--auto or --manual, got: {ctx}"
+                f"_continue_context with --continue-step in {skill_name} "
+                f"must include --auto or --manual, got: {ctx}"
             )
 
 
