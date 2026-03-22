@@ -351,3 +351,50 @@ def test_detects_untracked_file_rename(ci_project_excluded):
     second = _run(ci_project_excluded)
     assert second.returncode == 0
     assert _parse(second)["skipped"] is False
+
+
+def test_simulate_branch_sets_env_var_for_child(ci_project):
+    """--simulate-branch sets FLOW_SIMULATE_BRANCH in the child process env."""
+    # Replace bin/ci with a script that echoes the env var
+    (ci_project / "bin" / "ci").write_text(
+        '#!/usr/bin/env bash\necho "SIM=$FLOW_SIMULATE_BRANCH"\nexit 0\n'
+    )
+    result = _run(ci_project, args=["--force", "--simulate-branch", "main"])
+    assert result.returncode == 0
+    assert "SIM=main" in result.stdout
+
+
+def test_simulate_branch_does_not_affect_sentinel_name(ci_project):
+    """--simulate-branch does NOT change the sentinel file name."""
+    # Create a feature branch so it differs from the simulated "main"
+    subprocess.run(
+        ["git", "branch", "my-feature"],
+        cwd=str(ci_project), check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "switch", "my-feature"],
+        cwd=str(ci_project), check=True, capture_output=True,
+    )
+    result = _run(ci_project, args=["--force", "--simulate-branch", "main"])
+    assert result.returncode == 0
+    # Sentinel should be named after the real git branch, not "main"
+    sentinel = ci_project / ".flow-states" / "my-feature-ci-passed"
+    assert sentinel.exists()
+    # There should be no "main-ci-passed" sentinel
+    main_sentinel = ci_project / ".flow-states" / "main-ci-passed"
+    assert not main_sentinel.exists()
+
+
+def test_simulate_branch_with_force(ci_project_excluded):
+    """--simulate-branch combined with --force works correctly."""
+    # Run CI once to create sentinel
+    first = _run(ci_project_excluded)
+    assert first.returncode == 0
+    assert _parse(first)["skipped"] is False
+    # Run with --force --simulate-branch — must run (not skip)
+    second = _run(
+        ci_project_excluded,
+        args=["--force", "--simulate-branch", "main"],
+    )
+    assert second.returncode == 0
+    assert _parse(second)["skipped"] is False
