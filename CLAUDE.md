@@ -71,7 +71,7 @@ CI will fail if these are missing:
 - `lib/extract-release-notes.py` — extracts version sections from RELEASE-NOTES.md for GitHub Releases
 - `lib/start-lock.py` — serializes concurrent flow-start operations using a file lock at `.flow-states/start.lock` (PID-based stale detection + 30-min timeout)
 - `lib/start-setup.py` — consolidated Start phase setup (worktree, PR, state file, repo detection; optional git pull via `--skip-pull`)
-- `lib/flow_utils.py` — shared utilities: `now()` (Pacific Time timestamps), `PACIFIC` timezone, `format_time()`, `elapsed_since()`, `read_version()`, `read_version_from()`, `current_branch()`, `project_root()`, `extract_issue_numbers()`, `short_issue_ref()`, `detect_repo()`, `mutate_state()`, `derive_feature()`, `derive_worktree()`, `PHASE_NAMES`, `COMMANDS`
+- `lib/flow_utils.py` — shared utilities: `now()` (Pacific Time timestamps), `PACIFIC` timezone, `format_time()`, `elapsed_since()`, `read_version()`, `read_version_from()`, `current_branch()`, `project_root()`, `extract_issue_numbers()`, `short_issue_ref()`, `detect_repo()`, `mutate_state()`, `derive_feature()`, `derive_worktree()`, `freeze_phases()`, `build_initial_phases()`, `AUTO_SKILLS`, `PHASE_NAMES`, `COMMANDS`
 - `lib/phase-transition.py` — phase entry/completion (timing, counters, status, formatted_time, phase_transitions recording, diff_stats capture)
 - `lib/set-timestamp.py` — mid-phase timestamp fields via dot-path notation, code_task increment validation (prevents task batching)
 - `frameworks/<name>/` — per-framework data: `detect.json`, `permissions.json`, `dependencies`, `priming.md`
