@@ -6,6 +6,7 @@ Appends a timestamped line to the log file. Creates the directory if needed.
 No output on success, exit 1 on missing arguments.
 """
 
+import fcntl
 import sys
 from pathlib import Path
 
@@ -22,6 +23,7 @@ def append_log(branch, message):
     log_path = log_dir / f"{branch}.log"
     timestamp = now()
     with open(log_path, "a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
         f.write(f"{timestamp} {message}\n")
 
 

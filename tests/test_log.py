@@ -1,11 +1,12 @@
 """Tests for lib/log.py — append log entries to .flow-states/<branch>.log."""
 
+import fcntl
 import importlib
 import json
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import pytest
 
@@ -74,6 +75,25 @@ def test_multiple_appends(tmp_path):
     assert len(lines) == 2
     assert lines[0].endswith("first")
     assert lines[1].endswith("second")
+
+
+def test_append_log_uses_file_locking(tmp_path):
+    """append_log() must acquire fcntl.LOCK_EX before writing."""
+    log_dir = tmp_path / ".flow-states"
+    log_dir.mkdir()
+
+    with patch.object(_mod, "project_root", return_value=tmp_path), \
+         patch.object(_mod, "now", return_value="2026-01-01T00:00:00-08:00"), \
+         patch.object(_mod.fcntl, "flock") as mock_flock:
+        _mod.append_log("branch", "test message")
+
+    # Must have been called with LOCK_EX at least once
+    lock_calls = [c for c in mock_flock.call_args_list
+                  if c[0][1] == fcntl.LOCK_EX]
+    assert len(lock_calls) == 1, (
+        f"Expected exactly 1 LOCK_EX call, got {len(lock_calls)}: "
+        f"{mock_flock.call_args_list}"
+    )
 
 
 # --- CLI integration ---
