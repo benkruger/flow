@@ -185,12 +185,17 @@ git push
 1. Read each conflicted file using the Read tool
 2. Resolve the conflicts using the Edit tool — you have full context of the
    feature from this session
-3. Set the continuation flag and commit the resolution
+3. Set the resume step, continuation flag, and commit the resolution
 
-Set the continuation context and flag before committing:
+Record the resume step before committing so the continuation context
+needs only a single operation (self-invoke):
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set complete_step=4, then self-invoke flow:flow-complete --continue-step."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step."
 ```
 
 ```bash
@@ -199,12 +204,6 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 
 Commit the resolution via `/flow:flow-commit` — the commit skill handles
 staging, diff review, and push.
-
-After the commit completes, record the resume step:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
-```
 
 To continue to Step 4, invoke `flow:flow-complete --continue-step` using
 the Skill tool as your final action. If mode was resolved to auto, pass
@@ -232,10 +231,15 @@ sub-agent to diagnose and fix. Use the Agent tool:
 - `subagent_type`: `"flow:ci-fixer"`
 - `description`: `"Fix branch-dependent test failures"`
 
-If fixed, set continuation flags, commit, and self-invoke to re-check:
+If fixed, record the resume step, set continuation flags, commit, and
+self-invoke to re-check:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set complete_step=4, then self-invoke flow:flow-complete --continue-step."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step."
 ```
 
 ```bash
@@ -243,12 +247,6 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
 Commit the fixes via `/flow:flow-commit`.
-
-After the commit completes, record the resume step:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
-```
 
 Self-invoke `flow:flow-complete --continue-step` to re-run Step 4.
 
@@ -279,10 +277,15 @@ knows what failed.
 
 Wait for the sub-agent to return.
 
-- **Fixed** — set the continuation context and flag before committing:
+- **Fixed** — record the resume step and set continuation flags before
+committing:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set complete_step=4, then self-invoke flow:flow-complete --continue-step."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step."
 ```
 
 ```bash
@@ -290,12 +293,6 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
 Commit the fixes via `/flow:flow-commit`.
-
-After the commit completes, record the resume step:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
-```
 
 To re-check CI, invoke `flow:flow-complete --continue-step` using
 the Skill tool as your final action. If mode was resolved to auto, pass

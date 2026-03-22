@@ -27,20 +27,20 @@ from flow_utils import (
 _UNSET = object()
 
 
-def _log_error(root, branch, tag, exc):
-    """Write a fail-open diagnostic to stderr and (best-effort) the flow log.
+def _log(root, branch, message):
+    """Write a diagnostic to stderr and (best-effort) the flow log.
 
     Always writes to stderr first. Then attempts to append to
     .flow-states/<branch>.log if root and branch are known. If logging
     itself fails, the original stderr diagnostic is preserved.
     """
-    sys.stderr.write(f"[FLOW stop-continue] {tag} error: {exc}\n")
+    sys.stderr.write(f"[FLOW stop-continue] {message}\n")
     try:
         if root and branch:
             log_path = root / ".flow-states" / f"{branch}.log"
             with open(log_path, "a") as log_file:
                 log_file.write(
-                    f"{now()} [stop-continue] {tag} error: {exc}\n"
+                    f"{now()} [stop-continue] {message}\n"
                 )
     except Exception:
         pass
@@ -84,7 +84,7 @@ def capture_session_id(hook_input, root=None, branch=_UNSET):
 
         mutate_state(state_path, transform)
     except Exception as exc:
-        _log_error(root, branch, "capture_session_id", exc)
+        _log(root, branch, f"capture_session_id error: {exc}")
 
 
 def check_continue(hook_input=None, root=None, branch=_UNSET):
@@ -113,7 +113,10 @@ def check_continue(hook_input=None, root=None, branch=_UNSET):
         if not state_path.exists():
             return (False, None, None)
 
-        result = {"should_block": False, "skill": None, "context": None}
+        result = {
+            "should_block": False, "skill": None,
+            "context": None, "decision": None,
+        }
 
         def transform(state):
             pending = state.get("_continue_pending", "")
@@ -125,6 +128,10 @@ def check_continue(hook_input=None, root=None, branch=_UNSET):
             if state_sid and hook_sid and state_sid != hook_sid:
                 state["_continue_pending"] = ""
                 state["_continue_context"] = ""
+                result["decision"] = (
+                    f"session mismatch (state={state_sid} "
+                    f"hook={hook_sid}), cleared pending={pending}"
+                )
                 return
 
             result["context"] = state.get("_continue_context", "") or None
@@ -132,11 +139,16 @@ def check_continue(hook_input=None, root=None, branch=_UNSET):
             state["_continue_context"] = ""
             result["should_block"] = True
             result["skill"] = pending
+            result["decision"] = f"blocking: pending={pending}"
 
         mutate_state(state_path, transform)
+
+        if result["decision"]:
+            _log(root, branch, result["decision"])
+
         return (result["should_block"], result["skill"], result["context"])
     except Exception as exc:
-        _log_error(root, branch, "check_continue", exc)
+        _log(root, branch, f"check_continue error: {exc}")
         return (False, None, None)
 
 
@@ -162,7 +174,7 @@ def clear_blocked(root=None, branch=_UNSET):
 
         mutate_state(state_path, transform)
     except Exception as exc:
-        _log_error(root, branch, "clear_blocked", exc)
+        _log(root, branch, f"clear_blocked error: {exc}")
 
 
 def set_tab_title(root=None, branch=_UNSET):
@@ -184,7 +196,7 @@ def set_tab_title(root=None, branch=_UNSET):
         else:
             write_tab_sequences(repo=detect_repo(), root=root)
     except Exception as exc:
-        _log_error(root, branch, "set_tab_title", exc)
+        _log(root, branch, f"set_tab_title error: {exc}")
 
 
 def main():
