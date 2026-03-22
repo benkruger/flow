@@ -16,27 +16,17 @@ import argparse
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import derive_feature, detect_repo, now, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER
+from flow_utils import (
+    AUTO_SKILLS, build_initial_phases, derive_feature, detect_repo,
+    freeze_phases, now,
+)
 from log import append_log
-
-PLUGIN_ROOT = Path(__file__).resolve().parent.parent
-
-AUTO_SKILLS = {
-    "flow-start": {"continue": "auto"},
-    "flow-plan": {"continue": "auto", "dag": "auto"},
-    "flow-code": {"commit": "auto", "continue": "auto"},
-    "flow-code-review": {"commit": "auto", "continue": "auto", "code_review_plugin": "never"},
-    "flow-learn": {"commit": "auto", "continue": "auto"},
-    "flow-abort": "auto",
-    "flow-complete": "auto",
-}
 
 
 def _read_prompt_file(path):
@@ -162,29 +152,7 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
                        framework="rails", skills=None, prompt="", repo=None):
     """Create the FLOW state file."""
     current_time = now()
-    phases = {}
-    first_phase = PHASE_ORDER[0]
-    for key in PHASE_ORDER:
-        if key == first_phase:
-            phases[key] = {
-                "name": PHASE_NAMES[key],
-                "status": "in_progress",
-                "started_at": current_time,
-                "completed_at": None,
-                "session_started_at": current_time,
-                "cumulative_seconds": 0,
-                "visit_count": 1,
-            }
-        else:
-            phases[key] = {
-                "name": PHASE_NAMES[key],
-                "status": "pending",
-                "started_at": None,
-                "completed_at": None,
-                "session_started_at": None,
-                "cumulative_seconds": 0,
-                "visit_count": 0,
-            }
+    phases = build_initial_phases(current_time)
 
     state = {
         "schema_version": 1,
@@ -216,16 +184,6 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
     state_path = state_dir / f"{branch}.json"
     state_path.write_text(json.dumps(state, indent=2))
     return state
-
-
-def _freeze_phases(project_root, branch):
-    """Copy flow-phases.json to .flow-states/<branch>-phases.json."""
-    source = PLUGIN_ROOT / "flow-phases.json"
-    dest_dir = project_root / ".flow-states"
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / f"{branch}-phases.json"
-    shutil.copy2(source, dest)
-
 
 
 def main():
@@ -299,7 +257,7 @@ def main():
         append_log(branch, f"[Phase 1] create .flow-states/{branch}.json (exit 0)")
 
         # Freeze phase config for this feature
-        _freeze_phases(project_root, branch)
+        freeze_phases(project_root, branch)
         append_log(branch, f"[Phase 1] freeze .flow-states/{branch}-phases.json (exit 0)")
 
         output = {
