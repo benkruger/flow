@@ -46,6 +46,25 @@ def _log_error(root, branch, tag, exc):
         pass
 
 
+def _log_decision(root, branch, message):
+    """Write a decision diagnostic to stderr and (best-effort) the flow log.
+
+    Used for non-error decisions about _continue_pending (block or
+    session mismatch clear). Only called when _continue_pending is
+    non-empty — normal allow-stop paths do not log.
+    """
+    sys.stderr.write(f"[FLOW stop-continue] {message}\n")
+    try:
+        if root and branch:
+            log_path = root / ".flow-states" / f"{branch}.log"
+            with open(log_path, "a") as log_file:
+                log_file.write(
+                    f"{now()} [stop-continue] {message}\n"
+                )
+    except Exception:
+        pass
+
+
 def _resolve(root, branch):
     """Resolve root and branch defaults from environment.
 
@@ -113,7 +132,10 @@ def check_continue(hook_input=None, root=None, branch=_UNSET):
         if not state_path.exists():
             return (False, None, None)
 
-        result = {"should_block": False, "skill": None, "context": None}
+        result = {
+            "should_block": False, "skill": None,
+            "context": None, "decision": None,
+        }
 
         def transform(state):
             pending = state.get("_continue_pending", "")
@@ -125,6 +147,10 @@ def check_continue(hook_input=None, root=None, branch=_UNSET):
             if state_sid and hook_sid and state_sid != hook_sid:
                 state["_continue_pending"] = ""
                 state["_continue_context"] = ""
+                result["decision"] = (
+                    f"session mismatch (state={state_sid} "
+                    f"hook={hook_sid}), cleared pending={pending}"
+                )
                 return
 
             result["context"] = state.get("_continue_context", "") or None
@@ -132,8 +158,13 @@ def check_continue(hook_input=None, root=None, branch=_UNSET):
             state["_continue_context"] = ""
             result["should_block"] = True
             result["skill"] = pending
+            result["decision"] = f"blocking: pending={pending}"
 
         mutate_state(state_path, transform)
+
+        if result["decision"]:
+            _log_decision(root, branch, result["decision"])
+
         return (result["should_block"], result["skill"], result["context"])
     except Exception as exc:
         _log_error(root, branch, "check_continue", exc)

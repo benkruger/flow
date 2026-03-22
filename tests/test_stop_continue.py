@@ -365,6 +365,124 @@ class TestCheckContinueErrorReporting:
         assert "[FLOW stop-continue] check_continue error:" in stderr
 
 
+# --- Decision logging tests ---
+
+
+class TestCheckContinueDecisionLogging:
+    """Tests that check_continue logs meaningful decisions (block/session-mismatch)."""
+
+    def test_block_logs_decision_to_stderr(self, git_repo, state_dir, branch, monkeypatch, capsys):
+        """When flag is honored, stderr contains blocking decision."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_continue_pending"] = "commit"
+        write_state(state_dir, branch, state)
+
+        _mod.check_continue()
+
+        captured = capsys.readouterr()
+        assert "[FLOW stop-continue] blocking: pending=commit" in captured.err
+
+    def test_block_logs_decision_to_log_file(self, git_repo, state_dir, branch, monkeypatch, capsys):
+        """When flag is honored, decision is written to flow log file."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_continue_pending"] = "commit"
+        write_state(state_dir, branch, state)
+
+        _mod.check_continue()
+
+        log_path = state_dir / f"{branch}.log"
+        assert log_path.exists()
+        log_content = log_path.read_text()
+        assert "[stop-continue] blocking: pending=commit" in log_content
+
+    def test_session_mismatch_logs_decision_to_stderr(self, git_repo, state_dir, branch, monkeypatch, capsys):
+        """When session isolation clears flag, stderr contains session mismatch."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["session_id"] = "old-session"
+        state["_continue_pending"] = "simplify"
+        write_state(state_dir, branch, state)
+
+        _mod.check_continue({"session_id": "new-session"})
+
+        captured = capsys.readouterr()
+        assert "[FLOW stop-continue] session mismatch" in captured.err
+        assert "old-session" in captured.err
+        assert "new-session" in captured.err
+        assert "simplify" in captured.err
+
+    def test_session_mismatch_logs_decision_to_log_file(self, git_repo, state_dir, branch, monkeypatch, capsys):
+        """When session isolation clears flag, decision is written to flow log file."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["session_id"] = "old-session"
+        state["_continue_pending"] = "simplify"
+        write_state(state_dir, branch, state)
+
+        _mod.check_continue({"session_id": "new-session"})
+
+        log_path = state_dir / f"{branch}.log"
+        assert log_path.exists()
+        log_content = log_path.read_text()
+        assert "[stop-continue] session mismatch" in log_content
+        assert "simplify" in log_content
+
+    def test_no_pending_does_not_log_decision(self, git_repo, state_dir, branch, monkeypatch, capsys):
+        """When _continue_pending is empty, no decision log line."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_continue_pending"] = ""
+        write_state(state_dir, branch, state)
+
+        _mod.check_continue()
+
+        captured = capsys.readouterr()
+        assert "[FLOW stop-continue]" not in captured.err
+
+    def test_block_log_file_failure_does_not_propagate(self, git_repo, state_dir, branch, monkeypatch, capsys):
+        """When log file write fails, stderr diagnostic is still preserved."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_continue_pending"] = "commit"
+        write_state(state_dir, branch, state)
+
+        def raise_now():
+            raise OSError("clock broken")
+
+        monkeypatch.setattr(_mod, "now", raise_now)
+
+        _mod.check_continue()
+
+        captured = capsys.readouterr()
+        assert "[FLOW stop-continue] blocking: pending=commit" in captured.err
+        log_path = state_dir / f"{branch}.log"
+        log_content = log_path.read_text() if log_path.exists() else ""
+        assert "[stop-continue] blocking:" not in log_content
+
+    def test_no_state_file_does_not_log_decision(self, git_repo, monkeypatch, capsys):
+        """When no state file exists, no decision log line."""
+        monkeypatch.chdir(git_repo)
+
+        _mod.check_continue()
+
+        captured = capsys.readouterr()
+        assert "[FLOW stop-continue]" not in captured.err
+
+    def test_subprocess_block_logs_to_stderr(self, git_repo, state_dir, branch):
+        """Subprocess: blocking decision appears in stderr."""
+        state = make_state(current_phase="flow-code")
+        state["_continue_pending"] = "commit"
+        write_state(state_dir, branch, state)
+
+        stdin = json.dumps({})
+        exit_code, stdout, stderr = _run_hook(stdin, cwd=git_repo)
+
+        assert exit_code == 0
+        assert "blocking: pending=commit" in stderr
+
+
 # --- Subprocess integration tests ---
 
 
