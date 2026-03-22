@@ -566,3 +566,54 @@ def test_hook_subprocess_deny_allows_safe_command(tmp_path):
     code, stderr = _run_hook("git status", cwd=str(tmp_path))
     assert code == 0
     assert stderr == ""
+
+
+# --- Redirect blocking tests ---
+
+
+def test_validate_blocks_redirect_output():
+    """Shell output redirection (>) is blocked."""
+    mod = _load_module()
+    allowed, message = mod.validate("git show HEAD:file.py > /tmp/out.py")
+    assert allowed is False
+    assert "Read tool" in message
+    assert "Write tool" in message
+
+
+def test_validate_blocks_redirect_append():
+    """Shell append redirection (>>) is blocked."""
+    mod = _load_module()
+    allowed, message = mod.validate("git log >> /tmp/out.txt")
+    assert allowed is False
+    assert "redirection" in message.lower()
+
+
+def test_validate_blocks_redirect_stderr():
+    """Stderr redirection (2>) is blocked."""
+    mod = _load_module()
+    allowed, message = mod.validate("git status 2> /tmp/err.txt")
+    assert allowed is False
+    assert "redirection" in message.lower()
+
+
+def test_validate_blocks_redirect_no_space():
+    """Redirection without spaces (command>file) is blocked."""
+    mod = _load_module()
+    allowed, message = mod.validate("git show HEAD:file.py>/tmp/out.py")
+    assert allowed is False
+    assert "redirection" in message.lower()
+
+
+def test_validate_allows_no_redirect():
+    """Commands without > pass through (e.g. git diff --diff-filter=M)."""
+    mod = _load_module()
+    allowed, message = mod.validate("git diff --diff-filter=M")
+    assert allowed is True
+    assert message == ""
+
+
+def test_hook_exit_2_for_blocked_redirect():
+    """Full subprocess test: redirect blocked by hook."""
+    code, stderr = _run_hook("git show HEAD:file.py > /tmp/out.py")
+    assert code == 2
+    assert "BLOCKED" in stderr

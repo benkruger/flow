@@ -75,6 +75,13 @@ def validate(command, settings=None):
                 "BLOCKED: Compound commands (&&, ;, |) are not allowed. "
                 "Use separate Bash calls for each command.")
 
+    # Block shell redirection operators (>, >>)
+    if re.search(r"(?<![=\-])>{1,2}", command):
+        return (False,
+                "BLOCKED: Shell redirection (>, >>) is not allowed. "
+                "Use the Read tool to view file contents and the "
+                "Write tool to create files.")
+
     # Block blanket restore (git restore . wipes all changes without review)
     stripped = command.strip()
     if stripped == "git restore .":
