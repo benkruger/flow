@@ -544,6 +544,18 @@ def test_universal_allow_includes_claude_plugin_commands():
     assert "Bash(claude plugin install *)" in _mod.UNIVERSAL_ALLOW
 
 
+def test_gh_entries_grouped_in_universal_allow():
+    """All gh entries in UNIVERSAL_ALLOW must be contiguous (no gaps)."""
+    indices = [
+        i for i, entry in enumerate(_mod.UNIVERSAL_ALLOW)
+        if entry.startswith("Bash(gh ")
+    ]
+    assert len(indices) >= 2, "Expected multiple gh entries"
+    assert indices[-1] - indices[0] + 1 == len(indices), (
+        f"gh entries are not contiguous: indices {indices}"
+    )
+
+
 def test_permissions_loaded_from_framework_directory(tmp_path):
     _mod.merge_settings(tmp_path, "rails")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
