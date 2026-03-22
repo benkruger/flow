@@ -166,9 +166,9 @@ def reset(repo, local_path=None):
             return git_result
 
     prs_closed = close_prs(repo)
-    branches_deleted = delete_remote_branches(
-        repo, local_path or "."
-    )
+    branches_deleted = 0
+    if local_path:
+        branches_deleted = delete_remote_branches(repo, local_path)
 
     template = load_issue_template(repo)
     issues_reset = reset_issues(repo, template)

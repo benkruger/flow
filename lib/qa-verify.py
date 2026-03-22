@@ -224,8 +224,8 @@ def main():
     parser = argparse.ArgumentParser(description="Verify QA assertions")
     parser.add_argument("--tier", type=int, required=True,
                         help="Tier number (1, 2, or 3)")
-    parser.add_argument("--framework", required=True,
-                        help="Framework name")
+    parser.add_argument("--framework", default=None,
+                        help="Framework name (reserved for future use)")
     parser.add_argument("--repo", required=True,
                         help="GitHub repo (owner/name)")
     parser.add_argument("--project-root", default=".",
