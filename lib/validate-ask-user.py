@@ -11,9 +11,30 @@ Exit 2 — block (error message on stderr)
 """
 
 import json
-import subprocess
 import sys
 from pathlib import Path
+
+
+def set_blocked(state_path):
+    """Write _blocked timestamp to the state file.
+
+    Best-effort: any error is silently ignored so the hook
+    never interferes with AskUserQuestion delivery.
+    """
+    try:
+        if state_path is None or not Path(state_path).exists():
+            return
+
+        # Lazy import to avoid flow_utils module-level flow-phases.json load
+        # on every hook invocation — this hook only needs mutate_state/now.
+        from flow_utils import mutate_state, now
+
+        def transform(state):
+            state["_blocked"] = now()
+
+        mutate_state(Path(state_path), transform)
+    except Exception:
+        pass
 
 
 def validate(state_path):
@@ -37,46 +58,27 @@ def validate(state_path):
             f"BLOCKED: Auto-continue is active. Invoke {auto_cmd} now.")
 
 
-def _current_branch():
-    """Get current branch name via git."""
-    result = subprocess.run(
-        ["git", "branch", "--show-current"],
-        capture_output=True, text=True,
-    )
-    return result.stdout.strip() if result.returncode == 0 else None
-
-
-def _project_root():
-    """Get project root via git worktree list."""
-    result = subprocess.run(
-        ["git", "worktree", "list", "--porcelain"],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        return None
-    for line in result.stdout.splitlines():
-        if line.startswith("worktree "):
-            return line.split(" ", 1)[1]
-    return None
-
-
 def main():
     try:
         json.load(sys.stdin)
     except (json.JSONDecodeError, ValueError):
         sys.exit(0)
 
-    branch = _current_branch()
-    root = _project_root()
-    if not branch or not root:
+    # Lazy import to avoid flow_utils module-level flow-phases.json load
+    # on every hook invocation — this hook only needs branch/root helpers.
+    from flow_utils import current_branch, project_root
+
+    branch = current_branch()
+    if not branch:
         sys.exit(0)
 
-    state_path = Path(root) / ".flow-states" / f"{branch}.json"
+    state_path = project_root() / ".flow-states" / f"{branch}.json"
     allowed, message = validate(str(state_path))
     if not allowed:
         print(message, file=sys.stderr)
         sys.exit(2)
 
+    set_blocked(str(state_path))
     sys.exit(0)
 
 

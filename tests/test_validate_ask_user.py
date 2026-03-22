@@ -155,26 +155,78 @@ def test_hook_allows_outside_git_repo(tmp_path):
     assert code == 0
 
 
-# --- In-process helper function tests ---
+# --- In-process set_blocked() tests ---
 
 
-def test_project_root_returns_none_on_git_failure(tmp_path, monkeypatch):
-    """_project_root returns None when git worktree list fails."""
+def test_set_blocked_sets_timestamp(state_dir, branch):
+    """set_blocked writes _blocked timestamp to state file."""
     mod = _load_module()
-    monkeypatch.chdir(tmp_path)
-    result = mod._project_root()
-    assert result is None
+    state = make_state(current_phase="flow-code")
+    path = write_state(state_dir, branch, state)
+    mod.set_blocked(str(path))
+    updated = json.loads(path.read_text())
+    assert "_blocked" in updated
+    assert isinstance(updated["_blocked"], str)
+    assert len(updated["_blocked"]) > 0
 
 
-def test_project_root_returns_none_when_no_worktree_line(monkeypatch):
-    """_project_root returns None when output has no worktree line."""
+def test_set_blocked_no_state_file(tmp_path):
+    """set_blocked does nothing when state file does not exist."""
     mod = _load_module()
-    import subprocess as sp
+    mod.set_blocked(str(tmp_path / "nonexistent.json"))
+    # Should not raise
 
-    class FakeResult:
-        returncode = 0
-        stdout = "bare\n"
 
-    monkeypatch.setattr(sp, "run", lambda *a, **kw: FakeResult())
-    result = mod._project_root()
-    assert result is None
+def test_set_blocked_none_path():
+    """set_blocked does nothing when path is None."""
+    mod = _load_module()
+    mod.set_blocked(None)
+    # Should not raise
+
+
+def test_set_blocked_corrupt_state(tmp_path):
+    """set_blocked fails open on corrupt JSON."""
+    mod = _load_module()
+    bad_file = tmp_path / "bad.json"
+    bad_file.write_text("{bad json")
+    mod.set_blocked(str(bad_file))
+    # Should not raise
+
+
+def test_set_blocked_preserves_other_fields(state_dir, branch):
+    """set_blocked preserves existing state fields."""
+    mod = _load_module()
+    state = make_state(current_phase="flow-code")
+    state["session_id"] = "existing-session"
+    state["notes"] = [{"note": "a correction"}]
+    path = write_state(state_dir, branch, state)
+    mod.set_blocked(str(path))
+    updated = json.loads(path.read_text())
+    assert updated["session_id"] == "existing-session"
+    assert updated["notes"] == [{"note": "a correction"}]
+    assert "_blocked" in updated
+
+
+# --- Subprocess set_blocked tests ---
+
+
+def test_hook_writes_blocked_on_allow(git_repo, state_dir, branch):
+    """Hook writes _blocked to state file when allowing through (no auto-continue)."""
+    state = make_state(current_phase="flow-code")
+    path = write_state(state_dir, branch, state)
+    code, stderr = _run_hook(git_repo)
+    assert code == 0
+    updated = json.loads(path.read_text())
+    assert "_blocked" in updated
+    assert isinstance(updated["_blocked"], str)
+
+
+def test_hook_does_not_set_blocked_when_blocking(git_repo, state_dir, branch):
+    """Hook does not write _blocked when blocking due to auto-continue."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
+    state["_auto_continue"] = "/flow:flow-plan"
+    path = write_state(state_dir, branch, state)
+    code, stderr = _run_hook(git_repo)
+    assert code == 2
+    updated = json.loads(path.read_text())
+    assert "_blocked" not in updated
