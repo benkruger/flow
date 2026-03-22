@@ -58,7 +58,7 @@ def capture_session_id(hook_input, root=None, branch=_UNSET):
         pass
 
 
-def check_continue(hook_input=None, root=None, branch=None):
+def check_continue(hook_input=None, root=None, branch=_UNSET):
     """Check if _continue_pending flag is set in the active state file.
 
     Returns (should_block: bool, skill_name: str|None, context: str|None).
@@ -77,7 +77,7 @@ def check_continue(hook_input=None, root=None, branch=None):
     try:
         if root is None:
             root = project_root()
-        if branch is None:
+        if branch is _UNSET:
             branch = current_branch()
 
         if not branch:
@@ -123,7 +123,7 @@ def check_continue(hook_input=None, root=None, branch=None):
         return (False, None, None)
 
 
-def set_tab_title(root=None, branch=None):
+def set_tab_title(root=None, branch=_UNSET):
     """Write the current FLOW phase and repo color to the terminal tab via /dev/tty.
 
     Fail-open with diagnostics: any error is logged to stderr and
@@ -132,7 +132,7 @@ def set_tab_title(root=None, branch=None):
     try:
         if root is None:
             root = project_root()
-        if branch is None:
+        if branch is _UNSET:
             branch = current_branch()
         if not branch:
             return

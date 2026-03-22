@@ -1092,6 +1092,33 @@ class TestCheckContinueWithParams:
 
         assert should_block is False
 
+    def test_none_branch_does_not_modify_state(
+        self, git_repo, state_dir, branch, monkeypatch,
+    ):
+        """When branch=None is passed explicitly, state file must not be touched.
+
+        Regression: branch=None conflated with 'auto-detect' caused
+        current_branch() to leak to the host repo. On main, the host branch
+        matched the fixture branch, so the function found and modified the
+        state file. On feature branches the names diverged and the test
+        passed by accident. monkeypatch.chdir ensures current_branch()
+        returns the fixture's branch, making this test fail regardless of
+        which host branch is running.
+        """
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_continue_pending"] = "commit"
+        state["_continue_context"] = "Self-invoke flow:flow-code."
+        write_state(state_dir, branch, state)
+        original = (state_dir / f"{branch}.json").read_text()
+
+        should_block, skill_name, context = _mod.check_continue(
+            hook_input=None, root=git_repo, branch=None
+        )
+
+        assert should_block is False
+        assert (state_dir / f"{branch}.json").read_text() == original
+
 
 class TestCaptureSessionIdWithParams:
     """Tests that capture_session_id accepts root and branch params directly."""
@@ -1110,8 +1137,16 @@ class TestCaptureSessionIdWithParams:
         assert updated["session_id"] == "via-params"
         assert updated["transcript_path"] == "/p.jsonl"
 
-    def test_none_branch_param_skips(self, git_repo, state_dir, branch):
-        """When branch param is None, function returns without error."""
+    def test_none_branch_param_skips(
+        self, git_repo, state_dir, branch, monkeypatch,
+    ):
+        """When branch param is None, function returns without error.
+
+        Uses monkeypatch.chdir so current_branch() would resolve to the
+        fixture branch if accidentally called — catches regressions
+        regardless of host branch.
+        """
+        monkeypatch.chdir(git_repo)
         state = make_state(current_phase="flow-start")
         write_state(state_dir, branch, state)
         original = (state_dir / f"{branch}.json").read_text()
