@@ -9,10 +9,7 @@ from pathlib import Path
 import pytest
 
 from conftest import LIB_DIR, make_state, write_state
-from flow_utils import (
-    format_tab_color,
-    format_tab_title,
-)
+from flow_utils import format_tab_color
 
 SCRIPT = LIB_DIR / "stop-continue.py"
 
