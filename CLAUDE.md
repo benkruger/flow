@@ -207,10 +207,10 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_add_issue.py` | Issue recording: append to empty/existing array, missing state file, CLI integration |
 | `test_notify_slack.py` | Slack notification: config reading, message formatting, curl posting, threading, fail-open behavior, CLI integration |
 | `test_add_notification.py` | Notification recording: append to empty/existing array, message truncation, missing state file, CLI integration |
-| `test_format_complete_summary.py` | Complete phase summary: basic summary, issues, notes, prompt truncation, format_time usage, borders, version fallback, CLI |
+| `test_format_complete_summary.py` | Complete phase summary: basic summary, issues with #N shorthand, resolved issues (closed_issues param), notes, prompt truncation, format_time usage, borders, version fallback, CLI with --closed-issues-file |
 | `test_format_issues_summary.py` | Issues summary formatting: empty/missing/single/multiple issues, label grouping, table output, CLI |
 | `test_analyze_issues.py` | Issue analysis: file path extraction, dependency detection, label detection, stale detection, categorization, dependency graph, body truncation, CLI integration with gh subprocess/failure/timeout |
-| `test_close_issues.py` | Issue closing: extraction of `#N` patterns from prompt, deduplication, partial failure, CLI integration |
+| `test_close_issues.py` | Issue closing: extraction of `#N` patterns from prompt, deduplication, partial failure, repo-based URL generation, no-repo fallback, CLI integration |
 | `test_label_issues.py` | Issue labeling: add/remove Flow In-Progress label, partial failure, deduplication, missing prompt, CLI integration |
 | `test_check_phase.py` | Phase guard: blocks on incomplete prerequisites, allows on complete, handles worktrees, re-entry notes |
 | `test_session_start.py` | Session hook: feature detection, timing reset, awareness injection, multi-feature handling |
