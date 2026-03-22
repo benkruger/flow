@@ -771,15 +771,10 @@ class TestFormatTabColor:
         assert result in TAB_COLORS
 
     def test_all_pinned_repos(self):
-        expected = {
-            "benkruger/hh": (50, 120, 220),
-            "benkruger/salted-kitchen": (220, 130, 20),
-            "benkruger/flow": (40, 180, 70),
-        }
-        for repo, color in expected.items():
+        for repo, color in PINNED_COLORS.items():
             assert format_tab_color(repo=repo) == color
-        colors = [format_tab_color(repo=r) for r in expected]
-        assert len(set(colors)) == 3
+        colors = [format_tab_color(repo=r) for r in PINNED_COLORS]
+        assert len(set(colors)) == len(PINNED_COLORS)
 
 
 # --- set_tab_title tests ---
