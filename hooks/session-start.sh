@@ -32,35 +32,11 @@ _has_flow_utils = False
 if _flow_lib:
     sys.path.insert(0, _flow_lib)
     try:
-        from flow_utils import format_tab_title, format_tab_color, detect_repo
+        from flow_utils import write_tab_sequences, detect_repo
         _has_flow_utils = True
     except ImportError:
         pass
 
-
-def _write_tab_color_only():
-    """Apply tab color without a title (no active flow)."""
-    if not _has_flow_utils:
-        return
-    try:
-        override = None
-        try:
-            flow_json = json.loads(Path(".flow.json").read_text())
-            override = flow_json.get("tab_color")
-        except Exception:
-            pass
-        repo = detect_repo()
-        color = format_tab_color(repo=repo, override=override)
-        if color:
-            r, g, b = color
-            with open("/dev/tty", "w") as tty:
-                tty.write(
-                    f"\033]6;1;bg;red;brightness;{r}\007"
-                    f"\033]6;1;bg;green;brightness;{g}\007"
-                    f"\033]6;1;bg;blue;brightness;{b}\007"
-                )
-    except Exception:
-        pass
 
 state_dir = Path(".flow-states")
 if state_dir.is_dir():
@@ -148,7 +124,11 @@ if _current:
     files = [f for f in files if f.stem == _current]
 
 if not files and not orchestrate_block:
-    _write_tab_color_only()
+    if _has_flow_utils:
+        try:
+            write_tab_sequences(repo=detect_repo())
+        except Exception:
+            pass
     sys.exit(0)
 
 
@@ -218,7 +198,11 @@ for path in files:
         continue
 
 if not states and not orchestrate_block:
-    _write_tab_color_only()
+    if _has_flow_utils:
+        try:
+            write_tab_sequences(repo=detect_repo())
+        except Exception:
+            pass
     sys.exit(0)
 
 dev_mode = (state_dir / ".dev-mode").exists()
@@ -370,32 +354,9 @@ else:
 
 try:
     if _has_flow_utils and states:
-        ts = states[0]
-        title = format_tab_title(ts)
-
-        override = None
-        try:
-            flow_json = json.loads(Path(".flow.json").read_text())
-            override = flow_json.get("tab_color")
-        except Exception:
-            pass
-
-        color = format_tab_color(ts, override=override)
-
-        with open("/dev/tty", "w") as tty:
-            sequences = ""
-            if color:
-                r, g, b = color
-                sequences += (
-                    f"\033]6;1;bg;red;brightness;{r}\007"
-                    f"\033]6;1;bg;green;brightness;{g}\007"
-                    f"\033]6;1;bg;blue;brightness;{b}\007"
-                )
-            if title:
-                sequences += f"\033]1;{title}\007"
-            tty.write(sequences)
+        write_tab_sequences(states[0])
     elif _has_flow_utils:
-        _write_tab_color_only()
+        write_tab_sequences(repo=detect_repo())
 except Exception:
     pass
 

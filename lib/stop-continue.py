@@ -19,8 +19,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    current_branch, detect_repo, format_tab_color, format_tab_title,
-    mutate_state, now, project_root,
+    current_branch, detect_repo, mutate_state, now, project_root,
+    write_tab_sequences,
 )
 
 
@@ -143,46 +143,21 @@ def check_continue(hook_input=None, root=None, branch=_UNSET):
 def set_tab_title(root=None, branch=_UNSET):
     """Write the current FLOW phase and repo color to the terminal tab via /dev/tty.
 
-    Fail-open with diagnostics: any error is logged to stderr and
-    .flow-states/<branch>.log, but never blocks the hook.
+    Delegates to write_tab_sequences() for the actual escape sequence
+    building and tty writing. This wrapper handles root/branch resolution
+    and fail-open error logging.
     """
     try:
         root, branch = _resolve(root, branch)
         if not branch:
             return
 
-        override = None
-        try:
-            flow_json = json.loads((root / ".flow.json").read_text())
-            override = flow_json.get("tab_color")
-        except Exception:
-            pass
-
         state_path = root / ".flow-states" / f"{branch}.json"
         if state_path.exists():
             state = json.loads(state_path.read_text())
-            title = format_tab_title(state)
-            color = format_tab_color(state, override=override)
+            write_tab_sequences(state, root=root)
         else:
-            title = None
-            repo = detect_repo()
-            color = format_tab_color(repo=repo, override=override)
-
-        if not title and not color:
-            return
-
-        with open("/dev/tty", "w") as tty:
-            sequences = ""
-            if color:
-                r, g, b = color
-                sequences += (
-                    f"\033]6;1;bg;red;brightness;{r}\007"
-                    f"\033]6;1;bg;green;brightness;{g}\007"
-                    f"\033]6;1;bg;blue;brightness;{b}\007"
-                )
-            if title:
-                sequences += f"\033]1;{title}\007"
-            tty.write(sequences)
+            write_tab_sequences(repo=detect_repo(), root=root)
     except Exception as exc:
         _log_error(root, branch, "set_tab_title", exc)
 
