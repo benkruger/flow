@@ -385,3 +385,48 @@ def format_tab_color(state=None, *, repo=None, override=None):
     digest = hashlib.sha256(repo.encode()).digest()
     index = int.from_bytes(digest[:4], "big") % len(TAB_COLORS)
     return TAB_COLORS[index]
+
+
+def write_tab_sequences(state=None, *, repo=None, root=None):
+    """Build and write terminal tab escape sequences to /dev/tty.
+
+    Reads .flow.json for tab_color override, computes title (from state)
+    and color (from state or repo), builds OSC escape sequences, and
+    writes them to /dev/tty.
+
+    Does NOT catch exceptions — callers handle errors.
+
+    Args:
+        state: FLOW state dict (optional). Used for title and color.
+            When provided, repo is ignored for color lookup.
+        repo: GitHub repo string like "owner/repo" (optional). Used for
+              color when no state is provided.
+        root: Path to read .flow.json from (optional). Defaults to CWD.
+    """
+    override = None
+    try:
+        flow_json_path = Path(root) / ".flow.json" if root else Path(".flow.json")
+        flow_json = json.loads(flow_json_path.read_text())
+        override = flow_json.get("tab_color")
+    except Exception:
+        pass
+
+    title = format_tab_title(state) if state else None
+    color = format_tab_color(state, repo=repo, override=override)
+
+    if not title and not color:
+        return
+
+    sequences = ""
+    if color:
+        r, g, b = color
+        sequences += (
+            f"\033]6;1;bg;red;brightness;{r}\007"
+            f"\033]6;1;bg;green;brightness;{g}\007"
+            f"\033]6;1;bg;blue;brightness;{b}\007"
+        )
+    if title:
+        sequences += f"\033]1;{title}\007"
+
+    with open("/dev/tty", "w") as tty:
+        tty.write(sequences)

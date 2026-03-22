@@ -19,12 +19,44 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    current_branch, detect_repo, format_tab_color, format_tab_title,
-    mutate_state, now, project_root,
+    current_branch, detect_repo, mutate_state, now, project_root,
+    write_tab_sequences,
 )
 
 
 _UNSET = object()
+
+
+def _log_error(root, branch, tag, exc):
+    """Write a fail-open diagnostic to stderr and (best-effort) the flow log.
+
+    Always writes to stderr first. Then attempts to append to
+    .flow-states/<branch>.log if root and branch are known. If logging
+    itself fails, the original stderr diagnostic is preserved.
+    """
+    sys.stderr.write(f"[FLOW stop-continue] {tag} error: {exc}\n")
+    try:
+        if root and branch:
+            log_path = root / ".flow-states" / f"{branch}.log"
+            with open(log_path, "a") as log_file:
+                log_file.write(
+                    f"{now()} [stop-continue] {tag} error: {exc}\n"
+                )
+    except Exception:
+        pass
+
+
+def _resolve(root, branch):
+    """Resolve root and branch defaults from environment.
+
+    root=None → project_root(); branch=_UNSET → current_branch().
+    Passing branch=None explicitly (e.g. in tests) skips auto-detect.
+    """
+    if root is None:
+        root = project_root()
+    if branch is _UNSET:
+        branch = current_branch()
+    return root, branch
 
 
 def capture_session_id(hook_input, root=None, branch=_UNSET):
@@ -34,10 +66,7 @@ def capture_session_id(hook_input, root=None, branch=_UNSET):
         return
 
     try:
-        if root is None:
-            root = project_root()
-        if branch is _UNSET:
-            branch = current_branch()
+        root, branch = _resolve(root, branch)
         if not branch:
             return
 
@@ -54,8 +83,8 @@ def capture_session_id(hook_input, root=None, branch=_UNSET):
                 state["transcript_path"] = transcript_path
 
         mutate_state(state_path, transform)
-    except Exception:
-        pass
+    except Exception as exc:
+        _log_error(root, branch, "capture_session_id", exc)
 
 
 def check_continue(hook_input=None, root=None, branch=_UNSET):
@@ -75,10 +104,7 @@ def check_continue(hook_input=None, root=None, branch=_UNSET):
     branch is known.
     """
     try:
-        if root is None:
-            root = project_root()
-        if branch is _UNSET:
-            branch = current_branch()
+        root, branch = _resolve(root, branch)
 
         if not branch:
             return (False, None, None)
@@ -110,78 +136,30 @@ def check_continue(hook_input=None, root=None, branch=_UNSET):
         mutate_state(state_path, transform)
         return (result["should_block"], result["skill"], result["context"])
     except Exception as exc:
-        sys.stderr.write(
-            f"[FLOW stop-continue] check_continue error: {exc}\n"
-        )
-        try:
-            if root and branch:
-                log_path = root / ".flow-states" / f"{branch}.log"
-                with open(log_path, "a") as log_file:
-                    log_file.write(f"{now()} [stop-continue] ERROR: {exc}\n")
-        except Exception:
-            pass
+        _log_error(root, branch, "check_continue", exc)
         return (False, None, None)
 
 
 def set_tab_title(root=None, branch=_UNSET):
     """Write the current FLOW phase and repo color to the terminal tab via /dev/tty.
 
-    Fail-open with diagnostics: any error is logged to stderr and
-    .flow-states/<branch>.log, but never blocks the hook.
+    Delegates to write_tab_sequences() for the actual escape sequence
+    building and tty writing. This wrapper handles root/branch resolution
+    and fail-open error logging.
     """
     try:
-        if root is None:
-            root = project_root()
-        if branch is _UNSET:
-            branch = current_branch()
+        root, branch = _resolve(root, branch)
         if not branch:
             return
-
-        override = None
-        try:
-            flow_json = json.loads((root / ".flow.json").read_text())
-            override = flow_json.get("tab_color")
-        except Exception:
-            pass
 
         state_path = root / ".flow-states" / f"{branch}.json"
         if state_path.exists():
             state = json.loads(state_path.read_text())
-            title = format_tab_title(state)
-            color = format_tab_color(state, override=override)
+            write_tab_sequences(state, root=root)
         else:
-            title = None
-            repo = detect_repo()
-            color = format_tab_color(repo=repo, override=override)
-
-        if not title and not color:
-            return
-
-        with open("/dev/tty", "w") as tty:
-            sequences = ""
-            if color:
-                r, g, b = color
-                sequences += (
-                    f"\033]6;1;bg;red;brightness;{r}\007"
-                    f"\033]6;1;bg;green;brightness;{g}\007"
-                    f"\033]6;1;bg;blue;brightness;{b}\007"
-                )
-            if title:
-                sequences += f"\033]1;{title}\007"
-            tty.write(sequences)
+            write_tab_sequences(repo=detect_repo(), root=root)
     except Exception as exc:
-        sys.stderr.write(
-            f"[FLOW stop-continue] set_tab_title error: {exc}\n"
-        )
-        try:
-            if root and branch:
-                log_path = root / ".flow-states" / f"{branch}.log"
-                with open(log_path, "a") as log_file:
-                    log_file.write(
-                        f"{now()} [stop-continue] TAB ERROR: {exc}\n"
-                    )
-        except Exception:
-            pass
+        _log_error(root, branch, "set_tab_title", exc)
 
 
 def main():
