@@ -96,7 +96,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ## Logging
 
 After every Bash command in Steps 2–4, log it to `.flow-states/<branch>.log`
-using `bin/flow log`. Step 3 handles its own logging internally via start-setup.
+using `bin/flow log`. Step 4 handles its own logging internally via start-setup.
 
 Run the command first, then log the result. Pipeline the log call with the
 next command where possible (run both in parallel in one response).
