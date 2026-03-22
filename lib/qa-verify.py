@@ -126,10 +126,12 @@ def check_tier2(project_root, repo):
     if len(state_files) < 2:
         return {"status": "ok", "tier": 2, "checks": checks}
 
+    # Load all states once
+    loaded_states = [(sf, _load_state(sf)) for sf in state_files]
+
     # Check all flows have all phases complete
     all_complete = True
-    for sf in state_files:
-        state = _load_state(sf)
+    for sf, state in loaded_states:
         if state is None:
             all_complete = False
             continue
@@ -147,8 +149,7 @@ def check_tier2(project_root, repo):
 
     # Check branch isolation (different branches)
     branches = set()
-    for sf in state_files:
-        state = _load_state(sf)
+    for sf, state in loaded_states:
         if state:
             branches.add(state.get("branch", ""))
     checks.append({

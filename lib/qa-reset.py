@@ -11,6 +11,7 @@ Output (JSON to stdout):
 """
 
 import argparse
+import base64
 import json
 import shutil
 import subprocess
@@ -102,7 +103,6 @@ def load_issue_template(repo):
     if result.returncode != 0:
         return []
 
-    import base64
     try:
         content = base64.b64decode(result.stdout.strip()).decode()
         return json.loads(content)

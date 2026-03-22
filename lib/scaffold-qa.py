@@ -68,7 +68,8 @@ def scaffold(framework, repo, templates_dir=None, clone_dir=None):
     if clone_dir is None:
         clone_dir = tempfile.mkdtemp(prefix="flow-qa-")
     clone_path = Path(clone_dir)
-    clone_path.mkdir(parents=True, exist_ok=True)
+    if not clone_path.exists():
+        clone_path.mkdir(parents=True)
 
     # Write template files
     issues_data = []
