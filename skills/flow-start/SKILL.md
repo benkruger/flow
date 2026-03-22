@@ -77,9 +77,9 @@ shared state must be idempotent.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → continue=auto AND override ALL skills to fully autonomous (all commits auto, all continues auto, code review plugin skipped). The `--auto` flag is passed through to `start-setup` in Step 9, which writes the autonomous preset to the state file. All downstream phases inherit the override automatically.
+1. If `--auto` was passed → continue=auto AND override ALL skills to fully autonomous (all commits auto, all continues auto, code review plugin skipped). The `--auto` flag is passed through to `start-setup` in Step 10, which writes the autonomous preset to the state file. All downstream phases inherit the override automatically.
 2. If `--manual` was passed → continue=manual
-3. Otherwise → resolved in the Done section by reading `skills.flow-start.continue` from `.flow-states/<branch>.json` (which exists after Step 9)
+3. Otherwise → resolved in the Done section by reading `skills.flow-start.continue` from `.flow-states/<branch>.json` (which exists after Step 10)
 
 ## Announce
 
@@ -95,8 +95,8 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ## Logging
 
-After every Bash command in Steps 2–10, log it to `.flow-states/<branch>.log`
-using `bin/flow log`. Step 9 handles its own logging internally via start-setup.
+After every Bash command in Steps 2–11, log it to `.flow-states/<branch>.log`
+using `bin/flow log`. Step 10 handles its own logging internally via start-setup.
 
 Run the command first, then log the result. Pipeline the log call with the
 next command where possible (run both in parallel in one response).
@@ -162,11 +162,29 @@ Do NOT proceed if version check fails. Show the error message and stop.
 ```
 ````
 
-Steps 2–8 serialize all main-branch work behind a lock. Only one
+### Step 2 — Create early state file
+
+Create the state file immediately so the TUI can see this flow during
+the locked main operations in Steps 3–9. The state file has null PR fields
+at this point — start-setup backfills them after PR creation.
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>"
+```
+
+If `--auto` was passed to this skill invocation, also pass `--auto`:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --auto
+```
+
+Parse the JSON output. If `"status": "error"`, report the error and stop.
+
+Steps 3–9 serialize all main-branch work behind a lock. Only one
 flow-start runs this section at a time. Concurrent starts wait until
 the lock is released.
 
-### Step 2 — Acquire start lock
+### Step 3 — Acquire start lock
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --acquire --wait --feature <feature-name>
@@ -180,19 +198,19 @@ stale notification after the workflow completes.
 - If `"status": "timeout"` — stop and report to the user that another start
   holds the lock (show the feature name and PID from the response).
 
-### Step 3 — Pull latest main
+### Step 4 — Pull latest main
 
 ```bash
 git pull origin main
 ```
 
-### Step 4 — CI baseline gate
+### Step 5 — CI baseline gate
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 ```
 
-If CI passes, continue to Step 5.
+If CI passes, continue to Step 6.
 
 If it fails, launch the `ci-fixer` sub-agent to diagnose and fix. Use the Agent tool:
 
@@ -204,14 +222,14 @@ knows what failed.
 
 Wait for the sub-agent to return.
 
-- **Fixed** — commit the fixes via `/flow:flow-commit --auto`, then continue to Step 5
+- **Fixed** — commit the fixes via `/flow:flow-commit --auto`, then continue to Step 6
 - **Not fixed** — release the lock and stop. Report to the user.
 
-### Step 5 — Update dependencies
+### Step 6 — Update dependencies
 
 Use the Read tool to check if `bin/dependencies` exists at `<project_root>/bin/dependencies`.
 
-If it does not exist, skip to Step 8 (release lock).
+If it does not exist, skip to Step 9 (release lock).
 
 If it exists, run it:
 
@@ -225,9 +243,9 @@ Then check if anything changed:
 git status
 ```
 
-If `git status` shows no changes, skip to Step 8 (release lock).
+If `git status` shows no changes, skip to Step 9 (release lock).
 
-### Step 6 — CI post-deps gate
+### Step 7 — CI post-deps gate
 
 If dependencies changed anything, run CI again to catch dep-induced breakage
 (rubocop violations, breaking changes, etc.):
@@ -236,33 +254,33 @@ If dependencies changed anything, run CI again to catch dep-induced breakage
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 ```
 
-If CI passes, continue to Step 7.
+If CI passes, continue to Step 8.
 
 If it fails, launch the `ci-fixer` sub-agent:
 
 - `subagent_type`: `"flow:ci-fixer"`
 - `description`: `"Fix bin/flow ci failures after dependency update"`
 
-- **Fixed** — continue to Step 7
+- **Fixed** — continue to Step 8
 - **Not fixed** — release the lock and stop. Report to the user.
 
-### Step 7 — Commit to main
+### Step 8 — Commit to main
 
 If there are any uncommitted changes (dependency updates + CI fixes),
 commit them to main via `/flow:flow-commit --auto`.
 
-### Step 8 — Release start lock
+### Step 9 — Release start lock
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release
 ```
 
 <HARD-GATE>
-Do NOT proceed to Step 9 until the lock is released and `bin/flow ci` is green.
+Do NOT proceed to Step 10 until the lock is released and `bin/flow ci` is green.
 Uncommitted fixes on main will not appear in the worktree.
 </HARD-GATE>
 
-### Step 9 — Set up workspace
+### Step 10 — Set up workspace
 
 Write the user's original start prompt (verbatim, including `#N` issue references
 and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
@@ -286,7 +304,7 @@ The script performs these operations in a single process:
 
 1. `git worktree add .worktrees/<branch> -b <branch>`
 2. `git commit --allow-empty` + `git push -u origin` + `gh pr create`
-3. Create `.flow-states/<branch>.json` (initial state, all 6 phases)
+3. Backfill `pr_number`, `pr_url`, `repo`, and `prompt` into the existing state file
 
 The script logs each operation to `.flow-states/<branch>.log` internally.
 
@@ -315,7 +333,7 @@ in later steps — it would look for a nested `.worktrees/` that doesn't exist.
 If the script returns an error, read the stderr output for details, report
 the failure to the user, and stop.
 
-### Step 10 — Label referenced issues
+### Step 11 — Label referenced issues
 
 If the start prompt contains `#N` issue references, add the "Flow In-Progress"
 label so other engineers can see these issues are being worked on:
