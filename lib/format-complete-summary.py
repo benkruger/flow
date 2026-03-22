@@ -1,6 +1,6 @@
 """Format the Complete phase Done banner as a business-friendly summary.
 
-Usage: bin/flow format-complete-summary --state-file <path>
+Usage: bin/flow format-complete-summary --state-file <path> [--closed-issues-file <path>]
 
 Output (JSON to stdout):
   Success: {"status": "ok", "summary": "...", "total_seconds": N}
@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    derive_feature, format_time, read_version,
+    derive_feature, format_time, read_version, short_issue_ref,
     PHASE_NAMES, PHASE_ORDER,
 )
 
@@ -29,8 +29,13 @@ def _truncate_prompt(prompt):
     return prompt[:MAX_PROMPT_LENGTH] + "..."
 
 
-def format_complete_summary(state):
+def format_complete_summary(state, closed_issues=None):
     """Build the Complete phase Done banner from state dict.
+
+    Args:
+        state: The state file dict.
+        closed_issues: Optional list of closed issue dicts with 'number'
+            and optional 'url' keys.
 
     Returns dict with summary (str) and total_seconds (int).
     """
@@ -63,6 +68,20 @@ def format_complete_summary(state):
     lines.append(f"  Feature:  {feature}")
     lines.append(f"  What:     {_truncate_prompt(prompt)}")
     lines.append(f"  PR:       {pr_url}")
+
+    # Resolved section (closed issues from close-issues)
+    if closed_issues:
+        lines.append("")
+        lines.append("  Resolved")
+        lines.append("  " + "─" * 28)
+        for resolved in closed_issues:
+            num = resolved["number"]
+            url = resolved.get("url", "")
+            if url:
+                lines.append(f"    #{num} {url}")
+            else:
+                lines.append(f"    #{num}")
+
     lines.append("")
     lines.append("  Timeline")
     lines.append("  " + "─" * 28)
@@ -81,7 +100,9 @@ def format_complete_summary(state):
             lines.append(f"  Issues filed: {len(issues)}")
             for issue in issues:
                 url = issue.get("url", "")
-                lines.append(f"    [{issue['label']}] {issue['title']}")
+                shorthand = short_issue_ref(url) if url else ""
+                prefix = f"{shorthand} " if shorthand.startswith("#") else ""
+                lines.append(f"    [{issue['label']}] {prefix}{issue['title']}")
                 if url:
                     lines.append(f"    {url}")
         if notes:
@@ -97,6 +118,7 @@ def format_complete_summary(state):
 def main():
     parser = argparse.ArgumentParser(description="Format Complete phase summary")
     parser.add_argument("--state-file", required=True, help="Path to state JSON file")
+    parser.add_argument("--closed-issues-file", default=None, help="Path to closed issues JSON file")
 
     args = parser.parse_args()
 
@@ -107,7 +129,14 @@ def main():
             return
 
         state = json.loads(state_path.read_text())
-        result = format_complete_summary(state)
+
+        closed_issues = None
+        if args.closed_issues_file:
+            closed_path = Path(args.closed_issues_file)
+            if closed_path.exists():
+                closed_issues = json.loads(closed_path.read_text())
+
+        result = format_complete_summary(state, closed_issues=closed_issues)
 
         print(json.dumps({
             "status": "ok",

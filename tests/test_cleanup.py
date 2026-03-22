@@ -192,6 +192,23 @@ def test_cleanup_skips_missing_timings_file(git_repo):
     assert data["steps"]["timings_file"] == "skipped"
 
 
+def test_cleanup_deletes_closed_issues_file(git_repo):
+    wt_rel = _setup_feature(git_repo)
+    closed = git_repo / ".flow-states" / "test-feature-closed-issues.json"
+    closed.write_text('[{"number": 42, "url": "https://github.com/t/t/issues/42"}]')
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["closed_issues_file"] == "deleted"
+    assert not closed.exists()
+
+
+def test_cleanup_skips_missing_closed_issues_file(git_repo):
+    wt_rel = _setup_feature(git_repo)
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    assert data["steps"]["closed_issues_file"] == "skipped"
+
+
 def test_cleanup_deletes_issues_file(git_repo):
     wt_rel = _setup_feature(git_repo)
     issues = git_repo / ".flow-states" / "test-feature-issues.md"
@@ -210,7 +227,7 @@ def test_cleanup_skips_missing_issues_file(git_repo):
 
 
 def test_cleanup_full_happy_path(git_repo):
-    """Single invocation asserts all 9 step results, return code, status,
+    """Single invocation asserts all 10 step results, return code, status,
     and all 3 filesystem effects (worktree, state file, log file)."""
     wt_rel = _setup_feature(git_repo)
     result = _run(git_repo, "test-feature", wt_rel)
@@ -219,7 +236,7 @@ def test_cleanup_full_happy_path(git_repo):
     data = json.loads(result.stdout)
     assert data["status"] == "ok"
 
-    # All 9 step results
+    # All 10 step results
     assert data["steps"]["pr_close"] == "skipped"
     assert data["steps"]["worktree"] == "removed"
     assert data["steps"]["remote_branch"].startswith("failed:")  # no remote
@@ -230,6 +247,7 @@ def test_cleanup_full_happy_path(git_repo):
     assert data["steps"]["log_file"] == "deleted"
     assert data["steps"]["ci_sentinel"] == "skipped"
     assert data["steps"]["timings_file"] == "skipped"
+    assert data["steps"]["closed_issues_file"] == "skipped"
     assert data["steps"]["issues_file"] == "skipped"
 
     # All 3 filesystem effects
@@ -483,6 +501,28 @@ def test_dag_file_unlink_failure(git_repo, monkeypatch):
     assert steps["dag_file"].startswith("failed:")
 
 
+def test_closed_issues_file_unlink_failure(git_repo, monkeypatch):
+    wt_rel = _setup_feature(git_repo)
+    closed = git_repo / ".flow-states" / "test-feature-closed-issues.json"
+    closed.write_text('[{"number": 42}]')
+    original_unlink = closed.unlink.__func__
+
+    call_count = 0
+
+    # state_file=1, log_file=2, closed_issues=3 (frozen_phases + ci_sentinel + timings skipped)
+    def _fail_third_unlink(self, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 3:
+            raise PermissionError("no permission")
+        return original_unlink(self, *args, **kwargs)
+
+    from pathlib import PosixPath
+    monkeypatch.setattr(PosixPath, "unlink", _fail_third_unlink)
+    steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
+    assert steps["closed_issues_file"].startswith("failed:")
+
+
 def test_issues_file_unlink_failure(git_repo, monkeypatch):
     wt_rel = _setup_feature(git_repo)
     issues = git_repo / ".flow-states" / "test-feature-issues.md"
@@ -491,7 +531,7 @@ def test_issues_file_unlink_failure(git_repo, monkeypatch):
 
     call_count = 0
 
-    # state_file=1, log_file=2, issues=3 (frozen_phases + ci_sentinel + timings skipped)
+    # state_file=1, log_file=2, issues=3 (frozen_phases + ci_sentinel + timings + closed_issues skipped)
     def _fail_third_unlink(self, *args, **kwargs):
         nonlocal call_count
         call_count += 1

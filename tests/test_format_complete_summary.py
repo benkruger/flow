@@ -62,7 +62,7 @@ def test_basic_summary():
 
 
 def test_summary_with_issues():
-    """Summary includes issues filed count when issues exist."""
+    """Summary includes issues filed with #N shorthand from short_issue_ref."""
     mod = _import_module()
     state = _all_complete_state()
     state["issues_filed"] = [
@@ -87,17 +87,16 @@ def test_summary_with_issues():
     result = mod.format_complete_summary(state)
 
     assert "Issues filed: 2" in result["summary"]
-    assert "[Rule] Test rule" in result["summary"]
+    # #N shorthand appears in the label line
+    assert "[Rule] #1 Test rule" in result["summary"]
+    assert "[Tech Debt] #2 Refactor X" in result["summary"]
+    # URLs still on next line
     assert "https://github.com/test/test/issues/1" in result["summary"]
-    assert "[Tech Debt] Refactor X" in result["summary"]
     assert "https://github.com/test/test/issues/2" in result["summary"]
-    # Old #N: format must not appear
-    assert "#1:" not in result["summary"]
-    assert "#2:" not in result["summary"]
 
 
 def test_summary_with_single_issue():
-    """Summary lists a single issue with label, number, and title."""
+    """Summary lists a single issue with label, #N shorthand, and title."""
     mod = _import_module()
     state = _all_complete_state()
     state["issues_filed"] = [
@@ -114,10 +113,8 @@ def test_summary_with_single_issue():
     result = mod.format_complete_summary(state)
 
     assert "Issues filed: 1" in result["summary"]
-    assert "[Flow] Fix routing logic" in result["summary"]
+    assert "[Flow] #42 Fix routing logic" in result["summary"]
     assert "https://github.com/test/test/issues/42" in result["summary"]
-    # Old #N: format must not appear
-    assert "#42:" not in result["summary"]
 
 
 def test_summary_with_issues_url_without_number():
@@ -142,6 +139,86 @@ def test_summary_with_issues_url_without_number():
     assert "https://example.com/custom-path" in result["summary"]
     # Old colon-joined format must not appear
     assert "https://example.com/custom-path: Some rule" not in result["summary"]
+
+
+def test_summary_with_resolved_issues():
+    """Summary includes Resolved section when closed_issues provided."""
+    mod = _import_module()
+    state = _all_complete_state()
+    closed = [
+        {"number": 407, "url": "https://github.com/test/test/issues/407"},
+    ]
+
+    result = mod.format_complete_summary(state, closed_issues=closed)
+
+    assert "Resolved" in result["summary"]
+    assert "#407" in result["summary"]
+    assert "https://github.com/test/test/issues/407" in result["summary"]
+
+
+def test_summary_with_multiple_resolved_issues():
+    """Summary lists each resolved issue on its own line."""
+    mod = _import_module()
+    state = _all_complete_state()
+    closed = [
+        {"number": 83, "url": "https://github.com/test/test/issues/83"},
+        {"number": 89, "url": "https://github.com/test/test/issues/89"},
+    ]
+
+    result = mod.format_complete_summary(state, closed_issues=closed)
+
+    assert "#83" in result["summary"]
+    assert "#89" in result["summary"]
+
+
+def test_summary_no_resolved_issues():
+    """Summary omits Resolved section when closed_issues is empty or None."""
+    mod = _import_module()
+    state = _all_complete_state()
+
+    result_none = mod.format_complete_summary(state, closed_issues=None)
+    result_empty = mod.format_complete_summary(state, closed_issues=[])
+
+    assert "Resolved" not in result_none["summary"]
+    assert "Resolved" not in result_empty["summary"]
+
+
+def test_summary_with_resolved_and_filed():
+    """Summary includes both Resolved and Issues filed sections."""
+    mod = _import_module()
+    state = _all_complete_state()
+    state["issues_filed"] = [
+        {
+            "label": "Tech Debt",
+            "title": "Refactor X",
+            "url": "https://github.com/test/test/issues/50",
+            "phase": "flow-code-review",
+            "phase_name": "Code Review",
+            "timestamp": "2026-01-01T00:00:00-08:00",
+        },
+    ]
+    closed = [
+        {"number": 407, "url": "https://github.com/test/test/issues/407"},
+    ]
+
+    result = mod.format_complete_summary(state, closed_issues=closed)
+
+    assert "Resolved" in result["summary"]
+    assert "#407" in result["summary"]
+    assert "Issues filed: 1" in result["summary"]
+    assert "[Tech Debt] #50 Refactor X" in result["summary"]
+
+
+def test_summary_resolved_without_url():
+    """Resolved issues without url show only #N."""
+    mod = _import_module()
+    state = _all_complete_state()
+    closed = [{"number": 42}]
+
+    result = mod.format_complete_summary(state, closed_issues=closed)
+
+    assert "Resolved" in result["summary"]
+    assert "#42" in result["summary"]
 
 
 def test_summary_with_notes():
@@ -273,6 +350,51 @@ def test_cli_happy_path(tmp_path):
     assert data["status"] == "ok"
     assert "Test Feature" in data["summary"]
     assert isinstance(data["total_seconds"], int)
+
+
+def test_cli_with_closed_issues_file(tmp_path):
+    """CLI with --closed-issues-file includes Resolved section."""
+    state = _all_complete_state()
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps(state))
+
+    closed = [
+        {"number": 407, "url": "https://github.com/test/test/issues/407"},
+    ]
+    closed_path = tmp_path / "closed.json"
+    closed_path.write_text(json.dumps(closed))
+
+    result = subprocess.run(
+        [sys.executable, SCRIPT,
+         "--state-file", str(state_path),
+         "--closed-issues-file", str(closed_path)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+    assert "Resolved" in data["summary"]
+    assert "#407" in data["summary"]
+
+
+def test_cli_missing_closed_issues_file(tmp_path):
+    """CLI with nonexistent --closed-issues-file gracefully omits Resolved section."""
+    state = _all_complete_state()
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps(state))
+
+    result = subprocess.run(
+        [sys.executable, SCRIPT,
+         "--state-file", str(state_path),
+         "--closed-issues-file", str(tmp_path / "nonexistent.json")],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+    assert "Resolved" not in data["summary"]
 
 
 def test_cli_missing_state_file(tmp_path):

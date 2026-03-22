@@ -51,15 +51,21 @@ def test_extracts_mixed_hash_and_url():
 # --- close_issues ---
 
 
-def test_closes_all_extracted_issues():
-    """Calls gh issue close for each extracted issue number."""
+def test_closes_all_extracted_issues_with_repo():
+    """Calls gh issue close for each issue, includes URLs when repo provided."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr="",
         )
-        result = _mod.close_issues([83, 89])
+        result = _mod.close_issues([83, 89], repo="test/test")
 
-    assert result == {"closed": [83, 89], "failed": []}
+    assert result == {
+        "closed": [
+            {"number": 83, "url": "https://github.com/test/test/issues/83"},
+            {"number": 89, "url": "https://github.com/test/test/issues/89"},
+        ],
+        "failed": [],
+    }
     assert mock_run.call_count == 2
     mock_run.assert_any_call(
         ["gh", "issue", "close", "83"],
@@ -69,6 +75,20 @@ def test_closes_all_extracted_issues():
         ["gh", "issue", "close", "89"],
         capture_output=True, text=True, timeout=30,
     )
+
+
+def test_closes_issues_without_repo():
+    """When repo is None, closed items have number but no url."""
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr="",
+        )
+        result = _mod.close_issues([42])
+
+    assert result == {
+        "closed": [{"number": 42}],
+        "failed": [],
+    }
 
 
 def test_no_issues_no_gh_calls():
@@ -93,15 +113,20 @@ def test_partial_failure():
         )
 
     with patch("subprocess.run", side_effect=side_effect):
-        result = _mod.close_issues([83, 89])
+        result = _mod.close_issues([83, 89], repo="test/test")
 
-    assert result == {"closed": [83], "failed": [89]}
+    assert result == {
+        "closed": [
+            {"number": 83, "url": "https://github.com/test/test/issues/83"},
+        ],
+        "failed": [89],
+    }
 
 
 def test_timeout_counts_as_failure():
     """TimeoutExpired on gh call adds issue to failed list."""
     with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30)):
-        result = _mod.close_issues([42])
+        result = _mod.close_issues([42], repo="test/test")
 
     assert result == {"closed": [], "failed": [42]}
 
@@ -113,6 +138,7 @@ def test_cli_integration(tmp_path):
     """Subprocess call with --state-file reads prompt and closes issues."""
     state = {
         "prompt": "fix #42 and #99",
+        "repo": "test/test",
         "branch": "test",
     }
     state_file = tmp_path / "state.json"
