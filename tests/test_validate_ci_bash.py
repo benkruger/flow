@@ -612,6 +612,14 @@ def test_validate_allows_no_redirect():
     assert message == ""
 
 
+def test_validate_allows_arrow_in_flag():
+    """Commands with => in flags are not blocked (lookbehind guards)."""
+    mod = _load_module()
+    allowed, message = mod.validate("git log --format=>%s")
+    assert allowed is True
+    assert message == ""
+
+
 def test_hook_exit_2_for_blocked_redirect():
     """Full subprocess test: redirect blocked by hook."""
     code, stderr = _run_hook("git show HEAD:file.py > /tmp/out.py")
