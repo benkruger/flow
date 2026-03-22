@@ -1,10 +1,13 @@
 """Run the target project's bin/ci with dirty-check optimization.
 
 Usage:
-  bin/flow ci [--force]
+  bin/flow ci [--force] [--simulate-branch <name>]
 
 By default, skips if nothing changed since the last passing run.
 With --force, always runs bin/ci regardless of sentinel state.
+With --simulate-branch, sets FLOW_SIMULATE_BRANCH in the child
+environment so current_branch() returns the simulated name during
+test execution. Does not affect sentinel naming.
 
 Output (JSON to stdout):
   Success:  {"status": "ok", "skipped": false}
@@ -86,6 +89,14 @@ def main():
             branch_override = args[idx + 1]
             args = args[:idx] + args[idx + 2:]
 
+    # Extract --simulate-branch from args (set in child env, not sentinel)
+    simulate_branch = None
+    if "--simulate-branch" in args:
+        idx = args.index("--simulate-branch")
+        if idx + 1 < len(args):
+            simulate_branch = args[idx + 1]
+            args = args[:idx] + args[idx + 2:]
+
     branch, _ = resolve_branch(branch_override)
     sentinel = (
         root / ".flow-states" / f"{branch}-ci-passed"
@@ -102,6 +113,11 @@ def main():
         if sentinel.read_text() == snapshot:
             print(json.dumps({"status": "ok", "skipped": True, "reason": "no changes since last CI pass"}))
             sys.exit(0)
+
+    # Set simulate-branch env var AFTER branch resolution (sentinel uses
+    # the real branch) and BEFORE subprocess.run (child inherits it).
+    if simulate_branch:
+        os.environ["FLOW_SIMULATE_BRANCH"] = simulate_branch
 
     result = subprocess.run(
         [str(bin_ci)],

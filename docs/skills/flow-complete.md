@@ -29,9 +29,11 @@ SOFT-GATE and dispatches via the Resume Check.
    If conflicts exist, sets `_continue_pending=commit` before invoking
    `/flow:flow-commit`, then self-invokes with `--continue-step` to resume
    at Step 4
-4. Checks CI status — waits for checks to pass (suggests `/loop` for pending).
-   If CI fails and ci-fixer commits a fix, uses the same self-invocation
-   pattern to loop back and re-check CI
+4. Checks CI status — first runs `bin/flow ci --force --simulate-branch main`
+   locally to catch branch-dependent test failures before merge, then checks
+   GitHub CI via `gh pr checks` (waits for checks to pass, suggests `/loop`
+   for pending). If CI fails at either stage, ci-fixer commits a fix and
+   self-invokes to re-check
 5. Confirms with the user (only when `--manual` is passed)
 6. Archives artifacts to the PR body: session log link (from transcript path),
    phase timings table (non-collapsible), state file, and session log dump.

@@ -10,6 +10,7 @@ Provides common functions used across multiple hook scripts:
 import fcntl
 import hashlib
 import json
+import os
 import re
 import subprocess
 from datetime import datetime
@@ -95,7 +96,14 @@ def current_branch():
     """Get the current git branch name.
 
     Returns None if not on a branch (e.g. detached HEAD) or if git fails.
+
+    If FLOW_SIMULATE_BRANCH is set in the environment, returns that value
+    instead of querying git. Used by ``bin/flow ci --simulate-branch`` to
+    catch branch-dependent test failures before merge.
     """
+    simulated = os.environ.get("FLOW_SIMULATE_BRANCH")
+    if simulated:
+        return simulated
     try:
         result = subprocess.run(
             ["git", "branch", "--show-current"],
