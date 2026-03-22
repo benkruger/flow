@@ -157,6 +157,7 @@ PLACEHOLDER_SUBS = {
     "<message_text>": "Phase complete",
     "<id>": "abc12345",
     "<repo>": "owner/repo",
+    "<project_name>": "My Project",
     "<due_date>": "2026-06-01",
     "<child_number>": "5",
     "<epic_number>": "1",

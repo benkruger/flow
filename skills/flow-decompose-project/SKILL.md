@@ -153,7 +153,7 @@ Present the full issue list as a table:
 
 | # | Title | Phase | Depends On |
 |---|-------|-------|------------|
-| 1 | Epic: <project name> | — | — |
+| 1 | Epic: <project_name> | — | — |
 | 2 | <first leaf task> | Phase 1: API | — |
 | 3 | <second task> | Phase 1: API | 2 |
 
@@ -212,7 +212,7 @@ Parse `owner/repo` from the remote URL.
 Create the milestone:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow create-milestone --repo <repo> --title "<project name>" --due-date <due_date>
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow create-milestone --repo <repo> --title "<project_name>" --due-date <due_date>
 ```
 
 Parse the JSON output. Record the milestone number.
@@ -221,7 +221,7 @@ Create the parent epic issue. Write the epic body to
 `.flow-states/decompose-project-<id>-epic-body` using the Write tool, then:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo <repo> --title "Epic: <project name>" --body-file .flow-states/decompose-project-<id>-epic-body
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo <repo> --title "Epic: <project_name>" --body-file .flow-states/decompose-project-<id>-epic-body
 ```
 
 Parse the JSON output. Record the epic issue number and database ID.
