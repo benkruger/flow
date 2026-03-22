@@ -10,9 +10,12 @@ Exit 2 — block (error message on stderr is fed back to the sub-agent)
 
 Validation layers (in order):
 1. Compound commands (&&, ;, |) — "Use separate Bash calls instead"
-2. File-read commands (cat, head, tail, grep, rg, find, ls) —
+2. Shell redirection (>, >>, 2>, etc.) — "Use Read/Write tools instead"
+3. Blanket restore (git restore .) — "Restore files individually"
+4. Deny list — command matches a deny pattern in settings.json
+5. File-read commands (cat, head, tail, grep, rg, find, ls) —
    "Use Read/Glob/Grep tools instead"
-3. Whitelist — command must match a Bash(...) allow pattern in
+6. Whitelist — command must match a Bash(...) allow pattern in
    .claude/settings.json. If settings.json is missing or unparseable,
    fall through (don't break non-FLOW projects).
 """
@@ -74,6 +77,13 @@ def validate(command, settings=None):
         return (False,
                 "BLOCKED: Compound commands (&&, ;, |) are not allowed. "
                 "Use separate Bash calls for each command.")
+
+    # Block shell redirection operators (>, >>, 2>, etc.)
+    if re.search(r"(?<![=\-])>{1,2}", command):
+        return (False,
+                "BLOCKED: Shell redirection (>, >>) is not allowed. "
+                "Use the Read tool to view file contents and the "
+                "Write tool to create files.")
 
     # Block blanket restore (git restore . wipes all changes without review)
     stripped = command.strip()
