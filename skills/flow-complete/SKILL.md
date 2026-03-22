@@ -194,8 +194,14 @@ needs only a single operation (self-invoke):
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
 ```
 
+If mode is **auto**, use the first form. If mode is **manual**, use the second:
+
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --auto."
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --manual."
 ```
 
 ```bash
@@ -238,8 +244,14 @@ self-invoke to re-check:
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
 ```
 
+If mode is **auto**, use the first form. If mode is **manual**, use the second:
+
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --auto."
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --manual."
 ```
 
 ```bash
@@ -249,6 +261,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 Commit the fixes via `/flow:flow-commit`.
 
 Self-invoke `flow:flow-complete --continue-step` to re-run Step 4.
+If mode was resolved to auto, pass `--auto` as well.
 
 If not fixed after 3 attempts, stop and report.
 
@@ -284,8 +297,14 @@ committing:
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
 ```
 
+If mode is **auto**, use the first form. If mode is **manual**, use the second:
+
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --auto."
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --manual."
 ```
 
 ```bash
