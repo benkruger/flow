@@ -14,8 +14,6 @@ import json
 import sys
 from pathlib import Path
 
-from flow_utils import current_branch, project_root
-
 
 def validate(state_path):
     """Validate that auto-continue is not active.
@@ -44,12 +42,15 @@ def main():
     except (json.JSONDecodeError, ValueError):
         sys.exit(0)
 
+    # Lazy import to avoid flow_utils module-level flow-phases.json load
+    # on every hook invocation — this hook only needs branch/root helpers.
+    from flow_utils import current_branch, project_root
+
     branch = current_branch()
-    root = project_root()
-    if not branch or not root:
+    if not branch:
         sys.exit(0)
 
-    state_path = Path(root) / ".flow-states" / f"{branch}.json"
+    state_path = project_root() / ".flow-states" / f"{branch}.json"
     allowed, message = validate(str(state_path))
     if not allowed:
         print(message, file=sys.stderr)
