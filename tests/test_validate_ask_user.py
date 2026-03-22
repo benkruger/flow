@@ -180,59 +180,59 @@ def test_project_root_returns_none_when_no_worktree_line(monkeypatch):
     assert result is None
 
 
-# --- In-process write_blocked() tests ---
+# --- In-process set_blocked() tests ---
 
 
-def test_write_blocked_sets_timestamp(state_dir, branch):
-    """write_blocked writes _blocked timestamp to state file."""
+def test_set_blocked_sets_timestamp(state_dir, branch):
+    """set_blocked writes _blocked timestamp to state file."""
     mod = _load_module()
     state = make_state(current_phase="flow-code")
     path = write_state(state_dir, branch, state)
-    mod.write_blocked(str(path))
+    mod.set_blocked(str(path))
     updated = json.loads(path.read_text())
     assert "_blocked" in updated
     assert isinstance(updated["_blocked"], str)
     assert len(updated["_blocked"]) > 0
 
 
-def test_write_blocked_no_state_file(tmp_path):
-    """write_blocked does nothing when state file does not exist."""
+def test_set_blocked_no_state_file(tmp_path):
+    """set_blocked does nothing when state file does not exist."""
     mod = _load_module()
-    mod.write_blocked(str(tmp_path / "nonexistent.json"))
+    mod.set_blocked(str(tmp_path / "nonexistent.json"))
     # Should not raise
 
 
-def test_write_blocked_none_path():
-    """write_blocked does nothing when path is None."""
+def test_set_blocked_none_path():
+    """set_blocked does nothing when path is None."""
     mod = _load_module()
-    mod.write_blocked(None)
+    mod.set_blocked(None)
     # Should not raise
 
 
-def test_write_blocked_corrupt_state(tmp_path):
-    """write_blocked fails open on corrupt JSON."""
+def test_set_blocked_corrupt_state(tmp_path):
+    """set_blocked fails open on corrupt JSON."""
     mod = _load_module()
     bad_file = tmp_path / "bad.json"
     bad_file.write_text("{bad json")
-    mod.write_blocked(str(bad_file))
+    mod.set_blocked(str(bad_file))
     # Should not raise
 
 
-def test_write_blocked_preserves_other_fields(state_dir, branch):
-    """write_blocked preserves existing state fields."""
+def test_set_blocked_preserves_other_fields(state_dir, branch):
+    """set_blocked preserves existing state fields."""
     mod = _load_module()
     state = make_state(current_phase="flow-code")
     state["session_id"] = "existing-session"
     state["notes"] = [{"note": "a correction"}]
     path = write_state(state_dir, branch, state)
-    mod.write_blocked(str(path))
+    mod.set_blocked(str(path))
     updated = json.loads(path.read_text())
     assert updated["session_id"] == "existing-session"
     assert updated["notes"] == [{"note": "a correction"}]
     assert "_blocked" in updated
 
 
-# --- Subprocess write_blocked tests ---
+# --- Subprocess set_blocked tests ---
 
 
 def test_hook_writes_blocked_on_allow(git_repo, state_dir, branch):
@@ -246,7 +246,7 @@ def test_hook_writes_blocked_on_allow(git_repo, state_dir, branch):
     assert isinstance(updated["_blocked"], str)
 
 
-def test_hook_does_not_write_blocked_when_blocking(git_repo, state_dir, branch):
+def test_hook_does_not_set_blocked_when_blocking(git_repo, state_dir, branch):
     """Hook does not write _blocked when blocking due to auto-continue."""
     state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
     state["_auto_continue"] = "/flow:flow-plan"

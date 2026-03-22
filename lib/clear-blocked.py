@@ -14,18 +14,19 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import mutate_state, project_root, resolve_branch
+from flow_utils import current_branch, mutate_state, project_root
 
 
 def clear_blocked(hook_input):
     """Clear _blocked from the active state file.
 
-    Resolves the current branch and project root, then removes
-    _blocked via mutate_state. If _blocked is not present, does nothing.
+    Uses current_branch() for direct branch resolution — not
+    resolve_branch() — to avoid the scan-all-state-files fallback
+    that could clear the wrong flow's flag in multi-flow environments.
     """
     try:
         root = project_root()
-        branch, _ = resolve_branch()
+        branch = current_branch()
         if not branch:
             return
 

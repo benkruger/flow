@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from flow_utils import mutate_state, now
 
 
-def write_blocked(state_path):
+def set_blocked(state_path):
     """Write _blocked timestamp to the state file.
 
     Best-effort: any error is silently ignored so the hook
@@ -99,7 +99,7 @@ def main():
         print(message, file=sys.stderr)
         sys.exit(2)
 
-    write_blocked(str(state_path))
+    set_blocked(str(state_path))
     sys.exit(0)
 
 
