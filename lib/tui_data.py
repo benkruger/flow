@@ -54,6 +54,7 @@ def phase_timeline(state):
     """Build a list of phase display entries from a state dict."""
     phases = state.get("phases", {})
     code_task = state.get("code_task", 0)
+    code_tasks_total = state.get("code_tasks_total", 0)
     diff_stats = state.get("diff_stats")
     entries = []
 
@@ -68,7 +69,8 @@ def phase_timeline(state):
 
         annotation = ""
         if key == "flow-code" and status == "in_progress" and code_task > 0:
-            parts = [f"task {code_task}"]
+            task_str = f"task {code_task} of {code_tasks_total}" if code_tasks_total > 0 else f"task {code_task}"
+            parts = [task_str]
             if diff_stats:
                 ins = diff_stats.get("insertions", 0)
                 dels = diff_stats.get("deletions", 0)
