@@ -1690,32 +1690,32 @@ def test_phase_1_hard_gate_requires_rerun_with_arguments():
 
 
 def test_start_step_2_has_ci_fix_subagent():
-    """Step 2 must launch the ci-fixer sub-agent for CI failures on main."""
+    """Step 3 (locked main) must launch the ci-fixer sub-agent for CI failures."""
     content = _read_skill("flow-start")
-    step2_match = re.search(
-        r"### Step 2.*?\n(.*?)(?=\n### Step 3)", content, re.DOTALL
+    step3_match = re.search(
+        r"### Step 3.*?\n(.*?)(?=\n### Step 4)", content, re.DOTALL
     )
-    assert step2_match, "Could not find Step 2 in flow-start/SKILL.md"
-    step2_text = step2_match.group(1)
-    assert "ci-fixer" in step2_text, (
-        "flow-start Step 2 must reference the ci-fixer sub-agent "
+    assert step3_match, "Could not find Step 3 in flow-start/SKILL.md"
+    step3_text = step3_match.group(1)
+    assert "ci-fixer" in step3_text, (
+        "flow-start Step 3 must reference the ci-fixer sub-agent "
         "for automatic CI fix"
     )
-    assert "sub-agent" in step2_text.lower() or "Agent" in step2_text, (
-        "flow-start Step 2 must reference launching a sub-agent"
+    assert "sub-agent" in step3_text.lower() or "Agent" in step3_text, (
+        "flow-start Step 3 must reference launching a sub-agent"
     )
 
 
 def test_start_ci_fixes_committed_via_flow_commit():
-    """CI fixes on main must be committed via /flow:flow-commit in Step 2."""
+    """CI fixes on main must be committed via /flow:flow-commit in Step 3."""
     content = _read_skill("flow-start")
-    step2_match = re.search(
-        r"### Step 2.*?\n(.*?)(?=\n### Step 3)", content, re.DOTALL
+    step3_match = re.search(
+        r"### Step 3.*?\n(.*?)(?=\n### Step 4)", content, re.DOTALL
     )
-    assert step2_match, "Could not find Step 2 in flow-start/SKILL.md"
-    step2_text = step2_match.group(1)
-    assert "/flow:flow-commit" in step2_text, (
-        "flow-start Step 2 must commit CI fixes via /flow:flow-commit"
+    assert step3_match, "Could not find Step 3 in flow-start/SKILL.md"
+    step3_text = step3_match.group(1)
+    assert "/flow:flow-commit" in step3_text, (
+        "flow-start Step 3 must commit CI fixes via /flow:flow-commit"
     )
 
 
@@ -1907,29 +1907,29 @@ def test_code_review_has_self_invocation_check():
 
 
 def test_start_step_2_acquires_lock():
-    """Step 2 must acquire the start lock before CI and dependency work."""
+    """Step 3 (locked main) must acquire the start lock."""
     content = _read_skill("flow-start")
-    step2_match = re.search(
-        r"### Step 2.*?\n(.*?)(?=\n### Step 3)", content, re.DOTALL
+    step3_match = re.search(
+        r"### Step 3.*?\n(.*?)(?=\n### Step 4)", content, re.DOTALL
     )
-    assert step2_match, "Could not find Step 2 in flow-start/SKILL.md"
-    step2_text = step2_match.group(1)
-    assert "start-lock" in step2_text, (
-        "flow-start Step 2 must reference start-lock for serialization"
+    assert step3_match, "Could not find Step 3 in flow-start/SKILL.md"
+    step3_text = step3_match.group(1)
+    assert "start-lock" in step3_text, (
+        "flow-start Step 3 must reference start-lock for serialization"
     )
 
 
 def test_start_step_2_has_two_ci_gates():
-    """Step 2 must have two bin/flow ci calls (baseline + post-deps)."""
+    """Step 3 (locked main) must have two bin/flow ci calls."""
     content = _read_skill("flow-start")
-    step2_match = re.search(
-        r"### Step 2.*?\n(.*?)(?=\n### Step 3)", content, re.DOTALL
+    step3_match = re.search(
+        r"### Step 3.*?\n(.*?)(?=\n### Step 4)", content, re.DOTALL
     )
-    assert step2_match, "Could not find Step 2 in flow-start/SKILL.md"
-    step2_text = step2_match.group(1)
-    ci_count = step2_text.count("bin/flow ci")
+    assert step3_match, "Could not find Step 3 in flow-start/SKILL.md"
+    step3_text = step3_match.group(1)
+    ci_count = step3_text.count("bin/flow ci")
     assert ci_count >= 2, (
-        f"flow-start Step 2 must have at least 2 bin/flow ci calls "
+        f"flow-start Step 3 must have at least 2 bin/flow ci calls "
         f"(baseline + post-deps), found {ci_count}"
     )
 

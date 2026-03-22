@@ -95,7 +95,7 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ## Logging
 
-After every Bash command in Steps 2–3, log it to `.flow-states/<branch>.log`
+After every Bash command in Steps 2–4, log it to `.flow-states/<branch>.log`
 using `bin/flow log`. Step 3 handles its own logging internally via start-setup.
 
 Run the command first, then log the result. Pipeline the log call with the
@@ -162,7 +162,25 @@ Do NOT proceed if version check fails. Show the error message and stop.
 ```
 ````
 
-### Step 2 — Prepare main (locked)
+### Step 2 — Create early state file
+
+Create the state file immediately so the TUI can see this flow during
+the locked main operations in Step 3. The state file has null PR fields
+at this point — start-setup backfills them after PR creation.
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>"
+```
+
+If `--auto` was passed to this skill invocation, also pass `--auto`:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --auto
+```
+
+Parse the JSON output. If `"status": "error"`, report the error and stop.
+
+### Step 3 — Prepare main (locked)
 
 This step serializes all main-branch work behind a lock. Only one
 flow-start runs this section at a time. Concurrent starts wait until
@@ -256,11 +274,11 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release
 ```
 
 <HARD-GATE>
-Do NOT proceed to Step 3 until the lock is released and `bin/flow ci` is green.
+Do NOT proceed to Step 4 until the lock is released and `bin/flow ci` is green.
 Uncommitted fixes on main will not appear in the worktree.
 </HARD-GATE>
 
-### Step 3 — Set up workspace
+### Step 4 — Set up workspace
 
 Write the user's original start prompt (verbatim, including `#N` issue references
 and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
@@ -284,7 +302,7 @@ The script performs these operations in a single process:
 
 1. `git worktree add .worktrees/<branch> -b <branch>`
 2. `git commit --allow-empty` + `git push -u origin` + `gh pr create`
-3. Create `.flow-states/<branch>.json` (initial state, all 6 phases)
+3. Backfill `pr_number`, `pr_url`, `repo`, and `prompt` into the existing state file
 
 The script logs each operation to `.flow-states/<branch>.log` internally.
 
@@ -313,7 +331,7 @@ in later steps — it would look for a nested `.worktrees/` that doesn't exist.
 If the script returns an error, read the stderr output for details, report
 the failure to the user, and stop.
 
-### Step 4 — Label referenced issues
+### Step 5 — Label referenced issues
 
 If the start prompt contains `#N` issue references, add the "Flow In-Progress"
 label so other engineers can see these issues are being worked on:

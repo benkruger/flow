@@ -295,11 +295,12 @@ def main():
         # Update or create state file
         state_path = project_root / ".flow-states" / f"{branch}.json"
         if state_path.exists():
-            # Backfill PR fields into existing state file (created by init-state)
+            # Backfill PR fields and prompt into existing state file (created by init-state)
             def _backfill(state):
                 state["pr_number"] = pr_number
                 state["pr_url"] = pr_url
                 state["repo"] = repo
+                state["prompt"] = raw_prompt
             mutate_state(state_path, _backfill)
             append_log(branch, f"[Phase 1] backfill .flow-states/{branch}.json (exit 0)")
         else:
