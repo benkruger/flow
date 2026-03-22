@@ -11,9 +11,10 @@ Exit 2 — block (error message on stderr)
 """
 
 import json
-import subprocess
 import sys
 from pathlib import Path
+
+from flow_utils import current_branch, project_root
 
 
 def validate(state_path):
@@ -37,37 +38,14 @@ def validate(state_path):
             f"BLOCKED: Auto-continue is active. Invoke {auto_cmd} now.")
 
 
-def _current_branch():
-    """Get current branch name via git."""
-    result = subprocess.run(
-        ["git", "branch", "--show-current"],
-        capture_output=True, text=True,
-    )
-    return result.stdout.strip() if result.returncode == 0 else None
-
-
-def _project_root():
-    """Get project root via git worktree list."""
-    result = subprocess.run(
-        ["git", "worktree", "list", "--porcelain"],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        return None
-    for line in result.stdout.splitlines():
-        if line.startswith("worktree "):
-            return line.split(" ", 1)[1]
-    return None
-
-
 def main():
     try:
         json.load(sys.stdin)
     except (json.JSONDecodeError, ValueError):
         sys.exit(0)
 
-    branch = _current_branch()
-    root = _project_root()
+    branch = current_branch()
+    root = project_root()
     if not branch or not root:
         sys.exit(0)
 

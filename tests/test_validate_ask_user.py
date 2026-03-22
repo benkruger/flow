@@ -153,28 +153,3 @@ def test_hook_allows_outside_git_repo(tmp_path):
     empty.mkdir()
     code, stderr = _run_hook(empty)
     assert code == 0
-
-
-# --- In-process helper function tests ---
-
-
-def test_project_root_returns_none_on_git_failure(tmp_path, monkeypatch):
-    """_project_root returns None when git worktree list fails."""
-    mod = _load_module()
-    monkeypatch.chdir(tmp_path)
-    result = mod._project_root()
-    assert result is None
-
-
-def test_project_root_returns_none_when_no_worktree_line(monkeypatch):
-    """_project_root returns None when output has no worktree line."""
-    mod = _load_module()
-    import subprocess as sp
-
-    class FakeResult:
-        returncode = 0
-        stdout = "bare\n"
-
-    monkeypatch.setattr(sp, "run", lambda *a, **kw: FakeResult())
-    result = mod._project_root()
-    assert result is None
