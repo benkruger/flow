@@ -1,0 +1,12 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+		00000001 /* Calculator.swift */ = {isa = PBXFileReference; path = Calculator.swift; sourceTree = "<group>"; };
+		00000002 /* CalculatorTests.swift */ = {isa = PBXFileReference; path = CalculatorTests.swift; sourceTree = "<group>"; };
+	};
+	rootObject = 00000000;
+}

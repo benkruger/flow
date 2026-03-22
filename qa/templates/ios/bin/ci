@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+xcodebuild test \
+  -project FlowQA.xcodeproj \
+  -scheme FlowQA \
+  -destination 'platform=macOS' \
+  -quiet
