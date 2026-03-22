@@ -23,9 +23,15 @@ Begins a new feature. This is always the first command run for any piece of work
 ## What It Does
 
 1. Pre-flight: runs version gate and upgrade check in parallel
-2. Prepare main (locked): acquires a lock so only one start runs at a time (concurrent starts wait internally via `--wait` with a 5-minute timeout), pulls main, runs `bin/flow ci` for a clean baseline, updates dependencies on main via `bin/dependencies`, runs `bin/flow ci` again to catch dep-induced breakage, commits everything to main, releases lock. The ci-fixer sub-agent handles failures at both CI gates
-3. Runs `lib/start-setup.py` — worktree creation, empty commit + push + PR, and state file creation. The user's raw input (including `#N` issue references) is written to `.flow-states/<branch>-start-prompt` and passed via `--prompt-file` so it is preserved verbatim in the state file for issue closing at completion
-4. Labels referenced issues — if the prompt contains `#N` issue references, adds the "Flow In-Progress" label so other engineers can see these issues are being worked on
+2. Acquires a start lock so only one start runs at a time (concurrent starts wait internally via `--wait` with a 5-minute timeout)
+3. Pulls latest main
+4. Runs `bin/flow ci` for a clean baseline — ci-fixer sub-agent handles failures
+5. Updates dependencies on main via `bin/dependencies`
+6. Runs `bin/flow ci` again to catch dep-induced breakage — ci-fixer handles failures
+7. Commits any changes to main
+8. Releases the start lock
+9. Runs `lib/start-setup.py` — worktree creation, empty commit + push + PR, and state file creation. The user's raw input (including `#N` issue references) is written to `.flow-states/<branch>-start-prompt` and passed via `--prompt-file` so it is preserved verbatim in the state file for issue closing at completion
+10. Labels referenced issues — if the prompt contains `#N` issue references, adds the "Flow In-Progress" label so other engineers can see these issues are being worked on
 
 ---
 
