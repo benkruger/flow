@@ -43,8 +43,12 @@ def create_milestone(repo, title, due_date):
     except json.JSONDecodeError:
         return None, f"Invalid JSON response: {result.stdout.strip()}"
 
+    number = data.get("number")
+    if number is None:
+        return None, f"API response missing 'number' field"
+
     return {
-        "number": data["number"],
+        "number": number,
         "url": data.get("html_url", ""),
     }, None
 

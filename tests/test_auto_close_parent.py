@@ -17,6 +17,84 @@ auto_close_mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(auto_close_mod)
 
 
+class TestFetchIssueFields:
+    """Tests for _fetch_issue_fields — single API call for both fields."""
+
+    def test_returns_both_fields(self):
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout='{"parent_issue": {"number": 10}, "milestone": {"number": 3}}\n',
+            stderr="",
+        )
+        with patch.object(auto_close_mod.subprocess, "run",
+                          return_value=fake_result):
+            parent, milestone = auto_close_mod._fetch_issue_fields("o/r", 5)
+
+        assert parent == 10
+        assert milestone == 3
+
+    def test_no_parent_no_milestone(self):
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout='{}\n',
+            stderr="",
+        )
+        with patch.object(auto_close_mod.subprocess, "run",
+                          return_value=fake_result):
+            parent, milestone = auto_close_mod._fetch_issue_fields("o/r", 5)
+
+        assert parent is None
+        assert milestone is None
+
+    def test_api_failure_returns_none_none(self):
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="Not Found",
+        )
+        with patch.object(auto_close_mod.subprocess, "run",
+                          return_value=fake_result):
+            parent, milestone = auto_close_mod._fetch_issue_fields("o/r", 5)
+
+        assert parent is None
+        assert milestone is None
+
+    def test_invalid_json_returns_none_none(self):
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="not json\n", stderr="",
+        )
+        with patch.object(auto_close_mod.subprocess, "run",
+                          return_value=fake_result):
+            parent, milestone = auto_close_mod._fetch_issue_fields("o/r", 5)
+
+        assert parent is None
+        assert milestone is None
+
+    def test_parent_not_dict_returns_none(self):
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout='{"parent_issue": "not_a_dict", "milestone": {"number": 3}}\n',
+            stderr="",
+        )
+        with patch.object(auto_close_mod.subprocess, "run",
+                          return_value=fake_result):
+            parent, milestone = auto_close_mod._fetch_issue_fields("o/r", 5)
+
+        assert parent is None
+        assert milestone == 3
+
+    def test_milestone_number_not_int_returns_none(self):
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout='{"parent_issue": {"number": 10}, "milestone": {"number": "not_int"}}\n',
+            stderr="",
+        )
+        with patch.object(auto_close_mod.subprocess, "run",
+                          return_value=fake_result):
+            parent, milestone = auto_close_mod._fetch_issue_fields("o/r", 5)
+
+        assert parent == 10
+        assert milestone is None
+
+
 class TestCheckParent:
     """Tests for check_parent_closed."""
 

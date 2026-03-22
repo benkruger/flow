@@ -125,8 +125,7 @@ def main():
     repo = args.repo
     if repo is None and args.state_file:
         try:
-            from pathlib import Path as _Path
-            state = json.loads(_Path(args.state_file).read_text())
+            state = json.loads(Path(args.state_file).read_text())
             repo = state.get("repo")
         except (OSError, json.JSONDecodeError):
             pass

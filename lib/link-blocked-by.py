@@ -15,30 +15,11 @@ import argparse
 import json
 import subprocess
 import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-def resolve_database_id(repo, issue_number):
-    """Resolve an issue number to its REST API database ID.
-
-    Returns (id, error). id is an integer or None.
-    """
-    try:
-        result = subprocess.run(
-            ["gh", "api", f"repos/{repo}/issues/{issue_number}",
-             "--jq", ".id"],
-            capture_output=True, text=True, timeout=30,
-        )
-    except subprocess.TimeoutExpired:
-        return None, "gh api timed out after 30 seconds"
-
-    if result.returncode != 0:
-        error = result.stderr.strip() or "Unknown error"
-        return None, error
-
-    try:
-        return int(result.stdout.strip()), None
-    except (ValueError, TypeError):
-        return None, f"Invalid ID from API: {result.stdout.strip()}"
+from issue import fetch_database_id as resolve_database_id
 
 
 def link_blocked_by(repo, blocked_number, blocking_number):

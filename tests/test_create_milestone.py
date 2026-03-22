@@ -71,6 +71,21 @@ class TestCreateMilestone:
         assert result is None
         assert "timed out" in error.lower()
 
+    def test_missing_number_field(self):
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout='{"html_url": "https://github.com/o/r/milestone/1"}\n',
+            stderr="",
+        )
+        with patch.object(milestone_mod.subprocess, "run",
+                          return_value=fake_result):
+            result, error = milestone_mod.create_milestone(
+                "owner/repo", "Test", "2026-01-01",
+            )
+
+        assert result is None
+        assert "missing" in error.lower()
+
     def test_invalid_json_response(self):
         fake_result = subprocess.CompletedProcess(
             args=[], returncode=0,
