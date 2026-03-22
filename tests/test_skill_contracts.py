@@ -2415,9 +2415,9 @@ def test_complete_sets_continue_pending_before_commit():
             break
         flag_positions.append(pos)
         start = pos + 1
-    assert len(flag_positions) >= 2, (
-        "Complete must set _continue_pending=commit at least twice "
-        f"(Step 3 and Step 4), found {len(flag_positions)}"
+    assert len(flag_positions) >= 3, (
+        "Complete must set _continue_pending=commit at least three times "
+        f"(Steps 3, 4, and 5), found {len(flag_positions)}"
     )
     # Each flag must precede a /flow:flow-commit
     for i, flag_pos in enumerate(flag_positions):
