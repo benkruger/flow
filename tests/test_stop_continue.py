@@ -9,7 +9,13 @@ from pathlib import Path
 import pytest
 
 from conftest import LIB_DIR, make_state, write_state
-from flow_utils import format_tab_color, format_tab_title, write_tab_sequences
+from flow_utils import (
+    PINNED_COLORS,
+    TAB_COLORS,
+    format_tab_color,
+    format_tab_title,
+    write_tab_sequences,
+)
 
 SCRIPT = LIB_DIR / "stop-continue.py"
 
@@ -747,6 +753,33 @@ class TestFormatTabColor:
 
     def test_no_args_returns_none(self):
         assert format_tab_color() is None
+
+    def test_pinned_repo_returns_pinned_color(self):
+        result = format_tab_color(repo="benkruger/hh")
+        assert result == (50, 120, 220)
+
+    def test_pinned_repo_via_state(self):
+        result = format_tab_color(self._state("benkruger/flow"))
+        assert result == (40, 180, 70)
+
+    def test_override_beats_pinned(self):
+        result = format_tab_color(repo="benkruger/flow", override=[1, 2, 3])
+        assert result == (1, 2, 3)
+
+    def test_non_pinned_repo_still_hashes(self):
+        result = format_tab_color(repo="other/repo")
+        assert result in TAB_COLORS
+
+    def test_all_pinned_repos(self):
+        expected = {
+            "benkruger/hh": (50, 120, 220),
+            "benkruger/salted-kitchen": (220, 130, 20),
+            "benkruger/flow": (40, 180, 70),
+        }
+        for repo, color in expected.items():
+            assert format_tab_color(repo=repo) == color
+        colors = [format_tab_color(repo=r) for r in expected]
+        assert len(set(colors)) == 3
 
 
 # --- set_tab_title tests ---

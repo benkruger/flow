@@ -363,12 +363,20 @@ TAB_COLORS = (
     (25, 25, 112),    # midnight blue
 )
 
+PINNED_COLORS = {
+    "benkruger/hh": (50, 120, 220),
+    "benkruger/salted-kitchen": (220, 130, 20),
+    "benkruger/flow": (40, 180, 70),
+}
+
 
 def format_tab_color(state=None, *, repo=None, override=None):
     """Return an (r, g, b) tuple for the terminal tab color.
 
-    Hashes repo against TAB_COLORS for deterministic color.
+    Precedence: override > pinned > hash.
     If override is a 3-element list/tuple, it is used instead.
+    If repo is in PINNED_COLORS, the pinned color is returned.
+    Otherwise hashes repo against TAB_COLORS for deterministic color.
     Returns None if repo is missing/empty and no valid override.
 
     repo can be provided directly via the keyword argument, or extracted
@@ -381,6 +389,9 @@ def format_tab_color(state=None, *, repo=None, override=None):
         repo = state.get("repo", "")
     if not repo:
         return None
+
+    if repo in PINNED_COLORS:
+        return PINNED_COLORS[repo]
 
     digest = hashlib.sha256(repo.encode()).digest()
     index = int.from_bytes(digest[:4], "big") % len(TAB_COLORS)
