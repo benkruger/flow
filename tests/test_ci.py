@@ -366,19 +366,16 @@ def test_simulate_branch_sets_env_var_for_child(ci_project):
 
 def test_simulate_branch_does_not_affect_sentinel_name(ci_project):
     """--simulate-branch does NOT change the sentinel file name."""
-    # Create a feature branch so it differs from the simulated "main"
+    # Create and switch to a feature branch so it differs from simulated "main"
     subprocess.run(
-        ["git", "branch", "my-feature"],
+        ["git", "switch", "-c", "my-feature"],
         cwd=str(ci_project), check=True, capture_output=True,
     )
-    subprocess.run(
-        ["git", "switch", "my-feature"],
-        cwd=str(ci_project), check=True, capture_output=True,
-    )
+    branch = _branch_name(ci_project)
     result = _run(ci_project, args=["--force", "--simulate-branch", "main"])
     assert result.returncode == 0
     # Sentinel should be named after the real git branch, not "main"
-    sentinel = ci_project / ".flow-states" / "my-feature-ci-passed"
+    sentinel = ci_project / ".flow-states" / f"{branch}-ci-passed"
     assert sentinel.exists()
     # There should be no "main-ci-passed" sentinel
     main_sentinel = ci_project / ".flow-states" / "main-ci-passed"
