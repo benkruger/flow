@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import detect_repo, project_root, read_version
+from flow_utils import detect_repo, project_root, read_version, write_tab_sequences
 from tui_data import (
     load_all_flows, load_orchestration, orchestration_summary,
     parse_log_entries, phase_timeline,
@@ -37,6 +37,8 @@ class TuiApp:
         self.stdscr = stdscr
         self.root = project_root()
         self.version = read_version()
+        repo = detect_repo(cwd=str(self.root))
+        self.repo_name = repo.split("/")[-1] if repo else None
         self.flows = []
         self.selected = 0
         self.view = "list"
@@ -81,6 +83,10 @@ class TuiApp:
         """Main loop."""
         curses.curs_set(0)
         self._init_colors()
+        try:
+            write_tab_sequences(repo=detect_repo(cwd=str(self.root)), root=str(self.root))
+        except Exception:
+            pass
         self.stdscr.timeout(REFRESH_MS)
         self.refresh_data()
 
@@ -144,11 +150,15 @@ class TuiApp:
         self._safe_addstr(row, col, orch_label, orch_attr)
 
     def _draw_header(self):
-        """Draw the shared version header, tab bar, and separator."""
+        """Draw the shared version header, repo name, tab bar, and separator."""
         _, max_x = self.stdscr.getmaxyx()
         border = "\u2500" * max_x
         self._safe_addstr(0, 0, border, curses.A_DIM)
-        self._safe_addstr(0, 2, f" FLOW v{self.version} ", self._color(COLOR_HEADER) | curses.A_BOLD)
+        version_text = f" FLOW v{self.version} "
+        self._safe_addstr(0, 2, version_text, self._color(COLOR_HEADER) | curses.A_BOLD)
+        if self.repo_name:
+            repo_col = 2 + len(version_text) + 1
+            self._safe_addstr(0, repo_col, self.repo_name.upper(), self._color(COLOR_ACTIVE) | curses.A_BOLD)
         self._draw_tab_bar(2)
         self._safe_addstr(3, 2, "\u2500" * min(54, max_x - 4), curses.A_DIM)
 
