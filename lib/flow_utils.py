@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -32,6 +33,57 @@ PHASE_ORDER = _config["order"]
 PHASE_NAMES = {key: _config["phases"][key]["name"] for key in PHASE_ORDER}
 COMMANDS = {key: _config["phases"][key]["command"] for key in PHASE_ORDER}
 PHASE_NUMBER = {key: i + 1 for i, key in enumerate(PHASE_ORDER)}
+
+# Phase skills use per-axis dicts; simple skills use a plain "auto" string.
+AUTO_SKILLS = {
+    "flow-start": {"continue": "auto"},
+    "flow-plan": {"continue": "auto", "dag": "auto"},
+    "flow-code": {"commit": "auto", "continue": "auto"},
+    "flow-code-review": {"commit": "auto", "continue": "auto", "code_review_plugin": "never"},
+    "flow-learn": {"commit": "auto", "continue": "auto"},
+    "flow-abort": "auto",
+    "flow-complete": "auto",
+}
+
+
+def freeze_phases(project_root, branch):
+    """Copy flow-phases.json to .flow-states/<branch>-phases.json."""
+    dest_dir = project_root / ".flow-states"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{branch}-phases.json"
+    shutil.copy2(_phases_json, dest)
+
+
+def build_initial_phases(current_time):
+    """Build the initial phases dict for a new state file.
+
+    The first phase in PHASE_ORDER is set to in_progress with timestamps
+    and visit_count=1. All other phases are set to pending with null
+    timestamps and visit_count=0.
+    """
+    phases = {}
+    for i, key in enumerate(PHASE_ORDER):
+        if i == 0:
+            phases[key] = {
+                "name": PHASE_NAMES[key],
+                "status": "in_progress",
+                "started_at": current_time,
+                "completed_at": None,
+                "session_started_at": current_time,
+                "cumulative_seconds": 0,
+                "visit_count": 1,
+            }
+        else:
+            phases[key] = {
+                "name": PHASE_NAMES[key],
+                "status": "pending",
+                "started_at": None,
+                "completed_at": None,
+                "session_started_at": None,
+                "cumulative_seconds": 0,
+                "visit_count": 0,
+            }
+    return phases
 
 
 def load_phase_config(path):
