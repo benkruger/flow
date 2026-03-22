@@ -8,6 +8,7 @@
       "Bash(gh release create *)",
       "Bash(gh run list *)",
       "Bash(gh issue *)",
+      "Bash(gh label *)",
       "Bash(bin/*)",
       "Bash(*bin/flow *)",
       "Bash(claude plugin marketplace add *)",
