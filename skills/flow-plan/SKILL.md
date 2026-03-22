@@ -356,6 +356,15 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.plan=<plan_file_pa
 
 Replace `<plan_file_path>` with the relative path `.flow-states/<branch>-plan.md`.
 
+Count the total number of implementation tasks in the Tasks section of
+the plan file and store the count for TUI progress display:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_tasks_total=<n>
+```
+
+Replace `<n>` with the total task count from the plan.
+
 Render the complete PR body (artifacts, plan, DAG, timings, and state
 are all derived from the state file automatically):
 

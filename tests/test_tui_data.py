@@ -261,6 +261,68 @@ def test_phase_timeline_code_no_annotation():
     assert code_entry["annotation"] == ""
 
 
+def test_phase_timeline_code_with_total():
+    """Code phase shows 'task 3 of 8' when code_tasks_total is present."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    state["code_task"] = 3
+    state["code_tasks_total"] = 8
+
+    timeline = tui_data.phase_timeline(state)
+    code_entry = timeline[2]
+    assert "task 3 of 8" in code_entry["annotation"]
+
+
+def test_phase_timeline_code_total_absent_fallback():
+    """Falls back to 'task 3' when code_tasks_total is absent."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    state["code_task"] = 3
+
+    timeline = tui_data.phase_timeline(state)
+    code_entry = timeline[2]
+    assert code_entry["annotation"] == "task 3"
+    assert "of" not in code_entry["annotation"]
+
+
+def test_phase_timeline_code_total_with_diff_stats():
+    """Shows 'task 3 of 8, +127 -48' when all fields present."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    state["code_task"] = 3
+    state["code_tasks_total"] = 8
+    state["diff_stats"] = {"insertions": 127, "deletions": 48}
+
+    timeline = tui_data.phase_timeline(state)
+    code_entry = timeline[2]
+    assert code_entry["annotation"] == "task 3 of 8, +127 -48"
+
+
+def test_phase_timeline_code_total_zero_ignored():
+    """code_tasks_total=0 treated as absent (no 'of 0')."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    state["code_task"] = 3
+    state["code_tasks_total"] = 0
+
+    timeline = tui_data.phase_timeline(state)
+    code_entry = timeline[2]
+    assert code_entry["annotation"] == "task 3"
+    assert "of" not in code_entry["annotation"]
+
+
 # --- parse_log_entries ---
 
 

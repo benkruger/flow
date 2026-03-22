@@ -103,8 +103,8 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `schema_version` | integer | Schema version marker — currently `1` |
 | `branch` | string | Git branch name — slug format. Canonical identity field. Feature name and worktree path are derived from this at read time |
 | `repo` | string / null | GitHub repo in `owner/repo` format, cached during `/flow-start`. Used by `issue.py` to avoid repeated `git remote` calls. Null if detection fails |
-| `pr_number` | integer | GitHub PR number |
-| `pr_url` | string | Full GitHub PR URL |
+| `pr_number` | integer / null | GitHub PR number. Null during early Start (before PR creation) when created by `init-state` — backfilled by `start-setup` after PR creation |
+| `pr_url` | string / null | Full GitHub PR URL. Null during early Start — backfilled by `start-setup` after PR creation |
 | `started_at` | ISO 8601 | When the feature was started (Phase 1 entry) |
 | `current_phase` | string | The currently active phase key (e.g. `"flow-code"`) |
 | `framework` | string | `"rails"`, `"python"`, or `"ios"` — set during `/flow-prime`, copied to state by `/flow-start` |
@@ -114,6 +114,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `transcript_path` | string / null | Absolute path to session transcript .jsonl — set by Stop hook from hook stdin |
 | `skills` | object / absent | Per-skill autonomy settings copied from `.flow.json` by `/flow-start` — see [Skills Object](#skills-object) |
 | `code_review_step` | integer | Last completed Code Review step (0-4). Set to 0 on phase entry, incremented after each step. Used for resume after context compaction. |
+| `code_tasks_total` | integer / absent | Total number of implementation tasks from the plan. Set by Phase 2 (Plan) Step 4 via `set-timestamp`. Used by the TUI to show "task 3 of 8" in the Code phase annotation. Absent in state files created before v0.40 |
 | `_continue_pending` | string | Child skill or action currently executing. Phase skills set this before invoking a child skill so the Stop hook (`stop-continue.py`) blocks the turn from ending and forces continuation. Values are either a child skill name (`review`, `security-review`, `code-review:code-review`, `local-permission`) or the action `commit` (used by flow-code, flow-code-review, flow-learn, and flow-complete when invoking `/flow:flow-commit`). Cleared by the Stop hook after forcing continuation. Empty string or absent means no continuation pending. |
 | `_continue_context` | string | Specific next-step instructions for the model after a child skill returns. Written by phase skills before `_continue_pending`, read and cleared by the Stop hook. Included in the block reason so the model knows what to do after the turn boundary. Empty string or absent means use the generic fallback message. |
 | `_blocked` | ISO 8601 / null | Timestamp when the flow was blocked on AskUserQuestion. Set by PreToolUse hook (`validate-ask-user.py`) when allowing a prompt through. Cleared by PostToolUse hook (`clear-blocked.py`) after user responds and by Stop hook (`stop-continue.py`) as a safety net for crashed sessions. Transient. |
