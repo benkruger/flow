@@ -26,6 +26,26 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
+def _mock_tty(monkeypatch):
+    """Set up a fake /dev/tty and return the list that captures writes."""
+    written = []
+    fake_tty = type("FakeTTY", (), {
+        "write": lambda self, data: written.append(data),
+        "__enter__": lambda self: self,
+        "__exit__": lambda self, *a: None,
+    })()
+
+    original_open = open
+
+    def mock_open(path, *args, **kwargs):
+        if str(path) == "/dev/tty":
+            return fake_tty
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", mock_open)
+    return written
+
+
 # --- In-process tests ---
 
 
@@ -793,21 +813,7 @@ class TestSetTabTitle:
         )
         write_state(state_dir, branch, state)
 
-        written = []
-        fake_tty = type("FakeTTY", (), {
-            "write": lambda self, data: written.append(data),
-            "__enter__": lambda self: self,
-            "__exit__": lambda self, *a: None,
-        })()
-
-        original_open = open
-
-        def mock_open(path, *args, **kwargs):
-            if str(path) == "/dev/tty":
-                return fake_tty
-            return original_open(path, *args, **kwargs)
-
-        monkeypatch.setattr("builtins.open", mock_open)
+        written = _mock_tty(monkeypatch)
         _mod.set_tab_title()
 
         r, g, b = format_tab_color(state)
@@ -834,21 +840,7 @@ class TestSetTabTitle:
         write_state(state_dir, branch, state)
         (git_repo / ".flow.json").write_text(json.dumps({"tab_color": [99, 88, 77]}))
 
-        written = []
-        fake_tty = type("FakeTTY", (), {
-            "write": lambda self, data: written.append(data),
-            "__enter__": lambda self: self,
-            "__exit__": lambda self, *a: None,
-        })()
-
-        original_open = open
-
-        def mock_open(path, *args, **kwargs):
-            if str(path) == "/dev/tty":
-                return fake_tty
-            return original_open(path, *args, **kwargs)
-
-        monkeypatch.setattr("builtins.open", mock_open)
+        written = _mock_tty(monkeypatch)
         _mod.set_tab_title()
 
         assert len(written) == 1
@@ -923,21 +915,7 @@ class TestSetTabTitle:
         monkeypatch.chdir(git_repo)
         monkeypatch.setattr(_mod, "detect_repo", lambda: "test/test")
 
-        written = []
-        fake_tty = type("FakeTTY", (), {
-            "write": lambda self, data: written.append(data),
-            "__enter__": lambda self: self,
-            "__exit__": lambda self, *a: None,
-        })()
-
-        original_open = open
-
-        def mock_open(path, *args, **kwargs):
-            if str(path) == "/dev/tty":
-                return fake_tty
-            return original_open(path, *args, **kwargs)
-
-        monkeypatch.setattr("builtins.open", mock_open)
+        written = _mock_tty(monkeypatch)
         _mod.set_tab_title()
 
         assert len(written) == 1
@@ -975,21 +953,7 @@ class TestSetTabTitle:
         monkeypatch.setattr(_mod, "detect_repo", lambda: None)
         (git_repo / ".flow.json").write_text(json.dumps({"tab_color": [50, 60, 70]}))
 
-        written = []
-        fake_tty = type("FakeTTY", (), {
-            "write": lambda self, data: written.append(data),
-            "__enter__": lambda self: self,
-            "__exit__": lambda self, *a: None,
-        })()
-
-        original_open = open
-
-        def mock_open(path, *args, **kwargs):
-            if str(path) == "/dev/tty":
-                return fake_tty
-            return original_open(path, *args, **kwargs)
-
-        monkeypatch.setattr("builtins.open", mock_open)
+        written = _mock_tty(monkeypatch)
         _mod.set_tab_title()
 
         assert len(written) == 1
@@ -1015,21 +979,7 @@ class TestSetTabTitle:
         state["current_phase"] = "flow-unknown"
         write_state(state_dir, branch, state)
 
-        written = []
-        fake_tty = type("FakeTTY", (), {
-            "write": lambda self, data: written.append(data),
-            "__enter__": lambda self: self,
-            "__exit__": lambda self, *a: None,
-        })()
-
-        original_open = open
-
-        def mock_open(path, *args, **kwargs):
-            if str(path) == "/dev/tty":
-                return fake_tty
-            return original_open(path, *args, **kwargs)
-
-        monkeypatch.setattr("builtins.open", mock_open)
+        written = _mock_tty(monkeypatch)
         _mod.set_tab_title()
 
         assert len(written) == 1
@@ -1205,21 +1155,7 @@ class TestSetTabTitleWithParams:
         )
         write_state(state_dir, branch, state)
 
-        written = []
-        fake_tty = type("FakeTTY", (), {
-            "write": lambda self, data: written.append(data),
-            "__enter__": lambda self: self,
-            "__exit__": lambda self, *a: None,
-        })()
-
-        original_open = open
-
-        def mock_open(path, *args, **kwargs):
-            if str(path) == "/dev/tty":
-                return fake_tty
-            return original_open(path, *args, **kwargs)
-
-        monkeypatch.setattr("builtins.open", mock_open)
+        written = _mock_tty(monkeypatch)
         _mod.set_tab_title(root=git_repo, branch=branch)
 
         assert len(written) == 1
@@ -1239,22 +1175,7 @@ class TestWriteTabSequences:
 
     def _mock_tty(self, monkeypatch):
         """Set up a fake /dev/tty and return the list that captures writes."""
-        written = []
-        fake_tty = type("FakeTTY", (), {
-            "write": lambda self, data: written.append(data),
-            "__enter__": lambda self: self,
-            "__exit__": lambda self, *a: None,
-        })()
-
-        original_open = open
-
-        def mock_open(path, *args, **kwargs):
-            if str(path) == "/dev/tty":
-                return fake_tty
-            return original_open(path, *args, **kwargs)
-
-        monkeypatch.setattr("builtins.open", mock_open)
-        return written
+        return _mock_tty(monkeypatch)
 
     def test_writes_color_and_title_with_state(self, tmp_path, monkeypatch):
         """State dict with phase/branch/repo writes color + title to /dev/tty."""
