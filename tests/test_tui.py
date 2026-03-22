@@ -35,6 +35,7 @@ def _make_app(stdscr=None, root=None, flows=None, orch_data=None):
     if root is not None:
         app.root = Path(root)
     app.version = "0.36.2"
+    app.repo = "test/test"
     app.repo_name = "test"
     app.use_color = False
     if flows is not None:
@@ -70,6 +71,7 @@ def test_tui_app_init_sets_repo_name():
     with patch("tui.project_root", return_value=Path("/tmp/test")), \
          patch("tui.detect_repo", return_value="owner/myrepo"):
         app = tui.TuiApp(stdscr)
+    assert app.repo == "owner/myrepo"
     assert app.repo_name == "myrepo"
 
 
@@ -79,6 +81,7 @@ def test_tui_app_init_repo_name_none():
     with patch("tui.project_root", return_value=Path("/tmp/test")), \
          patch("tui.detect_repo", return_value=None):
         app = tui.TuiApp(stdscr)
+    assert app.repo is None
     assert app.repo_name is None
 
 
@@ -820,7 +823,7 @@ def test_run_calls_write_tab_sequences():
          patch.object(app, "_init_colors"), \
          patch("tui.write_tab_sequences") as mock_tabs:
         app.run()
-        mock_tabs.assert_called_once()
+        mock_tabs.assert_called_once_with(repo=app.repo, root=str(app.root))
 
 
 def test_run_write_tab_sequences_failure_ignored():

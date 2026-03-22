@@ -37,8 +37,8 @@ class TuiApp:
         self.stdscr = stdscr
         self.root = project_root()
         self.version = read_version()
-        repo = detect_repo(cwd=str(self.root))
-        self.repo_name = repo.split("/")[-1] if repo else None
+        self.repo = detect_repo(cwd=str(self.root))
+        self.repo_name = self.repo.split("/")[-1] if self.repo else None
         self.flows = []
         self.selected = 0
         self.view = "list"
@@ -84,7 +84,7 @@ class TuiApp:
         curses.curs_set(0)
         self._init_colors()
         try:
-            write_tab_sequences(repo=detect_repo(cwd=str(self.root)), root=str(self.root))
+            write_tab_sequences(repo=self.repo, root=str(self.root))
         except Exception:
             pass
         self.stdscr.timeout(REFRESH_MS)
