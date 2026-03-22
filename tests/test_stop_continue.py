@@ -1243,8 +1243,8 @@ class TestWriteTabSequences:
         assert f"\033]6;1;bg;red;brightness;{r}\007" in written[0]
         assert f"\033]6;1;bg;green;brightness;{g}\007" in written[0]
         assert f"\033]6;1;bg;blue;brightness;{b}\007" in written[0]
-        assert "\033]1;" in written[0]
-        assert "Test Feature" in written[0]
+        title = format_tab_title(state)
+        assert f"\033]1;{title}\007" in written[0]
 
     def test_writes_color_only_with_repo(self, tmp_path, monkeypatch):
         """repo kwarg without state writes only color sequences, no title."""
@@ -1323,7 +1323,7 @@ class TestWriteTabSequences:
         r, g, b = format_tab_color(state)
         assert f"\033]6;1;bg;red;brightness;{r}\007" in written[0]
 
-    def test_missing_flow_json_still_works(self, tmp_path, monkeypatch):
+    def test_missing_flow_json_uses_hash_color(self, tmp_path, monkeypatch):
         """No .flow.json file — uses hash-based color, no override."""
         monkeypatch.chdir(tmp_path)
         written = self._mock_tty(monkeypatch)

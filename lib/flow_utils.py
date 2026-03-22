@@ -390,6 +390,7 @@ def write_tab_sequences(state=None, *, repo=None, root=None):
 
     Args:
         state: FLOW state dict (optional). Used for title and color.
+            When provided, repo is ignored for color lookup.
         repo: GitHub repo string like "owner/repo" (optional). Used for
               color when no state is provided.
         root: Path to read .flow.json from (optional). Defaults to CWD.
