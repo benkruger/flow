@@ -7,6 +7,14 @@ Inserting a new phase shifts numbering. Every "Go back to Code" or
 "Go back to Plan" instruction in adjacent skills must reset all
 intermediate phases, including the new one.
 
+## Flat Sequential Step Numbering
+
+All steps in a SKILL.md must use flat sequential `### Step N` headings.
+Never use sub-step labels (1a, 1b, 2a–2g) or bold sub-step markers
+(`**2a.`). When a group of steps shares a logical context (e.g. steps
+that run under a lock), use a prose preamble before the first step in
+the group instead of nesting them under a parent step.
+
 ## Permission Safety
 
 Check the deny list before writing git commands in skills. `git
