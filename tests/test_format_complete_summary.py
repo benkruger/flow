@@ -378,6 +378,25 @@ def test_cli_with_closed_issues_file(tmp_path):
     assert "#407" in data["summary"]
 
 
+def test_cli_missing_closed_issues_file(tmp_path):
+    """CLI with nonexistent --closed-issues-file gracefully omits Resolved section."""
+    state = _all_complete_state()
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps(state))
+
+    result = subprocess.run(
+        [sys.executable, SCRIPT,
+         "--state-file", str(state_path),
+         "--closed-issues-file", str(tmp_path / "nonexistent.json")],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+    assert "Resolved" not in data["summary"]
+
+
 def test_cli_missing_state_file(tmp_path):
     """CLI with nonexistent state file returns error."""
     result = subprocess.run(

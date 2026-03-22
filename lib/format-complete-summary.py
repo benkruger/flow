@@ -74,9 +74,9 @@ def format_complete_summary(state, closed_issues=None):
         lines.append("")
         lines.append("  Resolved")
         lines.append("  " + "─" * 28)
-        for ci in closed_issues:
-            num = ci["number"]
-            url = ci.get("url", "")
+        for resolved in closed_issues:
+            num = resolved["number"]
+            url = resolved.get("url", "")
             if url:
                 lines.append(f"    #{num} {url}")
             else:
@@ -100,13 +100,9 @@ def format_complete_summary(state, closed_issues=None):
             lines.append(f"  Issues filed: {len(issues)}")
             for issue in issues:
                 url = issue.get("url", "")
-                ref = short_issue_ref(url) if url else ""
-                # Only include ref in label line if it's a #N shorthand
-                if ref.startswith("#"):
-                    label_line = f"    [{issue['label']}] {ref} {issue['title']}"
-                else:
-                    label_line = f"    [{issue['label']}] {issue['title']}"
-                lines.append(label_line)
+                shorthand = short_issue_ref(url) if url else ""
+                prefix = f"{shorthand} " if shorthand.startswith("#") else ""
+                lines.append(f"    [{issue['label']}] {prefix}{issue['title']}")
                 if url:
                     lines.append(f"    {url}")
         if notes:
