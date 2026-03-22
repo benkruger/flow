@@ -73,12 +73,15 @@ class TestCaptureSessionId:
         # Should not raise when not in a git repo
         _mod.capture_session_id({"session_id": "abc123"})
 
-    def test_corrupt_state_file(self, git_repo, state_dir, branch, monkeypatch):
+    def test_corrupt_state_file(self, git_repo, state_dir, branch, monkeypatch, capsys):
         monkeypatch.chdir(git_repo)
         (state_dir / f"{branch}.json").write_text("{bad json")
 
         # Should not raise on corrupt state file
         _mod.capture_session_id({"session_id": "abc123"})
+
+        captured = capsys.readouterr()
+        assert "[FLOW stop-continue] capture_session_id error:" in captured.err
 
     def test_updates_transcript_path(self, git_repo, state_dir, branch, monkeypatch):
         monkeypatch.chdir(git_repo)
@@ -276,7 +279,7 @@ class TestCheckContinueErrorReporting:
         log_path = state_dir / f"{branch}.log"
         assert log_path.exists()
         log_content = log_path.read_text()
-        assert "[stop-continue] ERROR:" in log_content
+        assert "[stop-continue] check_continue error:" in log_content
         assert "disk full" in log_content
 
     def test_no_crash_when_branch_unknown(self, tmp_path, monkeypatch, capsys):
@@ -324,7 +327,7 @@ class TestCheckContinueErrorReporting:
 
         log_path = state_dir / f"{branch}.log"
         log_content = log_path.read_text() if log_path.exists() else ""
-        assert "[stop-continue] ERROR:" not in log_content
+        assert "[stop-continue] check_continue error:" not in log_content
 
     def test_subprocess_corrupt_state_produces_stderr(self, git_repo, state_dir, branch):
         """Subprocess: corrupt state file with _continue_pending produces stderr diagnostic."""
@@ -1036,7 +1039,7 @@ class TestSetTabTitleErrorLogging:
         log_path = state_dir / f"{branch}.log"
         assert log_path.exists()
         log_content = log_path.read_text()
-        assert "[stop-continue] TAB ERROR:" in log_content
+        assert "[stop-continue] set_tab_title error:" in log_content
 
     def test_log_failure_does_not_propagate(self, git_repo, state_dir, branch, monkeypatch, capsys):
         """When both the main operation and log writing fail, no exception propagates."""
