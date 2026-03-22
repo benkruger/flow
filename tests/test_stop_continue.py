@@ -1061,3 +1061,44 @@ class TestMainErrorHandling:
 
         captured = capsys.readouterr()
         assert captured.out == ""
+
+
+class TestClearBlocked:
+    def test_clears_blocked_on_stop(self, git_repo, state_dir, branch, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_blocked"] = "2026-01-01T10:00:00-08:00"
+        write_state(state_dir, branch, state)
+
+        _mod.clear_blocked(root=git_repo, branch=branch)
+
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert "_blocked" not in updated
+
+    def test_no_blocked_flag_noop(self, git_repo, state_dir, branch, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        path = write_state(state_dir, branch, state)
+        original = path.read_text()
+
+        _mod.clear_blocked(root=git_repo, branch=branch)
+
+        assert path.read_text() == original
+
+    def test_no_state_file_noop(self, git_repo, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        # Should not raise
+        _mod.clear_blocked(root=git_repo, branch="nonexistent")
+
+    def test_no_branch_noop(self):
+        # Should not raise when branch is None
+        _mod.clear_blocked(root=Path("/tmp"), branch=None)
+
+    def test_corrupt_state_file_noop(self, git_repo, state_dir, branch, monkeypatch, capsys):
+        monkeypatch.chdir(git_repo)
+        (state_dir / f"{branch}.json").write_text("{bad json")
+
+        _mod.clear_blocked(root=git_repo, branch=branch)
+
+        captured = capsys.readouterr()
+        assert "[FLOW stop-continue] clear_blocked error:" in captured.err
