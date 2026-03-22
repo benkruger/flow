@@ -15,6 +15,28 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from flow_utils import mutate_state, now
+
+
+def write_blocked(state_path):
+    """Write _blocked timestamp to the state file.
+
+    Best-effort: any error is silently ignored so the hook
+    never interferes with AskUserQuestion delivery.
+    """
+    try:
+        if state_path is None or not Path(state_path).exists():
+            return
+
+        def transform(state):
+            state["_blocked"] = now()
+
+        mutate_state(Path(state_path), transform)
+    except Exception:
+        pass
+
 
 def validate(state_path):
     """Validate that auto-continue is not active.
@@ -77,6 +99,7 @@ def main():
         print(message, file=sys.stderr)
         sys.exit(2)
 
+    write_blocked(str(state_path))
     sys.exit(0)
 
 

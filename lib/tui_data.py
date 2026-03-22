@@ -44,6 +44,7 @@ def flow_summary(state, now=None):
         "diff_stats": state.get("diff_stats"),
         "notes_count": len(state.get("notes", [])),
         "issues_count": len(state.get("issues_filed", [])),
+        "blocked": bool(state.get("_blocked")),
         "issue_numbers": set(extract_issue_numbers(state.get("prompt", ""))),
         "phases": state.get("phases", {}),
         "state": state,

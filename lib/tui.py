@@ -186,7 +186,8 @@ class TuiApp:
                 feature_display = feature_display[:23] + "..."
             issue_nums = flow.get("issue_numbers", set())
             issue_info = " ".join(f"#{n}" for n in sorted(issue_nums)) + "  " if issue_nums else ""
-            line = f"{marker}{feature_display:<26s} {phase_info:<14s} {flow['elapsed']:<8s} {issue_info}{pr_info}"
+            elapsed_display = "Blocked " if flow.get("blocked") else flow['elapsed']
+            line = f"{marker}{feature_display:<26s} {phase_info:<14s} {elapsed_display:<8s} {issue_info}{pr_info}"
             self._safe_addstr(row, 2, line, attr)
 
         # Separator
@@ -229,7 +230,10 @@ class TuiApp:
                 suffix = ""
                 if entry["annotation"]:
                     suffix = f"  ({entry['annotation']})"
-                attr = self._color(COLOR_ACTIVE) | curses.A_BOLD
+                if flow.get("blocked"):
+                    attr = self._color(COLOR_FAILED) | curses.A_BOLD
+                else:
+                    attr = self._color(COLOR_ACTIVE) | curses.A_BOLD
             else:
                 marker = "[ ]"
                 suffix = ""
