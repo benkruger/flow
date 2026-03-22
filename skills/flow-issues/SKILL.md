@@ -14,7 +14,23 @@ edit, or close issues.
 
 ```text
 /flow:flow-issues
+/flow:flow-issues --ready
+/flow:flow-issues --blocked
+/flow:flow-issues --decomposed
+/flow:flow-issues --quick-start
 ```
+
+## Readiness Filters
+
+Optional flags filter the issue list by readiness. Flags are mutually
+exclusive — pass at most one.
+
+- `--ready` — issues with no dependencies (can start immediately)
+- `--blocked` — issues with unresolved dependencies (waiting on other work)
+- `--decomposed` — issues with the "Decomposed" label (work-ready with prior analysis)
+- `--quick-start` — decomposed issues with no dependencies (best candidates for autonomous execution)
+
+No flag returns all issues (current default behavior).
 
 ## Concurrency
 
@@ -46,9 +62,30 @@ open issues, detects "Flow In-Progress" and "decomposed" labels, checks for
 stale issues (older than 60 days with missing file references), and outputs
 condensed per-issue briefs:
 
+If a readiness filter flag was passed to this skill, append it to the command:
+
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues
 ```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --ready
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --blocked
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --decomposed
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --quick-start
+```
+
+Use the first form when no filter flag was passed. Use the matching form
+when a flag was passed.
 
 Parse the JSON output. The structure is:
 
