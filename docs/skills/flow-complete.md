@@ -45,8 +45,8 @@ SOFT-GATE and dispatches via the Resume Check.
    showing feature name, prompt, per-phase timeline, and artifact counts.
    After the Done banner, writes a brief prose session summary describing what was accomplished
 7. Squash-merges the PR via `gh pr merge --squash`
-8. Removes the "Flow In-Progress" label from any issues referenced in the start prompt
-9. Closes any GitHub issues referenced in the start prompt (`#N` patterns)
+8. Closes any GitHub issues referenced in the start prompt (`#N` patterns)
+9. Removes the "Flow In-Progress" label from any issues referenced in the start prompt
 10. Runs the cleanup process: remove worktree, delete branches, delete state file, log, and CI sentinel
 11. Pulls `origin main` so local main has the merged feature code
 
