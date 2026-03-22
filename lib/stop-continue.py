@@ -27,6 +27,19 @@ from flow_utils import (
 _UNSET = object()
 
 
+def _resolve(root, branch):
+    """Resolve root and branch defaults from environment.
+
+    root=None → project_root(); branch=_UNSET → current_branch().
+    Passing branch=None explicitly (e.g. in tests) skips auto-detect.
+    """
+    if root is None:
+        root = project_root()
+    if branch is _UNSET:
+        branch = current_branch()
+    return root, branch
+
+
 def capture_session_id(hook_input, root=None, branch=_UNSET):
     """Update session_id and transcript_path in active state file."""
     session_id = hook_input.get("session_id")
@@ -34,10 +47,7 @@ def capture_session_id(hook_input, root=None, branch=_UNSET):
         return
 
     try:
-        if root is None:
-            root = project_root()
-        if branch is _UNSET:
-            branch = current_branch()
+        root, branch = _resolve(root, branch)
         if not branch:
             return
 
@@ -75,10 +85,7 @@ def check_continue(hook_input=None, root=None, branch=_UNSET):
     branch is known.
     """
     try:
-        if root is None:
-            root = project_root()
-        if branch is _UNSET:
-            branch = current_branch()
+        root, branch = _resolve(root, branch)
 
         if not branch:
             return (False, None, None)
@@ -130,10 +137,7 @@ def set_tab_title(root=None, branch=_UNSET):
     .flow-states/<branch>.log, but never blocks the hook.
     """
     try:
-        if root is None:
-            root = project_root()
-        if branch is _UNSET:
-            branch = current_branch()
+        root, branch = _resolve(root, branch)
         if not branch:
             return
 
