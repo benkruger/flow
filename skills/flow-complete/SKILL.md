@@ -356,15 +356,6 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-issues-summary --state-file <project_
 Parse the JSON output. Keep the `banner_line` — use it in the Done
 banner below. If `has_issues` is `false`, there is no banner line.
 
-**Generate the summary** while the state file still exists:
-
-```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-complete-summary --state-file <project_root>/.flow-states/<branch>.json
-```
-
-Parse the JSON output. Keep the `summary` field — use it in the Done
-banner below.
-
 ### Step 7 — Merge PR
 
 Merge the PR via squash merge:
@@ -390,6 +381,27 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow close-issues --state-file <project_root>/.fl
 
 Parse the JSON output. Report which issues were closed and which failed.
 If no issues were referenced, proceed silently.
+
+If any issues were closed (the `closed` array is non-empty), write the
+`closed` array to `.flow-states/<branch>-closed-issues.json` using the
+Write tool. Each item in the array is a dict with `number` and `url` keys.
+
+**Generate the summary** while the state file still exists:
+
+If closed issues were written to a file, include the file path:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-complete-summary --state-file <project_root>/.flow-states/<branch>.json --closed-issues-file <project_root>/.flow-states/<branch>-closed-issues.json
+```
+
+If no issues were closed, omit the closed-issues-file arg:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-complete-summary --state-file <project_root>/.flow-states/<branch>.json
+```
+
+Parse the JSON output. Keep the `summary` field — use it in the Done
+banner below.
 
 ### Step 9 — Remove In-Progress labels
 
