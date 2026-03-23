@@ -214,6 +214,19 @@ def test_whitelist_allows_leading_glob():
     assert allowed is True
 
 
+def test_whitelist_allows_chmod_bin():
+    mod = _load_module()
+    settings = {
+        "permissions": {
+            "allow": ["Bash(chmod +x bin/*)"],
+            "deny": [],
+        }
+    }
+    allowed, message = mod.validate("chmod +x bin/ci-ios", settings=settings)
+    assert allowed is True
+    assert message == ""
+
+
 def test_whitelist_blocks_unmatched_command():
     mod = _load_module()
     allowed, message = mod.validate("curl http://example.com", settings=SAMPLE_SETTINGS)

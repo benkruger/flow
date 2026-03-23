@@ -238,10 +238,16 @@ instructions below.
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
 
-If green, set the continuation context and flag:
+If green, set the continuation context and flag.
+
+If commit=auto, use the first form. If commit=manual, use the second:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_review_step=1, then self-invoke flow:flow-code-review --continue-step."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_review_step=1, then self-invoke flow:flow-code-review --continue-step --auto."
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_review_step=1, then self-invoke flow:flow-code-review --continue-step --manual."
 ```
 
 ```bash
@@ -358,10 +364,16 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 Any fix made during Review requires `bin/flow ci` to run again.
 </HARD-GATE>
 
-If fixes were made, set the continuation context and flag before committing:
+If fixes were made, set the continuation context and flag before committing.
+
+If commit=auto, use the first form. If commit=manual, use the second:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Show review summary, set code_review_step=2, then self-invoke flow:flow-code-review --continue-step."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Show review summary, set code_review_step=2, then self-invoke flow:flow-code-review --continue-step --auto."
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Show review summary, set code_review_step=2, then self-invoke flow:flow-code-review --continue-step --manual."
 ```
 
 ```bash

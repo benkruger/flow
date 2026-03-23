@@ -293,10 +293,16 @@ user with excluded files), skip the commit gracefully — do not error.
 
 **Standalone:** Skip entirely — no commit.
 
-Set the continuation context and flag before committing:
+Set the continuation context and flag before committing.
+
+If commit=auto, use the first form. If commit=manual, use the second:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_step=4, then self-invoke flow:flow-learn --continue-step."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_step=4, then self-invoke flow:flow-learn --continue-step --auto."
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_step=4, then self-invoke flow:flow-learn --continue-step --manual."
 ```
 
 ```bash
