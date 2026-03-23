@@ -8,9 +8,17 @@ parent: Skills
 
 **Phase:** Any
 
-**Usage:** `/flow-issues`
+**Usage:**
 
-Fetches all open issues for the current repository, analyzes them via Python script (file paths, dependencies, labels, stale detection), ranks by impact using LLM judgment, and displays a dashboard with a recommended work order. Read-only — never creates, edits, or closes issues.
+```text
+/flow-issues
+/flow-issues --ready
+/flow-issues --blocked
+/flow-issues --decomposed
+/flow-issues --quick-start
+```
+
+Fetches all open issues for the current repository, analyzes them via Python script (file paths, dependencies, labels, stale detection), ranks by impact using LLM judgment, and displays a dashboard with a recommended work order. Supports optional readiness filters to narrow results. Read-only — never creates, edits, or closes issues.
 
 ---
 
@@ -21,6 +29,21 @@ Fetches all open issues for the current repository, analyzes them via Python scr
 3. Displays a summary line with total issue count
 4. Prints an In Progress table for WIP issues (linked `[#N](url)`, Title columns)
 5. Prints a single Recommended Work Order table with columns: Order, Impact, Labels, # (linked), Title, Rationale — excluding in-progress issues. Sorting respects explicit dependency ordering (prerequisites before dependents) and impact ranking. Each entry gets a copy-paste `/flow:flow-start` command listed after the table
+
+---
+
+## Readiness Filters
+
+Optional flags filter the issue list by readiness. Flags are mutually exclusive — pass at most one.
+
+| Flag | Shows |
+|------|-------|
+| `--ready` | Issues with no dependencies — can start immediately |
+| `--blocked` | Issues with unresolved dependencies — waiting on other work |
+| `--decomposed` | Issues with the "Decomposed" label — work-ready with prior analysis |
+| `--quick-start` | Decomposed issues with no dependencies — best candidates for autonomous execution |
+
+No flag returns all issues (default behavior).
 
 ---
 
