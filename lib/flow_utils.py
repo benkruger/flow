@@ -247,6 +247,26 @@ def find_state_files(root, branch):
     return results
 
 
+def read_prompt_file(path):
+    """Read prompt text from a file and delete the file.
+
+    Returns (prompt_text, error_message). On success error is None.
+    The file is always deleted after reading, even if empty.
+    """
+    try:
+        with open(path) as fh:
+            content = fh.read()
+    except OSError as exc:
+        return None, f"Could not read prompt file '{path}': {exc}"
+
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+    return content, None
+
+
 def extract_issue_numbers(prompt):
     """Extract unique issue numbers from #N patterns and GitHub URLs in a prompt string."""
     hash_matches = re.findall(r"#(\d+)", prompt)
