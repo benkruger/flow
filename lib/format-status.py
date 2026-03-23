@@ -11,6 +11,7 @@ Output:
   Exit 2: stderr = error message
 """
 
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -215,7 +216,13 @@ def main():
         sys.exit(1)
 
     version = read_version()
-    dev_mode = (root / ".flow-states" / ".dev-mode").exists()
+    dev_mode = False
+    try:
+        flow_json_path = root / ".flow.json"
+        if flow_json_path.exists():
+            dev_mode = "plugin_root_backup" in json.loads(flow_json_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        pass
 
     if len(results) > 1:
         panel = format_multi_panel(results, version, dev_mode=dev_mode)

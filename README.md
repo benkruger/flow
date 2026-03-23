@@ -309,13 +309,13 @@ Every plugin change can be tested locally before releasing:
 /flow-qa --stop       # switch back to marketplace
 ```
 
-`--start` uninstalls the marketplace plugin (if installed), nukes the plugin cache, and creates a `.dev-mode` marker. Then start Claude Code with `--plugin-dir` to load local source:
+`--start` redirects the plugin to local source by setting `plugin_root_backup` in `.flow.json`. Then start Claude Code with `--plugin-dir` to load local source:
 
 ```bash
 claude --plugin-dir=$HOME/code/flow
 ```
 
-`--stop` nukes the cache, reinstalls the marketplace plugin, and removes the `.dev-mode` marker. Both flags prompt you to run `/reload-plugins` afterward.
+`--stop` restores the original plugin path from `plugin_root_backup` in `.flow.json`. Both flags prompt you to run `/reload-plugins` afterward.
 
 The underlying commands can also be run directly:
 

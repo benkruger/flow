@@ -41,13 +41,15 @@ Reset with `bin/flow qa-reset --repo <owner/repo>`.
 
 ## Bare `/flow-qa` (no flags)
 
-### Step 1 — Check dev mode marker
+### Step 1 — Check dev mode
 
-Use the Read tool to check if `.flow-states/.dev-mode` exists.
+Use the Read tool to read `.flow.json`. Parse the JSON and check if the
+`plugin_root_backup` key exists. If `.flow.json` does not exist or cannot
+be parsed, treat as marketplace mode.
 
 ### Step 2 — Report
 
-If `.flow-states/.dev-mode` exists, print:
+If `plugin_root_backup` exists in the JSON, print:
 
 ````markdown
 ```text
@@ -57,7 +59,7 @@ If `.flow-states/.dev-mode` exists, print:
 ```
 ````
 
-If `.flow-states/.dev-mode` does not exist, print:
+If `plugin_root_backup` does not exist, print:
 
 ````markdown
 ```text
@@ -92,11 +94,7 @@ bin/flow qa-mode --start --local-path $HOME/code/flow
 
 If the JSON output has `"status": "error"`, print the error message and stop.
 
-### Step 2 — Create dev mode marker
-
-Use the Write tool to create `.flow-states/.dev-mode` with the content `active`.
-
-### Step 3 — Announce
+### Step 2 — Announce
 
 Print inside a fenced code block:
 
@@ -121,13 +119,7 @@ Then print these numbered instructions:
 
 ## Flag: `--stop`
 
-### Step 1 — Check dev mode
-
-Use the Read tool to check if `.flow-states/.dev-mode` exists.
-
-If it does not exist, print "Not in dev mode. Nothing to stop." and stop.
-
-### Step 2 — Restore plugin_root from backup
+### Step 1 — Restore plugin_root from backup
 
 Run:
 
@@ -137,15 +129,7 @@ bin/flow qa-mode --stop
 
 If the JSON output has `"status": "error"`, print the error message and stop.
 
-### Step 3 — Remove dev mode marker
-
-Use Bash to remove the marker:
-
-```bash
-rm .flow-states/.dev-mode
-```
-
-### Step 4 — Report
+### Step 2 — Report
 
 Print inside a fenced code block:
 
