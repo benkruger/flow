@@ -118,7 +118,6 @@ CI will fail if these are missing:
 - `docs/reference/skill-pattern.md` — template pattern for building new phase skills
 - `docs/integrations/slack.md` — Slack App setup guide and notification configuration
 - `.claude-plugin/marketplace.json` — marketplace registry (version must match plugin.json)
-- `.github/workflows/ci.yml` — GitHub Actions CI (Python 3.12, pytest)
 
 ## Development Environment
 
