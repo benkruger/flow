@@ -141,6 +141,35 @@ def truncate_body(body, max_length=200):
     return body[:max_length] + "..."
 
 
+_FILTERS = {
+    "ready": lambda i: not i["dependencies"],
+    "blocked": lambda i: bool(i["dependencies"]),
+    "decomposed": lambda i: i["decomposed"],
+    "quick-start": lambda i: i["decomposed"] and not i["dependencies"],
+}
+
+
+def filter_issues(issues, filter_name):
+    """Filter analyzed issues by readiness criteria.
+
+    Args:
+        issues: List of analyzed issue dicts (from analyze_issues).
+        filter_name: One of "ready", "blocked", "decomposed", "quick-start",
+                     or None for no filtering.
+
+    Returns:
+        Filtered list of issues.
+
+    Raises:
+        ValueError: If filter_name is not recognized.
+    """
+    if filter_name is None:
+        return issues
+    if filter_name not in _FILTERS:
+        raise ValueError(f"Unknown filter: {filter_name}")
+    return [i for i in issues if _FILTERS[filter_name](i)]
+
+
 def analyze_issues(issues):
     """Analyze a list of issues from gh issue list JSON.
 
@@ -220,6 +249,23 @@ def main():
         "--issues-json",
         help="Path to pre-fetched gh issue list JSON file (for testing)",
     )
+    filter_group = parser.add_mutually_exclusive_group()
+    filter_group.add_argument(
+        "--ready", action="store_const", const="ready", dest="filter",
+        help="Show only issues with no dependencies",
+    )
+    filter_group.add_argument(
+        "--blocked", action="store_const", const="blocked", dest="filter",
+        help="Show only issues with dependencies",
+    )
+    filter_group.add_argument(
+        "--decomposed", action="store_const", const="decomposed", dest="filter",
+        help="Show only decomposed issues",
+    )
+    filter_group.add_argument(
+        "--quick-start", action="store_const", const="quick-start", dest="filter",
+        help="Show only decomposed issues with no dependencies",
+    )
     args = parser.parse_args()
 
     if args.issues_json:
@@ -266,6 +312,9 @@ def main():
         sys.exit(1)
 
     output = analyze_issues(issues)
+    if args.filter:
+        output["issues"] = filter_issues(output["issues"], args.filter)
+        output["total"] = len(output["in_progress"]) + len(output["issues"])
     print(json.dumps(output, indent=2))
 
 
