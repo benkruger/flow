@@ -20,6 +20,10 @@ from zoneinfo import ZoneInfo
 
 PACIFIC = ZoneInfo("America/Los_Angeles")
 
+# Subprocess timeout constants (seconds)
+LOCAL_TIMEOUT = 30
+NETWORK_TIMEOUT = 60
+
 
 def now():
     """Return current Pacific Time timestamp in ISO 8601 format."""
@@ -265,6 +269,22 @@ def read_prompt_file(path):
         pass
 
     return content, None
+
+
+def parse_conflict_files(porcelain_output):
+    """Parse git status --porcelain output and return conflict file paths.
+
+    Detects UU, AA, DD, and any status containing 'U' as conflict markers.
+    Returns a list of file paths.
+    """
+    conflict_files = []
+    for line in porcelain_output.strip().split("\n"):
+        if not line:
+            continue
+        xy = line[:2]
+        if "U" in xy or xy in ("DD", "AA"):
+            conflict_files.append(line[3:].strip())
+    return conflict_files
 
 
 def extract_issue_numbers(prompt):
