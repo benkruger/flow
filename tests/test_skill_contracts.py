@@ -2491,6 +2491,32 @@ def test_complete_continue_context_includes_mode_flag():
             )
 
 
+# --- Flat sequential step numbering ---
+
+
+def test_skills_no_substep_markers():
+    """No SKILL.md may use sub-step labels (bold markers or heading labels)."""
+    bold_pattern = re.compile(r"\*\*\d+[a-z]\.")
+    heading_pattern = re.compile(r"^###\s+\d+[a-z]", re.MULTILINE)
+    for d in sorted(SKILLS_DIR.iterdir()):
+        if not d.is_dir():
+            continue
+        skill_path = d / "SKILL.md"
+        if not skill_path.exists():
+            continue
+        content = skill_path.read_text()
+        bold_matches = bold_pattern.findall(content)
+        assert not bold_matches, (
+            f"{d.name}/SKILL.md contains bold sub-step markers: "
+            f"{bold_matches}. Use flat sequential ### Step N headings."
+        )
+        heading_matches = heading_pattern.findall(content)
+        assert not heading_matches, (
+            f"{d.name}/SKILL.md contains heading sub-step labels: "
+            f"{heading_matches}. Use bold prose markers within the step."
+        )
+
+
 # --- DAG decomposition contracts ---
 
 
