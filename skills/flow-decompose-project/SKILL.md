@@ -100,7 +100,7 @@ Present the full DAG synthesis to the user.
 Ask the user to review the decomposition using AskUserQuestion:
 
 - **"Proceed to review"** → generate a session ID by running
-  `uuidgen` via the Bash tool, then extract the first 8 characters.
+  `exec ${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool.
   Write `{"decompose_step": 1}` to
   `.flow-states/decompose-project-<id>.json` using the Write tool.
   Save the full decompose output to
