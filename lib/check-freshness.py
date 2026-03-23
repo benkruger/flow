@@ -26,26 +26,28 @@ NETWORK_TIMEOUT = 60
 MAX_RETRIES = 3
 
 
-def _read_retries(state_file):
-    """Read freshness_retries from state file. Returns 0 if absent."""
-    with open(state_file) as f:
-        state = json.loads(f.read())
-    return state.get("freshness_retries", 0)
+def _check_and_increment_retries(state_file, increment=False):
+    """Check retry count and optionally increment, atomically.
 
-
-def _increment_retries(state_file):
-    """Increment freshness_retries in state file atomically. Returns new count."""
+    When increment=False, reads the current count without modifying.
+    When increment=True, increments and returns the new count.
+    Both operations happen under the mutate_state lock to prevent races.
+    """
     from flow_utils import mutate_state
 
-    new_count = [0]
+    count = 0
 
     def _transform(state):
+        nonlocal count
         current = state.get("freshness_retries", 0)
-        state["freshness_retries"] = current + 1
-        new_count[0] = state["freshness_retries"]
+        if increment:
+            count = current + 1
+            state["freshness_retries"] = count
+        else:
+            count = current
 
     mutate_state(state_file, _transform)
-    return new_count[0]
+    return count
 
 
 def check_freshness(state_file=None):
@@ -55,7 +57,7 @@ def check_freshness(state_file=None):
     """
     # Check retry limit
     if state_file:
-        retries = _read_retries(state_file)
+        retries = _check_and_increment_retries(state_file, increment=False)
         if retries >= MAX_RETRIES:
             return {"status": "max_retries", "retries": retries}
 
@@ -108,8 +110,9 @@ def check_freshness(state_file=None):
         # Merge succeeded — increment retries if tracking
         response = {"status": "merged"}
         if state_file:
-            new_count = _increment_retries(state_file)
-            response["retries"] = new_count
+            response["retries"] = _check_and_increment_retries(
+                state_file, increment=True,
+            )
         return response
 
     # Merge failed — check for conflicts
@@ -126,9 +129,7 @@ def check_freshness(state_file=None):
         }
 
     conflict_files = []
-    for line in status.stdout.strip().split("\n"):
-        if not line:
-            continue
+    for line in status.stdout.splitlines():
         xy = line[:2]
         if "U" in xy or xy in ("DD", "AA"):
             conflict_files.append(line[3:].strip())
@@ -136,8 +137,9 @@ def check_freshness(state_file=None):
     if conflict_files:
         response = {"status": "conflict", "files": conflict_files}
         if state_file:
-            new_count = _increment_retries(state_file)
-            response["retries"] = new_count
+            response["retries"] = _check_and_increment_retries(
+                state_file, increment=True,
+            )
         return response
 
     return {
