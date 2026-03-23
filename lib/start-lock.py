@@ -90,20 +90,34 @@ def _try_write_lock(lock_file, feature):
     race to create the file.  Returns lock_data on success, None on
     FileExistsError (another process created it first).
     """
+    try:
+        fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return None
     lock_data = {
         "pid": os.getppid(),
         "feature": feature,
         "acquired_at": now(),
     }
     try:
-        fd = os.open(str(lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        try:
-            os.write(fd, json.dumps(lock_data, indent=2).encode())
-        finally:
-            os.close(fd)
-        return lock_data
-    except FileExistsError:
-        return None
+        os.write(fd, json.dumps(lock_data, indent=2).encode())
+    finally:
+        os.close(fd)
+    return lock_data
+
+
+def _locked_by_winner(lock_file):
+    """Re-read after losing a race; return a locked result for whoever won."""
+    existing, _ = _read_lock(lock_file)
+    if existing is None:
+        return {"status": "locked", "feature": "unknown", "pid": 0,
+                "acquired_at": "unknown"}
+    return {
+        "status": "locked",
+        "feature": existing["feature"],
+        "pid": existing["pid"],
+        "acquired_at": existing["acquired_at"],
+    }
 
 
 def _break_and_acquire(lock_file, feature, stale_feature=None):
@@ -111,17 +125,7 @@ def _break_and_acquire(lock_file, feature, stale_feature=None):
     lock_file.unlink(missing_ok=True)
     lock_data = _try_write_lock(lock_file, feature)
     if lock_data is None:
-        # Another process won the race — re-read to find the winner.
-        existing, _ = _read_lock(lock_file)
-        if existing is None:
-            return {"status": "locked", "feature": "unknown", "pid": 0,
-                    "acquired_at": "unknown"}
-        return {
-            "status": "locked",
-            "feature": existing["feature"],
-            "pid": existing["pid"],
-            "acquired_at": existing["acquired_at"],
-        }
+        return _locked_by_winner(lock_file)
     result = {"status": "acquired", "stale_broken": True}
     if stale_feature is not None:
         result["stale_feature"] = stale_feature
@@ -139,17 +143,7 @@ def acquire(feature):
         lock_data = _try_write_lock(lock_file, feature)
         if lock_data is not None:
             return {"status": "acquired"}
-        # Lost the race — re-read to find the winner.
-        existing, _ = _read_lock(lock_file)
-        if existing is None:
-            return {"status": "locked", "feature": "unknown", "pid": 0,
-                    "acquired_at": "unknown"}
-        return {
-            "status": "locked",
-            "feature": existing["feature"],
-            "pid": existing["pid"],
-            "acquired_at": existing["acquired_at"],
-        }
+        return _locked_by_winner(lock_file)
 
     pid = existing["pid"]
     existing_feature = existing["feature"]
