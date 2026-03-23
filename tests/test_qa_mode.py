@@ -2,15 +2,12 @@
 
 import importlib.util
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
 from conftest import LIB_DIR
-
-SCRIPT = str(LIB_DIR / "qa-mode.py")
 
 
 def _import_module():
@@ -261,8 +258,9 @@ def test_stop_preserves_other_keys(tmp_path):
 # --- CLI integration ---
 
 
-def test_cli_start(tmp_path, monkeypatch):
+def test_cli_start(tmp_path, monkeypatch, capsys):
     """CLI --start --local-path produces correct JSON output."""
+    mod = _import_module()
     flow_json = tmp_path / ".flow.json"
     local_source = tmp_path / "flow-source"
     local_source.mkdir()
@@ -275,20 +273,22 @@ def test_cli_start(tmp_path, monkeypatch):
     })
 
     monkeypatch.chdir(tmp_path)
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "--start", "--local-path", str(local_source),
-         "--flow-json", str(flow_json)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "qa-mode", "--start", "--local-path", str(local_source),
+        "--flow-json", str(flow_json),
+    ])
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+    assert exc_info.value.code == 0
 
-    assert result.returncode == 0
-    output = json.loads(result.stdout.strip())
+    output = json.loads(capsys.readouterr().out.strip())
     assert output["status"] == "ok"
     assert output["plugin_root"] == str(local_source)
 
 
-def test_cli_stop(tmp_path, monkeypatch):
+def test_cli_stop(tmp_path, monkeypatch, capsys):
     """CLI --stop produces correct JSON output."""
+    mod = _import_module()
     flow_json = tmp_path / ".flow.json"
 
     _write_flow_json(flow_json, {
@@ -298,67 +298,75 @@ def test_cli_stop(tmp_path, monkeypatch):
     })
 
     monkeypatch.chdir(tmp_path)
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "--stop", "--flow-json", str(flow_json)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "qa-mode", "--stop", "--flow-json", str(flow_json),
+    ])
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+    assert exc_info.value.code == 0
 
-    assert result.returncode == 0
-    output = json.loads(result.stdout.strip())
+    output = json.loads(capsys.readouterr().out.strip())
     assert output["status"] == "ok"
     assert output["restored"] == "/original/path"
 
 
-def test_cli_start_error(tmp_path, monkeypatch):
+def test_cli_start_error(tmp_path, monkeypatch, capsys):
     """CLI --start returns error JSON on failure."""
+    mod = _import_module()
     flow_json = tmp_path / ".flow.json"
 
     monkeypatch.chdir(tmp_path)
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "--start", "--local-path", "/nonexistent",
-         "--flow-json", str(flow_json)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "qa-mode", "--start", "--local-path", "/nonexistent",
+        "--flow-json", str(flow_json),
+    ])
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+    assert exc_info.value.code == 1
 
-    assert result.returncode == 1
-    output = json.loads(result.stdout.strip())
+    output = json.loads(capsys.readouterr().out.strip())
     assert output["status"] == "error"
 
 
-def test_cli_stop_error(tmp_path, monkeypatch):
+def test_cli_stop_error(tmp_path, monkeypatch, capsys):
     """CLI --stop returns error JSON on failure."""
+    mod = _import_module()
     flow_json = tmp_path / ".flow.json"
 
     monkeypatch.chdir(tmp_path)
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "--stop", "--flow-json", str(flow_json)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "qa-mode", "--stop", "--flow-json", str(flow_json),
+    ])
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+    assert exc_info.value.code == 1
 
-    assert result.returncode == 1
-    output = json.loads(result.stdout.strip())
+    output = json.loads(capsys.readouterr().out.strip())
     assert output["status"] == "error"
 
 
-def test_cli_start_missing_local_path(tmp_path, monkeypatch):
+def test_cli_start_missing_local_path(tmp_path, monkeypatch, capsys):
     """CLI --start without --local-path returns error."""
+    mod = _import_module()
     flow_json = tmp_path / ".flow.json"
     _write_flow_json(flow_json, {"flow_version": "0.39.0", "plugin_root": "/p"})
 
     monkeypatch.chdir(tmp_path)
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "--start", "--flow-json", str(flow_json)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "qa-mode", "--start", "--flow-json", str(flow_json),
+    ])
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+    assert exc_info.value.code == 1
 
-    assert result.returncode == 1
-    output = json.loads(result.stdout.strip())
+    output = json.loads(capsys.readouterr().out.strip())
     assert output["status"] == "error"
     assert "--local-path" in output["message"]
 
 
-def test_cli_default_flow_json(git_repo, monkeypatch):
+def test_cli_default_flow_json(git_repo, monkeypatch, capsys):
     """CLI uses project_root()/.flow.json when --flow-json is omitted."""
+    mod = _import_module()
     flow_json = git_repo / ".flow.json"
     local_source = git_repo / "flow-source"
     local_source.mkdir()
@@ -371,13 +379,14 @@ def test_cli_default_flow_json(git_repo, monkeypatch):
     })
 
     monkeypatch.chdir(git_repo)
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "--start", "--local-path", str(local_source)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "qa-mode", "--start", "--local-path", str(local_source),
+    ])
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+    assert exc_info.value.code == 0
 
-    assert result.returncode == 0
-    output = json.loads(result.stdout.strip())
+    output = json.loads(capsys.readouterr().out.strip())
     assert output["status"] == "ok"
 
     data = _read_flow_json(flow_json)

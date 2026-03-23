@@ -2,14 +2,13 @@
 
 import importlib.util
 import json
-import subprocess
 import sys
 from datetime import datetime, timezone
 
+import pytest
+
 from conftest import LIB_DIR, PHASE_ORDER, make_state, write_state
 from flow_utils import elapsed_since, read_version, read_version_from
-
-SCRIPT = str(LIB_DIR / "format-status.py")
 
 # Import format-status.py for in-process unit tests
 _spec = importlib.util.spec_from_file_location(
@@ -21,45 +20,46 @@ _spec.loader.exec_module(_mod)
 VERSION = "0.8.2"
 
 
-def _run(cwd, branch=None):
-    """Run format-status.py via subprocess with optional --branch, from cwd."""
-    cmd = [sys.executable, SCRIPT]
-    if branch is not None:
-        cmd += ["--branch", branch]
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, cwd=str(cwd),
-    )
-    return result
-
-
 # --- CLI behavior ---
 
 
-def test_no_branch_returns_error(tmp_path):
+def test_no_branch_returns_error(tmp_path, monkeypatch, capsys):
     """Running outside a git repo (no branch) returns exit 2 with stderr."""
-    result = _run(tmp_path)
-    assert result.returncode == 2
-    assert "branch" in result.stderr
-    assert result.stdout == ""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["format-status"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 2
+    captured = capsys.readouterr()
+    assert "branch" in captured.err
+    assert captured.out == ""
 
 
-def test_no_state_file_returns_exit_1(git_repo):
+def test_no_state_file_returns_exit_1(git_repo, monkeypatch, capsys):
     """No state file returns exit 1 with no stdout."""
-    result = _run(git_repo)
-    assert result.returncode == 1
-    assert result.stdout == ""
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["format-status"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
 
 
-def test_corrupt_json_returns_exit_1(state_dir, git_repo, branch):
+def test_corrupt_json_returns_exit_1(state_dir, git_repo, branch, monkeypatch, capsys):
     """Corrupt state file for current branch is treated as no state (exit 1)."""
     bad_file = state_dir / f"{branch}.json"
     bad_file.write_text("{bad json")
-    result = _run(git_repo)
-    assert result.returncode == 1
-    assert result.stdout == ""
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["format-status"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
 
 
-def test_happy_path_returns_panel_text(state_dir, git_repo, branch):
+def test_happy_path_returns_panel_text(state_dir, git_repo, branch, monkeypatch, capsys):
     """Valid state file returns exit 0 with panel text on stdout."""
     state = make_state(
         current_phase="flow-plan",
@@ -67,10 +67,12 @@ def test_happy_path_returns_panel_text(state_dir, git_repo, branch):
     )
     state["phases"]["flow-start"]["cumulative_seconds"] = 300
     write_state(state_dir, branch, state)
-    result = _run(git_repo)
-    assert result.returncode == 0
-    assert "FLOW v" in result.stdout
-    assert "Phase 1:" in result.stdout
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["format-status"])
+    _mod.main()
+    captured = capsys.readouterr()
+    assert "FLOW v" in captured.out
+    assert "Phase 1:" in captured.out
 
 
 # --- Panel formatting (in-process) ---
@@ -341,7 +343,7 @@ def test_format_panel_all_complete_uses_frozen_phase_config():
     assert "Design" in panel
 
 
-def test_cli_uses_frozen_phases_file(state_dir, git_repo, branch):
+def test_cli_uses_frozen_phases_file(state_dir, git_repo, branch, monkeypatch, capsys):
     """CLI loads frozen phases file when it exists."""
     import shutil
     source = LIB_DIR.parent / "flow-phases.json"
@@ -353,42 +355,50 @@ def test_cli_uses_frozen_phases_file(state_dir, git_repo, branch):
         "flow-start": "complete", "flow-plan": "in_progress",
     })
     write_state(state_dir, branch, state)
-    result = _run(git_repo)
-    assert result.returncode == 0
-    assert "Plan" in result.stdout
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["format-status"])
+    _mod.main()
+    captured = capsys.readouterr()
+    assert "Plan" in captured.out
 
 
-def test_wrong_branch_multiple_features_returns_panel(state_dir, git_repo, branch):
+def test_wrong_branch_multiple_features_returns_panel(state_dir, git_repo, branch, monkeypatch, capsys):
     """When on wrong branch with multiple state files, returns panel text."""
     for name in ["feature-a", "feature-b"]:
         state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
         state["branch"] = name
         write_state(state_dir, name, state)
-    result = _run(git_repo)
-    assert result.returncode == 0
-    assert "Multiple Features Active" in result.stdout
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["format-status"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "Multiple Features Active" in captured.out
 
 
-# --- --branch flag (subprocess) ---
+# --- --branch flag ---
 
 
-def test_cli_branch_flag_uses_specified_state_file(state_dir, git_repo):
+def test_cli_branch_flag_uses_specified_state_file(state_dir, git_repo, monkeypatch, capsys):
     """--branch flag finds the state file for a different branch."""
     state = make_state(
         current_phase="flow-plan",
         phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
     )
     write_state(state_dir, "other-feature", state)
-    result = _run(git_repo, branch="other-feature")
-    assert result.returncode == 0
-    assert "FLOW v" in result.stdout
-    assert "Phase 1:" in result.stdout
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["format-status", "--branch", "other-feature"])
+    _mod.main()
+    captured = capsys.readouterr()
+    assert "FLOW v" in captured.out
+    assert "Phase 1:" in captured.out
 
 
 # --- Dev mode detection ---
 
 
-def test_cli_dev_mode_from_flow_json_with_backup(state_dir, git_repo, branch):
+def test_cli_dev_mode_from_flow_json_with_backup(state_dir, git_repo, branch, monkeypatch, capsys):
     """CLI shows [DEV MODE] when .flow.json has plugin_root_backup."""
     state = make_state(
         current_phase="flow-plan",
@@ -400,12 +410,14 @@ def test_cli_dev_mode_from_flow_json_with_backup(state_dir, git_repo, branch):
         "plugin_root": "/local/path",
         "plugin_root_backup": "/cache/path",
     }))
-    result = _run(git_repo)
-    assert result.returncode == 0
-    assert "[DEV MODE]" in result.stdout
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["format-status"])
+    _mod.main()
+    captured = capsys.readouterr()
+    assert "[DEV MODE]" in captured.out
 
 
-def test_cli_no_dev_mode_without_backup(state_dir, git_repo, branch):
+def test_cli_no_dev_mode_without_backup(state_dir, git_repo, branch, monkeypatch, capsys):
     """CLI does not show [DEV MODE] when .flow.json has no plugin_root_backup."""
     state = make_state(
         current_phase="flow-plan",
@@ -416,24 +428,28 @@ def test_cli_no_dev_mode_without_backup(state_dir, git_repo, branch):
         "flow_version": "0.39.0",
         "plugin_root": "/cache/path",
     }))
-    result = _run(git_repo)
-    assert result.returncode == 0
-    assert "[DEV MODE]" not in result.stdout
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["format-status"])
+    _mod.main()
+    captured = capsys.readouterr()
+    assert "[DEV MODE]" not in captured.out
 
 
-def test_cli_no_dev_mode_without_flow_json(state_dir, git_repo, branch):
+def test_cli_no_dev_mode_without_flow_json(state_dir, git_repo, branch, monkeypatch, capsys):
     """CLI does not show [DEV MODE] when .flow.json does not exist."""
     state = make_state(
         current_phase="flow-plan",
         phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
     )
     write_state(state_dir, branch, state)
-    result = _run(git_repo)
-    assert result.returncode == 0
-    assert "[DEV MODE]" not in result.stdout
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["format-status"])
+    _mod.main()
+    captured = capsys.readouterr()
+    assert "[DEV MODE]" not in captured.out
 
 
-def test_cli_no_dev_mode_with_malformed_flow_json(state_dir, git_repo, branch):
+def test_cli_no_dev_mode_with_malformed_flow_json(state_dir, git_repo, branch, monkeypatch, capsys):
     """CLI does not show [DEV MODE] when .flow.json is malformed."""
     state = make_state(
         current_phase="flow-plan",
@@ -441,6 +457,8 @@ def test_cli_no_dev_mode_with_malformed_flow_json(state_dir, git_repo, branch):
     )
     write_state(state_dir, branch, state)
     (git_repo / ".flow.json").write_text("{bad json")
-    result = _run(git_repo)
-    assert result.returncode == 0
-    assert "[DEV MODE]" not in result.stdout
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["format-status"])
+    _mod.main()
+    captured = capsys.readouterr()
+    assert "[DEV MODE]" not in captured.out
