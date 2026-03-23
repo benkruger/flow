@@ -1196,8 +1196,8 @@ def test_parse_conflict_files_du_marker():
 
 def test_parse_conflict_files_mixed():
     """Only conflict lines are returned, clean lines are skipped."""
-    porcelain = "UU conflict.py\n M clean.py\nA  added.py\nDD deleted.py\n"
-    assert _mod.parse_conflict_files(porcelain) == ["conflict.py", "deleted.py"]
+    porcelain = "UU conflict.py\n M clean.py\nAA both.py\nA  added.py\nDD deleted.py\n"
+    assert _mod.parse_conflict_files(porcelain) == ["conflict.py", "both.py", "deleted.py"]
 
 
 def test_parse_conflict_files_no_conflicts():

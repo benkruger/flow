@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 PACIFIC = ZoneInfo("America/Los_Angeles")
 
+# Subprocess timeout constants (seconds)
 LOCAL_TIMEOUT = 30
 NETWORK_TIMEOUT = 60
 
