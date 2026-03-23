@@ -1145,8 +1145,8 @@ def test_draw_detail_panel_issues_truncated_by_height():
     assert "#19" not in text
 
 
-def test_draw_detail_panel_issue_title_truncated_by_width():
-    """Long issue titles are truncated to available width."""
+def test_draw_detail_panel_issue_title_truncated_by_safe_addstr():
+    """Long issue titles are truncated by _safe_addstr to available width."""
     state = make_state()
     long_title = "A" * 100
     state["issues_filed"] = [
@@ -1163,7 +1163,7 @@ def test_draw_detail_panel_issue_title_truncated_by_width():
     stdscr = _make_stdscr(rows=40, cols=40)
     app = _make_app(stdscr, flows=[flow])
     app._draw_detail_panel(10)
-    # Find the issue line call
+    # _safe_addstr truncates to max_x - col = 40 - 2 = 38
     issue_calls = [
         c for c in stdscr.addstr.call_args_list
         if "#1" in str(c[0][2])
@@ -1493,15 +1493,6 @@ def test_issues_view_esc_returns_to_list():
     assert app.view == "list"
 
 
-def test_issues_view_quit():
-    """'q' key in issues view sets running to False."""
-    flow = _make_issues_flow()
-    app = _make_app(flows=[flow])
-    app.view = "issues"
-    app._handle_issues_input(ord("q"))
-    assert app.running is False
-
-
 def test_issues_view_no_issues_input():
     """Input handling does nothing for navigation when no issues exist."""
     state = make_state()
@@ -1565,7 +1556,7 @@ def test_issues_view_height_overflow():
 
 
 def test_issues_view_width_truncation():
-    """Long issue lines are truncated to terminal width."""
+    """Long issue lines are truncated by _safe_addstr to terminal width."""
     state = make_state()
     state["issues_filed"] = [
         {
@@ -1582,6 +1573,7 @@ def test_issues_view_width_truncation():
     app = _make_app(stdscr, flows=[flow])
     app.view = "issues"
     app._draw_issues_view()
+    # _safe_addstr truncates to max_x - col = 50 - 2 = 48
     issue_calls = [
         c for c in stdscr.addstr.call_args_list
         if "#1" in str(c[0][2])
@@ -1597,17 +1589,6 @@ def test_handle_issues_input_no_flows():
     app.view = "issues"
     app._handle_issues_input(curses.KEY_DOWN)
     assert app.issue_selected == 0
-
-
-def test_issues_view_quit_no_issues():
-    """'q' key quits when issues list is empty."""
-    state = make_state()
-    state["issues_filed"] = []
-    flow = _flow_from_state(state)
-    app = _make_app(flows=[flow])
-    app.view = "issues"
-    app._handle_issues_input(ord("q"))
-    assert app.running is False
 
 
 def test_handle_input_dispatches_to_issues_view():

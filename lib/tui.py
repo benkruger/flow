@@ -263,16 +263,10 @@ class TuiApp:
             if parts:
                 self._safe_addstr(row, 2, "  \u2502  ".join(parts))
                 row += 1
-            _, max_x = self.stdscr.getmaxyx()
             for issue in flow.get("issues", []):
                 if row >= max_y - 2:
                     break
-                ref = issue["ref"]
-                title = issue["title"]
-                line = f"  {ref} {title}"
-                available = max_x - 2
-                if len(line) > available:
-                    line = line[:available]
+                line = f"  {issue['ref']} {issue['title']}"
                 self._safe_addstr(row, 2, line)
                 row += 1
 
@@ -349,14 +343,11 @@ class TuiApp:
                 row = 3 + i
                 marker = "\u25b8 " if i == self.issue_selected else "  "
                 attr = curses.A_BOLD if i == self.issue_selected else 0
-                label = issue["label"][:16]
+                label = issue["label"][:18]
                 ref = issue["ref"]
-                phase = issue["phase_name"][:12]
+                phase = issue["phase_name"][:14]
                 title = issue["title"]
                 line = f"{marker}{label:<18s} {ref:<8s} {phase:<14s} {title}"
-                available = max_x - 2
-                if len(line) > available:
-                    line = line[:available]
                 self._safe_addstr(row, 2, line, attr)
 
         # Footer
@@ -413,8 +404,6 @@ class TuiApp:
         flow = self.flows[self.selected]
         issues = flow.get("issues", [])
         if not issues:
-            if key == ord("q"):
-                self.running = False
             return
 
         if key == curses.KEY_UP:
@@ -430,8 +419,6 @@ class TuiApp:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-        elif key == ord("q"):
-            self.running = False
 
     def _get_repo(self):
         """Get repo 'owner/repo' from flows or git remote fallback."""
