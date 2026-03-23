@@ -24,29 +24,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
     AUTO_SKILLS, build_initial_phases, derive_feature, detect_repo,
-    freeze_phases, mutate_state, now, read_flow_json,
+    freeze_phases, mutate_state, now, read_flow_json, read_prompt_file,
 )
 from log import append_log
 
-
-def _read_prompt_file(path):
-    """Read prompt text from a file and delete the file.
-
-    Returns (prompt_text, error_message). On success error is None.
-    The file is always deleted after reading, even if empty.
-    """
-    try:
-        with open(path) as fh:
-            content = fh.read()
-    except (OSError, IOError) as exc:
-        return None, f"Could not read prompt file '{path}': {exc}"
-
-    try:
-        os.remove(path)
-    except OSError:
-        pass
-
-    return content, None
 
 
 def _branch_name(feature_words):
@@ -209,7 +190,7 @@ def main():
 
     feature_words = args.feature_name
     if args.prompt_file:
-        raw_prompt, read_error = _read_prompt_file(args.prompt_file)
+        raw_prompt, read_error = read_prompt_file(args.prompt_file)
         if read_error:
             print(json.dumps({
                 "status": "error",

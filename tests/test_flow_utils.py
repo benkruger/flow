@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -1080,6 +1081,50 @@ class TestWriteTabSequences:
 
         with pytest.raises(OSError, match="No tty available"):
             write_tab_sequences(repo="test/test")
+
+
+# --- read_prompt_file ---
+
+
+def test_read_prompt_file_reads_and_deletes(tmp_path):
+    """read_prompt_file reads content and deletes the file."""
+    prompt_path = tmp_path / ".flow-start-prompt"
+    prompt_path.write_text("fix issue #42 with special chars: && | ;")
+    content, error = _mod.read_prompt_file(str(prompt_path))
+    assert error is None
+    assert content == "fix issue #42 with special chars: && | ;"
+    assert not prompt_path.exists()
+
+
+def test_read_prompt_file_empty_file(tmp_path):
+    """read_prompt_file reads empty file and deletes it."""
+    prompt_path = tmp_path / ".flow-start-prompt"
+    prompt_path.write_text("")
+    content, error = _mod.read_prompt_file(str(prompt_path))
+    assert error is None
+    assert content == ""
+    assert not prompt_path.exists()
+
+
+def test_read_prompt_file_missing_returns_error(tmp_path):
+    """read_prompt_file returns error for nonexistent file."""
+    content, error = _mod.read_prompt_file(str(tmp_path / "nonexistent"))
+    assert content is None
+    assert "Could not read" in error
+
+
+def test_read_prompt_file_delete_failure_still_returns_content(tmp_path, monkeypatch):
+    """read_prompt_file returns content even when file deletion fails."""
+    prompt_path = tmp_path / ".flow-start-prompt"
+    prompt_path.write_text("some prompt text")
+
+    def _fail_remove(path):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(os, "remove", _fail_remove)
+    content, error = _mod.read_prompt_file(str(prompt_path))
+    assert error is None
+    assert content == "some prompt text"
 
 
 # --- read_flow_json ---
