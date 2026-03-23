@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import detect_repo
+from flow_utils import LOCAL_TIMEOUT, detect_repo
 
 
 def read_body_file(path):
@@ -64,7 +64,7 @@ def fetch_database_id(repo, number):
     try:
         result = subprocess.run(
             ["gh", "api", f"repos/{repo}/issues/{number}", "--jq", ".id"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
         return None, "gh api timed out after 30 seconds"
@@ -94,7 +94,7 @@ def create_issue(repo, title, label=None, body=None):
         cmd.extend(["--body", body])
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=LOCAL_TIMEOUT)
     except subprocess.TimeoutExpired:
         return None, "Command timed out after 30 seconds"
 

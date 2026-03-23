@@ -619,6 +619,15 @@ class TestShortIssueRef:
         assert _mod.short_issue_ref(url) == url
 
 
+# --- LOCAL_TIMEOUT constant ---
+
+
+def test_local_timeout_exists_and_is_int():
+    """LOCAL_TIMEOUT must be an int with value 30."""
+    assert isinstance(_mod.LOCAL_TIMEOUT, int)
+    assert _mod.LOCAL_TIMEOUT == 30
+
+
 # --- AUTO_SKILLS constant ---
 
 

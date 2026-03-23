@@ -18,8 +18,12 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
-LOCAL_TIMEOUT = 30
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from flow_utils import LOCAL_TIMEOUT
+
 NETWORK_TIMEOUT = 60
 
 
