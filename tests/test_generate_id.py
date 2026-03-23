@@ -4,7 +4,7 @@ import re
 import subprocess
 import sys
 
-from conftest import BIN_DIR, LIB_DIR
+from conftest import LIB_DIR
 
 sys.path.insert(0, str(LIB_DIR))
 
