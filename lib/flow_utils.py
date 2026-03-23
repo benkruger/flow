@@ -450,6 +450,19 @@ def format_tab_color(state=None, *, repo=None, override=None):
     return TAB_COLORS[index]
 
 
+def read_flow_json(root=None):
+    """Read and parse .flow.json from the given root (or CWD).
+
+    Returns the parsed dict on success, or None if the file is missing
+    or contains invalid JSON. Callers decide their own error policy.
+    """
+    try:
+        path = Path(root) / ".flow.json" if root else Path(".flow.json")
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def write_tab_sequences(state=None, *, repo=None, root=None):
     """Build and write terminal tab escape sequences to /dev/tty.
 
