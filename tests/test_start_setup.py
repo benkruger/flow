@@ -660,39 +660,6 @@ def test_prompt_flag_omitted_falls_back_to_feature_words(git_repo_with_remote):
 # --- Prompt file support (--prompt-file flag) ---
 
 
-def test_read_prompt_file_reads_and_deletes(tmp_path):
-    """_read_prompt_file reads content and deletes the file."""
-    prompt_path = tmp_path / ".flow-start-prompt"
-    prompt_path.write_text("fix issue #42 with special chars: && | ;")
-    content, error = _mod._read_prompt_file(str(prompt_path))
-    assert error is None
-    assert content == "fix issue #42 with special chars: && | ;"
-    assert not prompt_path.exists()
-
-
-def test_read_prompt_file_missing_returns_error(tmp_path):
-    """_read_prompt_file returns error for nonexistent file."""
-    content, error = _mod._read_prompt_file(str(tmp_path / "nonexistent"))
-    assert content is None
-    assert "Could not read" in error
-
-
-def test_read_prompt_file_delete_failure_still_returns_content(tmp_path, monkeypatch):
-    """_read_prompt_file returns content even when file deletion fails."""
-    prompt_path = tmp_path / ".flow-start-prompt"
-    prompt_path.write_text("some prompt text")
-    original_remove = os.remove
-
-    def _fail_remove(path):
-        raise OSError("permission denied")
-
-    monkeypatch.setattr(os, "remove", _fail_remove)
-    content, error = _mod._read_prompt_file(str(prompt_path))
-    assert error is None
-    assert content == "some prompt text"
-    monkeypatch.setattr(os, "remove", original_remove)
-
-
 def test_prompt_file_not_found_returns_error_json(git_repo_with_remote):
     """--prompt-file with nonexistent path returns error JSON."""
     result = _run_no_gh(

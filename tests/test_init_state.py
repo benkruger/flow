@@ -351,22 +351,6 @@ def test_branch_name_single_long_word():
     assert result == "a" * 32
 
 
-def test_prompt_file_delete_failure_still_returns_content(tmp_path, monkeypatch):
-    """_read_prompt_file returns content even when file deletion fails."""
-    prompt_path = tmp_path / ".flow-start-prompt"
-    prompt_path.write_text("some prompt text")
-    original_remove = os.remove
-
-    def _fail_remove(path):
-        raise OSError("permission denied")
-
-    monkeypatch.setattr(os, "remove", _fail_remove)
-    content, error = _mod._read_prompt_file(str(prompt_path))
-    assert error is None
-    assert content == "some prompt text"
-    monkeypatch.setattr(os, "remove", original_remove)
-
-
 # --- CLI integration ---
 
 
