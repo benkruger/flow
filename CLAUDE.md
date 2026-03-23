@@ -81,6 +81,7 @@ CI will fail if these are missing:
 - `lib/create-dependencies.py` — copies framework dependency template to `bin/dependencies`
 - `agents/ci-fixer.md` — custom plugin sub-agent for CI failure diagnosis and fix
 - `lib/finalize-commit.py` — consolidates commit + message-file cleanup + pull + push into one subprocess chain
+- `lib/generate-id.py` — generates an 8-character hex session ID via `uuid.uuid4().hex[:8]`; used by `flow-create-issue` and `flow-decompose-project` skills
 - `lib/log.py` — appends timestamped entries to `.flow-states/<branch>.log` via Python file append with `fcntl.LOCK_EX` locking
 - `lib/orchestrate-state.py` — manages `.flow-states/orchestrate.json` (create, start-issue, record-outcome, complete, read, next); uses `mutate_state` for atomic writes
 - `lib/orchestrate-report.py` — generates morning report from orchestration state; writes `.flow-states/orchestrate-summary.md`
