@@ -205,7 +205,13 @@ if not states and not orchestrate_block:
             pass
     sys.exit(0)
 
-dev_mode = (state_dir / ".dev-mode").exists()
+dev_mode = False
+try:
+    flow_json_path = Path(".flow.json")
+    if flow_json_path.exists():
+        dev_mode = "plugin_root_backup" in json.loads(flow_json_path.read_text())
+except (json.JSONDecodeError, OSError):
+    pass
 dev_preamble = ""
 if dev_mode:
     dev_preamble = (
