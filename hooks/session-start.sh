@@ -207,10 +207,10 @@ if not states and not orchestrate_block:
 
 dev_mode = False
 try:
-    _fj = Path(".flow.json")
-    if _fj.exists():
-        dev_mode = "plugin_root_backup" in json.loads(_fj.read_text())
-except Exception:
+    flow_json_path = Path(".flow.json")
+    if flow_json_path.exists():
+        dev_mode = "plugin_root_backup" in json.loads(flow_json_path.read_text())
+except (json.JSONDecodeError, OSError):
     pass
 dev_preamble = ""
 if dev_mode:

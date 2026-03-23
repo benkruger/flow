@@ -218,10 +218,10 @@ def main():
     version = read_version()
     dev_mode = False
     try:
-        _fj = root / ".flow.json"
-        if _fj.exists():
-            dev_mode = "plugin_root_backup" in json.loads(_fj.read_text())
-    except Exception:
+        flow_json_path = root / ".flow.json"
+        if flow_json_path.exists():
+            dev_mode = "plugin_root_backup" in json.loads(flow_json_path.read_text())
+    except (json.JSONDecodeError, OSError):
         pass
 
     if len(results) > 1:

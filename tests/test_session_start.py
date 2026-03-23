@@ -1205,3 +1205,22 @@ def test_no_dev_mode_preamble_without_flow_json(git_repo):
     assert result.returncode == 0
     output = json.loads(result.stdout)
     assert "[DEV MODE]" not in output["additional_context"]
+
+
+def test_no_dev_mode_preamble_with_malformed_flow_json(git_repo):
+    """No dev mode preamble when .flow.json is malformed."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["branch"] = "bad-json"
+    write_state(state_dir, "bad-json", state)
+
+    (git_repo / ".flow.json").write_text("{bad json")
+
+    _switch(git_repo, "bad-json")
+    result = _run(git_repo)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert "[DEV MODE]" not in output["additional_context"]
