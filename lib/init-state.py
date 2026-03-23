@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import now, PHASE_NAMES, PHASE_ORDER
+from flow_utils import now, read_flow_json, PHASE_NAMES, PHASE_ORDER
 from log import append_log
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
@@ -160,14 +160,12 @@ def main():
     project_root = Path.cwd()
 
     # Read .flow.json for framework and skills
-    flow_json_path = project_root / ".flow.json"
-    try:
-        init_data = json.loads(flow_json_path.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
+    init_data = read_flow_json(project_root)
+    if init_data is None:
         print(json.dumps({
             "status": "error",
             "step": "flow_json",
-            "message": f"Could not read .flow.json: {exc}",
+            "message": "Could not read .flow.json",
         }))
         sys.exit(1)
 

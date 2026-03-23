@@ -164,7 +164,7 @@ Present the full DAG synthesis to the user.
 
 Ask the user to review the decomposition using AskUserQuestion:
 
-- **"Proceed to draft"** → generate a short session ID by running `uuidgen | cut -c1-8` via the Bash tool (this ID scopes all file paths for this session). Write `{"create_issue_step": 1}` to `.flow-states/create-issue-<id>.json` using the Write tool, then invoke `flow:flow-create-issue --step 2 --id <id>` using the Skill tool as your final action. Do not output anything else after this invocation.
+- **"Proceed to draft"** → generate a short session ID by running `exec ${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool (this ID scopes all file paths for this session). Write `{"create_issue_step": 1}` to `.flow-states/create-issue-<id>.json` using the Write tool, then invoke `flow:flow-create-issue --step 2 --id <id>` using the Skill tool as your final action. Do not output anything else after this invocation.
 - **"Iterate on decomposition"** → re-invoke `decompose:decompose` with the user's feedback, present the updated synthesis, and ask again.
 - **"Cancel"** → stop. Do not file an issue.
 

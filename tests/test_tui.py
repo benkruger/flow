@@ -578,8 +578,9 @@ def test_list_input_refresh_key():
 # --- _open_worktree ---
 
 
-def test_open_worktree(tmp_path):
-    """Opens worktree directory in Terminal."""
+def test_open_worktree(tmp_path, monkeypatch):
+    """Opens worktree directory in Terminal by default."""
+    monkeypatch.delenv("TERM_PROGRAM", raising=False)
     worktree_dir = tmp_path / ".worktrees" / "test-feature"
     worktree_dir.mkdir(parents=True)
     state = make_state()
@@ -591,6 +592,22 @@ def test_open_worktree(tmp_path):
         assert args[0] == "open"
         assert args[1] == "-a"
         assert args[2] == "Terminal"
+
+
+def test_open_worktree_iterm(tmp_path, monkeypatch):
+    """Opens worktree directory in iTerm when TERM_PROGRAM is iTerm.app."""
+    monkeypatch.setenv("TERM_PROGRAM", "iTerm.app")
+    worktree_dir = tmp_path / ".worktrees" / "test-feature"
+    worktree_dir.mkdir(parents=True)
+    state = make_state()
+    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+    with patch("tui.subprocess.Popen") as mock_popen:
+        app._open_worktree()
+        mock_popen.assert_called_once()
+        args = mock_popen.call_args[0][0]
+        assert args[0] == "open"
+        assert args[1] == "-a"
+        assert args[2] == "iTerm"
 
 
 def test_open_worktree_no_dir(tmp_path):

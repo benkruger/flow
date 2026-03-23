@@ -7,6 +7,7 @@ Usage: flow tui
 """
 
 import curses
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -458,8 +459,10 @@ class TuiApp:
         flow = self.flows[self.selected]
         worktree_path = self.root / flow["worktree"]
         if worktree_path.is_dir():
+            term = os.environ.get("TERM_PROGRAM", "")
+            app = "iTerm" if term == "iTerm.app" else "Terminal"
             subprocess.Popen(
-                ["open", "-a", "Terminal", str(worktree_path)],
+                ["open", "-a", app, str(worktree_path)],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )

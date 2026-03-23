@@ -72,7 +72,7 @@ CI will fail if these are missing:
 - `lib/start-lock.py` — serializes concurrent flow-start operations using a file lock at `.flow-states/start.lock` (PID-based stale detection + 30-min timeout)
 - `lib/init-state.py` — early state file creation with null PR fields for TUI visibility during Start; called before locked main operations
 - `lib/start-setup.py` — consolidated Start phase setup (worktree, PR, state file backfill, repo detection; optional git pull via `--skip-pull`)
-- `lib/flow_utils.py` — shared utilities: `now()` (Pacific Time timestamps), `PACIFIC` timezone, `format_time()`, `elapsed_since()`, `read_version()`, `read_version_from()`, `current_branch()`, `project_root()`, `extract_issue_numbers()`, `short_issue_ref()`, `detect_repo()`, `mutate_state()`, `derive_feature()`, `derive_worktree()`, `freeze_phases()`, `build_initial_phases()`, `AUTO_SKILLS`, `PHASE_NAMES`, `COMMANDS`
+- `lib/flow_utils.py` — shared utilities: `now()` (Pacific Time timestamps), `PACIFIC` timezone, `format_time()`, `elapsed_since()`, `read_version()`, `read_version_from()`, `current_branch()`, `project_root()`, `read_flow_json()`, `extract_issue_numbers()`, `short_issue_ref()`, `detect_repo()`, `mutate_state()`, `derive_feature()`, `derive_worktree()`, `freeze_phases()`, `build_initial_phases()`, `AUTO_SKILLS`, `PHASE_NAMES`, `COMMANDS`
 - `lib/phase-transition.py` — phase entry/completion (timing, counters, status, formatted_time, phase_transitions recording, diff_stats capture)
 - `lib/set-timestamp.py` — mid-phase timestamp fields via dot-path notation, code_task increment validation (prevents task batching)
 - `frameworks/<name>/` — per-framework data: `detect.json`, `permissions.json`, `dependencies`, `priming.md`
@@ -81,6 +81,7 @@ CI will fail if these are missing:
 - `lib/create-dependencies.py` — copies framework dependency template to `bin/dependencies`
 - `agents/ci-fixer.md` — custom plugin sub-agent for CI failure diagnosis and fix
 - `lib/finalize-commit.py` — consolidates commit + message-file cleanup + pull + push into one subprocess chain
+- `lib/generate-id.py` — generates an 8-character hex session ID via `uuid.uuid4().hex[:8]`; used by `flow-create-issue` and `flow-decompose-project` skills
 - `lib/log.py` — appends timestamped entries to `.flow-states/<branch>.log` via Python file append with `fcntl.LOCK_EX` locking
 - `lib/orchestrate-state.py` — manages `.flow-states/orchestrate.json` (create, start-issue, record-outcome, complete, read, next); uses `mutate_state` for atomic writes
 - `lib/orchestrate-report.py` — generates morning report from orchestration state; writes `.flow-states/orchestrate-summary.md`
@@ -117,7 +118,6 @@ CI will fail if these are missing:
 - `docs/reference/skill-pattern.md` — template pattern for building new phase skills
 - `docs/integrations/slack.md` — Slack App setup guide and notification configuration
 - `.claude-plugin/marketplace.json` — marketplace registry (version must match plugin.json)
-- `.github/workflows/ci.yml` — GitHub Actions CI (Python 3.12, pytest)
 
 ## Development Environment
 
@@ -243,6 +243,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_clear_blocked.py` | PostToolUse hook: clears `_blocked` from state, noop when absent, fail-open on errors, subprocess integration |
 | `test_post_compact.py` | PostCompact hook: compact_summary/cwd/count written to state, fail-open on errors, subprocess integration |
 | `test_finalize_commit.py` | Commit finalization: happy path, commit/pull/push failures, merge conflict detection, message file cleanup, CLI |
+| `test_generate_id.py` | Session ID generation: length, hex format, uniqueness, main stdout, CLI integration |
 | `test_flow_utils.py` | flow_utils functions: format_time, project_root, current_branch, find_state_files, resolve_branch, derive_feature, derive_worktree, detect_repo, mutate_state, extract_issue_numbers, short_issue_ref, tab color/title/sequence formatting |
 | `test_log.py` | Log append: existing file, new file, directory creation, multiple appends, file locking verification, CLI integration |
 | `test_tui_data.py` | TUI data layer: load_all_flows (0/1/N files, corrupt JSON, phases exclusion), flow_summary (all fields), phase_timeline (statuses, annotations), parse_log_entries (parsing, limits, malformed), read_version |
