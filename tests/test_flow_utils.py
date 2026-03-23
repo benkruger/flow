@@ -14,6 +14,7 @@ from flow_utils import (
     TAB_COLORS,
     format_tab_color,
     format_tab_title,
+    read_flow_json,
     write_tab_sequences,
 )
 
@@ -1079,3 +1080,42 @@ class TestWriteTabSequences:
 
         with pytest.raises(OSError, match="No tty available"):
             write_tab_sequences(repo="test/test")
+
+
+# --- read_flow_json ---
+
+
+class TestReadFlowJson:
+    """Tests for flow_utils.read_flow_json — shared .flow.json reader."""
+
+    def test_returns_parsed_dict_when_valid(self, tmp_path):
+        """Returns the parsed dict when .flow.json exists and is valid."""
+        data = {"flow_version": "0.39.0", "framework": "python"}
+        (tmp_path / ".flow.json").write_text(json.dumps(data))
+        result = read_flow_json(root=tmp_path)
+        assert result == data
+
+    def test_returns_none_when_missing(self, tmp_path):
+        """Returns None when .flow.json does not exist."""
+        result = read_flow_json(root=tmp_path)
+        assert result is None
+
+    def test_returns_none_when_corrupt(self, tmp_path):
+        """Returns None when .flow.json contains invalid JSON."""
+        (tmp_path / ".flow.json").write_text("{bad json")
+        result = read_flow_json(root=tmp_path)
+        assert result is None
+
+    def test_uses_cwd_when_root_is_none(self, tmp_path, monkeypatch):
+        """Defaults to CWD when root is None."""
+        monkeypatch.chdir(tmp_path)
+        data = {"flow_version": "0.39.0", "tab_color": [10, 20, 30]}
+        (tmp_path / ".flow.json").write_text(json.dumps(data))
+        result = read_flow_json()
+        assert result == data
+
+    def test_uses_cwd_when_missing_and_root_is_none(self, tmp_path, monkeypatch):
+        """Returns None when CWD has no .flow.json and root is None."""
+        monkeypatch.chdir(tmp_path)
+        result = read_flow_json()
+        assert result is None
