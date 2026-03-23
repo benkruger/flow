@@ -9,8 +9,8 @@ if [ ! -f "$SECRETS_FILE" ]; then
   cp "$SECRETS_EXAMPLE" "$SECRETS_FILE"
 fi
 
-xcodebuild test \
-  -project FlowQA.xcodeproj \
-  -scheme FlowQA \
-  -destination 'platform=macOS' \
-  -quiet
+ARGS=(test -project FlowQA.xcodeproj -scheme FlowQA
+      -destination 'platform=macOS' -quiet)
+FILTER="${1:-}"
+[ -n "$FILTER" ] && ARGS+=(-only-testing:"FlowQATests/$FILTER")
+xcodebuild "${ARGS[@]}"

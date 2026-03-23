@@ -1679,6 +1679,23 @@ def test_orch_view_item_with_pr_url():
     assert "PR 58" in text
 
 
+def test_orch_view_item_with_pr_url_trailing_slash():
+    """PR number extraction handles trailing slash in pr_url."""
+    items = [
+        _make_orch_item(42, "Done", icon="\u2713", status="completed",
+                        elapsed="1h 24m",
+                        pr_url="https://github.com/test/test/pull/58/"),
+    ]
+    orch = _make_orch_data(items=items, completed_count=1)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app.active_tab = 1
+    app._draw_orchestration_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "PR 58" in text
+
+
 def test_refresh_data_clamps_orch_selected(state_dir):
     """refresh_data clamps orch_selected when items shrink."""
     app = _make_app(root=state_dir.parent)

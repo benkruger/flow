@@ -9,7 +9,7 @@ if [ ! -f "$SECRETS_FILE" ]; then
   cp "$SECRETS_EXAMPLE" "$SECRETS_FILE"
 fi
 
-xcodebuild test \
+xcodebuild build \
   -project FlowQA.xcodeproj \
   -scheme FlowQA \
   -destination 'platform=macOS' \

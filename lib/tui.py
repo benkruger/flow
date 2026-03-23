@@ -486,7 +486,7 @@ class TuiApp:
             elapsed_str = f"  {item['elapsed']}" if item["elapsed"] else ""
             pr_str = ""
             if item["pr_url"]:
-                pr_str = f"  PR {item['pr_url'].rsplit('/', 1)[-1]}"
+                pr_str = f"  PR {item['pr_url'].rstrip('/').rsplit('/', 1)[-1]}"
             line = f"{marker}{item['icon']} #{item['issue_number']}  {item['title']:<30s}{elapsed_str}{pr_str}"
             self._safe_addstr(row, 2, line, attr)
 
