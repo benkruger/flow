@@ -165,6 +165,63 @@ def test_flow_summary_no_notes_or_issues():
     assert summary["issues_count"] == 0
 
 
+def test_flow_summary_issues_populated():
+    """issues key contains display-ready dicts from issues_filed."""
+    state = make_state()
+    state["issues_filed"] = [
+        {
+            "label": "Tech Debt",
+            "title": "Extract helper for date parsing",
+            "url": "https://github.com/test/test/issues/42",
+            "phase": "flow-code-review",
+            "phase_name": "Code Review",
+            "timestamp": "2026-01-01T10:00:00-08:00",
+        },
+        {
+            "label": "Flaky Test",
+            "title": "test_timeout flakes on CI",
+            "url": "https://github.com/test/test/issues/55",
+            "phase": "flow-code",
+            "phase_name": "Code",
+            "timestamp": "2026-01-01T11:00:00-08:00",
+        },
+    ]
+    summary = tui_data.flow_summary(state)
+    issues = summary["issues"]
+    assert len(issues) == 2
+    assert issues[0]["label"] == "Tech Debt"
+    assert issues[0]["title"] == "Extract helper for date parsing"
+    assert issues[0]["url"] == "https://github.com/test/test/issues/42"
+    assert issues[0]["ref"] == "#42"
+    assert issues[0]["phase_name"] == "Code Review"
+    assert issues[1]["ref"] == "#55"
+
+
+def test_flow_summary_issues_empty():
+    """issues is empty list when issues_filed is empty."""
+    state = make_state()
+    state["issues_filed"] = []
+    summary = tui_data.flow_summary(state)
+    assert summary["issues"] == []
+
+
+def test_flow_summary_issues_url_fallback():
+    """ref falls back to full URL when URL is non-standard."""
+    state = make_state()
+    state["issues_filed"] = [
+        {
+            "label": "Flow",
+            "title": "Process gap",
+            "url": "https://example.com/custom/path",
+            "phase": "flow-learn",
+            "phase_name": "Learn",
+            "timestamp": "2026-01-01T12:00:00-08:00",
+        },
+    ]
+    summary = tui_data.flow_summary(state)
+    assert summary["issues"][0]["ref"] == "https://example.com/custom/path"
+
+
 def test_flow_summary_blocked_true():
     """State with _blocked set returns blocked: True."""
     state = make_state(current_phase="flow-code")
