@@ -1127,11 +1127,11 @@ def test_reset_has_confirmation():
 # --- QA skill (maintainer) ---
 
 
-def test_flow_qa_has_dev_mode_marker():
-    """QA SKILL.md must reference the .dev-mode marker file."""
+def test_flow_qa_has_dev_mode_check():
+    """QA SKILL.md must check plugin_root_backup in .flow.json for dev mode."""
     content = (REPO_ROOT / ".claude" / "skills" / "flow-qa" / "SKILL.md").read_text()
-    assert ".flow-states/.dev-mode" in content, (
-        "flow-qa/SKILL.md must reference .flow-states/.dev-mode marker"
+    assert "plugin_root_backup" in content, (
+        "flow-qa/SKILL.md must reference plugin_root_backup for dev mode detection"
     )
 
 
