@@ -29,8 +29,8 @@ and PR number. If the state file is missing, infer from git state
 ### 2. Check PR status
 
 Check whether the PR is already merged. If merged, skip directly to
-archive artifacts (step 6), then continue to remove labels (step 8) and
-close issues (step 9) — skipping the merge since it already happened. If open, continue to merge
+archive artifacts (step 7), then continue to close issues (step 9) and
+remove labels (step 10) — skipping the merge since it already happened. If open, continue to merge
 flow. If closed but not merged, stop with an error.
 
 ### 3. Merge main into branch
@@ -38,22 +38,27 @@ flow. If closed but not merged, stop with an error.
 Fetch the latest main and merge it into the feature branch. If there
 are merge conflicts, resolve them inline and push the resolution.
 
-### 4. Check CI status
+### 4. Run local CI gate
 
-First runs `bin/flow ci --force --simulate-branch main` locally to catch
+Runs `bin/flow ci --force --simulate-branch main` locally to catch
 branch-dependent test failures (tests that pass on feature branches but
 fail on main because `current_branch()` resolves against the host repo).
-Then checks the PR's GitHub CI checks. If all pass, continue to merge.
-If any are pending, invoke `/loop 15s /flow:flow-complete` to auto-retry.
-If any have failed, launch the ci-fixer sub-agent to diagnose and fix.
+If it fails, launch the ci-fixer sub-agent to diagnose and fix.
 
-### 5. Confirm with user (--manual only)
+### 5. Check GitHub CI status
+
+Checks the PR's GitHub CI checks via `gh pr checks`. If all pass,
+continue to merge. If any are pending, invoke
+`/loop 15s /flow:flow-complete` to auto-retry. If any have failed,
+launch the ci-fixer sub-agent to diagnose and fix.
+
+### 6. Confirm with user (--manual only)
 
 When `--manual` is passed, explicit confirmation is required before
 the irreversible squash merge. Any warnings from the entry check are
 included in the confirmation message. Skipped by default.
 
-### 6. Archive artifacts to PR
+### 7. Archive artifacts to PR
 
 Archives key artifacts to the PR body before merging. This step also
 runs when the PR is already merged (via the Step 2 MERGED path) to
@@ -68,15 +73,10 @@ ensure artifacts are present regardless of how the PR was merged.
 - **State file** — the full state JSON in a collapsible details block
 - **Session log file** — the raw session log in a collapsible details block
 
-### 7. Merge PR
+### 8. Merge PR
 
 Squash-merge the PR via `gh pr merge --squash`. Branch deletion is
 handled by the cleanup script in the next step.
-
-### 8. Remove In-Progress labels
-
-Removes the "Flow In-Progress" label from any issues referenced in the
-start prompt. Best-effort — continues to close-issues even if removal fails.
 
 ### 9. Close referenced issues
 
@@ -84,7 +84,12 @@ If the `/flow-start` prompt contained `#N` issue references (e.g.,
 "fix #83 and #89"), those issues are closed via `gh issue close` after
 the merge succeeds. Best-effort — cleanup continues even if closing fails.
 
-### 10. Run cleanup
+### 10. Remove In-Progress labels
+
+Removes the "Flow In-Progress" label from any issues referenced in the
+start prompt. Best-effort — continues to cleanup even if removal fails.
+
+### 11. Run cleanup
 
 `bin/flow cleanup` handles all resources from the project root:
 remote and local branch deletion, worktree removal, state file deletion,
@@ -93,7 +98,7 @@ if one fails, the rest still run.
 
 This resets the SessionStart hook — the next session starts clean.
 
-### 11. Pull merged changes
+### 12. Pull merged changes
 
 Pulls `origin main` so local main has the merged feature code. If the
 pull fails, a warning is shown but cleanup is still considered complete.
@@ -140,7 +145,7 @@ The skill is safe to re-invoke (e.g., via `/loop 15s /flow:flow-complete`):
 | State file missing | Warns, infers from git, proceeds (confirms if `--manual`) |
 | PR not open or merged | Hard block, does not proceed |
 
-Every step after the merge (Steps 8-11) is best-effort — if one fails,
+Every step after the merge (Steps 9-12) is best-effort — if one fails,
 continue to the next.
 
 ---

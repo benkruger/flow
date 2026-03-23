@@ -320,7 +320,7 @@ def test_complete_does_not_contain_admin_flag():
 
 
 def test_complete_navigates_to_project_root():
-    """Complete skill must cd to project root before cleanup (Step 10)."""
+    """Complete skill must cd to project root before cleanup (Step 12)."""
     content = _read_skill("flow-complete")
     assert "cd <project_root>" in content, (
         "Complete skill must include cd <project_root> before cleanup — "
@@ -2251,7 +2251,7 @@ def test_plan_skill_does_not_reference_transcript_path():
 
 
 def test_complete_skill_uses_render_pr_body():
-    """Complete Step 6 must use render-pr-body for PR archival."""
+    """Complete Step 7 must use render-pr-body for PR archival."""
     content = _read_skill("flow-complete")
     assert "render-pr-body" in content, (
         "flow-complete/SKILL.md must use render-pr-body for PR body rendering"
@@ -2313,8 +2313,8 @@ def test_complete_done_banner_includes_session_summary():
     )
 
 
-def test_complete_step6_archives_all_pr_sections():
-    """Complete Step 6 must reference all required PR body section headings."""
+def test_complete_step7_archives_all_pr_sections():
+    """Complete Step 7 must reference all required PR body section headings."""
     content = _read_skill("flow-complete")
     required_headings = [
         "Phase Timings",
@@ -2325,17 +2325,17 @@ def test_complete_step6_archives_all_pr_sections():
     for heading in required_headings:
         assert heading in content, (
             f"flow-complete/SKILL.md must reference '{heading}' "
-            f"section heading in Step 6 archive"
+            f"section heading in Step 7 archive"
         )
 
 
 def test_complete_merged_path_includes_archive():
-    """Complete Step 2 MERGED path must route through Step 6 (archive)."""
+    """Complete Step 2 MERGED path must route through Step 7 (archive)."""
     content = _read_skill("flow-complete")
-    assert "Step 6" in content, (
-        "flow-complete/SKILL.md must reference Step 6"
+    assert "Step 7" in content, (
+        "flow-complete/SKILL.md must reference Step 7"
     )
-    # The MERGED path instruction must mention Step 6
+    # The MERGED path instruction must mention Step 7
     # to ensure archive runs before cleanup
     merged_idx = content.find("MERGED")
     assert merged_idx != -1, (
@@ -2347,8 +2347,8 @@ def test_complete_merged_path_includes_archive():
         "flow-complete/SKILL.md must have OPEN path after MERGED path"
     )
     merged_section = content[merged_idx:open_idx]
-    assert "Step 6" in merged_section, (
-        "flow-complete/SKILL.md MERGED path must route through Step 6 "
+    assert "Step 7" in merged_section, (
+        "flow-complete/SKILL.md MERGED path must route through Step 7 "
         "(archive artifacts) before proceeding to cleanup"
     )
 
@@ -2415,9 +2415,9 @@ def test_complete_sets_continue_pending_before_commit():
             break
         flag_positions.append(pos)
         start = pos + 1
-    assert len(flag_positions) >= 3, (
-        "Complete must set _continue_pending=commit at least three times "
-        f"(Steps 3, 4, and 5), found {len(flag_positions)}"
+    assert len(flag_positions) >= 4, (
+        "Complete must set _continue_pending=commit at least four times "
+        f"(Steps 3, 4, 5, and 6), found {len(flag_positions)}"
     )
     # Each flag must precede a /flow:flow-commit
     for i, flag_pos in enumerate(flag_positions):
@@ -2429,7 +2429,7 @@ def test_complete_sets_continue_pending_before_commit():
 
 
 def test_complete_commit_points_self_invoke():
-    """Complete Steps 3, 4, and 5 must self-invoke via --continue-step."""
+    """Complete Steps 3, 4, 5, and 6 must self-invoke via --continue-step."""
     content = _read_skill("flow-complete")
     # Step 3 section (merge conflicts)
     step3_match = re.search(
@@ -2439,7 +2439,7 @@ def test_complete_commit_points_self_invoke():
     assert "flow:flow-complete --continue-step" in step3_match.group(1), (
         "Step 3 must self-invoke via 'flow:flow-complete --continue-step'"
     )
-    # Step 4 section (CI check)
+    # Step 4 section (local CI gate)
     step4_match = re.search(
         r"### Step 4.*?\n(.*?)(?=\n### Step 5)", content, re.DOTALL
     )
@@ -2447,7 +2447,7 @@ def test_complete_commit_points_self_invoke():
     assert "flow:flow-complete --continue-step" in step4_match.group(1), (
         "Step 4 must self-invoke via 'flow:flow-complete --continue-step'"
     )
-    # Step 5 section (feedback loop)
+    # Step 5 section (GitHub CI status)
     step5_match = re.search(
         r"### Step 5.*?\n(.*?)(?=\n### Step 6)", content, re.DOTALL
     )
@@ -2455,16 +2455,24 @@ def test_complete_commit_points_self_invoke():
     assert "flow:flow-complete --continue-step" in step5_match.group(1), (
         "Step 5 must self-invoke via 'flow:flow-complete --continue-step'"
     )
+    # Step 6 section (confirm with user / feedback loop)
+    step6_match = re.search(
+        r"### Step 6.*?\n(.*?)(?=\n### Step 7)", content, re.DOTALL
+    )
+    assert step6_match, "Could not find Step 6 section"
+    assert "flow:flow-complete --continue-step" in step6_match.group(1), (
+        "Step 6 must self-invoke via 'flow:flow-complete --continue-step'"
+    )
 
 
 def test_complete_commit_points_record_step():
-    """Complete Steps 3, 4, and 5 must record complete_step via set-timestamp."""
+    """Complete Steps 3, 4, 5, and 6 must record complete_step via set-timestamp."""
     content = _read_skill("flow-complete")
     assert "complete_step=4" in content, (
-        "Complete must record complete_step=4 after Step 3 commit"
+        "Complete must record complete_step=4 after Step 3 and CI commits"
     )
-    assert "complete_step=5" in content, (
-        "Complete must record complete_step=5 after Step 5 feedback commit"
+    assert "complete_step=6" in content, (
+        "Complete must record complete_step=6 after Step 6 feedback commit"
     )
 
 
@@ -2473,7 +2481,7 @@ def test_continue_context_includes_mode_flag():
     skills_with_min = {
         "flow-code": 2,
         "flow-code-review": 4,
-        "flow-complete": 4,
+        "flow-complete": 6,
         "flow-learn": 2,
     }
     for skill_name, min_step_contexts in skills_with_min.items():
@@ -2490,6 +2498,32 @@ def test_continue_context_includes_mode_flag():
                 f"_continue_context with --continue-step in {skill_name} "
                 f"must include --auto or --manual, got: {ctx}"
             )
+
+
+# --- Flat sequential step numbering ---
+
+
+def test_skills_no_substep_markers():
+    """No SKILL.md may use sub-step labels (bold markers or heading labels)."""
+    bold_pattern = re.compile(r"\*\*\d+[a-z]\.")
+    heading_pattern = re.compile(r"^###\s+\d+[a-z]", re.MULTILINE)
+    for d in sorted(SKILLS_DIR.iterdir()):
+        if not d.is_dir():
+            continue
+        skill_path = d / "SKILL.md"
+        if not skill_path.exists():
+            continue
+        content = skill_path.read_text()
+        bold_matches = bold_pattern.findall(content)
+        assert not bold_matches, (
+            f"{d.name}/SKILL.md contains bold sub-step markers: "
+            f"{bold_matches}. Use flat sequential ### Step N headings."
+        )
+        heading_matches = heading_pattern.findall(content)
+        assert not heading_matches, (
+            f"{d.name}/SKILL.md contains heading sub-step labels: "
+            f"{heading_matches}. Use bold prose markers within the step."
+        )
 
 
 # --- DAG decomposition contracts ---
