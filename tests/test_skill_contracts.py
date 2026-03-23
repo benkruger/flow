@@ -1135,22 +1135,14 @@ def test_flow_qa_has_dev_mode_marker():
     )
 
 
-def test_flow_qa_has_cache_nuke():
-    """QA SKILL.md must nuke the plugin cache directory."""
+def test_flow_qa_has_qa_mode_commands():
+    """QA SKILL.md must reference bin/flow qa-mode for start and stop."""
     content = (REPO_ROOT / ".claude" / "skills" / "flow-qa" / "SKILL.md").read_text()
-    assert "rm -rf ~/.claude/plugins/cache/flow-marketplace" in content, (
-        "flow-qa/SKILL.md must contain cache nuke command"
+    assert "bin/flow qa-mode --start" in content, (
+        "flow-qa/SKILL.md must reference 'bin/flow qa-mode --start'"
     )
-
-
-def test_flow_qa_has_plugin_install_commands():
-    """QA SKILL.md must contain both plugin uninstall and install commands."""
-    content = (REPO_ROOT / ".claude" / "skills" / "flow-qa" / "SKILL.md").read_text()
-    assert "claude plugin uninstall flow@flow-marketplace" in content, (
-        "flow-qa/SKILL.md must contain 'claude plugin uninstall flow@flow-marketplace'"
-    )
-    assert "claude plugin install flow@flow-marketplace" in content, (
-        "flow-qa/SKILL.md must contain 'claude plugin install flow@flow-marketplace'"
+    assert "bin/flow qa-mode --stop" in content, (
+        "flow-qa/SKILL.md must reference 'bin/flow qa-mode --stop'"
     )
 
 
