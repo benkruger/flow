@@ -18,6 +18,9 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import LOCAL_TIMEOUT, NETWORK_TIMEOUT, parse_conflict_files
 
