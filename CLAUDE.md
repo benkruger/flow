@@ -244,6 +244,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_clear_blocked.py` | PostToolUse hook: clears `_blocked` from state, noop when absent, fail-open on errors, subprocess integration |
 | `test_post_compact.py` | PostCompact hook: compact_summary/cwd/count written to state, fail-open on errors, subprocess integration |
 | `test_finalize_commit.py` | Commit finalization: happy path, commit/pull/push failures, merge conflict detection, message file cleanup, CLI |
+| `test_generate_id.py` | Session ID generation: length, hex format, uniqueness, main stdout, CLI integration |
 | `test_flow_utils.py` | flow_utils functions: format_time, project_root, current_branch, find_state_files, resolve_branch, derive_feature, derive_worktree, detect_repo, mutate_state, extract_issue_numbers, short_issue_ref, tab color/title/sequence formatting |
 | `test_log.py` | Log append: existing file, new file, directory creation, multiple appends, file locking verification, CLI integration |
 | `test_tui_data.py` | TUI data layer: load_all_flows (0/1/N files, corrupt JSON, phases exclusion), flow_summary (all fields), phase_timeline (statuses, annotations), parse_log_entries (parsing, limits, malformed), read_version |
