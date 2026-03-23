@@ -1140,3 +1140,68 @@ def test_no_flow_json_no_state_files_exits_silently(git_repo):
     result = _run(git_repo)
     assert result.returncode == 0
     assert result.stdout.strip() == ""
+
+
+# --- Dev mode detection ---
+
+
+def test_dev_mode_preamble_when_plugin_root_backup_present(git_repo):
+    """Dev mode preamble appears when .flow.json has plugin_root_backup."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["branch"] = "dev-mode-test"
+    write_state(state_dir, "dev-mode-test", state)
+
+    (git_repo / ".flow.json").write_text(json.dumps({
+        "flow_version": "0.39.0",
+        "plugin_root": "/local/path",
+        "plugin_root_backup": "/cache/path",
+    }))
+
+    _switch(git_repo, "dev-mode-test")
+    result = _run(git_repo)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert "[DEV MODE]" in output["additional_context"]
+
+
+def test_no_dev_mode_preamble_without_plugin_root_backup(git_repo):
+    """No dev mode preamble when .flow.json has no plugin_root_backup."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["branch"] = "no-dev-mode"
+    write_state(state_dir, "no-dev-mode", state)
+
+    (git_repo / ".flow.json").write_text(json.dumps({
+        "flow_version": "0.39.0",
+        "plugin_root": "/cache/path",
+    }))
+
+    _switch(git_repo, "no-dev-mode")
+    result = _run(git_repo)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert "[DEV MODE]" not in output["additional_context"]
+
+
+def test_no_dev_mode_preamble_without_flow_json(git_repo):
+    """No dev mode preamble when .flow.json does not exist."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-code", phase_statuses={
+        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
+    })
+    state["branch"] = "no-flow-json"
+    write_state(state_dir, "no-flow-json", state)
+
+    _switch(git_repo, "no-flow-json")
+    result = _run(git_repo)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert "[DEV MODE]" not in output["additional_context"]
