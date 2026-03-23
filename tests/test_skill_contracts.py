@@ -320,7 +320,7 @@ def test_complete_does_not_contain_admin_flag():
 
 
 def test_complete_navigates_to_project_root():
-    """Complete skill must cd to project root before cleanup (Step 10)."""
+    """Complete skill must cd to project root before cleanup (Step 12)."""
     content = _read_skill("flow-complete")
     assert "cd <project_root>" in content, (
         "Complete skill must include cd <project_root> before cleanup — "
@@ -2251,7 +2251,7 @@ def test_plan_skill_does_not_reference_transcript_path():
 
 
 def test_complete_skill_uses_render_pr_body():
-    """Complete Step 6 must use render-pr-body for PR archival."""
+    """Complete Step 7 must use render-pr-body for PR archival."""
     content = _read_skill("flow-complete")
     assert "render-pr-body" in content, (
         "flow-complete/SKILL.md must use render-pr-body for PR body rendering"
