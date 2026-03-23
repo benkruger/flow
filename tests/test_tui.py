@@ -613,6 +613,7 @@ def test_open_pr():
         args = mock_popen.call_args[0][0]
         assert args[0] == "open"
         assert "github.com" in args[1]
+        assert args[1].endswith("/files")
 
 
 def test_open_pr_no_url():
