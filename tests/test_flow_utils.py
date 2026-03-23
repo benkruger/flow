@@ -1173,3 +1173,52 @@ class TestReadFlowJson:
         monkeypatch.chdir(tmp_path)
         result = read_flow_json()
         assert result is None
+
+
+# --- parse_conflict_files ---
+
+
+def test_parse_conflict_files_empty():
+    """Empty string returns empty list."""
+    assert _mod.parse_conflict_files("") == []
+
+
+def test_parse_conflict_files_uu():
+    """UU (both modified) status is recognized as a conflict."""
+    assert _mod.parse_conflict_files("UU file.py\n") == ["file.py"]
+
+
+def test_parse_conflict_files_aa():
+    """AA (both added) status is recognized as a conflict."""
+    assert _mod.parse_conflict_files("AA file.py\n") == ["file.py"]
+
+
+def test_parse_conflict_files_dd():
+    """DD (both deleted) status is recognized as a conflict."""
+    assert _mod.parse_conflict_files("DD file.py\n") == ["file.py"]
+
+
+def test_parse_conflict_files_du_marker():
+    """DU (deleted by us) status is recognized via U in xy."""
+    assert _mod.parse_conflict_files("DU file.py\n") == ["file.py"]
+
+
+def test_parse_conflict_files_mixed():
+    """Only conflict lines are returned, clean lines are skipped."""
+    porcelain = "UU conflict.py\n M clean.py\nAA both.py\nA  added.py\nDD deleted.py\n"
+    assert _mod.parse_conflict_files(porcelain) == ["conflict.py", "both.py", "deleted.py"]
+
+
+def test_parse_conflict_files_no_conflicts():
+    """No conflict markers returns empty list."""
+    porcelain = " M modified.py\nA  added.py\n?? untracked.py\n"
+    assert _mod.parse_conflict_files(porcelain) == []
+
+
+# --- timeout constants ---
+
+
+def test_timeout_constants():
+    """LOCAL_TIMEOUT and NETWORK_TIMEOUT have correct values."""
+    assert _mod.LOCAL_TIMEOUT == 30
+    assert _mod.NETWORK_TIMEOUT == 60
