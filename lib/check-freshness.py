@@ -1,0 +1,170 @@
+"""Pre-merge freshness check: fetch main, verify branch is up-to-date.
+
+Usage:
+  bin/flow check-freshness [--state-file <path>]
+
+Checks whether the feature branch contains the latest origin/main.
+If not, merges origin/main into the current branch.
+
+Output (JSON to stdout):
+  Up-to-date:   {"status": "up_to_date"}
+  Merged:       {"status": "merged"} or {"status": "merged", "retries": N}
+  Conflict:     {"status": "conflict", "files": ["..."]} or with "retries"
+  Max retries:  {"status": "max_retries", "retries": N}
+  Error:        {"status": "error", "step": "fetch|merge", "message": "..."}
+
+When --state-file is provided, tracks freshness_retries in the state file
+and stops at 3 retries (configurable via MAX_RETRIES).
+"""
+
+import json
+import subprocess
+import sys
+
+LOCAL_TIMEOUT = 30
+NETWORK_TIMEOUT = 60
+MAX_RETRIES = 3
+
+
+def _read_retries(state_file):
+    """Read freshness_retries from state file. Returns 0 if absent."""
+    with open(state_file) as f:
+        state = json.loads(f.read())
+    return state.get("freshness_retries", 0)
+
+
+def _increment_retries(state_file):
+    """Increment freshness_retries in state file atomically. Returns new count."""
+    from flow_utils import mutate_state
+
+    new_count = [0]
+
+    def _transform(state):
+        current = state.get("freshness_retries", 0)
+        state["freshness_retries"] = current + 1
+        new_count[0] = state["freshness_retries"]
+
+    mutate_state(state_file, _transform)
+    return new_count[0]
+
+
+def check_freshness(state_file=None):
+    """Check if branch is up-to-date with origin/main.
+
+    Returns a dict with status and details.
+    """
+    # Check retry limit
+    if state_file:
+        retries = _read_retries(state_file)
+        if retries >= MAX_RETRIES:
+            return {"status": "max_retries", "retries": retries}
+
+    # Step 1: fetch origin main
+    try:
+        result = subprocess.run(
+            ["git", "fetch", "origin", "main"],
+            capture_output=True, text=True, timeout=NETWORK_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "error",
+            "step": "fetch",
+            "message": f"git fetch timed out after {NETWORK_TIMEOUT}s",
+        }
+
+    if result.returncode != 0:
+        return {
+            "status": "error",
+            "step": "fetch",
+            "message": result.stderr.strip(),
+        }
+
+    # Step 2: check if origin/main is already an ancestor of HEAD
+    try:
+        result = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", "origin/main", "HEAD"],
+            capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
+        )
+        if result.returncode == 0:
+            return {"status": "up_to_date"}
+    except subprocess.TimeoutExpired:
+        # Treat timeout as "not sure" — proceed to merge attempt
+        pass
+
+    # Step 3: merge origin/main
+    try:
+        result = subprocess.run(
+            ["git", "merge", "origin/main"],
+            capture_output=True, text=True, timeout=NETWORK_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "error",
+            "step": "merge",
+            "message": f"git merge timed out after {NETWORK_TIMEOUT}s",
+        }
+
+    if result.returncode == 0:
+        # Merge succeeded — increment retries if tracking
+        response = {"status": "merged"}
+        if state_file:
+            new_count = _increment_retries(state_file)
+            response["retries"] = new_count
+        return response
+
+    # Merge failed — check for conflicts
+    try:
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "error",
+            "step": "merge",
+            "message": result.stderr.strip(),
+        }
+
+    conflict_files = []
+    for line in status.stdout.strip().split("\n"):
+        if not line:
+            continue
+        xy = line[:2]
+        if "U" in xy or xy in ("DD", "AA"):
+            conflict_files.append(line[3:].strip())
+
+    if conflict_files:
+        response = {"status": "conflict", "files": conflict_files}
+        if state_file:
+            new_count = _increment_retries(state_file)
+            response["retries"] = new_count
+        return response
+
+    return {
+        "status": "error",
+        "step": "merge",
+        "message": result.stderr.strip(),
+    }
+
+
+def main():
+    state_file = None
+    args = sys.argv[1:]
+
+    i = 0
+    while i < len(args):
+        if args[i] == "--state-file" and i + 1 < len(args):
+            state_file = args[i + 1]
+            i += 2
+        else:
+            i += 1
+
+    result = check_freshness(state_file=state_file)
+    print(json.dumps(result))
+
+    if result["status"] not in ("up_to_date", "merged"):
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
