@@ -68,7 +68,7 @@ blocks — it records warnings for the confirmation step.
 Use these values for all subsequent steps — do not re-read the state file
 or re-run git commands to gather the same information.
 
-Carry any warnings forward to the confirmation step in Step 5.
+Carry any warnings forward to the confirmation step in Step 6.
 
 Resolve the mode using the Mode Resolution rules above.
 
@@ -107,8 +107,8 @@ Parse the JSON output and confirm `status` is `"ok"`.
 
 Read `complete_step` from the state file (default `0` if absent).
 
-- If `complete_step` is `4`: skip to Step 4 (Check CI status).
-- If `complete_step` is `5`: skip to Step 5 (Confirm with user).
+- If `complete_step` is `4`: skip to Step 4 (Run local CI gate).
+- If `complete_step` is `6`: skip to Step 6 (Confirm with user).
 - If `complete_step` is `0` or absent: proceed normally to Step 1.
 
 ---
@@ -146,10 +146,10 @@ If the state file had no `pr_number` (or no state file was found), try the branc
 gh pr view <branch> --json state --jq .state
 ```
 
-**If `MERGED`** — the PR is already merged. Skip directly to Step 6
-(archive artifacts to PR). After Step 6, continue to Step 8 (close
-issues), then Step 9 (remove labels), then continue through cleanup
-(Steps 11-12) — skip Step 7 (merge) since the PR is already merged.
+**If `MERGED`** — the PR is already merged. Skip directly to Step 7
+(archive artifacts to PR). After Step 7, continue to Step 9 (close
+issues), then Step 10 (remove labels), then continue through cleanup
+(Steps 12-13) — skip Step 8 (merge) since the PR is already merged.
 
 **If `OPEN`** — continue to Step 3 to merge.
 
@@ -217,9 +217,7 @@ the Skill tool as your final action. If mode was resolved to auto, pass
 
 **If the merge fails for any other reason** — stop and report the error.
 
-### Step 4 — Check CI status
-
-**4a. Local simulated-branch CI gate:**
+### Step 4 — Run local CI gate
 
 Run CI locally with the branch name simulated as "main" to catch
 branch-dependent test failures before merge:
@@ -228,7 +226,7 @@ branch-dependent test failures before merge:
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --force --simulate-branch main
 ```
 
-If it passes, continue to 4b.
+If it passes, continue to Step 5.
 
 If it fails, the failure is likely a branch-dependent test that passes
 on the feature branch but would fail on main. Launch the `ci-fixer`
@@ -265,7 +263,7 @@ If mode was resolved to auto, pass `--auto` as well.
 
 If not fixed after 3 attempts, stop and report.
 
-**4b. GitHub CI status:**
+### Step 5 — Check GitHub CI status
 
 Check the CI status on the PR:
 
@@ -275,7 +273,7 @@ gh pr checks <pr_number>
 
 Parse the output. Each check has a status: pass, fail, or pending.
 
-**If all checks pass** — continue to Step 5.
+**If all checks pass** — continue to Step 6.
 
 **If any check is pending** — invoke the `loop` skill via the Skill tool with args `15s /flow:flow-complete` and return. The loop will re-invoke the complete skill automatically until CI completes.
 
@@ -321,9 +319,9 @@ If still failing after 3 attempts, stop and report.
 
 - **Not fixed** — stop and report to the user.
 
-### Step 5 — Confirm with user (manual mode only)
+### Step 6 — Confirm with user (manual mode only)
 
-Skip this step if mode is **auto** — proceed directly to Step 6.
+Skip this step if mode is **auto** — proceed directly to Step 7.
 
 <HARD-GATE>
 If mode is **manual**, use AskUserQuestion. If the SOFT-GATE recorded
@@ -338,16 +336,16 @@ If no warnings:
 
 Options:
 
-- **Yes, merge and clean up** — proceed to Step 6
+- **Yes, merge and clean up** — proceed to Step 7
 - **No, not yet** — stop here
 - **I have feedback on the code** — describe the issue
 
-Do NOT proceed to Step 6, do NOT merge, do NOT take any action outside
+Do NOT proceed to Step 7, do NOT merge, do NOT take any action outside
 this step until the user explicitly selects an option. Freeform text
 that is not one of the listed options is feedback — treat it the same
 as selecting "I have feedback on the code".
 
-**If "Yes, merge and clean up"** — proceed to Step 6.
+**If "Yes, merge and clean up"** — proceed to Step 7.
 
 **If "No, not yet"** — stop here.
 
@@ -359,7 +357,7 @@ code to address the feedback.
 Set the continuation context and flag before committing:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set complete_step=5, then self-invoke flow:flow-complete --continue-step --manual."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set complete_step=6, then self-invoke flow:flow-complete --continue-step --manual."
 ```
 
 ```bash
@@ -371,16 +369,16 @@ Commit the fixes via `/flow:flow-commit`.
 After the commit completes, record the resume step:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=5
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=6
 ```
 
-To loop back to Step 5, invoke `flow:flow-complete --continue-step --manual`
+To loop back to Step 6, invoke `flow:flow-complete --continue-step --manual`
 using the Skill tool as your final action. Do not output anything else
 after this invocation.
 
 </HARD-GATE>
 
-### Step 6 — Archive artifacts to PR
+### Step 7 — Archive artifacts to PR
 
 Record phase completion in the state file so Phase Timings includes
 the Complete row:
@@ -412,7 +410,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-issues-summary --state-file <project_
 Parse the JSON output. Keep the `banner_line` — use it in the Done
 banner below. If `has_issues` is `false`, there is no banner line.
 
-### Step 7 — Merge PR
+### Step 8 — Merge PR
 
 Merge the PR via squash merge:
 
@@ -426,7 +424,7 @@ If the merge succeeds, report to the user:
 If the merge fails, stop and report the error to the user. Do not retry
 the merge command with any additional flags or elevated privileges.
 
-### Step 8 — Close referenced issues
+### Step 9 — Close referenced issues
 
 Close any GitHub issues referenced in the start prompt. This is best-effort —
 continue to remove-labels even if closing fails.
@@ -459,7 +457,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-complete-summary --state-file <projec
 Parse the JSON output. Keep the `summary` field — use it in the Done
 banner below.
 
-### Step 9 — Remove In-Progress labels
+### Step 10 — Remove In-Progress labels
 
 Remove the "Flow In-Progress" label from any issues referenced in the start
 prompt. This is best-effort — continue to cleanup even if removal fails.
@@ -468,13 +466,13 @@ prompt. This is best-effort — continue to cleanup even if removal fails.
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --remove
 ```
 
-### Step 10 — Auto-close parent issues and milestones
+### Step 11 — Auto-close parent issues and milestones
 
-For each closed issue from Step 8, check if its parent epic or milestone
+For each closed issue from Step 9, check if its parent epic or milestone
 should be auto-closed. Best-effort — report closures in the Done banner,
 continue silently on failure.
 
-If Step 8 closed any issues (the `closed` array was non-empty), run for
+If Step 9 closed any issues (the `closed` array was non-empty), run for
 each closed issue number:
 
 ```bash
@@ -511,7 +509,7 @@ and pull) run from the project root on main.
 cd <project_root>
 ```
 
-### Step 11 — Run cleanup script
+### Step 12 — Run cleanup script
 
 Run the cleanup script from the project root:
 
@@ -526,7 +524,7 @@ resource (worktree, state\_file, log\_file, ci\_sentinel). Each step reports
 Report the results to the user: what was cleaned, what was already gone,
 and what failed.
 
-### Step 12 — Pull merged changes
+### Step 13 — Pull merged changes
 
 The worktree is removed and you are on main. Pull to get the merged
 feature code:
@@ -539,7 +537,7 @@ If the pull fails, warn the user but do not block — cleanup succeeded.
 
 ### Done — Print banner
 
-Output the COMPLETE banner line, the summary from Step 6, and cleanup
+Output the COMPLETE banner line, the summary from Step 7, and cleanup
 status in your response (not via Bash) inside a single fenced code block:
 
 ````markdown
@@ -568,11 +566,11 @@ run any commands. This is a narrative recap, not a structured template.
 
 ## Rules
 
-- Steps 1-10 run from the worktree (feature branch); Steps 11-12 run from the project root after an explicit cd before Step 11
+- Steps 1-11 run from the worktree (feature branch); Steps 12-13 run from the project root after an explicit cd before Step 12
 - If the merge fails, never retry with additional flags or elevated privileges — report to the user and stop
 - Confirm with the user only when mode is **manual**
 - State file deletion is what resets the session hook — do not skip it
-- Every step after the merge (Steps 8-11) is best-effort — if one fails, continue to the next
+- Every step after the merge (Steps 9-12) is best-effort — if one fails, continue to the next
 - The skill is idempotent: safe to re-invoke via `/loop` after a "pending CI" stop
 - Never use `general-purpose` sub-agents — use `"flow:ci-fixer"` for CI failures
 - Never use Bash to print banners — output them as text in your response
