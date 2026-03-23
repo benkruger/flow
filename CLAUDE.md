@@ -65,6 +65,7 @@ CI will fail if these are missing:
 - `skills/<name>/SKILL.md` — each skill's instructions
 - `hooks/hooks.json` — hook registration (SessionStart, PreToolUse, PostToolUse, PostCompact, Stop)
 - `hooks/session-start.sh` — detects in-progress features, injects awareness context
+- `lib/check-freshness.py` — pre-merge freshness check: fetches main, checks if branch is up-to-date, returns JSON status (up_to_date, merged, conflict, max_retries); manages retry counting via state file
 - `lib/check-phase.py` — reusable phase entry guard
 - `.claude/settings.json` — project permissions (git rebase denied)
 - `.github/workflows/ci.yml` — GitHub Actions CI (runs `bin/ci` on push/PR to main)

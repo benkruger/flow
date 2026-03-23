@@ -2407,9 +2407,9 @@ def test_complete_sets_continue_pending_before_commit():
             break
         flag_positions.append(pos)
         start = pos + 1
-    assert len(flag_positions) >= 4, (
-        "Complete must set _continue_pending=commit at least four times "
-        f"(Steps 3, 4, 5, and 6), found {len(flag_positions)}"
+    assert len(flag_positions) >= 5, (
+        "Complete must set _continue_pending=commit at least five times "
+        f"(Steps 3, 4, 5, 6, and 8), found {len(flag_positions)}"
     )
     # Each flag must precede a /flow:flow-commit
     for i, flag_pos in enumerate(flag_positions):
@@ -2455,6 +2455,14 @@ def test_complete_commit_points_self_invoke():
     assert "flow:flow-complete --continue-step" in step6_match.group(1), (
         "Step 6 must self-invoke via 'flow:flow-complete --continue-step'"
     )
+    # Step 8 section (freshness check + merge)
+    step8_match = re.search(
+        r"### Step 8.*?\n(.*?)(?=\n### Step 9)", content, re.DOTALL
+    )
+    assert step8_match, "Could not find Step 8 section"
+    assert "flow:flow-complete --continue-step" in step8_match.group(1), (
+        "Step 8 must self-invoke via 'flow:flow-complete --continue-step'"
+    )
 
 
 def test_complete_commit_points_record_step():
@@ -2473,7 +2481,7 @@ def test_continue_context_includes_mode_flag():
     skills_with_min = {
         "flow-code": 2,
         "flow-code-review": 4,
-        "flow-complete": 6,
+        "flow-complete": 8,
         "flow-learn": 2,
     }
     for skill_name, min_step_contexts in skills_with_min.items():
