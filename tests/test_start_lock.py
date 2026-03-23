@@ -206,6 +206,88 @@ def test_acquire_creates_state_dir_if_missing(tmp_path):
     assert (tmp_path / ".flow-states" / "start.lock").exists()
 
 
+def test_acquire_race_returns_locked(tmp_path):
+    """When another process creates the lock between read and write, returns locked."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    lock_file = state_dir / "start.lock"
+
+    # Pre-create lock file to simulate another process winning the race.
+    winner_data = {"pid": 99999, "feature": "winner-feature",
+                   "acquired_at": "2026-01-01T10:00:00-08:00"}
+    lock_file.write_text(json.dumps(winner_data))
+
+    with patch.object(_mod, "project_root", return_value=tmp_path), \
+         patch.object(_mod, "_read_lock", side_effect=[
+             (None, False),       # First call: appears free (TOCTOU window)
+             (winner_data, True),  # Second call: sees the winner
+         ]):
+        result = _mod.acquire("my-feature")
+
+    assert result["status"] == "locked"
+    assert result["feature"] == "winner-feature"
+    assert result["pid"] == 99999
+    # Lock file must not be overwritten
+    actual = json.loads(lock_file.read_text())
+    assert actual["feature"] == "winner-feature"
+
+
+def test_acquire_race_reread_also_fails(tmp_path):
+    """When race-lost re-read also returns None, acquire returns locked with unknown."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    lock_file = state_dir / "start.lock"
+
+    # Pre-create lock file so _try_write_lock fails.
+    lock_file.write_text("temp")
+
+    with patch.object(_mod, "project_root", return_value=tmp_path), \
+         patch.object(_mod, "_read_lock", side_effect=[
+             (None, False),  # First call: appears free
+             (None, True),   # Second call: winner already released
+         ]):
+        result = _mod.acquire("my-feature")
+
+    assert result["status"] == "locked"
+    assert result["feature"] == "unknown"
+    assert result["pid"] == 0
+
+
+def test_break_and_acquire_race_returns_locked(tmp_path):
+    """When another process wins the stale-break race, returns locked."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    lock_file = state_dir / "start.lock"
+
+    winner_data = {"pid": 88888, "feature": "winner-feature",
+                   "acquired_at": "2026-01-01T10:01:00-08:00"}
+
+    with patch.object(_mod, "project_root", return_value=tmp_path), \
+         patch.object(_mod, "_try_write_lock", return_value=None), \
+         patch.object(_mod, "_read_lock", return_value=(winner_data, True)):
+        result = _mod._break_and_acquire(lock_file, "my-feature", "stale-feature")
+
+    assert result["status"] == "locked"
+    assert result["feature"] == "winner-feature"
+    assert result["pid"] == 88888
+
+
+def test_break_and_acquire_race_reread_fails(tmp_path):
+    """When stale-break race lost and re-read also fails, returns unknown."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    lock_file = state_dir / "start.lock"
+
+    with patch.object(_mod, "project_root", return_value=tmp_path), \
+         patch.object(_mod, "_try_write_lock", return_value=None), \
+         patch.object(_mod, "_read_lock", return_value=(None, False)):
+        result = _mod._break_and_acquire(lock_file, "my-feature")
+
+    assert result["status"] == "locked"
+    assert result["feature"] == "unknown"
+    assert result["pid"] == 0
+
+
 # --- acquire_with_wait tests ---
 
 

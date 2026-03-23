@@ -83,20 +83,45 @@ def _is_timed_out(acquired_at):
         return True  # Can't parse timestamp — treat as stale
 
 
-def _write_lock(lock_file, feature):
-    """Write a new lock file."""
+def _try_write_lock(lock_file, feature):
+    """Atomically create a new lock file.
+
+    Uses O_CREAT | O_EXCL so exactly one process wins when multiple
+    race to create the file.  Returns lock_data on success, None on
+    FileExistsError (another process created it first).
+    """
     lock_data = {
         "pid": os.getppid(),
         "feature": feature,
         "acquired_at": now(),
     }
-    lock_file.write_text(json.dumps(lock_data, indent=2))
-    return lock_data
+    try:
+        fd = os.open(str(lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        try:
+            os.write(fd, json.dumps(lock_data, indent=2).encode())
+        finally:
+            os.close(fd)
+        return lock_data
+    except FileExistsError:
+        return None
 
 
 def _break_and_acquire(lock_file, feature, stale_feature=None):
     """Break a stale/corrupted lock and acquire a new one."""
-    _write_lock(lock_file, feature)
+    lock_file.unlink(missing_ok=True)
+    lock_data = _try_write_lock(lock_file, feature)
+    if lock_data is None:
+        # Another process won the race — re-read to find the winner.
+        existing, _ = _read_lock(lock_file)
+        if existing is None:
+            return {"status": "locked", "feature": "unknown", "pid": 0,
+                    "acquired_at": "unknown"}
+        return {
+            "status": "locked",
+            "feature": existing["feature"],
+            "pid": existing["pid"],
+            "acquired_at": existing["acquired_at"],
+        }
     result = {"status": "acquired", "stale_broken": True}
     if stale_feature is not None:
         result["stale_feature"] = stale_feature
@@ -111,8 +136,20 @@ def acquire(feature):
     if existing is None:
         if file_existed:
             return _break_and_acquire(lock_file, feature)
-        _write_lock(lock_file, feature)
-        return {"status": "acquired"}
+        lock_data = _try_write_lock(lock_file, feature)
+        if lock_data is not None:
+            return {"status": "acquired"}
+        # Lost the race — re-read to find the winner.
+        existing, _ = _read_lock(lock_file)
+        if existing is None:
+            return {"status": "locked", "feature": "unknown", "pid": 0,
+                    "acquired_at": "unknown"}
+        return {
+            "status": "locked",
+            "feature": existing["feature"],
+            "pid": existing["pid"],
+            "acquired_at": existing["acquired_at"],
+        }
 
     pid = existing["pid"]
     existing_feature = existing["feature"]
