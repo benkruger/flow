@@ -46,7 +46,10 @@ def test_find_templates_ios():
     assert "FlowQA.xcodeproj/project.pbxproj" in templates
     assert "bin/ci" in templates
     assert "FlowQA/Calculator.swift" in templates
+    assert "FlowQA/Secrets.swift.example" in templates
     assert "FlowQATests/CalculatorTests.swift" in templates
+    assert "bin/test" in templates
+    assert "bin/build" in templates
     assert ".qa/issues.json" in templates
 
 
@@ -208,6 +211,29 @@ def test_scaffold_sets_bin_ci_executable(tmp_path):
 
     ci_path = clone_dir / "bin" / "ci"
     assert ci_path.stat().st_mode & 0o111  # executable bits
+
+
+def test_scaffold_sets_all_bin_scripts_executable(tmp_path):
+    """scaffold() makes all bin/* scripts executable, not just bin/ci."""
+    clone_dir = tmp_path / "clone"
+
+    with patch.object(_mod, "find_templates") as mock_templates, \
+         patch("subprocess.run") as mock_run:
+        mock_templates.return_value = {
+            "bin/ci": "#!/usr/bin/env bash\n",
+            "bin/test": "#!/usr/bin/env bash\n",
+            "bin/build": "#!/usr/bin/env bash\n",
+            ".qa/issues.json": json.dumps([]),
+        }
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr="",
+        )
+
+        _mod.scaffold("ios", "owner/repo", clone_dir=str(clone_dir))
+
+    for script in ["ci", "test", "build"]:
+        path = clone_dir / "bin" / script
+        assert path.stat().st_mode & 0o111, f"bin/{script} not executable"
 
 
 # --- CLI integration ---

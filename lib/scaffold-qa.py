@@ -78,8 +78,8 @@ def scaffold(framework, repo, templates_dir=None, clone_dir=None):
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_text(content)
 
-        # Make bin/ci executable
-        if rel_path == "bin/ci":
+        # Make bin scripts executable
+        if rel_path.startswith("bin/"):
             file_path.chmod(0o755)
 
         # Extract issues data

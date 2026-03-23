@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SECRETS_FILE="$PROJECT_DIR/FlowQA/Secrets.swift"
+SECRETS_EXAMPLE="$PROJECT_DIR/FlowQA/Secrets.swift.example"
+if [ ! -f "$SECRETS_FILE" ]; then
+  echo "==> Generating Secrets.swift from example..."
+  cp "$SECRETS_EXAMPLE" "$SECRETS_FILE"
+fi
+
+FILTER="${1:-}"
+
+if [ -n "$FILTER" ]; then
+  xcodebuild test \
+    -project FlowQA.xcodeproj \
+    -scheme FlowQA \
+    -destination 'platform=macOS' \
+    -only-testing:"FlowQATests/$FILTER" \
+    -quiet
+else
+  xcodebuild test \
+    -project FlowQA.xcodeproj \
+    -scheme FlowQA \
+    -destination 'platform=macOS' \
+    -quiet
+fi
