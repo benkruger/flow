@@ -546,6 +546,7 @@ def test_cli_ready_flag(tmp_path):
     assert 3 in numbers
     assert 2 not in numbers
     assert 4 not in numbers
+    assert output["total"] == 2
 
 
 def test_cli_blocked_flag(tmp_path):
@@ -563,6 +564,7 @@ def test_cli_blocked_flag(tmp_path):
     assert 4 in numbers
     assert 1 not in numbers
     assert 3 not in numbers
+    assert output["total"] == 2
 
 
 def test_cli_decomposed_flag(tmp_path):
@@ -581,6 +583,7 @@ def test_cli_decomposed_flag(tmp_path):
     assert 4 in numbers
     assert 1 not in numbers
     assert 2 not in numbers
+    assert output["total"] == 2
 
 
 def test_cli_quick_start_flag(tmp_path):
@@ -596,6 +599,7 @@ def test_cli_quick_start_flag(tmp_path):
     output = json.loads(result.stdout)
     numbers = [i["number"] for i in output["issues"]]
     assert numbers == [3]
+    assert output["total"] == 1
 
 
 def test_cli_mutually_exclusive_flags(tmp_path):

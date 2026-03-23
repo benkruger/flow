@@ -314,6 +314,7 @@ def main():
     output = analyze_issues(issues)
     if args.filter:
         output["issues"] = filter_issues(output["issues"], args.filter)
+        output["total"] = len(output["in_progress"]) + len(output["issues"])
     print(json.dumps(output, indent=2))
 
 
