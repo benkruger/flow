@@ -448,3 +448,167 @@ def test_main_gh_timeout():
     output = json.loads(printed)
     assert output["status"] == "error"
     assert "timed out" in output["message"]
+
+
+# --- filter_issues ---
+
+
+def test_filter_ready_returns_no_dependencies():
+    """Ready filter returns only issues with empty dependencies array."""
+    issues = [
+        {"number": 1, "dependencies": [], "decomposed": False},
+        {"number": 2, "dependencies": [1], "decomposed": False},
+        {"number": 3, "dependencies": [], "decomposed": True},
+    ]
+    result = _mod.filter_issues(issues, "ready")
+    assert [i["number"] for i in result] == [1, 3]
+
+
+def test_filter_blocked_returns_has_dependencies():
+    """Blocked filter returns only issues with non-empty dependencies array."""
+    issues = [
+        {"number": 1, "dependencies": [], "decomposed": False},
+        {"number": 2, "dependencies": [1], "decomposed": False},
+        {"number": 3, "dependencies": [1, 2], "decomposed": True},
+    ]
+    result = _mod.filter_issues(issues, "blocked")
+    assert [i["number"] for i in result] == [2, 3]
+
+
+def test_filter_decomposed_returns_decomposed_true():
+    """Decomposed filter returns only issues with decomposed=True."""
+    issues = [
+        {"number": 1, "dependencies": [], "decomposed": False},
+        {"number": 2, "dependencies": [1], "decomposed": True},
+        {"number": 3, "dependencies": [], "decomposed": True},
+    ]
+    result = _mod.filter_issues(issues, "decomposed")
+    assert [i["number"] for i in result] == [2, 3]
+
+
+def test_filter_quick_start_returns_decomposed_and_ready():
+    """Quick-start filter returns decomposed issues with no dependencies."""
+    issues = [
+        {"number": 1, "dependencies": [], "decomposed": False},
+        {"number": 2, "dependencies": [1], "decomposed": True},
+        {"number": 3, "dependencies": [], "decomposed": True},
+    ]
+    result = _mod.filter_issues(issues, "quick-start")
+    assert [i["number"] for i in result] == [3]
+
+
+def test_filter_none_returns_all():
+    """No filter returns all issues unchanged."""
+    issues = [
+        {"number": 1, "dependencies": [], "decomposed": False},
+        {"number": 2, "dependencies": [1], "decomposed": True},
+    ]
+    result = _mod.filter_issues(issues, None)
+    assert result == issues
+
+
+def test_filter_unknown_raises():
+    """Invalid filter name raises ValueError."""
+    with pytest.raises(ValueError, match="Unknown filter"):
+        _mod.filter_issues([], "invalid")
+
+
+# --- CLI filter flags ---
+
+
+def _make_filter_issues_file(tmp_path):
+    """Create a JSON file with mixed issues for filter testing."""
+    issues = [
+        _make_issue(1, title="Ready plain", body=""),
+        _make_issue(2, title="Blocked", body="Depends on #1"),
+        _make_issue(3, title="Decomposed ready", body="",
+                    labels=["Decomposed"]),
+        _make_issue(4, title="Decomposed blocked", body="Depends on #1",
+                    labels=["Decomposed"]),
+    ]
+    json_file = tmp_path / "issues.json"
+    json_file.write_text(json.dumps(issues))
+    return json_file
+
+
+def test_cli_ready_flag(tmp_path):
+    """--ready flag filters to issues with no dependencies."""
+    json_file = _make_filter_issues_file(tmp_path)
+    script = Path(__file__).resolve().parent.parent / "lib" / "analyze-issues.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--issues-json", str(json_file), "--ready"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    numbers = [i["number"] for i in output["issues"]]
+    assert 1 in numbers
+    assert 3 in numbers
+    assert 2 not in numbers
+    assert 4 not in numbers
+    assert output["total"] == 2
+
+
+def test_cli_blocked_flag(tmp_path):
+    """--blocked flag filters to issues with dependencies."""
+    json_file = _make_filter_issues_file(tmp_path)
+    script = Path(__file__).resolve().parent.parent / "lib" / "analyze-issues.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--issues-json", str(json_file), "--blocked"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    numbers = [i["number"] for i in output["issues"]]
+    assert 2 in numbers
+    assert 4 in numbers
+    assert 1 not in numbers
+    assert 3 not in numbers
+    assert output["total"] == 2
+
+
+def test_cli_decomposed_flag(tmp_path):
+    """--decomposed flag filters to decomposed issues."""
+    json_file = _make_filter_issues_file(tmp_path)
+    script = Path(__file__).resolve().parent.parent / "lib" / "analyze-issues.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--issues-json", str(json_file),
+         "--decomposed"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    numbers = [i["number"] for i in output["issues"]]
+    assert 3 in numbers
+    assert 4 in numbers
+    assert 1 not in numbers
+    assert 2 not in numbers
+    assert output["total"] == 2
+
+
+def test_cli_quick_start_flag(tmp_path):
+    """--quick-start flag filters to decomposed issues with no dependencies."""
+    json_file = _make_filter_issues_file(tmp_path)
+    script = Path(__file__).resolve().parent.parent / "lib" / "analyze-issues.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--issues-json", str(json_file),
+         "--quick-start"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    numbers = [i["number"] for i in output["issues"]]
+    assert numbers == [3]
+    assert output["total"] == 1
+
+
+def test_cli_mutually_exclusive_flags(tmp_path):
+    """Passing two filter flags produces an error."""
+    json_file = _make_filter_issues_file(tmp_path)
+    script = Path(__file__).resolve().parent.parent / "lib" / "analyze-issues.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--issues-json", str(json_file),
+         "--ready", "--blocked"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode != 0

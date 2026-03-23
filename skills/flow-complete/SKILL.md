@@ -327,12 +327,14 @@ Skip this step if mode is **auto** — proceed directly to Step 7.
 If mode is **manual**, use AskUserQuestion. If the SOFT-GATE recorded
 warnings, include them:
 
-> "PR is green and ready to merge. Squash-merge '<feature>' into main?"
+> "PR #<pr_number> is green and ready to merge. Squash-merge '<feature>' into main?
+> <pr_url>"
 > ⚠ <any warnings from the gate>
 
 If no warnings:
 
-> "PR is green and ready to merge. Squash-merge '<feature>' into main?"
+> "PR #<pr_number> is green and ready to merge. Squash-merge '<feature>' into main?
+> <pr_url>"
 
 Options:
 
