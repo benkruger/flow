@@ -121,7 +121,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --next --state-file .flow-
 
 The `--next` response includes `index`, `issue_number`, and `title`.
 
-### 3a. Mark issue as started
+**Mark issue as started:**
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --start-issue <index> --state-file .flow-states/orchestrate.json
@@ -133,13 +133,13 @@ Log it:
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log orchestrate "[Orchestrate] Starting #<issue_number> — <title>"
 ```
 
-### 3b. Invoke flow-start
+**Invoke flow-start:**
 
 Invoke `flow:flow-start --auto <title> #<issue_number>` using the Skill tool.
 
 This runs the full lifecycle: Start, Plan, Code, Code Review, Learn, Complete.
 
-### 3c. Detect outcome
+**Detect outcome:**
 
 After `flow-start --auto` returns, determine the outcome by checking GitHub state.
 
@@ -157,7 +157,7 @@ Determine outcome:
 - Command succeeds and state is "CLOSED" → **failed**
 - Command fails (no PR for that branch) → check if a `.flow-states/<branch>.json` exists using the Glob tool. If it does, the feature is stuck — record as **failed** with reason "Feature did not complete"
 
-### 3d. Record outcome
+**Record outcome:**
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --record-outcome <index> --outcome <completed|failed> --pr-url <pr_url> --branch <branch> --state-file .flow-states/orchestrate.json
@@ -165,11 +165,11 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --record-outcome <index> -
 
 For failed outcomes, add `--reason "<reason>"`.
 
-### 3e. Clean up stuck features
+**Clean up stuck features:**
 
 If the outcome is **failed** and a state file still exists for the branch, invoke `flow:flow-abort --auto` to clean up the worktree, close the PR, and remove the state file.
 
-### 3f. Log and continue
+**Log and continue:**
 
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log orchestrate "[Orchestrate] #<issue_number> — <outcome>"
