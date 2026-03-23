@@ -61,7 +61,6 @@ def _read_lock(lock_file):
         return None, True
 
 
-
 def _is_timed_out(acquired_at):
     """Check if the lock has exceeded the stale timeout."""
     try:
