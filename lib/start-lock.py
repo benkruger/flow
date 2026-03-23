@@ -61,16 +61,6 @@ def _read_lock(lock_file):
         return None, True
 
 
-def _is_pid_alive(pid):
-    """Check if a process is still running."""
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True  # Process exists but we can't signal it
-
 
 def _is_timed_out(acquired_at):
     """Check if the lock has exceeded the stale timeout."""
@@ -149,7 +139,7 @@ def acquire(feature):
     existing_feature = existing["feature"]
     acquired_at = existing["acquired_at"]
 
-    if not _is_pid_alive(pid) or _is_timed_out(acquired_at):
+    if _is_timed_out(acquired_at):
         return _break_and_acquire(lock_file, feature, existing_feature)
 
     return {
@@ -198,14 +188,13 @@ def check():
     if existing is None:
         return {"status": "free"}
 
-    pid = existing["pid"]
-    if not _is_pid_alive(pid):
+    if _is_timed_out(existing["acquired_at"]):
         return {"status": "free"}
 
     return {
         "status": "locked",
         "feature": existing["feature"],
-        "pid": pid,
+        "pid": existing["pid"],
         "acquired_at": existing["acquired_at"],
     }
 
