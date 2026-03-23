@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
     AUTO_SKILLS, build_initial_phases, derive_feature, detect_repo,
-    freeze_phases, mutate_state, now,
+    freeze_phases, mutate_state, now, read_flow_json,
 )
 from log import append_log
 
@@ -227,8 +227,9 @@ def main():
 
     try:
         # Read framework from .flow.json (version gate already passed)
-        flow_json = project_root / ".flow.json"
-        init_data = json.loads(flow_json.read_text())
+        init_data = read_flow_json(project_root)
+        if init_data is None:
+            raise SetupError("flow_json", "Could not read .flow.json")
         framework = init_data.get("framework", "rails")
         skills = init_data.get("skills")
         if args.auto:

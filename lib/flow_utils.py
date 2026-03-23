@@ -479,13 +479,8 @@ def write_tab_sequences(state=None, *, repo=None, root=None):
               color when no state is provided.
         root: Path to read .flow.json from (optional). Defaults to CWD.
     """
-    override = None
-    try:
-        flow_json_path = Path(root) / ".flow.json" if root else Path(".flow.json")
-        flow_json = json.loads(flow_json_path.read_text())
-        override = flow_json.get("tab_color")
-    except Exception:
-        pass
+    data = read_flow_json(root)
+    override = data.get("tab_color") if data else None
 
     title = format_tab_title(state) if state else None
     color = format_tab_color(state, repo=repo, override=override)

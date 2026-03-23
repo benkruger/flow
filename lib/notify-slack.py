@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import PHASE_NAMES, project_root
+from flow_utils import PHASE_NAMES, project_root, read_flow_json
 
 
 SLACK_API_URL = "https://slack.com/api/chat.postMessage"
@@ -34,10 +34,8 @@ def read_slack_config(root):
 
     Returns dict with bot_token and channel, or None if not configured.
     """
-    flow_json = Path(root) / ".flow.json"
-    try:
-        data = json.loads(flow_json.read_text())
-    except (OSError, json.JSONDecodeError):
+    data = read_flow_json(root)
+    if data is None:
         return None
 
     slack = data.get("slack")
