@@ -287,6 +287,7 @@ All permissions (universal + all framework sets) for reference:
       "Bash(git symbolic-ref *)",
       "Bash(git worktree *)",
       "Bash(cd *)",
+      "Bash(chmod +x bin/*)",
       "Bash(gh pr create *)",
       "Bash(gh pr edit *)",
       "Bash(gh pr close *)",

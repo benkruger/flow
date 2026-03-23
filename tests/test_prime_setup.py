@@ -538,6 +538,10 @@ def test_universal_allow_includes_bin_glob():
     assert "Bash(bin/*)" in _mod.UNIVERSAL_ALLOW
 
 
+def test_universal_allow_includes_chmod():
+    assert "Bash(chmod +x bin/*)" in _mod.UNIVERSAL_ALLOW
+
+
 def test_universal_allow_includes_claude_plugin_commands():
     assert "Bash(claude plugin list)" in _mod.UNIVERSAL_ALLOW
     assert "Bash(claude plugin marketplace add *)" in _mod.UNIVERSAL_ALLOW
