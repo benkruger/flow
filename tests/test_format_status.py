@@ -383,3 +383,64 @@ def test_cli_branch_flag_uses_specified_state_file(state_dir, git_repo):
     assert result.returncode == 0
     assert "FLOW v" in result.stdout
     assert "Phase 1:" in result.stdout
+
+
+# --- Dev mode detection ---
+
+
+def test_cli_dev_mode_from_flow_json_with_backup(state_dir, git_repo, branch):
+    """CLI shows [DEV MODE] when .flow.json has plugin_root_backup."""
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
+    )
+    write_state(state_dir, branch, state)
+    (git_repo / ".flow.json").write_text(json.dumps({
+        "flow_version": "0.39.0",
+        "plugin_root": "/local/path",
+        "plugin_root_backup": "/cache/path",
+    }))
+    result = _run(git_repo)
+    assert result.returncode == 0
+    assert "[DEV MODE]" in result.stdout
+
+
+def test_cli_no_dev_mode_without_backup(state_dir, git_repo, branch):
+    """CLI does not show [DEV MODE] when .flow.json has no plugin_root_backup."""
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
+    )
+    write_state(state_dir, branch, state)
+    (git_repo / ".flow.json").write_text(json.dumps({
+        "flow_version": "0.39.0",
+        "plugin_root": "/cache/path",
+    }))
+    result = _run(git_repo)
+    assert result.returncode == 0
+    assert "[DEV MODE]" not in result.stdout
+
+
+def test_cli_no_dev_mode_without_flow_json(state_dir, git_repo, branch):
+    """CLI does not show [DEV MODE] when .flow.json does not exist."""
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
+    )
+    write_state(state_dir, branch, state)
+    result = _run(git_repo)
+    assert result.returncode == 0
+    assert "[DEV MODE]" not in result.stdout
+
+
+def test_cli_no_dev_mode_with_malformed_flow_json(state_dir, git_repo, branch):
+    """CLI does not show [DEV MODE] when .flow.json is malformed."""
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
+    )
+    write_state(state_dir, branch, state)
+    (git_repo / ".flow.json").write_text("{bad json")
+    result = _run(git_repo)
+    assert result.returncode == 0
+    assert "[DEV MODE]" not in result.stdout
