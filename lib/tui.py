@@ -48,6 +48,7 @@ class TuiApp:
         self.active_tab = 0
         self.orch_data = None
         self.orch_selected = 0
+        self.issue_selected = 0
         self.use_color = False
 
     def refresh_data(self):
@@ -99,6 +100,8 @@ class TuiApp:
                 self._draw_list_view()
             elif self.view == "log":
                 self._draw_log_view()
+            elif self.view == "issues":
+                self._draw_issues_view()
             self.stdscr.refresh()
 
             key = self.stdscr.getch()
@@ -210,7 +213,7 @@ class TuiApp:
             self._draw_detail_panel(detail_start)
 
         # Footer
-        footer = " [\u2190\u2192] Tab  [\u2191\u2193] Navigate  [Enter] Worktree  [p] PR  [i] Issue  [l] Log  [a] Abort  [r] Refresh  [q] Quit"
+        footer = " [\u2190\u2192] Tab  [\u2191\u2193] Navigate  [Enter] Worktree  [p] PR  [i] Issues  [I] Issue  [l] Log  [a] Abort  [r] Refresh  [q] Quit"
         self._safe_addstr(max_y - 1, 0, footer, curses.A_DIM)
 
     def _draw_detail_panel(self, start_row):
@@ -258,10 +261,15 @@ class TuiApp:
             parts = []
             if flow["notes_count"] > 0:
                 parts.append(f"Notes: {flow['notes_count']}")
-            if flow["issues_count"] > 0:
-                parts.append(f"Issues: {flow['issues_count']} filed")
             if parts:
                 self._safe_addstr(row, 2, "  \u2502  ".join(parts))
+                row += 1
+            for issue in flow.get("issues", []):
+                if row >= max_y - 2:
+                    break
+                line = f"  {issue['ref']} {issue['title']}"
+                self._safe_addstr(row, 2, line)
+                row += 1
 
     def _draw_log_view(self):
         """Draw the log view for the selected flow."""
@@ -303,6 +311,50 @@ class TuiApp:
         footer = " [Esc] Back  [q] Quit"
         self._safe_addstr(max_y - 1, 0, footer, curses.A_DIM)
 
+    def _draw_issues_view(self):
+        """Draw the issues view for the selected flow."""
+        max_y, max_x = self.stdscr.getmaxyx()
+
+        if not self.flows:
+            self.view = "list"
+            return
+
+        flow = self.flows[self.selected]
+        issues = flow.get("issues", [])
+
+        # Header
+        header = f" {flow['feature']} \u2014 Issues "
+        border = "\u2500" * max_x
+        self._safe_addstr(0, 0, border, curses.A_DIM)
+        self._safe_addstr(0, 2, header, curses.A_BOLD)
+
+        if not issues:
+            self._safe_addstr(2, 2, "No issues filed.")
+        else:
+            # Column header
+            self._safe_addstr(2, 2, f"  {'Label':<18s} {'Ref':<8s} {'Phase':<14s} Title", curses.A_DIM)
+
+            # Clamp selection
+            if self.issue_selected >= len(issues):
+                self.issue_selected = max(0, len(issues) - 1)
+
+            for i, issue in enumerate(issues):
+                if i >= max_y - 5:
+                    break
+                row = 3 + i
+                marker = "\u25b8 " if i == self.issue_selected else "  "
+                attr = curses.A_BOLD if i == self.issue_selected else 0
+                label = issue["label"][:18]
+                ref = issue["ref"]
+                phase = issue["phase_name"][:14]
+                title = issue["title"]
+                line = f"{marker}{label:<18s} {ref:<8s} {phase:<14s} {title}"
+                self._safe_addstr(row, 2, line, attr)
+
+        # Footer
+        footer = " [Esc] Back  [Enter] Open  [\u2191\u2193] Navigate  [q] Quit"
+        self._safe_addstr(max_y - 1, 0, footer, curses.A_DIM)
+
     def _handle_input(self, key):
         """Dispatch keyboard input."""
         if self.confirming_abort:
@@ -313,10 +365,12 @@ class TuiApp:
             self.active_tab = min(1, self.active_tab + 1)
         elif key == curses.KEY_LEFT:
             self.active_tab = max(0, self.active_tab - 1)
-        elif key == 27 and self.view == "log":
+        elif key == 27 and self.view in ("log", "issues"):
             self.view = "list"
         elif self.active_tab == 1:
             self._handle_orch_input(key)
+        elif self.view == "issues":
+            self._handle_issues_input(key)
         elif self.view == "list":
             self._handle_list_input(key)
 
@@ -336,11 +390,36 @@ class TuiApp:
         elif key == ord("l"):
             self.view = "log"
         elif key == ord("i"):
+            self.view = "issues"
+        elif key == ord("I"):
             self._open_flow_issue()
         elif key == ord("a"):
             self._start_abort()
         elif key == ord("r"):
             self.refresh_data()
+
+    def _handle_issues_input(self, key):
+        """Handle input in issues view."""
+        if not self.flows:
+            return
+        flow = self.flows[self.selected]
+        issues = flow.get("issues", [])
+        if not issues:
+            return
+
+        if key == curses.KEY_UP:
+            self.issue_selected = max(0, self.issue_selected - 1)
+        elif key == curses.KEY_DOWN:
+            self.issue_selected = min(len(issues) - 1, self.issue_selected + 1)
+        elif key == ord("\n"):
+            issue = issues[self.issue_selected]
+            url = issue.get("url")
+            if url:
+                subprocess.Popen(
+                    ["open", url],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
 
     def _get_repo(self):
         """Get repo 'owner/repo' from flows or git remote fallback."""
