@@ -1,6 +1,6 @@
 ---
 name: flow-qa
-description: "QA the FLOW plugin locally. Uninstall marketplace plugin for local testing, reinstall when done. Run tiered QA against per-framework repos."
+description: "QA the FLOW plugin locally. Switch to local plugin source for testing, restore when done. Run tiered QA against per-framework repos."
 ---
 
 # FLOW QA
@@ -67,38 +67,36 @@ If `.flow-states/.dev-mode` does not exist, print:
 ```
 ````
 
+### Step 3 — Show workflow
+
+After the mode banner, print:
+
+> **QA Workflow:**
+>
+> 1. `/flow-qa --start` — redirect plugin_root to local source
+> 2. Start Claude with `claude --plugin-dir=$HOME/code/flow`
+> 3. `/flow-qa --run <framework|all>` — run all tiers
+> 4. `/flow-qa --tier <N> --framework <name>` — run a specific tier
+> 5. `/flow-qa --reset <framework|all>` — reset QA repos to seed state
+> 6. `/flow-qa --stop` — restore marketplace plugin
+
 ## Flag: `--start`
 
-### Step 1 — Check if marketplace plugin is installed
+### Step 1 — Redirect plugin_root to local source
 
 Run:
 
 ```bash
-claude plugin list
+bin/flow qa-mode --start --local-path $HOME/code/flow
 ```
 
-If the output contains `flow@flow-marketplace`, run:
+If the JSON output has `"status": "error"`, print the error message and stop.
 
-```bash
-claude plugin uninstall flow@flow-marketplace
-```
-
-If the output does not contain `flow@flow-marketplace`, print "Marketplace
-plugin not installed, nothing to uninstall." and continue.
-
-### Step 2 — Nuke cache
-
-Run:
-
-```bash
-rm -rf ~/.claude/plugins/cache/flow-marketplace
-```
-
-### Step 3 — Create dev mode marker
+### Step 2 — Create dev mode marker
 
 Use the Write tool to create `.flow-states/.dev-mode` with the content `active`.
 
-### Step 4 — Announce
+### Step 3 — Announce
 
 Print inside a fenced code block:
 
@@ -110,17 +108,16 @@ Print inside a fenced code block:
 ```
 ````
 
-Then print:
+Then print these numbered instructions:
 
-> To test local source, start Claude Code with:
+> **Next steps:**
 >
-> `claude --plugin-dir=$HOME/code/flow`
->
-> Run `/flow-qa --stop` when done to reinstall the marketplace plugin.
-
-Then tell the user:
-
-> Run `/reload-plugins` now to update the skill list for this session.
+> 1. Run `/reload-plugins` now to update the skill list for this session.
+> 2. Start a new Claude Code session with `claude --plugin-dir=$HOME/code/flow`
+>    to load local source as the plugin.
+> 3. Run `/flow-qa --run <framework|all>` or `/flow-qa --tier <N> --framework <name>`
+>    to execute QA tiers.
+> 4. When done, run `/flow-qa --stop` to restore the marketplace plugin.
 
 ## Flag: `--stop`
 
@@ -130,19 +127,15 @@ Use the Read tool to check if `.flow-states/.dev-mode` exists.
 
 If it does not exist, print "Not in dev mode. Nothing to stop." and stop.
 
-### Step 2 — Nuke cache and reinstall marketplace plugin
+### Step 2 — Restore plugin_root from backup
 
 Run:
 
 ```bash
-rm -rf ~/.claude/plugins/cache/flow-marketplace
+bin/flow qa-mode --stop
 ```
 
-Then:
-
-```bash
-claude plugin install flow@flow-marketplace
-```
+If the JSON output has `"status": "error"`, print the error message and stop.
 
 ### Step 3 — Remove dev mode marker
 
