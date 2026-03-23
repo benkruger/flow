@@ -67,6 +67,8 @@ CI will fail if these are missing:
 - `hooks/session-start.sh` — detects in-progress features, injects awareness context
 - `lib/check-phase.py` — reusable phase entry guard
 - `.claude/settings.json` — project permissions (git rebase denied)
+- `.github/workflows/ci.yml` — GitHub Actions CI (runs `bin/ci` on push/PR to main)
+- `.github/workflows/autoupdate.yml` — auto-updates PR branches when main advances
 - `docs/` — GitHub Pages site (main /docs, static HTML)
 - `lib/extract-release-notes.py` — extracts version sections from RELEASE-NOTES.md for GitHub Releases
 - `lib/start-lock.py` — serializes concurrent flow-start operations using a file lock at `.flow-states/start.lock` (PID-based stale detection + 30-min timeout)
