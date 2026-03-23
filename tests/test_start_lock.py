@@ -2,6 +2,7 @@
 
 import importlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -256,6 +257,47 @@ def test_break_and_acquire_race_reread_fails(tmp_path):
     assert result["status"] == "locked"
     assert result["feature"] == "unknown"
     assert result["pid"] == 0
+
+
+# --- _try_write_lock error paths ---
+
+
+def test_try_write_lock_write_failure_closes_fd(tmp_path):
+    """When os.write fails, the fd is still closed in the finally block."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    lock_file = state_dir / "start.lock"
+
+    with patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
+         patch("os.getppid", return_value=12345), \
+         patch("os.write", side_effect=OSError("disk full")):
+        result = _mod._try_write_lock(str(lock_file), "test-feature")
+
+    assert result is None
+    assert not lock_file.exists()
+
+
+def test_try_write_lock_unlink_failure_ignored(tmp_path):
+    """When os.unlink of the temp file fails, the error is silently ignored."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    lock_file = state_dir / "start.lock"
+
+    original_unlink = os.unlink
+
+    def fail_unlink(path):
+        if ".start-lock-" in str(path):
+            raise OSError("permission denied")
+        return original_unlink(path)
+
+    with patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
+         patch("os.getppid", return_value=12345), \
+         patch("os.unlink", side_effect=fail_unlink):
+        result = _mod._try_write_lock(str(lock_file), "test-feature")
+
+    assert result is not None
+    assert result["feature"] == "test-feature"
+    assert lock_file.exists()
 
 
 # --- acquire_with_wait tests ---
