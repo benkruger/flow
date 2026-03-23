@@ -73,10 +73,16 @@ ensure artifacts are present regardless of how the PR was merged.
 - **State file** — the full state JSON in a collapsible details block
 - **Session log file** — the raw session log in a collapsible details block
 
-### 8. Merge PR
+### 8. Freshness check and merge PR
 
-Squash-merge the PR via `gh pr merge --squash`. Branch deletion is
-handled by the cleanup script in the next step.
+Verifies the branch is up-to-date with main before merging. Runs
+`bin/flow check-freshness` which fetches main and checks whether
+`origin/main` is already an ancestor of HEAD. If main has moved since
+the CI gate, the new commits are merged in and the flow loops back to
+Step 4 (CI gate) to re-test the combined code. If there are merge
+conflicts, they are resolved inline before looping. A retry limit of 3
+prevents infinite loops under high contention. Once up-to-date,
+squash-merges via `gh pr merge --squash`.
 
 ### 9. Close referenced issues
 
@@ -132,6 +138,7 @@ The skill is safe to re-invoke (e.g., via `/loop 15s /flow:flow-complete`):
 | PR already merged | Archives artifacts to PR, then skips to cleanup |
 | Main already merged into branch | No-op merge |
 | CI already passing | Skips to merge |
+| Freshness retry in progress | Loops back through CI gate, respects retry limit |
 | State file already deleted | Exits cleanly |
 
 ---

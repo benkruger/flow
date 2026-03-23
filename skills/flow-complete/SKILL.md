@@ -412,9 +412,26 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-issues-summary --state-file <project_
 Parse the JSON output. Keep the `banner_line` — use it in the Done
 banner below. If `has_issues` is `false`, there is no banner line.
 
-### Step 8 — Merge PR
+### Step 8 — Freshness check and merge PR
 
-Merge the PR via squash merge:
+Verify the branch is up-to-date with main before merging. If main has
+moved since the CI gate, merge it in and loop back through CI.
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow check-freshness --state-file <project_root>/.flow-states/<branch>.json
+```
+
+Parse the JSON output and handle each status:
+
+**If `"status": "max_retries"`** — stop and report to the user:
+> "High contention: main has moved 3 times since the CI gate. Another
+> engineer is merging frequently. Wait for a quieter window and
+> re-invoke `/flow:flow-complete`."
+
+**If `"status": "error"`** — stop and report the error to the user.
+
+**If `"status": "up_to_date"`** — branch already contains the latest
+main. Proceed to merge:
 
 ```bash
 gh pr merge <pr_number> --squash
@@ -425,6 +442,57 @@ If the merge succeeds, report to the user:
 
 If the merge fails, stop and report the error to the user. Do not retry
 the merge command with any additional flags or elevated privileges.
+
+**If `"status": "merged"`** — main had new commits that were merged
+into the branch without conflicts. Push the merge commit and loop back
+to re-run CI on the combined code:
+
+```bash
+git push
+```
+
+Record the resume step and self-invoke to re-run CI:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+```
+
+To re-run CI, invoke `flow:flow-complete --continue-step` using the
+Skill tool as your final action. If mode was resolved to auto, pass
+`--auto` as well. Do not output anything else after this invocation.
+
+**If `"status": "conflict"`** — main had new commits that conflict with
+the branch. The `files` array lists the conflicted files.
+
+1. Read each conflicted file using the Read tool
+2. Resolve the conflicts using the Edit tool — you have full context of
+   the feature from this session
+3. Record the resume step, set continuation flags, and commit
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+```
+
+If mode is **auto**, use the first form. If mode is **manual**, use the second:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --auto."
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --manual."
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+```
+
+Commit the resolution via `/flow:flow-commit` — the commit skill handles
+staging, diff review, and push.
+
+To continue to Step 4, invoke `flow:flow-complete --continue-step` using
+the Skill tool as your final action. If mode was resolved to auto, pass
+`--auto` as well. Do not output anything else after this invocation.
 
 ### Step 9 — Close referenced issues
 
