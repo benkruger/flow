@@ -13,6 +13,10 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from flow_utils import read_flow_json
+
 
 def _load_prime_setup():
     """Load the prime-setup module dynamically."""
@@ -47,14 +51,13 @@ def main():
     project_root = Path.cwd()
     flow_json = project_root / ".flow.json"
 
-    if not flow_json.exists():
+    init_data = read_flow_json(project_root)
+    if init_data is None:
         print(json.dumps({
             "status": "error",
             "message": "FLOW not initialized. Run /flow:flow-prime first.",
         }))
         return
-
-    init_data = json.loads(flow_json.read_text())
     plugin_data = _read_plugin_json()
     plugin_version = plugin_data["version"]
 

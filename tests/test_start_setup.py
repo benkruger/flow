@@ -224,6 +224,30 @@ def test_git_pull_failure_returns_error(tmp_path):
     assert data["step"] == "git_pull"
 
 
+def test_missing_flow_json_returns_error(tmp_path):
+    """When .flow.json is missing, returns error JSON."""
+    subprocess.run(
+        ["git", "init"], cwd=tmp_path, capture_output=True, check=True,
+    )
+    config_path = tmp_path / ".git" / "config"
+    with open(config_path, "a") as f:
+        f.write(
+            "[user]\n\temail = test@test.com\n\tname = Test\n"
+            "[commit]\n\tgpgsign = false\n"
+        )
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "init"],
+        cwd=tmp_path, capture_output=True, check=True,
+    )
+    # No _write_flow_json — .flow.json is absent
+    result = _run(tmp_path, "test feature", prompt="test")
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "error"
+    assert data["step"] == "flow_json"
+    assert "flow.json" in data["message"].lower()
+
+
 # --- Version gate now handled by prime-check.py (see test_prime_check.py) ---
 
 

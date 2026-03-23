@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from flow_utils import (
     PACIFIC, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER,
     derive_feature, derive_worktree, elapsed_since,
-    extract_issue_numbers, format_time,
+    extract_issue_numbers, format_time, short_issue_ref,
 )
 
 
@@ -31,6 +31,18 @@ def flow_summary(state, now=None):
 
     elapsed_seconds = elapsed_since(state.get("started_at"), now)
 
+    issues_filed = state.get("issues_filed", [])
+    issues = [
+        {
+            "label": entry.get("label", ""),
+            "title": entry.get("title", ""),
+            "url": entry.get("url", ""),
+            "ref": short_issue_ref(entry.get("url", "")),
+            "phase_name": entry.get("phase_name", ""),
+        }
+        for entry in issues_filed
+    ]
+
     return {
         "feature": derive_feature(branch),
         "branch": branch,
@@ -43,7 +55,8 @@ def flow_summary(state, now=None):
         "code_task": state.get("code_task", 0),
         "diff_stats": state.get("diff_stats"),
         "notes_count": len(state.get("notes", [])),
-        "issues_count": len(state.get("issues_filed", [])),
+        "issues_count": len(issues_filed),
+        "issues": issues,
         "blocked": bool(state.get("_blocked")),
         "issue_numbers": set(extract_issue_numbers(state.get("prompt", ""))),
         "phases": state.get("phases", {}),
