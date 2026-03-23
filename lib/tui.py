@@ -257,10 +257,21 @@ class TuiApp:
             parts = []
             if flow["notes_count"] > 0:
                 parts.append(f"Notes: {flow['notes_count']}")
-            if flow["issues_count"] > 0:
-                parts.append(f"Issues: {flow['issues_count']} filed")
             if parts:
                 self._safe_addstr(row, 2, "  \u2502  ".join(parts))
+                row += 1
+            _, max_x = self.stdscr.getmaxyx()
+            for issue in flow.get("issues", []):
+                if row >= max_y - 2:
+                    break
+                ref = issue["ref"]
+                title = issue["title"]
+                line = f"  {ref} {title}"
+                available = max_x - 2
+                if len(line) > available:
+                    line = line[:available]
+                self._safe_addstr(row, 2, line)
+                row += 1
 
     def _draw_log_view(self):
         """Draw the log view for the selected flow."""

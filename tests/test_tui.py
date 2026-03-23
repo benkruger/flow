@@ -292,14 +292,23 @@ def test_draw_list_view_multiple_flows_unselected_marker():
 
 
 def test_draw_list_view_with_notes_and_issues():
-    """Shows notes and issues counts in detail panel."""
+    """Shows notes count and per-issue lines in detail panel."""
     state = make_state(
         current_phase="flow-code",
         phase_statuses={"flow-start": "complete", "flow-plan": "complete",
                         "flow-code": "in_progress"},
     )
     state["notes"] = [{"text": "a"}, {"text": "b"}]
-    state["issues_filed"] = [{"url": "http://example.com"}]
+    state["issues_filed"] = [
+        {
+            "label": "Tech Debt",
+            "title": "Fix date parser",
+            "url": "https://github.com/test/test/issues/42",
+            "phase": "flow-code",
+            "phase_name": "Code",
+            "timestamp": "2026-01-01T10:00:00-08:00",
+        },
+    ]
     flow = _flow_from_state(state)
     stdscr = _make_stdscr(rows=40, cols=80)
     app = _make_app(stdscr, flows=[flow])
@@ -307,7 +316,8 @@ def test_draw_list_view_with_notes_and_issues():
     calls = [str(c) for c in stdscr.addstr.call_args_list]
     text = " ".join(calls)
     assert "Notes: 2" in text
-    assert "Issues: 1" in text
+    assert "#42" in text
+    assert "Fix date parser" in text
 
 
 def test_draw_list_view_with_issue_numbers():
@@ -1050,6 +1060,117 @@ def test_draw_detail_panel_no_notes_no_issues():
     text = " ".join(calls)
     assert "Notes:" not in text
     assert "Issues:" not in text
+
+
+def test_draw_detail_panel_with_issues():
+    """Detail panel renders per-issue lines instead of count."""
+    state = make_state()
+    state["issues_filed"] = [
+        {
+            "label": "Tech Debt",
+            "title": "Extract helper for date parsing",
+            "url": "https://github.com/test/test/issues/42",
+            "phase": "flow-code-review",
+            "phase_name": "Code Review",
+            "timestamp": "2026-01-01T10:00:00-08:00",
+        },
+        {
+            "label": "Flaky Test",
+            "title": "test_timeout flakes on CI",
+            "url": "https://github.com/test/test/issues/55",
+            "phase": "flow-code",
+            "phase_name": "Code",
+            "timestamp": "2026-01-01T11:00:00-08:00",
+        },
+    ]
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_detail_panel(10)
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "#42" in text
+    assert "Extract helper" in text
+    assert "#55" in text
+    assert "test_timeout" in text
+    assert "Issues: 2 filed" not in text
+
+
+def test_draw_detail_panel_single_issue():
+    """Detail panel renders single issue correctly."""
+    state = make_state()
+    state["issues_filed"] = [
+        {
+            "label": "Flow",
+            "title": "Process gap found",
+            "url": "https://github.com/test/test/issues/10",
+            "phase": "flow-learn",
+            "phase_name": "Learn",
+            "timestamp": "2026-01-01T12:00:00-08:00",
+        },
+    ]
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_detail_panel(10)
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "#10" in text
+    assert "Process gap found" in text
+
+
+def test_draw_detail_panel_issues_truncated_by_height():
+    """Issues stop rendering when row reaches max_y - 2."""
+    state = make_state()
+    state["issues_filed"] = [
+        {
+            "label": "Tech Debt",
+            "title": f"Issue {i}",
+            "url": f"https://github.com/test/test/issues/{i}",
+            "phase": "flow-code",
+            "phase_name": "Code",
+            "timestamp": "2026-01-01T10:00:00-08:00",
+        }
+        for i in range(1, 20)
+    ]
+    flow = _flow_from_state(state)
+    # Terminal with room for timeline + some issues but not all 19
+    stdscr = _make_stdscr(rows=28, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_detail_panel(10)
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    # Should render some issues but not all 19
+    assert "#1" in text
+    assert "#19" not in text
+
+
+def test_draw_detail_panel_issue_title_truncated_by_width():
+    """Long issue titles are truncated to available width."""
+    state = make_state()
+    long_title = "A" * 100
+    state["issues_filed"] = [
+        {
+            "label": "Tech Debt",
+            "title": long_title,
+            "url": "https://github.com/test/test/issues/1",
+            "phase": "flow-code",
+            "phase_name": "Code",
+            "timestamp": "2026-01-01T10:00:00-08:00",
+        },
+    ]
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=40)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_detail_panel(10)
+    # Find the issue line call
+    issue_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "#1" in str(c[0][2])
+    ]
+    assert len(issue_calls) >= 1
+    rendered = issue_calls[0][0][2]
+    assert len(rendered) <= 38  # max_x(40) - col(2)
 
 
 def test_draw_list_view_blocked_shows_blocked_text():
