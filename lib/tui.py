@@ -393,7 +393,7 @@ class TuiApp:
         pr_url = flow.get("pr_url")
         if pr_url:
             subprocess.Popen(
-                ["open", str(pr_url)],
+                ["open", f"{pr_url.rstrip('/')}/files"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
