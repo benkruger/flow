@@ -292,14 +292,23 @@ def test_draw_list_view_multiple_flows_unselected_marker():
 
 
 def test_draw_list_view_with_notes_and_issues():
-    """Shows notes and issues counts in detail panel."""
+    """Shows notes count and per-issue lines in detail panel."""
     state = make_state(
         current_phase="flow-code",
         phase_statuses={"flow-start": "complete", "flow-plan": "complete",
                         "flow-code": "in_progress"},
     )
     state["notes"] = [{"text": "a"}, {"text": "b"}]
-    state["issues_filed"] = [{"url": "http://example.com"}]
+    state["issues_filed"] = [
+        {
+            "label": "Tech Debt",
+            "title": "Fix date parser",
+            "url": "https://github.com/test/test/issues/42",
+            "phase": "flow-code",
+            "phase_name": "Code",
+            "timestamp": "2026-01-01T10:00:00-08:00",
+        },
+    ]
     flow = _flow_from_state(state)
     stdscr = _make_stdscr(rows=40, cols=80)
     app = _make_app(stdscr, flows=[flow])
@@ -307,7 +316,8 @@ def test_draw_list_view_with_notes_and_issues():
     calls = [str(c) for c in stdscr.addstr.call_args_list]
     text = " ".join(calls)
     assert "Notes: 2" in text
-    assert "Issues: 1" in text
+    assert "#42" in text
+    assert "Fix date parser" in text
 
 
 def test_draw_list_view_with_issue_numbers():
@@ -1069,6 +1079,117 @@ def test_draw_detail_panel_no_notes_no_issues():
     assert "Issues:" not in text
 
 
+def test_draw_detail_panel_with_issues():
+    """Detail panel renders per-issue lines instead of count."""
+    state = make_state()
+    state["issues_filed"] = [
+        {
+            "label": "Tech Debt",
+            "title": "Extract helper for date parsing",
+            "url": "https://github.com/test/test/issues/42",
+            "phase": "flow-code-review",
+            "phase_name": "Code Review",
+            "timestamp": "2026-01-01T10:00:00-08:00",
+        },
+        {
+            "label": "Flaky Test",
+            "title": "test_timeout flakes on CI",
+            "url": "https://github.com/test/test/issues/55",
+            "phase": "flow-code",
+            "phase_name": "Code",
+            "timestamp": "2026-01-01T11:00:00-08:00",
+        },
+    ]
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_detail_panel(10)
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "#42" in text
+    assert "Extract helper" in text
+    assert "#55" in text
+    assert "test_timeout" in text
+    assert "Issues: 2 filed" not in text
+
+
+def test_draw_detail_panel_single_issue():
+    """Detail panel renders single issue correctly."""
+    state = make_state()
+    state["issues_filed"] = [
+        {
+            "label": "Flow",
+            "title": "Process gap found",
+            "url": "https://github.com/test/test/issues/10",
+            "phase": "flow-learn",
+            "phase_name": "Learn",
+            "timestamp": "2026-01-01T12:00:00-08:00",
+        },
+    ]
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_detail_panel(10)
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "#10" in text
+    assert "Process gap found" in text
+
+
+def test_draw_detail_panel_issues_truncated_by_height():
+    """Issues stop rendering when row reaches max_y - 2."""
+    state = make_state()
+    state["issues_filed"] = [
+        {
+            "label": "Tech Debt",
+            "title": f"Issue {i}",
+            "url": f"https://github.com/test/test/issues/{i}",
+            "phase": "flow-code",
+            "phase_name": "Code",
+            "timestamp": "2026-01-01T10:00:00-08:00",
+        }
+        for i in range(1, 20)
+    ]
+    flow = _flow_from_state(state)
+    # Terminal with room for timeline + some issues but not all 19
+    stdscr = _make_stdscr(rows=28, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_detail_panel(10)
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    # Should render some issues but not all 19
+    assert "#1" in text
+    assert "#19" not in text
+
+
+def test_draw_detail_panel_issue_title_truncated_by_safe_addstr():
+    """Long issue titles are truncated by _safe_addstr to available width."""
+    state = make_state()
+    long_title = "A" * 100
+    state["issues_filed"] = [
+        {
+            "label": "Tech Debt",
+            "title": long_title,
+            "url": "https://github.com/test/test/issues/1",
+            "phase": "flow-code",
+            "phase_name": "Code",
+            "timestamp": "2026-01-01T10:00:00-08:00",
+        },
+    ]
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=40)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_detail_panel(10)
+    # _safe_addstr truncates to max_x - col = 40 - 2 = 38
+    issue_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "#1" in str(c[0][2])
+    ]
+    assert len(issue_calls) >= 1
+    rendered = issue_calls[0][0][2]
+    assert len(rendered) <= 38  # max_x(40) - col(2)
+
+
 def test_draw_list_view_blocked_shows_blocked_text():
     """Flow with blocked=True shows 'Blocked' in list row instead of elapsed time."""
     state = make_state(
@@ -1226,24 +1347,32 @@ def test_open_issue_with_explicit_repo():
 # --- 'i' key ---
 
 
-def test_i_key_opens_issue():
-    """'i' key extracts issue number from prompt and opens it."""
+def test_I_key_opens_flow_issue():
+    """'I' (capital) key extracts issue number from prompt and opens it."""
     state = make_state()
     state["prompt"] = "fix issue #42"
     app = _make_app(flows=[_flow_from_state(state)])
     with patch.object(app, "_open_issue") as mock_open:
-        app._handle_list_input(ord("i"))
+        app._handle_list_input(ord("I"))
         mock_open.assert_called_once_with(42, repo="test/test")
 
 
-def test_i_key_no_issue_in_prompt():
-    """'i' key does nothing when prompt has no issue reference."""
+def test_I_key_no_issue_in_prompt():
+    """'I' key does nothing when prompt has no issue reference."""
     state = make_state()
     state["prompt"] = "add new feature"
     app = _make_app(flows=[_flow_from_state(state)])
     with patch.object(app, "_open_issue") as mock_open:
-        app._handle_list_input(ord("i"))
+        app._handle_list_input(ord("I"))
         mock_open.assert_not_called()
+
+
+def test_i_key_opens_issues_view():
+    """'i' key switches to issues view."""
+    state = make_state()
+    app = _make_app(flows=[_flow_from_state(state)])
+    app._handle_list_input(ord("i"))
+    assert app.view == "issues"
 
 
 def test_open_flow_issue_no_flows():
@@ -1254,8 +1383,8 @@ def test_open_flow_issue_no_flows():
         mock_open.assert_not_called()
 
 
-def test_draw_list_view_footer_includes_issue():
-    """Footer includes [i] Issue hint."""
+def test_draw_list_view_footer_includes_issue_keys():
+    """Footer includes [i] Issues and [I] Issue hints."""
     state = make_state()
     flow = _flow_from_state(state)
     stdscr = _make_stdscr(rows=40, cols=120)
@@ -1263,7 +1392,244 @@ def test_draw_list_view_footer_includes_issue():
     app._draw_list_view()
     calls = [str(c) for c in stdscr.addstr.call_args_list]
     text = " ".join(calls)
-    assert "[i] Issue" in text
+    assert "[i] Issues" in text
+    assert "[I] Issue" in text
+
+
+# --- Issues view ---
+
+
+def _make_issues_flow():
+    """Build a flow with issues_filed for issues view tests."""
+    state = make_state()
+    state["issues_filed"] = [
+        {
+            "label": "Tech Debt",
+            "title": "Extract date parser helper",
+            "url": "https://github.com/test/test/issues/42",
+            "phase": "flow-code-review",
+            "phase_name": "Code Review",
+            "timestamp": "2026-01-01T10:00:00-08:00",
+        },
+        {
+            "label": "Flaky Test",
+            "title": "test_timeout flakes on CI",
+            "url": "https://github.com/test/test/issues/55",
+            "phase": "flow-code",
+            "phase_name": "Code",
+            "timestamp": "2026-01-01T11:00:00-08:00",
+        },
+    ]
+    return _flow_from_state(state)
+
+
+def test_draw_issues_view_with_entries():
+    """Issues view renders columnar display with Label, Ref, Phase, Title."""
+    flow = _make_issues_flow()
+    stdscr = _make_stdscr(rows=20, cols=100)
+    app = _make_app(stdscr, flows=[flow])
+    app.view = "issues"
+    app._draw_issues_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "Tech Debt" in text
+    assert "#42" in text
+    assert "Code Review" in text
+    assert "Extract date parser" in text
+    assert "#55" in text
+    assert "Flaky Test" in text
+
+
+def test_draw_issues_view_empty():
+    """Issues view shows empty message when no issues filed."""
+    state = make_state()
+    state["issues_filed"] = []
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=20, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app.view = "issues"
+    app._draw_issues_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "No issues filed" in text
+
+
+def test_draw_issues_view_no_flows():
+    """Issues view switches back to list view when no flows exist."""
+    stdscr = _make_stdscr()
+    app = _make_app(stdscr, flows=[])
+    app.view = "issues"
+    app._draw_issues_view()
+    assert app.view == "list"
+
+
+def test_issues_view_navigate_up_down():
+    """UP/DOWN changes issue_selected in issues view."""
+    flow = _make_issues_flow()
+    app = _make_app(flows=[flow])
+    app.view = "issues"
+    app.issue_selected = 0
+    app._handle_issues_input(curses.KEY_DOWN)
+    assert app.issue_selected == 1
+    app._handle_issues_input(curses.KEY_UP)
+    assert app.issue_selected == 0
+
+
+def test_issues_view_navigate_bounds():
+    """UP at top stays at 0, DOWN at bottom stays at max."""
+    flow = _make_issues_flow()
+    app = _make_app(flows=[flow])
+    app.view = "issues"
+    app.issue_selected = 0
+    app._handle_issues_input(curses.KEY_UP)
+    assert app.issue_selected == 0
+    app.issue_selected = 1
+    app._handle_issues_input(curses.KEY_DOWN)
+    assert app.issue_selected == 1
+
+
+def test_issues_view_enter_opens_url():
+    """ENTER opens selected issue URL via subprocess."""
+    flow = _make_issues_flow()
+    app = _make_app(flows=[flow])
+    app.view = "issues"
+    app.issue_selected = 0
+    with patch("tui.subprocess.Popen") as mock_popen:
+        app._handle_issues_input(ord("\n"))
+        mock_popen.assert_called_once()
+        args = mock_popen.call_args[0][0]
+        assert args[0] == "open"
+        assert "issues/42" in args[1]
+
+
+def test_issues_view_esc_returns_to_list():
+    """ESC in issues view returns to list view."""
+    app = _make_app()
+    app.view = "issues"
+    app._handle_input(27)
+    assert app.view == "list"
+
+
+def test_issues_view_no_issues_input():
+    """Input handling does nothing for navigation when no issues exist."""
+    state = make_state()
+    state["issues_filed"] = []
+    flow = _flow_from_state(state)
+    app = _make_app(flows=[flow])
+    app.view = "issues"
+    app.issue_selected = 0
+    app._handle_issues_input(curses.KEY_DOWN)
+    assert app.issue_selected == 0
+
+
+def test_issues_view_selected_marker():
+    """Selected issue has the marker indicator."""
+    flow = _make_issues_flow()
+    stdscr = _make_stdscr(rows=20, cols=100)
+    app = _make_app(stdscr, flows=[flow])
+    app.view = "issues"
+    app.issue_selected = 0
+    app._draw_issues_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    # First issue row should be bold (selected)
+    issue_calls = [c for c in calls if "#42" in c]
+    assert len(issue_calls) >= 1
+
+
+def test_issues_view_clamps_selection():
+    """Selected index is clamped when it exceeds issues count."""
+    flow = _make_issues_flow()
+    stdscr = _make_stdscr(rows=20, cols=100)
+    app = _make_app(stdscr, flows=[flow])
+    app.view = "issues"
+    app.issue_selected = 99  # Way beyond 2 issues
+    app._draw_issues_view()
+    assert app.issue_selected == 1  # Clamped to last index
+
+
+def test_issues_view_height_overflow():
+    """Issues view stops rendering when terminal is too small."""
+    state = make_state()
+    state["issues_filed"] = [
+        {
+            "label": "Tech Debt",
+            "title": f"Issue {i}",
+            "url": f"https://github.com/test/test/issues/{i}",
+            "phase": "flow-code",
+            "phase_name": "Code",
+            "timestamp": "2026-01-01T10:00:00-08:00",
+        }
+        for i in range(1, 20)
+    ]
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=10, cols=100)
+    app = _make_app(stdscr, flows=[flow])
+    app.view = "issues"
+    app._draw_issues_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "#1" in text
+    assert "#19" not in text
+
+
+def test_issues_view_width_truncation():
+    """Long issue lines are truncated by _safe_addstr to terminal width."""
+    state = make_state()
+    state["issues_filed"] = [
+        {
+            "label": "Tech Debt",
+            "title": "A" * 100,
+            "url": "https://github.com/test/test/issues/1",
+            "phase": "flow-code",
+            "phase_name": "Code",
+            "timestamp": "2026-01-01T10:00:00-08:00",
+        },
+    ]
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=20, cols=50)
+    app = _make_app(stdscr, flows=[flow])
+    app.view = "issues"
+    app._draw_issues_view()
+    # _safe_addstr truncates to max_x - col = 50 - 2 = 48
+    issue_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "#1" in str(c[0][2])
+    ]
+    assert len(issue_calls) >= 1
+    rendered = issue_calls[0][0][2]
+    assert len(rendered) <= 48  # max_x(50) - col(2)
+
+
+def test_handle_issues_input_no_flows():
+    """_handle_issues_input does nothing when no flows exist."""
+    app = _make_app(flows=[])
+    app.view = "issues"
+    app._handle_issues_input(curses.KEY_DOWN)
+    assert app.issue_selected == 0
+
+
+def test_handle_input_dispatches_to_issues_view():
+    """Non-quit/non-escape keys in issues view dispatch to _handle_issues_input."""
+    flow = _make_issues_flow()
+    app = _make_app(flows=[flow])
+    app.view = "issues"
+    with patch.object(app, "_handle_issues_input") as mock_issues:
+        app._handle_input(curses.KEY_UP)
+        mock_issues.assert_called_once_with(curses.KEY_UP)
+
+
+def test_run_loop_draws_issues_view():
+    """Run loop calls _draw_issues_view when view is 'issues'."""
+    flow = _make_issues_flow()
+    stdscr = _make_stdscr(rows=20, cols=80)
+    stdscr.getch.side_effect = [ord("q")]
+    app = _make_app(stdscr, flows=[flow])
+    app.view = "issues"
+    with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
+         patch.object(app, "_draw_issues_view") as mock_draw:
+        app.run()
+        mock_draw.assert_called()
 
 
 # --- Tab bar and orchestration view ---
