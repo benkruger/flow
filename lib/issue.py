@@ -67,7 +67,7 @@ def fetch_database_id(repo, number):
             capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
-        return None, "gh api timed out after 30 seconds"
+        return None, f"gh api timed out after {LOCAL_TIMEOUT}s"
 
     if result.returncode != 0:
         error = result.stderr.strip() or "Unknown error"
@@ -96,7 +96,7 @@ def create_issue(repo, title, label=None, body=None):
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=LOCAL_TIMEOUT)
     except subprocess.TimeoutExpired:
-        return None, "Command timed out after 30 seconds"
+        return None, f"Command timed out after {LOCAL_TIMEOUT}s"
 
     if result.returncode != 0:
         error = result.stderr.strip() or result.stdout.strip() or "Unknown error"
