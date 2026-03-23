@@ -2,13 +2,10 @@
 
 import importlib.util
 import json
-import subprocess
 import sys
 from unittest.mock import patch
 
 from conftest import LIB_DIR
-
-SCRIPT = str(LIB_DIR / "orchestrate-state.py")
 
 
 def _import_module():
@@ -368,178 +365,184 @@ def test_next_issue_all_done(tmp_path):
 # --- CLI integration tests ---
 
 
-def test_cli_create(tmp_path):
+def test_cli_create(tmp_path, monkeypatch, capsys):
     """CLI --create with --queue-file creates state."""
+    mod = _import_module()
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--create", "--queue-file", str(queue_file),
-         "--state-dir", str(state_dir)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--create", "--queue-file", str(queue_file),
+        "--state-dir", str(state_dir),
+    ])
+    mod.main()
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert (state_dir / "orchestrate.json").exists()
 
 
-def test_cli_start_issue(tmp_path):
+def test_cli_start_issue(tmp_path, monkeypatch, capsys):
     """CLI --start-issue marks queue item as in_progress."""
+    mod = _import_module()
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
 
-    subprocess.run(
-        [sys.executable, SCRIPT,
-         "--create", "--queue-file", str(queue_file),
-         "--state-dir", str(state_dir)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--create", "--queue-file", str(queue_file),
+        "--state-dir", str(state_dir),
+    ])
+    mod.main()
+    capsys.readouterr()  # discard setup output
 
     state_path = str(state_dir / "orchestrate.json")
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--start-issue", "0",
-         "--state-file", state_path],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--start-issue", "0",
+        "--state-file", state_path,
+    ])
+    mod.main()
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
 
 
-def test_cli_record_outcome(tmp_path):
+def test_cli_record_outcome(tmp_path, monkeypatch, capsys):
     """CLI --record-outcome records result for queue item."""
+    mod = _import_module()
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
 
-    subprocess.run(
-        [sys.executable, SCRIPT,
-         "--create", "--queue-file", str(queue_file),
-         "--state-dir", str(state_dir)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--create", "--queue-file", str(queue_file),
+        "--state-dir", str(state_dir),
+    ])
+    mod.main()
+    capsys.readouterr()  # discard setup output
 
     state_path = str(state_dir / "orchestrate.json")
-    subprocess.run(
-        [sys.executable, SCRIPT,
-         "--start-issue", "0",
-         "--state-file", state_path],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--start-issue", "0",
+        "--state-file", state_path,
+    ])
+    mod.main()
+    capsys.readouterr()  # discard setup output
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--record-outcome", "0",
-         "--outcome", "completed",
-         "--pr-url", "https://github.com/test/test/pull/100",
-         "--branch", "add-pdf-export",
-         "--state-file", state_path],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--record-outcome", "0",
+        "--outcome", "completed",
+        "--pr-url", "https://github.com/test/test/pull/100",
+        "--branch", "add-pdf-export",
+        "--state-file", state_path,
+    ])
+    mod.main()
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
 
 
-def test_cli_complete(tmp_path):
+def test_cli_complete(tmp_path, monkeypatch, capsys):
     """CLI --complete sets completed_at."""
+    mod = _import_module()
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
 
-    subprocess.run(
-        [sys.executable, SCRIPT,
-         "--create", "--queue-file", str(queue_file),
-         "--state-dir", str(state_dir)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--create", "--queue-file", str(queue_file),
+        "--state-dir", str(state_dir),
+    ])
+    mod.main()
+    capsys.readouterr()  # discard setup output
 
     state_path = str(state_dir / "orchestrate.json")
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--complete",
-         "--state-file", state_path],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--complete",
+        "--state-file", state_path,
+    ])
+    mod.main()
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
 
 
-def test_cli_read(tmp_path):
+def test_cli_read(tmp_path, monkeypatch, capsys):
     """CLI --read returns current state."""
+    mod = _import_module()
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
 
-    subprocess.run(
-        [sys.executable, SCRIPT,
-         "--create", "--queue-file", str(queue_file),
-         "--state-dir", str(state_dir)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--create", "--queue-file", str(queue_file),
+        "--state-dir", str(state_dir),
+    ])
+    mod.main()
+    capsys.readouterr()  # discard setup output
 
     state_path = str(state_dir / "orchestrate.json")
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--read",
-         "--state-file", state_path],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--read",
+        "--state-file", state_path,
+    ])
+    mod.main()
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert "state" in data
 
 
-def test_cli_next(tmp_path):
+def test_cli_next(tmp_path, monkeypatch, capsys):
     """CLI --next returns next pending issue."""
+    mod = _import_module()
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
 
-    subprocess.run(
-        [sys.executable, SCRIPT,
-         "--create", "--queue-file", str(queue_file),
-         "--state-dir", str(state_dir)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--create", "--queue-file", str(queue_file),
+        "--state-dir", str(state_dir),
+    ])
+    mod.main()
+    capsys.readouterr()  # discard setup output
 
     state_path = str(state_dir / "orchestrate.json")
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--next",
-         "--state-file", state_path],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--next",
+        "--state-file", state_path,
+    ])
+    mod.main()
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert data["index"] == 0
 
 
-def test_cli_read_missing_state(tmp_path):
+def test_cli_read_missing_state(tmp_path, monkeypatch, capsys):
     """CLI --read with nonexistent file returns error."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--read",
-         "--state-file", str(tmp_path / "missing.json")],
-        capture_output=True, text=True,
-    )
+    mod = _import_module()
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--read",
+        "--state-file", str(tmp_path / "missing.json"),
+    ])
+    mod.main()
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
 
 
@@ -581,116 +584,115 @@ def test_next_issue_missing_state(tmp_path):
 # --- CLI missing argument error paths ---
 
 
-def test_cli_create_missing_queue_file(tmp_path):
+def test_cli_create_missing_queue_file(tmp_path, monkeypatch, capsys):
     """CLI --create without --queue-file returns error."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "--create"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod = _import_module()
+    monkeypatch.setattr("sys.argv", ["orchestrate-state", "--create"])
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "--queue-file" in data["message"]
 
 
-def test_cli_start_issue_missing_state_file():
+def test_cli_start_issue_missing_state_file(monkeypatch, capsys):
     """CLI --start-issue without --state-file returns error."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "--start-issue", "0"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod = _import_module()
+    monkeypatch.setattr("sys.argv", ["orchestrate-state", "--start-issue", "0"])
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "--state-file" in data["message"]
 
 
-def test_cli_record_outcome_missing_state_file():
+def test_cli_record_outcome_missing_state_file(monkeypatch, capsys):
     """CLI --record-outcome without --state-file returns error."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--record-outcome", "0", "--outcome", "completed"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod = _import_module()
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--record-outcome", "0", "--outcome", "completed",
+    ])
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "--state-file" in data["message"]
 
 
-def test_cli_record_outcome_missing_outcome(tmp_path):
+def test_cli_record_outcome_missing_outcome(tmp_path, monkeypatch, capsys):
     """CLI --record-outcome without --outcome returns error."""
+    mod = _import_module()
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
 
-    subprocess.run(
-        [sys.executable, SCRIPT,
-         "--create", "--queue-file", str(queue_file),
-         "--state-dir", str(state_dir)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--create", "--queue-file", str(queue_file),
+        "--state-dir", str(state_dir),
+    ])
+    mod.main()
+    capsys.readouterr()  # discard setup output
 
     state_path = str(state_dir / "orchestrate.json")
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--record-outcome", "0",
-         "--state-file", state_path],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--record-outcome", "0",
+        "--state-file", state_path,
+    ])
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "--outcome" in data["message"]
 
 
-def test_cli_complete_missing_state_file():
+def test_cli_complete_missing_state_file(monkeypatch, capsys):
     """CLI --complete without --state-file returns error."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "--complete"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod = _import_module()
+    monkeypatch.setattr("sys.argv", ["orchestrate-state", "--complete"])
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "--state-file" in data["message"]
 
 
-def test_cli_read_missing_state_file():
+def test_cli_read_missing_state_file(monkeypatch, capsys):
     """CLI --read without --state-file returns error."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "--read"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod = _import_module()
+    monkeypatch.setattr("sys.argv", ["orchestrate-state", "--read"])
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "--state-file" in data["message"]
 
 
-def test_cli_next_missing_state_file():
+def test_cli_next_missing_state_file(monkeypatch, capsys):
     """CLI --next without --state-file returns error."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "--next"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod = _import_module()
+    monkeypatch.setattr("sys.argv", ["orchestrate-state", "--next"])
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "--state-file" in data["message"]
 
 
-def test_cli_exception_handling(tmp_path):
+def test_cli_exception_handling(tmp_path, monkeypatch, capsys):
     """CLI handles unexpected exceptions gracefully."""
+    mod = _import_module()
     bad_file = tmp_path / "bad.json"
     bad_file.write_text("{corrupt json")
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--start-issue", "0",
-         "--state-file", str(bad_file)],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", [
+        "orchestrate-state",
+        "--start-issue", "0",
+        "--state-file", str(bad_file),
+    ])
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"

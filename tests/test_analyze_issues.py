@@ -330,66 +330,54 @@ def test_analyze_total_includes_all():
 # --- CLI integration ---
 
 
-def test_cli_with_issues_json_file(tmp_path):
+def test_cli_with_issues_json_file(tmp_path, monkeypatch, capsys):
     """CLI reads issues from --issues-json file and outputs analysis."""
     issues = [_make_issue(1, title="Test issue", body="Check lib/foo.py")]
     json_file = tmp_path / "issues.json"
     json_file.write_text(json.dumps(issues))
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "analyze-issues.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--issues-json", str(json_file)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["analyze-issues", "--issues-json", str(json_file)])
+    _mod.main()
 
-    assert result.returncode == 0
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "ok"
     assert output["total"] == 1
 
 
-def test_cli_empty_json_file(tmp_path):
+def test_cli_empty_json_file(tmp_path, monkeypatch, capsys):
     """CLI handles empty issue list gracefully."""
     json_file = tmp_path / "issues.json"
     json_file.write_text("[]")
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "analyze-issues.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--issues-json", str(json_file)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["analyze-issues", "--issues-json", str(json_file)])
+    _mod.main()
 
-    assert result.returncode == 0
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["total"] == 0
 
 
-def test_cli_malformed_json(tmp_path):
+def test_cli_malformed_json(tmp_path, monkeypatch, capsys):
     """CLI returns error on malformed JSON input."""
     json_file = tmp_path / "issues.json"
     json_file.write_text("{corrupt")
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "analyze-issues.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--issues-json", str(json_file)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["analyze-issues", "--issues-json", str(json_file)])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
 
-    assert result.returncode == 1
-    output = json.loads(result.stdout)
+    assert exc_info.value.code == 1
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
 
 
-def test_cli_missing_file():
+def test_cli_missing_file(monkeypatch, capsys):
     """CLI returns error when --issues-json file does not exist."""
-    script = Path(__file__).resolve().parent.parent / "lib" / "analyze-issues.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--issues-json", "/nonexistent/file.json"],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["analyze-issues", "--issues-json", "/nonexistent/file.json"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
 
-    assert result.returncode == 1
-    output = json.loads(result.stdout)
+    assert exc_info.value.code == 1
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
 
 
@@ -531,16 +519,13 @@ def _make_filter_issues_file(tmp_path):
     return json_file
 
 
-def test_cli_ready_flag(tmp_path):
+def test_cli_ready_flag(tmp_path, monkeypatch, capsys):
     """--ready flag filters to issues with no dependencies."""
     json_file = _make_filter_issues_file(tmp_path)
-    script = Path(__file__).resolve().parent.parent / "lib" / "analyze-issues.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--issues-json", str(json_file), "--ready"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    output = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", ["analyze-issues", "--issues-json", str(json_file), "--ready"])
+    _mod.main()
+
+    output = json.loads(capsys.readouterr().out)
     numbers = [i["number"] for i in output["issues"]]
     assert 1 in numbers
     assert 3 in numbers
@@ -549,16 +534,13 @@ def test_cli_ready_flag(tmp_path):
     assert output["total"] == 2
 
 
-def test_cli_blocked_flag(tmp_path):
+def test_cli_blocked_flag(tmp_path, monkeypatch, capsys):
     """--blocked flag filters to issues with dependencies."""
     json_file = _make_filter_issues_file(tmp_path)
-    script = Path(__file__).resolve().parent.parent / "lib" / "analyze-issues.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--issues-json", str(json_file), "--blocked"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    output = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", ["analyze-issues", "--issues-json", str(json_file), "--blocked"])
+    _mod.main()
+
+    output = json.loads(capsys.readouterr().out)
     numbers = [i["number"] for i in output["issues"]]
     assert 2 in numbers
     assert 4 in numbers
@@ -567,17 +549,13 @@ def test_cli_blocked_flag(tmp_path):
     assert output["total"] == 2
 
 
-def test_cli_decomposed_flag(tmp_path):
+def test_cli_decomposed_flag(tmp_path, monkeypatch, capsys):
     """--decomposed flag filters to decomposed issues."""
     json_file = _make_filter_issues_file(tmp_path)
-    script = Path(__file__).resolve().parent.parent / "lib" / "analyze-issues.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--issues-json", str(json_file),
-         "--decomposed"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    output = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", ["analyze-issues", "--issues-json", str(json_file), "--decomposed"])
+    _mod.main()
+
+    output = json.loads(capsys.readouterr().out)
     numbers = [i["number"] for i in output["issues"]]
     assert 3 in numbers
     assert 4 in numbers
@@ -586,29 +564,23 @@ def test_cli_decomposed_flag(tmp_path):
     assert output["total"] == 2
 
 
-def test_cli_quick_start_flag(tmp_path):
+def test_cli_quick_start_flag(tmp_path, monkeypatch, capsys):
     """--quick-start flag filters to decomposed issues with no dependencies."""
     json_file = _make_filter_issues_file(tmp_path)
-    script = Path(__file__).resolve().parent.parent / "lib" / "analyze-issues.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--issues-json", str(json_file),
-         "--quick-start"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    output = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", ["analyze-issues", "--issues-json", str(json_file), "--quick-start"])
+    _mod.main()
+
+    output = json.loads(capsys.readouterr().out)
     numbers = [i["number"] for i in output["issues"]]
     assert numbers == [3]
     assert output["total"] == 1
 
 
-def test_cli_mutually_exclusive_flags(tmp_path):
+def test_cli_mutually_exclusive_flags(tmp_path, monkeypatch, capsys):
     """Passing two filter flags produces an error."""
     json_file = _make_filter_issues_file(tmp_path)
-    script = Path(__file__).resolve().parent.parent / "lib" / "analyze-issues.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--issues-json", str(json_file),
-         "--ready", "--blocked"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode != 0
+    monkeypatch.setattr("sys.argv", ["analyze-issues", "--issues-json", str(json_file), "--ready", "--blocked"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+
+    assert exc_info.value.code != 0
