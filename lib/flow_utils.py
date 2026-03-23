@@ -256,7 +256,7 @@ def read_prompt_file(path):
     try:
         with open(path) as fh:
             content = fh.read()
-    except (OSError, IOError) as exc:
+    except OSError as exc:
         return None, f"Could not read prompt file '{path}': {exc}"
 
     try:

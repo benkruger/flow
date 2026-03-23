@@ -1095,6 +1095,16 @@ def test_read_prompt_file_reads_and_deletes(tmp_path):
     assert not prompt_path.exists()
 
 
+def test_read_prompt_file_empty_file(tmp_path):
+    """read_prompt_file reads empty file and deletes it."""
+    prompt_path = tmp_path / ".flow-start-prompt"
+    prompt_path.write_text("")
+    content, error = _mod.read_prompt_file(str(prompt_path))
+    assert error is None
+    assert content == ""
+    assert not prompt_path.exists()
+
+
 def test_read_prompt_file_missing_returns_error(tmp_path):
     """read_prompt_file returns error for nonexistent file."""
     content, error = _mod.read_prompt_file(str(tmp_path / "nonexistent"))
