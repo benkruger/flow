@@ -71,7 +71,7 @@ CI will fail if these are missing:
 - `.github/workflows/autoupdate.yml` — auto-updates PR branches when main advances
 - `docs/` — GitHub Pages site (main /docs, static HTML)
 - `lib/extract-release-notes.py` — extracts version sections from RELEASE-NOTES.md for GitHub Releases
-- `lib/start-lock.py` — serializes concurrent flow-start operations using a file lock at `.flow-states/start.lock` (PID-based stale detection + 30-min timeout)
+- `lib/start-lock.py` — serializes concurrent flow-start operations using a file lock at `.flow-states/start.lock` (timeout-based stale detection, 30-min threshold)
 - `lib/init-state.py` — early state file creation with null PR fields for TUI visibility during Start; called before locked main operations
 - `lib/start-setup.py` — consolidated Start phase setup (worktree, PR, state file backfill, repo detection; optional git pull via `--skip-pull`)
 - `lib/flow_utils.py` — shared utilities: `now()` (Pacific Time timestamps), `PACIFIC` timezone, `format_time()`, `elapsed_since()`, `read_version()`, `read_version_from()`, `current_branch()`, `project_root()`, `read_flow_json()`, `extract_issue_numbers()`, `short_issue_ref()`, `read_prompt_file()`, `detect_repo()`, `mutate_state()`, `derive_feature()`, `derive_worktree()`, `freeze_phases()`, `build_initial_phases()`, `AUTO_SKILLS`, `PHASE_NAMES`, `COMMANDS`
