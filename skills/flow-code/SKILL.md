@@ -308,10 +308,16 @@ Record the completed task number:
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_task=<n>
 ```
 
-Set the continuation context and flag before committing:
+Set the continuation context and flag before committing.
+
+If commit=auto, use the first form. If commit=manual, use the second:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-code --continue-step."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-code --continue-step --auto."
+```
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-code --continue-step --manual."
 ```
 
 ```bash
