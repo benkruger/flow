@@ -2,7 +2,6 @@
 
 import importlib.util
 import json
-import subprocess
 import sys
 
 import pytest
@@ -18,15 +17,6 @@ def _import_module():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
-
-
-def _get_branch(git_repo):
-    """Get the current branch name from a git repo."""
-    result = subprocess.run(
-        ["git", "branch", "--show-current"],
-        capture_output=True, text=True, cwd=str(git_repo),
-    )
-    return result.stdout.strip()
 
 
 # --- In-process tests ---
@@ -140,16 +130,15 @@ def test_no_state_file_returns_no_state(git_repo, monkeypatch, capsys):
     assert data["status"] == "no_state"
 
 
-def test_cli_happy_path(state_dir, git_repo, monkeypatch, capsys):
+def test_cli_happy_path(state_dir, git_repo, branch, monkeypatch, capsys):
     """Full CLI round-trip: write state, run CLI, verify output."""
     mod = _import_module()
-    branch_name = _get_branch(git_repo)
     state = make_state(current_phase="flow-learn", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete",
         "flow-code": "complete", "flow-code-review": "complete",
         "flow-learn": "in_progress",
     })
-    path = write_state(state_dir, branch_name, state)
+    path = write_state(state_dir, branch, state)
 
     monkeypatch.chdir(git_repo)
     monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Rule",
@@ -188,11 +177,10 @@ def test_cli_branch_flag(state_dir, git_repo, monkeypatch, capsys):
     assert data["issue_count"] == 1
 
 
-def test_corrupt_state_file_returns_error(state_dir, git_repo, monkeypatch, capsys):
+def test_corrupt_state_file_returns_error(state_dir, git_repo, branch, monkeypatch, capsys):
     """Corrupt state file returns a read error."""
     mod = _import_module()
-    branch_name = _get_branch(git_repo)
-    bad_file = state_dir / f"{branch_name}.json"
+    bad_file = state_dir / f"{branch}.json"
     bad_file.write_text("{bad json")
 
     monkeypatch.chdir(git_repo)
@@ -206,16 +194,15 @@ def test_corrupt_state_file_returns_error(state_dir, git_repo, monkeypatch, caps
     assert "Could not read" in data["message"]
 
 
-def test_write_failure_returns_error(state_dir, git_repo, monkeypatch, capsys):
+def test_write_failure_returns_error(state_dir, git_repo, branch, monkeypatch, capsys):
     """Read-only state file returns a write error."""
     mod = _import_module()
-    branch_name = _get_branch(git_repo)
     state = make_state(current_phase="flow-learn", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete",
         "flow-code": "complete", "flow-code-review": "complete",
         "flow-learn": "in_progress",
     })
-    path = write_state(state_dir, branch_name, state)
+    path = write_state(state_dir, branch, state)
     path.chmod(0o444)
 
     monkeypatch.chdir(git_repo)
