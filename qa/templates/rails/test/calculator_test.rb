@@ -1,5 +1,5 @@
 require "minitest/autorun"
-require_relative "../../app/models/calculator"
+require "calculator"
 
 class CalculatorTest < Minitest::Test
   def test_add

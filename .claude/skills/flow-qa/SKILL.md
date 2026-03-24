@@ -30,7 +30,7 @@ If no argument is given, use AskUserQuestion with these options
 | rails | `benkruger/flow-qa-rails` | `.qa-repos/rails` |
 | ios | `benkruger/flow-qa-ios` | `.qa-repos/ios` |
 
-Currently only `python` is supported. Rails and ios are out of scope.
+Currently `python` and `rails` are supported. iOS is out of scope.
 
 ## Steps
 

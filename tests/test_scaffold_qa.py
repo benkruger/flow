@@ -25,8 +25,8 @@ def test_find_templates_rails():
     templates = _mod.find_templates("rails", templates_dir=str(TEMPLATES_DIR))
     assert "Gemfile" in templates
     assert "bin/ci" in templates
-    assert "app/models/calculator.rb" in templates
-    assert "test/models/calculator_test.rb" in templates
+    assert "lib/calculator.rb" in templates
+    assert "test/calculator_test.rb" in templates
     assert ".qa/issues.json" in templates
 
 

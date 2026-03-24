@@ -1,7 +1,7 @@
-#!/usr/bin/env ruby
-require "open3"
+#!/usr/bin/env bash
+set -euo pipefail
 
-stdout, stderr, status = Open3.capture3("ruby", "-Itest", *Dir["test/**/*_test.rb"])
-puts stdout
-$stderr.puts stderr unless stderr.empty?
-exit status.exitstatus
+cd "$(dirname "$0")/.."
+
+bundle exec ruby -Ilib -Itest test/*_test.rb
+bundle exec rubocop --no-server
