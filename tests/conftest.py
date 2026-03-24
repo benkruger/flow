@@ -1,5 +1,6 @@
 """Shared fixtures for FLOW plugin tests."""
 
+import importlib.util
 import json
 import os
 import shutil
@@ -20,6 +21,15 @@ FRAMEWORKS_DIR = REPO_ROOT / "frameworks"
 
 sys.path.insert(0, str(LIB_DIR))
 from flow_utils import PHASE_NAMES, PHASE_ORDER
+
+
+def import_lib(filename):
+    """Import a lib/*.py script by filename for in-process testing."""
+    module_name = filename.removesuffix(".py").replace("-", "_")
+    spec = importlib.util.spec_from_file_location(module_name, LIB_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 @pytest.fixture(autouse=True, scope="session")
