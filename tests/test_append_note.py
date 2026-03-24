@@ -2,7 +2,6 @@
 
 import importlib.util
 import json
-import subprocess
 import sys
 
 import pytest
@@ -15,15 +14,6 @@ _spec = importlib.util.spec_from_file_location(
 )
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
-
-
-def _get_branch(git_repo):
-    """Get the current branch name from a git repo."""
-    result = subprocess.run(
-        ["git", "branch", "--show-current"],
-        capture_output=True, text=True, cwd=str(git_repo),
-    )
-    return result.stdout.strip()
 
 
 # --- CLI behavior (in-process main()) ---
@@ -94,9 +84,8 @@ def test_multiple_notes_append(tmp_path):
     assert len(updated["notes"]) == 3
 
 
-def test_type_defaults_to_correction(state_dir, git_repo, monkeypatch, capsys):
+def test_type_defaults_to_correction(state_dir, git_repo, branch, monkeypatch, capsys):
     """Type defaults to correction when --type is not specified."""
-    branch = _get_branch(git_repo)
     state = make_state(current_phase="flow-code", phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"})
     path = write_state(state_dir, branch, state)
 
@@ -116,9 +105,8 @@ def test_invalid_type_rejected(monkeypatch):
     assert exc_info.value.code != 0
 
 
-def test_corrupt_state_file_returns_error(state_dir, git_repo, monkeypatch, capsys):
+def test_corrupt_state_file_returns_error(state_dir, git_repo, branch, monkeypatch, capsys):
     """Corrupt state file returns a read error."""
-    branch = _get_branch(git_repo)
     bad_file = state_dir / f"{branch}.json"
     bad_file.write_text("{bad json")
 
@@ -132,9 +120,8 @@ def test_corrupt_state_file_returns_error(state_dir, git_repo, monkeypatch, caps
     assert "Could not read" in data["message"]
 
 
-def test_write_failure_returns_error(state_dir, git_repo, monkeypatch, capsys):
+def test_write_failure_returns_error(state_dir, git_repo, branch, monkeypatch, capsys):
     """Read-only state file returns a write error."""
-    branch = _get_branch(git_repo)
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
     path = write_state(state_dir, branch, state)
     path.chmod(0o444)
