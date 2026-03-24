@@ -3,10 +3,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-repo_root = str(Path(__file__).resolve().parent.parent)
+repo_root = Path(__file__).resolve().parent.parent
+flow_venv = repo_root.parent.parent / ".venv" / "bin" / "python3"
 
 result = subprocess.run(
-    [sys.executable, "-m", "pytest", "tests/", "-v", "--rootdir", repo_root],
-    cwd=repo_root,
+    [str(flow_venv), "-m", "pytest", "tests/", "-v", "--rootdir", str(repo_root)],
+    cwd=str(repo_root),
 )
 sys.exit(result.returncode)
