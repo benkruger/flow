@@ -295,7 +295,7 @@ def test_dd_conflict_detected(tmp_path):
 # --- CLI integration ---
 
 
-def test_cli_happy_path(git_repo, branch, tmp_path):
+def test_cli_happy_path(git_repo, branch, tmp_path, monkeypatch, capsys):
     """Full subprocess run: commit, pull, push in a real git repo."""
     bare = tmp_path / "bare.git"
     subprocess.run(
@@ -320,49 +320,41 @@ def test_cli_happy_path(git_repo, branch, tmp_path):
     msg_file = git_repo / ".flow-commit-msg"
     msg_file.write_text("Test commit via CLI.")
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "finalize-commit.py"
-    result = subprocess.run(
-        [sys.executable, str(script), ".flow-commit-msg", branch],
-        capture_output=True, text=True,
-        cwd=str(git_repo),
-    )
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["finalize-commit", ".flow-commit-msg", branch])
+    _mod.main()
 
-    output = json.loads(result.stdout)
-    assert result.returncode == 0
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "ok"
     assert len(output["sha"]) >= 7
     assert not msg_file.exists()
 
 
-def test_cli_commit_failure(git_repo, branch):
+def test_cli_commit_failure(git_repo, branch, monkeypatch, capsys):
     """Commit failure exits with returncode 1."""
     msg_file = git_repo / ".flow-commit-msg"
     msg_file.write_text("Test commit.")
 
     # Nothing staged, so commit will fail
-    script = Path(__file__).resolve().parent.parent / "lib" / "finalize-commit.py"
-    result = subprocess.run(
-        [sys.executable, str(script), ".flow-commit-msg", branch],
-        capture_output=True, text=True,
-        cwd=str(git_repo),
-    )
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["finalize-commit", ".flow-commit-msg", branch])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
 
-    assert result.returncode == 1
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
     assert output["step"] == "commit"
     assert not msg_file.exists()
 
 
-def test_cli_missing_args():
+def test_cli_missing_args(monkeypatch, capsys):
     """Missing arguments exits with error JSON."""
-    script = Path(__file__).resolve().parent.parent / "lib" / "finalize-commit.py"
-    result = subprocess.run(
-        [sys.executable, str(script)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["finalize-commit"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
 
-    assert result.returncode == 1
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
     assert output["step"] == "args"
