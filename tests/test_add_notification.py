@@ -1,23 +1,12 @@
 """Tests for lib/add-notification.py — records Slack notifications in the state file."""
 
-import importlib.util
 import json
 import subprocess
 import sys
 
 import pytest
 
-from conftest import LIB_DIR, make_state, write_state
-
-
-def _import_module():
-    """Import add-notification.py for in-process unit tests."""
-    spec = importlib.util.spec_from_file_location(
-        "add_notification", LIB_DIR / "add-notification.py"
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+from conftest import import_lib, make_state, write_state
 
 
 def _get_branch(git_repo):
@@ -34,7 +23,7 @@ def _get_branch(git_repo):
 
 def test_append_to_empty_notifications(tmp_path):
     """add_notification creates slack_notifications array and appends first entry."""
-    mod = _import_module()
+    mod = import_lib("add-notification.py")
     state = make_state(current_phase="flow-start", phase_statuses={
         "flow-start": "in_progress",
     })
@@ -58,7 +47,7 @@ def test_append_to_empty_notifications(tmp_path):
 
 def test_append_to_existing_notifications(tmp_path):
     """add_notification preserves existing entries and appends new one."""
-    mod = _import_module()
+    mod = import_lib("add-notification.py")
     state = make_state(current_phase="flow-plan", phase_statuses={
         "flow-start": "complete", "flow-plan": "in_progress",
     })
@@ -85,7 +74,7 @@ def test_append_to_existing_notifications(tmp_path):
 
 def test_creates_array_if_missing(tmp_path):
     """add_notification creates slack_notifications key if state file lacks it."""
-    mod = _import_module()
+    mod = import_lib("add-notification.py")
     state = {"branch": "test", "current_phase": "flow-code"}
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
@@ -100,7 +89,7 @@ def test_creates_array_if_missing(tmp_path):
 
 def test_persists_to_disk(tmp_path):
     """add_notification writes the updated state back to disk."""
-    mod = _import_module()
+    mod = import_lib("add-notification.py")
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete",
         "flow-code": "in_progress",
@@ -120,7 +109,7 @@ def test_persists_to_disk(tmp_path):
 
 def test_truncates_long_message_preview(tmp_path):
     """message_preview is truncated to 100 characters."""
-    mod = _import_module()
+    mod = import_lib("add-notification.py")
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete",
         "flow-code": "in_progress",
@@ -144,7 +133,7 @@ def test_truncates_long_message_preview(tmp_path):
 
 def test_cli_no_branch_returns_error(tmp_path, monkeypatch, capsys):
     """Running outside a git repo returns an error."""
-    mod = _import_module()
+    mod = import_lib("add-notification.py")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.argv", [
         "add-notification",
@@ -160,7 +149,7 @@ def test_cli_no_branch_returns_error(tmp_path, monkeypatch, capsys):
 
 def test_cli_no_state_file_returns_no_state(git_repo, monkeypatch, capsys):
     """Running with no state file returns no_state."""
-    mod = _import_module()
+    mod = import_lib("add-notification.py")
     monkeypatch.chdir(git_repo)
     monkeypatch.setattr("sys.argv", [
         "add-notification",
@@ -176,7 +165,7 @@ def test_cli_no_state_file_returns_no_state(git_repo, monkeypatch, capsys):
 
 def test_cli_happy_path(state_dir, git_repo, monkeypatch, capsys):
     """Full CLI round-trip: write state, run CLI, verify output."""
-    mod = _import_module()
+    mod = import_lib("add-notification.py")
     branch_name = _get_branch(git_repo)
     state = make_state(current_phase="flow-start", phase_statuses={
         "flow-start": "in_progress",
@@ -198,7 +187,7 @@ def test_cli_happy_path(state_dir, git_repo, monkeypatch, capsys):
 
 def test_cli_branch_flag(state_dir, git_repo, monkeypatch, capsys):
     """--branch flag finds the state file for a different branch."""
-    mod = _import_module()
+    mod = import_lib("add-notification.py")
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete",
         "flow-code": "in_progress",
@@ -220,7 +209,7 @@ def test_cli_branch_flag(state_dir, git_repo, monkeypatch, capsys):
 
 def test_cli_ambiguous_multiple_state_files(state_dir, git_repo, monkeypatch, capsys):
     """Multiple state files with no exact match returns ambiguity error."""
-    mod = _import_module()
+    mod = import_lib("add-notification.py")
     for name in ["feat-a", "feat-b"]:
         state = make_state(current_phase="flow-code", phase_statuses={
             "flow-start": "complete", "flow-plan": "complete",
@@ -244,7 +233,7 @@ def test_cli_ambiguous_multiple_state_files(state_dir, git_repo, monkeypatch, ca
 
 def test_cli_write_failure_returns_error(state_dir, git_repo, monkeypatch, capsys):
     """Read-only state file returns a write error."""
-    mod = _import_module()
+    mod = import_lib("add-notification.py")
     branch_name = _get_branch(git_repo)
     state = make_state(current_phase="flow-start", phase_statuses={
         "flow-start": "in_progress",
@@ -269,7 +258,7 @@ def test_cli_write_failure_returns_error(state_dir, git_repo, monkeypatch, capsy
 
 def test_cli_corrupt_state_returns_error(state_dir, git_repo, monkeypatch, capsys):
     """Corrupt state file returns a read error."""
-    mod = _import_module()
+    mod = import_lib("add-notification.py")
     branch_name = _get_branch(git_repo)
     bad_file = state_dir / f"{branch_name}.json"
     bad_file.write_text("{bad json")

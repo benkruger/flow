@@ -1,22 +1,11 @@
 """Tests for lib/format-issues-summary.py — formats issues summary for Complete phase."""
 
-import importlib.util
 import json
 import sys
 
-from conftest import LIB_DIR, make_state
+from conftest import LIB_DIR, import_lib, make_state
 
 SCRIPT = str(LIB_DIR / "format-issues-summary.py")
-
-
-def _import_module():
-    """Import format-issues-summary.py for in-process unit tests."""
-    spec = importlib.util.spec_from_file_location(
-        "format_issues_summary", LIB_DIR / "format-issues-summary.py"
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
 
 
 def _make_issues(*labels):
@@ -39,7 +28,7 @@ def _make_issues(*labels):
 
 def test_empty_issues_returns_no_issues():
     """Empty issues_filed returns has_issues=False."""
-    mod = _import_module()
+    mod = import_lib("format-issues-summary.py")
     state = make_state()
     state["issues_filed"] = []
 
@@ -52,7 +41,7 @@ def test_empty_issues_returns_no_issues():
 
 def test_missing_issues_filed_returns_no_issues():
     """State without issues_filed key returns has_issues=False."""
-    mod = _import_module()
+    mod = import_lib("format-issues-summary.py")
     state = make_state()
     del state["issues_filed"]
 
@@ -63,7 +52,7 @@ def test_missing_issues_filed_returns_no_issues():
 
 def test_single_issue_formats_correctly():
     """Single issue produces correct banner line and table."""
-    mod = _import_module()
+    mod = import_lib("format-issues-summary.py")
     state = make_state()
     state["issues_filed"] = _make_issues("Rule")
 
@@ -77,7 +66,7 @@ def test_single_issue_formats_correctly():
 
 def test_multiple_labels_grouped():
     """Multiple issues with different labels are grouped correctly."""
-    mod = _import_module()
+    mod = import_lib("format-issues-summary.py")
     state = make_state()
     state["issues_filed"] = _make_issues("Rule", "Flaky Test", "Rule", "Tech Debt")
 
@@ -89,7 +78,7 @@ def test_multiple_labels_grouped():
 
 def test_table_contains_all_issues():
     """Table contains a row for each issue."""
-    mod = _import_module()
+    mod = import_lib("format-issues-summary.py")
     state = make_state()
     state["issues_filed"] = _make_issues("Rule", "Flow")
 
@@ -102,7 +91,7 @@ def test_table_contains_all_issues():
 
 def test_table_url_is_short_reference():
     """Table shows issue number as link, not full URL."""
-    mod = _import_module()
+    mod = import_lib("format-issues-summary.py")
     state = make_state()
     state["issues_filed"] = [{
         "label": "Rule",
@@ -120,7 +109,7 @@ def test_table_url_is_short_reference():
 
 def test_label_order_preserved():
     """Labels appear in the order they are first encountered."""
-    mod = _import_module()
+    mod = import_lib("format-issues-summary.py")
     state = make_state()
     state["issues_filed"] = _make_issues("Flaky Test", "Rule", "Flaky Test")
 
@@ -134,7 +123,7 @@ def test_label_order_preserved():
 
 def test_cli_happy_path(tmp_path, monkeypatch, capsys):
     """Full CLI round-trip: write state, run CLI, verify output."""
-    mod = _import_module()
+    mod = import_lib("format-issues-summary.py")
     state = make_state()
     state["issues_filed"] = _make_issues("Rule", "Flow")
     state_path = tmp_path / "state.json"
@@ -158,7 +147,7 @@ def test_cli_happy_path(tmp_path, monkeypatch, capsys):
 
 def test_cli_no_issues(tmp_path, monkeypatch, capsys):
     """CLI with no issues returns has_issues=False and skips file write."""
-    mod = _import_module()
+    mod = import_lib("format-issues-summary.py")
     state = make_state()
     state["issues_filed"] = []
     state_path = tmp_path / "state.json"
@@ -179,7 +168,7 @@ def test_cli_no_issues(tmp_path, monkeypatch, capsys):
 
 def test_cli_missing_state_file(tmp_path, monkeypatch, capsys):
     """CLI with nonexistent state file returns error."""
-    mod = _import_module()
+    mod = import_lib("format-issues-summary.py")
 
     monkeypatch.setattr("sys.argv", ["format-issues-summary.py",
                                       "--state-file", str(tmp_path / "missing.json"),
@@ -194,7 +183,7 @@ def test_cli_missing_state_file(tmp_path, monkeypatch, capsys):
 
 def test_cli_corrupt_state_file(tmp_path, monkeypatch, capsys):
     """CLI with corrupt JSON returns error."""
-    mod = _import_module()
+    mod = import_lib("format-issues-summary.py")
     bad_file = tmp_path / "state.json"
     bad_file.write_text("{bad json")
 

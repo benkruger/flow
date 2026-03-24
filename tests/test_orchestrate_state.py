@@ -1,21 +1,10 @@
 """Tests for lib/orchestrate-state.py — manages orchestration queue state."""
 
-import importlib.util
 import json
 import sys
 from unittest.mock import patch
 
-from conftest import LIB_DIR
-
-
-def _import_module():
-    """Import orchestrate-state.py for in-process unit tests."""
-    spec = importlib.util.spec_from_file_location(
-        "orchestrate_state", LIB_DIR / "orchestrate-state.py"
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+from conftest import import_lib
 
 
 def _sample_queue():
@@ -39,7 +28,7 @@ def _write_queue_file(tmp_path, issues):
 
 def test_create_state(tmp_path):
     """Creates orchestrate.json with queue, started_at, no completed_at."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     queue = _sample_queue()
@@ -69,7 +58,7 @@ def test_create_state(tmp_path):
 
 def test_create_state_empty_queue(tmp_path):
     """Creates state with empty queue when no decomposed issues found."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
 
@@ -83,7 +72,7 @@ def test_create_state_empty_queue(tmp_path):
 
 def test_create_state_already_exists_in_progress(tmp_path):
     """Errors when orchestrate.json exists without completed_at."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
 
@@ -103,7 +92,7 @@ def test_create_state_already_exists_in_progress(tmp_path):
 
 def test_create_state_overwrites_completed(tmp_path):
     """Overwrites existing state that has completed_at set."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
 
@@ -126,7 +115,7 @@ def test_create_state_overwrites_completed(tmp_path):
 
 def test_create_state_creates_directory(tmp_path):
     """Creates .flow-states/ directory if it does not exist."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
 
     with patch.object(mod, "now", return_value="2026-03-20T22:00:00-07:00"):
@@ -141,7 +130,7 @@ def test_create_state_creates_directory(tmp_path):
 
 def test_start_issue(tmp_path):
     """Sets current_index and marks issue as in_progress with started_at."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
 
@@ -161,7 +150,7 @@ def test_start_issue(tmp_path):
 
 def test_start_issue_out_of_range(tmp_path):
     """Errors when index is out of range."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
 
@@ -180,7 +169,7 @@ def test_start_issue_out_of_range(tmp_path):
 
 def test_record_outcome_completed(tmp_path):
     """Marks issue as completed with PR URL and branch."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
 
@@ -209,7 +198,7 @@ def test_record_outcome_completed(tmp_path):
 
 def test_record_outcome_failed(tmp_path):
     """Marks issue as failed with reason."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
 
@@ -235,7 +224,7 @@ def test_record_outcome_failed(tmp_path):
 
 def test_record_outcome_out_of_range(tmp_path):
     """Errors when index is out of range."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
 
@@ -254,7 +243,7 @@ def test_record_outcome_out_of_range(tmp_path):
 
 def test_complete(tmp_path):
     """Sets completed_at on the orchestrate state."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
 
@@ -275,7 +264,7 @@ def test_complete(tmp_path):
 
 def test_read_state(tmp_path):
     """Returns current state as JSON."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
 
@@ -292,7 +281,7 @@ def test_read_state(tmp_path):
 
 def test_read_state_missing(tmp_path):
     """Errors when no state file exists."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_path = str(tmp_path / ".flow-states" / "orchestrate.json")
 
     result = mod.read_state(state_path)
@@ -306,7 +295,7 @@ def test_read_state_missing(tmp_path):
 
 def test_next_issue(tmp_path):
     """Returns the next pending issue index."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
 
@@ -324,7 +313,7 @@ def test_next_issue(tmp_path):
 
 def test_next_issue_skips_completed(tmp_path):
     """Skips completed and failed issues, returns next pending."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
 
@@ -345,7 +334,7 @@ def test_next_issue_skips_completed(tmp_path):
 
 def test_next_issue_all_done(tmp_path):
     """Returns done status when all issues processed."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
 
@@ -367,7 +356,7 @@ def test_next_issue_all_done(tmp_path):
 
 def test_cli_create(tmp_path, monkeypatch, capsys):
     """CLI --create with --queue-file creates state."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
@@ -386,7 +375,7 @@ def test_cli_create(tmp_path, monkeypatch, capsys):
 
 def test_cli_start_issue(tmp_path, monkeypatch, capsys):
     """CLI --start-issue marks queue item as in_progress."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
@@ -413,7 +402,7 @@ def test_cli_start_issue(tmp_path, monkeypatch, capsys):
 
 def test_cli_record_outcome(tmp_path, monkeypatch, capsys):
     """CLI --record-outcome records result for queue item."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
@@ -451,7 +440,7 @@ def test_cli_record_outcome(tmp_path, monkeypatch, capsys):
 
 def test_cli_complete(tmp_path, monkeypatch, capsys):
     """CLI --complete sets completed_at."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
@@ -478,7 +467,7 @@ def test_cli_complete(tmp_path, monkeypatch, capsys):
 
 def test_cli_read(tmp_path, monkeypatch, capsys):
     """CLI --read returns current state."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
@@ -506,7 +495,7 @@ def test_cli_read(tmp_path, monkeypatch, capsys):
 
 def test_cli_next(tmp_path, monkeypatch, capsys):
     """CLI --next returns next pending issue."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
@@ -534,7 +523,7 @@ def test_cli_next(tmp_path, monkeypatch, capsys):
 
 def test_cli_read_missing_state(tmp_path, monkeypatch, capsys):
     """CLI --read with nonexistent file returns error."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     monkeypatch.setattr("sys.argv", [
         "orchestrate-state",
         "--read",
@@ -551,7 +540,7 @@ def test_cli_read_missing_state(tmp_path, monkeypatch, capsys):
 
 def test_start_issue_missing_state(tmp_path):
     """start_issue returns error when state file does not exist."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     result = mod.start_issue(str(tmp_path / "missing.json"), 0)
     assert result["status"] == "error"
     assert "not found" in result["message"]
@@ -559,7 +548,7 @@ def test_start_issue_missing_state(tmp_path):
 
 def test_record_outcome_missing_state(tmp_path):
     """record_outcome returns error when state file does not exist."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     result = mod.record_outcome(str(tmp_path / "missing.json"), 0, "completed")
     assert result["status"] == "error"
     assert "not found" in result["message"]
@@ -567,7 +556,7 @@ def test_record_outcome_missing_state(tmp_path):
 
 def test_complete_missing_state(tmp_path):
     """complete_orchestration returns error when state file does not exist."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     result = mod.complete_orchestration(str(tmp_path / "missing.json"))
     assert result["status"] == "error"
     assert "not found" in result["message"]
@@ -575,7 +564,7 @@ def test_complete_missing_state(tmp_path):
 
 def test_next_issue_missing_state(tmp_path):
     """next_issue returns error when state file does not exist."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     result = mod.next_issue(str(tmp_path / "missing.json"))
     assert result["status"] == "error"
     assert "not found" in result["message"]
@@ -586,7 +575,7 @@ def test_next_issue_missing_state(tmp_path):
 
 def test_cli_create_missing_queue_file(tmp_path, monkeypatch, capsys):
     """CLI --create without --queue-file returns error."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     monkeypatch.setattr("sys.argv", ["orchestrate-state", "--create"])
     mod.main()
 
@@ -597,7 +586,7 @@ def test_cli_create_missing_queue_file(tmp_path, monkeypatch, capsys):
 
 def test_cli_start_issue_missing_state_file(monkeypatch, capsys):
     """CLI --start-issue without --state-file returns error."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     monkeypatch.setattr("sys.argv", ["orchestrate-state", "--start-issue", "0"])
     mod.main()
 
@@ -608,7 +597,7 @@ def test_cli_start_issue_missing_state_file(monkeypatch, capsys):
 
 def test_cli_record_outcome_missing_state_file(monkeypatch, capsys):
     """CLI --record-outcome without --state-file returns error."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     monkeypatch.setattr("sys.argv", [
         "orchestrate-state",
         "--record-outcome", "0", "--outcome", "completed",
@@ -622,7 +611,7 @@ def test_cli_record_outcome_missing_state_file(monkeypatch, capsys):
 
 def test_cli_record_outcome_missing_outcome(tmp_path, monkeypatch, capsys):
     """CLI --record-outcome without --outcome returns error."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
@@ -650,7 +639,7 @@ def test_cli_record_outcome_missing_outcome(tmp_path, monkeypatch, capsys):
 
 def test_cli_complete_missing_state_file(monkeypatch, capsys):
     """CLI --complete without --state-file returns error."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     monkeypatch.setattr("sys.argv", ["orchestrate-state", "--complete"])
     mod.main()
 
@@ -661,7 +650,7 @@ def test_cli_complete_missing_state_file(monkeypatch, capsys):
 
 def test_cli_read_missing_state_file(monkeypatch, capsys):
     """CLI --read without --state-file returns error."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     monkeypatch.setattr("sys.argv", ["orchestrate-state", "--read"])
     mod.main()
 
@@ -672,7 +661,7 @@ def test_cli_read_missing_state_file(monkeypatch, capsys):
 
 def test_cli_next_missing_state_file(monkeypatch, capsys):
     """CLI --next without --state-file returns error."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     monkeypatch.setattr("sys.argv", ["orchestrate-state", "--next"])
     mod.main()
 
@@ -683,7 +672,7 @@ def test_cli_next_missing_state_file(monkeypatch, capsys):
 
 def test_cli_exception_handling(tmp_path, monkeypatch, capsys):
     """CLI handles unexpected exceptions gracefully."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-state.py")
     bad_file = tmp_path / "bad.json"
     bad_file.write_text("{corrupt json")
 
