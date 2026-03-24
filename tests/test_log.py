@@ -3,7 +3,6 @@
 import fcntl
 import importlib
 import json
-import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import call, patch
@@ -99,32 +98,25 @@ def test_append_log_uses_file_locking(tmp_path):
 # --- CLI integration ---
 
 
-def test_cli_integration(git_repo):
-    """Subprocess call appends to log file."""
+def test_cli_integration(git_repo, monkeypatch, capsys):
+    """In-process main() appends to log file."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir()
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "log.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "test-branch",
-         "[Phase 1] Step 5 — bin/dependencies (exit 0)"],
-        capture_output=True, text=True,
-        cwd=str(git_repo),
-    )
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["log", "test-branch",
+                                     "[Phase 1] Step 5 — bin/dependencies (exit 0)"])
+    _mod.main()
 
-    assert result.returncode == 0
     log_file = state_dir / "test-branch.log"
     assert log_file.exists()
     content = log_file.read_text()
     assert "[Phase 1] Step 5 — bin/dependencies (exit 0)" in content
 
 
-def test_cli_missing_args():
+def test_cli_missing_args(monkeypatch):
     """Missing arguments exits with error."""
-    script = Path(__file__).resolve().parent.parent / "lib" / "log.py"
-    result = subprocess.run(
-        [sys.executable, str(script)],
-        capture_output=True, text=True,
-    )
-
-    assert result.returncode == 1
+    monkeypatch.setattr("sys.argv", ["log"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1

@@ -5,9 +5,9 @@ import json
 import subprocess
 import sys
 
-from conftest import LIB_DIR, make_state, write_state
+import pytest
 
-SCRIPT = str(LIB_DIR / "add-issue.py")
+from conftest import LIB_DIR, make_state, write_state
 
 
 def _import_module():
@@ -18,23 +18,6 @@ def _import_module():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
-
-
-def _run(label, title, url, phase, cwd=None, branch=None):
-    """Run add-issue.py via subprocess."""
-    cmd = [
-        sys.executable, SCRIPT,
-        "--label", label,
-        "--title", title,
-        "--url", url,
-        "--phase", phase,
-    ]
-    if branch is not None:
-        cmd.extend(["--branch", branch])
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, cwd=str(cwd) if cwd else None,
-    )
-    return result
 
 
 def _get_branch(git_repo):
@@ -127,28 +110,39 @@ def test_persists_to_disk(tmp_path):
     assert on_disk["issues_filed"][0]["label"] == "Flaky Test"
 
 
-# --- CLI behavior (subprocess) ---
+# --- CLI behavior (in-process main()) ---
 
 
-def test_no_branch_returns_error(tmp_path):
+def test_no_branch_returns_error(tmp_path, monkeypatch, capsys):
     """Running outside a git repo returns an error."""
-    result = _run("Rule", "test", "https://example.com", "flow-learn", cwd=tmp_path)
-    assert result.returncode == 1
-    data = json.loads(result.stdout)
+    mod = _import_module()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Rule", "--title", "test",
+                                     "--url", "https://example.com", "--phase", "flow-learn"])
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+    assert exc_info.value.code == 1
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "branch" in data["message"]
 
 
-def test_no_state_file_returns_no_state(git_repo):
+def test_no_state_file_returns_no_state(git_repo, monkeypatch, capsys):
     """Running with no state file returns no_state."""
-    result = _run("Rule", "test", "https://example.com", "flow-learn", cwd=git_repo)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod = _import_module()
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Rule", "--title", "test",
+                                     "--url", "https://example.com", "--phase", "flow-learn"])
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+    assert exc_info.value.code == 0
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "no_state"
 
 
-def test_cli_happy_path(state_dir, git_repo):
+def test_cli_happy_path(state_dir, git_repo, monkeypatch, capsys):
     """Full CLI round-trip: write state, run CLI, verify output."""
+    mod = _import_module()
     branch_name = _get_branch(git_repo)
     state = make_state(current_phase="flow-learn", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete",
@@ -157,10 +151,14 @@ def test_cli_happy_path(state_dir, git_repo):
     })
     path = write_state(state_dir, branch_name, state)
 
-    result = _run("Rule", "Add rule: check imports", "https://github.com/test/test/issues/10", "flow-learn", cwd=git_repo)
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Rule",
+                                     "--title", "Add rule: check imports",
+                                     "--url", "https://github.com/test/test/issues/10",
+                                     "--phase", "flow-learn"])
+    mod.main()
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert data["issue_count"] == 1
 
@@ -168,38 +166,49 @@ def test_cli_happy_path(state_dir, git_repo):
     assert len(on_disk["issues_filed"]) == 1
 
 
-def test_cli_branch_flag(state_dir, git_repo):
+def test_cli_branch_flag(state_dir, git_repo, monkeypatch, capsys):
     """--branch flag finds the state file for a different branch."""
+    mod = _import_module()
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete",
         "flow-code": "in_progress",
     })
     write_state(state_dir, "other-feature", state)
 
-    result = _run("Tech Debt", "Clean up handler", "https://github.com/test/test/issues/5", "flow-code", cwd=git_repo, branch="other-feature")
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Tech Debt",
+                                     "--title", "Clean up handler",
+                                     "--url", "https://github.com/test/test/issues/5",
+                                     "--phase", "flow-code",
+                                     "--branch", "other-feature"])
+    mod.main()
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert data["issue_count"] == 1
 
 
-def test_corrupt_state_file_returns_error(state_dir, git_repo):
+def test_corrupt_state_file_returns_error(state_dir, git_repo, monkeypatch, capsys):
     """Corrupt state file returns a read error."""
+    mod = _import_module()
     branch_name = _get_branch(git_repo)
     bad_file = state_dir / f"{branch_name}.json"
     bad_file.write_text("{bad json")
 
-    result = _run("Rule", "test", "https://example.com", "flow-learn", cwd=git_repo)
-
-    assert result.returncode == 1
-    data = json.loads(result.stdout)
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Rule", "--title", "test",
+                                     "--url", "https://example.com", "--phase", "flow-learn"])
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+    assert exc_info.value.code == 1
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "Could not read" in data["message"]
 
 
-def test_write_failure_returns_error(state_dir, git_repo):
+def test_write_failure_returns_error(state_dir, git_repo, monkeypatch, capsys):
     """Read-only state file returns a write error."""
+    mod = _import_module()
     branch_name = _get_branch(git_repo)
     state = make_state(current_phase="flow-learn", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete",
@@ -209,17 +218,21 @@ def test_write_failure_returns_error(state_dir, git_repo):
     path = write_state(state_dir, branch_name, state)
     path.chmod(0o444)
 
-    result = _run("Rule", "test", "https://example.com", "flow-learn", cwd=git_repo)
-
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Rule", "--title", "test",
+                                     "--url", "https://example.com", "--phase", "flow-learn"])
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
     path.chmod(0o644)
-    assert result.returncode == 1
-    data = json.loads(result.stdout)
+    assert exc_info.value.code == 1
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "Failed to add" in data["message"]
 
 
-def test_noop_ambiguous_multiple_state_files(state_dir, git_repo):
+def test_noop_ambiguous_multiple_state_files(state_dir, git_repo, monkeypatch, capsys):
     """Multiple state files with no exact match returns no_state (silent no-op)."""
+    mod = _import_module()
     for name in ["feat-a", "feat-b"]:
         state = make_state(current_phase="flow-code", phase_statuses={
             "flow-start": "complete", "flow-plan": "complete",
@@ -227,8 +240,11 @@ def test_noop_ambiguous_multiple_state_files(state_dir, git_repo):
         })
         write_state(state_dir, name, state)
 
-    result = _run("Rule", "test", "https://example.com", "flow-learn", cwd=git_repo)
-
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Rule", "--title", "test",
+                                     "--url", "https://example.com", "--phase", "flow-learn"])
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+    assert exc_info.value.code == 0
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "no_state"

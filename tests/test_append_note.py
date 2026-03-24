@@ -5,9 +5,9 @@ import json
 import subprocess
 import sys
 
-from conftest import LIB_DIR, make_state, write_state
+import pytest
 
-SCRIPT = str(LIB_DIR / "append-note.py")
+from conftest import LIB_DIR, make_state, write_state
 
 # Import append-note.py for in-process unit tests
 _spec = importlib.util.spec_from_file_location(
@@ -15,19 +15,6 @@ _spec = importlib.util.spec_from_file_location(
 )
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
-
-
-def _run(note_text, note_type=None, cwd=None, branch=None):
-    """Run append-note.py via subprocess with --note and optional --type."""
-    cmd = [sys.executable, SCRIPT, "--note", note_text]
-    if note_type:
-        cmd.extend(["--type", note_type])
-    if branch is not None:
-        cmd.extend(["--branch", branch])
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, cwd=str(cwd) if cwd else None,
-    )
-    return result
 
 
 def _get_branch(git_repo):
@@ -39,22 +26,29 @@ def _get_branch(git_repo):
     return result.stdout.strip()
 
 
-# --- CLI behavior (subprocess) ---
+# --- CLI behavior (in-process main()) ---
 
 
-def test_no_branch_returns_error(tmp_path):
+def test_no_branch_returns_error(tmp_path, monkeypatch, capsys):
     """Running outside a git repo (no branch) returns an error."""
-    result = _run("test note", cwd=tmp_path)
-    assert result.returncode == 1
-    data = json.loads(result.stdout)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["append-note", "--note", "test note"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "branch" in data["message"]
 
 
-def test_no_state_file_returns_no_state(git_repo):
-    result = _run("test note", cwd=git_repo)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+def test_no_state_file_returns_no_state(git_repo, monkeypatch, capsys):
+    """Running with no state file returns no_state."""
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["append-note", "--note", "test note"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 0
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "no_state"
 
 
@@ -100,45 +94,58 @@ def test_multiple_notes_append(tmp_path):
     assert len(updated["notes"]) == 3
 
 
-def test_type_defaults_to_correction(state_dir, git_repo):
+def test_type_defaults_to_correction(state_dir, git_repo, monkeypatch, capsys):
+    """Type defaults to correction when --type is not specified."""
     branch = _get_branch(git_repo)
     state = make_state(current_phase="flow-code", phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"})
     path = write_state(state_dir, branch, state)
-    result = _run("Default type note", cwd=git_repo)
-    assert result.returncode == 0
+
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["append-note", "--note", "Default type note"])
+    _mod.main()
+
     updated = json.loads(path.read_text())
     assert updated["notes"][0]["type"] == "correction"
 
 
-def test_invalid_type_rejected():
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--type", "invalid", "--note", "test"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode != 0
+def test_invalid_type_rejected(monkeypatch):
+    """Invalid --type is rejected by argparse."""
+    monkeypatch.setattr("sys.argv", ["append-note", "--type", "invalid", "--note", "test"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code != 0
 
 
-def test_corrupt_state_file_returns_error(state_dir, git_repo):
+def test_corrupt_state_file_returns_error(state_dir, git_repo, monkeypatch, capsys):
+    """Corrupt state file returns a read error."""
     branch = _get_branch(git_repo)
     bad_file = state_dir / f"{branch}.json"
     bad_file.write_text("{bad json")
-    result = _run("test", cwd=git_repo)
-    assert result.returncode == 1
-    data = json.loads(result.stdout)
+
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["append-note", "--note", "test"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "Could not read" in data["message"]
 
 
-def test_write_failure_returns_error(state_dir, git_repo):
+def test_write_failure_returns_error(state_dir, git_repo, monkeypatch, capsys):
+    """Read-only state file returns a write error."""
     branch = _get_branch(git_repo)
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
     path = write_state(state_dir, branch, state)
     path.chmod(0o444)
-    result = _run("test note", cwd=git_repo)
+
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["append-note", "--note", "test note"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
     path.chmod(0o644)
-    assert result.returncode == 1
-    data = json.loads(result.stdout)
+    assert exc_info.value.code == 1
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "Failed to append" in data["message"]
 
@@ -167,32 +174,40 @@ def test_append_note_preserves_existing_notes(tmp_path):
     assert result["notes"][1]["note"] == "new note"
 
 
-# --- --branch flag (subprocess) ---
+# --- --branch flag (in-process main()) ---
 
 
-def test_cli_branch_flag_uses_specified_state_file(state_dir, git_repo):
+def test_cli_branch_flag_uses_specified_state_file(state_dir, git_repo, monkeypatch, capsys):
     """--branch flag finds the state file for a different branch."""
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
     })
     write_state(state_dir, "other-feature", state)
-    result = _run("Branch test note", cwd=git_repo, branch="other-feature")
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["append-note", "--note", "Branch test note",
+                                     "--branch", "other-feature"])
+    _mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert data["note_count"] == 1
 
 
-def test_error_ambiguous_multiple_state_files(state_dir, git_repo):
+def test_error_ambiguous_multiple_state_files(state_dir, git_repo, monkeypatch, capsys):
     """Multiple state files with no exact match returns ambiguity error."""
     for name in ["feat-a", "feat-b"]:
         state = make_state(current_phase="flow-code", phase_statuses={
             "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
         })
         write_state(state_dir, name, state)
-    result = _run("test note", cwd=git_repo)
-    assert result.returncode == 1
-    data = json.loads(result.stdout)
+
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["append-note", "--note", "test note"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "Multiple" in data["message"]
     assert sorted(data["candidates"]) == ["feat-a", "feat-b"]

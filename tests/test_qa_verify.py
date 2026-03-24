@@ -378,11 +378,9 @@ def test_main_error():
     assert exc_info.value.code == 1
 
 
-def test_cli_missing_args():
+def test_cli_missing_args(monkeypatch):
     """Missing required args exits with error."""
-    script = Path(__file__).resolve().parent.parent / "lib" / "qa-verify.py"
-    result = subprocess.run(
-        [sys.executable, str(script)],
-        capture_output=True, text=True,
-    )
-    assert result.returncode != 0
+    monkeypatch.setattr("sys.argv", ["qa-verify"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code != 0
