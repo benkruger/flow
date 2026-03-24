@@ -145,8 +145,9 @@ class TuiApp:
         else:
             orch_label = "Orchestration"
 
-        flows_attr = curses.A_BOLD | self._color(COLOR_LINK) if self.active_tab == 0 else curses.A_DIM
-        orch_attr = curses.A_BOLD | self._color(COLOR_LINK) if self.active_tab == 1 else curses.A_DIM
+        active_attr = curses.A_BOLD | self._color(COLOR_LINK)
+        flows_attr = active_attr if self.active_tab == 0 else curses.A_DIM
+        orch_attr = active_attr if self.active_tab == 1 else curses.A_DIM
 
         col = 2
         self._safe_addstr(row, col, flows_label, flows_attr)
@@ -390,7 +391,7 @@ class TuiApp:
                 except OSError:
                     pass
 
-        if not plan_content:
+        if plan_content is None:
             self._safe_addstr(2, 2, "No plan file.")
         else:
             lines = plan_content.split("\n")
