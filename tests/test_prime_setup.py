@@ -7,9 +7,9 @@ import subprocess
 import sys
 from unittest.mock import patch
 
-from conftest import FRAMEWORKS_DIR, LIB_DIR
+import pytest
 
-SCRIPT = str(LIB_DIR / "prime-setup.py")
+from conftest import FRAMEWORKS_DIR, LIB_DIR
 
 # Import prime-setup.py for in-process unit tests
 _spec = importlib.util.spec_from_file_location(
@@ -19,46 +19,53 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
-def _run(project_root, framework="rails", skills_json=None, commit_format=None,
-         plugin_root=None, env=None):
-    """Run prime-setup.py via subprocess."""
-    cmd = [sys.executable, SCRIPT, str(project_root)]
+def _run_main(monkeypatch, capsys, project_root, framework="rails",
+              skills_json=None, commit_format=None, plugin_root=None):
+    """Run prime-setup main() in-process, return (exit_code, stdout_text)."""
+    argv = ["prime-setup"]
+    if project_root is not None:
+        argv.append(str(project_root))
     if framework:
-        cmd.extend(["--framework", framework])
+        argv.extend(["--framework", framework])
     if skills_json is not None:
-        cmd.extend(["--skills-json", skills_json])
+        argv.extend(["--skills-json", skills_json])
     if commit_format is not None:
-        cmd.extend(["--commit-format", commit_format])
+        argv.extend(["--commit-format", commit_format])
     if plugin_root is not None:
-        cmd.extend(["--plugin-root", plugin_root])
-    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
-    return result
+        argv.extend(["--plugin-root", plugin_root])
+    monkeypatch.setattr("sys.argv", argv)
+    exit_code = 0
+    try:
+        _mod.main()
+    except SystemExit as e:
+        exit_code = e.code
+    captured = capsys.readouterr()
+    return exit_code, captured.out
 
 
 # --- CLI behavior ---
 
 
-def test_missing_args_returns_error():
-    result = subprocess.run(
-        [sys.executable, SCRIPT],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 1
-    data = json.loads(result.stdout)
+def test_missing_args_returns_error(monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["prime-setup"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
 
 
-def test_invalid_project_root_returns_error(tmp_path):
-    result = _run(tmp_path / "nonexistent")
-    assert result.returncode == 1
-    data = json.loads(result.stdout)
+def test_invalid_project_root_returns_error(tmp_path, monkeypatch, capsys):
+    exit_code, stdout = _run_main(monkeypatch, capsys, tmp_path / "nonexistent")
+    assert exit_code == 1
+    data = json.loads(stdout)
     assert data["status"] == "error"
 
 
-def test_happy_path_returns_ok(git_repo):
-    result = _run(git_repo)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+def test_happy_path_returns_ok(git_repo, monkeypatch, capsys):
+    exit_code, stdout = _run_main(monkeypatch, capsys, git_repo)
+    assert exit_code == 0
+    data = json.loads(stdout)
     assert data["status"] == "ok"
     assert data["settings_merged"] is True
     assert data["version_marker"] is True
@@ -387,9 +394,9 @@ def test_main_exception_returns_error(git_repo, monkeypatch):
     )
     import io
     captured = io.StringIO()
-    monkeypatch.setattr(sys, "argv", [SCRIPT, str(git_repo), "--framework", "rails"])
+    monkeypatch.setattr(sys, "argv", ["prime-setup", str(git_repo), "--framework", "rails"])
     monkeypatch.setattr(sys, "stdout", captured)
-    with __import__("pytest").raises(SystemExit) as exc_info:
+    with pytest.raises(SystemExit) as exc_info:
         _mod.main()
     assert exc_info.value.code == 1
     data = json.loads(captured.getvalue())
@@ -400,18 +407,18 @@ def test_main_exception_returns_error(git_repo, monkeypatch):
 # --- Framework argument ---
 
 
-def test_missing_framework_returns_error(git_repo):
-    result = _run(git_repo, framework=None)
-    assert result.returncode == 1
-    data = json.loads(result.stdout)
+def test_missing_framework_returns_error(git_repo, monkeypatch, capsys):
+    exit_code, stdout = _run_main(monkeypatch, capsys, git_repo, framework=None)
+    assert exit_code == 1
+    data = json.loads(stdout)
     assert data["status"] == "error"
     assert "framework" in data["message"].lower()
 
 
-def test_invalid_framework_returns_error(git_repo):
-    result = _run(git_repo, framework="django")
-    assert result.returncode == 1
-    data = json.loads(result.stdout)
+def test_invalid_framework_returns_error(git_repo, monkeypatch, capsys):
+    exit_code, stdout = _run_main(monkeypatch, capsys, git_repo, framework="django")
+    assert exit_code == 1
+    data = json.loads(stdout)
     assert data["status"] == "error"
     assert "framework" in data["message"].lower()
 
@@ -484,10 +491,10 @@ def test_python_framework_excludes_ios_permissions(tmp_path):
         assert entry not in settings["permissions"]["allow"]
 
 
-def test_framework_output_in_ok_response(git_repo):
-    result = _run(git_repo, framework="python")
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+def test_framework_output_in_ok_response(git_repo, monkeypatch, capsys):
+    exit_code, stdout = _run_main(monkeypatch, capsys, git_repo, framework="python")
+    assert exit_code == 0
+    data = json.loads(stdout)
     assert data["framework"] == "python"
 
 
@@ -607,10 +614,10 @@ def test_version_marker_without_config_hash_has_no_key(tmp_path):
     assert "config_hash" not in data
 
 
-def test_happy_path_stores_config_hash(git_repo):
+def test_happy_path_stores_config_hash(git_repo, monkeypatch, capsys):
     """main() computes and stores config_hash in .flow.json."""
-    result = _run(git_repo)
-    assert result.returncode == 0
+    exit_code, stdout = _run_main(monkeypatch, capsys, git_repo)
+    assert exit_code == 0
     data = json.loads((git_repo / ".flow.json").read_text())
     assert "config_hash" in data
     assert len(data["config_hash"]) == 12
@@ -655,10 +662,10 @@ def test_version_marker_without_setup_hash_has_no_key(tmp_path):
     assert "setup_hash" not in data
 
 
-def test_happy_path_stores_setup_hash(git_repo):
+def test_happy_path_stores_setup_hash(git_repo, monkeypatch, capsys):
     """main() computes and stores setup_hash in .flow.json."""
-    result = _run(git_repo)
-    assert result.returncode == 0
+    exit_code, stdout = _run_main(monkeypatch, capsys, git_repo)
+    assert exit_code == 0
     data = json.loads((git_repo / ".flow.json").read_text())
     assert "setup_hash" in data
     assert len(data["setup_hash"]) == 12
@@ -807,10 +814,10 @@ def test_derived_permissions_not_in_config_hash(tmp_path):
     assert len(hash_value) == 12
 
 
-def test_cli_derives_permissions_from_project(git_repo):
+def test_cli_derives_permissions_from_project(git_repo, monkeypatch, capsys):
     (git_repo / "TestApp.xcodeproj").mkdir()
-    result = _run(git_repo, framework="ios")
-    assert result.returncode == 0
+    exit_code, stdout = _run_main(monkeypatch, capsys, git_repo, framework="ios")
+    assert exit_code == 0
     settings = json.loads(
         (git_repo / ".claude" / "settings.json").read_text()
     )
@@ -934,116 +941,128 @@ def test_version_marker_title_only_format(tmp_path):
 # --- CLI --skills-json and --commit-format ---
 
 
-def test_cli_skills_json_written_to_flow_json(git_repo):
+def test_cli_skills_json_written_to_flow_json(git_repo, monkeypatch, capsys):
     skills = {"flow-start": {"continue": "manual"}, "flow-abort": "auto"}
-    result = _run(git_repo, skills_json=json.dumps(skills))
-    assert result.returncode == 0
+    exit_code, stdout = _run_main(
+        monkeypatch, capsys, git_repo, skills_json=json.dumps(skills),
+    )
+    assert exit_code == 0
     data = json.loads((git_repo / ".flow.json").read_text())
     assert data["skills"] == skills
 
 
-def test_cli_commit_format_written_to_flow_json(git_repo):
-    result = _run(git_repo, commit_format="title-only")
-    assert result.returncode == 0
+def test_cli_commit_format_written_to_flow_json(git_repo, monkeypatch, capsys):
+    exit_code, stdout = _run_main(
+        monkeypatch, capsys, git_repo, commit_format="title-only",
+    )
+    assert exit_code == 0
     data = json.loads((git_repo / ".flow.json").read_text())
     assert data["commit_format"] == "title-only"
 
 
-def test_cli_skills_json_and_commit_format_together(git_repo):
+def test_cli_skills_json_and_commit_format_together(git_repo, monkeypatch, capsys):
     skills = {"flow-code": {"commit": "auto", "continue": "auto"}}
-    result = _run(
-        git_repo, skills_json=json.dumps(skills), commit_format="full",
+    exit_code, stdout = _run_main(
+        monkeypatch, capsys, git_repo,
+        skills_json=json.dumps(skills), commit_format="full",
     )
-    assert result.returncode == 0
+    assert exit_code == 0
     data = json.loads((git_repo / ".flow.json").read_text())
     assert data["skills"] == skills
     assert data["commit_format"] == "full"
 
 
-def test_cli_invalid_skills_json_returns_error(git_repo):
-    result = _run(git_repo, skills_json="not valid json")
-    assert result.returncode == 1
-    data = json.loads(result.stdout)
+def test_cli_invalid_skills_json_returns_error(git_repo, monkeypatch, capsys):
+    exit_code, stdout = _run_main(
+        monkeypatch, capsys, git_repo, skills_json="not valid json",
+    )
+    assert exit_code == 1
+    data = json.loads(stdout)
     assert data["status"] == "error"
     assert "skills-json" in data["message"].lower()
 
 
-def test_cli_ignores_unknown_args(git_repo):
-    cmd = [sys.executable, SCRIPT, str(git_repo), "--framework", "rails", "--unknown"]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+def test_cli_ignores_unknown_args(git_repo, monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", [
+        "prime-setup", str(git_repo), "--framework", "rails", "--unknown",
+    ])
+    _mod.main()
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
 
 
 # --- CLI --plugin-root ---
 
 
-def test_cli_plugin_root_written_to_flow_json(git_repo, tmp_path):
+def test_cli_plugin_root_written_to_flow_json(git_repo, tmp_path, monkeypatch, capsys):
     fake_home = tmp_path / "fakehome"
     fake_home.mkdir()
-    env = {**os.environ, "HOME": str(fake_home)}
-    result = _run(git_repo, plugin_root="/some/cache/path", env=env)
-    assert result.returncode == 0
+    monkeypatch.setenv("HOME", str(fake_home))
+    exit_code, stdout = _run_main(
+        monkeypatch, capsys, git_repo, plugin_root="/some/cache/path",
+    )
+    assert exit_code == 0
     data = json.loads((git_repo / ".flow.json").read_text())
     assert data["plugin_root"] == "/some/cache/path"
 
 
-def test_cli_launcher_installed_in_output(git_repo, tmp_path):
+def test_cli_launcher_installed_in_output(git_repo, tmp_path, monkeypatch, capsys):
     fake_home = tmp_path / "fakehome"
     fake_home.mkdir()
-    env = {**os.environ, "HOME": str(fake_home)}
-    result = _run(git_repo, plugin_root="/some/cache/path", env=env)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    monkeypatch.setenv("HOME", str(fake_home))
+    exit_code, stdout = _run_main(
+        monkeypatch, capsys, git_repo, plugin_root="/some/cache/path",
+    )
+    assert exit_code == 0
+    data = json.loads(stdout)
     assert data["launcher_installed"] is True
 
 
-def test_cli_no_plugin_root_no_launcher(git_repo):
-    result = _run(git_repo)
-    assert result.returncode == 0
+def test_cli_no_plugin_root_no_launcher(git_repo, monkeypatch, capsys):
+    exit_code, stdout = _run_main(monkeypatch, capsys, git_repo)
+    assert exit_code == 0
     data = json.loads((git_repo / ".flow.json").read_text())
     assert "plugin_root" not in data
-    output = json.loads(result.stdout)
+    output = json.loads(stdout)
     assert output["launcher_installed"] is False
 
 
 # --- Consolidated prime-project and create-dependencies ---
 
 
-def test_cli_primes_project_claude_md(git_repo):
+def test_cli_primes_project_claude_md(git_repo, monkeypatch, capsys):
     (git_repo / "CLAUDE.md").write_text("# Project\n")
-    result = _run(git_repo, framework="rails")
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    exit_code, stdout = _run_main(monkeypatch, capsys, git_repo, framework="rails")
+    assert exit_code == 0
+    data = json.loads(stdout)
     assert data["prime_project"] == "ok"
     content = (git_repo / "CLAUDE.md").read_text()
     assert "<!-- FLOW:BEGIN -->" in content
 
 
-def test_cli_prime_project_error_does_not_block_success(git_repo):
-    result = _run(git_repo, framework="rails")
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+def test_cli_prime_project_error_does_not_block_success(git_repo, monkeypatch, capsys):
+    exit_code, stdout = _run_main(monkeypatch, capsys, git_repo, framework="rails")
+    assert exit_code == 0
+    data = json.loads(stdout)
     assert data["prime_project"] == "error"
     assert data["status"] == "ok"
 
 
-def test_cli_creates_bin_dependencies(git_repo):
-    result = _run(git_repo, framework="rails")
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+def test_cli_creates_bin_dependencies(git_repo, monkeypatch, capsys):
+    exit_code, stdout = _run_main(monkeypatch, capsys, git_repo, framework="rails")
+    assert exit_code == 0
+    data = json.loads(stdout)
     assert data["dependencies"] == "ok"
     assert (git_repo / "bin" / "dependencies").exists()
 
 
-def test_cli_dependencies_skipped_when_exists(git_repo):
+def test_cli_dependencies_skipped_when_exists(git_repo, monkeypatch, capsys):
     bin_dir = git_repo / "bin"
     bin_dir.mkdir()
     (bin_dir / "dependencies").write_text("#!/bin/bash\ncustom\n")
-    result = _run(git_repo, framework="rails")
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    exit_code, stdout = _run_main(monkeypatch, capsys, git_repo, framework="rails")
+    assert exit_code == 0
+    data = json.loads(stdout)
     assert data["dependencies"] == "skipped"
     assert (bin_dir / "dependencies").read_text() == "#!/bin/bash\ncustom\n"
 

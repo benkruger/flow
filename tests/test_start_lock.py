@@ -3,7 +3,6 @@
 import importlib
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -513,25 +512,21 @@ def test_check_when_locked(tmp_path):
 # --- CLI integration ---
 
 
-def test_cli_acquire(target_project):
+def test_cli_acquire(target_project, monkeypatch, capsys):
     """CLI acquire creates lock file."""
     state_dir = target_project / ".flow-states"
     state_dir.mkdir()
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "start-lock.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--acquire", "--feature", "cli-feature"],
-        capture_output=True, text=True,
-        cwd=str(target_project),
-    )
+    monkeypatch.chdir(target_project)
+    monkeypatch.setattr("sys.argv", ["start-lock", "--acquire", "--feature", "cli-feature"])
+    _mod.main()
 
-    assert result.returncode == 0
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "acquired"
     assert (state_dir / "start.lock").exists()
 
 
-def test_cli_release(target_project):
+def test_cli_release(target_project, monkeypatch, capsys):
     """CLI release deletes lock file."""
     state_dir = target_project / ".flow-states"
     state_dir.mkdir()
@@ -539,79 +534,65 @@ def test_cli_release(target_project):
         json.dumps({"pid": 1, "feature": "f", "acquired_at": "t"})
     )
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "start-lock.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--release"],
-        capture_output=True, text=True,
-        cwd=str(target_project),
-    )
+    monkeypatch.chdir(target_project)
+    monkeypatch.setattr("sys.argv", ["start-lock", "--release"])
+    _mod.main()
 
-    assert result.returncode == 0
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "released"
     assert not (state_dir / "start.lock").exists()
 
 
-def test_cli_check(target_project):
+def test_cli_check(target_project, monkeypatch, capsys):
     """CLI check returns status."""
     state_dir = target_project / ".flow-states"
     state_dir.mkdir()
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "start-lock.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--check"],
-        capture_output=True, text=True,
-        cwd=str(target_project),
-    )
+    monkeypatch.chdir(target_project)
+    monkeypatch.setattr("sys.argv", ["start-lock", "--check"])
+    _mod.main()
 
-    assert result.returncode == 0
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "free"
 
 
-def test_cli_no_flags(target_project):
+def test_cli_no_flags(target_project, monkeypatch, capsys):
     """CLI with no flags exits with error."""
-    script = Path(__file__).resolve().parent.parent / "lib" / "start-lock.py"
-    result = subprocess.run(
-        [sys.executable, str(script)],
-        capture_output=True, text=True,
-        cwd=str(target_project),
-    )
+    monkeypatch.chdir(target_project)
+    monkeypatch.setattr("sys.argv", ["start-lock"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
 
-    assert result.returncode == 1
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
 
 
-def test_cli_missing_feature_for_acquire(target_project):
+def test_cli_missing_feature_for_acquire(target_project, monkeypatch, capsys):
     """CLI acquire without --feature exits with error."""
-    script = Path(__file__).resolve().parent.parent / "lib" / "start-lock.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--acquire"],
-        capture_output=True, text=True,
-        cwd=str(target_project),
-    )
+    monkeypatch.chdir(target_project)
+    monkeypatch.setattr("sys.argv", ["start-lock", "--acquire"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
 
-    assert result.returncode == 1
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
 
 
-def test_cli_acquire_wait(target_project):
+def test_cli_acquire_wait(target_project, monkeypatch, capsys):
     """CLI acquire with --wait acquires immediately when lock is free."""
     state_dir = target_project / ".flow-states"
     state_dir.mkdir()
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "start-lock.py"
-    result = subprocess.run(
-        [sys.executable, str(script),
-         "--acquire", "--wait", "--timeout", "1",
-         "--feature", "cli-wait-feature"],
-        capture_output=True, text=True,
-        cwd=str(target_project),
-    )
+    monkeypatch.chdir(target_project)
+    monkeypatch.setattr("sys.argv", [
+        "start-lock",
+        "--acquire", "--wait", "--timeout", "1",
+        "--feature", "cli-wait-feature",
+    ])
+    _mod.main()
 
-    assert result.returncode == 0
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "acquired"
     assert (state_dir / "start.lock").exists()

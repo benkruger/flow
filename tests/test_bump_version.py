@@ -2,7 +2,6 @@
 
 import importlib.util
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -20,8 +19,6 @@ validate_version = _mod.validate_version
 read_current_version = _mod.read_current_version
 bump_json = _mod.bump_json
 bump_skill = _mod.bump_skill
-
-SCRIPT = str(LIB_DIR / "bump-version.py")
 
 
 @pytest.fixture
@@ -169,24 +166,24 @@ def test_cli_successful_bump(fake_repo, monkeypatch):
     assert "FLOW v1.0.0" not in text
 
 
-def test_cli_no_arguments_exits_1():
+def test_cli_no_arguments_exits_1(monkeypatch, capsys):
     """Running with no arguments should exit 1 with usage message."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 1
-    assert "Usage" in result.stdout
+    monkeypatch.setattr("sys.argv", ["bump-version.py"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    assert "Usage" in capsys.readouterr().out
 
 
-def test_cli_invalid_version_exits_1():
+def test_cli_invalid_version_exits_1(monkeypatch, capsys):
     """Running with a non-semver version should exit 1."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "v1.0.0"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 1
-    assert "invalid version format" in result.stdout
+    monkeypatch.setattr("sys.argv", ["bump-version.py", "v1.0.0"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    assert "invalid version format" in capsys.readouterr().out
 
 
 def test_cli_same_version_exits_1(fake_repo, monkeypatch):

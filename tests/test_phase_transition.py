@@ -5,9 +5,9 @@ import json
 import subprocess
 import sys
 
-from conftest import LIB_DIR, make_state, write_state
+import pytest
 
-SCRIPT = str(LIB_DIR / "phase-transition.py")
+from conftest import LIB_DIR, make_state, write_state
 
 _spec = importlib.util.spec_from_file_location(
     "phase_transition", LIB_DIR / "phase-transition.py"
@@ -16,17 +16,45 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
-def _run(git_repo, phase, action, next_phase=None, branch=None):
-    """Run phase-transition.py with the given args."""
-    cmd = [sys.executable, SCRIPT, "--phase", phase, "--action", action]
+def _run(git_repo, phase, action, next_phase=None, branch=None,
+         monkeypatch=None, capsys=None):
+    """Run phase-transition via in-process main() or subprocess fallback.
+
+    When monkeypatch and capsys are provided, runs in-process.
+    Otherwise falls back to subprocess (for tests that need real git state).
+    """
+    if monkeypatch is not None and capsys is not None:
+        monkeypatch.chdir(git_repo)
+        argv = ["phase-transition", "--phase", phase, "--action", action]
+        if next_phase is not None:
+            argv += ["--next-phase", next_phase]
+        if branch is not None:
+            argv += ["--branch", branch]
+        monkeypatch.setattr("sys.argv", argv)
+
+        class _Result:
+            def __init__(self, returncode, stdout, stderr=""):
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+
+        try:
+            _mod.main()
+            captured = capsys.readouterr()
+            return _Result(0, captured.out, captured.err)
+        except SystemExit as e:
+            captured = capsys.readouterr()
+            return _Result(e.code, captured.out, captured.err)
+    # Subprocess fallback for tests that need real git operations
+    cmd = [sys.executable, str(LIB_DIR / "phase-transition.py"),
+           "--phase", phase, "--action", action]
     if next_phase is not None:
         cmd += ["--next-phase", next_phase]
     if branch is not None:
         cmd += ["--branch", branch]
-    result = subprocess.run(
+    return subprocess.run(
         cmd, capture_output=True, text=True, cwd=str(git_repo),
     )
-    return result
 
 
 # --- Phase entry (in-process) ---
@@ -164,19 +192,21 @@ def test_formatted_time_hours():
     assert result["formatted_time"] == "1h 5m"
 
 
-# --- CLI integration (subprocess) ---
+# --- CLI integration (in-process) ---
 
 
-def test_cli_enter_and_complete_happy_path(git_repo, state_dir, branch):
-    """CLI happy path: enter then complete a phase via subprocess."""
+def test_cli_enter_and_complete_happy_path(git_repo, state_dir, branch, monkeypatch, capsys):
+    """CLI happy path: enter then complete a phase via in-process main()."""
     state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
     write_state(state_dir, branch, state)
 
-    enter_result = _run(git_repo, "flow-plan", "enter")
+    enter_result = _run(git_repo, "flow-plan", "enter",
+                        monkeypatch=monkeypatch, capsys=capsys)
     assert enter_result.returncode == 0
     assert json.loads(enter_result.stdout)["status"] == "ok"
 
-    complete_result = _run(git_repo, "flow-plan", "complete")
+    complete_result = _run(git_repo, "flow-plan", "complete",
+                           monkeypatch=monkeypatch, capsys=capsys)
     assert complete_result.returncode == 0
     assert json.loads(complete_result.stdout)["status"] == "ok"
 
@@ -184,9 +214,10 @@ def test_cli_enter_and_complete_happy_path(git_repo, state_dir, branch):
 # --- Error cases ---
 
 
-def test_error_missing_state_file(git_repo):
+def test_error_missing_state_file(git_repo, monkeypatch, capsys):
     """Missing state file returns error."""
-    result = _run(git_repo, "flow-plan", "enter")
+    result = _run(git_repo, "flow-plan", "enter",
+                  monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 1
 
     output = json.loads(result.stdout)
@@ -194,12 +225,13 @@ def test_error_missing_state_file(git_repo):
     assert "No state file" in output["message"]
 
 
-def test_error_invalid_phase(git_repo, state_dir, branch):
+def test_error_invalid_phase(git_repo, state_dir, branch, monkeypatch, capsys):
     """Invalid phase name returns error."""
     state = make_state(current_phase="flow-start")
     write_state(state_dir, branch, state)
 
-    result = _run(git_repo, "invalid", "enter")
+    result = _run(git_repo, "invalid", "enter",
+                  monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 1
 
     output = json.loads(result.stdout)
@@ -207,12 +239,13 @@ def test_error_invalid_phase(git_repo, state_dir, branch):
     assert "Invalid phase" in output["message"]
 
 
-def test_error_phase_not_in_state(git_repo, state_dir, branch):
+def test_error_phase_not_in_state(git_repo, state_dir, branch, monkeypatch, capsys):
     """Phase key missing from state phases dict returns error."""
     state = {"branch": branch, "current_phase": "flow-start", "phases": {}}
     write_state(state_dir, branch, state)
 
-    result = _run(git_repo, "flow-plan", "enter")
+    result = _run(git_repo, "flow-plan", "enter",
+                  monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 1
 
     output = json.loads(result.stdout)
@@ -220,12 +253,13 @@ def test_error_phase_not_in_state(git_repo, state_dir, branch):
     assert "not found" in output["message"]
 
 
-def test_error_corrupt_json(git_repo, state_dir, branch):
+def test_error_corrupt_json(git_repo, state_dir, branch, monkeypatch, capsys):
     """Corrupt JSON state file returns error."""
     state_dir.mkdir(parents=True, exist_ok=True)
     (state_dir / f"{branch}.json").write_text("{bad json")
 
-    result = _run(git_repo, "flow-plan", "enter")
+    result = _run(git_repo, "flow-plan", "enter",
+                  monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 1
 
     output = json.loads(result.stdout)
@@ -243,7 +277,12 @@ def test_detached_head_auto_resolves_single_state_file(git_repo, state_dir, bran
         cwd=str(git_repo), capture_output=True, check=True,
     )
 
-    result = _run(git_repo, "flow-plan", "enter")
+    # Must use subprocess — detached HEAD requires real git state
+    cmd = [sys.executable, str(LIB_DIR / "phase-transition.py"),
+           "--phase", "flow-plan", "--action", "enter"]
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, cwd=str(git_repo),
+    )
     assert result.returncode == 0
 
     output = json.loads(result.stdout)
@@ -258,7 +297,12 @@ def test_error_detached_head_no_state_files(git_repo):
         cwd=str(git_repo), capture_output=True, check=True,
     )
 
-    result = _run(git_repo, "flow-plan", "enter")
+    # Must use subprocess — detached HEAD requires real git state
+    cmd = [sys.executable, str(LIB_DIR / "phase-transition.py"),
+           "--phase", "flow-plan", "--action", "enter"]
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, cwd=str(git_repo),
+    )
     assert result.returncode == 1
 
     output = json.loads(result.stdout)
@@ -280,7 +324,7 @@ def test_complete_uses_custom_phase_order():
     assert updated["current_phase"] == "flow-code-review"
 
 
-def test_cli_uses_frozen_phases_file(git_repo, state_dir, branch):
+def test_cli_uses_frozen_phases_file(git_repo, state_dir, branch, monkeypatch, capsys):
     """CLI uses frozen phases file when it exists."""
     import shutil
     source = LIB_DIR.parent / "flow-phases.json"
@@ -291,26 +335,30 @@ def test_cli_uses_frozen_phases_file(git_repo, state_dir, branch):
     state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
     write_state(state_dir, branch, state)
 
-    enter_result = _run(git_repo, "flow-plan", "enter")
+    enter_result = _run(git_repo, "flow-plan", "enter",
+                        monkeypatch=monkeypatch, capsys=capsys)
     assert enter_result.returncode == 0
 
-    complete_result = _run(git_repo, "flow-plan", "complete")
+    complete_result = _run(git_repo, "flow-plan", "complete",
+                           monkeypatch=monkeypatch, capsys=capsys)
     assert complete_result.returncode == 0
     data = json.loads(complete_result.stdout)
     assert data["status"] == "ok"
     assert data["next_phase"] == "flow-code"
 
 
-def test_cli_falls_back_without_frozen_phases(git_repo, state_dir, branch):
+def test_cli_falls_back_without_frozen_phases(git_repo, state_dir, branch, monkeypatch, capsys):
     """CLI works without frozen phases file (backward compat)."""
     state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
     write_state(state_dir, branch, state)
 
     # No frozen phases file — should still work using module-level constants
-    enter_result = _run(git_repo, "flow-plan", "enter")
+    enter_result = _run(git_repo, "flow-plan", "enter",
+                        monkeypatch=monkeypatch, capsys=capsys)
     assert enter_result.returncode == 0
 
-    complete_result = _run(git_repo, "flow-plan", "complete")
+    complete_result = _run(git_repo, "flow-plan", "complete",
+                           monkeypatch=monkeypatch, capsys=capsys)
     assert complete_result.returncode == 0
     data = json.loads(complete_result.stdout)
     assert data["next_phase"] == "flow-code"
@@ -367,7 +415,7 @@ def test_complete_terminal_phase_auto_next():
     assert updated["current_phase"] == "flow-complete"
 
 
-def test_cli_flow_complete_enter(git_repo, state_dir, branch):
+def test_cli_flow_complete_enter(git_repo, state_dir, branch, monkeypatch, capsys):
     """CLI accepts flow-complete as a valid phase for entry."""
     state = make_state(current_phase="flow-learn", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
@@ -375,14 +423,15 @@ def test_cli_flow_complete_enter(git_repo, state_dir, branch):
     })
     write_state(state_dir, branch, state)
 
-    result = _run(git_repo, "flow-complete", "enter")
+    result = _run(git_repo, "flow-complete", "enter",
+                  monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     output = json.loads(result.stdout)
     assert output["status"] == "ok"
     assert output["phase"] == "flow-complete"
 
 
-def test_cli_flow_complete_complete(git_repo, state_dir, branch):
+def test_cli_flow_complete_complete(git_repo, state_dir, branch, monkeypatch, capsys):
     """CLI accepts flow-complete for completion with --next-phase."""
     state = make_state(current_phase="flow-complete", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
@@ -391,7 +440,8 @@ def test_cli_flow_complete_complete(git_repo, state_dir, branch):
     })
     write_state(state_dir, branch, state)
 
-    result = _run(git_repo, "flow-complete", "complete", next_phase="flow-complete")
+    result = _run(git_repo, "flow-complete", "complete", next_phase="flow-complete",
+                  monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     output = json.loads(result.stdout)
     assert output["status"] == "ok"
@@ -527,28 +577,30 @@ def test_complete_future_session_started_clamps_to_zero():
     assert result["cumulative_seconds"] == 50
 
 
-# --- --branch flag (subprocess) ---
+# --- --branch flag ---
 
 
-def test_cli_branch_flag_uses_specified_state_file(git_repo, state_dir):
+def test_cli_branch_flag_uses_specified_state_file(git_repo, state_dir, monkeypatch, capsys):
     """--branch flag finds the state file for a different branch."""
     state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
     write_state(state_dir, "other-feature", state)
 
-    result = _run(git_repo, "flow-plan", "enter", branch="other-feature")
+    result = _run(git_repo, "flow-plan", "enter", branch="other-feature",
+                  monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     output = json.loads(result.stdout)
     assert output["status"] == "ok"
     assert output["phase"] == "flow-plan"
 
 
-def test_error_ambiguous_multiple_state_files(git_repo, state_dir):
+def test_error_ambiguous_multiple_state_files(git_repo, state_dir, monkeypatch, capsys):
     """Multiple state files with no exact match returns ambiguity error."""
     for name in ["feat-a", "feat-b"]:
         state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
         write_state(state_dir, name, state)
 
-    result = _run(git_repo, "flow-plan", "enter")
+    result = _run(git_repo, "flow-plan", "enter",
+                  monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 1
     output = json.loads(result.stdout)
     assert output["status"] == "error"
@@ -651,7 +703,12 @@ def test_complete_code_phase_captures_diff_stats(git_repo, state_dir):
     })
     write_state(state_dir, "my-feature", state)
 
-    result = _run(git_repo, "flow-code", "complete", branch="my-feature")
+    # Must use subprocess — needs real git branch state for diff
+    cmd = [sys.executable, str(LIB_DIR / "phase-transition.py"),
+           "--phase", "flow-code", "--action", "complete", "--branch", "my-feature"]
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, cwd=str(git_repo),
+    )
     assert result.returncode == 0
     output = json.loads(result.stdout)
     assert output["status"] == "ok"

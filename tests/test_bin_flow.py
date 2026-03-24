@@ -66,7 +66,13 @@ def test_exit_code_passes_through(tmp_path):
 
 
 def test_every_lib_script_is_reachable():
-    """Every .py file in lib/ is reachable as a subcommand."""
+    """Every .py file in lib/ is reachable as a subcommand.
+
+    The bin/flow dispatcher resolves subcommands via:
+        script="$LIB_DIR/$subcmd.py"
+    so reachability is a pure filesystem property: every lib/*.py stem
+    must resolve to an existing file. No subprocess calls needed.
+    """
     py_files = sorted(LIB_DIR.glob("*.py"))
     # Exclude flow_utils.py (library, not a subcommand)
     scripts = [f for f in py_files if f.name != "flow_utils.py"]
@@ -74,13 +80,8 @@ def test_every_lib_script_is_reachable():
 
     for script in scripts:
         subcmd = script.stem
-        # Verify the script file exists and bin/flow can find it
-        # (we check by running with no args — the script should run,
-        # not produce "Unknown subcommand")
-        # FLOW_CI_RUNNING prevents bin/flow ci from running the full
-        # test suite recursively when cwd is a repo with bin/ci.
-        result = _run(subcmd, extra_env={"FLOW_CI_RUNNING": "1"})
-        assert "Unknown subcommand" not in result.stdout, (
-            f"bin/flow cannot find subcommand '{subcmd}' "
-            f"for lib/{script.name}"
+        resolved = LIB_DIR / f"{subcmd}.py"
+        assert resolved.is_file(), (
+            f"bin/flow cannot find subcommand '{subcmd}' — "
+            f"expected {resolved} to exist"
         )

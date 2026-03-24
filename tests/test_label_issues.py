@@ -100,56 +100,47 @@ def test_timeout_counts_as_failure():
 # --- main (CLI integration) ---
 
 
-def test_cli_integration_add(tmp_path):
-    """Subprocess call with --add returns valid JSON with status ok."""
+def test_cli_integration_add(tmp_path, monkeypatch, capsys):
+    """In-process main() with --add returns valid JSON with status ok."""
     state = make_state()
     state["prompt"] = "fix #42"
     state_file = tmp_path / "state.json"
     state_file.write_text(json.dumps(state))
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "label-issues.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--state-file", str(state_file), "--add"],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["label-issues", "--state-file", str(state_file), "--add"])
+    _mod.main()
 
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "ok"
     assert "labeled" in output
     assert "failed" in output
 
 
-def test_cli_integration_remove(tmp_path):
-    """Subprocess call with --remove returns valid JSON with status ok."""
+def test_cli_integration_remove(tmp_path, monkeypatch, capsys):
+    """In-process main() with --remove returns valid JSON with status ok."""
     state = make_state()
     state["prompt"] = "fix #42"
     state_file = tmp_path / "state.json"
     state_file.write_text(json.dumps(state))
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "label-issues.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--state-file", str(state_file), "--remove"],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["label-issues", "--state-file", str(state_file), "--remove"])
+    _mod.main()
 
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "ok"
     assert "labeled" in output
     assert "failed" in output
 
 
-def test_missing_prompt_field(tmp_path):
+def test_missing_prompt_field(tmp_path, monkeypatch, capsys):
     """State file without prompt field outputs ok with empty lists."""
     state = make_state()
     del state["prompt"]
     state_file = tmp_path / "state.json"
     state_file.write_text(json.dumps(state))
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "label-issues.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--state-file", str(state_file), "--add"],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["label-issues", "--state-file", str(state_file), "--add"])
+    _mod.main()
 
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output == {"status": "ok", "labeled": [], "failed": []}

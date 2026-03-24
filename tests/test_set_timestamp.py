@@ -21,19 +21,6 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
-def _run(git_repo, *set_args, branch=None):
-    """Run set-timestamp.py with --set arguments."""
-    cmd = [sys.executable, SCRIPT]
-    for arg in set_args:
-        cmd += ["--set", arg]
-    if branch is not None:
-        cmd += ["--branch", branch]
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, cwd=str(git_repo),
-    )
-    return result
-
-
 # --- Simple paths (in-process) ---
 
 
@@ -137,18 +124,20 @@ def test_security_scanned_at():
     assert ISO_PATTERN.match(updated["security"]["scanned_at"])
 
 
-# --- CLI integration (subprocess) ---
+# --- CLI integration (in-process main()) ---
 
 
-def test_cli_happy_path(git_repo, state_dir, branch):
-    """CLI happy path: write value and confirm state file updated via subprocess."""
+def test_cli_happy_path(git_repo, state_dir, branch, monkeypatch, capsys):
+    """CLI happy path: write value and confirm state file updated."""
     state = make_state(current_phase="flow-code", phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"})
     state["design"] = {"status": "pending"}
     write_state(state_dir, branch, state)
 
-    result = _run(git_repo, "design.status=approved")
-    assert result.returncode == 0
-    output = json.loads(result.stdout)
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--set", "design.status=approved"])
+    _mod.main()
+
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "ok"
     assert output["updates"][0]["value"] == "approved"
 
@@ -156,30 +145,36 @@ def test_cli_happy_path(git_repo, state_dir, branch):
 # --- Error cases ---
 
 
-def test_error_no_state_file(git_repo):
+def test_error_no_state_file(git_repo, monkeypatch, capsys):
     """No state file returns error."""
-    result = _run(git_repo, "design.approved_at=NOW")
-    assert result.returncode == 1
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--set", "design.approved_at=NOW"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
 
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
     assert "No state file" in output["message"]
 
 
-def test_error_invalid_path(git_repo, state_dir, branch):
+def test_error_invalid_path(git_repo, state_dir, branch, monkeypatch, capsys):
     """Nonexistent path key returns error."""
     state = make_state(current_phase="flow-code")
     write_state(state_dir, branch, state)
 
-    result = _run(git_repo, "nonexistent.field=NOW")
-    assert result.returncode == 1
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--set", "nonexistent.field=NOW"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
 
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
     assert "not found" in output["message"]
 
 
-def test_error_array_index_out_of_range(git_repo, state_dir, branch):
+def test_error_array_index_out_of_range(git_repo, state_dir, branch, monkeypatch, capsys):
     """Array index out of range returns error."""
     state = make_state(current_phase="flow-code-review", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-code-review": "in_progress",
@@ -187,41 +182,50 @@ def test_error_array_index_out_of_range(git_repo, state_dir, branch):
     state["plan"] = {"tasks": [{"id": 1, "status": "pending"}]}
     write_state(state_dir, branch, state)
 
-    result = _run(git_repo, "plan.tasks.5.status=in_progress")
-    assert result.returncode == 1
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--set", "plan.tasks.5.status=in_progress"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
 
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
     assert "out of range" in output["message"]
 
 
-def test_error_invalid_format(git_repo, state_dir, branch):
+def test_error_invalid_format(git_repo, state_dir, branch, monkeypatch, capsys):
     """Missing = in --set arg returns error."""
     state = make_state(current_phase="flow-code")
     write_state(state_dir, branch, state)
 
-    result = _run(git_repo, "design.approved_at")
-    assert result.returncode == 1
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--set", "design.approved_at"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
 
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
     assert "Invalid format" in output["message"]
 
 
-def test_error_corrupt_json(git_repo, state_dir, branch):
+def test_error_corrupt_json(git_repo, state_dir, branch, monkeypatch, capsys):
     """Corrupt JSON state file returns error."""
     state_dir.mkdir(parents=True, exist_ok=True)
     (state_dir / f"{branch}.json").write_text("{bad json")
 
-    result = _run(git_repo, "design.approved_at=NOW")
-    assert result.returncode == 1
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--set", "design.approved_at=NOW"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
 
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
     assert "Could not read" in output["message"]
 
 
-def test_detached_head_auto_resolves_single_state_file(git_repo, state_dir, branch):
+def test_detached_head_auto_resolves_single_state_file(git_repo, state_dir, branch, monkeypatch, capsys):
     """Detached HEAD with a single state file auto-resolves to that branch."""
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
@@ -234,24 +238,28 @@ def test_detached_head_auto_resolves_single_state_file(git_repo, state_dir, bran
         cwd=str(git_repo), capture_output=True, check=True,
     )
 
-    result = _run(git_repo, "design.status=approved")
-    assert result.returncode == 0
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--set", "design.status=approved"])
+    _mod.main()
 
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "ok"
 
 
-def test_error_detached_head_no_state_files(git_repo):
+def test_error_detached_head_no_state_files(git_repo, monkeypatch, capsys):
     """Detached HEAD with no state files returns error."""
     subprocess.run(
         ["git", "checkout", "--detach", "HEAD"],
         cwd=str(git_repo), capture_output=True, check=True,
     )
 
-    result = _run(git_repo, "design.approved_at=NOW")
-    assert result.returncode == 1
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--set", "design.approved_at=NOW"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
 
-    output = json.loads(result.stdout)
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
     assert "branch" in output["message"]
 
@@ -452,7 +460,7 @@ def test_code_task_non_integer_blocked():
         _mod.apply_updates(state, ["code_task=abc"])
 
 
-def test_code_task_cli_increment_blocked(git_repo, state_dir, branch):
+def test_code_task_cli_increment_blocked(git_repo, state_dir, branch, monkeypatch, capsys):
     """CLI blocks code_task jump with error exit code."""
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
@@ -460,17 +468,20 @@ def test_code_task_cli_increment_blocked(git_repo, state_dir, branch):
     state["code_task"] = 0
     write_state(state_dir, branch, state)
 
-    result = _run(git_repo, "code_task=5")
-    assert result.returncode == 1
-    output = json.loads(result.stdout)
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--set", "code_task=5"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
     assert "increment by 1" in output["message"]
 
 
-# --- --branch flag (subprocess) ---
+# --- --branch flag (in-process main()) ---
 
 
-def test_cli_branch_flag_uses_specified_state_file(git_repo, state_dir):
+def test_cli_branch_flag_uses_specified_state_file(git_repo, state_dir, monkeypatch, capsys):
     """--branch flag finds the state file for a different branch."""
     state = make_state(current_phase="flow-code", phase_statuses={
         "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
@@ -478,14 +489,16 @@ def test_cli_branch_flag_uses_specified_state_file(git_repo, state_dir):
     state["design"] = {"status": "pending"}
     write_state(state_dir, "other-feature", state)
 
-    result = _run(git_repo, "design.status=approved", branch="other-feature")
-    assert result.returncode == 0
-    output = json.loads(result.stdout)
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--set", "design.status=approved", "--branch", "other-feature"])
+    _mod.main()
+
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "ok"
     assert output["updates"][0]["value"] == "approved"
 
 
-def test_error_ambiguous_multiple_state_files(git_repo, state_dir):
+def test_error_ambiguous_multiple_state_files(git_repo, state_dir, monkeypatch, capsys):
     """Multiple state files with no exact match returns ambiguity error."""
     for name in ["feat-a", "feat-b"]:
         state = make_state(current_phase="flow-code", phase_statuses={
@@ -493,9 +506,12 @@ def test_error_ambiguous_multiple_state_files(git_repo, state_dir):
         })
         write_state(state_dir, name, state)
 
-    result = _run(git_repo, "current_phase=flow-code")
-    assert result.returncode == 1
-    output = json.loads(result.stdout)
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--set", "current_phase=flow-code"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
     assert "Multiple" in output["message"]
     assert sorted(output["candidates"]) == ["feat-a", "feat-b"]

@@ -3,15 +3,12 @@
 import importlib.util
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
 from conftest import LIB_DIR
-
-SCRIPT = str(LIB_DIR / "update-pr-body.py")
 
 # Import update-pr-body.py for in-process unit tests
 _spec = importlib.util.spec_from_file_location(
@@ -201,7 +198,7 @@ def test_append_section_replaces_if_heading_exists():
 # --- CLI end-to-end: --add-artifact ---
 
 
-def test_cli_add_artifact_end_to_end(tmp_path):
+def test_cli_add_artifact_end_to_end(tmp_path, monkeypatch, capsys):
     """CLI --add-artifact reads current body via gh, updates it."""
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
@@ -218,24 +215,22 @@ def test_cli_add_artifact_end_to_end(tmp_path):
     )
     gh_stub.chmod(0o755)
 
-    env = os.environ.copy()
-    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+    monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--pr", "42",
-         "--add-artifact",
-         "--label", "Plan file",
-         "--value", "/plans/x.md"],
-        capture_output=True, text=True, env=env,
-    )
-    assert result.returncode == 0, result.stderr
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", [
+        "update-pr-body",
+        "--pr", "42",
+        "--add-artifact",
+        "--label", "Plan file",
+        "--value", "/plans/x.md",
+    ])
+    _mod.main()
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert data["action"] == "add_artifact"
 
 
-def test_cli_add_multiple_artifacts_end_to_end(tmp_path):
+def test_cli_add_multiple_artifacts_end_to_end(tmp_path, monkeypatch, capsys):
     """CLI --add-artifact with repeated --label/--value adds both artifacts."""
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
@@ -255,21 +250,19 @@ def test_cli_add_multiple_artifacts_end_to_end(tmp_path):
     )
     gh_stub.chmod(0o755)
 
-    env = os.environ.copy()
-    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+    monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--pr", "42",
-         "--add-artifact",
-         "--label", "Plan file",
-         "--value", "/plans/x.md",
-         "--label", "Session log",
-         "--value", "/logs/y.jsonl"],
-        capture_output=True, text=True, env=env,
-    )
-    assert result.returncode == 0, result.stderr
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", [
+        "update-pr-body",
+        "--pr", "42",
+        "--add-artifact",
+        "--label", "Plan file",
+        "--value", "/plans/x.md",
+        "--label", "Session log",
+        "--value", "/logs/y.jsonl",
+    ])
+    _mod.main()
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert data["action"] == "add_artifact"
 
@@ -278,19 +271,18 @@ def test_cli_add_multiple_artifacts_end_to_end(tmp_path):
     assert "Session log" in captured
 
 
-def test_cli_add_artifact_mismatched_label_value_count(tmp_path):
+def test_cli_add_artifact_mismatched_label_value_count(monkeypatch, capsys):
     """CLI returns error when --label count does not match --value count."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--pr", "42",
-         "--add-artifact",
-         "--label", "Plan file",
-         "--value", "/plans/x.md",
-         "--label", "Session log"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", [
+        "update-pr-body",
+        "--pr", "42",
+        "--add-artifact",
+        "--label", "Plan file",
+        "--value", "/plans/x.md",
+        "--label", "Session log",
+    ])
+    _mod.main()
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "Mismatched" in data["message"]
 
@@ -298,7 +290,7 @@ def test_cli_add_artifact_mismatched_label_value_count(tmp_path):
 # --- CLI end-to-end: --append-section ---
 
 
-def test_cli_append_section_end_to_end(tmp_path):
+def test_cli_append_section_end_to_end(tmp_path, monkeypatch, capsys):
     """CLI --append-section reads content from file, appends details block."""
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
@@ -318,21 +310,19 @@ def test_cli_append_section_end_to_end(tmp_path):
     content_file = tmp_path / "state.json"
     content_file.write_text('{"key": "value"}')
 
-    env = os.environ.copy()
-    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+    monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--pr", "42",
-         "--append-section",
-         "--heading", "State File",
-         "--summary", ".flow-states/b.json",
-         "--content-file", str(content_file),
-         "--format", "json"],
-        capture_output=True, text=True, env=env,
-    )
-    assert result.returncode == 0, result.stderr
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", [
+        "update-pr-body",
+        "--pr", "42",
+        "--append-section",
+        "--heading", "State File",
+        "--summary", ".flow-states/b.json",
+        "--content-file", str(content_file),
+        "--format", "json",
+    ])
+    _mod.main()
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert data["action"] == "append_section"
 
@@ -340,26 +330,28 @@ def test_cli_append_section_end_to_end(tmp_path):
 # --- CLI error handling ---
 
 
-def test_cli_missing_pr_number():
+def test_cli_missing_pr_number(monkeypatch, capsys):
     """CLI exits with error when --pr is missing."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "--add-artifact",
-         "--label", "X", "--value", "Y"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode != 0
+    monkeypatch.setattr("sys.argv", [
+        "update-pr-body", "--add-artifact",
+        "--label", "X", "--value", "Y",
+    ])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code != 0
 
 
-def test_cli_missing_mode_flag():
+def test_cli_missing_mode_flag(monkeypatch, capsys):
     """CLI exits with error when neither --add-artifact nor --append-section."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "--pr", "42"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode != 0
+    monkeypatch.setattr("sys.argv", [
+        "update-pr-body", "--pr", "42",
+    ])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code != 0
 
 
-def test_cli_gh_failure_returns_error(tmp_path):
+def test_cli_gh_failure_returns_error(tmp_path, monkeypatch, capsys):
     """CLI returns error JSON when gh command fails."""
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
@@ -371,24 +363,22 @@ def test_cli_gh_failure_returns_error(tmp_path):
     )
     gh_stub.chmod(0o755)
 
-    env = os.environ.copy()
-    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+    monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--pr", "42",
-         "--add-artifact",
-         "--label", "Plan file",
-         "--value", "/plans/x.md"],
-        capture_output=True, text=True, env=env,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", [
+        "update-pr-body",
+        "--pr", "42",
+        "--add-artifact",
+        "--label", "Plan file",
+        "--value", "/plans/x.md",
+    ])
+    _mod.main()
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "message" in data
 
 
-def test_cli_gh_edit_failure_returns_error(tmp_path):
+def test_cli_gh_edit_failure_returns_error(tmp_path, monkeypatch, capsys):
     """CLI returns error JSON when gh pr edit fails."""
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
@@ -406,24 +396,22 @@ def test_cli_gh_edit_failure_returns_error(tmp_path):
     )
     gh_stub.chmod(0o755)
 
-    env = os.environ.copy()
-    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+    monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--pr", "42",
-         "--add-artifact",
-         "--label", "Plan file",
-         "--value", "/plans/x.md"],
-        capture_output=True, text=True, env=env,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", [
+        "update-pr-body",
+        "--pr", "42",
+        "--add-artifact",
+        "--label", "Plan file",
+        "--value", "/plans/x.md",
+    ])
+    _mod.main()
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "edit failed" in data["message"]
 
 
-def test_cli_append_section_missing_content_file_arg(tmp_path):
+def test_cli_append_section_missing_content_file_arg(tmp_path, monkeypatch, capsys):
     """CLI returns error when --content-file is not provided."""
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
@@ -436,25 +424,23 @@ def test_cli_append_section_missing_content_file_arg(tmp_path):
     )
     gh_stub.chmod(0o755)
 
-    env = os.environ.copy()
-    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+    monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--pr", "42",
-         "--append-section",
-         "--heading", "State File",
-         "--summary", "s",
-         "--format", "json"],
-        capture_output=True, text=True, env=env,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", [
+        "update-pr-body",
+        "--pr", "42",
+        "--append-section",
+        "--heading", "State File",
+        "--summary", "s",
+        "--format", "json",
+    ])
+    _mod.main()
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "Missing" in data["message"]
 
 
-def test_cli_append_section_missing_content_file(tmp_path):
+def test_cli_append_section_missing_content_file(tmp_path, monkeypatch, capsys):
     """CLI returns error when --content-file does not exist."""
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
@@ -467,21 +453,19 @@ def test_cli_append_section_missing_content_file(tmp_path):
     )
     gh_stub.chmod(0o755)
 
-    env = os.environ.copy()
-    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+    monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--pr", "42",
-         "--append-section",
-         "--heading", "State File",
-         "--summary", "s",
-         "--content-file", str(tmp_path / "nonexistent"),
-         "--format", "json"],
-        capture_output=True, text=True, env=env,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", [
+        "update-pr-body",
+        "--pr", "42",
+        "--append-section",
+        "--heading", "State File",
+        "--summary", "s",
+        "--content-file", str(tmp_path / "nonexistent"),
+        "--format", "json",
+    ])
+    _mod.main()
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
 
 
@@ -541,7 +525,7 @@ def test_append_plain_section_idempotent():
 # --- CLI end-to-end: --no-collapse ---
 
 
-def test_cli_no_collapse_end_to_end(tmp_path):
+def test_cli_no_collapse_end_to_end(tmp_path, monkeypatch, capsys):
     """CLI --append-section --no-collapse renders plain markdown, not details."""
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
@@ -561,19 +545,17 @@ def test_cli_no_collapse_end_to_end(tmp_path):
     content_file = tmp_path / "timings.md"
     content_file.write_text("| Phase | Duration |\n|-------|----------|")
 
-    env = os.environ.copy()
-    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+    monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--pr", "42",
-         "--append-section",
-         "--heading", "Phase Timings",
-         "--content-file", str(content_file),
-         "--no-collapse"],
-        capture_output=True, text=True, env=env,
-    )
-    assert result.returncode == 0, result.stderr
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", [
+        "update-pr-body",
+        "--pr", "42",
+        "--append-section",
+        "--heading", "Phase Timings",
+        "--content-file", str(content_file),
+        "--no-collapse",
+    ])
+    _mod.main()
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert data["action"] == "append_section"

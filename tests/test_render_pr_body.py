@@ -2,7 +2,6 @@
 
 import importlib.util
 import json
-import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -10,8 +9,6 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from conftest import LIB_DIR, make_state
-
-SCRIPT = str(LIB_DIR / "render-pr-body.py")
 
 # Import render-pr-body.py for in-process unit tests
 _spec = importlib.util.spec_from_file_location(
@@ -487,8 +484,8 @@ def test_no_issues_no_section(tmp_path):
 # --- CLI integration ---
 
 
-def test_cli_integration(target_project):
-    """Subprocess call via bin/flow render-pr-body returns JSON."""
+def test_cli_integration(target_project, monkeypatch, capsys):
+    """In-process main() via --dry-run returns JSON."""
     state_dir = target_project / ".flow-states"
     state_dir.mkdir()
     state = make_state(
@@ -500,27 +497,25 @@ def test_cli_integration(target_project):
     state_file = state_dir / "test-feature.json"
     state_file.write_text(json.dumps(state))
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "--pr", "1", "--state-file", str(state_file),
-         "--dry-run"],
-        capture_output=True, text=True, cwd=str(target_project),
-    )
-    assert result.returncode == 0, result.stderr
-    data = json.loads(result.stdout)
+    monkeypatch.chdir(target_project)
+    monkeypatch.setattr("sys.argv", ["render-pr-body", "--pr", "1",
+                                     "--state-file", str(state_file), "--dry-run"])
+    _mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert "sections" in data
     assert "What" in data["sections"]
 
 
-def test_cli_missing_state_file(tmp_path):
+def test_cli_missing_state_file(tmp_path, monkeypatch, capsys):
     """CLI returns error when state file does not exist."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "--pr", "1",
-         "--state-file", str(tmp_path / "nonexistent.json"), "--dry-run"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", ["render-pr-body", "--pr", "1",
+                                     "--state-file", str(tmp_path / "nonexistent.json"),
+                                     "--dry-run"])
+    _mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "not found" in data["message"]
 

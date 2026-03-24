@@ -239,14 +239,12 @@ def test_scaffold_sets_all_bin_scripts_executable(tmp_path):
 # --- CLI integration ---
 
 
-def test_cli_missing_args():
+def test_cli_missing_args(monkeypatch):
     """Missing arguments exits with error."""
-    script = Path(__file__).resolve().parent.parent / "lib" / "scaffold-qa.py"
-    result = subprocess.run(
-        [sys.executable, str(script)],
-        capture_output=True, text=True,
-    )
-    assert result.returncode != 0
+    monkeypatch.setattr("sys.argv", ["scaffold-qa"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code != 0
 
 
 def test_main_success():

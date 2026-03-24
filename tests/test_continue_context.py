@@ -2,13 +2,12 @@
 
 import importlib.util
 import json
-import subprocess
 import sys
+
+import pytest
 
 from conftest import LIB_DIR, PHASE_ORDER, make_state, write_state
 from flow_utils import read_version
-
-SCRIPT = str(LIB_DIR / "continue-context.py")
 
 # Import continue-context.py for in-process unit tests
 _spec = importlib.util.spec_from_file_location(
@@ -18,57 +17,61 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
-def _run(cwd, branch=None):
-    """Run continue-context.py via subprocess with optional --branch, from cwd."""
-    cmd = [sys.executable, SCRIPT]
-    if branch is not None:
-        cmd += ["--branch", branch]
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, cwd=str(cwd),
-    )
-    return result
+# --- CLI behavior (in-process main()) ---
 
 
-# --- CLI behavior ---
-
-
-def test_no_branch_returns_error(tmp_path):
+def test_no_branch_returns_error(tmp_path, monkeypatch, capsys):
     """Running outside a git repo (no branch) returns an error."""
-    result = _run(tmp_path)
-    assert result.returncode == 1
-    data = json.loads(result.stdout)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["continue-context"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "branch" in data["message"]
 
 
-def test_no_state_file_returns_no_state(git_repo):
-    result = _run(git_repo)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+def test_no_state_file_returns_no_state(git_repo, monkeypatch, capsys):
+    """Running with no state file returns no_state."""
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["continue-context"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 0
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "no_state"
     assert "branch" in data
 
 
-def test_corrupt_json_returns_no_state(state_dir, git_repo, branch):
+def test_corrupt_json_returns_no_state(state_dir, git_repo, branch, monkeypatch, capsys):
     """Corrupt state file for current branch is treated as no state."""
     bad_file = state_dir / f"{branch}.json"
     bad_file.write_text("{bad json")
-    result = _run(git_repo)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["continue-context"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 0
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "no_state"
 
 
-def test_happy_path_returns_ok_with_all_fields(state_dir, git_repo, branch):
+def test_happy_path_returns_ok_with_all_fields(state_dir, git_repo, branch, monkeypatch, capsys):
+    """Happy path returns ok with all expected fields."""
     state = make_state(
         current_phase="flow-plan",
         phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
     )
     state["phases"]["flow-start"]["cumulative_seconds"] = 300
     write_state(state_dir, branch, state)
-    result = _run(git_repo)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["continue-context"])
+    _mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert "panel" in data
     assert data["current_phase"] == "flow-plan"
@@ -83,16 +86,19 @@ def test_all_complete_returns_ok_with_phase_6():
     assert _mod.COMMANDS["flow-complete"] == "/flow:flow-complete"
 
 
-def test_worktree_derived_from_branch(state_dir, git_repo, branch):
+def test_worktree_derived_from_branch(state_dir, git_repo, branch, monkeypatch, capsys):
     """Worktree field is derived from the matched branch name."""
     state = make_state(
         current_phase="flow-code",
         phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
     write_state(state_dir, branch, state)
-    result = _run(git_repo)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["continue-context"])
+    _mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert data["worktree"] == f".worktrees/{branch}"
 
@@ -161,15 +167,19 @@ def test_wrong_branch_single_feature_returns_ok(tmp_path):
     assert matched_state["current_phase"] == "flow-code"
 
 
-def test_wrong_branch_multiple_features_returns_multiple(state_dir, git_repo, branch):
+def test_wrong_branch_multiple_features_returns_multiple(state_dir, git_repo, branch, monkeypatch, capsys):
     """When on wrong branch with multiple state files, returns multiple_features."""
     for name in ["feature-a", "feature-b"]:
         state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
         state["branch"] = name
         write_state(state_dir, name, state)
-    result = _run(git_repo)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["continue-context"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 0
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "multiple_features"
     assert len(data["features"]) == 2
 
@@ -188,19 +198,22 @@ def test_ok_response_includes_branch_field(tmp_path):
     assert matched_branch == "test-feature"
 
 
-# --- --branch flag (subprocess) ---
+# --- --branch flag (in-process main()) ---
 
 
-def test_cli_branch_flag_uses_specified_state_file(state_dir, git_repo):
+def test_cli_branch_flag_uses_specified_state_file(state_dir, git_repo, monkeypatch, capsys):
     """--branch flag finds the state file for a different branch."""
     state = make_state(
         current_phase="flow-code",
         phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
     write_state(state_dir, "other-feature", state)
-    result = _run(git_repo, branch="other-feature")
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["continue-context", "--branch", "other-feature"])
+    _mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert data["current_phase"] == "flow-code"
     assert data["branch"] == "other-feature"

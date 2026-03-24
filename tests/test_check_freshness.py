@@ -345,7 +345,7 @@ def test_retry_missing_key_in_state(tmp_path):
 # --- CLI integration tests ---
 
 
-def test_cli_up_to_date(git_repo, tmp_path):
+def test_cli_up_to_date(git_repo, tmp_path, monkeypatch, capsys):
     """Real git repo already up to date — up_to_date returned."""
     bare = tmp_path / "bare.git"
     subprocess.run(
@@ -361,19 +361,16 @@ def test_cli_up_to_date(git_repo, tmp_path):
         capture_output=True, check=True,
     )
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "check-freshness.py"
-    result = subprocess.run(
-        [sys.executable, str(script)],
-        capture_output=True, text=True,
-        cwd=str(git_repo),
-    )
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["check-freshness.py"])
 
-    output = json.loads(result.stdout)
-    assert result.returncode == 0
+    _mod.main()
+
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "up_to_date"
 
 
-def test_cli_merged(git_repo, tmp_path):
+def test_cli_merged(git_repo, tmp_path, monkeypatch, capsys):
     """Real git repo with new commits on main — merged returned."""
     bare = tmp_path / "bare.git"
     subprocess.run(
@@ -424,19 +421,16 @@ def test_cli_merged(git_repo, tmp_path):
         capture_output=True, check=True,
     )
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "check-freshness.py"
-    result = subprocess.run(
-        [sys.executable, str(script)],
-        capture_output=True, text=True,
-        cwd=str(git_repo),
-    )
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["check-freshness.py"])
 
-    output = json.loads(result.stdout)
-    assert result.returncode == 0
+    _mod.main()
+
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "merged"
 
 
-def test_cli_with_state_file(git_repo, tmp_path):
+def test_cli_with_state_file(git_repo, tmp_path, monkeypatch, capsys):
     """CLI with --state-file tracks retries."""
     bare = tmp_path / "bare.git"
     subprocess.run(
@@ -489,15 +483,13 @@ def test_cli_with_state_file(git_repo, tmp_path):
     state_file = tmp_path / "state.json"
     state_file.write_text(json.dumps({"branch": "feature", "freshness_retries": 0}))
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "check-freshness.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--state-file", str(state_file)],
-        capture_output=True, text=True,
-        cwd=str(git_repo),
-    )
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["check-freshness.py",
+                                      "--state-file", str(state_file)])
 
-    output = json.loads(result.stdout)
-    assert result.returncode == 0
+    _mod.main()
+
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "merged"
     assert output["retries"] == 1
 
@@ -505,25 +497,25 @@ def test_cli_with_state_file(git_repo, tmp_path):
     assert state["freshness_retries"] == 1
 
 
-def test_cli_max_retries(tmp_path, git_repo):
+def test_cli_max_retries(tmp_path, git_repo, monkeypatch, capsys):
     """CLI with max retries returns error exit code."""
     state_file = tmp_path / "state.json"
     state_file.write_text(json.dumps({"branch": "test", "freshness_retries": 3}))
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "check-freshness.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--state-file", str(state_file)],
-        capture_output=True, text=True,
-        cwd=str(git_repo),
-    )
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["check-freshness.py",
+                                      "--state-file", str(state_file)])
 
-    assert result.returncode == 1
-    output = json.loads(result.stdout)
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "max_retries"
     assert output["retries"] == 3
 
 
-def test_cli_unknown_args_ignored(git_repo, tmp_path):
+def test_cli_unknown_args_ignored(git_repo, tmp_path, monkeypatch, capsys):
     """Unknown CLI arguments are silently skipped."""
     bare = tmp_path / "bare.git"
     subprocess.run(
@@ -539,13 +531,10 @@ def test_cli_unknown_args_ignored(git_repo, tmp_path):
         capture_output=True, check=True,
     )
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "check-freshness.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--unknown", "value"],
-        capture_output=True, text=True,
-        cwd=str(git_repo),
-    )
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", ["check-freshness.py", "--unknown", "value"])
 
-    output = json.loads(result.stdout)
-    assert result.returncode == 0
+    _mod.main()
+
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "up_to_date"

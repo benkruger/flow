@@ -298,14 +298,14 @@ def test_log_file_created(target_project):
 # --- Error cases ---
 
 
-def test_missing_feature_name_fails(target_project):
+def test_missing_feature_name_fails(target_project, monkeypatch, capsys):
     """Running without a feature name exits with error."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT],
-        capture_output=True, text=True, cwd=str(target_project),
-    )
-    assert result.returncode == 1
-    data = json.loads(result.stdout)
+    monkeypatch.chdir(target_project)
+    monkeypatch.setattr("sys.argv", ["init-state"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "feature name" in data["message"].lower()
 

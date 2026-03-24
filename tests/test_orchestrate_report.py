@@ -2,12 +2,9 @@
 
 import importlib.util
 import json
-import subprocess
 import sys
 
 from conftest import LIB_DIR, make_orchestrate_state
-
-SCRIPT = str(LIB_DIR / "orchestrate-report.py")
 
 
 def _import_module():
@@ -253,11 +250,12 @@ def test_report_results_table_format():
     assert "Outcome" in result["summary"]
 
 
-# --- CLI integration tests ---
+# --- CLI integration tests (in-process) ---
 
 
-def test_cli_happy_path(tmp_path):
+def test_cli_happy_path(tmp_path, monkeypatch, capsys):
     """CLI generates report from state file."""
+    mod = _import_module()
     state = _make_report_state(queue_items=[
         _completed_item(42, "Add PDF export"),
         _failed_item(43, "Fix login"),
@@ -265,48 +263,45 @@ def test_cli_happy_path(tmp_path):
     state_path = tmp_path / "orchestrate.json"
     state_path.write_text(json.dumps(state))
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--state-file", str(state_path),
-         "--output-dir", str(tmp_path)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["orchestrate-report.py",
+                                      "--state-file", str(state_path),
+                                      "--output-dir", str(tmp_path)])
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert data["completed"] == 1
     assert data["failed"] == 1
     assert (tmp_path / "orchestrate-summary.md").exists()
 
 
-def test_cli_missing_state_file(tmp_path):
+def test_cli_missing_state_file(tmp_path, monkeypatch, capsys):
     """CLI with nonexistent state file returns error."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--state-file", str(tmp_path / "missing.json"),
-         "--output-dir", str(tmp_path)],
-        capture_output=True, text=True,
-    )
+    mod = _import_module()
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", ["orchestrate-report.py",
+                                      "--state-file", str(tmp_path / "missing.json"),
+                                      "--output-dir", str(tmp_path)])
+
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "not found" in data["message"]
 
 
-def test_cli_corrupt_state_file(tmp_path):
+def test_cli_corrupt_state_file(tmp_path, monkeypatch, capsys):
     """CLI with corrupt JSON returns error."""
+    mod = _import_module()
     bad_file = tmp_path / "orchestrate.json"
     bad_file.write_text("{bad json")
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--state-file", str(bad_file),
-         "--output-dir", str(tmp_path)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["orchestrate-report.py",
+                                      "--state-file", str(bad_file),
+                                      "--output-dir", str(tmp_path)])
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"

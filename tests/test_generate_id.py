@@ -1,7 +1,6 @@
 """Tests for lib/generate-id.py — session ID generation."""
 
 import re
-import subprocess
 import sys
 
 from conftest import LIB_DIR
@@ -33,17 +32,5 @@ def test_main_prints_id(capsys):
     generate_id_mod.main()
     captured = capsys.readouterr()
     output = captured.out.strip()
-    assert len(output) == 8
-    assert re.fullmatch(r"[0-9a-f]{8}", output)
-
-
-def test_cli_integration():
-    result = subprocess.run(
-        [sys.executable, str(LIB_DIR / "generate-id.py")],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0
-    output = result.stdout.strip()
     assert len(output) == 8
     assert re.fullmatch(r"[0-9a-f]{8}", output)

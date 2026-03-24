@@ -19,43 +19,41 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
-def _run(git_repo, phase, state_dir=None, branch=None):
-    """Run check-phase.py --required <phase> inside the given git repo."""
-    cmd = [sys.executable, SCRIPT, "--required", phase]
-    if branch is not None:
-        cmd += ["--branch", branch]
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, cwd=str(git_repo),
-    )
-    return result
+# --- Basic behavior (in-process main() — covers main() paths) ---
 
 
-# --- Basic behavior (subprocess — covers main() paths) ---
-
-
-def test_phase_1_always_exits_0(git_repo):
+def test_phase_1_always_exits_0(git_repo, monkeypatch):
     """Phase 1 has no prerequisites — always allowed."""
-    result = _run(git_repo, "flow-start")
-    assert result.returncode == 0
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--required", "flow-start"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 0
 
 
-def test_detached_head_exits_1(git_repo):
+def test_detached_head_exits_1(git_repo, monkeypatch, capsys):
     """Detached HEAD with no state files should block with a clear message."""
     # Detach HEAD by checking out a specific commit
     subprocess.run(
         ["git", "checkout", "--detach", "HEAD"],
         cwd=str(git_repo), capture_output=True, check=True,
     )
-    result = _run(git_repo, "flow-plan")
-    assert result.returncode == 1
-    assert "Could not determine current git branch" in result.stdout
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--required", "flow-plan"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    assert "Could not determine current git branch" in capsys.readouterr().out
 
 
-def test_no_state_file_exits_1(git_repo):
+def test_no_state_file_exits_1(git_repo, monkeypatch, capsys):
     """No state file for the current branch should block."""
-    result = _run(git_repo, "flow-plan")
-    assert result.returncode == 1
-    assert "/flow:flow-start" in result.stdout
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--required", "flow-plan"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    assert "/flow:flow-start" in capsys.readouterr().out
 
 
 def test_corrupt_json_exits_1(tmp_path, monkeypatch):
@@ -76,14 +74,19 @@ def test_corrupt_json_exits_1(tmp_path, monkeypatch):
     assert "Could not read state file" in captured.getvalue()
 
 
-def test_previous_phase_pending_blocks(git_repo, state_dir, branch):
+def test_previous_phase_pending_blocks(git_repo, state_dir, branch, monkeypatch, capsys):
     """Previous phase 'pending' blocks entry (covers print+exit path in main)."""
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "pending"})
     write_state(state_dir, branch, state)
-    result = _run(git_repo, "flow-plan")
-    assert result.returncode == 1
-    assert "BLOCKED" in result.stdout
-    assert "pending" in result.stdout
+
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--required", "flow-plan"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    output = capsys.readouterr().out
+    assert "BLOCKED" in output
+    assert "pending" in output
 
 
 # --- Phase status checks (in-process) ---
@@ -189,7 +192,7 @@ def test_invalid_phase_name_raises():
         _mod.check_phase(state, "nonexistent")
 
 
-# --- Worktree resolution (subprocess) ---
+# --- Frozen config (in-process) ---
 
 
 def test_check_phase_uses_frozen_config():
@@ -225,7 +228,7 @@ def test_check_phase_frozen_config_uses_correct_predecessor():
     assert "BLOCKED" in output
 
 
-def test_cli_uses_frozen_phases_file(git_repo, state_dir, branch):
+def test_cli_uses_frozen_phases_file(git_repo, state_dir, branch, monkeypatch):
     """CLI loads frozen phases file when it exists."""
     import shutil
     source = LIB_DIR.parent / "flow-phases.json"
@@ -236,11 +239,14 @@ def test_cli_uses_frozen_phases_file(git_repo, state_dir, branch):
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete"})
     write_state(state_dir, branch, state)
 
-    result = _run(git_repo, "flow-plan")
-    assert result.returncode == 0
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--required", "flow-plan"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 0
 
 
-def test_worktree_finds_state_in_main_repo(git_repo, state_dir):
+def test_worktree_finds_state_in_main_repo(git_repo, state_dir, monkeypatch):
     """Running from a worktree should find state files in the main repo."""
     # Create a branch for the worktree
     subprocess.run(
@@ -257,30 +263,40 @@ def test_worktree_finds_state_in_main_repo(git_repo, state_dir):
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete"})
     write_state(state_dir, "feature-branch", state)
 
-    result = _run(wt_path, "flow-plan")
-    assert result.returncode == 0
+    monkeypatch.chdir(wt_path)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--required", "flow-plan"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 0
 
 
-# --- --branch flag (subprocess) ---
+# --- --branch flag (in-process main()) ---
 
 
-def test_cli_branch_flag_uses_specified_state_file(git_repo, state_dir):
+def test_cli_branch_flag_uses_specified_state_file(git_repo, state_dir, monkeypatch):
     """--branch flag finds the state file for a different branch."""
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete"})
     write_state(state_dir, "other-feature", state)
 
-    result = _run(git_repo, "flow-plan", branch="other-feature")
-    assert result.returncode == 0
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--required", "flow-plan", "--branch", "other-feature"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 0
 
 
-def test_error_ambiguous_multiple_state_files(git_repo, state_dir):
+def test_error_ambiguous_multiple_state_files(git_repo, state_dir, monkeypatch, capsys):
     """Multiple state files with no exact match returns ambiguity error."""
     for name in ["feat-a", "feat-b"]:
         state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete"})
         write_state(state_dir, name, state)
 
-    result = _run(git_repo, "flow-plan")
-    assert result.returncode == 1
-    assert "Multiple active features" in result.stdout
-    assert "feat-a" in result.stdout
-    assert "feat-b" in result.stdout
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr("sys.argv", [SCRIPT, "--required", "flow-plan"])
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    output = capsys.readouterr().out
+    assert "Multiple active features" in output
+    assert "feat-a" in output
+    assert "feat-b" in output
