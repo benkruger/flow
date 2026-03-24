@@ -1,12 +1,12 @@
 ---
 name: flow-qa
-description: "QA the FLOW plugin locally. Switch to local plugin source for testing, restore when done. Run tiered QA against per-framework repos."
+description: "QA the FLOW plugin locally. Clone QA repos, prime them, run tiered QA, and verify results — all in-session."
 ---
 
 # FLOW QA
 
-Test the FLOW plugin locally before releasing. Maintainer-only — requires
-the plugin to be installed.
+Test the FLOW plugin locally before releasing. Maintainer-only — runs
+in the FLOW source repo against dedicated QA repos cloned to `.qa-repos/`.
 
 ## Usage
 
@@ -19,10 +19,10 @@ the plugin to be installed.
 /flow-qa --tier <1|2|3> --framework <name>
 ```
 
-- `/flow-qa` — show current mode (dev or marketplace)
-- `/flow-qa --start` — switch to dev mode (local plugin source)
-- `/flow-qa --stop` — switch back to marketplace plugin
-- `/flow-qa --run <framework|all>` — run all 3 tiers against QA repo(s)
+- `/flow-qa` — show setup status (which QA repos are cloned and primed)
+- `/flow-qa --start` — clone and prime QA repo(s) into `.qa-repos/`
+- `/flow-qa --stop` — remove `.qa-repos/` directory
+- `/flow-qa --run <framework|all>` — run Tier 1 against QA repo(s)
 - `/flow-qa --reset <framework|all>` — reset QA repo(s) to seed state
 - `/flow-qa --tier <1|2|3> --framework <name>` — run a specific tier
 
@@ -30,104 +30,107 @@ the plugin to be installed.
 
 Each framework has a dedicated QA repo:
 
-| Framework | Repo |
-|-----------|------|
-| rails | `benkruger/flow-qa-rails` |
-| python | `benkruger/flow-qa-python` |
-| ios | `benkruger/flow-qa-ios` |
+| Framework | Repo | Local path |
+|-----------|------|------------|
+| python | `benkruger/flow-qa-python` | `.qa-repos/python` |
+| rails | `benkruger/flow-qa-rails` | `.qa-repos/rails` |
+| ios | `benkruger/flow-qa-ios` | `.qa-repos/ios` |
 
 Create repos with `bin/flow scaffold-qa --framework <name> --repo <owner/repo>`.
-Reset with `bin/flow qa-reset --repo <owner/repo>`.
 
 ## Bare `/flow-qa` (no flags)
 
-### Step 1 — Check dev mode
+### Step 1 — Check setup
 
-Use the Read tool to read `.flow.json`. Parse the JSON and check if the
-`plugin_root_backup` key exists. If `.flow.json` does not exist or cannot
-be parsed, treat as marketplace mode.
+Use the Glob tool to check if `.qa-repos/` contains any framework
+directories (e.g., `.qa-repos/python/`).
 
 ### Step 2 — Report
 
-If `plugin_root_backup` exists in the JSON, print:
+If `.qa-repos/` contains at least one framework directory, print:
 
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW QA — DEV MODE (local)
+  FLOW QA — READY
 ──────────────────────────────────────────────────
 ```
 ````
 
-If `plugin_root_backup` does not exist, print:
+Then list which frameworks are set up (which subdirectories exist
+under `.qa-repos/`).
+
+If `.qa-repos/` does not exist or is empty, print:
 
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW QA — MARKETPLACE (remote)
+  FLOW QA — NOT SET UP
 ──────────────────────────────────────────────────
 ```
 ````
 
 ### Step 3 — Show workflow
 
-After the mode banner, print:
+After the status banner, print:
 
 > **QA Workflow:**
 >
-> 1. `/flow-qa --start` — redirect plugin_root to local source
-> 2. Start Claude with `claude --plugin-dir=$HOME/code/flow`
-> 3. `/flow-qa --run <framework|all>` — run all tiers
-> 4. `/flow-qa --tier <N> --framework <name>` — run a specific tier
-> 5. `/flow-qa --reset <framework|all>` — reset QA repos to seed state
-> 6. `/flow-qa --stop` — restore marketplace plugin
+> 1. `/flow-qa --start` — clone and prime QA repo(s)
+> 2. `/flow-qa --run <framework|all>` — run Tier 1
+> 3. `/flow-qa --reset <framework|all>` — reset QA repos to seed state
+> 4. `/flow-qa --stop` — remove local QA repos
 
 ## Flag: `--start`
 
-### Step 1 — Redirect plugin_root to local source
+Set up QA repos locally by cloning and priming them. Currently
+supports `python` only (rails and ios are out of scope for now).
 
-Run:
+### Step 1 — Clone QA repo
+
+If `.qa-repos/python` does not already exist, clone it:
 
 ```bash
-bin/flow qa-mode --start --local-path $HOME/code/flow
+gh repo clone benkruger/flow-qa-python .qa-repos/python
+```
+
+If the directory already exists, skip cloning.
+
+### Step 2 — Prime QA repo
+
+Run `prime-setup` directly with fully autonomous settings. This
+creates `.flow.json`, `.claude/settings.json`, and all FLOW
+artifacts in the QA repo without interactive prompts.
+
+```bash
+bin/flow prime-setup .qa-repos/python --framework python --skills-json '{"flow-start":{"continue":"auto"},"flow-plan":{"continue":"auto","dag":"auto"},"flow-code":{"commit":"auto","continue":"auto"},"flow-code-review":{"commit":"auto","continue":"auto","code_review_plugin":"never"},"flow-learn":{"commit":"auto","continue":"auto"},"flow-abort":"auto","flow-complete":"auto"}' --plugin-root $PWD
 ```
 
 If the JSON output has `"status": "error"`, print the error message and stop.
 
-### Step 2 — Announce
+### Step 3 — Announce
 
 Print inside a fenced code block:
 
 ````markdown
 ```text
-──────────────────────────────────────────────────
-  FLOW QA — DEV MODE ACTIVE
-──────────────────────────────────────────────────
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ FLOW QA — Setup complete (python)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
-Then print these numbered instructions:
-
-> **Next steps:**
->
-> 1. Run `/reload-plugins` now to update the skill list for this session.
-> 2. Start a new Claude Code session with `claude --plugin-dir=$HOME/code/flow`
->    to load local source as the plugin.
-> 3. Run `/flow-qa --run <framework|all>` or `/flow-qa --tier <N> --framework <name>`
->    to execute QA tiers.
-> 4. When done, run `/flow-qa --stop` to restore the marketplace plugin.
-
 ## Flag: `--stop`
 
-### Step 1 — Restore plugin_root from backup
+Remove the `.qa-repos/` directory to clean up local QA clones.
 
-Run:
+### Step 1 — Remove QA repos
+
+Use the Bash tool to remove the directory:
 
 ```bash
-bin/flow qa-mode --stop
+rm -rf .qa-repos
 ```
-
-If the JSON output has `"status": "error"`, print the error message and stop.
 
 ### Step 2 — Report
 
@@ -136,39 +139,44 @@ Print inside a fenced code block:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW QA — Dev mode stopped
+  ✓ FLOW QA — Cleaned up
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
-Then tell the user:
-
-> Run `/reload-plugins` now to update the skill list for this session.
-
 ## Flag: `--reset <framework|all>`
 
-Reset QA repo(s) to seed state. If `all`, reset all 3 frameworks.
+Reset QA repo(s) to seed state. If `all`, reset all set-up frameworks.
 
 ### Step 1 — Determine repos
 
-Map the framework argument to repos:
+Map the framework argument to repos. Only reset frameworks that have
+a local clone in `.qa-repos/`.
 
-- `rails` → `benkruger/flow-qa-rails`
-- `python` → `benkruger/flow-qa-python`
-- `ios` → `benkruger/flow-qa-ios`
-- `all` → all three repos
+- `python` → `benkruger/flow-qa-python`, local path `.qa-repos/python`
+- `rails` → `benkruger/flow-qa-rails`, local path `.qa-repos/rails`
+- `ios` → `benkruger/flow-qa-ios`, local path `.qa-repos/ios`
+- `all` → all frameworks that have a directory under `.qa-repos/`
 
 ### Step 2 — Reset each repo
 
 For each repo, run:
 
 ```bash
-bin/flow qa-reset --repo <owner/repo>
+bin/flow qa-reset --repo <owner/repo> --local-path .qa-repos/<framework>
 ```
 
 Report the JSON output for each.
 
-### Step 3 — Report
+### Step 3 — Re-prime each repo
+
+Reset wipes `.flow.json` and `.claude/`, so re-prime each repo:
+
+```bash
+bin/flow prime-setup .qa-repos/<framework> --framework <framework> --skills-json '{"flow-start":{"continue":"auto"},"flow-plan":{"continue":"auto","dag":"auto"},"flow-code":{"commit":"auto","continue":"auto"},"flow-code-review":{"commit":"auto","continue":"auto","code_review_plugin":"never"},"flow-learn":{"commit":"auto","continue":"auto"},"flow-abort":"auto","flow-complete":"auto"}' --plugin-root $PWD
+```
+
+### Step 4 — Report
 
 Print inside a fenced code block:
 
@@ -182,33 +190,113 @@ Print inside a fenced code block:
 
 ## Flag: `--run <framework|all>`
 
-Run all 3 tiers against the specified framework(s). If `all`, run
-against all 3 frameworks sequentially.
+Run Tier 1 against the specified framework. If `all`, run against
+all set-up frameworks sequentially.
 
-For each framework, run Tier 1, then Tier 2, then Tier 3. Stop on
-the first tier failure.
+### Step 1 — Verify setup
+
+Check that `.qa-repos/<framework>` exists. If not, tell the user
+to run `/flow-qa --start` first and stop.
+
+### Step 2 — Reset and re-prime
+
+Reset the QA repo to seed state:
+
+```bash
+bin/flow qa-reset --repo <owner/repo> --local-path .qa-repos/<framework>
+```
+
+Re-prime (reset wipes `.flow.json` and `.claude/`):
+
+```bash
+bin/flow prime-setup .qa-repos/<framework> --framework <framework> --skills-json '{"flow-start":{"continue":"auto"},"flow-plan":{"continue":"auto","dag":"auto"},"flow-code":{"commit":"auto","continue":"auto"},"flow-code-review":{"commit":"auto","continue":"auto","code_review_plugin":"never"},"flow-learn":{"commit":"auto","continue":"auto"},"flow-abort":"auto","flow-complete":"auto"}' --plugin-root $PWD
+```
+
+### Step 3 — Fetch an issue
+
+Get the first open issue from the QA repo:
+
+```bash
+gh issue list --repo <owner/repo> --state open --json number --jq '.[0].number'
+```
+
+If no issues exist, print "No open issues in QA repo — run
+`/flow-qa --reset <framework>` to recreate seed issues" and stop.
+
+### Step 4 — Execute the flow
+
+Change directory to the QA repo:
+
+```bash
+cd .qa-repos/<framework>
+```
+
+Invoke the FLOW lifecycle using the Skill tool:
+
+> Invoke `/flow:flow-start --auto fix issue #<N>` where `<N>` is the
+> issue number from Step 3.
+
+The flow will run all 6 phases autonomously (Start through Complete).
+After `flow-complete` finishes, the worktree is cleaned up and the
+PR is merged.
+
+### Step 5 — Return to FLOW repo
+
+After all phases complete, the worktree has been removed and the Bash
+cwd may be invalid. Change back to the FLOW repo root using the
+absolute path you were in before Step 4 (not a relative `cd ../..`
+which may fail if the cwd was deleted):
+
+```bash
+cd <absolute-path-to-flow-repo>
+```
+
+### Step 6 — Verify
+
+Run Tier 1 verification:
+
+```bash
+bin/flow qa-verify --tier 1 --framework <framework> --repo <owner/repo> --project-root .qa-repos/<framework>
+```
+
+Parse the JSON output. Report each check's pass/fail status.
+
+### Step 7 — Report
+
+If all checks passed, print:
+
+````markdown
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ FLOW QA — Tier 1 PASSED (<framework>)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+````
+
+If any check failed, print:
+
+````markdown
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✗ FLOW QA — Tier 1 FAILED (<framework>)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+````
 
 ## Flag: `--tier <N> --framework <name>`
 
 Run a specific tier against a specific framework.
 
+Map to the corresponding tier definition below and execute its steps.
+
 ## Tier Definitions
 
 ### Tier 1 — Smoke (Single-Flow Lifecycle)
 
-**Goal:** Verify one complete Start-to-Complete flow works.
+**Goal:** Verify one complete Start-to-Complete flow works in-session.
 
-**Steps:**
-
-1. Clone the QA repo locally if not already cloned
-2. Run `/flow:flow-prime` in the QA repo
-3. Run `/flow:flow-start fix issue #1` in the QA repo
-4. Complete all 6 phases manually (Plan through Complete)
-5. Run verification:
-
-```bash
-bin/flow qa-verify --tier 1 --framework <name> --repo <owner/repo> --project-root <path>
-```
+Tier 1 is the execution path for `--run`. See the `--run` flag section
+above for the full step-by-step procedure.
 
 **Pass criteria:**
 
@@ -222,23 +310,19 @@ bin/flow qa-verify --tier 1 --framework <name> --repo <owner/repo> --project-roo
 - PR not created or not merged
 - Artifacts left behind after Complete
 
-### Tier 2 — Concurrent (Two Autonomous Flows)
+### Tier 2 — Sequential (Two Autonomous Flows)
 
-**Goal:** Verify two flows run simultaneously without interference.
+**Goal:** Verify two sequential flows on the same repo complete without interference.
 
 **Steps:**
 
-1. Reset the QA repo: `bin/flow qa-reset --repo <owner/repo>`
-2. Start Flow A: `/flow:flow-start --auto fix issue #1`
-3. While Flow A runs, start Flow B in a separate Claude session:
-   `claude -p "run /flow:flow-start --auto fix issue #2" --plugin-dir=$HOME/code/flow`
-   If the background session cannot be launched, instruct the user to
-   open a second terminal and run the command manually.
-4. Wait for both flows to complete
-5. Run verification:
+1. Reset the QA repo
+2. Start Flow A in-session: `/flow:flow-start --auto fix issue #1`
+3. After Flow A completes, start Flow B: `/flow:flow-start --auto fix issue #2`
+4. Run verification:
 
 ```bash
-bin/flow qa-verify --tier 2 --framework <name> --repo <owner/repo> --project-root <path>
+bin/flow qa-verify --tier 2 --framework <name> --repo <owner/repo> --project-root .qa-repos/<framework>
 ```
 
 **Pass criteria:**
@@ -262,12 +346,12 @@ bin/flow qa-verify --tier 2 --framework <name> --repo <owner/repo> --project-roo
 1. Reset the QA repo
 2. Start a flow, then kill the Claude session mid-Code phase
 3. Start a new session and run `/flow:flow-continue` to verify recovery
-4. Start two flows simultaneously with `--auto` to test lock contention
+4. Start two flows sequentially with `--auto` to test lock contention
 5. Run cleanup on one flow while another is active
 6. Run verification:
 
 ```bash
-bin/flow qa-verify --tier 3 --framework <name> --repo <owner/repo> --project-root <path>
+bin/flow qa-verify --tier 3 --framework <name> --repo <owner/repo> --project-root .qa-repos/<framework>
 ```
 
 **Pass criteria:**
@@ -284,7 +368,7 @@ bin/flow qa-verify --tier 3 --framework <name> --repo <owner/repo> --project-roo
 
 ## Hard Rules
 
-- Never run QA tiers against the FLOW repo itself — only against QA repos
+- Never run QA tiers against the FLOW repo itself — only against QA repos in `.qa-repos/`
 - Always reset between tier runs to ensure clean state
 - Report pass/fail for each tier check individually
 - Stop on first tier failure when running all tiers

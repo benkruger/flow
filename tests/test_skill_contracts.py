@@ -1127,31 +1127,22 @@ def test_reset_has_confirmation():
 # --- QA skill (maintainer) ---
 
 
-def test_flow_qa_has_dev_mode_check():
-    """QA SKILL.md must check plugin_root_backup in .flow.json for dev mode."""
+def test_flow_qa_has_setup_check():
+    """QA SKILL.md must check .qa-repos/ for setup status."""
     content = (REPO_ROOT / ".claude" / "skills" / "flow-qa" / "SKILL.md").read_text()
-    assert "plugin_root_backup" in content, (
-        "flow-qa/SKILL.md must reference plugin_root_backup for dev mode detection"
+    assert ".qa-repos" in content, (
+        "flow-qa/SKILL.md must reference .qa-repos for setup detection"
     )
 
 
-def test_flow_qa_has_qa_mode_commands():
-    """QA SKILL.md must reference bin/flow qa-mode for start and stop."""
+def test_flow_qa_has_setup_commands():
+    """QA SKILL.md must reference prime-setup and gh repo clone for setup."""
     content = (REPO_ROOT / ".claude" / "skills" / "flow-qa" / "SKILL.md").read_text()
-    assert "bin/flow qa-mode --start" in content, (
-        "flow-qa/SKILL.md must reference 'bin/flow qa-mode --start'"
+    assert "bin/flow prime-setup" in content, (
+        "flow-qa/SKILL.md must reference 'bin/flow prime-setup' for priming QA repos"
     )
-    assert "bin/flow qa-mode --stop" in content, (
-        "flow-qa/SKILL.md must reference 'bin/flow qa-mode --stop'"
-    )
-
-
-def test_flow_qa_has_reload_plugins():
-    """flow-qa must reload plugins after install/uninstall changes."""
-    content = (REPO_ROOT / ".claude" / "skills" / "flow-qa" / "SKILL.md").read_text()
-    assert "/reload-plugins" in content, (
-        "flow-qa/SKILL.md must include /reload-plugins — "
-        "skill list is stale until plugins are reloaded"
+    assert "gh repo clone" in content, (
+        "flow-qa/SKILL.md must reference 'gh repo clone' for cloning QA repos"
     )
 
 
@@ -1161,11 +1152,11 @@ def test_flow_qa_bare_is_status():
     assert "Bare `/flow-qa` (no flags)" in content, (
         "flow-qa/SKILL.md must have a 'Bare /flow-qa (no flags)' section"
     )
-    assert "DEV MODE (local)" in content, (
-        "flow-qa/SKILL.md must show DEV MODE (local) status"
+    assert "FLOW QA — READY" in content, (
+        "flow-qa/SKILL.md must show READY status when QA repos are set up"
     )
-    assert "MARKETPLACE (remote)" in content, (
-        "flow-qa/SKILL.md must show MARKETPLACE (remote) status"
+    assert "FLOW QA — NOT SET UP" in content, (
+        "flow-qa/SKILL.md must show NOT SET UP status when QA repos are missing"
     )
 
 
