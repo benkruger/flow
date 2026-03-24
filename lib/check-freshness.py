@@ -20,9 +20,12 @@ and stops at 3 retries (configurable via MAX_RETRIES).
 import json
 import subprocess
 import sys
+from pathlib import Path
 
-LOCAL_TIMEOUT = 30
-NETWORK_TIMEOUT = 60
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from flow_utils import LOCAL_TIMEOUT, NETWORK_TIMEOUT, mutate_state, parse_conflict_files
+
 MAX_RETRIES = 3
 
 
@@ -33,8 +36,6 @@ def _check_and_increment_retries(state_file, increment=False):
     When increment=True, increments and returns the new count.
     Both operations happen under the mutate_state lock to prevent races.
     """
-    from flow_utils import mutate_state
-
     count = 0
 
     def _transform(state):
@@ -128,11 +129,7 @@ def check_freshness(state_file=None):
             "message": result.stderr.strip(),
         }
 
-    conflict_files = []
-    for line in status.stdout.splitlines():
-        xy = line[:2]
-        if "U" in xy or xy in ("DD", "AA"):
-            conflict_files.append(line[3:].strip())
+    conflict_files = parse_conflict_files(status.stdout)
 
     if conflict_files:
         response = {"status": "conflict", "files": conflict_files}

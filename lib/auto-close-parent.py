@@ -18,6 +18,11 @@ import argparse
 import json
 import subprocess
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from flow_utils import LOCAL_TIMEOUT
 
 
 def _run_api(cmd):
@@ -26,7 +31,7 @@ def _run_api(cmd):
     Returns (result, None) on success, (None, error) on failure or timeout.
     """
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=LOCAL_TIMEOUT)
     except subprocess.TimeoutExpired:
         return None, "timed out"
     if result.returncode != 0:

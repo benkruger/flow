@@ -2,6 +2,7 @@
 
 import importlib
 import json
+import os
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -35,8 +36,8 @@ def test_acquire_when_no_lock_exists(tmp_path):
     assert lock_data["acquired_at"] == "2026-01-01T10:00:00-08:00"
 
 
-def test_acquire_when_locked_by_alive_pid(tmp_path):
-    """Acquire returns locked status when another session holds the lock."""
+def test_acquire_when_locked_within_timeout(tmp_path):
+    """Acquire returns locked status when lock exists and timeout not exceeded."""
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     lock_file = state_dir / "start.lock"
@@ -47,9 +48,7 @@ def test_acquire_when_locked_by_alive_pid(tmp_path):
     }))
 
     with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"), \
-         patch("os.kill") as mock_kill:
-        mock_kill.return_value = None  # PID is alive
+         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"):
         result = _mod.acquire("new-feature")
 
     assert result["status"] == "locked"
@@ -57,8 +56,8 @@ def test_acquire_when_locked_by_alive_pid(tmp_path):
     assert result["pid"] == 99999
 
 
-def test_acquire_when_locked_by_dead_pid(tmp_path):
-    """Acquire breaks stale lock when the holding PID is dead."""
+def test_acquire_when_locked_by_dead_pid_within_timeout(tmp_path):
+    """Acquire returns locked even when PID is dead — only timeout matters."""
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     lock_file = state_dir / "start.lock"
@@ -69,17 +68,12 @@ def test_acquire_when_locked_by_dead_pid(tmp_path):
     }))
 
     with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"), \
-         patch("os.getppid", return_value=12345), \
-         patch("os.kill", side_effect=ProcessLookupError):
+         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"):
         result = _mod.acquire("new-feature")
 
-    assert result["status"] == "acquired"
-    assert result["stale_broken"] is True
-    assert result["stale_feature"] == "dead-feature"
-    lock_data = json.loads(lock_file.read_text())
-    assert lock_data["pid"] == 12345
-    assert lock_data["feature"] == "new-feature"
+    assert result["status"] == "locked"
+    assert result["feature"] == "dead-feature"
+    assert result["pid"] == 99999
 
 
 def test_acquire_when_lock_exceeds_timeout(tmp_path):
@@ -95,9 +89,7 @@ def test_acquire_when_lock_exceeds_timeout(tmp_path):
 
     with patch.object(_mod, "project_root", return_value=tmp_path), \
          patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
-         patch("os.getppid", return_value=12345), \
-         patch("os.kill") as mock_kill:
-        mock_kill.return_value = None  # PID is alive, but timeout exceeded
+         patch("os.getppid", return_value=12345):
         result = _mod.acquire("new-feature")
 
     assert result["status"] == "acquired"
@@ -153,25 +145,6 @@ def test_acquire_when_lock_has_missing_keys(tmp_path):
     assert result["stale_broken"] is True
 
 
-def test_acquire_when_pid_permission_error(tmp_path):
-    """Acquire treats PermissionError on kill as alive (process exists)."""
-    state_dir = tmp_path / ".flow-states"
-    state_dir.mkdir()
-    lock_file = state_dir / "start.lock"
-    lock_file.write_text(json.dumps({
-        "pid": 99999,
-        "feature": "other-feature",
-        "acquired_at": "2026-01-01T10:00:00-08:00",
-    }))
-
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"), \
-         patch("os.kill", side_effect=PermissionError):
-        result = _mod.acquire("new-feature")
-
-    assert result["status"] == "locked"
-
-
 def test_acquire_when_timestamp_unparseable(tmp_path):
     """Acquire breaks lock when acquired_at timestamp is invalid."""
     state_dir = tmp_path / ".flow-states"
@@ -185,9 +158,7 @@ def test_acquire_when_timestamp_unparseable(tmp_path):
 
     with patch.object(_mod, "project_root", return_value=tmp_path), \
          patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
-         patch("os.getppid", return_value=12345), \
-         patch("os.kill") as mock_kill:
-        mock_kill.return_value = None  # PID alive, but timestamp broken
+         patch("os.getppid", return_value=12345):
         result = _mod.acquire("new-feature")
 
     assert result["status"] == "acquired"
@@ -287,6 +258,47 @@ def test_break_and_acquire_race_reread_fails(tmp_path):
     assert result["pid"] == 0
 
 
+# --- _try_write_lock error paths ---
+
+
+def test_try_write_lock_write_failure_closes_fd(tmp_path):
+    """When os.write fails, the fd is still closed in the finally block."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    lock_file = state_dir / "start.lock"
+
+    with patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
+         patch("os.getppid", return_value=12345), \
+         patch("os.write", side_effect=OSError("disk full")):
+        result = _mod._try_write_lock(str(lock_file), "test-feature")
+
+    assert result is None
+    assert not lock_file.exists()
+
+
+def test_try_write_lock_unlink_failure_ignored(tmp_path):
+    """When os.unlink of the temp file fails, the error is silently ignored."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    lock_file = state_dir / "start.lock"
+
+    original_unlink = os.unlink
+
+    def fail_unlink(path):
+        if ".start-lock-" in str(path):
+            raise OSError("permission denied")
+        return original_unlink(path)
+
+    with patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
+         patch("os.getppid", return_value=12345), \
+         patch("os.unlink", side_effect=fail_unlink):
+        result = _mod._try_write_lock(str(lock_file), "test-feature")
+
+    assert result is not None
+    assert result["feature"] == "test-feature"
+    assert lock_file.exists()
+
+
 # --- acquire_with_wait tests ---
 
 
@@ -325,10 +337,8 @@ def test_acquire_with_wait_succeeds_after_retry(tmp_path):
     with patch.object(_mod, "project_root", return_value=tmp_path), \
          patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"), \
          patch("os.getppid", return_value=12345), \
-         patch("os.kill") as mock_kill, \
          patch.object(_mod.time, "sleep", side_effect=mock_sleep_side_effect), \
          patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0, 10.0]):
-        mock_kill.return_value = None
         result = _mod.acquire_with_wait("new-feature", timeout=300, interval=10)
 
     assert result["status"] == "acquired"
@@ -348,10 +358,8 @@ def test_acquire_with_wait_timeout(tmp_path):
 
     with patch.object(_mod, "project_root", return_value=tmp_path), \
          patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"), \
-         patch("os.kill") as mock_kill, \
          patch.object(_mod.time, "sleep"), \
          patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0, 35.0]):
-        mock_kill.return_value = None
         result = _mod.acquire_with_wait("new-feature", timeout=30, interval=10)
 
     assert result["status"] == "timeout"
@@ -361,34 +369,32 @@ def test_acquire_with_wait_timeout(tmp_path):
 
 
 def test_acquire_with_wait_stale_during_wait(tmp_path):
-    """Wait mode succeeds when PID dies between retries (stale detected)."""
+    """Wait mode succeeds when timeout expires between retries."""
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     lock_file = state_dir / "start.lock"
     lock_file.write_text(json.dumps({
         "pid": 99999,
-        "feature": "dying-feature",
+        "feature": "stale-feature",
         "acquired_at": "2026-01-01T10:00:00-08:00",
     }))
 
-    kill_calls = [None, ProcessLookupError]
-
-    def kill_side_effect(pid, sig):
-        effect = kill_calls.pop(0)
-        if effect is not None:
-            raise effect
+    now_calls = [
+        "2026-01-01T10:05:00-08:00",   # First acquire: within timeout → locked
+        "2026-01-01T10:35:00-08:00",   # Second acquire: timeout exceeded → break
+        "2026-01-01T10:35:00-08:00",   # _try_write_lock: new lock timestamp
+    ]
 
     with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"), \
+         patch.object(_mod, "now", side_effect=now_calls), \
          patch("os.getppid", return_value=12345), \
-         patch("os.kill", side_effect=kill_side_effect), \
          patch.object(_mod.time, "sleep"), \
          patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0, 10.0]):
         result = _mod.acquire_with_wait("new-feature", timeout=300, interval=10)
 
     assert result["status"] == "acquired"
     assert result["stale_broken"] is True
-    assert result["stale_feature"] == "dying-feature"
+    assert result["stale_feature"] == "stale-feature"
 
 
 def test_acquire_with_wait_timeout_zero(tmp_path):
@@ -404,10 +410,8 @@ def test_acquire_with_wait_timeout_zero(tmp_path):
 
     with patch.object(_mod, "project_root", return_value=tmp_path), \
          patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"), \
-         patch("os.kill") as mock_kill, \
          patch.object(_mod.time, "sleep") as mock_sleep, \
          patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0]):
-        mock_kill.return_value = None
         result = _mod.acquire_with_wait("new-feature", timeout=0, interval=10)
 
     assert result["status"] == "timeout"
@@ -456,8 +460,8 @@ def test_check_when_free(tmp_path):
     assert result["status"] == "free"
 
 
-def test_check_when_dead_pid(tmp_path):
-    """Check returns free when lock exists but PID is dead."""
+def test_check_when_dead_pid_within_timeout(tmp_path):
+    """Check returns locked even when PID is dead — only timeout matters."""
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     lock_data = {"pid": 99999, "feature": "dead-feature",
@@ -465,7 +469,24 @@ def test_check_when_dead_pid(tmp_path):
     (state_dir / "start.lock").write_text(json.dumps(lock_data))
 
     with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch("os.kill", side_effect=ProcessLookupError):
+         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"):
+        result = _mod.check()
+
+    assert result["status"] == "locked"
+    assert result["feature"] == "dead-feature"
+    assert result["pid"] == 99999
+
+
+def test_check_when_timed_out(tmp_path):
+    """Check returns free when lock has exceeded the 30-minute timeout."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    lock_data = {"pid": 99999, "feature": "old-feature",
+                 "acquired_at": "2026-01-01T08:00:00-08:00"}
+    (state_dir / "start.lock").write_text(json.dumps(lock_data))
+
+    with patch.object(_mod, "project_root", return_value=tmp_path), \
+         patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"):
         result = _mod.check()
 
     assert result["status"] == "free"
@@ -480,8 +501,7 @@ def test_check_when_locked(tmp_path):
     (state_dir / "start.lock").write_text(json.dumps(lock_data))
 
     with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch("os.kill") as mock_kill:
-        mock_kill.return_value = None  # PID alive
+         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"):
         result = _mod.check()
 
     assert result["status"] == "locked"

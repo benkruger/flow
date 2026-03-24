@@ -18,9 +18,11 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
-LOCAL_TIMEOUT = 30
-NETWORK_TIMEOUT = 60
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from flow_utils import LOCAL_TIMEOUT, NETWORK_TIMEOUT, parse_conflict_files
 
 
 def _remove_message_file(message_file):
@@ -65,13 +67,7 @@ def finalize_commit(message_file, branch):
             )
         except subprocess.TimeoutExpired:
             return {"status": "error", "step": "pull", "message": result.stderr.strip()}
-        conflict_files = []
-        for line in status.stdout.strip().split("\n"):
-            if not line:
-                continue
-            xy = line[:2]
-            if "U" in xy or xy in ("DD", "AA"):
-                conflict_files.append(line[3:].strip())
+        conflict_files = parse_conflict_files(status.stdout)
 
         if conflict_files:
             return {"status": "conflict", "files": conflict_files}
