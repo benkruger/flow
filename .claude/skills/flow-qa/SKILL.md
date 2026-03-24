@@ -195,8 +195,8 @@ all set-up frameworks sequentially.
 
 ### Step 1 — Verify setup
 
-Check that `.qa-repos/<framework>` exists. If not, run `--start`
-first and stop.
+Check that `.qa-repos/<framework>` exists. If not, tell the user
+to run `/flow-qa --start` first and stop.
 
 ### Step 2 — Reset and re-prime
 
@@ -220,7 +220,8 @@ Get the first open issue from the QA repo:
 gh issue list --repo <owner/repo> --state open --json number --jq '.[0].number'
 ```
 
-If no issues exist, stop and report.
+If no issues exist, print "No open issues in QA repo — run
+`/flow-qa --reset <framework>` to recreate seed issues" and stop.
 
 ### Step 4 — Execute the flow
 
@@ -241,10 +242,13 @@ PR is merged.
 
 ### Step 5 — Return to FLOW repo
 
-After all phases complete, change back to the FLOW repo root:
+After all phases complete, the worktree has been removed and the Bash
+cwd may be invalid. Change back to the FLOW repo root using the
+absolute path you were in before Step 4 (not a relative `cd ../..`
+which may fail if the cwd was deleted):
 
 ```bash
-cd ../..
+cd <absolute-path-to-flow-repo>
 ```
 
 ### Step 6 — Verify
@@ -306,9 +310,9 @@ above for the full step-by-step procedure.
 - PR not created or not merged
 - Artifacts left behind after Complete
 
-### Tier 2 — Concurrent (Two Autonomous Flows)
+### Tier 2 — Sequential (Two Autonomous Flows)
 
-**Goal:** Verify two flows run simultaneously without interference.
+**Goal:** Verify two sequential flows on the same repo complete without interference.
 
 **Steps:**
 
