@@ -33,6 +33,16 @@ operation could follow a reference back to the real resource and
 mutate it, the fixture is unsafe. Replace indirect references with
 self-contained fakes that cannot escape the temp directory.
 
+## Coverage Changes After Main Merge
+
+When CI coverage reports unexpected statement counts (e.g. a file
+shows 456 stmts instead of 398), check whether main was recently
+merged into the branch before diagnosing cross-process interference.
+Merging main brings in new source lines from other PRs — this is
+the most common cause of coverage data "changing" between CI runs.
+Do not attribute coverage changes to env var leaking or subprocess
+interference without first verifying the file contents are unchanged.
+
 ## Ambiguous Check Name Filters
 
 When filtering a list of check results by name substring (e.g.
