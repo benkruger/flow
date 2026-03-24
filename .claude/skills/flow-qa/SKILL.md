@@ -88,13 +88,17 @@ supports `python` only (rails and ios are out of scope for now).
 
 ### Step 1 — Clone QA repo
 
-If `.qa-repos/python` does not already exist, clone it:
+Remove any existing clone and start fresh:
+
+```bash
+rm -rf .qa-repos/python
+```
+
+Then clone:
 
 ```bash
 gh repo clone benkruger/flow-qa-python .qa-repos/python
 ```
-
-If the directory already exists, skip cloning.
 
 ### Step 2 — Prime QA repo
 

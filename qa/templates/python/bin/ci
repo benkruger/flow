@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 import subprocess
 import sys
+from pathlib import Path
+
+repo_root = str(Path(__file__).resolve().parent.parent)
 
 result = subprocess.run(
-    [sys.executable, "-m", "pytest", "tests/", "-v"],
-    cwd=str(__import__("pathlib").Path(__file__).resolve().parent.parent),
+    [sys.executable, "-m", "pytest", "tests/", "-v", "--rootdir", repo_root],
+    cwd=repo_root,
 )
 sys.exit(result.returncode)
