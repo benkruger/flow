@@ -1146,27 +1146,13 @@ def test_flow_qa_has_setup_commands():
     )
 
 
-def test_flow_qa_bare_is_status():
-    """Bare /flow-qa must be a status check, not an alias for --start."""
+def test_flow_qa_asks_for_framework():
+    """flow-qa must prompt for framework when none is given."""
     content = (REPO_ROOT / ".claude" / "skills" / "flow-qa" / "SKILL.md").read_text()
-    assert "Bare `/flow-qa` (no flags)" in content, (
-        "flow-qa/SKILL.md must have a 'Bare /flow-qa (no flags)' section"
-    )
-    assert "FLOW QA — READY" in content, (
-        "flow-qa/SKILL.md must show READY status when QA repos are set up"
-    )
-    assert "FLOW QA — NOT SET UP" in content, (
-        "flow-qa/SKILL.md must show NOT SET UP status when QA repos are missing"
+    assert "AskUserQuestion" in content, (
+        "flow-qa/SKILL.md must use AskUserQuestion when no framework is given"
     )
 
-
-def test_flow_qa_no_ask_user():
-    """flow-qa must not prompt — all paths are automatic."""
-    content = (REPO_ROOT / ".claude" / "skills" / "flow-qa" / "SKILL.md").read_text()
-    assert "AskUserQuestion" not in content, (
-        "flow-qa/SKILL.md must not use AskUserQuestion — "
-        "all paths should run without prompting"
-    )
 
 
 def test_commit_mode_resolution():
