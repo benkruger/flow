@@ -102,6 +102,8 @@ class TuiApp:
                 self._draw_log_view()
             elif self.view == "issues":
                 self._draw_issues_view()
+            elif self.view == "tasks":
+                self._draw_tasks_view()
             self.stdscr.refresh()
 
             key = self.stdscr.getch()
@@ -143,8 +145,8 @@ class TuiApp:
         else:
             orch_label = "Orchestration"
 
-        flows_attr = curses.A_BOLD if self.active_tab == 0 else curses.A_DIM
-        orch_attr = curses.A_BOLD if self.active_tab == 1 else curses.A_DIM
+        flows_attr = curses.A_BOLD | self._color(COLOR_LINK) if self.active_tab == 0 else curses.A_DIM
+        orch_attr = curses.A_BOLD | self._color(COLOR_LINK) if self.active_tab == 1 else curses.A_DIM
 
         col = 2
         self._safe_addstr(row, col, flows_label, flows_attr)
@@ -193,6 +195,8 @@ class TuiApp:
             else:
                 marker = "  "
             attr = curses.A_BOLD if i == self.selected else 0
+            if flow["blocked"]:
+                attr = attr | self._color(COLOR_FAILED)
             phase_info = f"{flow['phase_number']}: {flow['phase_name']}"
             pr_info = f"PR #{flow['pr_number']}" if flow["pr_number"] else ""
             feature_display = flow['feature']
@@ -213,7 +217,7 @@ class TuiApp:
             self._draw_detail_panel(detail_start)
 
         # Footer
-        footer = " [\u2190\u2192] Tab  [\u2191\u2193] Navigate  [Enter] Worktree  [p] PR  [i] Issues  [I] Issue  [l] Log  [a] Abort  [r] Refresh  [q] Quit"
+        footer = " [\u2190\u2192] Tab  [\u2191\u2193] Navigate  [Enter] Worktree  [p] PR  [i] Issues  [I] Issue  [t] Tasks  [l] Log  [a] Abort  [r] Refresh  [q] Quit"
         self._safe_addstr(max_y - 1, 0, footer, curses.A_DIM)
 
     def _draw_detail_panel(self, start_row):
@@ -355,6 +359,51 @@ class TuiApp:
         footer = " [Esc] Back  [Enter] Open  [\u2191\u2193] Navigate  [q] Quit"
         self._safe_addstr(max_y - 1, 0, footer, curses.A_DIM)
 
+    def _draw_tasks_view(self):
+        """Draw the tasks/plan view for the selected flow."""
+        max_y, max_x = self.stdscr.getmaxyx()
+
+        if not self.flows:
+            self.view = "list"
+            return
+
+        flow = self.flows[self.selected]
+        plan_path = flow.get("plan_path")
+
+        # Header
+        header = f" {flow['feature']} \u2014 Tasks "
+        border = "\u2500" * max_x
+        self._safe_addstr(0, 0, border, curses.A_DIM)
+        self._safe_addstr(0, 2, header, curses.A_BOLD)
+
+        # Read plan file
+        plan_content = None
+        if plan_path:
+            try:
+                plan_content = Path(plan_path).read_text()
+            except OSError:
+                pass
+            if plan_content is None:
+                # Try relative to project root
+                try:
+                    plan_content = (self.root / plan_path).read_text()
+                except OSError:
+                    pass
+
+        if not plan_content:
+            self._safe_addstr(2, 2, "No plan file.")
+        else:
+            lines = plan_content.split("\n")
+            for i, line in enumerate(lines):
+                row = 2 + i
+                if row >= max_y - 2:
+                    break
+                self._safe_addstr(row, 2, line)
+
+        # Footer
+        footer = " [Esc] Back  [q] Quit"
+        self._safe_addstr(max_y - 1, 0, footer, curses.A_DIM)
+
     def _handle_input(self, key):
         """Dispatch keyboard input."""
         if self.confirming_abort:
@@ -365,12 +414,14 @@ class TuiApp:
             self.active_tab = min(1, self.active_tab + 1)
         elif key == curses.KEY_LEFT:
             self.active_tab = max(0, self.active_tab - 1)
-        elif key == 27 and self.view in ("log", "issues"):
+        elif key == 27 and self.view in ("log", "issues", "tasks"):
             self.view = "list"
         elif self.active_tab == 1:
             self._handle_orch_input(key)
         elif self.view == "issues":
             self._handle_issues_input(key)
+        elif self.view == "tasks":
+            pass
         elif self.view == "list":
             self._handle_list_input(key)
 
@@ -391,6 +442,8 @@ class TuiApp:
             self.view = "log"
         elif key == ord("i"):
             self.view = "issues"
+        elif key == ord("t"):
+            self.view = "tasks"
         elif key == ord("I"):
             self._open_flow_issue()
         elif key == ord("a"):
