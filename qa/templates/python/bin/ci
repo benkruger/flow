@@ -4,7 +4,21 @@ import sys
 from pathlib import Path
 
 repo_root = Path(__file__).resolve().parent.parent
-flow_venv = repo_root.parent.parent / ".venv" / "bin" / "python3"
+
+# Walk up from repo_root to find the FLOW repo's .venv.
+# Works from both the QA repo root and worktrees at any depth.
+search = repo_root
+flow_venv = None
+while search != search.parent:
+    candidate = search / ".venv" / "bin" / "python3"
+    if candidate.exists():
+        flow_venv = candidate
+        break
+    search = search.parent
+
+if flow_venv is None:
+    print("Error: no .venv found in any parent directory", file=sys.stderr)
+    sys.exit(1)
 
 result = subprocess.run(
     [str(flow_venv), "-m", "pytest", "tests/", "-v", "--rootdir", str(repo_root)],
