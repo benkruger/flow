@@ -34,11 +34,3 @@ def test_main_prints_id(capsys):
     output = captured.out.strip()
     assert len(output) == 8
     assert re.fullmatch(r"[0-9a-f]{8}", output)
-
-
-def test_cli_integration(capsys):
-    generate_id_mod.main()
-    captured = capsys.readouterr()
-    output = captured.out.strip()
-    assert len(output) == 8
-    assert re.fullmatch(r"[0-9a-f]{8}", output)
