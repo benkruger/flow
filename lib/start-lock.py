@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -61,17 +62,6 @@ def _read_lock(lock_file):
         return None, True
 
 
-def _is_pid_alive(pid):
-    """Check if a process is still running."""
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True  # Process exists but we can't signal it
-
-
 def _is_timed_out(acquired_at):
     """Check if the lock has exceeded the stale timeout."""
     try:
@@ -86,23 +76,32 @@ def _is_timed_out(acquired_at):
 def _try_write_lock(lock_file, feature):
     """Atomically create a new lock file.
 
-    Uses O_CREAT | O_EXCL so exactly one process wins when multiple
-    race to create the file.  Returns lock_data on success, None on
-    FileExistsError (another process created it first).
+    Writes lock data to a temp file first, then hard-links it to the
+    lock path.  os.link() fails with FileExistsError if the target
+    already exists, so exactly one process wins.  The lock file is
+    never visible in an empty/partial state.
     """
-    try:
-        fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        return None
     lock_data = {
         "pid": os.getppid(),
         "feature": feature,
         "acquired_at": now(),
     }
+    lock_dir = str(Path(lock_file).parent)
+    fd, tmp_path = tempfile.mkstemp(dir=lock_dir, prefix=".start-lock-")
     try:
         os.write(fd, json.dumps(lock_data, indent=2).encode())
-    finally:
         os.close(fd)
+        fd = -1
+        os.link(tmp_path, lock_file)
+    except (FileExistsError, OSError):
+        return None
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
     return lock_data
 
 
@@ -149,7 +148,7 @@ def acquire(feature):
     existing_feature = existing["feature"]
     acquired_at = existing["acquired_at"]
 
-    if not _is_pid_alive(pid) or _is_timed_out(acquired_at):
+    if _is_timed_out(acquired_at):
         return _break_and_acquire(lock_file, feature, existing_feature)
 
     return {
@@ -198,14 +197,13 @@ def check():
     if existing is None:
         return {"status": "free"}
 
-    pid = existing["pid"]
-    if not _is_pid_alive(pid):
+    if _is_timed_out(existing["acquired_at"]):
         return {"status": "free"}
 
     return {
         "status": "locked",
         "feature": existing["feature"],
-        "pid": pid,
+        "pid": existing["pid"],
         "acquired_at": existing["acquired_at"],
     }
 
