@@ -134,8 +134,8 @@ def test_timeout_counts_as_failure():
 # --- CLI integration ---
 
 
-def test_cli_integration(tmp_path):
-    """Subprocess call with --state-file reads prompt and closes issues."""
+def test_cli_integration(tmp_path, monkeypatch, capsys):
+    """In-process main() with --state-file reads prompt and closes issues."""
     state = {
         "prompt": "fix #42 and #99",
         "repo": "test/test",
@@ -144,17 +144,16 @@ def test_cli_integration(tmp_path):
     state_file = tmp_path / "state.json"
     state_file.write_text(json.dumps(state))
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "close-issues.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--state-file", str(state_file)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["close-issues.py",
+                                      "--state-file", str(state_file)])
 
-    output = json.loads(result.stdout)
+    _mod.main()
+
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] in ("ok", "error")
 
 
-def test_cli_no_prompt_field(tmp_path):
+def test_cli_no_prompt_field(tmp_path, monkeypatch, capsys):
     """State file without prompt field outputs ok with empty lists."""
     state = {
         "branch": "test",
@@ -162,28 +161,27 @@ def test_cli_no_prompt_field(tmp_path):
     state_file = tmp_path / "state.json"
     state_file.write_text(json.dumps(state))
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "close-issues.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--state-file", str(state_file)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["close-issues.py",
+                                      "--state-file", str(state_file)])
 
-    output = json.loads(result.stdout)
+    _mod.main()
+
+    output = json.loads(capsys.readouterr().out)
     assert output == {"status": "ok", "closed": [], "failed": []}
 
 
-def test_cli_corrupt_state_file(tmp_path):
+def test_cli_corrupt_state_file(tmp_path, monkeypatch, capsys):
     """Corrupt state file returns structured error."""
     state_file = tmp_path / "state.json"
     state_file.write_text("{corrupt")
 
-    script = Path(__file__).resolve().parent.parent / "lib" / "close-issues.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--state-file", str(state_file)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["close-issues.py",
+                                      "--state-file", str(state_file)])
 
-    assert result.returncode == 1
-    output = json.loads(result.stdout)
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+
+    output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
     assert "state file" in output["message"].lower()

@@ -2,12 +2,11 @@
 
 import importlib.util
 import json
-import subprocess
 import sys
 
-from conftest import LIB_DIR, make_state, PHASE_NAMES
+import pytest
 
-SCRIPT = str(LIB_DIR / "format-complete-summary.py")
+from conftest import LIB_DIR, make_state, PHASE_NAMES
 
 
 def _import_module():
@@ -330,30 +329,30 @@ def test_summary_version():
     assert "FLOW v" in result["summary"]
 
 
-# --- CLI behavior (subprocess) ---
+# --- CLI behavior (in-process main()) ---
 
 
-def test_cli_happy_path(tmp_path):
+def test_cli_happy_path(tmp_path, monkeypatch, capsys):
     """Full CLI round-trip: write state, run CLI, verify JSON output."""
+    mod = _import_module()
     state = _all_complete_state()
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--state-file", str(state_path)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["format-complete-summary.py",
+                                      "--state-file", str(state_path)])
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert "Test Feature" in data["summary"]
     assert isinstance(data["total_seconds"], int)
 
 
-def test_cli_with_closed_issues_file(tmp_path):
+def test_cli_with_closed_issues_file(tmp_path, monkeypatch, capsys):
     """CLI with --closed-issues-file includes Resolved section."""
+    mod = _import_module()
     state = _all_complete_state()
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
@@ -364,64 +363,62 @@ def test_cli_with_closed_issues_file(tmp_path):
     closed_path = tmp_path / "closed.json"
     closed_path.write_text(json.dumps(closed))
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--state-file", str(state_path),
-         "--closed-issues-file", str(closed_path)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["format-complete-summary.py",
+                                      "--state-file", str(state_path),
+                                      "--closed-issues-file", str(closed_path)])
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert "Resolved" in data["summary"]
     assert "#407" in data["summary"]
 
 
-def test_cli_missing_closed_issues_file(tmp_path):
+def test_cli_missing_closed_issues_file(tmp_path, monkeypatch, capsys):
     """CLI with nonexistent --closed-issues-file gracefully omits Resolved section."""
+    mod = _import_module()
     state = _all_complete_state()
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--state-file", str(state_path),
-         "--closed-issues-file", str(tmp_path / "nonexistent.json")],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["format-complete-summary.py",
+                                      "--state-file", str(state_path),
+                                      "--closed-issues-file",
+                                      str(tmp_path / "nonexistent.json")])
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert "Resolved" not in data["summary"]
 
 
-def test_cli_missing_state_file(tmp_path):
+def test_cli_missing_state_file(tmp_path, monkeypatch, capsys):
     """CLI with nonexistent state file returns error."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--state-file", str(tmp_path / "missing.json")],
-        capture_output=True, text=True,
-    )
+    mod = _import_module()
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", ["format-complete-summary.py",
+                                      "--state-file",
+                                      str(tmp_path / "missing.json")])
+
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "not found" in data["message"]
 
 
-def test_cli_corrupt_state_file(tmp_path):
+def test_cli_corrupt_state_file(tmp_path, monkeypatch, capsys):
     """CLI with corrupt JSON returns error."""
+    mod = _import_module()
     bad_file = tmp_path / "state.json"
     bad_file.write_text("{bad json")
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--state-file", str(bad_file)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["format-complete-summary.py",
+                                      "--state-file", str(bad_file)])
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
