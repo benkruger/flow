@@ -5,16 +5,4 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-if [ -x "$REPO_ROOT/.venv/bin/pip" ]; then
-  PIP="$REPO_ROOT/.venv/bin/pip"
-else
-  PIP="pip"
-fi
-
-if [ -f "requirements.txt" ]; then
-    "$PIP" install --upgrade pip -q
-    "$PIP" install -r requirements.txt --upgrade -q
-elif [ -f "pyproject.toml" ]; then
-    "$PIP" install --upgrade pip -q
-    "$PIP" install -e ".[dev]" --upgrade -q
-fi
+"$REPO_ROOT/.venv/bin/pip" install -r requirements.txt -q

@@ -34,11 +34,9 @@ def dep_project(tmp_path):
     return tmp_path
 
 
-def _run_dep(project_dir, extra_env=None):
+def _run_dep(project_dir):
     """Run bin/dependencies inside the given project directory."""
     env = {k: v for k, v in os.environ.items() if k != "COVERAGE_PROCESS_START"}
-    if extra_env:
-        env.update(extra_env)
     return subprocess.run(
         ["bash", str(project_dir / "bin" / "dependencies")],
         capture_output=True, text=True, cwd=str(project_dir), env=env,
@@ -60,29 +58,12 @@ def test_script_is_valid_bash(tmp_path):
     assert result.returncode == 0, f"Syntax error: {result.stderr}"
 
 
-def test_skips_when_no_requirements_or_pyproject(tmp_path):
-    """Running in a directory with neither requirements.txt nor pyproject.toml exits cleanly."""
-    script = tmp_path / "dependencies"
-    script.write_text((BIN_DIR / "dependencies").read_text())
-    script.chmod(0o755)
-    result = subprocess.run(
-        ["bash", str(script)],
-        capture_output=True, text=True, cwd=str(tmp_path),
-    )
-    assert result.returncode == 0
-
-
-def test_uses_venv_pip_when_available(dep_project):
+def test_uses_venv_pip(dep_project):
     result = _run_dep(dep_project)
-    assert result.stdout.count("VENV_MARKER") == 2, "pip should be called twice (self-update + install)"
+    assert result.stdout.count("VENV_MARKER") == 1, "pip should be called once (install)"
 
 
-def test_falls_back_to_system_pip_when_no_venv(dep_project):
+def test_fails_when_no_venv(dep_project):
     shutil.rmtree(dep_project / ".venv")
-    local_bin = dep_project / "local_bin"
-    local_bin.mkdir()
-    fake_pip = local_bin / "pip"
-    fake_pip.write_text("#!/usr/bin/env bash\necho SYSTEM_PIP_MARKER\n")
-    fake_pip.chmod(0o755)
-    result = _run_dep(dep_project, extra_env={"PATH": f"{local_bin}:{os.environ['PATH']}"})
-    assert result.stdout.count("SYSTEM_PIP_MARKER") == 2, "pip should be called twice (self-update + install)"
+    result = _run_dep(dep_project)
+    assert result.returncode != 0, "Should fail when .venv/bin/pip is missing"
