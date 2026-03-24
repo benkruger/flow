@@ -33,7 +33,7 @@ def test_find_templates_rails():
 def test_find_templates_python():
     """Finds all template files for python framework."""
     templates = _mod.find_templates("python", templates_dir=str(TEMPLATES_DIR))
-    assert "pyproject.toml" in templates
+    assert "bin/dependencies" in templates
     assert "bin/ci" in templates
     assert "src/calculator.py" in templates
     assert "tests/test_calculator.py" in templates
