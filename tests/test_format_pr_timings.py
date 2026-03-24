@@ -2,15 +2,9 @@
 
 import importlib.util
 import json
-import subprocess
 import sys
-from pathlib import Path
-
-import pytest
 
 from conftest import LIB_DIR, make_state
-
-SCRIPT = str(LIB_DIR / "format-pr-timings.py")
 
 # Import format-pr-timings.py for in-process unit tests
 _spec = importlib.util.spec_from_file_location(
@@ -119,10 +113,10 @@ def test_format_timings_table_uses_format_time():
     assert "1h 1m" in result
 
 
-# --- CLI end-to-end ---
+# --- CLI end-to-end (in-process) ---
 
 
-def test_cli_writes_output_file(tmp_path):
+def test_cli_writes_output_file(tmp_path, monkeypatch, capsys):
     """CLI reads state file and writes markdown to output file."""
     state = make_state(
         current_phase="flow-complete",
@@ -142,45 +136,44 @@ def test_cli_writes_output_file(tmp_path):
     state_file.write_text(json.dumps(state))
     output_file = tmp_path / "timings.md"
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--state-file", str(state_file),
-         "--output", str(output_file)],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", ["format-pr-timings.py",
+                                      "--state-file", str(state_file),
+                                      "--output", str(output_file)])
+
+    _mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert output_file.exists()
     content = output_file.read_text()
     assert "| Phase | Duration |" in content
 
 
-def test_cli_missing_state_file(tmp_path):
+def test_cli_missing_state_file(tmp_path, monkeypatch, capsys):
     """CLI returns error when state file does not exist."""
     output_file = tmp_path / "timings.md"
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--state-file", str(tmp_path / "nonexistent.json"),
-         "--output", str(output_file)],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+
+    monkeypatch.setattr("sys.argv", ["format-pr-timings.py",
+                                      "--state-file", str(tmp_path / "nonexistent.json"),
+                                      "--output", str(output_file)])
+
+    _mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
 
 
-def test_cli_invalid_json_returns_error(tmp_path):
+def test_cli_invalid_json_returns_error(tmp_path, monkeypatch, capsys):
     """CLI returns error when state file contains invalid JSON."""
     state_file = tmp_path / "bad.json"
     state_file.write_text("not valid json {{{")
     output_file = tmp_path / "timings.md"
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--state-file", str(state_file),
-         "--output", str(output_file)],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+
+    monkeypatch.setattr("sys.argv", ["format-pr-timings.py",
+                                      "--state-file", str(state_file),
+                                      "--output", str(output_file)])
+
+    _mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"

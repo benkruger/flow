@@ -2,7 +2,6 @@
 
 import importlib.util
 import json
-import subprocess
 import sys
 
 from conftest import LIB_DIR, make_state
@@ -130,26 +129,25 @@ def test_label_order_preserved():
     assert result["banner_line"] == "Issues filed: 3 (Flaky Test: 2, Rule: 1)"
 
 
-# --- CLI behavior (subprocess) ---
+# --- CLI behavior (in-process) ---
 
 
-def test_cli_happy_path(tmp_path):
+def test_cli_happy_path(tmp_path, monkeypatch, capsys):
     """Full CLI round-trip: write state, run CLI, verify output."""
+    mod = _import_module()
     state = make_state()
     state["issues_filed"] = _make_issues("Rule", "Flow")
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
     output_path = tmp_path / "issues.md"
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--state-file", str(state_path),
-         "--output", str(output_path)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["format-issues-summary.py",
+                                      "--state-file", str(state_path),
+                                      "--output", str(output_path)])
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert data["has_issues"] is True
     assert "Issues filed: 2" in data["banner_line"]
@@ -158,55 +156,53 @@ def test_cli_happy_path(tmp_path):
     assert "| Label | Title | Phase | URL |" in table_on_disk
 
 
-def test_cli_no_issues(tmp_path):
+def test_cli_no_issues(tmp_path, monkeypatch, capsys):
     """CLI with no issues returns has_issues=False and skips file write."""
+    mod = _import_module()
     state = make_state()
     state["issues_filed"] = []
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
     output_path = tmp_path / "issues.md"
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--state-file", str(state_path),
-         "--output", str(output_path)],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["format-issues-summary.py",
+                                      "--state-file", str(state_path),
+                                      "--output", str(output_path)])
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
     assert data["has_issues"] is False
     assert not output_path.exists()
 
 
-def test_cli_missing_state_file(tmp_path):
+def test_cli_missing_state_file(tmp_path, monkeypatch, capsys):
     """CLI with nonexistent state file returns error."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--state-file", str(tmp_path / "missing.json"),
-         "--output", str(tmp_path / "out.md")],
-        capture_output=True, text=True,
-    )
+    mod = _import_module()
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    monkeypatch.setattr("sys.argv", ["format-issues-summary.py",
+                                      "--state-file", str(tmp_path / "missing.json"),
+                                      "--output", str(tmp_path / "out.md")])
+
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
     assert "not found" in data["message"]
 
 
-def test_cli_corrupt_state_file(tmp_path):
+def test_cli_corrupt_state_file(tmp_path, monkeypatch, capsys):
     """CLI with corrupt JSON returns error."""
+    mod = _import_module()
     bad_file = tmp_path / "state.json"
     bad_file.write_text("{bad json")
 
-    result = subprocess.run(
-        [sys.executable, SCRIPT,
-         "--state-file", str(bad_file),
-         "--output", str(tmp_path / "out.md")],
-        capture_output=True, text=True,
-    )
+    monkeypatch.setattr("sys.argv", ["format-issues-summary.py",
+                                      "--state-file", str(bad_file),
+                                      "--output", str(tmp_path / "out.md")])
 
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"

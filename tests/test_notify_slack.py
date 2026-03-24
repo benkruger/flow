@@ -8,8 +8,6 @@ from unittest.mock import patch
 
 from conftest import LIB_DIR, make_flow_json
 
-SCRIPT = str(LIB_DIR / "notify-slack.py")
-
 
 def _import_module():
     """Import notify-slack.py for in-process unit tests."""
@@ -185,18 +183,17 @@ def test_post_message_invalid_json_response():
 # --- CLI integration ---
 
 
-def _run(args, cwd=None):
-    """Run notify-slack.py via subprocess."""
-    cmd = [sys.executable, SCRIPT] + args
-    return subprocess.run(cmd, capture_output=True, text=True,
-                          cwd=str(cwd) if cwd else None)
-
-
-def test_cli_no_config_returns_skipped(tmp_path):
+def test_cli_no_config_returns_skipped(tmp_path, monkeypatch, capsys):
     """CLI returns skipped when no .flow.json exists."""
-    result = _run(["--phase", "flow-start", "--message", "test"], cwd=tmp_path)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod = _import_module()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["notify-slack.py",
+                                      "--phase", "flow-start",
+                                      "--message", "test"])
+
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert data["status"] == "skipped"
 
 
@@ -236,11 +233,17 @@ def test_cli_with_thread_ts(tmp_path):
     assert result["status"] == "ok"
 
 
-def test_cli_returns_valid_json(tmp_path):
+def test_cli_returns_valid_json(tmp_path, monkeypatch, capsys):
     """CLI produces valid JSON on stdout."""
-    result = _run(["--phase", "flow-start", "--message", "test"], cwd=tmp_path)
-    assert result.returncode == 0
-    data = json.loads(result.stdout)
+    mod = _import_module()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["notify-slack.py",
+                                      "--phase", "flow-start",
+                                      "--message", "test"])
+
+    mod.main()
+
+    data = json.loads(capsys.readouterr().out)
     assert "status" in data
 
 

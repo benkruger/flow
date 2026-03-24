@@ -1,7 +1,6 @@
 """Tests for lib/extract-release-notes.py."""
 
 import importlib.util
-import subprocess
 import sys
 from pathlib import Path
 
@@ -16,8 +15,6 @@ _spec = importlib.util.spec_from_file_location(
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 extract = _mod.extract
-
-SCRIPT = str(LIB_DIR / "extract-release-notes.py")
 
 SAMPLE_NOTES = """\
 # Release Notes
@@ -73,18 +70,12 @@ def test_missing_version_returns_empty(notes_file):
     assert result == ""
 
 
-def test_cli_writes_output_file(tmp_path):
-    notes = tmp_path / "RELEASE-NOTES.md"
-    notes.write_text(SAMPLE_NOTES)
-    # Run from the parent of lib/ so the script finds RELEASE-NOTES.md
-    # But the script uses Path(__file__).parent.parent, so we need to
-    # supply the file via the actual repo. Instead, test via subprocess
-    # pointing at the real repo's RELEASE-NOTES.md.
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "v0.5.1"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0
+def test_cli_writes_output_file(monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["extract-release-notes.py", "v0.5.1"])
+
+    _mod.main()
+
+    captured = capsys.readouterr()
     out_file = REPO_ROOT / "tmp" / "release-notes-v0.5.1.md"
     assert out_file.exists()
     content = out_file.read_text()
@@ -92,14 +83,14 @@ def test_cli_writes_output_file(tmp_path):
     out_file.unlink()
 
 
-def test_cli_no_arguments_exits_1():
+def test_cli_no_arguments_exits_1(monkeypatch, capsys):
     """Running the script with no arguments should exit 1 with usage message."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 1
-    assert "Usage" in result.stdout
+    monkeypatch.setattr("sys.argv", ["extract-release-notes.py"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    assert "Usage" in capsys.readouterr().out
 
 
 def test_version_in_body_text_not_matched(tmp_path):
@@ -117,23 +108,23 @@ def test_version_in_body_text_not_matched(tmp_path):
     assert result == ""
 
 
-def test_cli_missing_version_exits_1():
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "v99.99.99"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 1
-    assert "no section found" in result.stdout
+def test_cli_missing_version_exits_1(monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["extract-release-notes.py", "v99.99.99"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    assert "no section found" in capsys.readouterr().out
 
 
-def test_cli_invalid_version_format_exits_1():
+def test_cli_invalid_version_format_exits_1(monkeypatch, capsys):
     """Running the script with a non-semver version should exit 1."""
-    result = subprocess.run(
-        [sys.executable, SCRIPT, "../../etc/passwd"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 1
-    assert "invalid version format" in result.stdout
+    monkeypatch.setattr("sys.argv", ["extract-release-notes.py", "../../etc/passwd"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        _mod.main()
+    assert exc_info.value.code == 1
+    assert "invalid version format" in capsys.readouterr().out
 
 
 # --- In-process test for exception path not reachable via subprocess ---
