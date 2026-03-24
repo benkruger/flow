@@ -2,7 +2,6 @@
 
 import importlib.util
 import json
-import sys
 
 import pytest
 
