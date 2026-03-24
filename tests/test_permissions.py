@@ -1124,7 +1124,7 @@ SETTINGS_ALLOW_CATEGORIES = [
     ("bin", ["Bash(bin/", "Bash(*bin/"]),
     ("plugins", ["Bash(claude plugin"]),
     ("cleanup", ["Bash(rm "]),
-    ("build", ["Bash(cd ", "Bash(make ", "Bash(diff ", "Bash(.venv/", "Bash(curl "]),
+    ("build", ["Bash(cd ", "Bash(pwd)", "Bash(make ", "Bash(diff ", "Bash(.venv/", "Bash(curl "]),
     ("read", ["Read("]),
     ("skills", ["Skill("]),
     ("agents", ["Agent("]),

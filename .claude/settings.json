@@ -21,6 +21,7 @@
       "Bash(rm -rf *.qa-repos*)",
       "Bash(rm .claude/settings.local.json)",
       "Bash(cd *)",
+      "Bash(pwd)",
       "Bash(make *)",
       "Bash(diff *)",
       "Bash(.venv/bin/pip install *)",
