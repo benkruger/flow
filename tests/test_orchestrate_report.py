@@ -1,20 +1,9 @@
 """Tests for lib/orchestrate-report.py — generates morning report from orchestration state."""
 
-import importlib.util
 import json
 import sys
 
-from conftest import LIB_DIR, make_orchestrate_state
-
-
-def _import_module():
-    """Import orchestrate-report.py for in-process unit tests."""
-    spec = importlib.util.spec_from_file_location(
-        "orchestrate_report", LIB_DIR / "orchestrate-report.py"
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+from conftest import import_lib, make_orchestrate_state
 
 
 def _make_report_state(queue_items=None, **kwargs):
@@ -58,7 +47,7 @@ def _failed_item(issue_number, title, reason="CI failed after 3 attempts"):
 
 def test_report_all_completed():
     """Report shows all issues as completed."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
     state = _make_report_state(queue_items=[
         _completed_item(42, "Add PDF export"),
         _completed_item(43, "Fix login timeout"),
@@ -76,7 +65,7 @@ def test_report_all_completed():
 
 def test_report_mixed_results():
     """Report shows both completed and failed issues."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
     state = _make_report_state(queue_items=[
         _completed_item(42, "Add PDF export"),
         _failed_item(43, "Fix login timeout"),
@@ -93,7 +82,7 @@ def test_report_mixed_results():
 
 def test_report_all_failed():
     """Report shows all issues as failed."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
     state = _make_report_state(queue_items=[
         _failed_item(42, "Add PDF export"),
         _failed_item(43, "Fix login timeout"),
@@ -108,7 +97,7 @@ def test_report_all_failed():
 
 def test_report_empty_queue():
     """Report handles empty queue gracefully."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
     state = _make_report_state(queue_items=[])
 
     result = mod.generate_report(state)
@@ -120,7 +109,7 @@ def test_report_empty_queue():
 
 def test_report_single_issue():
     """Report works with a single completed issue."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
     state = _make_report_state(queue_items=[
         _completed_item(42, "Add PDF export"),
     ])
@@ -135,7 +124,7 @@ def test_report_single_issue():
 
 def test_report_includes_timing():
     """Report includes duration based on started_at and completed_at."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
     state = _make_report_state(
         queue_items=[_completed_item(42, "Add PDF export")],
         started_at="2026-03-20T22:00:00-07:00",
@@ -149,7 +138,7 @@ def test_report_includes_timing():
 
 def test_report_includes_pr_urls():
     """Report includes PR URLs for completed issues."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
     state = _make_report_state(queue_items=[
         _completed_item(42, "Add PDF export",
                         pr_url="https://github.com/test/test/pull/100"),
@@ -162,7 +151,7 @@ def test_report_includes_pr_urls():
 
 def test_report_includes_failure_reasons():
     """Report includes failure reasons for failed issues."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
     state = _make_report_state(queue_items=[
         _failed_item(43, "Fix login timeout", reason="CI failed after 3 attempts"),
     ])
@@ -174,7 +163,7 @@ def test_report_includes_failure_reasons():
 
 def test_report_writes_summary_file(tmp_path):
     """Report writes summary to .flow-states/orchestrate-summary.md."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
     state = _make_report_state(queue_items=[
         _completed_item(42, "Add PDF export"),
     ])
@@ -197,7 +186,7 @@ def test_compute_duration_none_completed_at():
     Documents the failure mode when orchestrate-report runs before
     orchestrate-state --complete (Bug 1 from #323).
     """
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
 
     assert mod._compute_duration_seconds("2026-03-20T22:00:00-07:00", None) == 0
 
@@ -209,7 +198,7 @@ def test_report_none_completed_at():
     duration field falls back to <1m. This test documents the observable
     bug behavior from #323.
     """
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
     state = _make_report_state(
         queue_items=[_completed_item(42, "Add PDF export")],
         started_at="2026-03-20T22:00:00-07:00",
@@ -223,7 +212,7 @@ def test_report_none_completed_at():
 
 def test_report_bad_timestamps():
     """Report handles invalid timestamps gracefully (duration shows <1m)."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
     state = _make_report_state(
         queue_items=[_completed_item(42, "Add PDF export")],
         started_at="not-a-timestamp",
@@ -237,7 +226,7 @@ def test_report_bad_timestamps():
 
 def test_report_results_table_format():
     """Report results table has the expected column headers."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
     state = _make_report_state(queue_items=[
         _completed_item(42, "Add PDF export"),
         _failed_item(43, "Fix login"),
@@ -255,7 +244,7 @@ def test_report_results_table_format():
 
 def test_cli_happy_path(tmp_path, monkeypatch, capsys):
     """CLI generates report from state file."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
     state = _make_report_state(queue_items=[
         _completed_item(42, "Add PDF export"),
         _failed_item(43, "Fix login"),
@@ -278,7 +267,7 @@ def test_cli_happy_path(tmp_path, monkeypatch, capsys):
 
 def test_cli_missing_state_file(tmp_path, monkeypatch, capsys):
     """CLI with nonexistent state file returns error."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
 
     monkeypatch.setattr("sys.argv", ["orchestrate-report.py",
                                       "--state-file", str(tmp_path / "missing.json"),
@@ -293,7 +282,7 @@ def test_cli_missing_state_file(tmp_path, monkeypatch, capsys):
 
 def test_cli_corrupt_state_file(tmp_path, monkeypatch, capsys):
     """CLI with corrupt JSON returns error."""
-    mod = _import_module()
+    mod = import_lib("orchestrate-report.py")
     bad_file = tmp_path / "orchestrate.json"
     bad_file.write_text("{bad json")
 
