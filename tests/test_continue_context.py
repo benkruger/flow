@@ -22,6 +22,7 @@ _spec.loader.exec_module(_mod)
 
 def test_no_branch_returns_error(tmp_path, monkeypatch, capsys):
     """Running outside a git repo (no branch) returns an error."""
+    monkeypatch.delenv("FLOW_SIMULATE_BRANCH", raising=False)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.argv", ["continue-context"])
     with pytest.raises(SystemExit) as exc_info:

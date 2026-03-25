@@ -33,6 +33,7 @@ def test_phase_1_always_exits_0(git_repo, monkeypatch):
 
 def test_detached_head_exits_1(git_repo, monkeypatch, capsys):
     """Detached HEAD with no state files should block with a clear message."""
+    monkeypatch.delenv("FLOW_SIMULATE_BRANCH", raising=False)
     # Detach HEAD by checking out a specific commit
     subprocess.run(
         ["git", "checkout", "--detach", "HEAD"],

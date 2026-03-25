@@ -248,6 +248,7 @@ def test_detached_head_auto_resolves_single_state_file(git_repo, state_dir, bran
 
 def test_error_detached_head_no_state_files(git_repo, monkeypatch, capsys):
     """Detached HEAD with no state files returns error."""
+    monkeypatch.delenv("FLOW_SIMULATE_BRANCH", raising=False)
     subprocess.run(
         ["git", "checkout", "--detach", "HEAD"],
         cwd=str(git_repo), capture_output=True, check=True,
