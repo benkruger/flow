@@ -1,5 +1,6 @@
 """Shared fixtures for FLOW plugin tests."""
 
+import importlib.util
 import json
 import os
 import shutil
@@ -20,6 +21,29 @@ FRAMEWORKS_DIR = REPO_ROOT / "frameworks"
 
 sys.path.insert(0, str(LIB_DIR))
 from flow_utils import PHASE_NAMES, PHASE_ORDER
+
+
+def import_lib(filename):
+    """Import a lib/*.py script by filename for in-process testing."""
+    module_name = filename.removesuffix(".py").replace("-", "_")
+    spec = importlib.util.spec_from_file_location(module_name, LIB_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.fixture(autouse=True)
+def _clear_simulate_branch(monkeypatch):
+    """Remove FLOW_SIMULATE_BRANCH so it does not leak into tests.
+
+    When bin/flow ci runs with --simulate-branch, the env var propagates
+    to child pytest processes. Tests that simulate detached HEAD or non-git
+    directories expect current_branch() to return None, but the env var
+    short-circuits git detection. Clearing it per-test is safe because
+    tests that need it (e.g. test_current_branch_simulate_env_var) set it
+    explicitly via monkeypatch.setenv.
+    """
+    monkeypatch.delenv("FLOW_SIMULATE_BRANCH", raising=False)
 
 
 @pytest.fixture(autouse=True, scope="session")

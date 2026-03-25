@@ -1,22 +1,11 @@
 """Tests for lib/format-complete-summary.py — formats the Done banner for Complete phase."""
 
-import importlib.util
 import json
 import sys
 
 import pytest
 
-from conftest import LIB_DIR, make_state, PHASE_NAMES
-
-
-def _import_module():
-    """Import format-complete-summary.py for in-process unit tests."""
-    spec = importlib.util.spec_from_file_location(
-        "format_complete_summary", LIB_DIR / "format-complete-summary.py"
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+from conftest import import_lib, make_state, PHASE_NAMES
 
 
 def _all_complete_state(**overrides):
@@ -45,7 +34,7 @@ def _all_complete_state(**overrides):
 
 def test_basic_summary():
     """Summary contains feature name, prompt, PR URL, all phase names, and total."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
 
     result = mod.format_complete_summary(state)
@@ -62,7 +51,7 @@ def test_basic_summary():
 
 def test_summary_with_issues():
     """Summary includes issues filed with #N shorthand from short_issue_ref."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     state["issues_filed"] = [
         {
@@ -96,7 +85,7 @@ def test_summary_with_issues():
 
 def test_summary_with_single_issue():
     """Summary lists a single issue with label, #N shorthand, and title."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     state["issues_filed"] = [
         {
@@ -118,7 +107,7 @@ def test_summary_with_single_issue():
 
 def test_summary_with_issues_url_without_number():
     """Issues with non-standard URLs fall back to full URL."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     state["issues_filed"] = [
         {
@@ -142,7 +131,7 @@ def test_summary_with_issues_url_without_number():
 
 def test_summary_with_resolved_issues():
     """Summary includes Resolved section when closed_issues provided."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     closed = [
         {"number": 407, "url": "https://github.com/test/test/issues/407"},
@@ -157,7 +146,7 @@ def test_summary_with_resolved_issues():
 
 def test_summary_with_multiple_resolved_issues():
     """Summary lists each resolved issue on its own line."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     closed = [
         {"number": 83, "url": "https://github.com/test/test/issues/83"},
@@ -172,7 +161,7 @@ def test_summary_with_multiple_resolved_issues():
 
 def test_summary_no_resolved_issues():
     """Summary omits Resolved section when closed_issues is empty or None."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
 
     result_none = mod.format_complete_summary(state, closed_issues=None)
@@ -184,7 +173,7 @@ def test_summary_no_resolved_issues():
 
 def test_summary_with_resolved_and_filed():
     """Summary includes both Resolved and Issues filed sections."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     state["issues_filed"] = [
         {
@@ -210,7 +199,7 @@ def test_summary_with_resolved_and_filed():
 
 def test_summary_resolved_without_url():
     """Resolved issues without url show only #N."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     closed = [{"number": 42}]
 
@@ -222,7 +211,7 @@ def test_summary_resolved_without_url():
 
 def test_summary_with_notes():
     """Summary includes notes captured count when notes exist."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     state["notes"] = [
         {
@@ -241,7 +230,7 @@ def test_summary_with_notes():
 
 def test_summary_no_issues_no_notes():
     """Summary omits artifact lines when no issues and no notes."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     state["issues_filed"] = []
     state["notes"] = []
@@ -254,7 +243,7 @@ def test_summary_no_issues_no_notes():
 
 def test_summary_truncates_long_prompt():
     """Prompt over 80 chars is truncated with ellipsis."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     long_prompt = "A" * 100
     state = _all_complete_state(prompt=long_prompt)
 
@@ -268,7 +257,7 @@ def test_summary_truncates_long_prompt():
 
 def test_summary_short_prompt_not_truncated():
     """Prompt under 80 chars is not truncated."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     short_prompt = "Fix login bug"
     state = _all_complete_state(prompt=short_prompt)
 
@@ -280,7 +269,7 @@ def test_summary_short_prompt_not_truncated():
 
 def test_summary_uses_format_time():
     """Phase timings use format_time conventions."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     # flow-start has 20s → "<1m"
     # flow-code has 2700s → "45m"
@@ -301,7 +290,7 @@ def test_read_version_fallback_on_error(tmp_path):
 
 def test_summary_heavy_borders():
     """Summary uses heavy horizontal borders (━━)."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
 
     result = mod.format_complete_summary(state)
@@ -311,7 +300,7 @@ def test_summary_heavy_borders():
 
 def test_summary_check_mark():
     """Summary includes ✓ marker."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
 
     result = mod.format_complete_summary(state)
@@ -321,7 +310,7 @@ def test_summary_check_mark():
 
 def test_summary_version():
     """Summary includes FLOW version."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
 
     result = mod.format_complete_summary(state)
@@ -334,7 +323,7 @@ def test_summary_version():
 
 def test_cli_happy_path(tmp_path, monkeypatch, capsys):
     """Full CLI round-trip: write state, run CLI, verify JSON output."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
@@ -352,7 +341,7 @@ def test_cli_happy_path(tmp_path, monkeypatch, capsys):
 
 def test_cli_with_closed_issues_file(tmp_path, monkeypatch, capsys):
     """CLI with --closed-issues-file includes Resolved section."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
@@ -377,7 +366,7 @@ def test_cli_with_closed_issues_file(tmp_path, monkeypatch, capsys):
 
 def test_cli_missing_closed_issues_file(tmp_path, monkeypatch, capsys):
     """CLI with nonexistent --closed-issues-file gracefully omits Resolved section."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
@@ -396,7 +385,7 @@ def test_cli_missing_closed_issues_file(tmp_path, monkeypatch, capsys):
 
 def test_cli_missing_state_file(tmp_path, monkeypatch, capsys):
     """CLI with nonexistent state file returns error."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
 
     monkeypatch.setattr("sys.argv", ["format-complete-summary.py",
                                       "--state-file",
@@ -411,7 +400,7 @@ def test_cli_missing_state_file(tmp_path, monkeypatch, capsys):
 
 def test_cli_corrupt_state_file(tmp_path, monkeypatch, capsys):
     """CLI with corrupt JSON returns error."""
-    mod = _import_module()
+    mod = import_lib("format-complete-summary.py")
     bad_file = tmp_path / "state.json"
     bad_file.write_text("{bad json")
 
