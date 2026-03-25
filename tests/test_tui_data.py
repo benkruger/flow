@@ -253,6 +253,30 @@ def test_flow_summary_issue_numbers():
     assert summary["issue_numbers"] == {83, 89}
 
 
+def test_flow_summary_plan_path_from_files():
+    """Extracts plan_path from files.plan when set."""
+    state = make_state()
+    state["files"]["plan"] = ".flow-states/test-feature-plan.md"
+    summary = tui_data.flow_summary(state)
+    assert summary["plan_path"] == ".flow-states/test-feature-plan.md"
+
+
+def test_flow_summary_plan_path_fallback_plan_file():
+    """Falls back to plan_file when files.plan is None."""
+    state = make_state()
+    state["files"]["plan"] = None
+    state["plan_file"] = ".flow-states/test-feature-plan.md"
+    summary = tui_data.flow_summary(state)
+    assert summary["plan_path"] == ".flow-states/test-feature-plan.md"
+
+
+def test_flow_summary_plan_path_absent():
+    """Returns None when both files.plan and plan_file are null."""
+    state = make_state()
+    summary = tui_data.flow_summary(state)
+    assert summary["plan_path"] is None
+
+
 # --- phase_timeline ---
 
 

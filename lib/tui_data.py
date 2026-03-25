@@ -43,6 +43,9 @@ def flow_summary(state, now=None):
         for entry in issues_filed
     ]
 
+    files = state.get("files", {})
+    plan_path = files.get("plan") or state.get("plan_file")
+
     return {
         "feature": derive_feature(branch),
         "branch": branch,
@@ -59,6 +62,7 @@ def flow_summary(state, now=None):
         "issues": issues,
         "blocked": bool(state.get("_blocked")),
         "issue_numbers": set(extract_issue_numbers(state.get("prompt", ""))),
+        "plan_path": plan_path,
         "phases": state.get("phases", {}),
         "state": state,
     }

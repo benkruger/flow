@@ -1,6 +1,7 @@
 """Tests for lib/validate-ask-user.py — PreToolUse hook for AskUserQuestion."""
 
 import json
+import os
 import subprocess
 import sys
 
@@ -26,12 +27,15 @@ def _run_hook(git_repo, stdin_json=None):
     """
     if stdin_json is None:
         stdin_json = json.dumps({"tool_input": {}})
+    env = os.environ.copy()
+    env.pop("FLOW_SIMULATE_BRANCH", None)
     result = subprocess.run(
         [sys.executable, str(SCRIPT)],
         input=stdin_json,
         capture_output=True,
         text=True,
         cwd=str(git_repo),
+        env=env,
     )
     return result.returncode, result.stderr.strip()
 

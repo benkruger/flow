@@ -95,6 +95,7 @@ def test_project_root_falls_back_on_git_failure(monkeypatch):
 
 
 def test_current_branch_returns_none_on_git_failure(monkeypatch):
+    monkeypatch.delenv("FLOW_SIMULATE_BRANCH", raising=False)
     def _raise(*args, **kwargs):
         raise OSError("git not found")
     monkeypatch.setattr(subprocess, "run", _raise)
@@ -102,6 +103,7 @@ def test_current_branch_returns_none_on_git_failure(monkeypatch):
 
 
 def test_current_branch_returns_none_for_empty_string(monkeypatch):
+    monkeypatch.delenv("FLOW_SIMULATE_BRANCH", raising=False)
     class FakeResult:
         stdout = ""
         returncode = 0
