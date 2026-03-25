@@ -22,6 +22,19 @@ sys.path.insert(0, str(LIB_DIR))
 from flow_utils import PHASE_NAMES, PHASE_ORDER
 
 
+@pytest.fixture(autouse=True)
+def _clear_simulate_branch(monkeypatch):
+    """Remove FLOW_SIMULATE_BRANCH so it does not leak from ci.py.
+
+    When ``bin/flow ci --simulate-branch main`` runs the test suite, it
+    sets this env var in the parent process.  Without cleanup, every call
+    to ``current_branch()`` returns the simulated value instead of the
+    real (or mocked) git branch.  Tests that need the variable use
+    ``monkeypatch.setenv`` explicitly.
+    """
+    monkeypatch.delenv("FLOW_SIMULATE_BRANCH", raising=False)
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _subprocess_coverage():
     """Route subprocess coverage data to the project root.
