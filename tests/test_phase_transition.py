@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 
@@ -298,10 +299,12 @@ def test_error_detached_head_no_state_files(git_repo):
     )
 
     # Must use subprocess — detached HEAD requires real git state
+    env = os.environ.copy()
+    env.pop("FLOW_SIMULATE_BRANCH", None)
     cmd = [sys.executable, str(LIB_DIR / "phase-transition.py"),
            "--phase", "flow-plan", "--action", "enter"]
     result = subprocess.run(
-        cmd, capture_output=True, text=True, cwd=str(git_repo),
+        cmd, capture_output=True, text=True, cwd=str(git_repo), env=env,
     )
     assert result.returncode == 1
 

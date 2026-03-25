@@ -46,6 +46,7 @@ def _run(project_dir, args=None, extra_env=None):
     """Run lib/ci.py inside the given project directory."""
     env = os.environ.copy()
     env.pop("FLOW_CI_RUNNING", None)
+    env.pop("FLOW_SIMULATE_BRANCH", None)
     if extra_env:
         env.update(extra_env)
     cmd = [sys.executable, str(LIB_DIR / "ci.py")]

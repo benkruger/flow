@@ -115,6 +115,7 @@ def test_persists_to_disk(tmp_path):
 
 def test_no_branch_returns_error(tmp_path, monkeypatch, capsys):
     """Running outside a git repo returns an error."""
+    monkeypatch.delenv("FLOW_SIMULATE_BRANCH", raising=False)
     mod = _import_module()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Rule", "--title", "test",

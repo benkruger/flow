@@ -25,6 +25,7 @@ VERSION = "0.8.2"
 
 def test_no_branch_returns_error(tmp_path, monkeypatch, capsys):
     """Running outside a git repo (no branch) returns exit 2 with stderr."""
+    monkeypatch.delenv("FLOW_SIMULATE_BRANCH", raising=False)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.argv", ["format-status"])
     with pytest.raises(SystemExit) as exc_info:

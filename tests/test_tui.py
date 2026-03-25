@@ -1213,6 +1213,29 @@ def test_draw_list_view_blocked_shows_blocked_text():
     assert "Blocked" in list_row_text
 
 
+def test_draw_list_view_blocked_row_uses_red():
+    """Flow with blocked=True renders list row with COLOR_FAILED (red)."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
+                        "flow-code": "in_progress"},
+    )
+    state["_blocked"] = "2026-01-01T10:00:00-08:00"
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app.use_color = True
+    with patch("tui.curses.color_pair", side_effect=lambda p: p * 100):
+        app._draw_list_view()
+    list_row_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if c[0][0] == 4 and "Blocked" in str(c[0][2])
+    ]
+    assert list_row_calls, "Expected a row 4 call with 'Blocked' text"
+    attr = list_row_calls[0][0][3]
+    assert attr & (tui.COLOR_FAILED * 100), "Blocked row should use COLOR_FAILED (red)"
+
+
 def test_draw_detail_panel_blocked_uses_red():
     """Flow with blocked=True renders in-progress phase [>] in red."""
     state = make_state(
@@ -1699,6 +1722,24 @@ def test_draw_list_view_shows_tab_bar():
     assert "Active Flows" in text
 
 
+def test_draw_tab_bar_active_tab_uses_blue():
+    """Active tab title renders with COLOR_LINK (blue)."""
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[])
+    app.active_tab = 0
+    app.use_color = True
+    with patch("tui.curses.color_pair", side_effect=lambda p: p * 100):
+        app._draw_tab_bar(2)
+    active_tab_calls = [
+        c for c in stdscr.addstr.call_args_list
+        if "Active Flows" in str(c[0][2])
+    ]
+    assert active_tab_calls, "Expected a call rendering 'Active Flows'"
+    attr = active_tab_calls[0][0][3]
+    assert attr & (tui.COLOR_LINK * 100), "Active tab should use COLOR_LINK (blue)"
+    assert attr & curses.A_BOLD, "Active tab should also be bold"
+
+
 def test_tab_switch_right():
     """Right arrow moves to orchestration tab."""
     app = _make_app(flows=[])
@@ -2145,3 +2186,129 @@ def test_open_orch_issue_no_orch_data():
     with patch.object(app, "_open_issue") as mock_open:
         app._open_orch_issue()
         mock_open.assert_not_called()
+
+
+# --- tasks view ---
+
+
+def test_handle_list_input_t_switches_to_tasks_view():
+    """Pressing 't' in list view switches to tasks view."""
+    state = make_state()
+    app = _make_app(flows=[_flow_from_state(state)])
+    app.view = "list"
+    app._handle_list_input(ord("t"))
+    assert app.view == "tasks"
+
+
+def test_draw_tasks_view_renders_plan_content(tmp_path):
+    """Tasks view renders plan file content."""
+    plan_file = tmp_path / "plan.md"
+    plan_file.write_text("# Plan\n\n## Tasks\n\n- Task 1\n- Task 2\n")
+    state = make_state()
+    state["files"]["plan"] = str(plan_file)
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[flow], root=tmp_path)
+    app.view = "tasks"
+    app._draw_tasks_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "Task 1" in text
+
+
+def test_draw_tasks_view_no_plan():
+    """Tasks view shows 'No plan file.' when plan_path is None."""
+    state = make_state()
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app.view = "tasks"
+    app._draw_tasks_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "No plan file" in text
+
+
+def test_handle_input_escape_tasks_returns_to_list():
+    """Escape from tasks view returns to list view."""
+    state = make_state()
+    app = _make_app(flows=[_flow_from_state(state)])
+    app.view = "tasks"
+    app._handle_input(27)
+    assert app.view == "list"
+
+
+def test_draw_list_view_footer_includes_tasks():
+    """Footer in list view includes [t] Tasks shortcut."""
+    state = make_state()
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=120)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "[t] Tasks" in text
+
+
+def test_run_loop_draws_tasks_view():
+    """Run loop dispatches to _draw_tasks_view when view is 'tasks'."""
+    state = make_state()
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    stdscr.getch.side_effect = [ord("q")]
+    app = _make_app(stdscr, flows=[flow])
+    app.view = "tasks"
+    with patch("tui.curses.curs_set"), \
+         patch.object(app, "_init_colors"), \
+         patch.object(app, "_draw_tasks_view") as mock_draw:
+        app.run()
+        mock_draw.assert_called()
+
+
+def test_draw_tasks_view_missing_file(tmp_path):
+    """Tasks view shows 'No plan file.' when plan file path does not exist."""
+    state = make_state()
+    state["files"]["plan"] = str(tmp_path / "nonexistent.md")
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[flow], root=tmp_path)
+    app.view = "tasks"
+    app._draw_tasks_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "No plan file" in text
+
+
+def test_draw_tasks_view_no_flows():
+    """Tasks view returns to list when no flows exist."""
+    stdscr = _make_stdscr(rows=30, cols=80)
+    app = _make_app(stdscr, flows=[])
+    app.view = "tasks"
+    app._draw_tasks_view()
+    assert app.view == "list"
+
+
+def test_draw_tasks_view_content_overflow(tmp_path):
+    """Tasks view truncates plan content that exceeds screen height."""
+    plan_file = tmp_path / "plan.md"
+    plan_file.write_text("\n".join(f"Line {i}" for i in range(100)))
+    state = make_state()
+    state["files"]["plan"] = str(plan_file)
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=10, cols=80)
+    app = _make_app(stdscr, flows=[flow], root=tmp_path)
+    app.view = "tasks"
+    app._draw_tasks_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "Line 0" in text
+    assert "Line 99" not in text
+
+
+def test_handle_input_tasks_view_ignores_unknown_keys():
+    """Unknown keys in tasks view are ignored (view stays 'tasks')."""
+    state = make_state()
+    app = _make_app(flows=[_flow_from_state(state)])
+    app.view = "tasks"
+    app._handle_input(ord("x"))
+    assert app.view == "tasks"

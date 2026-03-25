@@ -31,6 +31,7 @@ def _get_branch(git_repo):
 
 def test_no_branch_returns_error(tmp_path, monkeypatch, capsys):
     """Running outside a git repo (no branch) returns an error."""
+    monkeypatch.delenv("FLOW_SIMULATE_BRANCH", raising=False)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.argv", ["append-note", "--note", "test note"])
     with pytest.raises(SystemExit) as exc_info:
