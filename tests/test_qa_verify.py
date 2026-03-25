@@ -116,100 +116,83 @@ def test_tier1_no_flow_states_dir(tmp_path):
 # --- tier 2 checks ---
 
 
-def test_tier2_two_completed_flows(tmp_path):
-    """Tier 2 passes when two flows completed without cross-contamination."""
-    state_dir = tmp_path / ".flow-states"
-    state_dir.mkdir()
-
-    for branch in ["flow-a", "flow-b"]:
-        state_file = state_dir / f"{branch}.json"
-        state_file.write_text(json.dumps({
-            "branch": branch,
-            "pr_number": 1,
-            "phases": {
-                "flow-start": {"status": "complete"},
-                "flow-plan": {"status": "complete"},
-                "flow-code": {"status": "complete"},
-                "flow-code-review": {"status": "complete"},
-                "flow-learn": {"status": "complete"},
-                "flow-complete": {"status": "complete"},
-            },
-        }))
-
-    result = _mod.check_tier2(str(tmp_path), "owner/repo")
+def test_tier2_all_pass(tmp_path):
+    """Tier 2 passes when cleanup is complete and 2+ PRs are merged."""
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout=json.dumps([{"number": 1}, {"number": 2}]), stderr="",
+        )
+        result = _mod.check_tier2(str(tmp_path), "owner/repo")
 
     assert result["tier"] == 2
     assert all(c["passed"] for c in result["checks"])
 
 
-def test_tier2_insufficient_flows(tmp_path):
-    """Tier 2 fails when fewer than 2 flows completed."""
+def test_tier2_insufficient_merged_prs(tmp_path):
+    """Tier 2 fails when fewer than 2 PRs have been merged."""
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout=json.dumps([{"number": 1}]), stderr="",
+        )
+        result = _mod.check_tier2(str(tmp_path), "owner/repo")
+
+    pr_check = [c for c in result["checks"] if "PR" in c["name"]]
+    assert len(pr_check) >= 1
+    assert not pr_check[0]["passed"]
+
+
+def test_tier2_leftover_state_file(tmp_path):
+    """Tier 2 fails when state files remain after concurrent flows."""
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
-    state_file = state_dir / "flow-a.json"
-    state_file.write_text(json.dumps({
-        "branch": "flow-a",
-        "phases": {
-            "flow-start": {"status": "complete"},
-            "flow-plan": {"status": "complete"},
-            "flow-code": {"status": "complete"},
-            "flow-code-review": {"status": "complete"},
-            "flow-learn": {"status": "complete"},
-            "flow-complete": {"status": "complete"},
-        },
+    (state_dir / "leftover.json").write_text(json.dumps({
+        "branch": "leftover",
     }))
 
-    result = _mod.check_tier2(str(tmp_path), "owner/repo")
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout=json.dumps([{"number": 1}, {"number": 2}]), stderr="",
+        )
+        result = _mod.check_tier2(str(tmp_path), "owner/repo")
 
-    failed = [c for c in result["checks"] if not c["passed"]]
-    assert len(failed) >= 1
-
-
-def test_tier2_corrupt_state_file(tmp_path):
-    """Tier 2 handles corrupt state file in one flow."""
-    state_dir = tmp_path / ".flow-states"
-    state_dir.mkdir()
-    (state_dir / "flow-a.json").write_text("not valid json {{{")
-    (state_dir / "flow-b.json").write_text(json.dumps({
-        "branch": "flow-b",
-        "phases": {p: {"status": "complete"} for p in [
-            "flow-start", "flow-plan", "flow-code",
-            "flow-code-review", "flow-learn", "flow-complete",
-        ]},
-    }))
-
-    result = _mod.check_tier2(str(tmp_path), "owner/repo")
-
-    complete_check = [c for c in result["checks"]
-                      if "all phases" in c["name"].lower()]
-    assert len(complete_check) >= 1
-    assert not complete_check[0]["passed"]
+    state_check = [c for c in result["checks"]
+                   if "state" in c["name"].lower()]
+    assert len(state_check) >= 1
+    assert not state_check[0]["passed"]
 
 
-def test_tier2_incomplete_phase(tmp_path):
-    """Tier 2 detects incomplete phases in one flow."""
-    state_dir = tmp_path / ".flow-states"
-    state_dir.mkdir()
+def test_tier2_leftover_worktree(tmp_path):
+    """Tier 2 fails when worktrees remain after concurrent flows."""
+    wt_dir = tmp_path / ".worktrees" / "some-feature"
+    wt_dir.mkdir(parents=True)
 
-    for i, branch in enumerate(["flow-a", "flow-b"]):
-        phases = {p: {"status": "complete"} for p in [
-            "flow-start", "flow-plan", "flow-code",
-            "flow-code-review", "flow-learn", "flow-complete",
-        ]}
-        if i == 1:
-            phases["flow-code"]["status"] = "in_progress"
-        (state_dir / f"{branch}.json").write_text(json.dumps({
-            "branch": branch,
-            "pr_number": 1,
-            "phases": phases,
-        }))
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout=json.dumps([{"number": 1}, {"number": 2}]), stderr="",
+        )
+        result = _mod.check_tier2(str(tmp_path), "owner/repo")
 
-    result = _mod.check_tier2(str(tmp_path), "owner/repo")
+    wt_check = [c for c in result["checks"]
+                if "worktree" in c["name"].lower()]
+    assert len(wt_check) >= 1
+    assert not wt_check[0]["passed"]
 
-    complete_check = [c for c in result["checks"]
-                      if "all phases" in c["name"].lower()]
-    assert len(complete_check) >= 1
-    assert not complete_check[0]["passed"]
+
+def test_tier2_pr_fetch_failure(tmp_path):
+    """Tier 2 reports PR fetch failure."""
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="not found",
+        )
+        result = _mod.check_tier2(str(tmp_path), "owner/repo")
+
+    pr_check = [c for c in result["checks"] if "PR" in c["name"]]
+    assert len(pr_check) >= 1
+    assert not pr_check[0]["passed"]
 
 
 # --- tier 3 checks ---

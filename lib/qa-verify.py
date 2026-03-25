@@ -106,51 +106,59 @@ def check_tier1(project_root, repo):
 
 
 def check_tier2(project_root, repo):
-    """Tier 2: Concurrent flow verification."""
+    """Tier 2: Concurrent flow verification.
+
+    After multiple successful Complete phases, all state files and worktrees
+    are deleted, and multiple PRs are merged. This checks post-Complete
+    outcomes for concurrent flows.
+    """
     checks = []
 
-    # Check at least 2 state files exist
+    # State files should be cleaned up after all flows complete
     state_files = _find_state_files(project_root)
     checks.append({
-        "name": "Two or more flows completed",
-        "passed": len(state_files) >= 2,
-        "detail": f"Found {len(state_files)} state file(s)",
+        "name": "State files cleaned up",
+        "passed": len(state_files) == 0,
+        "detail": "No leftover state files"
+        if len(state_files) == 0
+        else f"Found {len(state_files)} leftover state file(s)",
     })
 
-    if len(state_files) < 2:
-        return {"status": "ok", "tier": 2, "checks": checks}
-
-    # Load all states once
-    loaded_states = [(sf, _load_state(sf)) for sf in state_files]
-
-    # Check all flows have all phases complete
-    all_complete = True
-    for sf, state in loaded_states:
-        if state is None:
-            all_complete = False
-            continue
-        phases = state.get("phases", {})
-        for p in REQUIRED_PHASES:
-            if phases.get(p, {}).get("status") != "complete":
-                all_complete = False
-                break
-
+    # Worktrees should be cleaned up after all flows complete
+    worktrees_dir = Path(project_root) / ".worktrees"
+    worktree_count = (
+        len(list(worktrees_dir.iterdir())) if worktrees_dir.is_dir() else 0
+    )
     checks.append({
-        "name": "All flows completed all phases",
-        "passed": all_complete,
-        "detail": f"Checked {len(state_files)} flows",
+        "name": "Worktrees cleaned up",
+        "passed": worktree_count == 0,
+        "detail": "No leftover worktrees"
+        if worktree_count == 0
+        else f"Found {worktree_count} leftover worktree(s)",
     })
 
-    # Check branch isolation (different branches)
-    branches = set()
-    for sf, state in loaded_states:
-        if state:
-            branches.add(state.get("branch", ""))
-    checks.append({
-        "name": "Branch isolation",
-        "passed": len(branches) == len(state_files),
-        "detail": f"Unique branches: {len(branches)}",
-    })
+    # At least 2 PRs should be merged (concurrent flows)
+    result = subprocess.run(
+        ["gh", "pr", "list", "--repo", repo, "--state", "merged",
+         "--limit", "10", "--json", "number"],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        pr_list = json.loads(result.stdout)
+        has_enough = len(pr_list) >= 2
+        checks.append({
+            "name": "Two or more PRs merged",
+            "passed": has_enough,
+            "detail": f"{len(pr_list)} merged PR(s) found"
+            if has_enough
+            else f"Only {len(pr_list)} merged PR(s) found, need 2+",
+        })
+    else:
+        checks.append({
+            "name": "Two or more PRs merged",
+            "passed": False,
+            "detail": "Could not fetch merged PRs",
+        })
 
     return {"status": "ok", "tier": 2, "checks": checks}
 

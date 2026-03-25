@@ -1,23 +1,12 @@
 """Tests for lib/qa-mode.py — manage dev-mode plugin_root redirection."""
 
-import importlib.util
 import json
 import sys
 from pathlib import Path
 
 import pytest
 
-from conftest import LIB_DIR
-
-
-def _import_module():
-    """Import qa-mode.py for in-process unit tests."""
-    spec = importlib.util.spec_from_file_location(
-        "qa_mode", LIB_DIR / "qa-mode.py"
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+from conftest import import_lib
 
 
 def _write_flow_json(path, data):
@@ -35,7 +24,7 @@ def _read_flow_json(path):
 
 def test_start_happy_path(tmp_path):
     """start() saves backup and redirects plugin_root."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
     local_source = tmp_path / "flow-source"
     local_source.mkdir()
@@ -61,7 +50,7 @@ def test_start_happy_path(tmp_path):
 
 def test_start_missing_flow_json(tmp_path):
     """start() returns error when .flow.json does not exist."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
     local_source = tmp_path / "flow-source"
 
@@ -73,7 +62,7 @@ def test_start_missing_flow_json(tmp_path):
 
 def test_start_missing_plugin_root(tmp_path):
     """start() returns error when .flow.json has no plugin_root."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
     local_source = tmp_path / "flow-source"
     local_source.mkdir()
@@ -93,7 +82,7 @@ def test_start_missing_plugin_root(tmp_path):
 
 def test_start_already_in_dev_mode(tmp_path):
     """start() returns error when plugin_root_backup already exists."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
     local_source = tmp_path / "flow-source"
     local_source.mkdir()
@@ -114,7 +103,7 @@ def test_start_already_in_dev_mode(tmp_path):
 
 def test_start_invalid_local_path_not_exists(tmp_path):
     """start() returns error when local source path doesn't exist."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
 
     _write_flow_json(flow_json, {
@@ -130,7 +119,7 @@ def test_start_invalid_local_path_not_exists(tmp_path):
 
 def test_start_invalid_local_path_no_bin_flow(tmp_path):
     """start() returns error when local source has no bin/flow."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
     local_source = tmp_path / "flow-source"
     local_source.mkdir()
@@ -148,7 +137,7 @@ def test_start_invalid_local_path_no_bin_flow(tmp_path):
 
 def test_start_preserves_other_keys(tmp_path):
     """start() preserves all existing .flow.json keys."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
     local_source = tmp_path / "flow-source"
     local_source.mkdir()
@@ -184,7 +173,7 @@ def test_start_preserves_other_keys(tmp_path):
 
 def test_stop_happy_path(tmp_path):
     """stop() restores plugin_root from backup and removes backup key."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
 
     _write_flow_json(flow_json, {
@@ -205,7 +194,7 @@ def test_stop_happy_path(tmp_path):
 
 def test_stop_not_in_dev_mode(tmp_path):
     """stop() returns error when plugin_root_backup doesn't exist."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
 
     _write_flow_json(flow_json, {
@@ -221,7 +210,7 @@ def test_stop_not_in_dev_mode(tmp_path):
 
 def test_stop_missing_flow_json(tmp_path):
     """stop() returns error when .flow.json does not exist."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
 
     result = mod.stop(flow_json)
@@ -232,7 +221,7 @@ def test_stop_missing_flow_json(tmp_path):
 
 def test_stop_preserves_other_keys(tmp_path):
     """stop() preserves all existing .flow.json keys except backup."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
 
     _write_flow_json(flow_json, {
@@ -260,7 +249,7 @@ def test_stop_preserves_other_keys(tmp_path):
 
 def test_cli_start(tmp_path, monkeypatch, capsys):
     """CLI --start --local-path produces correct JSON output."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
     local_source = tmp_path / "flow-source"
     local_source.mkdir()
@@ -288,7 +277,7 @@ def test_cli_start(tmp_path, monkeypatch, capsys):
 
 def test_cli_stop(tmp_path, monkeypatch, capsys):
     """CLI --stop produces correct JSON output."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
 
     _write_flow_json(flow_json, {
@@ -312,7 +301,7 @@ def test_cli_stop(tmp_path, monkeypatch, capsys):
 
 def test_cli_start_error(tmp_path, monkeypatch, capsys):
     """CLI --start returns error JSON on failure."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
 
     monkeypatch.chdir(tmp_path)
@@ -330,7 +319,7 @@ def test_cli_start_error(tmp_path, monkeypatch, capsys):
 
 def test_cli_stop_error(tmp_path, monkeypatch, capsys):
     """CLI --stop returns error JSON on failure."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
 
     monkeypatch.chdir(tmp_path)
@@ -347,7 +336,7 @@ def test_cli_stop_error(tmp_path, monkeypatch, capsys):
 
 def test_cli_start_missing_local_path(tmp_path, monkeypatch, capsys):
     """CLI --start without --local-path returns error."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
     _write_flow_json(flow_json, {"flow_version": "0.39.0", "plugin_root": "/p"})
 
@@ -366,7 +355,7 @@ def test_cli_start_missing_local_path(tmp_path, monkeypatch, capsys):
 
 def test_cli_default_flow_json(git_repo, monkeypatch, capsys):
     """CLI uses project_root()/.flow.json when --flow-json is omitted."""
-    mod = _import_module()
+    mod = import_lib("qa-mode.py")
     flow_json = git_repo / ".flow.json"
     local_source = git_repo / "flow-source"
     local_source.mkdir()
