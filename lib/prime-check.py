@@ -3,7 +3,7 @@
 Usage: bin/flow prime-check
 
 Output (JSON to stdout):
-  Success: {"status": "ok", "framework": "rails|python"}
+  Success: {"status": "ok", "framework": "rails|python|ios"}
   Auto-upgrade: {"status": "ok", "framework": "...", "auto_upgraded": true, "old_version": "...", "new_version": "..."}
   Failure: {"status": "error", "message": "..."}
 """
@@ -97,7 +97,7 @@ def main():
         return
 
     framework = init_data.get("framework")
-    if framework not in ("rails", "python"):
+    if framework not in ("rails", "python", "ios"):
         print(json.dumps({
             "status": "error",
             "message": "Missing framework in .flow.json. Run /flow:flow-prime to configure.",
