@@ -1,4 +1,3 @@
 source "https://rubygems.org"
 
-gem "minitest"
-gem "rubocop", require: false
+gem "minitest", "6.0.2"
