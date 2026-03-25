@@ -32,6 +32,20 @@ def import_lib(filename):
     return mod
 
 
+@pytest.fixture(autouse=True)
+def _clear_simulate_branch(monkeypatch):
+    """Remove FLOW_SIMULATE_BRANCH so it does not leak into tests.
+
+    When bin/flow ci runs with --simulate-branch, the env var propagates
+    to child pytest processes. Tests that simulate detached HEAD or non-git
+    directories expect current_branch() to return None, but the env var
+    short-circuits git detection. Clearing it per-test is safe because
+    tests that need it (e.g. test_current_branch_simulate_env_var) set it
+    explicitly via monkeypatch.setenv.
+    """
+    monkeypatch.delenv("FLOW_SIMULATE_BRANCH", raising=False)
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _subprocess_coverage():
     """Route subprocess coverage data to the project root.
