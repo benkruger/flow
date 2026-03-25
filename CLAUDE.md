@@ -113,7 +113,7 @@ CI will fail if these are missing:
 - `lib/clear-blocked.py` — PostToolUse hook on AskUserQuestion that clears `_blocked` from the state file after the user responds; fail-open
 - `lib/scaffold-qa.py` — creates QA repos from per-framework templates (`qa/templates/`); CLI: `bin/flow scaffold-qa --framework <name> --repo <owner/repo>`
 - `lib/qa-reset.py` — resets QA repos to seed state (git reset, close PRs, delete branches, recreate issues); CLI: `bin/flow qa-reset --repo <owner/repo> [--local-path <path>]`
-- `lib/qa-verify.py` — verifies QA assertions per tier (state files, phase completion, lock cleanliness, orphan detection); CLI: `bin/flow qa-verify --tier <N> --framework <name> --repo <owner/repo>`
+- `lib/qa-verify.py` — verifies QA assertions after a completed flow (cleanup, worktrees, merged PR); CLI: `bin/flow qa-verify --framework <name> --repo <owner/repo>`
 - `lib/qa-mode.py` — manages dev-mode plugin_root redirection in `.flow.json` (backup/redirect/restore); CLI: `bin/flow qa-mode --start --local-path <path>` and `bin/flow qa-mode --stop`
 - `qa/templates/<framework>/` — per-framework QA repo templates (rails, python, ios) with Calculator class, tests, bin/ci, and .qa/issues.json
 - `bin/flow` — dispatcher script routing subcommands to `lib/*.py`
@@ -257,12 +257,12 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_concurrency.py` | Real-process concurrency: mutate_state counter integrity (20 workers), log append line integrity (20 workers), start-lock serialization (3 workers), parallel state file creation (5 workers), cleanup isolation (concurrent cleanup + mutation) |
 | `test_scaffold_qa.py` | QA repo scaffolding: template discovery per framework, file writing, subprocess mocking for gh/git, bin/ci executable bit, error paths, CLI main() |
 | `test_qa_reset.py` | QA repo reset: git reset, PR closing, branch deletion, issue template loading/recreation, local cleanup, error paths, CLI main() |
-| `test_qa_verify.py` | QA verification: tier 1 (lifecycle checks, phase completion, PR merge), tier 2 (concurrent flow isolation, branch uniqueness), tier 3 (stale lock, orphan state files), error paths, CLI main() |
+| `test_qa_verify.py` | QA verification: post-Complete checks (cleanup, worktrees, merged PR), exclusion filters (orchestrate/phases files), error paths, CLI main() |
 | `test_qa_mode.py` | QA dev-mode: start/stop happy paths, missing .flow.json, missing plugin_root, double start, invalid path, key preservation, CLI integration |
 
 ## Maintainer Skills (private to this repo)
 
-- `/flow-qa` — `.claude/skills/flow-qa/SKILL.md` — `--start`/`--stop` dev mode, `--run`/`--reset`/`--tier` 3-tier QA protocol against per-framework repos. **Always run `/flow-qa --start` before `/flow:flow-start` when developing FLOW.** The installed marketplace plugin enforces its own phase count and skill gates, which conflict with the source being developed and break the workflow mid-feature.
+- `/flow-qa` — `.claude/skills/flow-qa/SKILL.md` — clone QA repos, prime, run a full lifecycle, and verify results. **Always run `/flow-qa --start` before `/flow:flow-start` when developing FLOW.** The installed marketplace plugin enforces its own phase count and skill gates, which conflict with the source being developed and break the workflow mid-feature.
 - `/flow-release` — `.claude/skills/flow-release/SKILL.md` — bump version, tag, push, create GitHub Release
 
 ## Conventions

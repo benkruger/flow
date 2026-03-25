@@ -1,13 +1,12 @@
-"""Verify QA assertions per tier.
+"""Verify QA assertions after a completed flow.
 
-Usage: bin/flow qa-verify --tier <1|2|3> --framework <name> --repo <owner/repo>
+Usage: bin/flow qa-verify --framework <name> --repo <owner/repo>
 
-Reads state files and GitHub state, checks per-step assertions,
-outputs structured JSON pass/fail report.
+Checks post-Complete outcomes: cleanup (no leftover state files or
+worktrees) and at least one merged PR.
 
 Output (JSON to stdout):
-  {"status": "ok", "tier": N, "checks": [{"name": "...", "passed": true/false, "detail": "..."}]}
-  {"status": "error", "message": "..."}
+  {"status": "ok", "checks": [{"name": "...", "passed": true/false, "detail": "..."}]}
 """
 
 import argparse
@@ -15,13 +14,6 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-REQUIRED_PHASES = [
-    "flow-start", "flow-plan", "flow-code",
-    "flow-code-review", "flow-learn", "flow-complete",
-]
 
 
 def _find_state_files(project_root):
@@ -36,20 +28,11 @@ def _find_state_files(project_root):
     ]
 
 
-def _load_state(path):
-    """Load and parse a state file."""
-    try:
-        return json.loads(Path(path).read_text())
-    except (json.JSONDecodeError, FileNotFoundError):
-        return None
-
-
-def check_tier1(project_root, repo):
-    """Tier 1: Single-flow full lifecycle verification.
+def verify(framework, repo, project_root):
+    """Verify post-Complete outcomes.
 
     After a successful Complete phase, the state file is deleted, the
-    worktree is removed, and the PR is merged. This checks post-Complete
-    outcomes rather than mid-flow state.
+    worktree is removed, and the PR is merged. This checks those outcomes.
     """
     checks = []
 
@@ -102,130 +85,11 @@ def check_tier1(project_root, repo):
             "detail": "Could not fetch merged PRs",
         })
 
-    return {"status": "ok", "tier": 1, "checks": checks}
-
-
-def check_tier2(project_root, repo):
-    """Tier 2: Concurrent flow verification.
-
-    After multiple successful Complete phases, all state files and worktrees
-    are deleted, and multiple PRs are merged. This checks post-Complete
-    outcomes for concurrent flows.
-    """
-    checks = []
-
-    # State files should be cleaned up after all flows complete
-    state_files = _find_state_files(project_root)
-    checks.append({
-        "name": "State files cleaned up",
-        "passed": len(state_files) == 0,
-        "detail": "No leftover state files"
-        if len(state_files) == 0
-        else f"Found {len(state_files)} leftover state file(s)",
-    })
-
-    # Worktrees should be cleaned up after all flows complete
-    worktrees_dir = Path(project_root) / ".worktrees"
-    worktree_count = (
-        len(list(worktrees_dir.iterdir())) if worktrees_dir.is_dir() else 0
-    )
-    checks.append({
-        "name": "Worktrees cleaned up",
-        "passed": worktree_count == 0,
-        "detail": "No leftover worktrees"
-        if worktree_count == 0
-        else f"Found {worktree_count} leftover worktree(s)",
-    })
-
-    # At least 2 PRs should be merged (concurrent flows)
-    result = subprocess.run(
-        ["gh", "pr", "list", "--repo", repo, "--state", "merged",
-         "--limit", "10", "--json", "number"],
-        capture_output=True, text=True,
-    )
-    if result.returncode == 0:
-        pr_list = json.loads(result.stdout)
-        has_enough = len(pr_list) >= 2
-        checks.append({
-            "name": "Two or more PRs merged",
-            "passed": has_enough,
-            "detail": f"{len(pr_list)} merged PR(s) found"
-            if has_enough
-            else f"Only {len(pr_list)} merged PR(s) found, need 2+",
-        })
-    else:
-        checks.append({
-            "name": "Two or more PRs merged",
-            "passed": False,
-            "detail": "Could not fetch merged PRs",
-        })
-
-    return {"status": "ok", "tier": 2, "checks": checks}
-
-
-def check_tier3(project_root, repo):
-    """Tier 3: Stress and recovery verification."""
-    checks = []
-
-    # Check no stale lock file
-    lock_file = Path(project_root) / ".flow-states" / "start.lock"
-    if lock_file.exists():
-        try:
-            lock_data = json.loads(lock_file.read_text())
-            checks.append({
-                "name": "No stale lock",
-                "passed": False,
-                "detail": f"Lock held by feature: {lock_data.get('feature')}",
-            })
-        except (json.JSONDecodeError, OSError):
-            checks.append({
-                "name": "No stale lock",
-                "passed": False,
-                "detail": "Corrupt lock file exists",
-            })
-    else:
-        checks.append({
-            "name": "No stale lock",
-            "passed": True,
-            "detail": "No lock file present",
-        })
-
-    # Check no orphan state files (state files without matching worktrees)
-    state_files = _find_state_files(project_root)
-    orphans = []
-    for sf in state_files:
-        state = _load_state(sf)
-        if state:
-            branch = state.get("branch", "")
-            wt_path = Path(project_root) / ".worktrees" / branch
-            if not wt_path.exists():
-                orphans.append(branch)
-
-    checks.append({
-        "name": "No orphan state files",
-        "passed": len(orphans) == 0,
-        "detail": f"Orphans: {orphans}" if orphans else "No orphans",
-    })
-
-    return {"status": "ok", "tier": 3, "checks": checks}
-
-
-def verify(tier, framework, repo, project_root):
-    """Dispatch to the correct tier check."""
-    if tier == 1:
-        return check_tier1(project_root, repo)
-    elif tier == 2:
-        return check_tier2(project_root, repo)
-    elif tier == 3:
-        return check_tier3(project_root, repo)
-    else:
-        return {"status": "error", "message": f"Invalid tier: {tier}"}
+    return {"status": "ok", "checks": checks}
 
 
 def main():
     parser = argparse.ArgumentParser(description="Verify QA assertions")
-    parser.add_argument("--tier", type=int, required=True,
-                        help="Tier number (1, 2, or 3)")
     parser.add_argument("--framework", default=None,
                         help="Framework name (reserved for future use)")
     parser.add_argument("--repo", required=True,
@@ -234,10 +98,8 @@ def main():
                         help="Project root path")
     args = parser.parse_args()
 
-    result = verify(args.tier, args.framework, args.repo, args.project_root)
+    result = verify(args.framework, args.repo, args.project_root)
     print(json.dumps(result, indent=2))
-    if result.get("status") == "error":
-        sys.exit(1)
 
 
 if __name__ == "__main__":

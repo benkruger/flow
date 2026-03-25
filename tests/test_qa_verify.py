@@ -1,4 +1,4 @@
-"""Tests for lib/qa-verify.py — verify QA assertions per tier."""
+"""Tests for lib/qa-verify.py — verify QA assertions after a completed flow."""
 
 import importlib
 import json
@@ -14,25 +14,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 _mod = importlib.import_module("qa-verify")
 
 
-# --- tier 1 checks ---
+# --- verify checks ---
 
 
-def test_tier1_all_pass(tmp_path):
-    """Tier 1 passes when cleanup is complete and PR is merged."""
-    # After successful Complete: no state files, no worktrees, PR merged
+def test_verify_all_pass(tmp_path):
+    """Verify passes when cleanup is complete and PR is merged."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0,
             stdout=json.dumps([{"number": 1}]), stderr="",
         )
-        result = _mod.check_tier1(str(tmp_path), "owner/repo")
+        result = _mod.verify("python", "owner/repo", str(tmp_path))
 
-    assert result["tier"] == 1
+    assert result["status"] == "ok"
     assert all(c["passed"] for c in result["checks"])
 
 
-def test_tier1_leftover_state_file(tmp_path):
-    """Tier 1 fails when state files remain after Complete."""
+def test_verify_leftover_state_file(tmp_path):
+    """Verify fails when state files remain after Complete."""
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     (state_dir / "leftover.json").write_text(json.dumps({
@@ -44,7 +43,7 @@ def test_tier1_leftover_state_file(tmp_path):
             args=[], returncode=0,
             stdout=json.dumps([{"number": 1}]), stderr="",
         )
-        result = _mod.check_tier1(str(tmp_path), "owner/repo")
+        result = _mod.verify("python", "owner/repo", str(tmp_path))
 
     state_check = [c for c in result["checks"]
                    if "state" in c["name"].lower()]
@@ -52,8 +51,8 @@ def test_tier1_leftover_state_file(tmp_path):
     assert not state_check[0]["passed"]
 
 
-def test_tier1_leftover_worktree(tmp_path):
-    """Tier 1 fails when worktrees remain after Complete."""
+def test_verify_leftover_worktree(tmp_path):
+    """Verify fails when worktrees remain after Complete."""
     wt_dir = tmp_path / ".worktrees" / "some-feature"
     wt_dir.mkdir(parents=True)
 
@@ -62,7 +61,7 @@ def test_tier1_leftover_worktree(tmp_path):
             args=[], returncode=0,
             stdout=json.dumps([{"number": 1}]), stderr="",
         )
-        result = _mod.check_tier1(str(tmp_path), "owner/repo")
+        result = _mod.verify("python", "owner/repo", str(tmp_path))
 
     wt_check = [c for c in result["checks"]
                 if "worktree" in c["name"].lower()]
@@ -70,242 +69,82 @@ def test_tier1_leftover_worktree(tmp_path):
     assert not wt_check[0]["passed"]
 
 
-def test_tier1_no_merged_pr(tmp_path):
-    """Tier 1 fails when no PR has been merged."""
+def test_verify_no_merged_pr(tmp_path):
+    """Verify fails when no PR has been merged."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0,
             stdout=json.dumps([]), stderr="",
         )
-        result = _mod.check_tier1(str(tmp_path), "owner/repo")
+        result = _mod.verify("python", "owner/repo", str(tmp_path))
 
     pr_check = [c for c in result["checks"] if "PR" in c["name"]]
     assert len(pr_check) >= 1
     assert not pr_check[0]["passed"]
 
 
-def test_tier1_pr_fetch_failure(tmp_path):
-    """Tier 1 reports PR fetch failure."""
+def test_verify_pr_fetch_failure(tmp_path):
+    """Verify reports PR fetch failure."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=1, stdout="", stderr="not found",
         )
-        result = _mod.check_tier1(str(tmp_path), "owner/repo")
+        result = _mod.verify("python", "owner/repo", str(tmp_path))
 
     pr_check = [c for c in result["checks"] if "PR" in c["name"]]
     assert len(pr_check) >= 1
     assert not pr_check[0]["passed"]
 
 
-def test_tier1_no_flow_states_dir(tmp_path):
-    """Tier 1 passes cleanup check when .flow-states/ doesn't exist."""
+def test_verify_no_flow_states_dir(tmp_path):
+    """Verify passes cleanup check when .flow-states/ doesn't exist."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0,
             stdout=json.dumps([{"number": 1}]), stderr="",
         )
-        result = _mod.check_tier1(str(tmp_path), "owner/repo")
+        result = _mod.verify("python", "owner/repo", str(tmp_path))
 
-    assert result["tier"] == 1
     state_check = [c for c in result["checks"]
                    if "state" in c["name"].lower()]
     assert len(state_check) >= 1
     assert state_check[0]["passed"]
 
 
-# --- tier 2 checks ---
+def test_verify_excludes_orchestrate_files(tmp_path):
+    """Verify ignores orchestrate JSON files in .flow-states/."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "orchestrate-queue.json").write_text("{}")
 
-
-def test_tier2_all_pass(tmp_path):
-    """Tier 2 passes when cleanup is complete and 2+ PRs are merged."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0,
-            stdout=json.dumps([{"number": 1}, {"number": 2}]), stderr="",
-        )
-        result = _mod.check_tier2(str(tmp_path), "owner/repo")
-
-    assert result["tier"] == 2
-    assert all(c["passed"] for c in result["checks"])
-
-
-def test_tier2_insufficient_merged_prs(tmp_path):
-    """Tier 2 fails when fewer than 2 PRs have been merged."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0,
             stdout=json.dumps([{"number": 1}]), stderr="",
         )
-        result = _mod.check_tier2(str(tmp_path), "owner/repo")
-
-    pr_check = [c for c in result["checks"] if "PR" in c["name"]]
-    assert len(pr_check) >= 1
-    assert not pr_check[0]["passed"]
-
-
-def test_tier2_leftover_state_file(tmp_path):
-    """Tier 2 fails when state files remain after concurrent flows."""
-    state_dir = tmp_path / ".flow-states"
-    state_dir.mkdir()
-    (state_dir / "leftover.json").write_text(json.dumps({
-        "branch": "leftover",
-    }))
-
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0,
-            stdout=json.dumps([{"number": 1}, {"number": 2}]), stderr="",
-        )
-        result = _mod.check_tier2(str(tmp_path), "owner/repo")
+        result = _mod.verify("python", "owner/repo", str(tmp_path))
 
     state_check = [c for c in result["checks"]
                    if "state" in c["name"].lower()]
-    assert len(state_check) >= 1
-    assert not state_check[0]["passed"]
+    assert state_check[0]["passed"]
 
 
-def test_tier2_leftover_worktree(tmp_path):
-    """Tier 2 fails when worktrees remain after concurrent flows."""
-    wt_dir = tmp_path / ".worktrees" / "some-feature"
-    wt_dir.mkdir(parents=True)
+def test_verify_excludes_phases_files(tmp_path):
+    """Verify ignores frozen phases JSON files in .flow-states/."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "feature-phases.json").write_text("{}")
 
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0,
-            stdout=json.dumps([{"number": 1}, {"number": 2}]), stderr="",
+            stdout=json.dumps([{"number": 1}]), stderr="",
         )
-        result = _mod.check_tier2(str(tmp_path), "owner/repo")
+        result = _mod.verify("python", "owner/repo", str(tmp_path))
 
-    wt_check = [c for c in result["checks"]
-                if "worktree" in c["name"].lower()]
-    assert len(wt_check) >= 1
-    assert not wt_check[0]["passed"]
-
-
-def test_tier2_pr_fetch_failure(tmp_path):
-    """Tier 2 reports PR fetch failure."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="not found",
-        )
-        result = _mod.check_tier2(str(tmp_path), "owner/repo")
-
-    pr_check = [c for c in result["checks"] if "PR" in c["name"]]
-    assert len(pr_check) >= 1
-    assert not pr_check[0]["passed"]
-
-
-# --- tier 3 checks ---
-
-
-def test_tier3_lock_file_absent(tmp_path):
-    """Tier 3 passes lock check when no stale lock exists."""
-    state_dir = tmp_path / ".flow-states"
-    state_dir.mkdir()
-
-    result = _mod.check_tier3(str(tmp_path), "owner/repo")
-
-    assert result["tier"] == 3
-    lock_check = [c for c in result["checks"]
-                  if "lock" in c["name"].lower()]
-    if lock_check:
-        assert lock_check[0]["passed"]
-
-
-def test_tier3_stale_lock_detected(tmp_path):
-    """Tier 3 fails lock check when stale lock exists."""
-    state_dir = tmp_path / ".flow-states"
-    state_dir.mkdir()
-    lock_file = state_dir / "start.lock"
-    lock_file.write_text(json.dumps({
-        "pid": 99999, "feature": "stale",
-        "acquired_at": "2025-01-01T00:00:00-08:00",
-    }))
-
-    result = _mod.check_tier3(str(tmp_path), "owner/repo")
-
-    lock_check = [c for c in result["checks"]
-                  if "lock" in c["name"].lower()]
-    if lock_check:
-        assert not lock_check[0]["passed"]
-
-
-def test_tier3_corrupt_lock(tmp_path):
-    """Tier 3 detects corrupt lock file."""
-    state_dir = tmp_path / ".flow-states"
-    state_dir.mkdir()
-    (state_dir / "start.lock").write_text("not json {{{")
-
-    result = _mod.check_tier3(str(tmp_path), "owner/repo")
-
-    lock_check = [c for c in result["checks"]
-                  if "lock" in c["name"].lower()]
-    assert len(lock_check) >= 1
-    assert not lock_check[0]["passed"]
-    assert "Corrupt" in lock_check[0]["detail"]
-
-
-def test_tier3_orphan_state_files(tmp_path):
-    """Tier 3 detects orphan state files without matching worktrees."""
-    state_dir = tmp_path / ".flow-states"
-    state_dir.mkdir()
-    (state_dir / "orphan-branch.json").write_text(json.dumps({
-        "branch": "orphan-branch",
-    }))
-
-    result = _mod.check_tier3(str(tmp_path), "owner/repo")
-
-    orphan_check = [c for c in result["checks"]
-                    if "orphan" in c["name"].lower()]
-    assert len(orphan_check) >= 1
-    assert not orphan_check[0]["passed"]
-
-
-# --- _load_state ---
-
-
-def test_load_state_file_not_found(tmp_path):
-    """_load_state returns None when file does not exist."""
-    result = _mod._load_state(tmp_path / "nonexistent.json")
-    assert result is None
-
-
-# --- verify (main orchestrator) ---
-
-
-def test_verify_dispatches_to_tier():
-    """verify() dispatches to the correct tier function."""
-    with patch.object(_mod, "check_tier1") as mock_t1:
-        mock_t1.return_value = {"tier": 1, "checks": []}
-        result = _mod.verify(1, "rails", "owner/repo", "/tmp/project")
-
-    assert result["tier"] == 1
-    mock_t1.assert_called_once()
-
-
-def test_verify_invalid_tier():
-    """verify() returns error for invalid tier."""
-    result = _mod.verify(99, "rails", "owner/repo", "/tmp/project")
-
-    assert result["status"] == "error"
-
-
-def test_verify_tier2():
-    """verify() dispatches tier 2."""
-    with patch.object(_mod, "check_tier2") as mock_t2:
-        mock_t2.return_value = {"tier": 2, "checks": []}
-        result = _mod.verify(2, "rails", "owner/repo", "/tmp/project")
-
-    assert result["tier"] == 2
-
-
-def test_verify_tier3():
-    """verify() dispatches tier 3."""
-    with patch.object(_mod, "check_tier3") as mock_t3:
-        mock_t3.return_value = {"tier": 3, "checks": []}
-        result = _mod.verify(3, "rails", "owner/repo", "/tmp/project")
-
-    assert result["tier"] == 3
+    state_check = [c for c in result["checks"]
+                   if "state" in c["name"].lower()]
+    assert state_check[0]["passed"]
 
 
 # --- CLI ---
@@ -314,34 +153,19 @@ def test_verify_tier3():
 def test_main_success():
     """main() prints JSON on success."""
     with patch.object(_mod, "verify") as mock_verify, \
-         patch("sys.argv", ["qa-verify", "--tier", "1",
+         patch("sys.argv", ["qa-verify",
                             "--framework", "rails",
                             "--repo", "owner/repo"]):
         mock_verify.return_value = {
-            "status": "ok", "tier": 1, "checks": [],
+            "status": "ok", "checks": [],
         }
         _mod.main()
 
     mock_verify.assert_called_once()
 
 
-def test_main_error():
-    """main() exits 1 on error."""
-    with patch.object(_mod, "verify") as mock_verify, \
-         patch("sys.argv", ["qa-verify", "--tier", "99",
-                            "--framework", "rails",
-                            "--repo", "owner/repo"]), \
-         pytest.raises(SystemExit) as exc_info:
-        mock_verify.return_value = {
-            "status": "error", "message": "invalid tier",
-        }
-        _mod.main()
-
-    assert exc_info.value.code == 1
-
-
-def test_cli_missing_args(monkeypatch):
-    """Missing required args exits with error."""
+def test_cli_missing_repo(monkeypatch):
+    """Missing --repo exits with error."""
     monkeypatch.setattr("sys.argv", ["qa-verify"])
     with pytest.raises(SystemExit) as exc_info:
         _mod.main()

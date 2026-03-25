@@ -102,7 +102,7 @@ cd <absolute-path-to-flow-repo>
 Run verification:
 
 ```bash
-bin/flow qa-verify --tier 1 --framework <framework> --repo <owner/repo> --project-root .qa-repos/<framework>
+bin/flow qa-verify --framework <framework> --repo <owner/repo> --project-root .qa-repos/<framework>
 ```
 
 Parse the JSON output. Report each check's pass/fail status.
