@@ -108,6 +108,7 @@ Parse the JSON output and confirm `status` is `"ok"`.
 Read `complete_step` from the state file (default `0` if absent).
 
 - If `complete_step` is `4`: skip to Step 4 (Run local CI gate).
+- If `complete_step` is `5`: skip to Step 5 (Check GitHub CI status).
 - If `complete_step` is `6`: skip to Step 6 (Confirm with user).
 - If `complete_step` is `0` or absent: proceed normally to Step 1.
 
@@ -275,7 +276,14 @@ Parse the output. Each check has a status: pass, fail, or pending.
 
 **If all checks pass** — continue to Step 6.
 
-**If any check is pending** — invoke the `loop` skill via the Skill tool with args `15s /flow:flow-complete` and return. The loop will re-invoke the complete skill automatically until CI completes.
+**If any check is pending** — record the resume step so re-entry skips
+straight to Step 5:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=5
+```
+
+Then invoke the `loop` skill via the Skill tool with args `15s /flow:flow-complete` and return. The loop will re-invoke the complete skill automatically until CI completes.
 
 **If any check has failed** — launch the `ci-fixer` sub-agent to diagnose
 and fix. Use the Agent tool:
@@ -359,7 +367,7 @@ code to address the feedback.
 Set the continuation context and flag before committing:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set complete_step=6, then self-invoke flow:flow-complete --continue-step --manual."
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set complete_step=4, then self-invoke flow:flow-complete --continue-step --manual."
 ```
 
 ```bash
@@ -371,10 +379,10 @@ Commit the fixes via `/flow:flow-commit`.
 After the commit completes, record the resume step:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=6
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
 ```
 
-To loop back to Step 6, invoke `flow:flow-complete --continue-step --manual`
+To loop back through CI, invoke `flow:flow-complete --continue-step --manual`
 using the Skill tool as your final action. Do not output anything else
 after this invocation.
 
@@ -440,8 +448,23 @@ gh pr merge <pr_number> --squash
 If the merge succeeds, report to the user:
 > "PR #<pr_number> merged into main."
 
-If the merge fails, stop and report the error to the user. Do not retry
-the merge command with any additional flags or elevated privileges.
+If the merge fails, check the error message:
+
+- If the error contains "base branch policy prohibits the merge" — GitHub
+  CI has not finished on the latest commits. Set the resume step and
+  self-invoke to wait for CI:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=5
+```
+
+  Invoke `flow:flow-complete --continue-step` using the Skill tool as
+  your final action. If mode was resolved to auto, pass `--auto` as
+  well. Do not output anything else after this invocation.
+
+- For any other error — stop and report the error to the user. Do not
+  retry the merge command with any additional flags or elevated
+  privileges.
 
 **If `"status": "merged"`** — main had new commits that were merged
 into the branch without conflicts. Push the merge commit and loop back
