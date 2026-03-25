@@ -44,12 +44,11 @@ def test_find_templates_ios():
     """Finds all template files for ios framework."""
     templates = _mod.find_templates("ios", templates_dir=str(TEMPLATES_DIR))
     assert "FlowQA.xcodeproj/project.pbxproj" in templates
+    assert "FlowQA.xcodeproj/xcshareddata/xcschemes/FlowQA.xcscheme" in templates
     assert "bin/ci" in templates
     assert "FlowQA/Calculator.swift" in templates
-    assert "FlowQA/Secrets.swift.example" in templates
+    assert "FlowQA/FlowQAApp.swift" in templates
     assert "FlowQATests/CalculatorTests.swift" in templates
-    assert "bin/test" in templates
-    assert "bin/build" in templates
     assert ".qa/issues.json" in templates
 
 
