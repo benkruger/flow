@@ -134,4 +134,5 @@ If any check failed, print:
 - Never run QA against the FLOW repo itself — only against QA repos in `.qa-repos/`
 - Report pass/fail for each check individually
 - Stop on first framework failure when running `all`
+- QA repos test the FLOW lifecycle, not project code quality — `bin/ci` should run tests only, no linters. If `bin/ci` fails on seed code, fix the seed (remove what doesn't belong), don't debug the linter.
 - When fixing a QA repo (e.g. broken file permissions, missing files), always update the `seed` tag after pushing the fix: `git -C .qa-repos/<framework> tag -f seed` then `git -C .qa-repos/<framework> push -f origin seed`. The `qa-reset` script resets to the seed tag — if the tag points to the broken state, the fix is lost on every reset.
