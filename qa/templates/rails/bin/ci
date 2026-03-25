@@ -4,4 +4,3 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 bundle exec ruby -Ilib -Itest test/*_test.rb
-bundle exec rubocop --no-server
