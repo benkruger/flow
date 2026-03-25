@@ -18,29 +18,12 @@ _mod = importlib.import_module("qa-verify")
 
 
 def test_tier1_all_pass(tmp_path):
-    """Tier 1 checks pass when all conditions are met."""
-    state_dir = tmp_path / ".flow-states"
-    state_dir.mkdir()
-    state_file = state_dir / "test-feature.json"
-    state_file.write_text(json.dumps({
-        "branch": "test-feature",
-        "pr_number": 1,
-        "pr_url": "https://github.com/owner/repo/pull/1",
-        "phases": {
-            "flow-start": {"status": "complete"},
-            "flow-plan": {"status": "complete"},
-            "flow-code": {"status": "complete"},
-            "flow-code-review": {"status": "complete"},
-            "flow-learn": {"status": "complete"},
-            "flow-complete": {"status": "complete"},
-        },
-    }))
-
+    """Tier 1 passes when cleanup is complete and PR is merged."""
+    # After successful Complete: no state files, no worktrees, PR merged
     with patch("subprocess.run") as mock_run:
-        # gh pr view returns merged
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0,
-            stdout=json.dumps({"state": "MERGED"}), stderr="",
+            stdout=json.dumps([{"number": 1}]), stderr="",
         )
         result = _mod.check_tier1(str(tmp_path), "owner/repo")
 
@@ -48,80 +31,61 @@ def test_tier1_all_pass(tmp_path):
     assert all(c["passed"] for c in result["checks"])
 
 
-def test_tier1_no_state_file(tmp_path):
-    """Tier 1 fails when no state file exists."""
+def test_tier1_leftover_state_file(tmp_path):
+    """Tier 1 fails when state files remain after Complete."""
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
-
-    result = _mod.check_tier1(str(tmp_path), "owner/repo")
-
-    assert result["tier"] == 1
-    failed = [c for c in result["checks"] if not c["passed"]]
-    assert len(failed) >= 1
-
-
-def test_tier1_incomplete_phase(tmp_path):
-    """Tier 1 fails when a phase is not complete."""
-    state_dir = tmp_path / ".flow-states"
-    state_dir.mkdir()
-    state_file = state_dir / "test-feature.json"
-    state_file.write_text(json.dumps({
-        "branch": "test-feature",
-        "phases": {
-            "flow-start": {"status": "complete"},
-            "flow-plan": {"status": "complete"},
-            "flow-code": {"status": "in_progress"},
-            "flow-code-review": {"status": "pending"},
-            "flow-learn": {"status": "pending"},
-            "flow-complete": {"status": "pending"},
-        },
+    (state_dir / "leftover.json").write_text(json.dumps({
+        "branch": "leftover",
     }))
 
-    result = _mod.check_tier1(str(tmp_path), "owner/repo")
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout=json.dumps([{"number": 1}]), stderr="",
+        )
+        result = _mod.check_tier1(str(tmp_path), "owner/repo")
 
-    phase_check = [c for c in result["checks"]
-                   if "phases" in c["name"].lower()
-                   or "phase" in c["name"].lower()]
-    if phase_check:
-        assert not phase_check[0]["passed"]
-
-
-def test_tier1_no_flow_states_dir(tmp_path):
-    """Tier 1 fails when .flow-states/ directory doesn't exist."""
-    result = _mod.check_tier1(str(tmp_path), "owner/repo")
-
-    assert result["tier"] == 1
-    failed = [c for c in result["checks"] if not c["passed"]]
-    assert len(failed) >= 1
+    state_check = [c for c in result["checks"]
+                   if "state" in c["name"].lower()]
+    assert len(state_check) >= 1
+    assert not state_check[0]["passed"]
 
 
-def test_tier1_corrupt_state_file(tmp_path):
-    """Tier 1 fails when state file is corrupt JSON."""
-    state_dir = tmp_path / ".flow-states"
-    state_dir.mkdir()
-    (state_dir / "broken.json").write_text("not json {{{")
+def test_tier1_leftover_worktree(tmp_path):
+    """Tier 1 fails when worktrees remain after Complete."""
+    wt_dir = tmp_path / ".worktrees" / "some-feature"
+    wt_dir.mkdir(parents=True)
 
-    result = _mod.check_tier1(str(tmp_path), "owner/repo")
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout=json.dumps([{"number": 1}]), stderr="",
+        )
+        result = _mod.check_tier1(str(tmp_path), "owner/repo")
 
-    json_check = [c for c in result["checks"]
-                  if "valid" in c["name"].lower() or "JSON" in c["name"]]
-    assert len(json_check) >= 1
-    assert not json_check[0]["passed"]
+    wt_check = [c for c in result["checks"]
+                if "worktree" in c["name"].lower()]
+    assert len(wt_check) >= 1
+    assert not wt_check[0]["passed"]
+
+
+def test_tier1_no_merged_pr(tmp_path):
+    """Tier 1 fails when no PR has been merged."""
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout=json.dumps([]), stderr="",
+        )
+        result = _mod.check_tier1(str(tmp_path), "owner/repo")
+
+    pr_check = [c for c in result["checks"] if "PR" in c["name"]]
+    assert len(pr_check) >= 1
+    assert not pr_check[0]["passed"]
 
 
 def test_tier1_pr_fetch_failure(tmp_path):
     """Tier 1 reports PR fetch failure."""
-    state_dir = tmp_path / ".flow-states"
-    state_dir.mkdir()
-    (state_dir / "feat.json").write_text(json.dumps({
-        "branch": "feat",
-        "pr_number": 42,
-        "phases": {p: {"status": "complete"} for p in [
-            "flow-start", "flow-plan", "flow-code",
-            "flow-code-review", "flow-learn", "flow-complete",
-        ]},
-    }))
-
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=1, stdout="", stderr="not found",
@@ -131,6 +95,22 @@ def test_tier1_pr_fetch_failure(tmp_path):
     pr_check = [c for c in result["checks"] if "PR" in c["name"]]
     assert len(pr_check) >= 1
     assert not pr_check[0]["passed"]
+
+
+def test_tier1_no_flow_states_dir(tmp_path):
+    """Tier 1 passes cleanup check when .flow-states/ doesn't exist."""
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout=json.dumps([{"number": 1}]), stderr="",
+        )
+        result = _mod.check_tier1(str(tmp_path), "owner/repo")
+
+    assert result["tier"] == 1
+    state_check = [c for c in result["checks"]
+                   if "state" in c["name"].lower()]
+    assert len(state_check) >= 1
+    assert state_check[0]["passed"]
 
 
 # --- tier 2 checks ---
@@ -189,7 +169,7 @@ def test_tier2_corrupt_state_file(tmp_path):
     """Tier 2 handles corrupt state file in one flow."""
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
-    (state_dir / "flow-a.json").write_text("{}")
+    (state_dir / "flow-a.json").write_text("not valid json {{{")
     (state_dir / "flow-b.json").write_text(json.dumps({
         "branch": "flow-b",
         "phases": {p: {"status": "complete"} for p in [
@@ -198,17 +178,7 @@ def test_tier2_corrupt_state_file(tmp_path):
         ]},
     }))
 
-    load_orig = _mod._load_state
-    call_count = [0]
-
-    def mock_load(path):
-        call_count[0] += 1
-        if "flow-a" in str(path):
-            return None
-        return load_orig(path)
-
-    with patch.object(_mod, "_load_state", side_effect=mock_load):
-        result = _mod.check_tier2(str(tmp_path), "owner/repo")
+    result = _mod.check_tier2(str(tmp_path), "owner/repo")
 
     complete_check = [c for c in result["checks"]
                       if "all phases" in c["name"].lower()]
@@ -306,6 +276,15 @@ def test_tier3_orphan_state_files(tmp_path):
                     if "orphan" in c["name"].lower()]
     assert len(orphan_check) >= 1
     assert not orphan_check[0]["passed"]
+
+
+# --- _load_state ---
+
+
+def test_load_state_file_not_found(tmp_path):
+    """_load_state returns None when file does not exist."""
+    result = _mod._load_state(tmp_path / "nonexistent.json")
+    assert result is None
 
 
 # --- verify (main orchestrator) ---

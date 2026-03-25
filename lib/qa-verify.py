@@ -45,68 +45,62 @@ def _load_state(path):
 
 
 def check_tier1(project_root, repo):
-    """Tier 1: Single-flow full lifecycle verification."""
+    """Tier 1: Single-flow full lifecycle verification.
+
+    After a successful Complete phase, the state file is deleted, the
+    worktree is removed, and the PR is merged. This checks post-Complete
+    outcomes rather than mid-flow state.
+    """
     checks = []
 
-    # Check state files exist
+    # State files should be cleaned up after Complete
     state_files = _find_state_files(project_root)
     checks.append({
-        "name": "State file exists",
-        "passed": len(state_files) >= 1,
-        "detail": f"Found {len(state_files)} state file(s)",
+        "name": "State files cleaned up",
+        "passed": len(state_files) == 0,
+        "detail": "No leftover state files"
+        if len(state_files) == 0
+        else f"Found {len(state_files)} leftover state file(s)",
     })
 
-    if not state_files:
-        return {"status": "ok", "tier": 1, "checks": checks}
-
-    # Load first state file
-    state = _load_state(state_files[0])
-    if state is None:
-        checks.append({
-            "name": "State file valid JSON",
-            "passed": False,
-            "detail": f"Could not parse {state_files[0].name}",
-        })
-        return {"status": "ok", "tier": 1, "checks": checks}
-
-    # Check all phases complete
-    phases = state.get("phases", {})
-    all_complete = all(
-        phases.get(p, {}).get("status") == "complete"
-        for p in REQUIRED_PHASES
+    # Worktrees should be cleaned up after Complete
+    worktrees_dir = Path(project_root) / ".worktrees"
+    worktree_count = (
+        len(list(worktrees_dir.iterdir())) if worktrees_dir.is_dir() else 0
     )
-    incomplete = [
-        p for p in REQUIRED_PHASES
-        if phases.get(p, {}).get("status") != "complete"
-    ]
     checks.append({
-        "name": "All phases complete",
-        "passed": all_complete,
-        "detail": f"Incomplete: {incomplete}" if incomplete else "All 6 complete",
+        "name": "Worktrees cleaned up",
+        "passed": worktree_count == 0,
+        "detail": "No leftover worktrees"
+        if worktree_count == 0
+        else f"Found {worktree_count} leftover worktree(s)",
     })
 
-    # Check PR merged
-    pr_number = state.get("pr_number")
-    if pr_number:
-        result = subprocess.run(
-            ["gh", "pr", "view", str(pr_number), "--repo", repo,
-             "--json", "state"],
-            capture_output=True, text=True,
+    # At least one PR should be merged
+    result = subprocess.run(
+        ["gh", "pr", "list", "--repo", repo, "--state", "merged",
+         "--limit", "1", "--json", "number"],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        pr_list = json.loads(result.stdout)
+        has_merged = len(pr_list) >= 1
+        detail = (
+            f"PR #{pr_list[0]['number']} merged"
+            if has_merged
+            else "No merged PRs found"
         )
-        if result.returncode == 0:
-            pr_data = json.loads(result.stdout)
-            merged = pr_data.get("state") == "MERGED"
-            checks.append({
-                "name": "PR merged",
-                "passed": merged,
-                "detail": f"PR #{pr_number} state: {pr_data.get('state')}",
-            })
-        else:
-            checks.append({
-                "name": "PR merged",
-                "passed": False,
-                "detail": f"Could not fetch PR #{pr_number}",
-            })
+        checks.append({
+            "name": "PR merged",
+            "passed": has_merged,
+            "detail": detail,
+        })
+    else:
+        checks.append({
+            "name": "PR merged",
+            "passed": False,
+            "detail": "Could not fetch merged PRs",
+        })
 
     return {"status": "ok", "tier": 1, "checks": checks}
 
