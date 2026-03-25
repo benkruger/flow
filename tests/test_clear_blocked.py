@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 
@@ -78,12 +79,15 @@ class TestClearBlocked:
 
 def _run_hook(stdin_data, cwd=None):
     """Run the clear-blocked hook script as a subprocess."""
+    env = os.environ.copy()
+    env.pop("FLOW_SIMULATE_BRANCH", None)
     result = subprocess.run(
         [sys.executable, str(SCRIPT)],
         input=stdin_data,
         capture_output=True,
         text=True,
         cwd=str(cwd) if cwd else None,
+        env=env,
     )
     return result.returncode, result.stdout.strip()
 
