@@ -125,6 +125,20 @@ class TestCaptureCompactData:
             "compact_summary": "Summary.",
         })
 
+    def test_no_branch_returns_early(self, git_repo, state_dir, branch, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        monkeypatch.setattr(_mod, "resolve_branch", lambda override=None: (None, []))
+        state = make_state(current_phase="flow-code")
+        write_state(state_dir, branch, state)
+
+        _mod.capture_compact_data({
+            "compact_summary": "Summary.",
+        })
+
+        # State should be unchanged — early return skipped the mutation
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert "compact_summary" not in updated
+
     def test_not_in_git_repo(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
 

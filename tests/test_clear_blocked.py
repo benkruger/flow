@@ -53,6 +53,19 @@ class TestClearBlocked:
         # Should not raise
         _mod.clear_blocked({})
 
+    def test_no_branch_returns_early(self, git_repo, state_dir, branch, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        monkeypatch.setattr(_mod, "current_branch", lambda: None)
+        state = make_state(current_phase="flow-code")
+        state["_blocked"] = "2026-01-01T10:00:00-08:00"
+        write_state(state_dir, branch, state)
+
+        _mod.clear_blocked({})
+
+        # _blocked should still be present — early return skipped the mutation
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert "_blocked" in updated
+
     def test_not_in_git_repo(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         # Should not raise
