@@ -2448,8 +2448,8 @@ def test_complete_commit_points_record_step():
     assert "complete_step=4" in content, (
         "Complete must record complete_step=4 after Step 3 and CI commits"
     )
-    assert "complete_step=6" in content, (
-        "Complete must record complete_step=6 after Step 6 feedback commit"
+    assert "complete_step=5" in content, (
+        "Complete must record complete_step=5 for Step 5 GitHub CI gate"
     )
 
 
