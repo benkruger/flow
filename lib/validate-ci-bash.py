@@ -22,6 +22,7 @@ Validation layers (in order):
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -49,6 +50,34 @@ def _find_settings_and_root():
     return None, None
 
 
+WORKTREE_MARKER = ".worktrees/"
+
+
+def _detect_branch_from_cwd():
+    """Detect the current branch name from the working directory.
+
+    In a worktree (.worktrees/<branch>/), extracts the branch from
+    the path with no subprocess cost. Otherwise falls back to
+    ``git branch --show-current`` (one subprocess).
+
+    Returns None if not on a branch (detached HEAD) or if git fails.
+    """
+    cwd = str(Path.cwd())
+    marker_pos = cwd.find(WORKTREE_MARKER)
+    if marker_pos != -1:
+        after_marker = cwd[marker_pos + len(WORKTREE_MARKER):]
+        branch = after_marker.split("/")[0]
+        return branch if branch else None
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            capture_output=True, text=True, check=True,
+        )
+        return result.stdout.strip() or None
+    except Exception:
+        return None
+
+
 def _build_permission_regexes(settings, list_key):
     """Extract Bash(...) patterns from settings and compile to regexes.
 
@@ -65,14 +94,20 @@ def _build_permission_regexes(settings, list_key):
     return regexes
 
 
-def validate(command, settings=None):
+def validate(command, settings=None, flow_active=True):
     """Validate a Bash command string.
 
     Returns (allowed: bool, message: str).
     message is empty if allowed, otherwise explains why blocked.
 
-    If settings is provided, also checks command against the allow-list
-    whitelist. If settings is None, the whitelist check is skipped.
+    Layers 1-5 (compound commands, redirection, blanket restore, deny
+    list, file-read commands) are always enforced regardless of
+    flow_active.
+
+    Layer 6 (whitelist enforcement) is only enforced when both settings
+    are provided AND flow_active is True. When flow_active is False,
+    unlisted commands fall through to Claude Code's native permission
+    system.
     """
     # Block compound commands (&&, ;, |)
     if "&&" in command or re.search(r"(?<!\\);", command) or "|" in command:
@@ -114,8 +149,8 @@ def validate(command, settings=None):
                 f"(Read for cat/head/tail, Grep for grep/rg, "
                 f"Glob for find/ls).")
 
-    # Whitelist check — only if settings are available
-    if settings is not None:
+    # Whitelist check — only during an active flow
+    if settings is not None and flow_active:
         regexes = _build_permission_regexes(settings, "allow")
         if regexes:
             matched = any(r.match(command) for r in regexes)

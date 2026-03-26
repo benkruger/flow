@@ -258,6 +258,77 @@ def test_whitelist_skipped_when_empty_allow():
     assert allowed is True
 
 
+# --- flow_active parameter tests ---
+
+
+def test_flow_active_false_allows_unlisted_command():
+    """When flow_active=False, unlisted commands pass through (no whitelist)."""
+    mod = _load_module()
+    allowed, message = mod.validate(
+        "npm test", settings=SAMPLE_SETTINGS, flow_active=False
+    )
+    assert allowed is True
+    assert message == ""
+
+
+def test_flow_active_true_blocks_unlisted_command():
+    """When flow_active=True, unlisted commands are blocked (whitelist enforced)."""
+    mod = _load_module()
+    allowed, message = mod.validate(
+        "npm test", settings=SAMPLE_SETTINGS, flow_active=True
+    )
+    assert allowed is False
+    assert "not in allow list" in message
+
+
+def test_flow_active_false_still_blocks_compound():
+    """Layers 1-5 enforced regardless of flow_active."""
+    mod = _load_module()
+    allowed, message = mod.validate(
+        "git status && git diff", settings=SAMPLE_SETTINGS, flow_active=False
+    )
+    assert allowed is False
+    assert "Compound commands" in message
+
+
+def test_flow_active_false_still_blocks_file_read():
+    """File-read commands blocked even when flow_active=False."""
+    mod = _load_module()
+    allowed, message = mod.validate(
+        "cat README.md", settings=SAMPLE_SETTINGS, flow_active=False
+    )
+    assert allowed is False
+    assert "Read" in message
+
+
+def test_flow_active_false_still_blocks_deny():
+    """Deny list enforced even when flow_active=False."""
+    mod = _load_module()
+    allowed, message = mod.validate(
+        "git rebase main", settings=DENY_SETTINGS, flow_active=False
+    )
+    assert allowed is False
+    assert "deny" in message.lower()
+
+
+def test_flow_active_false_still_blocks_redirect():
+    """Redirection blocked even when flow_active=False."""
+    mod = _load_module()
+    allowed, message = mod.validate(
+        "git log > /tmp/out.txt", settings=SAMPLE_SETTINGS, flow_active=False
+    )
+    assert allowed is False
+    assert "redirection" in message.lower()
+
+
+def test_flow_active_default_is_true():
+    """Default flow_active=True preserves backward compat — unlisted blocked."""
+    mod = _load_module()
+    allowed, message = mod.validate("npm test", settings=SAMPLE_SETTINGS)
+    assert allowed is False
+    assert "not in allow list" in message
+
+
 def test_compound_blocked_before_whitelist():
     """Compound commands are caught by fast-path before whitelist check."""
     mod = _load_module()
@@ -663,3 +734,79 @@ def test_hook_exit_2_for_blocked_redirect():
     code, stderr = _run_hook("git show HEAD:file.py > /tmp/out.py")
     assert code == 2
     assert "BLOCKED" in stderr
+
+
+# --- Branch detection tests ---
+
+
+def test_detect_branch_from_cwd_worktree(tmp_path):
+    """Extracts branch name from .worktrees/<branch>/ in CWD."""
+    mod = _load_module()
+    worktree_dir = tmp_path / "project" / ".worktrees" / "my-feature"
+    worktree_dir.mkdir(parents=True)
+
+    import os
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(worktree_dir)
+        result = mod._detect_branch_from_cwd()
+        assert result == "my-feature"
+    finally:
+        os.chdir(old_cwd)
+
+
+def test_detect_branch_from_cwd_worktree_subdir(tmp_path):
+    """Extracts branch from .worktrees/<branch>/subdir/ path."""
+    mod = _load_module()
+    subdir = tmp_path / "project" / ".worktrees" / "fix-login" / "src" / "lib"
+    subdir.mkdir(parents=True)
+
+    import os
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(subdir)
+        result = mod._detect_branch_from_cwd()
+        assert result == "fix-login"
+    finally:
+        os.chdir(old_cwd)
+
+
+def test_detect_branch_from_cwd_non_worktree(tmp_path, monkeypatch):
+    """Falls back to git branch --show-current when not in a worktree."""
+    mod = _load_module()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        mod.subprocess, "run",
+        lambda *a, **kw: type("R", (), {
+            "stdout": "main\n", "returncode": 0
+        })()
+    )
+    result = mod._detect_branch_from_cwd()
+    assert result == "main"
+
+
+def test_detect_branch_from_cwd_detached_head(tmp_path, monkeypatch):
+    """Returns None when git returns empty (detached HEAD)."""
+    mod = _load_module()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        mod.subprocess, "run",
+        lambda *a, **kw: type("R", (), {
+            "stdout": "\n", "returncode": 0
+        })()
+    )
+    result = mod._detect_branch_from_cwd()
+    assert result is None
+
+
+def test_detect_branch_from_cwd_git_fails(tmp_path, monkeypatch):
+    """Returns None when git subprocess fails."""
+    mod = _load_module()
+    monkeypatch.chdir(tmp_path)
+
+    def fail(*a, **kw):
+        raise OSError("git not found")
+
+    monkeypatch.setattr(mod.subprocess, "run", fail)
+    result = mod._detect_branch_from_cwd()
+    assert result is None
