@@ -31,20 +31,22 @@ from flow_utils import permission_to_regex
 FILE_READ_COMMANDS = {"cat", "head", "tail", "grep", "rg", "find", "ls"}
 
 
-def _find_settings_json():
+def _find_settings_and_root():
     """Walk up from CWD looking for .claude/settings.json.
 
-    Returns the parsed dict, or None if not found or unparseable.
+    Returns (settings_dict, project_root) where project_root is the
+    directory containing .claude/. Returns (None, None) if not found
+    or unparseable.
     """
     current = Path.cwd().resolve()
     for directory in [current, *current.parents]:
         settings_path = directory / ".claude" / "settings.json"
         if settings_path.is_file():
             try:
-                return json.loads(settings_path.read_text())
+                return json.loads(settings_path.read_text()), directory
             except (json.JSONDecodeError, ValueError, OSError):
-                return None
-    return None
+                return None, None
+    return None, None
 
 
 def _build_permission_regexes(settings, list_key):
@@ -136,7 +138,7 @@ def main():
     if not command:
         sys.exit(0)
 
-    settings = _find_settings_json()
+    settings, _project_root = _find_settings_and_root()
     allowed, message = validate(command, settings=settings)
     if not allowed:
         print(message, file=sys.stderr)

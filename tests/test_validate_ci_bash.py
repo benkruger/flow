@@ -276,8 +276,8 @@ def test_file_read_blocked_before_whitelist():
     assert "Read" in message
 
 
-def test_find_settings_json(tmp_path):
-    """_find_settings_json finds settings.json walking up from CWD."""
+def test_find_settings_and_root(tmp_path):
+    """_find_settings_and_root finds settings.json and returns project root."""
     mod = _load_module()
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir()
@@ -292,29 +292,31 @@ def test_find_settings_json(tmp_path):
     old_cwd = os.getcwd()
     try:
         os.chdir(subdir)
-        result = mod._find_settings_json()
-        assert result is not None
-        assert result["permissions"]["allow"] == ["Bash(git status)"]
+        result_settings, result_root = mod._find_settings_and_root()
+        assert result_settings is not None
+        assert result_settings["permissions"]["allow"] == ["Bash(git status)"]
+        assert result_root == tmp_path.resolve()
     finally:
         os.chdir(old_cwd)
 
 
-def test_find_settings_json_missing(tmp_path):
-    """_find_settings_json returns None when no settings.json exists."""
+def test_find_settings_and_root_missing(tmp_path):
+    """_find_settings_and_root returns (None, None) when no settings.json."""
     mod = _load_module()
 
     import os
     old_cwd = os.getcwd()
     try:
         os.chdir(tmp_path)
-        result = mod._find_settings_json()
-        assert result is None
+        result_settings, result_root = mod._find_settings_and_root()
+        assert result_settings is None
+        assert result_root is None
     finally:
         os.chdir(old_cwd)
 
 
-def test_find_settings_json_invalid(tmp_path):
-    """_find_settings_json returns None when settings.json is invalid JSON."""
+def test_find_settings_and_root_invalid(tmp_path):
+    """_find_settings_and_root returns (None, None) for invalid JSON."""
     mod = _load_module()
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir()
@@ -324,8 +326,31 @@ def test_find_settings_json_invalid(tmp_path):
     old_cwd = os.getcwd()
     try:
         os.chdir(tmp_path)
-        result = mod._find_settings_json()
-        assert result is None
+        result_settings, result_root = mod._find_settings_and_root()
+        assert result_settings is None
+        assert result_root is None
+    finally:
+        os.chdir(old_cwd)
+
+
+def test_find_settings_and_root_returns_parent_of_claude_dir(tmp_path):
+    """Project root is the directory containing .claude/, not .claude/ itself."""
+    mod = _load_module()
+    project = tmp_path / "myproject"
+    project.mkdir()
+    claude_dir = project / ".claude"
+    claude_dir.mkdir()
+    settings = {"permissions": {"allow": []}}
+    (claude_dir / "settings.json").write_text(json.dumps(settings))
+
+    import os
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        _, result_root = mod._find_settings_and_root()
+        # Root should be the project dir, not .claude/
+        assert result_root == project.resolve()
+        assert result_root.name == "myproject"
     finally:
         os.chdir(old_cwd)
 
