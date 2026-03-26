@@ -78,6 +78,19 @@ def _detect_branch_from_cwd():
         return None
 
 
+def _is_flow_active(branch, project_root):
+    """Check if a FLOW feature is active for the given branch.
+
+    Returns True when ``.flow-states/<branch>.json`` exists at the
+    project root. Returns False for None branch, None root, or
+    missing state file.
+    """
+    if not branch or project_root is None:
+        return False
+    state_file = Path(project_root) / ".flow-states" / f"{branch}.json"
+    return state_file.is_file()
+
+
 def _build_permission_regexes(settings, list_key):
     """Extract Bash(...) patterns from settings and compile to regexes.
 
@@ -173,8 +186,10 @@ def main():
     if not command:
         sys.exit(0)
 
-    settings, _project_root = _find_settings_and_root()
-    allowed, message = validate(command, settings=settings)
+    settings, project_root = _find_settings_and_root()
+    branch = _detect_branch_from_cwd()
+    flow_active = _is_flow_active(branch, project_root)
+    allowed, message = validate(command, settings=settings, flow_active=flow_active)
     if not allowed:
         print(message, file=sys.stderr)
         sys.exit(2)

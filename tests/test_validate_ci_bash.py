@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 from conftest import LIB_DIR, REPO_ROOT
 
@@ -496,14 +497,18 @@ def test_hook_exit_0_for_missing_tool_input():
     assert result.returncode == 0
 
 
-def test_hook_subprocess_whitelist_block(tmp_path):
-    """Full subprocess test: command blocked by whitelist."""
-    claude_dir = tmp_path / ".claude"
+def test_hook_subprocess_whitelist_block(git_repo):
+    """Full subprocess test: command blocked by whitelist when flow is active."""
+    claude_dir = git_repo / ".claude"
     claude_dir.mkdir()
     settings = {"permissions": {"allow": ["Bash(git status)"]}}
     (claude_dir / "settings.json").write_text(json.dumps(settings))
+    # State file makes flow active — whitelist enforced
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "main.json").write_text("{}")
 
-    code, stderr = _run_hook("curl http://example.com", cwd=str(tmp_path))
+    code, stderr = _run_hook("curl http://example.com", cwd=str(git_repo))
     assert code == 2
     assert "not in allow list" in stderr
 
@@ -810,3 +815,108 @@ def test_detect_branch_from_cwd_git_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(mod.subprocess, "run", fail)
     result = mod._detect_branch_from_cwd()
     assert result is None
+
+
+# --- _is_flow_active() tests ---
+
+
+def test_is_flow_active_with_state_file(tmp_path):
+    """Returns True when state file exists for the branch."""
+    mod = _load_module()
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "my-feature.json").write_text("{}")
+    assert mod._is_flow_active("my-feature", tmp_path) is True
+
+
+def test_is_flow_active_no_state_file(tmp_path):
+    """Returns False when state file does not exist."""
+    mod = _load_module()
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    assert mod._is_flow_active("my-feature", tmp_path) is False
+
+
+def test_is_flow_active_no_branch():
+    """Returns False when branch is None (detached HEAD)."""
+    mod = _load_module()
+    assert mod._is_flow_active(None, Path("/some/path")) is False
+
+
+def test_is_flow_active_no_project_root():
+    """Returns False when project_root is None."""
+    mod = _load_module()
+    assert mod._is_flow_active("my-feature", None) is False
+
+
+def test_is_flow_active_no_flow_states_dir(tmp_path):
+    """Returns False when .flow-states/ directory doesn't exist."""
+    mod = _load_module()
+    assert mod._is_flow_active("my-feature", tmp_path) is False
+
+
+# --- Flow detection subprocess integration tests ---
+
+
+def test_hook_subprocess_flow_active_blocks(git_repo):
+    """Subprocess: settings + state file → unlisted command blocked."""
+    claude_dir = git_repo / ".claude"
+    claude_dir.mkdir()
+    settings = {"permissions": {"allow": ["Bash(git status)"]}}
+    (claude_dir / "settings.json").write_text(json.dumps(settings))
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "main.json").write_text("{}")
+
+    code, stderr = _run_hook("npm test", cwd=str(git_repo))
+    assert code == 2
+    assert "not in allow list" in stderr
+
+
+def test_hook_subprocess_no_flow_allows(git_repo):
+    """Subprocess: settings + no state file → unlisted command allowed."""
+    claude_dir = git_repo / ".claude"
+    claude_dir.mkdir()
+    settings = {"permissions": {"allow": ["Bash(git status)"]}}
+    (claude_dir / "settings.json").write_text(json.dumps(settings))
+    # No .flow-states/ — flow not active
+
+    code, stderr = _run_hook("npm test", cwd=str(git_repo))
+    assert code == 0
+    assert stderr == ""
+
+
+def test_hook_subprocess_worktree_flow_active_blocks(tmp_path):
+    """Subprocess: worktree CWD + state file → unlisted command blocked."""
+    project = tmp_path / "project"
+    project.mkdir()
+    claude_dir = project / ".claude"
+    claude_dir.mkdir()
+    settings = {"permissions": {"allow": ["Bash(git status)"]}}
+    (claude_dir / "settings.json").write_text(json.dumps(settings))
+    state_dir = project / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "my-feature.json").write_text("{}")
+    worktree_dir = project / ".worktrees" / "my-feature"
+    worktree_dir.mkdir(parents=True)
+
+    code, stderr = _run_hook("npm test", cwd=str(worktree_dir))
+    assert code == 2
+    assert "not in allow list" in stderr
+
+
+def test_hook_subprocess_worktree_no_flow_allows(tmp_path):
+    """Subprocess: worktree CWD + no state file → unlisted command allowed."""
+    project = tmp_path / "project"
+    project.mkdir()
+    claude_dir = project / ".claude"
+    claude_dir.mkdir()
+    settings = {"permissions": {"allow": ["Bash(git status)"]}}
+    (claude_dir / "settings.json").write_text(json.dumps(settings))
+    # No .flow-states/ — flow not active
+    worktree_dir = project / ".worktrees" / "my-feature"
+    worktree_dir.mkdir(parents=True)
+
+    code, stderr = _run_hook("npm test", cwd=str(worktree_dir))
+    assert code == 0
+    assert stderr == ""
