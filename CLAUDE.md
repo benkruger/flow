@@ -181,7 +181,7 @@ The 2 destinations:
 
 Learn also files GitHub issues for process gaps ("Flow" label on the plugin repo) and documentation drift ("Documentation Drift" label). All filed issues are recorded in the state file via `bin/flow add-issue` and surfaced in the Complete phase.
 
-Code files "Flaky Test" issues when tests fail intermittently during the CI gate. Code Review files "Tech Debt" and "Documentation Drift" issues for out-of-scope findings. All issue filing uses `bin/flow issue` and `bin/flow add-issue`.
+Start and Code file "Flaky Test" issues when tests fail intermittently during CI gates. Code Review files "Tech Debt" and "Documentation Drift" issues for out-of-scope findings. All issue filing uses `bin/flow issue` and `bin/flow add-issue`.
 
 Notes captured by `/flow:flow-note` feed into the same routing mechanism.
 
