@@ -46,7 +46,7 @@ Start → Plan → Code → Code Review → Learn → Complete
 | **1: Start** | `/flow-start <prompt>` | Lock, pull main, `bin/ci` baseline, upgrade dependencies, `bin/ci` post-deps, commit to main, unlock, new worktree + PR — ci-fixer sub-agent handles failures |
 | **2: Plan** | `/flow-plan` | Reads the start prompt, invokes DAG decompose plugin for dependency analysis, explores codebase, produces ordered tasks with dependency graph |
 | **3: Code** | `/flow-code` | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
-| **4: Code Review** | `/flow-code-review` | Four lenses — clarity (foreground review agents), correctness (`/review`), safety (`/security-review`), and CLAUDE.md compliance (`code-review:code-review` plugin) |
+| **4: Code Review** | `/flow-code-review` | Three built-in lenses — clarity (foreground review agents), correctness (`/review`), safety (`/security-review`) — plus optional CLAUDE.md compliance (`code-review:code-review` plugin, configurable: `always`/`auto`/`never`) |
 | **5: Learn** | `/flow-learn` | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
 | **6: Complete** | `/flow-complete` | Close issues referenced in prompt, PR merged, worktree removed, state file deleted, feature done |
 
@@ -222,12 +222,21 @@ Phase 1 uses the **ci-fixer sub-agent** when `bin/ci` fails — at the baseline 
 
 ### State File Persistence
 
-Every feature has a state file at `.flow-states/<branch>.json`. It stores:
+Every feature has a state file at `.flow-states/<branch>.json`. Key fields include:
 
-- **Plan file path** — reference to the plan file at `~/.claude/plans/<name>.md`
-- **Notes** — corrections captured automatically throughout the session
-- **Timing** — per-phase cumulative seconds and visit counts
-- **Security findings** — vulnerability tracking with fix status
+- **Identity** — `branch`, `repo`, `pr_number`, `pr_url`, `prompt`, `framework`
+- **Phase tracking** — `current_phase`, per-phase `status`/`started_at`/`completed_at`/`cumulative_seconds`/`visit_count`, `phase_transitions` history
+- **Artifact paths** — `files.plan`, `files.dag`, `files.log`, `files.state`
+- **Progress** — `code_task` counter, `code_review_step`, `learn_step`, `complete_step`
+- **Notes** — corrections captured via `/flow-note` throughout the session
+- **Continuation** — `_continue_pending`, `_continue_context`, `_auto_continue` for stop-hook resumption
+- **Compaction** — `compact_summary`, `compact_cwd`, `compact_count` for post-compaction context recovery
+- **Autonomy** — `skills` object with per-skill `commit`/`continue` settings
+- **Slack** — `slack_thread_ts`, `slack_notifications` for thread-per-feature tracking
+- **Issues** — `issues_filed` array (Tech Debt, Flaky Test, Documentation Drift, Flow issues)
+- **Diff stats** — `files_changed`, `insertions`, `deletions` captured at Code phase completion
+
+Full schema reference: `docs/reference/flow-state-schema.md`.
 
 State survives session breaks and compaction. Multiple features can run simultaneously in separate worktrees with separate state files — both on the same machine and across multiple engineers. State files are local to each machine; GitHub labels ("Flow In-Progress") provide cross-engineer WIP detection so `/flow-issues` shows which issues are already being worked on.
 
@@ -235,13 +244,16 @@ State survives session breaks and compaction. Multiple features can run simultan
 
 Every Claude Code session start — new terminal, `/clear`, `/compact` — triggers a hook that scans `.flow-states/` for in-progress features.
 
-If a feature is found, Claude knows the feature name, current phase, and worktree — but does not act on it. No auto-prompting, no "Ready to continue?" interrupting your train of thought. When you want to resume, type `/flow-continue` and pick up exactly where you left off.
+If a feature is found, Claude knows the feature name, current phase, worktree, and code task progress — but does not act on it. No auto-prompting, no "Ready to continue?" When you want to resume, type `/flow-continue` and pick up exactly where you left off.
 
-The same hook injects the correction-capture instruction for the full session:
+The hook also handles:
 
-> "Throughout this session: whenever the user corrects you, invoke `/flow-note` immediately before replying."
+- **Timing recovery** — resets interrupted session timing so cumulative phase durations stay accurate across session breaks
+- **Compaction recovery** — consumes `compact_summary` and `compact_cwd` from the state file to inject richer context after `/compact`
+- **Orchestration awareness** — detects in-progress or completed orchestration runs and delivers the morning report
+- **Correction capture** — injects the instruction to invoke `/flow-note` whenever the user corrects Claude
 
-Both behaviors — feature awareness and correction capture — are wired in at session start, without any user action.
+All behaviors are wired at session start without any user action.
 
 ### The Learning System
 
@@ -259,6 +271,19 @@ Each learning is routed to the right repo-local destination:
 ```
 
 The learnings don't evaporate at session end. They compound.
+
+### Bash Validation Hook
+
+A global `PreToolUse` hook (`validate-ci-bash.py`) fires on every Bash call in any FLOW-primed project. It enforces 6 validation layers in order:
+
+1. **Compound commands** — blocks `&&`, `;`, `|` (use separate Bash calls)
+2. **Shell redirection** — blocks `>`, `>>`, `2>` (use Read/Write tools)
+3. **Blanket restore** — blocks `git restore .` (restore files individually)
+4. **Deny list** — blocks commands matching deny patterns in `.claude/settings.json`
+5. **File-read commands** — blocks `cat`, `head`, `tail`, `grep`, `rg`, `find`, `ls` (use dedicated tools)
+6. **Whitelist** — command must match a `Bash(...)` allow pattern in `.claude/settings.json`
+
+Layers 1–5 are always enforced. Layer 6 (whitelist) is **flow-aware**: it only enforces during an active flow (when `.flow-states/<branch>.json` exists). Outside of flows, unlisted commands fall through to Claude Code's native permission system so users can still run `npm test`, `docker compose up`, or any other command by approving the prompt.
 
 ### Phase Back-Navigation
 
@@ -309,34 +334,27 @@ These skills and scripts live in the FLOW repo itself (`.claude/skills/` and `li
 | Command | What it does |
 |---------|-------------|
 | `/flow-release` | Bump version in plugin.json and marketplace.json, tag, push, create GitHub Release |
-| `/flow-qa` | QA mode — bare shows status, `--start` switches to local `--plugin-dir` testing, `--stop` reinstalls marketplace |
+| `/flow-qa` | End-to-end QA — clone QA repos, prime with local source, run a full 6-phase lifecycle, verify results |
 
-### Local QA Workflow
+### QA System
 
-Every plugin change can be tested locally before releasing:
+Every plugin change can be tested end-to-end before releasing. `/flow-qa` clones dedicated QA repos, primes them with the local plugin source, runs a fully autonomous 6-phase lifecycle (Start through Complete), and verifies the results.
 
 ```bash
-/flow-qa              # check current mode (dev or marketplace)
-/flow-qa --start      # switch to local dev mode
-/flow-qa --stop       # switch back to marketplace
+/flow-qa python       # test against Python QA repo
+/flow-qa rails        # test against Rails QA repo
+/flow-qa ios          # test against iOS QA repo
+/flow-qa all          # test all frameworks sequentially
 ```
 
-`--start` redirects the plugin to local source by setting `plugin_root_backup` in `.flow.json`. Then start Claude Code with `--plugin-dir` to load local source:
+Each framework has a dedicated QA repo (`benkruger/flow-qa-python`, `flow-qa-rails`, `flow-qa-ios`) with a minimal Calculator class, tests, `bin/ci`, and seed issues. The QA skill clones fresh, primes with `--plugin-root $PWD` to test the local source, runs a flow against a seed issue, and then verifies: worktree removed, state file deleted, PR merged, no stale artifacts.
+
+Supporting scripts: `bin/flow scaffold-qa` (create QA repos from templates), `bin/flow qa-reset` (reset repos to seed state), `bin/flow qa-verify` (verify post-Complete assertions).
+
+For quick local testing without the full QA lifecycle, use Claude Code's `--plugin-dir` flag:
 
 ```bash
 claude --plugin-dir=$HOME/code/flow
-```
-
-`--stop` restores the original plugin path from `plugin_root_backup` in `.flow.json`. Both flags prompt you to run `/reload-plugins` afterward.
-
-The underlying commands can also be run directly:
-
-```bash
-claude plugin list                               # check if marketplace plugin is installed
-claude plugin uninstall flow@flow-marketplace    # remove it (if installed)
-rm -rf ~/.claude/plugins/cache/flow-marketplace  # nuke cache
-claude --plugin-dir=$HOME/code/flow              # test with local source
-claude plugin install flow@flow-marketplace      # reinstall when done
 ```
 
 ---
