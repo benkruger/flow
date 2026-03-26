@@ -1,4 +1,5 @@
 import XCTest
+@testable import FlowQA
 
 final class CalculatorTests: XCTestCase {
     func testAdd() {
