@@ -87,7 +87,7 @@ def _is_flow_active(branch, project_root):
     """
     if not branch or project_root is None:
         return False
-    state_file = Path(project_root) / ".flow-states" / f"{branch}.json"
+    state_file = project_root / ".flow-states" / f"{branch}.json"
     return state_file.is_file()
 
 
@@ -187,7 +187,7 @@ def main():
         sys.exit(0)
 
     settings, project_root = _find_settings_and_root()
-    branch = _detect_branch_from_cwd()
+    branch = _detect_branch_from_cwd() if settings is not None else None
     flow_active = _is_flow_active(branch, project_root)
     allowed, message = validate(command, settings=settings, flow_active=flow_active)
     if not allowed:
