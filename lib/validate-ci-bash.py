@@ -22,6 +22,7 @@ Validation layers (in order):
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -31,20 +32,63 @@ from flow_utils import permission_to_regex
 FILE_READ_COMMANDS = {"cat", "head", "tail", "grep", "rg", "find", "ls"}
 
 
-def _find_settings_json():
+def _find_settings_and_root():
     """Walk up from CWD looking for .claude/settings.json.
 
-    Returns the parsed dict, or None if not found or unparseable.
+    Returns (settings_dict, project_root) where project_root is the
+    directory containing .claude/. Returns (None, None) if not found
+    or unparseable.
     """
     current = Path.cwd().resolve()
     for directory in [current, *current.parents]:
         settings_path = directory / ".claude" / "settings.json"
         if settings_path.is_file():
             try:
-                return json.loads(settings_path.read_text())
+                return json.loads(settings_path.read_text()), directory
             except (json.JSONDecodeError, ValueError, OSError):
-                return None
-    return None
+                return None, None
+    return None, None
+
+
+WORKTREE_MARKER = ".worktrees/"
+
+
+def _detect_branch_from_cwd():
+    """Detect the current branch name from the working directory.
+
+    In a worktree (.worktrees/<branch>/), extracts the branch from
+    the path with no subprocess cost. Otherwise falls back to
+    ``git branch --show-current`` (one subprocess).
+
+    Returns None if not on a branch (detached HEAD) or if git fails.
+    """
+    cwd = str(Path.cwd())
+    marker_pos = cwd.find(WORKTREE_MARKER)
+    if marker_pos != -1:
+        after_marker = cwd[marker_pos + len(WORKTREE_MARKER):]
+        branch = after_marker.split("/")[0]
+        return branch if branch else None
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            capture_output=True, text=True, check=True,
+        )
+        return result.stdout.strip() or None
+    except Exception:
+        return None
+
+
+def _is_flow_active(branch, project_root):
+    """Check if a FLOW feature is active for the given branch.
+
+    Returns True when ``.flow-states/<branch>.json`` exists at the
+    project root. Returns False for None branch, None root, or
+    missing state file.
+    """
+    if not branch or project_root is None:
+        return False
+    state_file = project_root / ".flow-states" / f"{branch}.json"
+    return state_file.is_file()
 
 
 def _build_permission_regexes(settings, list_key):
@@ -63,14 +107,20 @@ def _build_permission_regexes(settings, list_key):
     return regexes
 
 
-def validate(command, settings=None):
+def validate(command, settings=None, flow_active=True):
     """Validate a Bash command string.
 
     Returns (allowed: bool, message: str).
     message is empty if allowed, otherwise explains why blocked.
 
-    If settings is provided, also checks command against the allow-list
-    whitelist. If settings is None, the whitelist check is skipped.
+    Layers 1-5 (compound commands, redirection, blanket restore, deny
+    list, file-read commands) are always enforced regardless of
+    flow_active.
+
+    Layer 6 (whitelist enforcement) is only enforced when both settings
+    are provided AND flow_active is True. When flow_active is False,
+    unlisted commands fall through to Claude Code's native permission
+    system.
     """
     # Block compound commands (&&, ;, |)
     if "&&" in command or re.search(r"(?<!\\);", command) or "|" in command:
@@ -112,8 +162,8 @@ def validate(command, settings=None):
                 f"(Read for cat/head/tail, Grep for grep/rg, "
                 f"Glob for find/ls).")
 
-    # Whitelist check — only if settings are available
-    if settings is not None:
+    # Whitelist check — only during an active flow
+    if settings is not None and flow_active:
         regexes = _build_permission_regexes(settings, "allow")
         if regexes:
             matched = any(r.match(command) for r in regexes)
@@ -136,8 +186,10 @@ def main():
     if not command:
         sys.exit(0)
 
-    settings = _find_settings_json()
-    allowed, message = validate(command, settings=settings)
+    settings, project_root = _find_settings_and_root()
+    branch = _detect_branch_from_cwd() if settings is not None else None
+    flow_active = _is_flow_active(branch, project_root)
+    allowed, message = validate(command, settings=settings, flow_active=flow_active)
     if not allowed:
         print(message, file=sys.stderr)
         sys.exit(2)

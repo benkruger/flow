@@ -208,7 +208,7 @@ Claude never computes timestamps, time differences, or counter increments. All s
 Every `` ```bash `` block in every skill and docs file must run without triggering a Claude Code permission prompt. Two layers enforce this:
 
 - **Test time** — `test_permissions.py` extracts every bash block, substitutes placeholders with concrete values, and verifies each command matches an allow-list pattern and does not match a deny-list pattern. New bash commands require a matching permission entry. New placeholders require a `PLACEHOLDER_SUBS` entry. Unrecognized placeholders fail the test — they are never silently skipped.
-- **Runtime** — `validate-ci-bash.py` runs as a global `PreToolUse` hook on every Bash call. It blocks compound commands, shell redirection, and file-read commands via fast-path checks, then enforces the `.claude/settings.json` allow list as a whitelist. Commands not matching any `Bash(...)` allow pattern are blocked with exit code 2 and a helpful error message. If `settings.json` is missing (non-FLOW project), the whitelist check is skipped.
+- **Runtime** — `validate-ci-bash.py` runs as a global `PreToolUse` hook on every Bash call. It blocks compound commands, shell redirection, and file-read commands via fast-path checks regardless of flow state. The `.claude/settings.json` allow list is enforced as a whitelist only when a flow is active (`.flow-states/<branch>.json` exists for the current branch). Commands not matching any `Bash(...)` allow pattern are blocked with exit code 2 and a helpful error message. When no flow is active or `settings.json` is missing, the whitelist check is skipped — unlisted commands fall through to Claude Code's native permission system.
 
 ## Test Architecture
 
@@ -242,6 +242,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_prime_project.py` | CLAUDE.md priming: marker insertion, idempotent replacement, framework switching |
 | `test_create_dependencies.py` | Dependency template: file creation, skip-if-exists, chmod, CLI |
 | `test_prime_setup.py` | Prime setup: data-driven permissions, settings merge, version marker, git exclude, pre-commit hook |
+| `test_validate_ci_bash.py` | Bash hook validator: compound commands, redirection, blanket restore, deny list, file-read commands, whitelist enforcement (flow-active gating, worktree branch detection, settings+root resolution), in-process and subprocess integration |
 | `test_validate_ask_user.py` | AskUserQuestion hook: blocks prompts when `_auto_continue` set, allows when absent/empty, `_blocked` write on allow, subprocess integration |
 | `test_clear_blocked.py` | PostToolUse hook: clears `_blocked` from state, noop when absent, fail-open on errors, subprocess integration |
 | `test_post_compact.py` | PostCompact hook: compact_summary/cwd/count written to state, fail-open on errors, subprocess integration |
