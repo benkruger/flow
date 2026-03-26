@@ -167,19 +167,31 @@ Monitor every active flow from your terminal — no Claude session needed. `flow
 | Key | Action |
 |-----|--------|
 | Up/Down | Navigate flow list |
+| Left/Right | Switch tab |
 | Enter | Open worktree in new Terminal tab |
 | p | Open PR in browser |
+| i | Open issue in browser |
 | l | Show session log |
 | a | Abort flow (with Y/N confirmation) |
 | r | Force refresh |
-| Esc | Return from log view to list view |
+| Esc | Back to list view |
 | q | Quit |
 
 The detail panel shows the full phase timeline with per-phase cumulative time, code task progress, diff stats, notes count, and issues filed. Runs standalone on macOS and Linux using the Python standard library `curses` module.
 
+### Project Decomposition
+
+Describe a project in plain language and FLOW decomposes it into a fully linked GitHub issue graph — epic, milestones, sub-issues, blocked-by dependencies, and phase labels. Every issue is filed work-ready with acceptance criteria, file paths, and scope boundaries from real codebase exploration.
+
+```text
+/flow-decompose-project add multi-tenant billing
+```
+
+The skill walks through 6 steps: DAG decomposition with codebase exploration, issue list review with iteration, epic and milestone creation, child issue filing in topological order, sub-issue and blocked-by relationship linking, and a final report. You review and iterate at each gate before anything is filed. The resulting issue graph feeds directly into `/flow-orchestrate` for overnight processing, or you pick issues one at a time with `/flow-start work on issue #N`.
+
 ### Batch Orchestration
 
-Queue up decomposed issues and let FLOW process them overnight. `/flow-orchestrate` fetches open issues labeled "Decomposed", filters out any marked "Flow In-Progress", and runs each sequentially through all 6 phases via `flow-start --auto`.
+Feed the issue graph into `/flow-orchestrate` and let FLOW process them overnight. It fetches open issues labeled "Decomposed", filters out any marked "Flow In-Progress", and runs each sequentially through all 6 phases via `flow-start --auto`.
 
 The next time you open a Claude Code session, the session-start hook delivers a morning report: which issues completed (with PR links), which failed (with reasons), and total elapsed time. One command to start, zero intervention overnight, full accountability in the morning.
 

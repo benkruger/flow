@@ -667,19 +667,70 @@
   <section>
     <h2>Beyond the Phases</h2>
 
-    <h3>Batch Orchestration</h3>
-    <p>Queue up decomposed issues and let FLOW process them overnight. Each issue runs through all 6 phases autonomously via <code>/flow-start --auto</code>. Wake up to a morning report.</p>
+    <h3>Project Decomposition</h3>
+    <p>Describe a project in plain language and FLOW decomposes it into a fully linked GitHub issue graph &mdash; epic, milestones, sub-issues, blocked-by dependencies, and phase labels. Every issue is filed work-ready with acceptance criteria, file paths, and scope boundaries from real codebase exploration.</p>
 
     <div class="pipeline">
       <div class="pipeline-step">
         <div class="step-num">1</div>
+        <span class="step-label">Describe</span>
+        <span class="step-detail">Tell Claude what to build &mdash; <code>/flow-decompose-project add multi-tenant billing</code></span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">2</div>
         <span class="step-label">Decompose</span>
-        <span class="step-detail"><code>/flow-create-issue</code> files work-ready issues with DAG analysis</span>
+        <span class="step-detail">DAG analysis with deep codebase exploration &mdash; dependency graph, phase groupings, risk identification</span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">3</div>
+        <span class="step-label">Review</span>
+        <span class="step-detail">Full issue list with bodies, dependencies, and phase labels &mdash; iterate until right</span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">4</div>
+        <span class="step-label">File</span>
+        <span class="step-detail">Epic, milestone, child issues, sub-issue links, blocked-by relationships &mdash; all created on GitHub</span>
+      </div>
+    </div>
+
+    <div class="terminal">
+      <div class="terminal-bar">
+        <span class="t-close"></span>
+        <span class="t-min"></span>
+        <span class="t-max"></span>
+      </div>
+      <div class="terminal-body">
+<span class="t-bold">  ── Step 6 of 6: Report ──</span>
+
+| #  | Title                              | Issue  | Phase          | Deps   |
+|----|------------------------------------|--------|----------------|--------|
+| &mdash;  | <span class="t-bold">Epic: Multi-tenant billing</span>          | <span class="t-accent">#120</span>   | &mdash;             | &mdash;     |
+| 1  | Add tenant model and migrations    | <span class="t-green">#121</span>   | Phase 1: Data  | &mdash;     |
+| 2  | Scope queries to current tenant    | <span class="t-green">#122</span>   | Phase 1: Data  | <span class="t-dim">#121</span>   |
+| 3  | Stripe Connect per-tenant accounts | <span class="t-green">#123</span>   | Phase 2: API   | <span class="t-dim">#121</span>   |
+| 4  | Metered usage tracking             | <span class="t-green">#124</span>   | Phase 2: API   | <span class="t-dim">#122</span>   |
+| 5  | Invoice generation and PDF export  | <span class="t-green">#125</span>   | Phase 3: UI    | <span class="t-dim">#123 #124</span> |
+| 6  | Tenant admin billing dashboard     | <span class="t-green">#126</span>   | Phase 3: UI    | <span class="t-dim">#125</span>   |
+
+Issues: <span class="t-green">6 created</span>  &middot;  Milestone: <span class="t-accent">Multi-tenant billing (2026-04-15)</span>
+Sub-issues: <span class="t-green">6 linked</span>  &middot;  Dependencies: <span class="t-green">5 linked</span></div>
+    </div>
+
+    <p>The issue graph feeds directly into <code>/flow-orchestrate</code> below &mdash; or pick issues one at a time with <code>/flow-start work on issue #121</code>.</p>
+
+    <h3>Batch Orchestration</h3>
+    <p>Feed the issue graph into <code>/flow-orchestrate</code> and let FLOW process them overnight. Each issue runs through all 6 phases autonomously. Wake up to a morning report.</p>
+
+    <div class="pipeline">
+      <div class="pipeline-step">
+        <div class="step-num">1</div>
+        <span class="step-label">Select</span>
+        <span class="step-detail">Fetches open issues labeled <code>Decomposed</code>, filters out in-progress work</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">2</div>
         <span class="step-label">Queue</span>
-        <span class="step-detail"><code>/flow-orchestrate</code> fetches decomposed issues, filters in-progress, builds queue</span>
+        <span class="step-detail"><code>/flow-orchestrate</code> builds the execution queue in dependency order</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">3</div>
@@ -775,6 +826,7 @@ Duration: <span class="t-accent">6h 27m</span>
         <tr><td><code>/flow-config</code></td><td>Display current configuration &mdash; version, framework, per-skill autonomy</td></tr>
         <tr><td><code>/flow-issues</code></td><td>Fetch open issues, categorize, prioritize, and display a dashboard. Supports readiness filters</td></tr>
         <tr><td><code>/flow-create-issue</code></td><td>Explore a design question or decompose a concrete problem, iterate until work-ready, then file it</td></tr>
+        <tr><td><code>/flow-decompose-project</code></td><td>Decompose a project into a linked GitHub issue graph &mdash; epic, milestones, sub-issues, blocked-by dependencies</td></tr>
         <tr><td><code>/flow-orchestrate</code></td><td>Batch orchestration &mdash; process decomposed issues overnight via flow-start --auto</td></tr>
         <tr><td><code>/flow-local-permission</code></td><td>Promote permissions from settings.local.json into settings.json</td></tr>
       </tbody>
@@ -794,7 +846,7 @@ Duration: <span class="t-accent">6h 27m</span>
         <span class="t-max"></span>
       </div>
       <div class="terminal-body">
-<span class="t-dim">────</span> <span class="t-bold">FLOW v0.37.0</span> <span class="t-dim">──────────────────────────────────────────────</span>
+<span class="t-dim">────</span> <span class="t-bold">FLOW v0.39.0</span> <span class="t-dim">──────────────────────────────────────────────</span>
 
   <span class="t-bold">Active Flows (2)</span>  <span class="t-dim">&#9474;</span>  <span class="t-dim">Orchestration</span>
   <span class="t-dim">──────────────────────────────────────────────────────</span>
@@ -825,7 +877,7 @@ Duration: <span class="t-accent">6h 27m</span>
         <span class="t-max"></span>
       </div>
       <div class="terminal-body">
-<span class="t-dim">────</span> <span class="t-bold">FLOW v0.37.0</span> <span class="t-dim">──────────────────────────────────────────────</span>
+<span class="t-dim">────</span> <span class="t-bold">FLOW v0.39.0</span> <span class="t-dim">──────────────────────────────────────────────</span>
 
   <span class="t-dim">Active Flows (2)</span>  <span class="t-dim">&#9474;</span>  <span class="t-bold">Orchestration (4/5)</span>
   <span class="t-dim">──────────────────────────────────────────────────────</span>
