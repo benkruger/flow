@@ -31,7 +31,7 @@ Acquires a lock (`lib/start-lock.py`) so only one flow-start runs at a time. The
 
 ### 4. CI baseline gate
 
-`bin/flow ci` — establish a clean baseline. If CI fails, the ci-fixer sub-agent diagnoses and fixes, then commits to main.
+`bin/flow ci` — establish a clean baseline. Main is pristine, so any failure is a flaky test. Retries up to 3 times; if a subsequent attempt passes, files a Flaky Test issue and continues. If all 3 fail, stops and reports to the user.
 
 ### 5. Update dependencies
 
@@ -39,7 +39,7 @@ Acquires a lock (`lib/start-lock.py`) so only one flow-start runs at a time. The
 
 ### 6. CI post-deps gate
 
-If dependencies changed, `bin/flow ci` again — catches dep-induced breakage (rubocop, breaking changes). If CI fails, ci-fixer again, then commits to main.
+If dependencies changed, `bin/flow ci` again — catches dep-induced breakage (rubocop, breaking changes). Retries up to 3 times to detect flaky tests. If all retries fail consistently, launches the ci-fixer sub-agent to diagnose and fix.
 
 ### 7. Commit to main
 
