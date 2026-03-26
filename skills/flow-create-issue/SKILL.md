@@ -32,7 +32,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v0.39.0 — flow:flow-create-issue — STARTING
+  FLOW v1.0.0 — flow:flow-create-issue — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -298,7 +298,7 @@ Display the issue URL to the user, then output the COMPLETE banner:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v0.39.0 — flow:flow-create-issue — COMPLETE
+  ✓ FLOW v1.0.0 — flow:flow-create-issue — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````

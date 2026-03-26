@@ -1,5 +1,39 @@
 # Release Notes
 
+## v1.0.0 — The full lifecycle: from project idea to merged PRs, autonomously
+
+### New features
+
+- **Project Decomposition** — `/flow-decompose-project` breaks a project into a fully linked GitHub issue graph: epic, milestones, sub-issues with blocked-by dependencies, and phase labels. Every issue filed work-ready with acceptance criteria and file paths from real codebase exploration (#428).
+- **iOS framework support** — third supported framework after Rails and Python. QA templates, prime-check validation, and bin autogen secrets for iOS projects.
+- **Flow-aware Bash validation** — whitelist enforcement (layer 6) now only fires during active flows. Outside of flows, unlisted commands fall through to Claude Code's native permission system instead of being hard-blocked (#499).
+- **Pre-merge freshness check** — Complete phase fetches main and checks branch freshness before merging, preventing stale-branch merges with automatic retry (#473).
+- **Comprehensive QA system** — `/flow-qa` clones dedicated QA repos, primes with local source, runs a full autonomous 6-phase lifecycle, and verifies results. Supports Python, Rails, and iOS with per-framework templates (#434).
+- **Start CI flaky retry** — flaky test detection during the Start phase baseline CI gate (#497).
+
+### Improvements
+
+- **Shell redirection blocking** — new validation layer blocking `>`, `>>`, `2>` in Bash calls (#402).
+- **Start lock stale detection** — automatically recovers from stale PIDs holding the start lock (#477).
+- **CI speed improvements** — faster test suite execution (#482).
+- **CI branch-dependent test gate** — `--simulate-branch main` catches branch-dependent failures before merge (#405).
+- **GitHub Actions CI** — restored CI workflow with autoupdate for PR branches.
+- **TUI enhancements** — per-repo tab colors (#440), blocked status display (#422), early state task progress (#414), issue details surfaced (#469), open PR changes URL (#454), visual fixes (#490), terminal emulator auto-detection.
+- **Complete phase hardening** — issue links in Done banner (#411), merge CI timing (#494), manual prompt for PR (#449), continue manual flag (#437), docs step ordering (#438).
+- **Codebase consolidation** — extracted helpers (read_prompt_file, read_flow_json, conflict_parser, import_lib, mock_tty), consolidated branch/root/stop-continue/init-state logic, flattened sub-step markers, grouped gh allow entries (#388–#492).
+- **Marketing site and README** — Project Decomposition section, QA system documentation, state file schema expansion, Bash validation hook documentation, guardrails section additions.
+
+### Fixes
+
+- Fix create-issue targeting wrong repo (#394).
+- Fix prime skipping commit when unstaged (#390).
+- Fix prime-setup redundant permissions (#389).
+- Fix tab title cycling bug (#393).
+- Fix stop-continue merge conflict handling (#431).
+- Fix continue context dropping mode flag (#445).
+- Fix uuidgen blocked by Bash hook (#466).
+- Fix capture_session_id treating None branch as auto-detect.
+
 ## v0.39.0 — Direct rule editing, flow-issues redesign, and decision point gates
 
 ### New features
