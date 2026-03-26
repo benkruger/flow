@@ -702,21 +702,24 @@
       <div class="terminal-body">
 <span class="t-bold">  ── Step 6 of 6: Report ──</span>
 
-| #  | Title                              | Issue  | Phase          | Deps   |
-|----|------------------------------------|--------|----------------|--------|
-| &mdash;  | <span class="t-bold">Epic: Multi-tenant billing</span>          | <span class="t-accent">#120</span>   | &mdash;             | &mdash;     |
-| 1  | Add tenant model and migrations    | <span class="t-green">#121</span>   | Phase 1: Data  | &mdash;     |
-| 2  | Scope queries to current tenant    | <span class="t-green">#122</span>   | Phase 1: Data  | <span class="t-dim">#121</span>   |
-| 3  | Stripe Connect per-tenant accounts | <span class="t-green">#123</span>   | Phase 2: API   | <span class="t-dim">#121</span>   |
-| 4  | Metered usage tracking             | <span class="t-green">#124</span>   | Phase 2: API   | <span class="t-dim">#122</span>   |
-| 5  | Invoice generation and PDF export  | <span class="t-green">#125</span>   | Phase 3: UI    | <span class="t-dim">#123 #124</span> |
-| 6  | Tenant admin billing dashboard     | <span class="t-green">#126</span>   | Phase 3: UI    | <span class="t-dim">#125</span>   |
+  #   Title                              Issue   Phase          Deps
+  <span class="t-dim">──────────────────────────────────────────────────────────────────────────</span>
+  —   <span class="t-bold">Epic: Multi-tenant billing</span>          <span class="t-accent">#120</span>    —              —
+  1   Add tenant model and migrations    <span class="t-green">#121</span>    Phase 1: Data  —
+  2   Scope queries to current tenant    <span class="t-green">#122</span>    Phase 1: Data  <span class="t-dim">#121</span>
+  3   Stripe Connect per-tenant accounts <span class="t-green">#123</span>    Phase 2: API   <span class="t-dim">#121</span>
+  4   Metered usage tracking             <span class="t-green">#124</span>    Phase 2: API   <span class="t-dim">#122</span>
+  5   Invoice generation and PDF export  <span class="t-green">#125</span>    Phase 3: UI    <span class="t-dim">#123 #124</span>
+  6   Tenant admin billing dashboard     <span class="t-green">#126</span>    Phase 3: UI    <span class="t-dim">#125</span>
+  <span class="t-dim">──────────────────────────────────────────────────────────────────────────</span>
 
-Issues: <span class="t-green">6 created</span>  &middot;  Milestone: <span class="t-accent">Multi-tenant billing (2026-04-15)</span>
-Sub-issues: <span class="t-green">6 linked</span>  &middot;  Dependencies: <span class="t-green">5 linked</span></div>
+  Issues: <span class="t-green">6 created</span>  ·  Milestone: <span class="t-accent">Multi-tenant billing (2026-04-15)</span>
+  Sub-issues: <span class="t-green">6 linked</span>  ·  Dependencies: <span class="t-green">5 linked</span></div>
     </div>
 
-    <p>The issue graph feeds directly into <code>/flow-orchestrate</code> below &mdash; or pick issues one at a time with <code>/flow-start work on issue #121</code>.</p>
+    <div class="callout">
+      <p>The issue graph feeds directly into <code>/flow-orchestrate</code> below — or pick issues one at a time with <code>/flow-start work on issue #121</code>.</p>
+    </div>
 
     <h3>Batch Orchestration</h3>
     <p>Feed the issue graph into <code>/flow-orchestrate</code> and let FLOW process them overnight. Each issue runs through all 6 phases autonomously. Wake up to a morning report.</p>
