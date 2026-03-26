@@ -71,6 +71,16 @@ If no issues exist, print "No open issues in QA repo" and stop.
 
 ### Step 4 — Execute the flow
 
+Write a QA continuation breadcrumb so the stop hook forces continuation
+after all 6 phases complete (the branch state file is deleted by cleanup,
+so this breadcrumb is the only thing that survives):
+
+Use the Write tool to write `.flow-states/qa-pending.json` with:
+
+```json
+{"_continue_context": "QA flow complete. Return to FLOW repo at <absolute-path-to-flow-repo>, delete .flow-states/qa-pending.json via the Write tool (overwrite with empty), then run qa-verify and report results for <framework> against <owner/repo>."}
+```
+
 Change directory to the QA repo:
 
 ```bash
@@ -95,6 +105,13 @@ which may fail if the cwd was deleted):
 
 ```bash
 cd <absolute-path-to-flow-repo>
+```
+
+Delete the QA breadcrumb file by overwriting it with the Write tool
+(write `{}` to `.flow-states/qa-pending.json`), then delete it:
+
+```bash
+rm .flow-states/qa-pending.json
 ```
 
 ### Step 6 — Verify

@@ -199,6 +199,35 @@ def set_tab_title(root=None, branch=_UNSET):
         _log(root, branch, f"set_tab_title error: {exc}")
 
 
+def check_qa_pending(root=None):
+    """Check for a QA continuation breadcrumb at .flow-states/qa-pending.json.
+
+    The /flow-qa skill writes this file before invoking flow-start --auto.
+    After all 6 phases complete, the branch state file is deleted by cleanup.
+    This breadcrumb survives cleanup and forces the stop hook to block,
+    returning control to the QA skill's remaining steps.
+
+    Returns (should_block: bool, context: str|None).
+    Does NOT delete the file — the QA skill handles cleanup.
+    Fail-open: any error allows the stop.
+    """
+    try:
+        if root is None:
+            root = project_root()
+        qa_path = root / ".flow-states" / "qa-pending.json"
+        if not qa_path.exists():
+            return (False, None)
+
+        data = json.loads(qa_path.read_text())
+        context = data.get("_continue_context", "")
+        if not context:
+            return (False, None)
+
+        return (True, context)
+    except Exception:
+        return (False, None)
+
+
 def main():
     hook_input = {}
     try:
@@ -224,6 +253,15 @@ def main():
     clear_blocked(root=root, branch=branch)
 
     set_tab_title(root=root, branch=branch)
+
+    # Fallback: check for QA continuation breadcrumb when no branch
+    # state file blocked the stop.
+    if not should_block:
+        qa_block, qa_context = check_qa_pending(root=root)
+        if qa_block:
+            should_block = True
+            skill_name = "flow-complete"
+            context = qa_context
 
     if should_block:
         reason = (

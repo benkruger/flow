@@ -721,6 +721,92 @@ class TestSessionIsolation:
         assert updated["session_id"] == "new-session"
 
 
+# --- check_qa_pending tests ---
+
+
+class TestCheckQaPending:
+    def test_blocks_when_file_exists(self, git_repo):
+        state_dir = git_repo / ".flow-states"
+        state_dir.mkdir(exist_ok=True)
+        (state_dir / "qa-pending.json").write_text(json.dumps({
+            "_continue_context": "Return to FLOW repo and verify.",
+        }))
+
+        should_block, context = _mod.check_qa_pending(root=git_repo)
+
+        assert should_block is True
+        assert context == "Return to FLOW repo and verify."
+
+    def test_allows_when_no_file(self, git_repo):
+        should_block, context = _mod.check_qa_pending(root=git_repo)
+
+        assert should_block is False
+        assert context is None
+
+    def test_allows_when_empty_context(self, git_repo):
+        state_dir = git_repo / ".flow-states"
+        state_dir.mkdir(exist_ok=True)
+        (state_dir / "qa-pending.json").write_text(json.dumps({
+            "_continue_context": "",
+        }))
+
+        should_block, context = _mod.check_qa_pending(root=git_repo)
+
+        assert should_block is False
+        assert context is None
+
+    def test_allows_when_corrupt_json(self, git_repo):
+        state_dir = git_repo / ".flow-states"
+        state_dir.mkdir(exist_ok=True)
+        (state_dir / "qa-pending.json").write_text("{bad json")
+
+        should_block, context = _mod.check_qa_pending(root=git_repo)
+
+        assert should_block is False
+        assert context is None
+
+    def test_does_not_delete_file(self, git_repo):
+        state_dir = git_repo / ".flow-states"
+        state_dir.mkdir(exist_ok=True)
+        qa_path = state_dir / "qa-pending.json"
+        qa_path.write_text(json.dumps({
+            "_continue_context": "Verify results.",
+        }))
+
+        _mod.check_qa_pending(root=git_repo)
+
+        assert qa_path.exists()
+
+    def test_default_root_resolution(self, git_repo, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        state_dir = git_repo / ".flow-states"
+        state_dir.mkdir(exist_ok=True)
+        (state_dir / "qa-pending.json").write_text(json.dumps({
+            "_continue_context": "Verify results.",
+        }))
+
+        should_block, context = _mod.check_qa_pending()
+
+        assert should_block is True
+        assert context == "Verify results."
+
+    def test_subprocess_qa_fallback_blocks(self, git_repo):
+        """main() blocks via qa-pending fallback when no branch state file."""
+        state_dir = git_repo / ".flow-states"
+        state_dir.mkdir(exist_ok=True)
+        (state_dir / "qa-pending.json").write_text(json.dumps({
+            "_continue_context": "Return to FLOW repo and verify.",
+        }))
+
+        stdin = json.dumps({})
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
+
+        assert exit_code == 0
+        output = json.loads(stdout)
+        assert output["decision"] == "block"
+        assert "Return to FLOW repo and verify." in output["reason"]
+
+
 # --- set_tab_title tests ---
 
 
