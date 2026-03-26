@@ -1907,6 +1907,22 @@ def test_start_step_2_has_two_ci_gates():
     )
 
 
+def test_start_files_flaky_test_issues():
+    """Locked section (Steps 3–9) must file Flaky Test issues for intermittent CI failures."""
+    content = _read_skill("flow-start")
+    locked_match = re.search(
+        r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL
+    )
+    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_text = locked_match.group(1)
+    assert "Flaky Test" in locked_text, (
+        "flow-start locked section must detect and file 'Flaky Test' issues"
+    )
+    assert "bin/flow issue" in locked_text, (
+        "flow-start locked section must use 'bin/flow issue' to file flaky test issues"
+    )
+
+
 def test_start_truncation_proceeds_without_confirmation():
     """Truncation instruction must tell Claude to proceed without confirming."""
     content = _read_skill("flow-start")

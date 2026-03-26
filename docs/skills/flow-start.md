@@ -25,9 +25,9 @@ Begins a new feature. This is always the first command run for any piece of work
 1. Pre-flight: runs version gate and upgrade check in parallel
 2. Acquires a start lock so only one start runs at a time (concurrent starts wait internally via `--wait` with a 5-minute timeout)
 3. Pulls latest main
-4. Runs `bin/flow ci` for a clean baseline — ci-fixer sub-agent handles failures
+4. Runs `bin/flow ci` for a clean baseline — retries up to 3 times for flaky tests, files a Flaky Test issue if intermittent, stops if all fail
 5. Updates dependencies on main via `bin/dependencies`
-6. Runs `bin/flow ci` again to catch dep-induced breakage — ci-fixer handles failures
+6. Runs `bin/flow ci` again to catch dep-induced breakage — retries up to 3 times for flaky tests, falls back to ci-fixer sub-agent if all retries fail
 7. Commits any changes to main
 8. Releases the start lock
 9. Runs `lib/start-setup.py` — worktree creation, empty commit + push + PR, and state file creation. The user's raw input (including `#N` issue references) is written to `.flow-states/<branch>-start-prompt` and passed via `--prompt-file` so it is preserved verbatim in the state file for issue closing at completion

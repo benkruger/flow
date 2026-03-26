@@ -206,24 +206,49 @@ git pull origin main
 
 ### Step 5 — CI baseline gate
 
+Main is pristine — nothing merges without clean CI. Any failure here is
+a flaky test, not a real breakage.
+
 ```bash
 exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 ```
 
 If CI passes, continue to Step 6.
 
-If it fails, launch the `ci-fixer` sub-agent to diagnose and fix. Use the Agent tool:
+If CI fails, re-run up to 2 more times (3 total). Do not make any code
+changes between attempts — just re-run:
 
-- `subagent_type`: `"flow:ci-fixer"`
-- `description`: `"Fix bin/flow ci failures on main"`
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
+```
 
-Provide the full `bin/flow ci` output in the prompt so the sub-agent
-knows what failed.
+**If any subsequent attempt passes without code changes**, the failure
+was flaky. File a "Flaky Test" issue with reproduction data, then
+continue to Step 6.
 
-Wait for the sub-agent to return.
+The issue body must include: the test name, the failure message, how many
+attempts it took to pass, and the context "CI baseline on pristine main
+during flow-start".
 
-- **Fixed** — commit the fixes via `/flow:flow-commit --auto`, then continue to Step 6
-- **Not fixed** — release the lock and stop. Report to the user.
+Write the issue body to `.flow-issue-body` in the project root using the
+Write tool, then file:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Flaky Test" --title "<issue_title>" --body-file .flow-issue-body
+```
+
+After filing, record it:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_title>" --url "<issue_url>" --phase "flow-start"
+```
+
+**If all 3 attempts fail consistently**, release the lock and stop.
+Report to the user that CI is consistently failing on pristine main.
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release
+```
 
 ### Step 6 — Update dependencies
 
@@ -256,10 +281,45 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 
 If CI passes, continue to Step 8.
 
-If it fails, launch the `ci-fixer` sub-agent:
+If CI fails, re-run up to 2 more times (3 total). Do not make any code
+changes between attempts — just re-run:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
+```
+
+**If any subsequent attempt passes without code changes**, the failure
+was flaky. File a "Flaky Test" issue with reproduction data, then
+continue to Step 8.
+
+The issue body must include: the test name, the failure message, how many
+attempts it took to pass, and the context "CI post-deps gate during
+flow-start after dependency update".
+
+Write the issue body to `.flow-issue-body` in the project root using the
+Write tool, then file:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Flaky Test" --title "<issue_title>" --body-file .flow-issue-body
+```
+
+After filing, record it:
+
+```bash
+exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_title>" --url "<issue_url>" --phase "flow-start"
+```
+
+**If all 3 attempts fail consistently**, this is real dep-induced
+breakage. Launch the `ci-fixer` sub-agent to diagnose and fix. Use the
+Agent tool:
 
 - `subagent_type`: `"flow:ci-fixer"`
 - `description`: `"Fix bin/flow ci failures after dependency update"`
+
+Provide the full `bin/flow ci` output in the prompt so the sub-agent
+knows what failed.
+
+Wait for the sub-agent to return.
 
 - **Fixed** — continue to Step 8
 - **Not fixed** — release the lock and stop. Report to the user.
