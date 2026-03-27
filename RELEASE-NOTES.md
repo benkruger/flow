@@ -1,5 +1,15 @@
 # Release Notes
 
+## v1.0.1 — Fix plugin permission matching in target projects
+
+### Fixes
+
+- Fix broken `Bash(*bin/flow *)` permission pattern — replace with dynamic
+  installation-specific patterns generated from the actual plugin path at
+  prime time. Every `exec ${CLAUDE_PLUGIN_ROOT}/bin/flow` command was
+  triggering permission prompts in target projects (#501).
+- Add `chmod` permission to `.claude/settings.json` build category.
+
 ## v1.0.0 — The full lifecycle: from project idea to merged PRs, autonomously
 
 ### New features

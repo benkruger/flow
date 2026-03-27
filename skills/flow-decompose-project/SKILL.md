@@ -57,7 +57,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v1.0.0 — flow:flow-decompose-project — STARTING
+  FLOW v1.0.1 — flow:flow-decompose-project — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -356,7 +356,7 @@ Output the COMPLETE banner:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v1.0.0 — flow:flow-decompose-project — COMPLETE
+  ✓ FLOW v1.0.1 — flow:flow-decompose-project — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
