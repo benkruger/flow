@@ -217,7 +217,8 @@ For each learning, follow this decision procedure to choose the destination:
    as project-wide knowledge (architecture, key files, universal conventions).
 2. **Check existing rules files.** Use the Glob tool to list files at
    `<worktree_path>/.claude/rules/*.md`. If an existing file covers this
-   topic, route to that file (update it).
+   topic, route to that file (update it). If no existing file matches,
+   continue to step 3.
 3. **Apply the scope test.** Ask: "Would every Claude session in this project
    need this knowledge, regardless of what it is working on?"
    - If yes → Project CLAUDE.md (`CLAUDE.md`) — Edit on disk
