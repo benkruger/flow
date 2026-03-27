@@ -349,18 +349,16 @@ class TestMain:
         output = json.loads(capsys.readouterr().out)
         assert output["status"] == "ok"
 
-    def test_main_state_file_no_repo_falls_back(self, capsys):
+    def test_main_state_file_no_repo_falls_back(self, capsys, tmp_path):
         """--state-file with no repo key falls back to detect_repo."""
-        import tempfile
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump({"branch": "test"}, f)
-            state_path = f.name
+        state_file = tmp_path / "state.json"
+        state_file.write_text(json.dumps({"branch": "test"}))
         with patch.object(issue_mod, "detect_repo", return_value="detected/repo"), \
              patch.object(issue_mod.subprocess, "run",
                           side_effect=_make_subprocess_router(
                               "https://github.com/detected/repo/issues/77\n")), \
              patch("sys.argv", ["issue.py", "--title", "Fallback",
-                                "--state-file", state_path]):
+                                "--state-file", str(state_file)]):
             issue_mod.main()
 
         output = json.loads(capsys.readouterr().out)
