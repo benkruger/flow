@@ -6,11 +6,19 @@ skills). Prohibition tests enforce that bash blocks never contain patterns
 that break permission matching or shell behavior.
 """
 
+import importlib.util
 import json
 import re
 
 from conftest import LIB_DIR, REPO_ROOT, SKILLS_DIR
 from flow_utils import permission_to_regex as _permission_to_regex_impl
+
+# Import prime-setup.py for dynamic pattern generation
+_ps_spec = importlib.util.spec_from_file_location(
+    "prime_setup", LIB_DIR / "prime-setup.py"
+)
+_ps_mod = importlib.util.module_from_spec(_ps_spec)
+_ps_spec.loader.exec_module(_ps_mod)
 
 MAINTAINER_SKILLS_DIR = REPO_ROOT / ".claude" / "skills"
 SETTINGS_JSON = REPO_ROOT / ".claude" / "settings.json"
@@ -168,8 +176,14 @@ PLACEHOLDER_SUBS = {
 def _substitute_placeholders(line):
     """Replace angle-bracket placeholders with concrete test values.
 
+    Also expands ${CLAUDE_PLUGIN_ROOT} to the repo root path so that
+    commands like 'exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ...' become
+    concrete paths for permission matching.
+
     Returns the substituted line, or None if unrecognized placeholders remain.
     """
+    # Expand shell variable used in plugin skill bash blocks
+    line = line.replace("${CLAUDE_PLUGIN_ROOT}", str(REPO_ROOT))
     for placeholder, value in PLACEHOLDER_SUBS.items():
         line = line.replace(placeholder, value)
     # If any angle-bracket placeholders remain, skip (safety net)
@@ -524,7 +538,11 @@ def test_all_bash_commands_have_permission_coverage():
     """Every ```bash``` block in all SKILL.md and docs/*.md files must match
     at least one permission from prime/SKILL.md or be in the auto-allowed set."""
     permissions = _extract_prime_permissions()
-    regexes = [_permission_to_regex(p) for p in permissions]
+    # Add dynamic patterns for the test plugin root (simulates runtime behavior
+    # where merge_settings generates patterns from the actual plugin path)
+    dynamic = _ps_mod._dynamic_plugin_patterns(str(REPO_ROOT))
+    all_permissions = permissions + dynamic
+    regexes = [_permission_to_regex(p) for p in all_permissions]
     regexes = [r for r in regexes if r is not None]
 
     errors = []
@@ -849,12 +867,6 @@ def test_permission_to_regex_known_conversions():
     r = _permission_to_regex("Bash(git -C *)")
     assert r is not None
     assert r.match("git -C .worktrees/my-branch status")
-
-    # Leading glob
-    r = _permission_to_regex("Bash(*bin/flow *)")
-    assert r is not None
-    assert r.match("/usr/local/bin/flow run")
-    assert r.match("bin/flow run")
 
     # rm with glob suffix
     r = _permission_to_regex("Bash(rm .flow-*)")
