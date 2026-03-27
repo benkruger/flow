@@ -33,7 +33,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ### Step 1 — Run the status formatter
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-status
+${CLAUDE_PLUGIN_ROOT}/bin/flow format-status
 ```
 
 Check the exit code:

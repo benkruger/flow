@@ -94,7 +94,7 @@ At the very start, output the following banner in your response (not via Bash) i
 Update state for phase entry:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-code-review --action enter
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-code-review --action enter
 ```
 
 Parse the JSON output to confirm `"status": "ok"`.
@@ -109,7 +109,7 @@ Run the command first, then log the result. Pipeline the log call with the
 next command where possible (run both in parallel in one response).
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 4] Step X — desc (exit EC)"
+${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 4] Step X — desc (exit EC)"
 ```
 
 Get `<branch>` from the state file.
@@ -176,13 +176,13 @@ Write the issue body to `.flow-issue-body` in the project root using the
 Write tool, then file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Tech Debt" --title "<issue_title>" --body-file .flow-issue-body
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Tech Debt" --title "<issue_title>" --body-file .flow-issue-body
 ```
 
 After filing, record it:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Tech Debt" --title "<issue_title>" --url "<issue_url>" --phase "flow-code-review"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Tech Debt" --title "<issue_title>" --url "<issue_url>" --phase "flow-code-review"
 ```
 
 Repeat for each out-of-scope finding. Then continue to the diff review below.
@@ -235,7 +235,7 @@ instructions below.
 **Commit**: Run CI first:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
 
 If green, set the continuation context and flag.
@@ -243,15 +243,15 @@ If green, set the continuation context and flag.
 If commit=auto, use the first form. If commit=manual, use the second:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_review_step=1, then self-invoke flow:flow-code-review --continue-step --auto."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_review_step=1, then self-invoke flow:flow-code-review --continue-step --auto."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_review_step=1, then self-invoke flow:flow-code-review --continue-step --manual."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_review_step=1, then self-invoke flow:flow-code-review --continue-step --manual."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
 If commit=auto, use `/flow:flow-commit --auto`; otherwise use `/flow:flow-commit`.
@@ -259,7 +259,7 @@ If commit=auto, use `/flow:flow-commit --auto`; otherwise use `/flow:flow-commit
 Record step completion:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=1
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=1
 ```
 
 To continue to Step 2, invoke `flow:flow-code-review --continue-step` using
@@ -276,11 +276,11 @@ file to get the plan file path. Use the Read tool to read the plan file.
 Set the continuation context and flag before invoking the child skill:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Wait for all pending background agents to complete. Then process review findings, fix issues, run bin/flow ci, then commit if fixes were made."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Wait for all pending background agents to complete. Then process review findings, fix issues, run bin/flow ci, then commit if fixes were made."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=review
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=review
 ```
 
 Invoke Claude's built-in review command on the PR:
@@ -338,25 +338,25 @@ Write the issue body to `.flow-issue-body` in the project root using the
 Write tool, then file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Tech Debt" --title "<issue_title>" --body-file .flow-issue-body
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Tech Debt" --title "<issue_title>" --body-file .flow-issue-body
 ```
 
 Or for documentation:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Documentation Drift" --title "<issue_title>" --body-file .flow-issue-body
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Documentation Drift" --title "<issue_title>" --body-file .flow-issue-body
 ```
 
 After filing, record it:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Tech Debt" --title "<issue_title>" --url "<issue_url>" --phase "flow-code-review"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Tech Debt" --title "<issue_title>" --url "<issue_url>" --phase "flow-code-review"
 ```
 
 After fixing in-scope findings, run:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
 
 <HARD-GATE>
@@ -369,15 +369,15 @@ If fixes were made, set the continuation context and flag before committing.
 If commit=auto, use the first form. If commit=manual, use the second:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Show review summary, set code_review_step=2, then self-invoke flow:flow-code-review --continue-step --auto."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Show review summary, set code_review_step=2, then self-invoke flow:flow-code-review --continue-step --auto."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Show review summary, set code_review_step=2, then self-invoke flow:flow-code-review --continue-step --manual."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Show review summary, set code_review_step=2, then self-invoke flow:flow-code-review --continue-step --manual."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
 If commit=auto use `/flow:flow-commit --auto`,
@@ -407,7 +407,7 @@ Show a summary of what was found and fixed inside a fenced code block:
 Record step completion:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=2
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=2
 ```
 
 To continue to Step 3, invoke `flow:flow-code-review --continue-step` using
@@ -421,11 +421,11 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 Set the continuation context and flag before invoking the child skill:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Wait for all pending background agents to complete. Then process security findings, fix issues, run bin/flow ci, then commit if fixes were made."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Wait for all pending background agents to complete. Then process security findings, fix issues, run bin/flow ci, then commit if fixes were made."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=security-review
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=security-review
 ```
 
 Invoke Claude's built-in security review command:
@@ -452,17 +452,17 @@ For each finding from the security review, fix the issue in code, then
 run CI:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
 
 Set the continuation context and flag:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Continue fixing remaining security findings."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Continue fixing remaining security findings."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
 If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise
@@ -507,7 +507,7 @@ Show a summary of what was found and fixed inside a fenced code block:
 Record step completion:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=3
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=3
 ```
 
 Check Code Review Plugin Mode Resolution:
@@ -529,11 +529,11 @@ anything else after this invocation.
 Set the continuation context and flag before invoking the child skill:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Wait for all pending background agents to complete. Then process code-review findings, fix issues, run bin/flow ci, then commit if fixes were made."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Wait for all pending background agents to complete. Then process code-review findings, fix issues, run bin/flow ci, then commit if fixes were made."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=code-review:code-review
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=code-review:code-review
 ```
 
 Invoke the `code-review:code-review` plugin using the Skill tool with no
@@ -565,17 +565,17 @@ For each finding from the code-review plugin, fix the issue in code, then
 run CI:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
 
 Set the continuation context and flag:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Continue fixing remaining code-review findings."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Continue fixing remaining code-review findings."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
 If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise
@@ -617,7 +617,7 @@ Show a summary of what was found and fixed inside a fenced code block:
 Record step completion:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=4
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=4
 ```
 
 To continue to Done, invoke `flow:flow-code-review --continue-step` using
@@ -646,7 +646,7 @@ Use AskUserQuestion if a finding is too significant to fix in Code Review:
 Complete the phase:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-code-review --action complete
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-code-review --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -668,13 +668,13 @@ Output in your response (not via Bash) inside a fenced code block:
 Read `slack_thread_ts` from the state file. If present, post a thread reply. Best-effort — skip silently on failure.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-code-review --message "<message_text>" --thread-ts <thread_ts>
+${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-code-review --message "<message_text>" --thread-ts <thread_ts>
 ```
 
 If `"status": "ok"`, record the notification:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-code-review --ts <ts> --thread-ts <thread_ts> --message "<message_text>"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-code-review --ts <ts> --thread-ts <thread_ts> --message "<message_text>"
 ```
 
 If `"status": "skipped"` or `"status": "error"`, continue without error.

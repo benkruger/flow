@@ -96,7 +96,7 @@ operation — writing log entries that are immediately deleted is pointless.
 Record phase entry in the state file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-complete --action enter --branch <branch>
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-complete --action enter --branch <branch>
 ```
 
 Parse the JSON output and confirm `status` is `"ok"`.
@@ -192,21 +192,21 @@ Record the resume step before committing so the continuation context
 needs only a single operation (self-invoke):
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
 ```
 
 If mode is **auto**, use the first form. If mode is **manual**, use the second:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --auto."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --auto."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --manual."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --manual."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
 Commit the resolution via `/flow:flow-commit` — the commit skill handles
@@ -224,7 +224,7 @@ Run CI locally with the branch name simulated as "main" to catch
 branch-dependent test failures before merge:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --force --simulate-branch main
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci --force --simulate-branch main
 ```
 
 If it passes, continue to Step 5.
@@ -240,21 +240,21 @@ If fixed, record the resume step, set continuation flags, commit, and
 self-invoke to re-check:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
 ```
 
 If mode is **auto**, use the first form. If mode is **manual**, use the second:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --auto."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --auto."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --manual."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --manual."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
 Commit the fixes via `/flow:flow-commit`.
@@ -280,7 +280,7 @@ Parse the output. Each check has a status: pass, fail, or pending.
 straight to Step 5:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=5
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=5
 ```
 
 Then invoke the `loop` skill via the Skill tool with args `15s /flow:flow-complete` and return. The loop will re-invoke the complete skill automatically until CI completes.
@@ -300,21 +300,21 @@ Wait for the sub-agent to return.
 committing:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
 ```
 
 If mode is **auto**, use the first form. If mode is **manual**, use the second:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --auto."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --auto."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --manual."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --manual."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
 Commit the fixes via `/flow:flow-commit`.
@@ -367,11 +367,11 @@ code to address the feedback.
 Set the continuation context and flag before committing:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set complete_step=4, then self-invoke flow:flow-complete --continue-step --manual."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set complete_step=4, then self-invoke flow:flow-complete --continue-step --manual."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
 Commit the fixes via `/flow:flow-commit`.
@@ -379,7 +379,7 @@ Commit the fixes via `/flow:flow-commit`.
 After the commit completes, record the resume step:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
 ```
 
 To loop back through CI, invoke `flow:flow-complete --continue-step --manual`
@@ -394,7 +394,7 @@ Record phase completion in the state file so Phase Timings includes
 the Complete row:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-complete --action complete --next-phase flow-complete --branch <branch>
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-complete --action complete --next-phase flow-complete --branch <branch>
 ```
 
 Parse the JSON output. Keep `formatted_time` and `cumulative_seconds`
@@ -407,14 +407,14 @@ Session Log, Issues Filed) from the state file and available artifact
 files. Sections with missing data are omitted automatically.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow render-pr-body --pr <pr_number>
+${CLAUDE_PLUGIN_ROOT}/bin/flow render-pr-body --pr <pr_number>
 ```
 
 **Issues banner line:** Format the issues summary to get the banner
 line for the Done banner:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-issues-summary --state-file <project_root>/.flow-states/<branch>.json --output <project_root>/.flow-states/<branch>-issues.md
+${CLAUDE_PLUGIN_ROOT}/bin/flow format-issues-summary --state-file <project_root>/.flow-states/<branch>.json --output <project_root>/.flow-states/<branch>-issues.md
 ```
 
 Parse the JSON output. Keep the `banner_line` — use it in the Done
@@ -426,7 +426,7 @@ Verify the branch is up-to-date with main before merging. If main has
 moved since the CI gate, merge it in and loop back through CI.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow check-freshness --state-file <project_root>/.flow-states/<branch>.json
+${CLAUDE_PLUGIN_ROOT}/bin/flow check-freshness --state-file <project_root>/.flow-states/<branch>.json
 ```
 
 Parse the JSON output and handle each status:
@@ -455,7 +455,7 @@ If the merge fails, check the error message:
   self-invoke to wait for CI:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=5
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=5
 ```
 
   Invoke `flow:flow-complete --continue-step` using the Skill tool as
@@ -477,7 +477,7 @@ git push
 Record the resume step and self-invoke to re-run CI:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
 ```
 
 To re-run CI, invoke `flow:flow-complete --continue-step` using the
@@ -493,21 +493,21 @@ the branch. The `files` array lists the conflicted files.
 3. Record the resume step, set continuation flags, and commit
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
 ```
 
 If mode is **auto**, use the first form. If mode is **manual**, use the second:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --auto."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --auto."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --manual."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --manual."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
 Commit the resolution via `/flow:flow-commit` — the commit skill handles
@@ -523,7 +523,7 @@ Close any GitHub issues referenced in the start prompt. This is best-effort —
 continue to remove-labels even if closing fails.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow close-issues --state-file <project_root>/.flow-states/<branch>.json
+${CLAUDE_PLUGIN_ROOT}/bin/flow close-issues --state-file <project_root>/.flow-states/<branch>.json
 ```
 
 Parse the JSON output. Report which issues were closed and which failed.
@@ -538,13 +538,13 @@ Write tool. Each item in the array is a dict with `number` and `url` keys.
 If closed issues were written to a file, include the file path:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-complete-summary --state-file <project_root>/.flow-states/<branch>.json --closed-issues-file <project_root>/.flow-states/<branch>-closed-issues.json
+${CLAUDE_PLUGIN_ROOT}/bin/flow format-complete-summary --state-file <project_root>/.flow-states/<branch>.json --closed-issues-file <project_root>/.flow-states/<branch>-closed-issues.json
 ```
 
 If no issues were closed, omit the closed-issues-file arg:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow format-complete-summary --state-file <project_root>/.flow-states/<branch>.json
+${CLAUDE_PLUGIN_ROOT}/bin/flow format-complete-summary --state-file <project_root>/.flow-states/<branch>.json
 ```
 
 Parse the JSON output. Keep the `summary` field — use it in the Done
@@ -556,7 +556,7 @@ Remove the "Flow In-Progress" label from any issues referenced in the start
 prompt. This is best-effort — continue to cleanup even if removal fails.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --remove
+${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --remove
 ```
 
 ### Step 11 — Auto-close parent issues and milestones
@@ -569,7 +569,7 @@ If Step 9 closed any issues (the `closed` array was non-empty), run for
 each closed issue number:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow auto-close-parent --repo <repo> --issue-number <N>
+${CLAUDE_PLUGIN_ROOT}/bin/flow auto-close-parent --repo <repo> --issue-number <N>
 ```
 
 Parse the JSON output. If `parent_closed` or `milestone_closed` is true,
@@ -581,13 +581,13 @@ issue.
 Read `slack_thread_ts` from the state file. If present, post the final thread reply with end-to-end timeline before cleanup deletes the state file. Best-effort — skip silently on failure.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-complete --message "<message_text>" --thread-ts <thread_ts>
+${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-complete --message "<message_text>" --thread-ts <thread_ts>
 ```
 
 If `"status": "ok"`, record the notification:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-complete --ts <ts> --thread-ts <thread_ts> --message "<message_text>"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-complete --ts <ts> --thread-ts <thread_ts> --message "<message_text>"
 ```
 
 If `"status": "skipped"` or `"status": "error"`, continue without error.
@@ -607,7 +607,7 @@ cd <project_root>
 Run the cleanup script from the project root:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup <project_root> --branch <branch> --worktree <worktree_path>
+${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup <project_root> --branch <branch> --worktree <worktree_path>
 ```
 
 The script outputs JSON with a `steps` dict showing what happened to each

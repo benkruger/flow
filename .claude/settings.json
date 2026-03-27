@@ -11,6 +11,7 @@
       "Bash(gh repo clone *)",
       "Bash(gh label *)",
       "Bash(bin/*)",
+      "Bash(*bin/flow *)",
       "Bash(claude plugin marketplace add *)",
       "Bash(claude plugin marketplace update *)",
       "Bash(claude plugin uninstall *)",

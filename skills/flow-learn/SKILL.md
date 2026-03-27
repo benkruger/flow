@@ -108,7 +108,7 @@ At the very start, output the following banner in your response (not via Bash) i
 Update state for phase entry:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-learn --action enter
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-learn --action enter
 ```
 
 Parse the JSON output to confirm `"status": "ok"`.
@@ -278,7 +278,7 @@ If no changes were made in Step 3, record step completion and
 self-invoke to skip the commit:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=3
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=3
 ```
 
 Then invoke `flow:flow-learn --continue-step` using the Skill tool as
@@ -298,15 +298,15 @@ Set the continuation context and flag before committing.
 If commit=auto, use the first form. If commit=manual, use the second:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_step=4, then self-invoke flow:flow-learn --continue-step --auto."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_step=4, then self-invoke flow:flow-learn --continue-step --auto."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_step=4, then self-invoke flow:flow-learn --continue-step --manual."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_step=4, then self-invoke flow:flow-learn --continue-step --manual."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
 If commit=auto, use `/flow:flow-commit --auto`. Otherwise, use
@@ -315,7 +315,7 @@ If commit=auto, use `/flow:flow-commit --auto`. Otherwise, use
 After the commit completes, record step completion:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=4
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=4
 ```
 
 To continue to Step 5, invoke `flow:flow-learn --continue-step` using
@@ -341,13 +341,13 @@ Write the issue body to `.flow-issue-body` in the project root using the
 Write tool, then file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo benkruger/flow --label "Flow" --title "<issue_title>" --body-file .flow-issue-body
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo benkruger/flow --label "Flow" --title "<issue_title>" --body-file .flow-issue-body
 ```
 
 After each successful issue, record it:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_title>" --url "<issue_url>" --phase "flow-learn"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_title>" --url "<issue_url>" --phase "flow-learn"
 ```
 
 ### Documentation drift issues
@@ -362,13 +362,13 @@ Write the issue body to `.flow-issue-body` in the project root using the
 Write tool, then file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Documentation Drift" --title "<issue_title>" --body-file .flow-issue-body
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Documentation Drift" --title "<issue_title>" --body-file .flow-issue-body
 ```
 
 After each successful issue, record it:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Documentation Drift" --title "<issue_title>" --url "<issue_url>" --phase "flow-learn"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Documentation Drift" --title "<issue_title>" --url "<issue_url>" --phase "flow-learn"
 ```
 
 If there are no process gap or documentation drift items, skip this step.
@@ -444,7 +444,7 @@ brackets (e.g. `[Rule]`, `[Flow]`, `[Documentation Drift]`).
 Complete the phase:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-learn --action complete
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-learn --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -467,13 +467,13 @@ Output in your response (not via Bash) inside a fenced code block:
 Read `slack_thread_ts` from the state file. If present, post a thread reply. Best-effort — skip silently on failure.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-learn --message "<message_text>" --thread-ts <thread_ts>
+${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-learn --message "<message_text>" --thread-ts <thread_ts>
 ```
 
 If `"status": "ok"`, record the notification:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-learn --ts <ts> --thread-ts <thread_ts> --message "<message_text>"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-learn --ts <ts> --thread-ts <thread_ts> --message "<message_text>"
 ```
 
 If `"status": "skipped"` or `"status": "error"`, continue without error.

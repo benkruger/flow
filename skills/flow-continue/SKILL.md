@@ -52,7 +52,7 @@ feature, rebuild from the state file:
 ### Step 1 — Load context
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow continue-context
+${CLAUDE_PLUGIN_ROOT}/bin/flow continue-context
 ```
 
 Parse the JSON output:

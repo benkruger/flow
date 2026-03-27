@@ -45,7 +45,7 @@ If `--reprime` was passed:
 Run both in parallel (one response, two Bash calls):
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow detect-framework <project_root>
+${CLAUDE_PLUGIN_ROOT}/bin/flow detect-framework <project_root>
 ```
 
 ```bash
@@ -232,7 +232,7 @@ Serialize `skills_dict` from Step 2 as a JSON string for the `--skills-json` arg
 Pass the `commit_format` value from Step 4 via `--commit-format`.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --framework <framework> --skills-json '<skills_dict_json>' --commit-format <commit_format> --plugin-root ${CLAUDE_PLUGIN_ROOT}
+${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --framework <framework> --skills-json '<skills_dict_json>' --commit-format <commit_format> --plugin-root ${CLAUDE_PLUGIN_ROOT}
 ```
 
 The script handles everything in a single call:
@@ -294,6 +294,7 @@ All permissions (universal + all framework sets) for reference:
       "Bash(gh pr close *)",
       "Bash(gh pr list *)",
       "Bash(bin/*)",
+      "Bash(*bin/flow *)",
       "Bash(rm .flow-*)",
       "Bash(gh pr view *)",
       "Bash(bin/rails test *)",

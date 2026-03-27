@@ -65,23 +65,23 @@ condensed per-issue briefs:
 If a readiness filter flag was passed to this skill, append it to the command:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues
+${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --ready
+${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --ready
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --blocked
+${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --blocked
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --decomposed
+${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --decomposed
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --quick-start
+${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --quick-start
 ```
 
 Use the first form when no filter flag was passed. Use the matching form

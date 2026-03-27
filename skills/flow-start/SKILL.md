@@ -102,7 +102,7 @@ Run the command first, then log the result. Pipeline the log call with the
 next command where possible (run both in parallel in one response).
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 1] Step X — desc (exit EC)"
+${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 1] Step X — desc (exit EC)"
 ```
 
 Use the feature name as `<branch>` — it matches the branch name.
@@ -116,11 +116,11 @@ Use the feature name as `<branch>` — it matches the branch name.
 Run both in parallel (one response, multiple tool calls):
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-check
+${CLAUDE_PLUGIN_ROOT}/bin/flow prime-check
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow upgrade-check
+${CLAUDE_PLUGIN_ROOT}/bin/flow upgrade-check
 ```
 
 Process the results in this order:
@@ -169,13 +169,13 @@ the locked main operations in Steps 3–9. The state file has null PR fields
 at this point — start-setup backfills them after PR creation.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>"
+${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>"
 ```
 
 If `--auto` was passed to this skill invocation, also pass `--auto`:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --auto
+${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --auto
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -187,7 +187,7 @@ the lock is released.
 ### Step 3 — Acquire start lock
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --acquire --wait --feature <feature-name>
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --acquire --wait --feature <feature-name>
 ```
 
 Do not run this command in the background. The `--wait` flag blocks until
@@ -210,7 +210,7 @@ Main is pristine — nothing merges without clean CI. Any failure here is
 a flaky test, not a real breakage.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 ```
 
 If CI passes, continue to Step 6.
@@ -219,7 +219,7 @@ If CI fails, re-run up to 2 more times (3 total). Do not make any code
 changes between attempts — just re-run:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 ```
 
 **If any subsequent attempt passes without code changes**, the failure
@@ -234,20 +234,20 @@ Write the issue body to `.flow-issue-body` in the project root using the
 Write tool, then file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Flaky Test" --title "<issue_title>" --body-file .flow-issue-body
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Flaky Test" --title "<issue_title>" --body-file .flow-issue-body
 ```
 
 After filing, record it:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_title>" --url "<issue_url>" --phase "flow-start"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_title>" --url "<issue_url>" --phase "flow-start"
 ```
 
 **If all 3 attempts fail consistently**, release the lock and stop.
 Report to the user that CI is consistently failing on pristine main.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release
 ```
 
 ### Step 6 — Update dependencies
@@ -276,7 +276,7 @@ If dependencies changed anything, run CI again to catch dep-induced breakage
 (rubocop violations, breaking changes, etc.):
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 ```
 
 If CI passes, continue to Step 8.
@@ -285,7 +285,7 @@ If CI fails, re-run up to 2 more times (3 total). Do not make any code
 changes between attempts — just re-run:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 ```
 
 **If any subsequent attempt passes without code changes**, the failure
@@ -300,13 +300,13 @@ Write the issue body to `.flow-issue-body` in the project root using the
 Write tool, then file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Flaky Test" --title "<issue_title>" --body-file .flow-issue-body
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Flaky Test" --title "<issue_title>" --body-file .flow-issue-body
 ```
 
 After filing, record it:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_title>" --url "<issue_url>" --phase "flow-start"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_title>" --url "<issue_url>" --phase "flow-start"
 ```
 
 **If all 3 attempts fail consistently**, this is real dep-induced
@@ -332,7 +332,7 @@ commit them to main via `/flow:flow-commit --auto`.
 ### Step 9 — Release start lock
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release
 ```
 
 <HARD-GATE>
@@ -348,11 +348,11 @@ Write tool. Then run the setup script. If `--auto` was passed to this skill
 invocation, also pass `--auto` to the start-setup command:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull --auto
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull --auto
 ```
 
 Use the first form when no mode flag was passed or `--manual` was passed.
@@ -399,7 +399,7 @@ If the start prompt contains `#N` issue references, add the "Flow In-Progress"
 label so other engineers can see these issues are being worked on:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --add
+${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --add
 ```
 
 Best-effort — if labeling fails, log the result and continue. Do not block
@@ -410,7 +410,7 @@ the Start phase for a label failure.
 Complete the phase:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-start --action complete
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-start --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -432,17 +432,17 @@ Output the following banner in your response (not via Bash) inside a fenced code
 Post the initial Slack thread message (creates the thread). Best-effort — skip silently on failure.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-start --message "<message_text>" --pr-url <pr_url>
+${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-start --message "<message_text>" --pr-url <pr_url>
 ```
 
 Parse the JSON output. If `"status": "ok"`, store the thread timestamp and record the notification:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set slack_thread_ts=<ts>
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set slack_thread_ts=<ts>
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-start --ts <ts> --thread-ts <ts> --message "<message_text>"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-start --ts <ts> --thread-ts <ts> --message "<message_text>"
 ```
 
 If `"status": "skipped"` or `"status": "error"`, continue without error.

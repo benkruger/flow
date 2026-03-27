@@ -177,7 +177,7 @@ def _substitute_placeholders(line):
     """Replace angle-bracket placeholders with concrete test values.
 
     Also expands ${CLAUDE_PLUGIN_ROOT} to the repo root path so that
-    commands like 'exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ...' become
+    commands like '${CLAUDE_PLUGIN_ROOT}/bin/flow ...' become
     concrete paths for permission matching.
 
     Returns the substituted line, or None if unrecognized placeholders remain.
@@ -538,11 +538,7 @@ def test_all_bash_commands_have_permission_coverage():
     """Every ```bash``` block in all SKILL.md and docs/*.md files must match
     at least one permission from prime/SKILL.md or be in the auto-allowed set."""
     permissions = _extract_prime_permissions()
-    # Add dynamic patterns for the test plugin root (simulates runtime behavior
-    # where merge_settings generates patterns from the actual plugin path)
-    dynamic = _ps_mod._dynamic_plugin_patterns(str(REPO_ROOT))
-    all_permissions = permissions + dynamic
-    regexes = [_permission_to_regex(p) for p in all_permissions]
+    regexes = [_permission_to_regex(p) for p in permissions]
     regexes = [r for r in regexes if r is not None]
 
     errors = []

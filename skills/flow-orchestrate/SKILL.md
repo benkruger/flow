@@ -74,7 +74,7 @@ Build the queue from the filtered issues. Sort by issue number ascending. Write 
 Write the queue JSON to `.flow-states/orchestrate-queue.json` using the Write tool. Each item must have `issue_number` (integer) and `title` (string) fields.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --create --queue-file .flow-states/orchestrate-queue.json --state-dir .flow-states
+${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --create --queue-file .flow-states/orchestrate-queue.json --state-dir .flow-states
 ```
 
 If the response indicates an orchestration is already in progress, stop and report.
@@ -82,7 +82,7 @@ If the response indicates an orchestration is already in progress, stop and repo
 Log the queue:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log orchestrate "[Orchestrate] Started — N issues queued"
+${CLAUDE_PLUGIN_ROOT}/bin/flow log orchestrate "[Orchestrate] Started — N issues queued"
 ```
 
 Display the queue as a rich markdown table matching the `flow-issues` format.
@@ -108,7 +108,7 @@ Output the table inline with columns: `Order`, `Priority`, `Impact`,
 Read the orchestration state to find the next pending issue:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --next --state-file .flow-states/orchestrate.json
+${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --next --state-file .flow-states/orchestrate.json
 ```
 
 - If `"status": "done"` — all issues processed. Skip to Done.
@@ -124,13 +124,13 @@ The `--next` response includes `index`, `issue_number`, and `title`.
 **Mark issue as started:**
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --start-issue <index> --state-file .flow-states/orchestrate.json
+${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --start-issue <index> --state-file .flow-states/orchestrate.json
 ```
 
 Log it:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log orchestrate "[Orchestrate] Starting #<issue_number> — <title>"
+${CLAUDE_PLUGIN_ROOT}/bin/flow log orchestrate "[Orchestrate] Starting #<issue_number> — <title>"
 ```
 
 **Invoke flow-start:**
@@ -160,7 +160,7 @@ Determine outcome:
 **Record outcome:**
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --record-outcome <index> --outcome <completed|failed> --pr-url <pr_url> --branch <branch> --state-file .flow-states/orchestrate.json
+${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --record-outcome <index> --outcome <completed|failed> --pr-url <pr_url> --branch <branch> --state-file .flow-states/orchestrate.json
 ```
 
 For failed outcomes, add `--reason "<reason>"`.
@@ -172,7 +172,7 @@ If the outcome is **failed** and a state file still exists for the branch, invok
 **Log and continue:**
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log orchestrate "[Orchestrate] #<issue_number> — <outcome>"
+${CLAUDE_PLUGIN_ROOT}/bin/flow log orchestrate "[Orchestrate] #<issue_number> — <outcome>"
 ```
 
 Self-invoke to process the next issue. Invoke `flow:flow-orchestrate --continue-step` using the Skill tool as your final action. Do not output anything else after this invocation.
@@ -186,13 +186,13 @@ All issues have been processed.
 ### Mark complete
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --complete --state-file .flow-states/orchestrate.json
+${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --complete --state-file .flow-states/orchestrate.json
 ```
 
 ### Generate report
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-report --state-file .flow-states/orchestrate.json --output-dir .flow-states
+${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-report --state-file .flow-states/orchestrate.json --output-dir .flow-states
 ```
 
 ### Present report

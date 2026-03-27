@@ -67,6 +67,7 @@ UNIVERSAL_ALLOW = [
     "Bash(gh issue *)",
     "Bash(gh label *)",
     "Bash(bin/*)",
+    "Bash(*bin/flow *)",
     "Bash(rm .flow-*)",
     "Bash(claude plugin list)",
     "Bash(claude plugin marketplace add *)",
@@ -101,19 +102,6 @@ EXCLUDE_ENTRIES = [
     ".claude/scheduled_tasks.lock",
 ]
 
-
-def _dynamic_plugin_patterns(plugin_root):
-    """Generate dynamic permission patterns for the plugin's bin/flow.
-
-    Produces 4 patterns covering exec/no-exec prefix and single/double
-    slash separator (CLAUDE_PLUGIN_ROOT may have a trailing slash).
-    """
-    root = plugin_root.rstrip("/")
-    patterns = []
-    for prefix in ("exec ", ""):
-        for sep in ("/", "//"):
-            patterns.append(f"Bash({prefix}{root}{sep}bin/flow *)")
-    return patterns
 
 
 def _load_framework_permissions(framework):
@@ -218,7 +206,7 @@ def _is_subsumed(candidate, existing_set):
     return False
 
 
-def merge_settings(project_root, framework, plugin_root=None):
+def merge_settings(project_root, framework):
     """Merge FLOW permissions into .claude/settings.json. Returns merged dict."""
     settings_dir = project_root / ".claude"
     settings_path = settings_dir / "settings.json"
@@ -247,13 +235,6 @@ def merge_settings(project_root, framework, plugin_root=None):
         if entry not in existing_allow and not _is_subsumed(entry, existing_allow):
             settings["permissions"]["allow"].append(entry)
             existing_allow.add(entry)
-
-    # Merge dynamic plugin patterns (installation-specific)
-    if plugin_root is not None:
-        for entry in _dynamic_plugin_patterns(plugin_root):
-            if entry not in existing_allow and not _is_subsumed(entry, existing_allow):
-                settings["permissions"]["allow"].append(entry)
-                existing_allow.add(entry)
 
     existing_deny = set(settings["permissions"]["deny"])
     for entry in FLOW_DENY:
@@ -572,7 +553,7 @@ def main():
         version = plugin_data["version"]
         config_hash = compute_config_hash(framework)
         setup_hash = compute_setup_hash()
-        merge_settings(project_root, framework, plugin_root=plugin_root)
+        merge_settings(project_root, framework)
         write_version_marker(project_root, version, framework,
                              skills=skills, config_hash=config_hash,
                              setup_hash=setup_hash,

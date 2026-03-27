@@ -43,7 +43,7 @@ Compose the note text as a reusable pattern, not a specific complaint:
 The note should read as something useful to a future session, not a log of what happened.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow append-note --note "<note_text>"
+${CLAUDE_PLUGIN_ROOT}/bin/flow append-note --note "<note_text>"
 ```
 
 The script derives the state file path and current phase internally.

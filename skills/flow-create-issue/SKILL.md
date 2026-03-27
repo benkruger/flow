@@ -164,7 +164,7 @@ Present the full DAG synthesis to the user.
 
 Ask the user to review the decomposition using AskUserQuestion:
 
-- **"Proceed to draft"** → generate a short session ID by running `exec ${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool (this ID scopes all file paths for this session). Write `{"create_issue_step": 1}` to `.flow-states/create-issue-<id>.json` using the Write tool, then invoke `flow:flow-create-issue --step 2 --id <id>` using the Skill tool as your final action. Do not output anything else after this invocation.
+- **"Proceed to draft"** → generate a short session ID by running `${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool (this ID scopes all file paths for this session). Write `{"create_issue_step": 1}` to `.flow-states/create-issue-<id>.json` using the Write tool, then invoke `flow:flow-create-issue --step 2 --id <id>` using the Skill tool as your final action. Do not output anything else after this invocation.
 - **"Iterate on decomposition"** → re-invoke `decompose:decompose` with the user's feedback, present the updated synthesis, and ask again.
 - **"Cancel"** → stop. Do not file an issue.
 
@@ -266,25 +266,25 @@ Write the issue body to `.flow-issue-body-<id>` in the project root using the Wr
 **If target project:**
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id> --label decomposed
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id> --label decomposed
 ```
 
 Record the issue in the state file (no-op if no FLOW feature is active):
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
 ```
 
 **If FLOW plugin bug:**
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo benkruger/flow --title "<issue_title>" --body-file .flow-issue-body-<id> --label "Flow"
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo benkruger/flow --title "<issue_title>" --body-file .flow-issue-body-<id> --label "Flow"
 ```
 
 Record the issue in the state file (no-op if no FLOW feature is active):
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
 ```
 
 Clean up the state and draft files. Use the Bash tool to remove both:

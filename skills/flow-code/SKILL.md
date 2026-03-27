@@ -83,7 +83,7 @@ At the very start, output the following banner in your response (not via Bash) i
 Update state for phase entry:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-code --action enter
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-code --action enter
 ```
 
 Parse the JSON output to confirm `"status": "ok"`.
@@ -110,7 +110,7 @@ Run the command first, then log the result. Pipeline the log call with the
 next command where possible (run both in parallel in one response).
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 3] Step X — desc (exit EC)"
+${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 3] Step X — desc (exit EC)"
 ```
 
 Get `<branch>` from the state file.
@@ -257,7 +257,7 @@ user visibility, but skip the AskUserQuestion and proceed directly to
 ### bin/flow ci Gate
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
 
 This must be green before committing.
@@ -269,7 +269,7 @@ This must be green before committing.
 - Re-run CI after each fix:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
 
 - Max 3 attempts — if still failing after 3, stop and report exactly what is failing
@@ -285,13 +285,13 @@ Write the issue body to `.flow-issue-body` in the project root using the
 Write tool, then file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Flaky Test" --title "<issue_title>" --body-file .flow-issue-body
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Flaky Test" --title "<issue_title>" --body-file .flow-issue-body
 ```
 
 After filing, record it:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_title>" --url "<issue_url>" --phase "flow-code"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_title>" --url "<issue_url>" --phase "flow-code"
 ```
 
 <HARD-GATE>
@@ -305,7 +305,7 @@ Do NOT commit and do NOT move to the next task until `bin/flow ci` is green.
 Record the completed task number:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_task=<n>
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_task=<n>
 ```
 
 Set the continuation context and flag before committing.
@@ -313,15 +313,15 @@ Set the continuation context and flag before committing.
 If commit=auto, use the first form. If commit=manual, use the second:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-code --continue-step --auto."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-code --continue-step --auto."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-code --continue-step --manual."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-code --continue-step --manual."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
 If commit=auto, use `/flow:flow-commit --auto`. Otherwise, use `/flow:flow-commit`.
@@ -358,7 +358,7 @@ Once every task from the plan file is complete:
 **Final `bin/flow ci` sweep:**
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
 
 Then check coverage — Read `coverage/uncovered.txt`.
@@ -367,7 +367,7 @@ If there are uncovered lines, write tests for each uncovered line, then
 run CI again:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
 
 Repeat until `coverage/uncovered.txt` is empty.
@@ -382,7 +382,7 @@ is empty. 100% coverage is mandatory.
 Complete the phase:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-code --action complete
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-code --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -404,13 +404,13 @@ Output in your response (not via Bash) inside a fenced code block:
 Read `slack_thread_ts` from the state file. If present, post a thread reply. Best-effort — skip silently on failure.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-code --message "<message_text>" --thread-ts <thread_ts>
+${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-code --message "<message_text>" --thread-ts <thread_ts>
 ```
 
 If `"status": "ok"`, record the notification:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-code --ts <ts> --thread-ts <thread_ts> --message "<message_text>"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-code --ts <ts> --thread-ts <thread_ts> --message "<message_text>"
 ```
 
 If `"status": "skipped"` or `"status": "error"`, continue without error.

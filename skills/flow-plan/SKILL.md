@@ -87,7 +87,7 @@ At the very start, output the following banner in your response (not via Bash) i
 Update state for phase entry:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-plan --action enter
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-plan --action enter
 ```
 
 Parse the JSON output to confirm `"status": "ok"`.
@@ -102,7 +102,7 @@ Run the command first, then log the result. Pipeline the log call with the
 next command where possible (run both in parallel in one response).
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 2] Step X — desc (exit EC)"
+${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 2] Step X — desc (exit EC)"
 ```
 
 Get `<branch>` from the state file.
@@ -199,7 +199,7 @@ wrapped with a markdown heading:
 Store the path in the state file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.dag=<dag_file_path>
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.dag=<dag_file_path>
 ```
 
 Replace `<dag_file_path>` with the relative path `.flow-states/<branch>-dag.md`.
@@ -220,11 +220,11 @@ Before invoking the decompose plugin, set the continuation flags so the
 stop-continue hook forces continuation after decompose returns:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Decompose returned. Save the complete DAG output verbatim to the DAG file, store the path in state, clear _continue_pending, then self-invoke flow:flow-plan --continue-step."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Decompose returned. Save the complete DAG output verbatim to the DAG file, store the path in state, clear _continue_pending, then self-invoke flow:flow-plan --continue-step."
 ```
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=decompose
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=decompose
 ```
 
 Invoke `/decompose:decompose` using the Skill tool. Pass the feature
@@ -254,7 +254,7 @@ After the decompose plugin returns, save the complete decompose output:
 2. Store the path in the state file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.dag=<dag_file_path>
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.dag=<dag_file_path>
 ```
 
 Replace `<dag_file_path>` with the relative path `.flow-states/<branch>-dag.md`.
@@ -351,7 +351,7 @@ Proceed to Step 4.
 Store the plan file path in the state file:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.plan=<plan_file_path>
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.plan=<plan_file_path>
 ```
 
 Replace `<plan_file_path>` with the relative path `.flow-states/<branch>-plan.md`.
@@ -360,7 +360,7 @@ Count the total number of implementation tasks in the Tasks section of
 the plan file and store the count for TUI progress display:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_tasks_total=<n>
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_tasks_total=<n>
 ```
 
 Replace `<n>` with the total task count from the plan.
@@ -369,13 +369,13 @@ Render the complete PR body (artifacts, plan, DAG, timings, and state
 are all derived from the state file automatically):
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow render-pr-body --pr <pr_number>
+${CLAUDE_PLUGIN_ROOT}/bin/flow render-pr-body --pr <pr_number>
 ```
 
 Complete the phase:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-plan --action complete
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-plan --action complete
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -410,13 +410,13 @@ Output in your response (not via Bash) inside a fenced code block:
 Read `slack_thread_ts` from the state file. If present, post a thread reply. Best-effort — skip silently on failure.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-plan --message "<message_text>" --thread-ts <thread_ts>
+${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-plan --message "<message_text>" --thread-ts <thread_ts>
 ```
 
 If `"status": "ok"`, record the notification:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-plan --ts <ts> --thread-ts <thread_ts> --message "<message_text>"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-plan --ts <ts> --thread-ts <thread_ts> --message "<message_text>"
 ```
 
 If `"status": "skipped"` or `"status": "error"`, continue without error.

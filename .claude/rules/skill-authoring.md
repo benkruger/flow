@@ -215,7 +215,7 @@ design that makes it reachable.
 ## Plugin Root for bin/flow
 
 Every `bin/flow` call in a plugin skill bash block must use
-`exec ${CLAUDE_PLUGIN_ROOT}/bin/flow`. Bare `bin/flow` only
+`${CLAUDE_PLUGIN_ROOT}/bin/flow`. Bare `bin/flow` only
 resolves in the FLOW repo itself — target projects do not have
 it. This works during plugin development (the FLOW repo has
 `bin/flow` locally) but fails with exit 127 in every target

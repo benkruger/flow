@@ -100,7 +100,7 @@ label from any issues referenced in the prompt. Best-effort — continue to
 cleanup even if removal fails. Skip this step if no state file exists.
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --remove
+${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --remove
 ```
 
 ### Steps 3–8 — Run cleanup script
@@ -108,7 +108,7 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.fl
 Run the cleanup script from the project root with abort flags:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup <project_root> --branch <branch> --worktree <worktree_path> --pr <pr_number>
+${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup <project_root> --branch <branch> --worktree <worktree_path> --pr <pr_number>
 ```
 
 If `pr_number` is unknown, omit `--pr`. The cleanup script always deletes remote and local branches.

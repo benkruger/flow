@@ -827,46 +827,21 @@ def test_cli_derives_permissions_from_project(git_repo, monkeypatch, capsys):
 # --- Dynamic plugin patterns (in-process) ---
 
 
-def test_merge_settings_with_plugin_root_adds_dynamic_patterns(tmp_path):
-    """When plugin_root is provided, dynamic patterns are added to allow list."""
-    _mod.merge_settings(tmp_path, "rails", plugin_root="/some/plugin/path")
-    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-    allow = settings["permissions"]["allow"]
-    assert "Bash(exec /some/plugin/path/bin/flow *)" in allow
-    assert "Bash(exec /some/plugin/path//bin/flow *)" in allow
-    assert "Bash(/some/plugin/path/bin/flow *)" in allow
-    assert "Bash(/some/plugin/path//bin/flow *)" in allow
-
-
-def test_merge_settings_plugin_root_trailing_slash(tmp_path):
-    """Trailing slash on plugin_root is normalized — same 4 patterns."""
-    _mod.merge_settings(tmp_path, "rails", plugin_root="/some/plugin/path/")
-    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-    allow = settings["permissions"]["allow"]
-    assert "Bash(exec /some/plugin/path/bin/flow *)" in allow
-    assert "Bash(exec /some/plugin/path//bin/flow *)" in allow
-    assert "Bash(/some/plugin/path/bin/flow *)" in allow
-    assert "Bash(/some/plugin/path//bin/flow *)" in allow
-
-
-def test_merge_settings_no_plugin_root_no_dynamic_patterns(tmp_path):
-    """Without plugin_root, no dynamic patterns are added."""
+def test_merge_settings_includes_static_bin_flow_pattern(tmp_path):
+    """Static Bash(*bin/flow *) pattern is included in allow list."""
     _mod.merge_settings(tmp_path, "rails")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
     allow = settings["permissions"]["allow"]
-    assert not any("/some/" in entry for entry in allow)
-    # No exec-prefixed plugin paths should appear
-    assert not any(entry.startswith("Bash(exec /") for entry in allow)
+    assert "Bash(*bin/flow *)" in allow
 
 
-def test_merge_settings_idempotent_with_plugin_root(tmp_path):
-    """Calling merge_settings twice with same plugin_root doesn't duplicate."""
-    _mod.merge_settings(tmp_path, "rails", plugin_root="/some/plugin/path")
-    _mod.merge_settings(tmp_path, "rails", plugin_root="/some/plugin/path")
+def test_merge_settings_no_dynamic_plugin_patterns(tmp_path):
+    """No installation-specific dynamic patterns in allow list."""
+    _mod.merge_settings(tmp_path, "rails")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
     allow = settings["permissions"]["allow"]
-    assert allow.count("Bash(exec /some/plugin/path/bin/flow *)") == 1
-    assert allow.count("Bash(exec /some/plugin/path//bin/flow *)") == 1
+    assert not any(entry.startswith("Bash(exec /") for entry in allow)
+    assert not any(entry.startswith("Bash(/") for entry in allow)
 
 
 def test_pre_commit_hook_allows_commit_without_flow_state(git_repo):

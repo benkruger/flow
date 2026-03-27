@@ -100,7 +100,7 @@ Present the full DAG synthesis to the user.
 Ask the user to review the decomposition using AskUserQuestion:
 
 - **"Proceed to review"** → generate a session ID by running
-  `exec ${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool.
+  `${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool.
   Write `{"decompose_step": 1}` to
   `.flow-states/decompose-project-<id>.json` using the Write tool.
   Save the full decompose output to
@@ -212,7 +212,7 @@ Parse `owner/repo` from the remote URL.
 Create the milestone:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow create-milestone --repo <repo> --title "<project_name>" --due-date <due_date>
+${CLAUDE_PLUGIN_ROOT}/bin/flow create-milestone --repo <repo> --title "<project_name>" --due-date <due_date>
 ```
 
 Parse the JSON output. Record the milestone number.
@@ -221,7 +221,7 @@ Create the parent epic issue. Write the epic body to
 `.flow-states/decompose-project-<id>-epic-body` using the Write tool, then:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo <repo> --title "Epic: <project_name>" --body-file .flow-states/decompose-project-<id>-epic-body
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo <repo> --title "Epic: <project_name>" --body-file .flow-states/decompose-project-<id>-epic-body
 ```
 
 Parse the JSON output. Record the epic issue number and database ID.
@@ -257,7 +257,7 @@ Write the issue body to `.flow-states/decompose-project-<id>-issue-body`
 using the Write tool, then create the issue:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo <repo> --title "<title>" --body-file .flow-states/decompose-project-<id>-issue-body --label Decomposed
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo <repo> --title "<title>" --body-file .flow-states/decompose-project-<id>-issue-body --label Decomposed
 ```
 
 Parse the JSON output and record `{title, number, id}` in the mapping.
@@ -265,7 +265,7 @@ Parse the JSON output and record `{title, number, id}` in the mapping.
 Record the issue (no-op if no FLOW feature is active):
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label Decomposed --title "<title>" --url "<issue_url>" --phase flow-decompose-project
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label Decomposed --title "<title>" --url "<issue_url>" --phase flow-decompose-project
 ```
 
 After all issues are created, write the complete mapping to the session
@@ -295,7 +295,7 @@ the `issues` mapping.
 For each child issue, link it as a sub-issue of the epic:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow create-sub-issue --repo <repo> --parent-number <epic_number> --child-number <child_number>
+${CLAUDE_PLUGIN_ROOT}/bin/flow create-sub-issue --repo <repo> --parent-number <epic_number> --child-number <child_number>
 ```
 
 Best-effort — log failures but continue.
@@ -305,7 +305,7 @@ Best-effort — log failures but continue.
 For each child issue that has dependencies, create the blocked-by link:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow link-blocked-by --repo <repo> --blocked-number <child_number> --blocking-number <dep_number>
+${CLAUDE_PLUGIN_ROOT}/bin/flow link-blocked-by --repo <repo> --blocked-number <child_number> --blocking-number <dep_number>
 ```
 
 Best-effort — log failures but continue.

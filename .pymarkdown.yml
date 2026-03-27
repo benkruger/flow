@@ -2,6 +2,10 @@ plugins:
   md013:
     # Line length — disabled. README, SKILL.md, docs have long prose, tables, URLs.
     enabled: false
+  md014:
+    # Dollar signs before commands — disabled. Skills use ${CLAUDE_PLUGIN_ROOT}/bin/flow
+    # in bash blocks, which starts with $ (shell variable expansion, not a prompt marker).
+    enabled: false
   md024:
     # Duplicate headings — allowed under different parents (changelog format).
     allow_different_nesting: true
