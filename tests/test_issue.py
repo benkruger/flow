@@ -789,3 +789,67 @@ class TestMainEnhanced:
         assert output["status"] == "ok"
         assert output["number"] == 42
         assert output["id"] is None
+
+
+class TestMainPathResolution:
+    """CLI integration tests for body-file path resolution."""
+
+    def test_main_relative_body_file_resolved(self, capsys, tmp_path):
+        """main() with relative --body-file resolves against project_root."""
+        body_file = tmp_path / ".flow-issue-body"
+        body_file.write_text("Body from relative path")
+
+        with patch.object(issue_mod, "project_root", return_value=tmp_path), \
+             patch.object(issue_mod.subprocess, "run",
+                          side_effect=_make_subprocess_router(
+                              "https://github.com/owner/repo/issues/50\n")), \
+             patch("sys.argv", ["issue.py", "--repo", "owner/repo",
+                                "--title", "Test",
+                                "--body-file", ".flow-issue-body"]):
+            issue_mod.main()
+
+        output = json.loads(capsys.readouterr().out)
+        assert output["status"] == "ok"
+        assert output["number"] == 50
+        assert not body_file.exists()
+
+
+class TestMainLabelRetry:
+    """CLI integration tests for label retry logic."""
+
+    def test_main_label_not_found_retries_and_succeeds(self, capsys):
+        """main() with label-not-found triggers retry and succeeds."""
+        call_count = {"n": 0}
+
+        def side_effect(cmd, **kwargs):
+            call_count["n"] += 1
+            if cmd[1] == "issue" and call_count["n"] == 1:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=1, stdout="",
+                    stderr="could not add label: 'Flaky Test' not found",
+                )
+            if cmd[1] == "label":
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="", stderr="",
+                )
+            if cmd[1] == "issue":
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0,
+                    stdout="https://github.com/owner/repo/issues/60\n",
+                    stderr="",
+                )
+            if cmd[1] == "api":
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="99999\n", stderr="",
+                )
+            raise ValueError(f"Unexpected command: {cmd}")
+
+        with patch.object(issue_mod.subprocess, "run",
+                          side_effect=side_effect), \
+             patch("sys.argv", ["issue.py", "--repo", "owner/repo",
+                                "--title", "Test", "--label", "Flaky Test"]):
+            issue_mod.main()
+
+        output = json.loads(capsys.readouterr().out)
+        assert output["status"] == "ok"
+        assert output["number"] == 60
