@@ -14,6 +14,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 _mod = importlib.import_module("start-lock")
 
 
+@pytest.fixture(autouse=True)
+def _reset_lock_path_cache():
+    """Reset _CACHED_LOCK_PATH between tests to prevent cache pollution."""
+    yield
+    if hasattr(_mod, "_CACHED_LOCK_PATH"):
+        _mod._CACHED_LOCK_PATH = None
+
+
 # --- acquire tests ---
 
 
