@@ -382,6 +382,73 @@ class TestCreateIssueLabelRetry:
         assert result is None
         assert error == "HTTP 500: Internal Server Error"
 
+    def test_label_create_fails_retry_includes_body(self):
+        """When label creation fails and body was provided, retry cmd includes --body."""
+        call_count = {"n": 0}
+
+        def side_effect(cmd, **kwargs):
+            call_count["n"] += 1
+            if cmd[1] == "issue" and call_count["n"] == 1:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=1, stdout="",
+                    stderr="could not add label: 'Flaky Test' not found",
+                )
+            if cmd[1] == "label":
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=1, stdout="", stderr="",
+                )
+            if cmd[1] == "issue":
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0,
+                    stdout="https://github.com/owner/repo/issues/42\n",
+                    stderr="",
+                )
+            if cmd[1] == "api":
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="99999\n", stderr="",
+                )
+            raise ValueError(f"Unexpected command: {cmd}")
+
+        with patch.object(issue_mod.subprocess, "run",
+                          side_effect=side_effect) as mock_run:
+            result, error = issue_mod.create_issue(
+                "owner/repo", "Test", label="Flaky Test", body="Details",
+            )
+
+        assert error is None
+        # The retry call (3rd) should include --body but not --label
+        retry_call = mock_run.call_args_list[2]
+        retry_cmd = retry_call[0][0]
+        assert "--body" in retry_cmd
+        assert "--label" not in retry_cmd
+
+    def test_retry_timeout_returns_error(self):
+        """If the retry subprocess times out, return a timeout error."""
+        call_count = {"n": 0}
+
+        def side_effect(cmd, **kwargs):
+            call_count["n"] += 1
+            if cmd[1] == "issue" and call_count["n"] == 1:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=1, stdout="",
+                    stderr="could not add label: 'Flaky Test' not found",
+                )
+            if cmd[1] == "label":
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="", stderr="",
+                )
+            if cmd[1] == "issue":
+                raise subprocess.TimeoutExpired(cmd="gh", timeout=30)
+            raise ValueError(f"Unexpected command: {cmd}")
+
+        with patch.object(issue_mod.subprocess, "run", side_effect=side_effect):
+            result, error = issue_mod.create_issue(
+                "owner/repo", "Test", label="Flaky Test",
+            )
+
+        assert result is None
+        assert "timed out" in error.lower()
+
     def test_no_label_no_retry_on_failure(self):
         """Without a label, label retry logic is not triggered."""
         fake_result = subprocess.CompletedProcess(

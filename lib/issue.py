@@ -106,23 +106,30 @@ def create_issue(repo, title, label=None, body=None):
 
         # Label-not-found: try creating the label, then retry
         if label and "label" in error.lower() and "not found" in error.lower():
+            label_created = False
             try:
                 label_result = subprocess.run(
                     ["gh", "label", "create", label, "--repo", repo],
                     capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
                 )
+                label_created = label_result.returncode == 0
             except subprocess.TimeoutExpired:
-                label_result = None
+                pass
 
-            if label_result and label_result.returncode == 0:
-                # Label created — retry with label
-                retry = subprocess.run(cmd, capture_output=True, text=True,
-                                       timeout=LOCAL_TIMEOUT)
+            if label_created:
+                retry_cmd = cmd
             else:
                 # Label creation failed — retry without label
-                retry_cmd = [c for c in cmd if c != "--label" and c != label]
+                retry_cmd = ["gh", "issue", "create", "--repo", repo,
+                             "--title", title]
+                if body:
+                    retry_cmd.extend(["--body", body])
+
+            try:
                 retry = subprocess.run(retry_cmd, capture_output=True,
                                        text=True, timeout=LOCAL_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                return None, f"Command timed out after {LOCAL_TIMEOUT}s"
 
             if retry.returncode == 0:
                 result = retry
