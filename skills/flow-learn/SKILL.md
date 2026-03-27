@@ -265,7 +265,7 @@ Both CLAUDE.md and `.claude/rules/` edits are direct — committed in Step 4.
 
 ### Apply CLAUDE.md changes
 
-For each item routed to CLAUDE.md (process rules, architecture):
+For each item routed to CLAUDE.md (project-wide conventions, architecture):
 
 1. Compose a learning entry following the writing rules above
 2. Read `<worktree_path>/CLAUDE.md` using the Read tool to check
@@ -281,7 +281,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <worktree_path>/CLAUDE.md --con
 
 ### Apply rules changes
 
-For each item routed to `.claude/rules/` (coding anti-patterns, gotchas):
+For each item routed to `.claude/rules/` (domain-specific gotchas, situational instructions):
 
 1. Compose the rule text following the writing rules above
 2. Determine the target file (`<worktree_path>/.claude/rules/<topic>.md`)
