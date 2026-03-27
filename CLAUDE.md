@@ -280,6 +280,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 - **Prefer dedicated tools over Bash for all non-execution tasks** — Read files with the Read tool, search with Glob and Grep, create with Write, modify with Edit. Bash should only be used for commands that genuinely require shell execution: `bin/ci`, `bin/test`, `bin/flow`, `make`, and `git`. In this project's strict permission environment (`defaultMode: "plan"`), every Bash command not in the allow list triggers a permission prompt. When you need to explore, understand, or modify files, use dedicated tools — they never prompt.
 - **Always use `bin/flow issue` to file GitHub issues** — never use `gh issue create` directly. `bin/flow issue` auto-detects the repo from git remote when `--repo` is omitted; pass `--repo` only when filing against a different repo. Direct `gh` calls trigger permission prompts.
 - **All FLOW-produced rules and instructions target the project repo** — `CLAUDE.md` and `.claude/rules/` are always repo-level paths, never user-level `~/.claude/` paths. Reading user-level files is fine; writing to them is never valid during any FLOW phase.
+- **Never use `run_in_background` for Bash commands during a FLOW phase** — background commands produce stale notifications that clutter the session after the workflow advances. Use parallel foreground tool calls (multiple Bash calls in one response) instead. This applies to `bin/flow log`, `bin/flow ci`, `git` commands, and all other Bash calls.
 
 <!-- FLOW:BEGIN -->
 
