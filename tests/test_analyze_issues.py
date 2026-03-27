@@ -118,11 +118,18 @@ def test_detects_in_progress_label():
 
 
 def test_detects_decomposed_label():
-    """Issues with Decomposed label are flagged."""
-    labels = [{"name": "Decomposed"}]
+    """Issues with decomposed label are flagged (case-insensitive)."""
+    labels = [{"name": "decomposed"}]
     result = _mod.detect_labels(labels)
     assert result["decomposed"] is True
     assert result["in_progress"] is False
+
+
+def test_detects_decomposed_label_case_insensitive():
+    """Decomposed label detection is case-insensitive."""
+    labels = [{"name": "Decomposed"}]
+    result = _mod.detect_labels(labels)
+    assert result["decomposed"] is True
 
 
 def test_no_special_labels():
@@ -274,13 +281,13 @@ def test_analyze_separates_in_progress():
 def test_analyze_issue_fields():
     """Each analyzed issue has all expected fields."""
     issues = [_make_issue(1, title="Test", body="Check lib/foo.py",
-                          labels=["Decomposed"])]
+                          labels=["decomposed"])]
     result = _mod.analyze_issues(issues)
     issue = result["issues"][0]
     assert issue["number"] == 1
     assert issue["title"] == "Test"
     assert "url" in issue
-    assert issue["labels"] == ["Decomposed"]
+    assert issue["labels"] == ["decomposed"]
     assert issue["decomposed"] is True
     assert "age_days" in issue
     assert "file_paths" in issue
@@ -510,9 +517,9 @@ def _make_filter_issues_file(tmp_path):
         _make_issue(1, title="Ready plain", body=""),
         _make_issue(2, title="Blocked", body="Depends on #1"),
         _make_issue(3, title="Decomposed ready", body="",
-                    labels=["Decomposed"]),
+                    labels=["decomposed"]),
         _make_issue(4, title="Decomposed blocked", body="Depends on #1",
-                    labels=["Decomposed"]),
+                    labels=["decomposed"]),
     ]
     json_file = tmp_path / "issues.json"
     json_file.write_text(json.dumps(issues))

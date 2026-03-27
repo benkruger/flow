@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import LOCAL_TIMEOUT, detect_repo
+from flow_utils import LOCAL_TIMEOUT, detect_repo, project_root
 
 
 def read_body_file(path):
@@ -31,6 +31,9 @@ def read_body_file(path):
     Returns (body_text, error_message). On success error is None.
     The file is always deleted after reading, even if empty.
     """
+    if not os.path.isabs(path):
+        path = str(project_root() / path)
+
     try:
         body = open(path).read()
     except (OSError, IOError) as exc:
@@ -100,7 +103,43 @@ def create_issue(repo, title, label=None, body=None):
 
     if result.returncode != 0:
         error = result.stderr.strip() or result.stdout.strip() or "Unknown error"
-        return None, error
+
+        # Label-not-found: try creating the label, then retry
+        if label and "label" in error.lower() and "not found" in error.lower():
+            label_created = False
+            try:
+                label_result = subprocess.run(
+                    ["gh", "label", "create", label, "--repo", repo],
+                    capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
+                )
+                label_created = label_result.returncode == 0
+            except subprocess.TimeoutExpired:
+                pass
+
+            if label_created:
+                retry_cmd = cmd
+            else:
+                # Label creation failed — retry without label
+                retry_cmd = ["gh", "issue", "create", "--repo", repo,
+                             "--title", title]
+                if body:
+                    retry_cmd.extend(["--body", body])
+
+            try:
+                retry = subprocess.run(retry_cmd, capture_output=True,
+                                       text=True, timeout=LOCAL_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                return None, f"Command timed out after {LOCAL_TIMEOUT}s"
+
+            if retry.returncode == 0:
+                result = retry
+            else:
+                retry_err = (retry.stderr.strip() or retry.stdout.strip()
+                             or "Unknown error")
+                return None, retry_err
+
+        else:
+            return None, error
 
     url = result.stdout.strip()
     number = parse_issue_number(url)
