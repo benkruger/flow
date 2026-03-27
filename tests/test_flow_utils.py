@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from conftest import LIB_DIR, make_state
 from flow_utils import (
     PINNED_COLORS,
@@ -20,9 +19,7 @@ from flow_utils import (
 )
 
 # Import flow_utils for in-process unit tests
-_spec = importlib.util.spec_from_file_location(
-    "flow_utils", LIB_DIR / "flow_utils.py"
-)
+_spec = importlib.util.spec_from_file_location("flow_utils", LIB_DIR / "flow_utils.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -77,7 +74,9 @@ def test_format_time_none_input():
 def test_project_root_returns_path_in_git_repo(git_repo):
     result = subprocess.run(
         ["git", "worktree", "list", "--porcelain"],
-        capture_output=True, text=True, cwd=str(git_repo),
+        capture_output=True,
+        text=True,
+        cwd=str(git_repo),
     )
     assert result.returncode == 0
     # project_root relies on cwd for subprocess — test the function directly
@@ -87,6 +86,7 @@ def test_project_root_returns_path_in_git_repo(git_repo):
 def test_project_root_falls_back_on_git_failure(monkeypatch):
     def _raise(*args, **kwargs):
         raise OSError("git not found")
+
     monkeypatch.setattr(subprocess, "run", _raise)
     assert _mod.project_root() == Path(".")
 
@@ -96,19 +96,24 @@ def test_project_root_falls_back_on_git_failure(monkeypatch):
 
 def test_current_branch_returns_none_on_git_failure(monkeypatch):
     monkeypatch.delenv("FLOW_SIMULATE_BRANCH", raising=False)
+
     def _raise(*args, **kwargs):
         raise OSError("git not found")
+
     monkeypatch.setattr(subprocess, "run", _raise)
     assert _mod.current_branch() is None
 
 
 def test_current_branch_returns_none_for_empty_string(monkeypatch):
     monkeypatch.delenv("FLOW_SIMULATE_BRANCH", raising=False)
+
     class FakeResult:
         stdout = ""
         returncode = 0
+
     monkeypatch.setattr(
-        subprocess, "run",
+        subprocess,
+        "run",
         lambda *args, **kwargs: FakeResult(),
     )
     assert _mod.current_branch() is None
@@ -258,9 +263,7 @@ def test_find_state_files_skips_frozen_phases_files(tmp_path):
     state_dir.mkdir()
     state = make_state(current_phase="flow-plan")
     (state_dir / "feature-x.json").write_text(json.dumps(state))
-    (state_dir / "feature-x-phases.json").write_text(
-        json.dumps({"order": [], "phases": {}})
-    )
+    (state_dir / "feature-x-phases.json").write_text(json.dumps({"order": [], "phases": {}}))
 
     results = _mod.find_state_files(tmp_path, "main")
     assert len(results) == 1
@@ -345,9 +348,7 @@ def test_resolve_branch_skips_phases_json(monkeypatch, tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     (state_dir / "feat-x.json").write_text(json.dumps(make_state()))
-    (state_dir / "feat-x-phases.json").write_text(
-        json.dumps({"order": [], "phases": {}})
-    )
+    (state_dir / "feat-x-phases.json").write_text(json.dumps({"order": [], "phases": {}}))
     monkeypatch.setattr(_mod, "current_branch", lambda: "main")
     monkeypatch.setattr(_mod, "project_root", lambda: tmp_path)
     branch, candidates = _mod.resolve_branch()
@@ -412,65 +413,65 @@ class TestDetectRepo:
 
     def _fake_result(self, stdout, returncode=0):
         return subprocess.CompletedProcess(
-            args=[], returncode=returncode, stdout=stdout, stderr="",
+            args=[],
+            returncode=returncode,
+            stdout=stdout,
+            stderr="",
         )
 
     def test_ssh_url_with_dotgit(self):
-        with patch.object(_mod.subprocess, "run",
-                          return_value=self._fake_result("git@github.com:owner/repo.git\n")):
+        with patch.object(_mod.subprocess, "run", return_value=self._fake_result("git@github.com:owner/repo.git\n")):
             assert _mod.detect_repo() == "owner/repo"
 
     def test_https_url_with_dotgit(self):
-        with patch.object(_mod.subprocess, "run",
-                          return_value=self._fake_result("https://github.com/owner/repo.git\n")):
+        with patch.object(
+            _mod.subprocess, "run", return_value=self._fake_result("https://github.com/owner/repo.git\n")
+        ):
             assert _mod.detect_repo() == "owner/repo"
 
     def test_https_url_without_dotgit(self):
-        with patch.object(_mod.subprocess, "run",
-                          return_value=self._fake_result("https://github.com/owner/repo\n")):
+        with patch.object(_mod.subprocess, "run", return_value=self._fake_result("https://github.com/owner/repo\n")):
             assert _mod.detect_repo() == "owner/repo"
 
     def test_ssh_url_without_dotgit(self):
-        with patch.object(_mod.subprocess, "run",
-                          return_value=self._fake_result("git@github.com:owner/repo\n")):
+        with patch.object(_mod.subprocess, "run", return_value=self._fake_result("git@github.com:owner/repo\n")):
             assert _mod.detect_repo() == "owner/repo"
 
     def test_non_github_url_returns_none(self):
-        with patch.object(_mod.subprocess, "run",
-                          return_value=self._fake_result("https://gitlab.com/owner/repo.git\n")):
+        with patch.object(
+            _mod.subprocess, "run", return_value=self._fake_result("https://gitlab.com/owner/repo.git\n")
+        ):
             assert _mod.detect_repo() is None
 
     def test_git_failure_returns_none(self):
-        with patch.object(_mod.subprocess, "run",
-                          return_value=self._fake_result("", returncode=1)):
+        with patch.object(_mod.subprocess, "run", return_value=self._fake_result("", returncode=1)):
             assert _mod.detect_repo() is None
 
     def test_empty_output_returns_none(self):
-        with patch.object(_mod.subprocess, "run",
-                          return_value=self._fake_result("")):
+        with patch.object(_mod.subprocess, "run", return_value=self._fake_result("")):
             assert _mod.detect_repo() is None
 
     def test_malformed_url_returns_none(self):
-        with patch.object(_mod.subprocess, "run",
-                          return_value=self._fake_result("not-a-url\n")):
+        with patch.object(_mod.subprocess, "run", return_value=self._fake_result("not-a-url\n")):
             assert _mod.detect_repo() is None
 
     def test_subprocess_exception_returns_none(self):
-        with patch.object(_mod.subprocess, "run",
-                          side_effect=OSError("git not found")):
+        with patch.object(_mod.subprocess, "run", side_effect=OSError("git not found")):
             assert _mod.detect_repo() is None
 
     def test_cwd_parameter_passed_to_subprocess(self):
-        with patch.object(_mod.subprocess, "run",
-                          return_value=self._fake_result("git@github.com:owner/repo.git\n")) as mock_run:
+        with patch.object(
+            _mod.subprocess, "run", return_value=self._fake_result("git@github.com:owner/repo.git\n")
+        ) as mock_run:
             _mod.detect_repo(cwd="/some/path")
 
         call_kwargs = mock_run.call_args
         assert call_kwargs[1].get("cwd") == "/some/path"
 
     def test_cwd_none_by_default(self):
-        with patch.object(_mod.subprocess, "run",
-                          return_value=self._fake_result("git@github.com:owner/repo.git\n")) as mock_run:
+        with patch.object(
+            _mod.subprocess, "run", return_value=self._fake_result("git@github.com:owner/repo.git\n")
+        ) as mock_run:
             _mod.detect_repo()
 
         call_kwargs = mock_run.call_args
@@ -532,6 +533,7 @@ class TestMutateState:
 
     def test_file_locking_uses_flock(self, tmp_path):
         import fcntl
+
         state_path = tmp_path / "state.json"
         state_path.write_text(json.dumps({"x": 1}))
 
@@ -559,20 +561,14 @@ class TestExtractIssueNumbersUrls:
     """Tests for URL-format issue reference extraction."""
 
     def test_github_url_extracts_number(self):
-        assert _mod.extract_issue_numbers(
-            "fix https://github.com/owner/repo/issues/42"
-        ) == [42]
+        assert _mod.extract_issue_numbers("fix https://github.com/owner/repo/issues/42") == [42]
 
     def test_mixed_hash_and_url_formats(self):
-        result = _mod.extract_issue_numbers(
-            "fix #83 and https://github.com/owner/repo/issues/89"
-        )
+        result = _mod.extract_issue_numbers("fix #83 and https://github.com/owner/repo/issues/89")
         assert result == [83, 89]
 
     def test_deduplication_across_formats(self):
-        result = _mod.extract_issue_numbers(
-            "fix #42 and https://github.com/owner/repo/issues/42"
-        )
+        result = _mod.extract_issue_numbers("fix #42 and https://github.com/owner/repo/issues/42")
         assert result == [42]
 
     def test_multiple_urls(self):
@@ -582,15 +578,11 @@ class TestExtractIssueNumbersUrls:
         assert result == [10, 20]
 
     def test_url_only_no_hash(self):
-        result = _mod.extract_issue_numbers(
-            "see https://github.com/owner/repo/issues/99"
-        )
+        result = _mod.extract_issue_numbers("see https://github.com/owner/repo/issues/99")
         assert result == [99]
 
     def test_hash_ordering_preserved_first(self):
-        result = _mod.extract_issue_numbers(
-            "https://github.com/owner/repo/issues/200 and #100"
-        )
+        result = _mod.extract_issue_numbers("https://github.com/owner/repo/issues/200 and #100")
         assert result == [100, 200]
 
 
@@ -601,9 +593,7 @@ class TestShortIssueRef:
     """Tests for URL-to-display-reference extraction."""
 
     def test_github_issue_url_returns_hash_number(self):
-        assert _mod.short_issue_ref(
-            "https://github.com/owner/repo/issues/42"
-        ) == "#42"
+        assert _mod.short_issue_ref("https://github.com/owner/repo/issues/42") == "#42"
 
     def test_empty_string_returns_empty(self):
         assert _mod.short_issue_ref("") == ""
@@ -646,8 +636,7 @@ def test_auto_skills_all_commits_auto():
 
 def test_auto_skills_all_continues_auto():
     """Every phase with a continue axis must be set to auto."""
-    for key in ("flow-start", "flow-plan", "flow-code",
-                "flow-code-review", "flow-learn"):
+    for key in ("flow-start", "flow-plan", "flow-code", "flow-code-review", "flow-learn"):
         assert _mod.AUTO_SKILLS[key]["continue"] == "auto"
 
 
@@ -732,8 +721,11 @@ def test_build_initial_phases_has_correct_names():
     """Phase names must match PHASE_NAMES from flow-phases.json."""
     phases = _mod.build_initial_phases("2026-01-01T00:00:00-08:00")
     expected = {
-        "flow-start": "Start", "flow-plan": "Plan", "flow-code": "Code",
-        "flow-code-review": "Code Review", "flow-learn": "Learn",
+        "flow-start": "Start",
+        "flow-plan": "Plan",
+        "flow-code": "Code",
+        "flow-code-review": "Code Review",
+        "flow-learn": "Learn",
         "flow-complete": "Complete",
     }
     for key, name in expected.items():
@@ -744,8 +736,13 @@ def test_build_initial_phases_required_fields():
     """Each phase must have all 7 required fields."""
     phases = _mod.build_initial_phases("2026-01-01T00:00:00-08:00")
     required = [
-        "name", "status", "started_at", "completed_at",
-        "session_started_at", "cumulative_seconds", "visit_count",
+        "name",
+        "status",
+        "started_at",
+        "completed_at",
+        "session_started_at",
+        "cumulative_seconds",
+        "visit_count",
     ]
     for key in _mod.PHASE_ORDER:
         for field in required:
@@ -953,11 +950,15 @@ class TestWriteTabSequences:
     def _mock_tty(self, monkeypatch):
         """Set up a fake /dev/tty and return the list that captures writes."""
         written = []
-        fake_tty = type("FakeTTY", (), {
-            "write": lambda self, data: written.append(data),
-            "__enter__": lambda self: self,
-            "__exit__": lambda self, *a: None,
-        })()
+        fake_tty = type(
+            "FakeTTY",
+            (),
+            {
+                "write": lambda self, data: written.append(data),
+                "__enter__": lambda self: self,
+                "__exit__": lambda self, *a: None,
+            },
+        )()
 
         original_open = open
 

@@ -3,17 +3,12 @@
 import importlib.util
 import json
 import os
-import sys
-from pathlib import Path
 
 import pytest
-
 from conftest import LIB_DIR
 
 # Import update-pr-body.py for in-process unit tests
-_spec = importlib.util.spec_from_file_location(
-    "update_pr_body", LIB_DIR / "update-pr-body.py"
-)
+_spec = importlib.util.spec_from_file_location("update_pr_body", LIB_DIR / "update-pr-body.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -65,10 +60,7 @@ def test_add_artifact_to_body_adds_new_line():
 
 def test_add_artifact_to_body_replaces_existing_same_label():
     """Replaces an existing artifact line with the same label."""
-    body = (
-        "## What\n\nFeature Title.\n\n## Artifacts\n\n"
-        "- **Plan file**: `/old/path.md`"
-    )
+    body = "## What\n\nFeature Title.\n\n## Artifacts\n\n- **Plan file**: `/old/path.md`"
     result = _mod._add_artifact_to_body(body, "Plan file", "/new/path.md")
     assert "- **Plan file**: `/new/path.md`" in result
     assert "/old/path.md" not in result
@@ -100,9 +92,7 @@ def test_add_artifact_multiple_pairs():
 
 def test_build_details_block_returns_collapsible_html():
     """Returns a details block with heading, summary, and fenced code."""
-    result = _mod._build_details_block(
-        "State File", ".flow-states/b.json", '{"key": "value"}', "json"
-    )
+    result = _mod._build_details_block("State File", ".flow-states/b.json", '{"key": "value"}', "json")
     assert "## State File" in result
     assert "<details>" in result
     assert "<summary>.flow-states/b.json</summary>" in result
@@ -113,9 +103,7 @@ def test_build_details_block_returns_collapsible_html():
 
 def test_build_details_block_text_format():
     """Uses text format for non-json content."""
-    result = _mod._build_details_block(
-        "Session Log", ".flow-states/b.log", "line 1\nline 2", "text"
-    )
+    result = _mod._build_details_block("Session Log", ".flow-states/b.log", "line 1\nline 2", "text")
     assert "```text" in result
     assert "line 1\nline 2" in result
 
@@ -172,9 +160,7 @@ def test_build_details_block_nested_fences():
 def test_append_section_to_body_appends():
     """Appends a details section to the end of the body."""
     body = "## What\n\nFeature Title."
-    result = _mod._append_section_to_body(
-        body, "State File", ".flow-states/b.json", '{"k": "v"}', "json"
-    )
+    result = _mod._append_section_to_body(body, "State File", ".flow-states/b.json", '{"k": "v"}', "json")
     assert body in result
     assert "## State File" in result
     assert "<details>" in result
@@ -187,9 +173,7 @@ def test_append_section_replaces_if_heading_exists():
         "## State File\n\n<details>\n<summary>old</summary>\n\n"
         "```json\nold content\n```\n\n</details>"
     )
-    result = _mod._append_section_to_body(
-        body, "State File", "new-summary", "new content", "json"
-    )
+    result = _mod._append_section_to_body(body, "State File", "new-summary", "new content", "json")
     assert "old content" not in result
     assert "new content" in result
     assert result.count("## State File") == 1
@@ -204,26 +188,32 @@ def test_cli_add_artifact_end_to_end(tmp_path, monkeypatch, capsys):
     stub_dir.mkdir()
     gh_stub = stub_dir / "gh"
     gh_stub.write_text(
-        '#!/bin/bash\n'
+        "#!/bin/bash\n"
         'if [[ "$1" == "pr" && "$2" == "view" ]]; then\n'
         '    echo "## What"\n'
         '    echo ""\n'
         '    echo "Feature Title."\n'
         'elif [[ "$1" == "pr" && "$2" == "edit" ]]; then\n'
         '    echo "ok"\n'
-        'fi\n'
+        "fi\n"
     )
     gh_stub.chmod(0o755)
 
     monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    monkeypatch.setattr("sys.argv", [
-        "update-pr-body",
-        "--pr", "42",
-        "--add-artifact",
-        "--label", "Plan file",
-        "--value", "/plans/x.md",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "update-pr-body",
+            "--pr",
+            "42",
+            "--add-artifact",
+            "--label",
+            "Plan file",
+            "--value",
+            "/plans/x.md",
+        ],
+    )
     _mod.main()
     data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
@@ -238,7 +228,7 @@ def test_cli_add_multiple_artifacts_end_to_end(tmp_path, monkeypatch, capsys):
     # Capture the body passed to `gh pr edit` so we can verify both artifacts
     body_file = tmp_path / "captured_body.txt"
     gh_stub.write_text(
-        '#!/bin/bash\n'
+        "#!/bin/bash\n"
         'if [[ "$1" == "pr" && "$2" == "view" ]]; then\n'
         '    echo "## What"\n'
         '    echo ""\n'
@@ -246,21 +236,29 @@ def test_cli_add_multiple_artifacts_end_to_end(tmp_path, monkeypatch, capsys):
         'elif [[ "$1" == "pr" && "$2" == "edit" ]]; then\n'
         f'    echo "$5" > "{body_file}"\n'
         '    echo "ok"\n'
-        'fi\n'
+        "fi\n"
     )
     gh_stub.chmod(0o755)
 
     monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    monkeypatch.setattr("sys.argv", [
-        "update-pr-body",
-        "--pr", "42",
-        "--add-artifact",
-        "--label", "Plan file",
-        "--value", "/plans/x.md",
-        "--label", "Session log",
-        "--value", "/logs/y.jsonl",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "update-pr-body",
+            "--pr",
+            "42",
+            "--add-artifact",
+            "--label",
+            "Plan file",
+            "--value",
+            "/plans/x.md",
+            "--label",
+            "Session log",
+            "--value",
+            "/logs/y.jsonl",
+        ],
+    )
     _mod.main()
     data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
@@ -273,14 +271,21 @@ def test_cli_add_multiple_artifacts_end_to_end(tmp_path, monkeypatch, capsys):
 
 def test_cli_add_artifact_mismatched_label_value_count(monkeypatch, capsys):
     """CLI returns error when --label count does not match --value count."""
-    monkeypatch.setattr("sys.argv", [
-        "update-pr-body",
-        "--pr", "42",
-        "--add-artifact",
-        "--label", "Plan file",
-        "--value", "/plans/x.md",
-        "--label", "Session log",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "update-pr-body",
+            "--pr",
+            "42",
+            "--add-artifact",
+            "--label",
+            "Plan file",
+            "--value",
+            "/plans/x.md",
+            "--label",
+            "Session log",
+        ],
+    )
     _mod.main()
     data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
@@ -296,14 +301,14 @@ def test_cli_append_section_end_to_end(tmp_path, monkeypatch, capsys):
     stub_dir.mkdir()
     gh_stub = stub_dir / "gh"
     gh_stub.write_text(
-        '#!/bin/bash\n'
+        "#!/bin/bash\n"
         'if [[ "$1" == "pr" && "$2" == "view" ]]; then\n'
         '    echo "## What"\n'
         '    echo ""\n'
         '    echo "Feature Title."\n'
         'elif [[ "$1" == "pr" && "$2" == "edit" ]]; then\n'
         '    echo "ok"\n'
-        'fi\n'
+        "fi\n"
     )
     gh_stub.chmod(0o755)
 
@@ -312,15 +317,23 @@ def test_cli_append_section_end_to_end(tmp_path, monkeypatch, capsys):
 
     monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    monkeypatch.setattr("sys.argv", [
-        "update-pr-body",
-        "--pr", "42",
-        "--append-section",
-        "--heading", "State File",
-        "--summary", ".flow-states/b.json",
-        "--content-file", str(content_file),
-        "--format", "json",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "update-pr-body",
+            "--pr",
+            "42",
+            "--append-section",
+            "--heading",
+            "State File",
+            "--summary",
+            ".flow-states/b.json",
+            "--content-file",
+            str(content_file),
+            "--format",
+            "json",
+        ],
+    )
     _mod.main()
     data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
@@ -332,10 +345,17 @@ def test_cli_append_section_end_to_end(tmp_path, monkeypatch, capsys):
 
 def test_cli_missing_pr_number(monkeypatch, capsys):
     """CLI exits with error when --pr is missing."""
-    monkeypatch.setattr("sys.argv", [
-        "update-pr-body", "--add-artifact",
-        "--label", "X", "--value", "Y",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "update-pr-body",
+            "--add-artifact",
+            "--label",
+            "X",
+            "--value",
+            "Y",
+        ],
+    )
     with pytest.raises(SystemExit) as exc_info:
         _mod.main()
     assert exc_info.value.code != 0
@@ -343,9 +363,14 @@ def test_cli_missing_pr_number(monkeypatch, capsys):
 
 def test_cli_missing_mode_flag(monkeypatch, capsys):
     """CLI exits with error when neither --add-artifact nor --append-section."""
-    monkeypatch.setattr("sys.argv", [
-        "update-pr-body", "--pr", "42",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "update-pr-body",
+            "--pr",
+            "42",
+        ],
+    )
     with pytest.raises(SystemExit) as exc_info:
         _mod.main()
     assert exc_info.value.code != 0
@@ -356,22 +381,24 @@ def test_cli_gh_failure_returns_error(tmp_path, monkeypatch, capsys):
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
     gh_stub = stub_dir / "gh"
-    gh_stub.write_text(
-        '#!/bin/bash\n'
-        'echo "gh error" >&2\n'
-        'exit 1\n'
-    )
+    gh_stub.write_text('#!/bin/bash\necho "gh error" >&2\nexit 1\n')
     gh_stub.chmod(0o755)
 
     monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    monkeypatch.setattr("sys.argv", [
-        "update-pr-body",
-        "--pr", "42",
-        "--add-artifact",
-        "--label", "Plan file",
-        "--value", "/plans/x.md",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "update-pr-body",
+            "--pr",
+            "42",
+            "--add-artifact",
+            "--label",
+            "Plan file",
+            "--value",
+            "/plans/x.md",
+        ],
+    )
     _mod.main()
     data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
@@ -384,27 +411,33 @@ def test_cli_gh_edit_failure_returns_error(tmp_path, monkeypatch, capsys):
     stub_dir.mkdir()
     gh_stub = stub_dir / "gh"
     gh_stub.write_text(
-        '#!/bin/bash\n'
+        "#!/bin/bash\n"
         'if [[ "$1" == "pr" && "$2" == "view" ]]; then\n'
         '    echo "## What"\n'
         '    echo ""\n'
         '    echo "Feature Title."\n'
         'elif [[ "$1" == "pr" && "$2" == "edit" ]]; then\n'
         '    echo "edit failed" >&2\n'
-        '    exit 1\n'
-        'fi\n'
+        "    exit 1\n"
+        "fi\n"
     )
     gh_stub.chmod(0o755)
 
     monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    monkeypatch.setattr("sys.argv", [
-        "update-pr-body",
-        "--pr", "42",
-        "--add-artifact",
-        "--label", "Plan file",
-        "--value", "/plans/x.md",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "update-pr-body",
+            "--pr",
+            "42",
+            "--add-artifact",
+            "--label",
+            "Plan file",
+            "--value",
+            "/plans/x.md",
+        ],
+    )
     _mod.main()
     data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
@@ -416,24 +449,26 @@ def test_cli_append_section_missing_content_file_arg(tmp_path, monkeypatch, caps
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
     gh_stub = stub_dir / "gh"
-    gh_stub.write_text(
-        '#!/bin/bash\n'
-        'echo "## What"\n'
-        'echo ""\n'
-        'echo "Feature."\n'
-    )
+    gh_stub.write_text('#!/bin/bash\necho "## What"\necho ""\necho "Feature."\n')
     gh_stub.chmod(0o755)
 
     monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    monkeypatch.setattr("sys.argv", [
-        "update-pr-body",
-        "--pr", "42",
-        "--append-section",
-        "--heading", "State File",
-        "--summary", "s",
-        "--format", "json",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "update-pr-body",
+            "--pr",
+            "42",
+            "--append-section",
+            "--heading",
+            "State File",
+            "--summary",
+            "s",
+            "--format",
+            "json",
+        ],
+    )
     _mod.main()
     data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
@@ -445,25 +480,28 @@ def test_cli_append_section_missing_content_file(tmp_path, monkeypatch, capsys):
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
     gh_stub = stub_dir / "gh"
-    gh_stub.write_text(
-        '#!/bin/bash\n'
-        'echo "## What"\n'
-        'echo ""\n'
-        'echo "Feature."\n'
-    )
+    gh_stub.write_text('#!/bin/bash\necho "## What"\necho ""\necho "Feature."\n')
     gh_stub.chmod(0o755)
 
     monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    monkeypatch.setattr("sys.argv", [
-        "update-pr-body",
-        "--pr", "42",
-        "--append-section",
-        "--heading", "State File",
-        "--summary", "s",
-        "--content-file", str(tmp_path / "nonexistent"),
-        "--format", "json",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "update-pr-body",
+            "--pr",
+            "42",
+            "--append-section",
+            "--heading",
+            "State File",
+            "--summary",
+            "s",
+            "--content-file",
+            str(tmp_path / "nonexistent"),
+            "--format",
+            "json",
+        ],
+    )
     _mod.main()
     data = json.loads(capsys.readouterr().out)
     assert data["status"] == "error"
@@ -487,9 +525,7 @@ def test_build_plain_section_returns_heading_and_content():
 def test_append_plain_section_appends_to_body():
     """Appends a plain section to the end of the body."""
     body = "## What\n\nFeature Title."
-    result = _mod._append_plain_section_to_body(
-        body, "Phase Timings", "| Phase | Duration |"
-    )
+    result = _mod._append_plain_section_to_body(body, "Phase Timings", "| Phase | Duration |")
     assert body in result
     assert "## Phase Timings" in result
     assert "<!-- end:Phase Timings -->" in result
@@ -497,13 +533,8 @@ def test_append_plain_section_appends_to_body():
 
 def test_append_plain_section_replaces_existing():
     """Replaces an existing plain section with the same heading."""
-    body = (
-        "## What\n\nFeature Title.\n\n"
-        "## Phase Timings\n\nold content\n\n<!-- end:Phase Timings -->"
-    )
-    result = _mod._append_plain_section_to_body(
-        body, "Phase Timings", "new content"
-    )
+    body = "## What\n\nFeature Title.\n\n## Phase Timings\n\nold content\n\n<!-- end:Phase Timings -->"
+    result = _mod._append_plain_section_to_body(body, "Phase Timings", "new content")
     assert "old content" not in result
     assert "new content" in result
     assert result.count("## Phase Timings") == 1
@@ -512,12 +543,8 @@ def test_append_plain_section_replaces_existing():
 def test_append_plain_section_idempotent():
     """Calling twice with same content produces same result."""
     body = "## What\n\nFeature Title."
-    first = _mod._append_plain_section_to_body(
-        body, "Phase Timings", "| Phase | Duration |"
-    )
-    second = _mod._append_plain_section_to_body(
-        first, "Phase Timings", "| Phase | Duration |"
-    )
+    first = _mod._append_plain_section_to_body(body, "Phase Timings", "| Phase | Duration |")
+    second = _mod._append_plain_section_to_body(first, "Phase Timings", "| Phase | Duration |")
     assert first == second
     assert second.count("## Phase Timings") == 1
 
@@ -531,14 +558,14 @@ def test_cli_no_collapse_end_to_end(tmp_path, monkeypatch, capsys):
     stub_dir.mkdir()
     gh_stub = stub_dir / "gh"
     gh_stub.write_text(
-        '#!/bin/bash\n'
+        "#!/bin/bash\n"
         'if [[ "$1" == "pr" && "$2" == "view" ]]; then\n'
         '    echo "## What"\n'
         '    echo ""\n'
         '    echo "Feature Title."\n'
         'elif [[ "$1" == "pr" && "$2" == "edit" ]]; then\n'
         '    echo "ok"\n'
-        'fi\n'
+        "fi\n"
     )
     gh_stub.chmod(0o755)
 
@@ -547,14 +574,20 @@ def test_cli_no_collapse_end_to_end(tmp_path, monkeypatch, capsys):
 
     monkeypatch.setenv("PATH", f"{stub_dir}:{os.environ['PATH']}")
 
-    monkeypatch.setattr("sys.argv", [
-        "update-pr-body",
-        "--pr", "42",
-        "--append-section",
-        "--heading", "Phase Timings",
-        "--content-file", str(content_file),
-        "--no-collapse",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "update-pr-body",
+            "--pr",
+            "42",
+            "--append-section",
+            "--heading",
+            "Phase Timings",
+            "--content-file",
+            str(content_file),
+            "--no-collapse",
+        ],
+    )
     _mod.main()
     data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"

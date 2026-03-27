@@ -5,7 +5,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import patch, call
+from unittest.mock import call, patch
 
 import pytest
 
@@ -19,7 +19,10 @@ _mod = importlib.import_module("finalize-commit")
 
 def _make_result(returncode=0, stdout="", stderr=""):
     return subprocess.CompletedProcess(
-        args=[], returncode=returncode, stdout=stdout, stderr=stderr,
+        args=[],
+        returncode=returncode,
+        stdout=stdout,
+        stderr=stderr,
     )
 
 
@@ -29,10 +32,10 @@ def test_happy_path(tmp_path):
     msg_file.write_text("Test commit.")
 
     responses = [
-        _make_result(),                         # git commit
-        _make_result(),                         # git pull
-        _make_result(),                         # git push
-        _make_result(stdout="abc123\n"),         # git rev-parse HEAD
+        _make_result(),  # git commit
+        _make_result(),  # git pull
+        _make_result(),  # git push
+        _make_result(stdout="abc123\n"),  # git rev-parse HEAD
     ]
 
     with patch("subprocess.run", side_effect=responses):
@@ -48,7 +51,7 @@ def test_commit_failure(tmp_path):
     msg_file.write_text("Test commit.")
 
     responses = [
-        _make_result(1, stderr="nothing to commit"),    # git commit
+        _make_result(1, stderr="nothing to commit"),  # git commit
     ]
 
     with patch("subprocess.run", side_effect=responses):
@@ -65,9 +68,9 @@ def test_pull_conflict(tmp_path):
 
     porcelain = "UU file1.py\nAA file2.py\n"
     responses = [
-        _make_result(),                                          # git commit
-        _make_result(1, stderr="CONFLICT"),                      # git pull
-        _make_result(stdout=porcelain),                          # git status --porcelain
+        _make_result(),  # git commit
+        _make_result(1, stderr="CONFLICT"),  # git pull
+        _make_result(stdout=porcelain),  # git status --porcelain
     ]
 
     with patch("subprocess.run", side_effect=responses):
@@ -83,9 +86,9 @@ def test_pull_error_non_conflict(tmp_path):
     msg_file.write_text("Test commit.")
 
     responses = [
-        _make_result(),                                     # git commit
-        _make_result(1, stderr="Could not resolve host"),   # git pull
-        _make_result(stdout=""),                             # git status --porcelain (clean)
+        _make_result(),  # git commit
+        _make_result(1, stderr="Could not resolve host"),  # git pull
+        _make_result(stdout=""),  # git status --porcelain (clean)
     ]
 
     with patch("subprocess.run", side_effect=responses):
@@ -100,9 +103,9 @@ def test_push_failure(tmp_path):
     msg_file.write_text("Test commit.")
 
     responses = [
-        _make_result(),                                 # git commit
-        _make_result(),                                 # git pull
-        _make_result(1, stderr="permission denied"),    # git push
+        _make_result(),  # git commit
+        _make_result(),  # git pull
+        _make_result(1, stderr="permission denied"),  # git push
     ]
 
     with patch("subprocess.run", side_effect=responses):
@@ -117,10 +120,10 @@ def test_message_file_missing_ok(tmp_path):
     # Don't create the file — simulate it already being gone
 
     responses = [
-        _make_result(),                         # git commit (succeeds despite file arg)
-        _make_result(),                         # git pull
-        _make_result(),                         # git push
-        _make_result(stdout="def456\n"),         # git rev-parse HEAD
+        _make_result(),  # git commit (succeeds despite file arg)
+        _make_result(),  # git pull
+        _make_result(),  # git push
+        _make_result(stdout="def456\n"),  # git rev-parse HEAD
     ]
 
     with patch("subprocess.run", side_effect=responses):
@@ -158,9 +161,9 @@ def test_rev_parse_failure(tmp_path):
     msg_file.write_text("Test commit.")
 
     responses = [
-        _make_result(),                                 # git commit
-        _make_result(),                                 # git pull
-        _make_result(),                                 # git push
+        _make_result(),  # git commit
+        _make_result(),  # git pull
+        _make_result(),  # git push
         _make_result(returncode=1, stderr="bad HEAD"),  # git rev-parse HEAD
     ]
 
@@ -259,9 +262,9 @@ def test_status_porcelain_timeout(tmp_path):
     msg_file.write_text("Test commit.")
 
     responses = [
-        _make_result(),                                     # git commit
-        _make_result(1, stderr="Could not resolve host"),   # git pull fails
-        subprocess.TimeoutExpired("git", 30),               # git status --porcelain times out
+        _make_result(),  # git commit
+        _make_result(1, stderr="Could not resolve host"),  # git pull fails
+        subprocess.TimeoutExpired("git", 30),  # git status --porcelain times out
     ]
 
     with patch("subprocess.run", side_effect=responses):
@@ -300,21 +303,25 @@ def test_cli_happy_path(git_repo, branch, tmp_path, monkeypatch, capsys):
     bare = tmp_path / "bare.git"
     subprocess.run(
         ["git", "init", "--bare", str(bare)],
-        capture_output=True, check=True,
+        capture_output=True,
+        check=True,
     )
     subprocess.run(
         ["git", "-C", str(git_repo), "remote", "add", "origin", str(bare)],
-        capture_output=True, check=True,
+        capture_output=True,
+        check=True,
     )
     subprocess.run(
         ["git", "-C", str(git_repo), "push", "-u", "origin", branch],
-        capture_output=True, check=True,
+        capture_output=True,
+        check=True,
     )
 
     (git_repo / "test.txt").write_text("hello")
     subprocess.run(
         ["git", "-C", str(git_repo), "add", "-A"],
-        capture_output=True, check=True,
+        capture_output=True,
+        check=True,
     )
 
     msg_file = git_repo / ".flow-commit-msg"

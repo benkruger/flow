@@ -67,7 +67,9 @@ def fetch_database_id(repo, number):
     try:
         result = subprocess.run(
             ["gh", "api", f"repos/{repo}/issues/{number}", "--jq", ".id"],
-            capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
+            capture_output=True,
+            text=True,
+            timeout=LOCAL_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
         return None, f"gh api timed out after {LOCAL_TIMEOUT}s"
@@ -110,7 +112,9 @@ def create_issue(repo, title, label=None, body=None):
             try:
                 label_result = subprocess.run(
                     ["gh", "label", "create", label, "--repo", repo],
-                    capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
+                    capture_output=True,
+                    text=True,
+                    timeout=LOCAL_TIMEOUT,
                 )
                 label_created = label_result.returncode == 0
             except subprocess.TimeoutExpired:
@@ -120,22 +124,19 @@ def create_issue(repo, title, label=None, body=None):
                 retry_cmd = cmd
             else:
                 # Label creation failed — retry without label
-                retry_cmd = ["gh", "issue", "create", "--repo", repo,
-                             "--title", title]
+                retry_cmd = ["gh", "issue", "create", "--repo", repo, "--title", title]
                 if body:
                     retry_cmd.extend(["--body", body])
 
             try:
-                retry = subprocess.run(retry_cmd, capture_output=True,
-                                       text=True, timeout=LOCAL_TIMEOUT)
+                retry = subprocess.run(retry_cmd, capture_output=True, text=True, timeout=LOCAL_TIMEOUT)
             except subprocess.TimeoutExpired:
                 return None, f"Command timed out after {LOCAL_TIMEOUT}s"
 
             if retry.returncode == 0:
                 result = retry
             else:
-                retry_err = (retry.stderr.strip() or retry.stdout.strip()
-                             or "Unknown error")
+                retry_err = retry.stderr.strip() or retry.stdout.strip() or "Unknown error"
                 return None, retry_err
 
         else:
@@ -155,10 +156,12 @@ def main():
     parser.add_argument("--repo", default=None, help="Repository (owner/name)")
     parser.add_argument("--title", required=True, help="Issue title")
     parser.add_argument("--label", default=None, help="Issue label")
-    parser.add_argument("--body-file", default=None,
-                        help="Path to file containing issue body (file is deleted after reading)")
-    parser.add_argument("--state-file", default=None,
-                        help="Path to state file for repo lookup (checks state before detect_repo)")
+    parser.add_argument(
+        "--body-file", default=None, help="Path to file containing issue body (file is deleted after reading)"
+    )
+    parser.add_argument(
+        "--state-file", default=None, help="Path to state file for repo lookup (checks state before detect_repo)"
+    )
     args = parser.parse_args()
 
     repo = args.repo
@@ -171,10 +174,14 @@ def main():
     if repo is None:
         repo = detect_repo()
         if repo is None:
-            print(json.dumps({
-                "status": "error",
-                "message": "Could not detect repo from git remote. Use --repo owner/name.",
-            }))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": "Could not detect repo from git remote. Use --repo owner/name.",
+                    }
+                )
+            )
             sys.exit(1)
 
     body = None
@@ -190,12 +197,16 @@ def main():
         print(json.dumps({"status": "error", "message": error}))
         sys.exit(1)
 
-    print(json.dumps({
-        "status": "ok",
-        "url": result["url"],
-        "number": result["number"],
-        "id": result["id"],
-    }))
+    print(
+        json.dumps(
+            {
+                "status": "ok",
+                "url": result["url"],
+                "number": result["number"],
+                "id": result["id"],
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

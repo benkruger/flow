@@ -2,17 +2,13 @@
 
 import importlib.util
 import json
-import os
 import stat
 import sys
 
 import pytest
-
 from conftest import FRAMEWORKS_DIR, LIB_DIR
 
-_spec = importlib.util.spec_from_file_location(
-    "create_dependencies", LIB_DIR / "create-dependencies.py"
-)
+_spec = importlib.util.spec_from_file_location("create_dependencies", LIB_DIR / "create-dependencies.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -68,7 +64,8 @@ def test_ios_template_content(tmp_path):
 
 def test_main_success(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(
-        sys, "argv",
+        sys,
+        "argv",
         ["create-dependencies", str(tmp_path), "--framework", "rails"],
     )
     _mod.main()
@@ -96,7 +93,8 @@ def test_main_missing_framework(tmp_path, capsys, monkeypatch):
 
 def test_main_error_exits_with_1(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(
-        sys, "argv",
+        sys,
+        "argv",
         ["create-dependencies", str(tmp_path), "--framework", "nonexistent"],
     )
     with pytest.raises(SystemExit) as exc_info:

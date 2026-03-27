@@ -1,7 +1,6 @@
 """Tests for lib/format-issues-summary.py — formats issues summary for Complete phase."""
 
 import json
-import sys
 
 from conftest import LIB_DIR, import_lib, make_state
 
@@ -12,14 +11,16 @@ def _make_issues(*labels):
     """Create a list of issue dicts with the given labels."""
     issues = []
     for i, label in enumerate(labels, 1):
-        issues.append({
-            "label": label,
-            "title": f"Issue {i}",
-            "url": f"https://github.com/test/test/issues/{i}",
-            "phase": "flow-learn",
-            "phase_name": "Learn",
-            "timestamp": "2026-01-01T00:00:00-08:00",
-        })
+        issues.append(
+            {
+                "label": label,
+                "title": f"Issue {i}",
+                "url": f"https://github.com/test/test/issues/{i}",
+                "phase": "flow-learn",
+                "phase_name": "Learn",
+                "timestamp": "2026-01-01T00:00:00-08:00",
+            }
+        )
     return issues
 
 
@@ -93,14 +94,16 @@ def test_table_url_is_short_reference():
     """Table shows issue number as link, not full URL."""
     mod = import_lib("format-issues-summary.py")
     state = make_state()
-    state["issues_filed"] = [{
-        "label": "Rule",
-        "title": "Test rule",
-        "url": "https://github.com/test/test/issues/42",
-        "phase": "flow-learn",
-        "phase_name": "Learn",
-        "timestamp": "2026-01-01T00:00:00-08:00",
-    }]
+    state["issues_filed"] = [
+        {
+            "label": "Rule",
+            "title": "Test rule",
+            "url": "https://github.com/test/test/issues/42",
+            "phase": "flow-learn",
+            "phase_name": "Learn",
+            "timestamp": "2026-01-01T00:00:00-08:00",
+        }
+    ]
 
     result = mod.format_issues_summary(state)
 
@@ -130,9 +133,9 @@ def test_cli_happy_path(tmp_path, monkeypatch, capsys):
     state_path.write_text(json.dumps(state))
     output_path = tmp_path / "issues.md"
 
-    monkeypatch.setattr("sys.argv", ["format-issues-summary.py",
-                                      "--state-file", str(state_path),
-                                      "--output", str(output_path)])
+    monkeypatch.setattr(
+        "sys.argv", ["format-issues-summary.py", "--state-file", str(state_path), "--output", str(output_path)]
+    )
 
     mod.main()
 
@@ -154,9 +157,9 @@ def test_cli_no_issues(tmp_path, monkeypatch, capsys):
     state_path.write_text(json.dumps(state))
     output_path = tmp_path / "issues.md"
 
-    monkeypatch.setattr("sys.argv", ["format-issues-summary.py",
-                                      "--state-file", str(state_path),
-                                      "--output", str(output_path)])
+    monkeypatch.setattr(
+        "sys.argv", ["format-issues-summary.py", "--state-file", str(state_path), "--output", str(output_path)]
+    )
 
     mod.main()
 
@@ -170,9 +173,16 @@ def test_cli_missing_state_file(tmp_path, monkeypatch, capsys):
     """CLI with nonexistent state file returns error."""
     mod = import_lib("format-issues-summary.py")
 
-    monkeypatch.setattr("sys.argv", ["format-issues-summary.py",
-                                      "--state-file", str(tmp_path / "missing.json"),
-                                      "--output", str(tmp_path / "out.md")])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "format-issues-summary.py",
+            "--state-file",
+            str(tmp_path / "missing.json"),
+            "--output",
+            str(tmp_path / "out.md"),
+        ],
+    )
 
     mod.main()
 
@@ -187,9 +197,9 @@ def test_cli_corrupt_state_file(tmp_path, monkeypatch, capsys):
     bad_file = tmp_path / "state.json"
     bad_file.write_text("{bad json")
 
-    monkeypatch.setattr("sys.argv", ["format-issues-summary.py",
-                                      "--state-file", str(bad_file),
-                                      "--output", str(tmp_path / "out.md")])
+    monkeypatch.setattr(
+        "sys.argv", ["format-issues-summary.py", "--state-file", str(bad_file), "--output", str(tmp_path / "out.md")]
+    )
 
     mod.main()
 

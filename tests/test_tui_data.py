@@ -3,11 +3,9 @@
 import json
 from datetime import datetime
 
-from conftest import make_orchestrate_state, make_state, write_state
-
 import tui_data
+from conftest import make_orchestrate_state, make_state, write_state
 from flow_utils import PACIFIC, PHASE_ORDER, elapsed_since, read_version, read_version_from
-
 
 # --- load_all_flows ---
 
@@ -22,8 +20,7 @@ def test_load_all_flows_single(state_dir):
     """Returns one flow summary for a single state file."""
     state = make_state(
         current_phase="flow-code",
-        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
-                        "flow-code": "in_progress"},
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
     write_state(state_dir, "test-feature", state)
 
@@ -83,8 +80,7 @@ def test_flow_summary_basic():
     now = datetime(2026, 1, 1, 1, 0, 0, tzinfo=PACIFIC)
     state = make_state(
         current_phase="flow-code",
-        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
-                        "flow-code": "in_progress"},
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
     summary = tui_data.flow_summary(state, now=now)
 
@@ -111,8 +107,7 @@ def test_flow_summary_code_task_present():
     """Extracts code_task when present."""
     state = make_state(
         current_phase="flow-code",
-        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
-                        "flow-code": "in_progress"},
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
     state["code_task"] = 3
     summary = tui_data.flow_summary(state)
@@ -292,8 +287,7 @@ def test_phase_timeline_mixed():
     """Complete, in_progress, and pending all appear correctly."""
     state = make_state(
         current_phase="flow-code",
-        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
-                        "flow-code": "in_progress"},
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
     state["phases"]["flow-start"]["cumulative_seconds"] = 120
     state["phases"]["flow-plan"]["cumulative_seconds"] = 480
@@ -317,8 +311,7 @@ def test_phase_timeline_code_with_task_annotation():
     """Code phase shows task annotation when code_task is set."""
     state = make_state(
         current_phase="flow-code",
-        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
-                        "flow-code": "in_progress"},
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
     state["code_task"] = 3
     state["diff_stats"] = {"files_changed": 5, "insertions": 127, "deletions": 48}
@@ -334,8 +327,7 @@ def test_phase_timeline_code_no_annotation():
     """Code phase has empty annotation when code_task is 0."""
     state = make_state(
         current_phase="flow-code",
-        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
-                        "flow-code": "in_progress"},
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
     timeline = tui_data.phase_timeline(state)
     code_entry = timeline[2]
@@ -346,8 +338,7 @@ def test_phase_timeline_code_with_total():
     """Code phase shows 'task 3 of 8' when code_tasks_total is present."""
     state = make_state(
         current_phase="flow-code",
-        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
-                        "flow-code": "in_progress"},
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
     state["code_task"] = 3
     state["code_tasks_total"] = 8
@@ -361,8 +352,7 @@ def test_phase_timeline_code_total_absent_fallback():
     """Falls back to 'task 3' when code_tasks_total is absent."""
     state = make_state(
         current_phase="flow-code",
-        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
-                        "flow-code": "in_progress"},
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
     state["code_task"] = 3
 
@@ -376,8 +366,7 @@ def test_phase_timeline_code_total_with_diff_stats():
     """Shows 'task 3 of 8, +127 -48' when all fields present."""
     state = make_state(
         current_phase="flow-code",
-        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
-                        "flow-code": "in_progress"},
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
     state["code_task"] = 3
     state["code_tasks_total"] = 8
@@ -392,8 +381,7 @@ def test_phase_timeline_code_total_zero_ignored():
     """code_tasks_total=0 treated as absent (no 'of 0')."""
     state = make_state(
         current_phase="flow-code",
-        phase_statuses={"flow-start": "complete", "flow-plan": "complete",
-                        "flow-code": "in_progress"},
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
     state["code_task"] = 3
     state["code_tasks_total"] = 0
@@ -422,10 +410,7 @@ def test_parse_log_entries_basic():
 
 def test_parse_log_entries_limit():
     """Returns only the last N entries when limit is set."""
-    lines = [
-        f"2026-01-01T10:{i:02d}:00-08:00 entry {i}\n"
-        for i in range(30)
-    ]
+    lines = [f"2026-01-01T10:{i:02d}:00-08:00 entry {i}\n" for i in range(30)]
     log = "".join(lines)
     entries = tui_data.parse_log_entries(log, limit=5)
     assert len(entries) == 5
@@ -460,11 +445,7 @@ def test_parse_log_entries_malformed_lines():
 
 def test_parse_log_entries_blank_lines():
     """Blank lines in log content are skipped."""
-    log = (
-        "2026-01-01T10:15:00-08:00 first entry\n"
-        "\n"
-        "2026-01-01T10:20:00-08:00 second entry\n"
-    )
+    log = "2026-01-01T10:15:00-08:00 first entry\n\n2026-01-01T10:20:00-08:00 second entry\n"
     entries = tui_data.parse_log_entries(log)
     assert len(entries) == 2
 
@@ -536,11 +517,21 @@ def test_load_orchestration_no_file(state_dir):
 
 def test_load_orchestration_with_state(state_dir):
     """Returns parsed state dict when orchestrate.json exists."""
-    orch = make_orchestrate_state(queue=[
-        {"issue_number": 42, "title": "Add PDF export", "status": "pending",
-         "started_at": None, "completed_at": None, "outcome": None,
-         "pr_url": None, "branch": None, "reason": None},
-    ])
+    orch = make_orchestrate_state(
+        queue=[
+            {
+                "issue_number": 42,
+                "title": "Add PDF export",
+                "status": "pending",
+                "started_at": None,
+                "completed_at": None,
+                "outcome": None,
+                "pr_url": None,
+                "branch": None,
+                "reason": None,
+            },
+        ]
+    )
     (state_dir / "orchestrate.json").write_text(json.dumps(orch))
 
     result = tui_data.load_orchestration(state_dir.parent)
@@ -573,9 +564,17 @@ STATUS_ICONS = {
 }
 
 
-def _make_queue_item(issue_number, title, status="pending",
-                     started_at=None, completed_at=None,
-                     outcome=None, pr_url=None, branch=None, reason=None):
+def _make_queue_item(
+    issue_number,
+    title,
+    status="pending",
+    started_at=None,
+    completed_at=None,
+    outcome=None,
+    pr_url=None,
+    branch=None,
+    reason=None,
+):
     """Build a queue item dict for tests."""
     return {
         "issue_number": issue_number,
@@ -607,14 +606,20 @@ def test_orchestration_summary_default_now():
 def test_orchestration_summary_basic():
     """Extracts queue items with status icons, elapsed, and counts."""
     now = datetime(2026, 3, 21, 0, 0, 0, tzinfo=PACIFIC)
-    orch = make_orchestrate_state(queue=[
-        _make_queue_item(42, "Add PDF export", status="completed",
-                         outcome="completed",
-                         started_at="2026-03-20T22:00:00-07:00",
-                         completed_at="2026-03-20T23:24:00-07:00",
-                         pr_url="https://github.com/test/test/pull/58"),
-        _make_queue_item(43, "Fix login timeout", status="pending"),
-    ])
+    orch = make_orchestrate_state(
+        queue=[
+            _make_queue_item(
+                42,
+                "Add PDF export",
+                status="completed",
+                outcome="completed",
+                started_at="2026-03-20T22:00:00-07:00",
+                completed_at="2026-03-20T23:24:00-07:00",
+                pr_url="https://github.com/test/test/pull/58",
+            ),
+            _make_queue_item(43, "Fix login timeout", status="pending"),
+        ]
+    )
 
     summary = tui_data.orchestration_summary(orch, now=now)
 
@@ -631,16 +636,28 @@ def test_orchestration_summary_basic():
 def test_orchestration_summary_with_completed_and_failed():
     """Correct counts for mixed outcomes."""
     now = datetime(2026, 3, 21, 2, 0, 0, tzinfo=PACIFIC)
-    orch = make_orchestrate_state(queue=[
-        _make_queue_item(42, "A", status="completed", outcome="completed",
-                         started_at="2026-03-20T22:00:00-07:00",
-                         completed_at="2026-03-20T23:00:00-07:00"),
-        _make_queue_item(43, "B", status="failed", outcome="failed",
-                         started_at="2026-03-20T23:00:00-07:00",
-                         completed_at="2026-03-21T00:00:00-07:00",
-                         reason="CI failed after 3 attempts"),
-        _make_queue_item(44, "C", status="pending"),
-    ])
+    orch = make_orchestrate_state(
+        queue=[
+            _make_queue_item(
+                42,
+                "A",
+                status="completed",
+                outcome="completed",
+                started_at="2026-03-20T22:00:00-07:00",
+                completed_at="2026-03-20T23:00:00-07:00",
+            ),
+            _make_queue_item(
+                43,
+                "B",
+                status="failed",
+                outcome="failed",
+                started_at="2026-03-20T23:00:00-07:00",
+                completed_at="2026-03-21T00:00:00-07:00",
+                reason="CI failed after 3 attempts",
+            ),
+            _make_queue_item(44, "C", status="pending"),
+        ]
+    )
 
     summary = tui_data.orchestration_summary(orch, now=now)
 
@@ -654,10 +671,12 @@ def test_orchestration_summary_with_completed_and_failed():
 def test_orchestration_summary_in_progress_elapsed():
     """Live elapsed time for in-progress item."""
     now = datetime(2026, 3, 21, 0, 38, 0, tzinfo=PACIFIC)
-    orch = make_orchestrate_state(queue=[
-        _make_queue_item(45, "Update hooks", status="in_progress",
-                         started_at="2026-03-21T00:00:00-07:00"),
-    ], current_index=0)
+    orch = make_orchestrate_state(
+        queue=[
+            _make_queue_item(45, "Update hooks", status="in_progress", started_at="2026-03-21T00:00:00-07:00"),
+        ],
+        current_index=0,
+    )
 
     summary = tui_data.orchestration_summary(orch, now=now)
 
@@ -682,9 +701,14 @@ def test_orchestration_summary_not_running():
     now = datetime(2026, 3, 21, 6, 0, 0, tzinfo=PACIFIC)
     orch = make_orchestrate_state(
         queue=[
-            _make_queue_item(42, "Done", status="completed", outcome="completed",
-                             started_at="2026-03-20T22:00:00-07:00",
-                             completed_at="2026-03-20T23:00:00-07:00"),
+            _make_queue_item(
+                42,
+                "Done",
+                status="completed",
+                outcome="completed",
+                started_at="2026-03-20T22:00:00-07:00",
+                completed_at="2026-03-20T23:00:00-07:00",
+            ),
         ],
         completed_at="2026-03-20T23:00:00-07:00",
     )
@@ -698,17 +722,29 @@ def test_orchestration_summary_not_running():
 def test_queue_item_display_icons():
     """Each status maps to the correct icon."""
     now = datetime(2026, 3, 21, 0, 0, 0, tzinfo=PACIFIC)
-    orch = make_orchestrate_state(queue=[
-        _make_queue_item(1, "A", status="completed", outcome="completed",
-                         started_at="2026-03-20T22:00:00-07:00",
-                         completed_at="2026-03-20T23:00:00-07:00"),
-        _make_queue_item(2, "B", status="failed", outcome="failed",
-                         started_at="2026-03-20T22:00:00-07:00",
-                         completed_at="2026-03-20T23:00:00-07:00"),
-        _make_queue_item(3, "C", status="in_progress",
-                         started_at="2026-03-20T23:00:00-07:00"),
-        _make_queue_item(4, "D", status="pending"),
-    ], current_index=2)
+    orch = make_orchestrate_state(
+        queue=[
+            _make_queue_item(
+                1,
+                "A",
+                status="completed",
+                outcome="completed",
+                started_at="2026-03-20T22:00:00-07:00",
+                completed_at="2026-03-20T23:00:00-07:00",
+            ),
+            _make_queue_item(
+                2,
+                "B",
+                status="failed",
+                outcome="failed",
+                started_at="2026-03-20T22:00:00-07:00",
+                completed_at="2026-03-20T23:00:00-07:00",
+            ),
+            _make_queue_item(3, "C", status="in_progress", started_at="2026-03-20T23:00:00-07:00"),
+            _make_queue_item(4, "D", status="pending"),
+        ],
+        current_index=2,
+    )
 
     summary = tui_data.orchestration_summary(orch, now=now)
 

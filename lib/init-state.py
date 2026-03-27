@@ -13,7 +13,6 @@ Output (JSON to stdout):
 
 import argparse
 import json
-import os
 import re
 import shutil
 import sys
@@ -21,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import now, read_flow_json, read_prompt_file, PHASE_NAMES, PHASE_ORDER
+from flow_utils import PHASE_NAMES, PHASE_ORDER, now, read_flow_json, read_prompt_file
 from log import append_log
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
@@ -50,9 +49,7 @@ def _branch_name(feature_words):
     return name[:32]
 
 
-
-def create_state(project_root, branch, framework="rails", skills=None,
-                 prompt=""):
+def create_state(project_root, branch, framework="rails", skills=None, prompt=""):
     """Create the initial state file with null PR fields."""
     current_time = now()
     phases = {}
@@ -123,18 +120,22 @@ def freeze_phases(project_root, branch):
 def main():
     parser = argparse.ArgumentParser(description="FLOW init-state — early state file creation")
     parser.add_argument("feature_name", nargs="?", help="Feature name words")
-    parser.add_argument("--prompt-file", default=None,
-                        help="Path to file containing start prompt (file is deleted after reading)")
-    parser.add_argument("--auto", action="store_true",
-                        help="Override all skills to fully autonomous preset")
+    parser.add_argument(
+        "--prompt-file", default=None, help="Path to file containing start prompt (file is deleted after reading)"
+    )
+    parser.add_argument("--auto", action="store_true", help="Override all skills to fully autonomous preset")
     args = parser.parse_args()
 
     if not args.feature_name:
-        print(json.dumps({
-            "status": "error",
-            "step": "args",
-            "message": "Feature name required. Usage: bin/flow init-state \"<feature name>\"",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "step": "args",
+                    "message": 'Feature name required. Usage: bin/flow init-state "<feature name>"',
+                }
+            )
+        )
         sys.exit(1)
 
     feature_words = args.feature_name
@@ -144,11 +145,15 @@ def main():
     # Read .flow.json for framework and skills
     init_data = read_flow_json(project_root)
     if init_data is None:
-        print(json.dumps({
-            "status": "error",
-            "step": "flow_json",
-            "message": "Could not read .flow.json",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "step": "flow_json",
+                    "message": "Could not read .flow.json",
+                }
+            )
+        )
         sys.exit(1)
 
     framework = init_data.get("framework", "rails")
@@ -160,28 +165,35 @@ def main():
     if args.prompt_file:
         raw_prompt, read_error = read_prompt_file(args.prompt_file)
         if read_error:
-            print(json.dumps({
-                "status": "error",
-                "step": "prompt_file",
-                "message": read_error,
-            }))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "step": "prompt_file",
+                        "message": read_error,
+                    }
+                )
+            )
             sys.exit(1)
     else:
         raw_prompt = feature_words
 
     # Create state file and frozen phases
-    create_state(project_root, branch, framework=framework, skills=skills,
-                 prompt=raw_prompt)
+    create_state(project_root, branch, framework=framework, skills=skills, prompt=raw_prompt)
     append_log(branch, f"[Phase 1] create .flow-states/{branch}.json (exit 0)")
 
     freeze_phases(project_root, branch)
     append_log(branch, f"[Phase 1] freeze .flow-states/{branch}-phases.json (exit 0)")
 
-    print(json.dumps({
-        "status": "ok",
-        "branch": branch,
-        "state_file": f".flow-states/{branch}.json",
-    }))
+    print(
+        json.dumps(
+            {
+                "status": "ok",
+                "branch": branch,
+                "state_file": f".flow-states/{branch}.json",
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

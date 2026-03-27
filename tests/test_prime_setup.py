@@ -8,19 +8,17 @@ import sys
 from unittest.mock import patch
 
 import pytest
-
 from conftest import FRAMEWORKS_DIR, LIB_DIR
 
 # Import prime-setup.py for in-process unit tests
-_spec = importlib.util.spec_from_file_location(
-    "prime_setup", LIB_DIR / "prime-setup.py"
-)
+_spec = importlib.util.spec_from_file_location("prime_setup", LIB_DIR / "prime-setup.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
-def _run_main(monkeypatch, capsys, project_root, framework="rails",
-              skills_json=None, commit_format=None, plugin_root=None):
+def _run_main(
+    monkeypatch, capsys, project_root, framework="rails", skills_json=None, commit_format=None, plugin_root=None
+):
     """Run prime-setup main() in-process, return (exit_code, stdout_text)."""
     argv = ["prime-setup"]
     if project_root is not None:
@@ -334,8 +332,7 @@ def test_git_exclude_not_updated_when_already_present(git_repo):
     info_dir = git_repo / ".git" / "info"
     info_dir.mkdir(parents=True, exist_ok=True)
     (info_dir / "exclude").write_text(
-        ".flow-states/\n.worktrees/\n.flow.json\nbin/dependencies\n"
-        ".claude/scheduled_tasks.lock\n"
+        ".flow-states/\n.worktrees/\n.flow.json\nbin/dependencies\n.claude/scheduled_tasks.lock\n"
     )
 
     updated = _mod.update_git_exclude(git_repo)
@@ -403,10 +400,12 @@ def test_update_git_exclude_creates_file_when_missing(git_repo):
 
 def test_main_exception_returns_error(git_repo, monkeypatch):
     monkeypatch.setattr(
-        _mod, "_plugin_json",
+        _mod,
+        "_plugin_json",
         lambda: (_ for _ in ()).throw(RuntimeError("test error")),
     )
     import io
+
     captured = io.StringIO()
     monkeypatch.setattr(sys, "argv", ["prime-setup", str(git_repo), "--framework", "rails"])
     monkeypatch.setattr(sys, "stdout", captured)
@@ -571,14 +570,9 @@ def test_universal_allow_includes_claude_plugin_commands():
 
 def test_gh_entries_grouped_in_universal_allow():
     """All gh entries in UNIVERSAL_ALLOW must be contiguous (no gaps)."""
-    indices = [
-        i for i, entry in enumerate(_mod.UNIVERSAL_ALLOW)
-        if entry.startswith("Bash(gh ")
-    ]
+    indices = [i for i, entry in enumerate(_mod.UNIVERSAL_ALLOW) if entry.startswith("Bash(gh ")]
     assert len(indices) >= 2, "Expected multiple gh entries"
-    assert indices[-1] - indices[0] + 1 == len(indices), (
-        f"gh entries are not contiguous: indices {indices}"
-    )
+    assert indices[-1] - indices[0] + 1 == len(indices), f"gh entries are not contiguous: indices {indices}"
 
 
 def test_permissions_loaded_from_framework_directory(tmp_path):
@@ -617,7 +611,10 @@ def test_compute_config_hash_differs_by_framework():
 
 def test_version_marker_with_config_hash(tmp_path):
     _mod.write_version_marker(
-        tmp_path, _mod._plugin_version(), "rails", config_hash="abc123def456",
+        tmp_path,
+        _mod._plugin_version(),
+        "rails",
+        config_hash="abc123def456",
     )
     data = json.loads((tmp_path / ".flow.json").read_text())
     assert data["config_hash"] == "abc123def456"
@@ -657,7 +654,7 @@ def test_compute_setup_hash_is_deterministic():
 def test_compute_setup_hash_matches_file_content():
     """Verify the hash is derived from the actual file bytes."""
     import hashlib
-    from pathlib import Path
+
     content = (LIB_DIR / "prime-setup.py").read_bytes()
     expected = hashlib.sha256(content).hexdigest()[:12]
     assert _mod.compute_setup_hash() == expected
@@ -665,7 +662,10 @@ def test_compute_setup_hash_matches_file_content():
 
 def test_version_marker_with_setup_hash(tmp_path):
     _mod.write_version_marker(
-        tmp_path, _mod._plugin_version(), "rails", setup_hash="abc123def456",
+        tmp_path,
+        _mod._plugin_version(),
+        "rails",
+        setup_hash="abc123def456",
     )
     data = json.loads((tmp_path / ".flow.json").read_text())
     assert data["setup_hash"] == "abc123def456"
@@ -691,7 +691,9 @@ def test_happy_path_stores_setup_hash(git_repo, monkeypatch, capsys):
 
 def test_version_marker_with_plugin_root(tmp_path):
     _mod.write_version_marker(
-        tmp_path, _mod._plugin_version(), "rails",
+        tmp_path,
+        _mod._plugin_version(),
+        "rails",
         plugin_root="/some/cache/path",
     )
     data = json.loads((tmp_path / ".flow.json").read_text())
@@ -760,7 +762,9 @@ def test_pre_commit_hook_blocks_direct_commit(git_repo, branch):
     subprocess.run(["git", "add", "test.txt"], cwd=git_repo, check=True)
     result = subprocess.run(
         ["git", "commit", "-m", "direct commit"],
-        cwd=git_repo, capture_output=True, text=True,
+        cwd=git_repo,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode != 0
     assert "BLOCKED" in result.stderr or "BLOCKED" in result.stdout
@@ -777,7 +781,9 @@ def test_pre_commit_hook_allows_flow_commit(git_repo, branch):
     (git_repo / ".flow-commit-msg").write_text("test commit message")
     result = subprocess.run(
         ["git", "commit", "-F", ".flow-commit-msg"],
-        cwd=git_repo, capture_output=True, text=True,
+        cwd=git_repo,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0
 
@@ -833,9 +839,7 @@ def test_cli_derives_permissions_from_project(git_repo, monkeypatch, capsys):
     (git_repo / "TestApp.xcodeproj").mkdir()
     exit_code, stdout = _run_main(monkeypatch, capsys, git_repo, framework="ios")
     assert exit_code == 0
-    settings = json.loads(
-        (git_repo / ".claude" / "settings.json").read_text()
-    )
+    settings = json.loads((git_repo / ".claude" / "settings.json").read_text())
     assert "Bash(killall TestApp)" in settings["permissions"]["allow"]
 
 
@@ -866,7 +870,9 @@ def test_pre_commit_hook_allows_commit_without_flow_state(git_repo):
     subprocess.run(["git", "add", "test.txt"], cwd=git_repo, check=True)
     result = subprocess.run(
         ["git", "commit", "-m", "direct commit"],
-        cwd=git_repo, capture_output=True, text=True,
+        cwd=git_repo,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0
 
@@ -881,7 +887,9 @@ def test_pre_commit_hook_allows_commit_on_different_branch(git_repo):
     subprocess.run(["git", "add", "test.txt"], cwd=git_repo, check=True)
     result = subprocess.run(
         ["git", "commit", "-m", "direct commit"],
-        cwd=git_repo, capture_output=True, text=True,
+        cwd=git_repo,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0
 
@@ -953,7 +961,10 @@ def test_check_launcher_path_not_in_path(tmp_path, monkeypatch, capsys):
 
 def test_version_marker_with_commit_format(tmp_path):
     _mod.write_version_marker(
-        tmp_path, _mod._plugin_version(), "rails", commit_format="full",
+        tmp_path,
+        _mod._plugin_version(),
+        "rails",
+        commit_format="full",
     )
     data = json.loads((tmp_path / ".flow.json").read_text())
     assert data["commit_format"] == "full"
@@ -967,7 +978,10 @@ def test_version_marker_without_commit_format_has_no_key(tmp_path):
 
 def test_version_marker_title_only_format(tmp_path):
     _mod.write_version_marker(
-        tmp_path, _mod._plugin_version(), "python", commit_format="title-only",
+        tmp_path,
+        _mod._plugin_version(),
+        "python",
+        commit_format="title-only",
     )
     data = json.loads((tmp_path / ".flow.json").read_text())
     assert data["commit_format"] == "title-only"
@@ -979,7 +993,10 @@ def test_version_marker_title_only_format(tmp_path):
 def test_cli_skills_json_written_to_flow_json(git_repo, monkeypatch, capsys):
     skills = {"flow-start": {"continue": "manual"}, "flow-abort": "auto"}
     exit_code, stdout = _run_main(
-        monkeypatch, capsys, git_repo, skills_json=json.dumps(skills),
+        monkeypatch,
+        capsys,
+        git_repo,
+        skills_json=json.dumps(skills),
     )
     assert exit_code == 0
     data = json.loads((git_repo / ".flow.json").read_text())
@@ -988,7 +1005,10 @@ def test_cli_skills_json_written_to_flow_json(git_repo, monkeypatch, capsys):
 
 def test_cli_commit_format_written_to_flow_json(git_repo, monkeypatch, capsys):
     exit_code, stdout = _run_main(
-        monkeypatch, capsys, git_repo, commit_format="title-only",
+        monkeypatch,
+        capsys,
+        git_repo,
+        commit_format="title-only",
     )
     assert exit_code == 0
     data = json.loads((git_repo / ".flow.json").read_text())
@@ -998,8 +1018,11 @@ def test_cli_commit_format_written_to_flow_json(git_repo, monkeypatch, capsys):
 def test_cli_skills_json_and_commit_format_together(git_repo, monkeypatch, capsys):
     skills = {"flow-code": {"commit": "auto", "continue": "auto"}}
     exit_code, stdout = _run_main(
-        monkeypatch, capsys, git_repo,
-        skills_json=json.dumps(skills), commit_format="full",
+        monkeypatch,
+        capsys,
+        git_repo,
+        skills_json=json.dumps(skills),
+        commit_format="full",
     )
     assert exit_code == 0
     data = json.loads((git_repo / ".flow.json").read_text())
@@ -1009,7 +1032,10 @@ def test_cli_skills_json_and_commit_format_together(git_repo, monkeypatch, capsy
 
 def test_cli_invalid_skills_json_returns_error(git_repo, monkeypatch, capsys):
     exit_code, stdout = _run_main(
-        monkeypatch, capsys, git_repo, skills_json="not valid json",
+        monkeypatch,
+        capsys,
+        git_repo,
+        skills_json="not valid json",
     )
     assert exit_code == 1
     data = json.loads(stdout)
@@ -1018,9 +1044,16 @@ def test_cli_invalid_skills_json_returns_error(git_repo, monkeypatch, capsys):
 
 
 def test_cli_ignores_unknown_args(git_repo, monkeypatch, capsys):
-    monkeypatch.setattr("sys.argv", [
-        "prime-setup", str(git_repo), "--framework", "rails", "--unknown",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "prime-setup",
+            str(git_repo),
+            "--framework",
+            "rails",
+            "--unknown",
+        ],
+    )
     _mod.main()
     data = json.loads(capsys.readouterr().out)
     assert data["status"] == "ok"
@@ -1034,7 +1067,10 @@ def test_cli_plugin_root_written_to_flow_json(git_repo, tmp_path, monkeypatch, c
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
     exit_code, stdout = _run_main(
-        monkeypatch, capsys, git_repo, plugin_root="/some/cache/path",
+        monkeypatch,
+        capsys,
+        git_repo,
+        plugin_root="/some/cache/path",
     )
     assert exit_code == 0
     data = json.loads((git_repo / ".flow.json").read_text())
@@ -1046,7 +1082,10 @@ def test_cli_launcher_installed_in_output(git_repo, tmp_path, monkeypatch, capsy
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
     exit_code, stdout = _run_main(
-        monkeypatch, capsys, git_repo, plugin_root="/some/cache/path",
+        monkeypatch,
+        capsys,
+        git_repo,
+        plugin_root="/some/cache/path",
     )
     assert exit_code == 0
     data = json.loads(stdout)
@@ -1108,15 +1147,15 @@ def test_cli_dependencies_skipped_when_exists(git_repo, monkeypatch, capsys):
 def test_write_slack_config_both_vars_present(tmp_path):
     """Writes slack block to .flow.json when both env vars are set."""
     # Create initial .flow.json
-    (tmp_path / ".flow.json").write_text(
-        json.dumps({"flow_version": "0.36.2", "framework": "rails"}) + "\n"
-    )
+    (tmp_path / ".flow.json").write_text(json.dumps({"flow_version": "0.36.2", "framework": "rails"}) + "\n")
     env = {"FLOW_SLACK_TOKEN": "xoxb-test-token", "FLOW_SLACK_CHANNEL": "C12345"}
     with patch.dict(os.environ, env):
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
-                args=[], returncode=0,
-                stdout=json.dumps({"ok": True}), stderr="",
+                args=[],
+                returncode=0,
+                stdout=json.dumps({"ok": True}),
+                stderr="",
             )
             _mod.write_slack_config(tmp_path)
     data = json.loads((tmp_path / ".flow.json").read_text())
@@ -1128,11 +1167,15 @@ def test_write_slack_config_both_vars_present(tmp_path):
 def test_write_slack_config_token_missing(tmp_path):
     """Removes slack block when FLOW_SLACK_TOKEN is absent."""
     (tmp_path / ".flow.json").write_text(
-        json.dumps({
-            "flow_version": "0.36.2", "framework": "rails",
-            "slack": {"bot_token": "old", "channel": "old"},
-            "notify": "auto",
-        }) + "\n"
+        json.dumps(
+            {
+                "flow_version": "0.36.2",
+                "framework": "rails",
+                "slack": {"bot_token": "old", "channel": "old"},
+                "notify": "auto",
+            }
+        )
+        + "\n"
     )
     env = {"FLOW_SLACK_CHANNEL": "C12345"}
     with patch.dict(os.environ, env, clear=False):
@@ -1146,11 +1189,15 @@ def test_write_slack_config_token_missing(tmp_path):
 def test_write_slack_config_channel_missing(tmp_path):
     """Removes slack block when FLOW_SLACK_CHANNEL is absent."""
     (tmp_path / ".flow.json").write_text(
-        json.dumps({
-            "flow_version": "0.36.2", "framework": "rails",
-            "slack": {"bot_token": "old", "channel": "old"},
-            "notify": "auto",
-        }) + "\n"
+        json.dumps(
+            {
+                "flow_version": "0.36.2",
+                "framework": "rails",
+                "slack": {"bot_token": "old", "channel": "old"},
+                "notify": "auto",
+            }
+        )
+        + "\n"
     )
     env = {"FLOW_SLACK_TOKEN": "xoxb-test"}
     with patch.dict(os.environ, env, clear=False):
@@ -1163,9 +1210,7 @@ def test_write_slack_config_channel_missing(tmp_path):
 
 def test_write_slack_config_both_missing(tmp_path):
     """Removes slack block and sets notify=never when both vars absent."""
-    (tmp_path / ".flow.json").write_text(
-        json.dumps({"flow_version": "0.36.2", "framework": "rails"}) + "\n"
-    )
+    (tmp_path / ".flow.json").write_text(json.dumps({"flow_version": "0.36.2", "framework": "rails"}) + "\n")
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("FLOW_SLACK_TOKEN", None)
         os.environ.pop("FLOW_SLACK_CHANNEL", None)
@@ -1177,15 +1222,15 @@ def test_write_slack_config_both_missing(tmp_path):
 
 def test_write_slack_config_validates_token(tmp_path):
     """Calls auth.test to validate the Slack token."""
-    (tmp_path / ".flow.json").write_text(
-        json.dumps({"flow_version": "0.36.2", "framework": "rails"}) + "\n"
-    )
+    (tmp_path / ".flow.json").write_text(json.dumps({"flow_version": "0.36.2", "framework": "rails"}) + "\n")
     env = {"FLOW_SLACK_TOKEN": "xoxb-test", "FLOW_SLACK_CHANNEL": "C12345"}
     with patch.dict(os.environ, env):
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
-                args=[], returncode=0,
-                stdout=json.dumps({"ok": True}), stderr="",
+                args=[],
+                returncode=0,
+                stdout=json.dumps({"ok": True}),
+                stderr="",
             )
             _mod.write_slack_config(tmp_path)
     call_args = mock_run.call_args[0][0]
@@ -1194,14 +1239,13 @@ def test_write_slack_config_validates_token(tmp_path):
 
 def test_write_slack_config_warns_on_invalid_token(tmp_path, capsys):
     """Writes config but warns when auth.test fails."""
-    (tmp_path / ".flow.json").write_text(
-        json.dumps({"flow_version": "0.36.2", "framework": "rails"}) + "\n"
-    )
+    (tmp_path / ".flow.json").write_text(json.dumps({"flow_version": "0.36.2", "framework": "rails"}) + "\n")
     env = {"FLOW_SLACK_TOKEN": "xoxb-bad", "FLOW_SLACK_CHANNEL": "C12345"}
     with patch.dict(os.environ, env):
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
-                args=[], returncode=0,
+                args=[],
+                returncode=0,
                 stdout=json.dumps({"ok": False, "error": "invalid_auth"}),
                 stderr="",
             )
@@ -1214,14 +1258,15 @@ def test_write_slack_config_warns_on_invalid_token(tmp_path, capsys):
 
 def test_write_slack_config_warns_on_curl_failure(tmp_path, capsys):
     """Writes config but warns when curl fails."""
-    (tmp_path / ".flow.json").write_text(
-        json.dumps({"flow_version": "0.36.2", "framework": "rails"}) + "\n"
-    )
+    (tmp_path / ".flow.json").write_text(json.dumps({"flow_version": "0.36.2", "framework": "rails"}) + "\n")
     env = {"FLOW_SLACK_TOKEN": "xoxb-test", "FLOW_SLACK_CHANNEL": "C12345"}
     with patch.dict(os.environ, env):
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
-                args=[], returncode=1, stdout="", stderr="Connection refused",
+                args=[],
+                returncode=1,
+                stdout="",
+                stderr="Connection refused",
             )
             _mod.write_slack_config(tmp_path)
     data = json.loads((tmp_path / ".flow.json").read_text())
@@ -1232,15 +1277,15 @@ def test_write_slack_config_warns_on_curl_failure(tmp_path, capsys):
 
 def test_write_slack_config_auth_invalid_json(tmp_path, capsys):
     """Writes config but warns when auth.test returns invalid JSON."""
-    (tmp_path / ".flow.json").write_text(
-        json.dumps({"flow_version": "0.36.2", "framework": "rails"}) + "\n"
-    )
+    (tmp_path / ".flow.json").write_text(json.dumps({"flow_version": "0.36.2", "framework": "rails"}) + "\n")
     env = {"FLOW_SLACK_TOKEN": "xoxb-test", "FLOW_SLACK_CHANNEL": "C12345"}
     with patch.dict(os.environ, env):
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
-                args=[], returncode=0,
-                stdout="<html>error</html>", stderr="",
+                args=[],
+                returncode=0,
+                stdout="<html>error</html>",
+                stderr="",
             )
             _mod.write_slack_config(tmp_path)
     data = json.loads((tmp_path / ".flow.json").read_text())
@@ -1251,9 +1296,7 @@ def test_write_slack_config_auth_invalid_json(tmp_path, capsys):
 
 def test_write_slack_config_auth_timeout(tmp_path, capsys):
     """Writes config but warns when auth.test times out."""
-    (tmp_path / ".flow.json").write_text(
-        json.dumps({"flow_version": "0.36.2", "framework": "rails"}) + "\n"
-    )
+    (tmp_path / ".flow.json").write_text(json.dumps({"flow_version": "0.36.2", "framework": "rails"}) + "\n")
     env = {"FLOW_SLACK_TOKEN": "xoxb-test", "FLOW_SLACK_CHANNEL": "C12345"}
     with patch.dict(os.environ, env):
         with patch("subprocess.run") as mock_run:
@@ -1275,17 +1318,24 @@ def test_write_slack_config_no_flow_json(tmp_path):
 def test_write_slack_config_preserves_other_keys(tmp_path):
     """Slack config write preserves existing .flow.json keys."""
     (tmp_path / ".flow.json").write_text(
-        json.dumps({
-            "flow_version": "0.36.2", "framework": "rails",
-            "config_hash": "abc123", "skills": {"flow-start": "manual"},
-        }) + "\n"
+        json.dumps(
+            {
+                "flow_version": "0.36.2",
+                "framework": "rails",
+                "config_hash": "abc123",
+                "skills": {"flow-start": "manual"},
+            }
+        )
+        + "\n"
     )
     env = {"FLOW_SLACK_TOKEN": "xoxb-test", "FLOW_SLACK_CHANNEL": "C12345"}
     with patch.dict(os.environ, env):
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
-                args=[], returncode=0,
-                stdout=json.dumps({"ok": True}), stderr="",
+                args=[],
+                returncode=0,
+                stdout=json.dumps({"ok": True}),
+                stderr="",
             )
             _mod.write_slack_config(tmp_path)
     data = json.loads((tmp_path / ".flow.json").read_text())

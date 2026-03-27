@@ -3,16 +3,12 @@
 import importlib.util
 import json
 import subprocess
-import sys
 
 import pytest
-
 from conftest import LIB_DIR, make_state, write_state
 
 # Import append-note.py for in-process unit tests
-_spec = importlib.util.spec_from_file_location(
-    "append_note", LIB_DIR / "append-note.py"
-)
+_spec = importlib.util.spec_from_file_location("append_note", LIB_DIR / "append-note.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -21,7 +17,9 @@ def _get_branch(git_repo):
     """Get the current branch name from a git repo."""
     result = subprocess.run(
         ["git", "branch", "--show-current"],
-        capture_output=True, text=True, cwd=str(git_repo),
+        capture_output=True,
+        text=True,
+        cwd=str(git_repo),
     )
     return result.stdout.strip()
 
@@ -98,7 +96,10 @@ def test_multiple_notes_append(tmp_path):
 def test_type_defaults_to_correction(state_dir, git_repo, monkeypatch, capsys):
     """Type defaults to correction when --type is not specified."""
     branch = _get_branch(git_repo)
-    state = make_state(current_phase="flow-code", phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"})
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
     path = write_state(state_dir, branch, state)
 
     monkeypatch.chdir(git_repo)
@@ -180,14 +181,18 @@ def test_append_note_preserves_existing_notes(tmp_path):
 
 def test_cli_branch_flag_uses_specified_state_file(state_dir, git_repo, monkeypatch, capsys):
     """--branch flag finds the state file for a different branch."""
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     write_state(state_dir, "other-feature", state)
 
     monkeypatch.chdir(git_repo)
-    monkeypatch.setattr("sys.argv", ["append-note", "--note", "Branch test note",
-                                     "--branch", "other-feature"])
+    monkeypatch.setattr("sys.argv", ["append-note", "--note", "Branch test note", "--branch", "other-feature"])
     _mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -198,9 +203,14 @@ def test_cli_branch_flag_uses_specified_state_file(state_dir, git_repo, monkeypa
 def test_error_ambiguous_multiple_state_files(state_dir, git_repo, monkeypatch, capsys):
     """Multiple state files with no exact match returns ambiguity error."""
     for name in ["feat-a", "feat-b"]:
-        state = make_state(current_phase="flow-code", phase_statuses={
-            "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-        })
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
         write_state(state_dir, name, state)
 
     monkeypatch.chdir(git_repo)

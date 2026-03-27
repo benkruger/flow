@@ -9,6 +9,3 @@ select = ["E", "F", "W", "I"]
 # pattern for scripts that are not installed as packages.
 "lib/*.py" = ["E402"]
 "tests/*.py" = ["E402"]
-
-[format]
-line-length = 120

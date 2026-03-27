@@ -50,9 +50,7 @@ def format_issues_summary(state):
         url = issue["url"]
         short_url = short_issue_ref(url)
         lines.append(
-            f"| {issue['label']} | {issue['title']} "
-            f"| {issue.get('phase_name', issue.get('phase', ''))} "
-            f"| {short_url} |"
+            f"| {issue['label']} | {issue['title']} | {issue.get('phase_name', issue.get('phase', ''))} | {short_url} |"
         )
 
     table = "\n".join(lines)
@@ -81,12 +79,16 @@ def main():
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(result["table"])
 
-        print(json.dumps({
-            "status": "ok",
-            "has_issues": result["has_issues"],
-            "banner_line": result["banner_line"],
-            "table": result["table"],
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "has_issues": result["has_issues"],
+                    "banner_line": result["banner_line"],
+                    "table": result["table"],
+                }
+            )
+        )
 
     except Exception as exc:
         print(json.dumps({"status": "error", "message": str(exc)}))

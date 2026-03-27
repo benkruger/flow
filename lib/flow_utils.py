@@ -29,6 +29,7 @@ def now():
     """Return current Pacific Time timestamp in ISO 8601 format."""
     return datetime.now(PACIFIC).isoformat(timespec="seconds")
 
+
 _plugin_root = Path(__file__).resolve().parent.parent
 _phases_json = _plugin_root / "flow-phases.json"
 _config = json.loads(_phases_json.read_text())
@@ -138,7 +139,9 @@ def project_root():
     try:
         result = subprocess.run(
             ["git", "worktree", "list", "--porcelain"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         for line in result.stdout.strip().split("\n"):
             if line.startswith("worktree "):
@@ -163,7 +166,9 @@ def current_branch():
     try:
         result = subprocess.run(
             ["git", "branch", "--show-current"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return result.stdout.strip() or None
     except Exception:
@@ -349,7 +354,9 @@ def detect_repo(cwd=None):
     try:
         result = subprocess.run(
             ["git", "remote", "get-url", "origin"],
-            capture_output=True, text=True, cwd=cwd,
+            capture_output=True,
+            text=True,
+            cwd=cwd,
         )
         if result.returncode != 0:
             return None
@@ -441,18 +448,18 @@ def format_tab_title(state):
 
 
 TAB_COLORS = (
-    (178, 34, 34),    # firebrick
-    (0, 128, 128),    # teal
-    (75, 0, 130),     # indigo
-    (184, 134, 11),   # dark goldenrod
-    (0, 100, 0),      # dark green
-    (128, 0, 0),      # maroon
-    (70, 130, 180),   # steel blue
-    (139, 69, 19),    # saddle brown
-    (72, 61, 139),    # dark slate blue
-    (0, 139, 139),    # dark cyan
-    (160, 82, 45),    # sienna
-    (25, 25, 112),    # midnight blue
+    (178, 34, 34),  # firebrick
+    (0, 128, 128),  # teal
+    (75, 0, 130),  # indigo
+    (184, 134, 11),  # dark goldenrod
+    (0, 100, 0),  # dark green
+    (128, 0, 0),  # maroon
+    (70, 130, 180),  # steel blue
+    (139, 69, 19),  # saddle brown
+    (72, 61, 139),  # dark slate blue
+    (0, 139, 139),  # dark cyan
+    (160, 82, 45),  # sienna
+    (25, 25, 112),  # midnight blue
 )
 
 PINNED_COLORS = {
@@ -532,9 +539,7 @@ def write_tab_sequences(state=None, *, repo=None, root=None):
     if color:
         r, g, b = color
         sequences += (
-            f"\033]6;1;bg;red;brightness;{r}\007"
-            f"\033]6;1;bg;green;brightness;{g}\007"
-            f"\033]6;1;bg;blue;brightness;{b}\007"
+            f"\033]6;1;bg;red;brightness;{r}\007\033]6;1;bg;green;brightness;{g}\007\033]6;1;bg;blue;brightness;{b}\007"
         )
     if title:
         sequences += f"\033]1;{title}\007"

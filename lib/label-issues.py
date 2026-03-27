@@ -36,7 +36,9 @@ def label_issues(issue_numbers, action="add"):
         try:
             result = subprocess.run(
                 ["gh", "issue", "edit", str(num), flag, LABEL],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             if result.returncode == 0:
                 labeled.append(num)

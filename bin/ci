@@ -11,4 +11,6 @@ else
 fi
 
 "$PYTHON" -m pymarkdown -c "$REPO_ROOT/.pymarkdown.yml" scan -r -e ".venv" -e ".pytest_cache" -e ".claude" -e "tmp" -e ".flow-states" .
+"$PYTHON" -m ruff check lib/ tests/
+"$PYTHON" -m ruff format --check lib/ tests/
 "$PYTHON" -m pytest tests/

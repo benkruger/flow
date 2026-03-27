@@ -2,18 +2,13 @@
 
 import importlib.util
 import json
-import sys
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 from conftest import LIB_DIR, make_state
 
 # Import render-pr-body.py for in-process unit tests
-_spec = importlib.util.spec_from_file_location(
-    "render_pr_body", LIB_DIR / "render-pr-body.py"
-)
+_spec = importlib.util.spec_from_file_location("render_pr_body", LIB_DIR / "render-pr-body.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -154,9 +149,7 @@ def test_nested_fences_preserve_subsequent_sections(tmp_path):
     )
     dag_file = tmp_path / "dag.md"
     dag_file.write_text(
-        "# DAG Analysis\n\n"
-        "```xml\n<dag goal='test'><node id='1'/></dag>\n```\n\n"
-        "```python\nprint('hello')\n```"
+        "# DAG Analysis\n\n```xml\n<dag goal='test'><node id='1'/></dag>\n```\n\n```python\nprint('hello')\n```"
     )
     state["dag_file"] = str(dag_file)
     state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
@@ -216,8 +209,7 @@ def test_full_state(tmp_path):
     state["dag_file"] = str(dag_file)
     state["transcript_path"] = "/path/to/session.jsonl"
     state["issues_filed"] = [
-        {"label": "Flow", "title": "Test issue", "url": "https://github.com/test/test/issues/1",
-         "phase_name": "Learn"},
+        {"label": "Flow", "title": "Test issue", "url": "https://github.com/test/test/issues/1", "phase_name": "Learn"},
     ]
 
     body = _mod.render_body(state, tmp_path)
@@ -240,8 +232,7 @@ def test_with_issues(tmp_path):
     )
     state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
     state["issues_filed"] = [
-        {"label": "Rule", "title": "Add rule X", "url": "https://github.com/test/test/issues/5",
-         "phase_name": "Learn"},
+        {"label": "Rule", "title": "Add rule X", "url": "https://github.com/test/test/issues/5", "phase_name": "Learn"},
     ]
 
     body = _mod.render_body(state, tmp_path)
@@ -445,8 +436,7 @@ def test_section_order(tmp_path):
     state["dag_file"] = str(dag_file)
     state["transcript_path"] = "/path/to/session.jsonl"
     state["issues_filed"] = [
-        {"label": "Flow", "title": "Issue", "url": "https://github.com/t/t/issues/1",
-         "phase_name": "Learn"},
+        {"label": "Flow", "title": "Issue", "url": "https://github.com/t/t/issues/1", "phase_name": "Learn"},
     ]
 
     body = _mod.render_body(state, tmp_path)
@@ -462,9 +452,7 @@ def test_section_order(tmp_path):
         "## Issues Filed",
     ]
     positions = [body.index(h) for h in headings]
-    assert positions == sorted(positions), (
-        f"Sections out of order: {list(zip(headings, positions))}"
-    )
+    assert positions == sorted(positions), f"Sections out of order: {list(zip(headings, positions))}"
 
 
 def test_no_issues_no_section(tmp_path):
@@ -498,8 +486,7 @@ def test_cli_integration(target_project, monkeypatch, capsys):
     state_file.write_text(json.dumps(state))
 
     monkeypatch.chdir(target_project)
-    monkeypatch.setattr("sys.argv", ["render-pr-body", "--pr", "1",
-                                     "--state-file", str(state_file), "--dry-run"])
+    monkeypatch.setattr("sys.argv", ["render-pr-body", "--pr", "1", "--state-file", str(state_file), "--dry-run"])
     _mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -510,9 +497,9 @@ def test_cli_integration(target_project, monkeypatch, capsys):
 
 def test_cli_missing_state_file(tmp_path, monkeypatch, capsys):
     """CLI returns error when state file does not exist."""
-    monkeypatch.setattr("sys.argv", ["render-pr-body", "--pr", "1",
-                                     "--state-file", str(tmp_path / "nonexistent.json"),
-                                     "--dry-run"])
+    monkeypatch.setattr(
+        "sys.argv", ["render-pr-body", "--pr", "1", "--state-file", str(tmp_path / "nonexistent.json"), "--dry-run"]
+    )
     _mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -527,7 +514,8 @@ def test_gh_set_body_success():
         _mod._gh_set_body(42, "body text")
     mock_run.assert_called_once_with(
         ["gh", "pr", "edit", "42", "--body", "body text"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
 
 
@@ -552,10 +540,12 @@ def test_main_auto_detect_state_file(tmp_path):
     state_file = state_dir / "my-branch.json"
     state_file.write_text(json.dumps(state))
 
-    with patch.object(_mod, "project_root", return_value=str(tmp_path)), \
-         patch.object(_mod, "current_branch", return_value="my-branch"), \
-         patch.object(_mod, "_gh_set_body"), \
-         patch("sys.argv", ["render-pr-body", "--pr", "1"]):
+    with (
+        patch.object(_mod, "project_root", return_value=str(tmp_path)),
+        patch.object(_mod, "current_branch", return_value="my-branch"),
+        patch.object(_mod, "_gh_set_body"),
+        patch("sys.argv", ["render-pr-body", "--pr", "1"]),
+    ):
         _mod.main()
     # If no exception, auto-detect worked
 
@@ -572,9 +562,10 @@ def test_main_non_dry_run_calls_gh(tmp_path):
     state_file = state_dir / "state.json"
     state_file.write_text(json.dumps(state))
 
-    with patch.object(_mod, "_gh_set_body") as mock_gh, \
-         patch("sys.argv", ["render-pr-body", "--pr", "99",
-                            "--state-file", str(state_file)]):
+    with (
+        patch.object(_mod, "_gh_set_body") as mock_gh,
+        patch("sys.argv", ["render-pr-body", "--pr", "99", "--state-file", str(state_file)]),
+    ):
         _mod.main()
     mock_gh.assert_called_once()
     assert mock_gh.call_args[0][0] == 99
@@ -588,10 +579,12 @@ def test_main_error_handling(tmp_path):
     state_file.write_text("invalid json {{{")
 
     import io
+
     captured = io.StringIO()
-    with patch("sys.argv", ["render-pr-body", "--pr", "1",
-                            "--state-file", str(state_file)]), \
-         patch("sys.stdout", captured):
+    with (
+        patch("sys.argv", ["render-pr-body", "--pr", "1", "--state-file", str(state_file)]),
+        patch("sys.stdout", captured),
+    ):
         _mod.main()
     data = json.loads(captured.getvalue())
     assert data["status"] == "error"

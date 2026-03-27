@@ -1,11 +1,8 @@
 """Tests for lib/format-complete-summary.py — formats the Done banner for Complete phase."""
 
 import json
-import sys
 
-import pytest
-
-from conftest import import_lib, make_state, PHASE_NAMES
+from conftest import PHASE_NAMES, import_lib, make_state
 
 
 def _all_complete_state(**overrides):
@@ -285,6 +282,7 @@ def test_summary_uses_format_time():
 def test_read_version_fallback_on_error(tmp_path):
     """read_version_from returns '?' when plugin.json cannot be read."""
     from flow_utils import read_version_from
+
     assert read_version_from(tmp_path / "nonexistent.json") == "?"
 
 
@@ -328,8 +326,7 @@ def test_cli_happy_path(tmp_path, monkeypatch, capsys):
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
 
-    monkeypatch.setattr("sys.argv", ["format-complete-summary.py",
-                                      "--state-file", str(state_path)])
+    monkeypatch.setattr("sys.argv", ["format-complete-summary.py", "--state-file", str(state_path)])
 
     mod.main()
 
@@ -352,9 +349,10 @@ def test_cli_with_closed_issues_file(tmp_path, monkeypatch, capsys):
     closed_path = tmp_path / "closed.json"
     closed_path.write_text(json.dumps(closed))
 
-    monkeypatch.setattr("sys.argv", ["format-complete-summary.py",
-                                      "--state-file", str(state_path),
-                                      "--closed-issues-file", str(closed_path)])
+    monkeypatch.setattr(
+        "sys.argv",
+        ["format-complete-summary.py", "--state-file", str(state_path), "--closed-issues-file", str(closed_path)],
+    )
 
     mod.main()
 
@@ -371,10 +369,16 @@ def test_cli_missing_closed_issues_file(tmp_path, monkeypatch, capsys):
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
 
-    monkeypatch.setattr("sys.argv", ["format-complete-summary.py",
-                                      "--state-file", str(state_path),
-                                      "--closed-issues-file",
-                                      str(tmp_path / "nonexistent.json")])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "format-complete-summary.py",
+            "--state-file",
+            str(state_path),
+            "--closed-issues-file",
+            str(tmp_path / "nonexistent.json"),
+        ],
+    )
 
     mod.main()
 
@@ -387,9 +391,7 @@ def test_cli_missing_state_file(tmp_path, monkeypatch, capsys):
     """CLI with nonexistent state file returns error."""
     mod = import_lib("format-complete-summary.py")
 
-    monkeypatch.setattr("sys.argv", ["format-complete-summary.py",
-                                      "--state-file",
-                                      str(tmp_path / "missing.json")])
+    monkeypatch.setattr("sys.argv", ["format-complete-summary.py", "--state-file", str(tmp_path / "missing.json")])
 
     mod.main()
 
@@ -404,8 +406,7 @@ def test_cli_corrupt_state_file(tmp_path, monkeypatch, capsys):
     bad_file = tmp_path / "state.json"
     bad_file.write_text("{bad json")
 
-    monkeypatch.setattr("sys.argv", ["format-complete-summary.py",
-                                      "--state-file", str(bad_file)])
+    monkeypatch.setattr("sys.argv", ["format-complete-summary.py", "--state-file", str(bad_file)])
 
     mod.main()
 

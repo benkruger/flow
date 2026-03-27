@@ -2,17 +2,13 @@
 
 import importlib.util
 import json
-import sys
 
 import pytest
-
 from conftest import LIB_DIR, PHASE_ORDER, make_state, write_state
 from flow_utils import read_version
 
 # Import continue-context.py for in-process unit tests
-_spec = importlib.util.spec_from_file_location(
-    "continue_context", LIB_DIR / "continue-context.py"
-)
+_spec = importlib.util.spec_from_file_location("continue_context", LIB_DIR / "continue-context.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -115,7 +111,9 @@ def test_panel_matches_format_status_output():
     state = make_state(
         current_phase="flow-code-review",
         phase_statuses={
-            "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
             "flow-code-review": "in_progress",
         },
     )
@@ -171,7 +169,9 @@ def test_wrong_branch_single_feature_returns_ok(tmp_path):
 def test_wrong_branch_multiple_features_returns_multiple(state_dir, git_repo, branch, monkeypatch, capsys):
     """When on wrong branch with multiple state files, returns multiple_features."""
     for name in ["feature-a", "feature-b"]:
-        state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
+        state = make_state(
+            current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"}
+        )
         state["branch"] = name
         write_state(state_dir, name, state)
 

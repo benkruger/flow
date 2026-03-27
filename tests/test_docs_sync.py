@@ -9,9 +9,7 @@ import json
 import re
 
 from conftest import DOCS_DIR, REPO_ROOT, SKILLS_DIR
-
 from flow_utils import PHASE_NUMBER
-
 
 REQUIRED_FEATURES = {
     "Autonomy config": ["autonomy"],
@@ -53,9 +51,7 @@ def test_every_skill_has_a_docs_page():
     """Every skills/<name>/ must have a docs/skills/flow-<name>.md."""
     for name in _skill_names():
         doc = DOCS_DIR / "skills" / f"{name}.md"
-        assert doc.exists(), (
-            f"skills/{name}/ exists but docs/skills/{name}.md is missing"
-        )
+        assert doc.exists(), f"skills/{name}/ exists but docs/skills/{name}.md is missing"
 
 
 def test_every_docs_skill_page_has_a_skill_dir():
@@ -65,9 +61,7 @@ def test_every_docs_skill_page_has_a_skill_dir():
             continue
         # flow-commit.md -> flow-commit
         skill_name = path.stem
-        assert (SKILLS_DIR / skill_name).is_dir(), (
-            f"docs/skills/{path.name} exists but skills/{skill_name}/ is missing"
-        )
+        assert (SKILLS_DIR / skill_name).is_dir(), f"docs/skills/{path.name} exists but skills/{skill_name}/ is missing"
 
 
 # --- Phase docs match flow-phases.json ---
@@ -80,9 +74,7 @@ def test_every_phase_has_a_docs_page():
         num = PHASE_NUMBER[key]
         name = phase["name"].lower().replace(" ", "-")
         doc = DOCS_DIR / "phases" / f"phase-{num}-{name}.md"
-        assert doc.exists(), (
-            f"Phase {num} ({phase['name']}) has no docs/phases/phase-{num}-{name}.md"
-        )
+        assert doc.exists(), f"Phase {num} ({phase['name']}) has no docs/phases/phase-{num}-{name}.md"
 
 
 def test_phase_docs_contain_correct_command():
@@ -95,10 +87,7 @@ def test_phase_docs_contain_correct_command():
         content = doc.read_text()
         # Docs use /flow-start, not /flow:flow-start
         user_command = phase["command"].replace("/flow:", "/")
-        assert user_command in content, (
-            f"docs/phases/phase-{num}-{name}.md does not mention "
-            f"command '{user_command}'"
-        )
+        assert user_command in content, f"docs/phases/phase-{num}-{name}.md does not mention command '{user_command}'"
 
 
 def test_phase_docs_have_correct_title():
@@ -111,8 +100,7 @@ def test_phase_docs_have_correct_title():
         content = doc.read_text()
         pattern = rf"Phase {num}:\s*{re.escape(phase['name'])}"
         assert re.search(pattern, content), (
-            f"docs/phases/phase-{num}-{name_lower}.md missing "
-            f"'Phase {num}: {phase['name']}' in title"
+            f"docs/phases/phase-{num}-{name_lower}.md missing 'Phase {num}: {phase['name']}' in title"
         )
 
 
@@ -124,9 +112,7 @@ def test_index_mentions_every_skill_command():
     index = (DOCS_DIR / "skills" / "index.md").read_text()
     for name in _skill_names():
         command = f"/{name}"
-        assert command in index, (
-            f"docs/skills/index.md does not mention {command}"
-        )
+        assert command in index, f"docs/skills/index.md does not mention {command}"
 
 
 def test_index_phase_table_shows_all_phases():
@@ -136,10 +122,7 @@ def test_index_phase_table_shows_all_phases():
     for key, phase in data["phases"].items():
         num = PHASE_NUMBER[key]
         pattern = rf"{num}\s*—\s*{re.escape(phase['name'])}"
-        assert re.search(pattern, index), (
-            f"docs/skills/index.md missing '{num} — {phase['name']}' "
-            f"in phase table"
-        )
+        assert re.search(pattern, index), f"docs/skills/index.md missing '{num} — {phase['name']}' in phase table"
 
 
 # --- README completeness ---
@@ -153,13 +136,9 @@ def test_readme_mentions_all_phase_commands():
         num = PHASE_NUMBER[key]
         # README uses /flow-start, not /flow:flow-start
         user_command = phase["command"].replace("/flow:", "/")
-        assert user_command in readme, (
-            f"README.md does not mention phase command '{user_command}'"
-        )
+        assert user_command in readme, f"README.md does not mention phase command '{user_command}'"
         pattern = rf"{num}:\s*{re.escape(phase['name'])}"
-        assert re.search(pattern, readme), (
-            f"README.md does not mention '{num}: {phase['name']}'"
-        )
+        assert re.search(pattern, readme), f"README.md does not mention '{num}: {phase['name']}'"
 
 
 def test_readme_mentions_all_maintainer_commands():
@@ -169,9 +148,7 @@ def test_readme_mentions_all_maintainer_commands():
     for d in sorted(maintainer_dir.iterdir()):
         if d.is_dir() and (d / "SKILL.md").exists():
             command = f"/{d.name}"
-            assert command in readme, (
-                f"README.md does not mention maintainer command '{command}'"
-            )
+            assert command in readme, f"README.md does not mention maintainer command '{command}'"
 
 
 def test_readme_mentions_all_utility_commands():
@@ -179,9 +156,7 @@ def test_readme_mentions_all_utility_commands():
     readme = (REPO_ROOT / "README.md").read_text()
     for name in _utility_skill_names():
         command = f"/{name}"
-        assert command in readme, (
-            f"README.md does not mention utility command '{command}'"
-        )
+        assert command in readme, f"README.md does not mention utility command '{command}'"
 
 
 # --- Landing page completeness ---
@@ -192,9 +167,7 @@ def test_landing_page_mentions_all_phase_names():
     html = (DOCS_DIR / "index.html").read_text()
     data = _load_phases()
     for key, phase in data["phases"].items():
-        assert phase["name"] in html, (
-            f"docs/index.html does not mention phase name '{phase['name']}'"
-        )
+        assert phase["name"] in html, f"docs/index.html does not mention phase name '{phase['name']}'"
 
 
 # --- State schema coverage ---
@@ -204,14 +177,18 @@ def test_schema_doc_covers_phase_fields():
     """Schema doc must document all phase-level fields from conftest.make_state()."""
     schema = (DOCS_DIR / "reference" / "flow-state-schema.md").read_text()
     phase_fields = [
-        "name", "status", "started_at", "completed_at",
-        "session_started_at", "cumulative_seconds", "visit_count",
+        "name",
+        "status",
+        "started_at",
+        "completed_at",
+        "session_started_at",
+        "cumulative_seconds",
+        "visit_count",
     ]
     for field in phase_fields:
         pattern = rf"`{re.escape(field)}`"
         assert re.search(pattern, schema), (
-            f"docs/reference/flow-state-schema.md does not document "
-            f"phase field '{field}'"
+            f"docs/reference/flow-state-schema.md does not document phase field '{field}'"
         )
 
 
@@ -219,15 +196,21 @@ def test_schema_doc_covers_top_level_fields():
     """Schema doc must document all top-level fields from conftest.make_state()."""
     schema = (DOCS_DIR / "reference" / "flow-state-schema.md").read_text()
     top_level_fields = [
-        "schema_version", "branch", "repo", "pr_number", "pr_url",
-        "started_at", "current_phase", "prompt", "notes",
+        "schema_version",
+        "branch",
+        "repo",
+        "pr_number",
+        "pr_url",
+        "started_at",
+        "current_phase",
+        "prompt",
+        "notes",
         "phase_transitions",
     ]
     for field in top_level_fields:
         pattern = rf"`{re.escape(field)}`"
         assert re.search(pattern, schema), (
-            f"docs/reference/flow-state-schema.md does not document "
-            f"top-level field '{field}'"
+            f"docs/reference/flow-state-schema.md does not document top-level field '{field}'"
         )
 
 
@@ -238,10 +221,7 @@ def _assert_covers_key_features(content, source_label):
     """Assert content mentions every feature in REQUIRED_FEATURES."""
     for feature, keywords in REQUIRED_FEATURES.items():
         found = any(kw.lower() in content for kw in keywords)
-        assert found, (
-            f"{source_label} does not mention feature '{feature}' "
-            f"(looked for: {keywords})"
-        )
+        assert found, f"{source_label} does not mention feature '{feature}' (looked for: {keywords})"
 
 
 def test_readme_covers_key_features():
@@ -252,5 +232,3 @@ def test_readme_covers_key_features():
 def test_landing_page_covers_key_features():
     """docs/index.html must mention all key features by keyword."""
     _assert_covers_key_features((DOCS_DIR / "index.html").read_text().lower(), "docs/index.html")
-
-

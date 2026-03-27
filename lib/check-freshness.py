@@ -66,7 +66,9 @@ def check_freshness(state_file=None):
     try:
         result = subprocess.run(
             ["git", "fetch", "origin", "main"],
-            capture_output=True, text=True, timeout=NETWORK_TIMEOUT,
+            capture_output=True,
+            text=True,
+            timeout=NETWORK_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
         return {
@@ -86,7 +88,9 @@ def check_freshness(state_file=None):
     try:
         result = subprocess.run(
             ["git", "merge-base", "--is-ancestor", "origin/main", "HEAD"],
-            capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
+            capture_output=True,
+            text=True,
+            timeout=LOCAL_TIMEOUT,
         )
         if result.returncode == 0:
             return {"status": "up_to_date"}
@@ -98,7 +102,9 @@ def check_freshness(state_file=None):
     try:
         result = subprocess.run(
             ["git", "merge", "origin/main"],
-            capture_output=True, text=True, timeout=NETWORK_TIMEOUT,
+            capture_output=True,
+            text=True,
+            timeout=NETWORK_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
         return {
@@ -112,7 +118,8 @@ def check_freshness(state_file=None):
         response = {"status": "merged"}
         if state_file:
             response["retries"] = _check_and_increment_retries(
-                state_file, increment=True,
+                state_file,
+                increment=True,
             )
         return response
 
@@ -120,7 +127,9 @@ def check_freshness(state_file=None):
     try:
         status = subprocess.run(
             ["git", "status", "--porcelain"],
-            capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
+            capture_output=True,
+            text=True,
+            timeout=LOCAL_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
         return {
@@ -135,7 +144,8 @@ def check_freshness(state_file=None):
         response = {"status": "conflict", "files": conflict_files}
         if state_file:
             response["retries"] = _check_and_increment_retries(
-                state_file, increment=True,
+                state_file,
+                increment=True,
             )
         return response
 

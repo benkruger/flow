@@ -5,7 +5,6 @@ import subprocess
 import sys
 
 import pytest
-
 from conftest import BIN_DIR
 
 
@@ -20,7 +19,7 @@ def test_project(tmp_path):
     venv_bin = tmp_path / ".venv" / "bin"
     venv_bin.mkdir(parents=True)
     wrapper = venv_bin / "python3"
-    wrapper.write_text(f"#!/usr/bin/env bash\nexec {sys.executable} \"$@\"\n")
+    wrapper.write_text(f'#!/usr/bin/env bash\nexec {sys.executable} "$@"\n')
     wrapper.chmod(0o755)
     return tmp_path
 
@@ -32,31 +31,28 @@ def _run(project_dir, *args, extra_env=None):
         env.update(extra_env)
     result = subprocess.run(
         ["bash", str(project_dir / "bin" / "test"), *args],
-        capture_output=True, text=True, cwd=str(project_dir), env=env,
+        capture_output=True,
+        text=True,
+        cwd=str(project_dir),
+        env=env,
     )
     return result
 
 
 def test_exits_0_when_pytest_passes(test_project):
-    (test_project / "tests" / "test_pass.py").write_text(
-        "def test_ok(): assert True\n"
-    )
+    (test_project / "tests" / "test_pass.py").write_text("def test_ok(): assert True\n")
     result = _run(test_project, "tests/")
     assert result.returncode == 0
 
 
 def test_exits_nonzero_when_pytest_fails(test_project):
-    (test_project / "tests" / "test_fail.py").write_text(
-        "def test_bad(): assert False\n"
-    )
+    (test_project / "tests" / "test_fail.py").write_text("def test_bad(): assert False\n")
     result = _run(test_project, "tests/")
     assert result.returncode != 0
 
 
 def test_passes_arguments_through(test_project):
-    (test_project / "tests" / "test_pass.py").write_text(
-        "def test_ok(): assert True\ndef test_also(): assert True\n"
-    )
+    (test_project / "tests" / "test_pass.py").write_text("def test_ok(): assert True\ndef test_also(): assert True\n")
     result = _run(test_project, "tests/", "-v")
     assert result.returncode == 0
     assert "test_ok" in result.stdout
@@ -65,8 +61,6 @@ def test_passes_arguments_through(test_project):
 
 def test_passes_no_cov_flag(test_project):
     """bin/test must always pass --no-cov so coverage is skipped."""
-    (test_project / "tests" / "test_pass.py").write_text(
-        "def test_ok(): assert True\n"
-    )
-    result = _run(test_project, "tests/", "-v", "--collect-only")
+    (test_project / "tests" / "test_pass.py").write_text("def test_ok(): assert True\n")
+    _run(test_project, "tests/", "-v", "--collect-only")
     assert "--no-cov" in (test_project / "bin" / "test").read_text()

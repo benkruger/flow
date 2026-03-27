@@ -6,15 +6,12 @@ import subprocess
 import sys
 
 import pytest
-
 from conftest import LIB_DIR, make_state, write_state
 
 SCRIPT = str(LIB_DIR / "check-phase.py")
 
 # Import check-phase.py for in-process unit tests
-_spec = importlib.util.spec_from_file_location(
-    "check_phase_mod", LIB_DIR / "check-phase.py"
-)
+_spec = importlib.util.spec_from_file_location("check_phase_mod", LIB_DIR / "check-phase.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -37,7 +34,9 @@ def test_detached_head_exits_1(git_repo, monkeypatch, capsys):
     # Detach HEAD by checking out a specific commit
     subprocess.run(
         ["git", "checkout", "--detach", "HEAD"],
-        cwd=str(git_repo), capture_output=True, check=True,
+        cwd=str(git_repo),
+        capture_output=True,
+        check=True,
     )
     monkeypatch.chdir(git_repo)
     monkeypatch.setattr("sys.argv", [SCRIPT, "--required", "flow-plan"])
@@ -145,7 +144,9 @@ def test_phase_5_requires_phase_4_complete():
     state = make_state(
         current_phase="flow-learn",
         phase_statuses={
-            "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
             "flow-code-review": "pending",
         },
     )
@@ -159,8 +160,11 @@ def test_phase_6_requires_phase_5_complete():
     state = make_state(
         current_phase="flow-complete",
         phase_statuses={
-            "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
-            "flow-code-review": "complete", "flow-learn": "pending",
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "complete",
+            "flow-learn": "pending",
         },
     )
     allowed, output = _mod.check_phase(state, "flow-complete")
@@ -178,9 +182,14 @@ def test_missing_phases_key_blocks():
 
 def test_blocked_message_includes_correct_command():
     """Blocked message should include the correct /flow:X command."""
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "pending",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "pending",
+        },
+    )
     allowed, output = _mod.check_phase(state, "flow-code-review")
     assert not allowed
     assert "/flow:flow-code" in output
@@ -204,9 +213,13 @@ def test_check_phase_uses_frozen_config():
     custom_commands = {"flow-start": "/t:a", "flow-plan": "/t:b", "flow-code-review": "/t:c"}
     config = (custom_order, custom_names, custom_numbers, custom_commands)
 
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+        },
+    )
     allowed, output = _mod.check_phase(state, "flow-code-review", phase_config=config)
     assert allowed
 
@@ -219,9 +232,13 @@ def test_check_phase_frozen_config_uses_correct_predecessor():
     custom_commands = {"flow-start": "/t:a", "flow-code": "/t:b", "flow-plan": "/t:c"}
     config = (custom_order, custom_names, custom_numbers, custom_commands)
 
-    state = make_state(current_phase="flow-plan", phase_statuses={
-        "flow-start": "complete", "flow-code": "pending",
-    })
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-code": "pending",
+        },
+    )
     # In default PHASE_ORDER, flow-plan's predecessor is flow-start (complete).
     # In custom order, flow-plan's predecessor is flow-code (pending) → blocked.
     allowed, output = _mod.check_phase(state, "flow-plan", phase_config=config)
@@ -232,6 +249,7 @@ def test_check_phase_frozen_config_uses_correct_predecessor():
 def test_cli_uses_frozen_phases_file(git_repo, state_dir, branch, monkeypatch):
     """CLI loads frozen phases file when it exists."""
     import shutil
+
     source = LIB_DIR.parent / "flow-phases.json"
     frozen = state_dir / f"{branch}-phases.json"
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -252,13 +270,17 @@ def test_worktree_finds_state_in_main_repo(git_repo, state_dir, monkeypatch):
     # Create a branch for the worktree
     subprocess.run(
         ["git", "branch", "feature-branch"],
-        cwd=str(git_repo), capture_output=True, check=True,
+        cwd=str(git_repo),
+        capture_output=True,
+        check=True,
     )
     # Create a worktree
     wt_path = git_repo / "wt"
     subprocess.run(
         ["git", "worktree", "add", str(wt_path), "feature-branch"],
-        cwd=str(git_repo), capture_output=True, check=True,
+        cwd=str(git_repo),
+        capture_output=True,
+        check=True,
     )
     # Write state file in main repo for the feature-branch
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete"})

@@ -35,7 +35,7 @@ def main():
         sys.exit(1)
 
     version = sys.argv[1]
-    if not re.match(r'^v?\d+\.\d+\.\d+$', version):
+    if not re.match(r"^v?\d+\.\d+\.\d+$", version):
         print(f"Error: invalid version format: {version}")
         sys.exit(1)
 

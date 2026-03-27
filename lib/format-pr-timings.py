@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import format_time, PHASE_NAMES, PHASE_ORDER
+from flow_utils import PHASE_NAMES, PHASE_ORDER, format_time
 
 
 def format_timings_table(state, *, started_only=False):

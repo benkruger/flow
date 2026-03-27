@@ -115,10 +115,10 @@ def apply_updates(state, set_args):
 
 def main():
     parser = argparse.ArgumentParser(description="Set state file fields")
-    parser.add_argument("--set", dest="set_args", action="append", required=True,
-                        help="path=value (use NOW for current timestamp)")
-    parser.add_argument("--branch", type=str, default=None,
-                        help="Override branch for state file lookup")
+    parser.add_argument(
+        "--set", dest="set_args", action="append", required=True, help="path=value (use NOW for current timestamp)"
+    )
+    parser.add_argument("--branch", type=str, default=None, help="Override branch for state file lookup")
     args = parser.parse_args()
 
     root = project_root()
@@ -126,25 +126,37 @@ def main():
 
     if branch is None:
         if candidates:
-            print(json.dumps({
-                "status": "error",
-                "message": "Multiple active features. Pass --branch.",
-                "candidates": candidates,
-            }))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": "Multiple active features. Pass --branch.",
+                        "candidates": candidates,
+                    }
+                )
+            )
         else:
-            print(json.dumps({
-                "status": "error",
-                "message": "Could not determine current branch",
-            }))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": "Could not determine current branch",
+                    }
+                )
+            )
         sys.exit(1)
 
     state_path = root / ".flow-states" / f"{branch}.json"
 
     if not state_path.exists():
-        print(json.dumps({
-            "status": "error",
-            "message": f"No state file found: {state_path}",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"No state file found: {state_path}",
+                }
+            )
+        )
         sys.exit(1)
 
     updates = []
@@ -156,16 +168,24 @@ def main():
     try:
         mutate_state(state_path, transform)
     except json.JSONDecodeError as e:
-        print(json.dumps({
-            "status": "error",
-            "message": f"Could not read state file: {e}",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Could not read state file: {e}",
+                }
+            )
+        )
         sys.exit(1)
     except (KeyError, IndexError, ValueError) as e:
-        print(json.dumps({
-            "status": "error",
-            "message": str(e),
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": str(e),
+                }
+            )
+        )
         sys.exit(1)
 
     print(json.dumps({"status": "ok", "updates": updates}))

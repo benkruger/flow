@@ -1,7 +1,6 @@
 """Tests for lib/orchestrate-state.py — manages orchestration queue state."""
 
 import json
-import sys
 from unittest.mock import patch
 
 from conftest import import_lib
@@ -182,7 +181,9 @@ def test_record_outcome_completed(tmp_path):
 
     with patch.object(mod, "now", return_value="2026-03-20T23:00:00-07:00"):
         result = mod.record_outcome(
-            state_path, 0, "completed",
+            state_path,
+            0,
+            "completed",
             pr_url="https://github.com/test/test/pull/100",
             branch="add-pdf-export",
         )
@@ -211,7 +212,9 @@ def test_record_outcome_failed(tmp_path):
 
     with patch.object(mod, "now", return_value="2026-03-20T23:00:00-07:00"):
         result = mod.record_outcome(
-            state_path, 1, "failed",
+            state_path,
+            1,
+            "failed",
             reason="CI failed after 3 attempts",
         )
 
@@ -361,11 +364,17 @@ def test_cli_create(tmp_path, monkeypatch, capsys):
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
 
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--create", "--queue-file", str(queue_file),
-        "--state-dir", str(state_dir),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--create",
+            "--queue-file",
+            str(queue_file),
+            "--state-dir",
+            str(state_dir),
+        ],
+    )
     mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -380,20 +389,31 @@ def test_cli_start_issue(tmp_path, monkeypatch, capsys):
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
 
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--create", "--queue-file", str(queue_file),
-        "--state-dir", str(state_dir),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--create",
+            "--queue-file",
+            str(queue_file),
+            "--state-dir",
+            str(state_dir),
+        ],
+    )
     mod.main()
     capsys.readouterr()  # discard setup output
 
     state_path = str(state_dir / "orchestrate.json")
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--start-issue", "0",
-        "--state-file", state_path,
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--start-issue",
+            "0",
+            "--state-file",
+            state_path,
+        ],
+    )
     mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -407,31 +427,50 @@ def test_cli_record_outcome(tmp_path, monkeypatch, capsys):
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
 
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--create", "--queue-file", str(queue_file),
-        "--state-dir", str(state_dir),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--create",
+            "--queue-file",
+            str(queue_file),
+            "--state-dir",
+            str(state_dir),
+        ],
+    )
     mod.main()
     capsys.readouterr()  # discard setup output
 
     state_path = str(state_dir / "orchestrate.json")
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--start-issue", "0",
-        "--state-file", state_path,
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--start-issue",
+            "0",
+            "--state-file",
+            state_path,
+        ],
+    )
     mod.main()
     capsys.readouterr()  # discard setup output
 
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--record-outcome", "0",
-        "--outcome", "completed",
-        "--pr-url", "https://github.com/test/test/pull/100",
-        "--branch", "add-pdf-export",
-        "--state-file", state_path,
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--record-outcome",
+            "0",
+            "--outcome",
+            "completed",
+            "--pr-url",
+            "https://github.com/test/test/pull/100",
+            "--branch",
+            "add-pdf-export",
+            "--state-file",
+            state_path,
+        ],
+    )
     mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -445,20 +484,30 @@ def test_cli_complete(tmp_path, monkeypatch, capsys):
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
 
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--create", "--queue-file", str(queue_file),
-        "--state-dir", str(state_dir),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--create",
+            "--queue-file",
+            str(queue_file),
+            "--state-dir",
+            str(state_dir),
+        ],
+    )
     mod.main()
     capsys.readouterr()  # discard setup output
 
     state_path = str(state_dir / "orchestrate.json")
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--complete",
-        "--state-file", state_path,
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--complete",
+            "--state-file",
+            state_path,
+        ],
+    )
     mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -472,20 +521,30 @@ def test_cli_read(tmp_path, monkeypatch, capsys):
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
 
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--create", "--queue-file", str(queue_file),
-        "--state-dir", str(state_dir),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--create",
+            "--queue-file",
+            str(queue_file),
+            "--state-dir",
+            str(state_dir),
+        ],
+    )
     mod.main()
     capsys.readouterr()  # discard setup output
 
     state_path = str(state_dir / "orchestrate.json")
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--read",
-        "--state-file", state_path,
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--read",
+            "--state-file",
+            state_path,
+        ],
+    )
     mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -500,20 +559,30 @@ def test_cli_next(tmp_path, monkeypatch, capsys):
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
 
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--create", "--queue-file", str(queue_file),
-        "--state-dir", str(state_dir),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--create",
+            "--queue-file",
+            str(queue_file),
+            "--state-dir",
+            str(state_dir),
+        ],
+    )
     mod.main()
     capsys.readouterr()  # discard setup output
 
     state_path = str(state_dir / "orchestrate.json")
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--next",
-        "--state-file", state_path,
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--next",
+            "--state-file",
+            state_path,
+        ],
+    )
     mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -524,11 +593,15 @@ def test_cli_next(tmp_path, monkeypatch, capsys):
 def test_cli_read_missing_state(tmp_path, monkeypatch, capsys):
     """CLI --read with nonexistent file returns error."""
     mod = import_lib("orchestrate-state.py")
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--read",
-        "--state-file", str(tmp_path / "missing.json"),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--read",
+            "--state-file",
+            str(tmp_path / "missing.json"),
+        ],
+    )
     mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -598,10 +671,16 @@ def test_cli_start_issue_missing_state_file(monkeypatch, capsys):
 def test_cli_record_outcome_missing_state_file(monkeypatch, capsys):
     """CLI --record-outcome without --state-file returns error."""
     mod = import_lib("orchestrate-state.py")
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--record-outcome", "0", "--outcome", "completed",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--record-outcome",
+            "0",
+            "--outcome",
+            "completed",
+        ],
+    )
     mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -616,20 +695,31 @@ def test_cli_record_outcome_missing_outcome(tmp_path, monkeypatch, capsys):
     state_dir.mkdir()
     queue_file = _write_queue_file(tmp_path, _sample_queue())
 
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--create", "--queue-file", str(queue_file),
-        "--state-dir", str(state_dir),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--create",
+            "--queue-file",
+            str(queue_file),
+            "--state-dir",
+            str(state_dir),
+        ],
+    )
     mod.main()
     capsys.readouterr()  # discard setup output
 
     state_path = str(state_dir / "orchestrate.json")
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--record-outcome", "0",
-        "--state-file", state_path,
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--record-outcome",
+            "0",
+            "--state-file",
+            state_path,
+        ],
+    )
     mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -676,11 +766,16 @@ def test_cli_exception_handling(tmp_path, monkeypatch, capsys):
     bad_file = tmp_path / "bad.json"
     bad_file.write_text("{corrupt json")
 
-    monkeypatch.setattr("sys.argv", [
-        "orchestrate-state",
-        "--start-issue", "0",
-        "--state-file", str(bad_file),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orchestrate-state",
+            "--start-issue",
+            "0",
+            "--state-file",
+            str(bad_file),
+        ],
+    )
     mod.main()
 
     data = json.loads(capsys.readouterr().out)

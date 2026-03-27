@@ -22,8 +22,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    load_phase_config, project_root, resolve_branch,
-    COMMANDS, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER,
+    COMMANDS,
+    PHASE_NAMES,
+    PHASE_NUMBER,
+    PHASE_ORDER,
+    load_phase_config,
+    project_root,
+    resolve_branch,
 )
 
 
@@ -53,8 +58,7 @@ def check_phase(state, phase, phase_config=None):
 
     if prev_status != "complete":
         lines = [
-            f"BLOCKED: Phase {prev_num}: {prev_name} must be complete before "
-            f"entering Phase {phase_num}: {phase_name}.",
+            f"BLOCKED: Phase {prev_num}: {prev_name} must be complete before entering Phase {phase_num}: {phase_name}.",
             f"Phase {prev_num} current status: {prev_status}",
             f"Complete it first with: {prev_cmd}",
         ]
@@ -64,18 +68,18 @@ def check_phase(state, phase, phase_config=None):
     this_data = state.get("phases", {}).get(phase, {})
     if this_data.get("status") == "complete":
         visits = this_data.get("visit_count", 0)
-        return (True, f"NOTE: Phase {phase_num}: {phase_name} was previously completed "
-                      f"({visits} visit(s)). Re-entering.")
+        return (
+            True,
+            f"NOTE: Phase {phase_num}: {phase_name} was previously completed ({visits} visit(s)). Re-entering.",
+        )
 
     return (True, "")
 
 
 def main():
     parser = argparse.ArgumentParser(description="SDLC phase entry guard")
-    parser.add_argument("--required", type=str, required=True,
-                        help="Phase name being entered")
-    parser.add_argument("--branch", type=str, default=None,
-                        help="Override branch for state file lookup")
+    parser.add_argument("--required", type=str, required=True, help="Phase name being entered")
+    parser.add_argument("--branch", type=str, default=None, help="Override branch for state file lookup")
     args = parser.parse_args()
     phase = args.required
 

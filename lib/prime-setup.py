@@ -12,6 +12,7 @@ Output (JSON to stdout):
 """
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -19,8 +20,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-import importlib.util
-from flow_utils import frameworks_dir as _frameworks_dir, permission_to_regex
+from flow_utils import frameworks_dir as _frameworks_dir
+from flow_utils import permission_to_regex
 
 
 def _import_sibling(name, filename):
@@ -30,6 +31,7 @@ def _import_sibling(name, filename):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
 
 UNIVERSAL_ALLOW = [
     "Bash(git add *)",
@@ -102,7 +104,6 @@ EXCLUDE_ENTRIES = [
     "bin/dependencies",
     ".claude/scheduled_tasks.lock",
 ]
-
 
 
 def _load_framework_permissions(framework):
@@ -261,9 +262,16 @@ def merge_settings(project_root, framework):
     return settings
 
 
-def write_version_marker(project_root, version, framework, skills=None,
-                         config_hash=None, setup_hash=None,
-                         commit_format=None, plugin_root=None):
+def write_version_marker(
+    project_root,
+    version,
+    framework,
+    skills=None,
+    config_hash=None,
+    setup_hash=None,
+    commit_format=None,
+    plugin_root=None,
+):
     """Write .flow.json with the plugin version, framework, and optional fields.
 
     If skills is provided, it is included as a top-level key mapping skill
@@ -295,7 +303,9 @@ def update_git_exclude(project_root):
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--git-common-dir"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
             cwd=str(project_root),
         )
         git_dir = Path(result.stdout.strip())
@@ -375,7 +385,8 @@ if [ ! -f "$flow_json" ]; then
   exit 1
 fi
 
-plugin_root=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('plugin_root',''))" "$flow_json" 2>/dev/null) || plugin_root=""
+plugin_root=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('plugin_root',''))" \
+  "$flow_json" 2>/dev/null) || plugin_root=""
 if [ -z "$plugin_root" ]; then
   echo "Error: plugin_root not found in $flow_json — run /flow:flow-prime to update" >&2
   exit 1
@@ -446,13 +457,14 @@ def write_slack_config(project_root):
 
         try:
             result = subprocess.run(
-                ["curl", "-s", "-X", "POST", SLACK_AUTH_URL,
-                 "-H", f"Authorization: Bearer {token}"],
-                capture_output=True, text=True, timeout=10,
+                ["curl", "-s", "-X", "POST", SLACK_AUTH_URL, "-H", f"Authorization: Bearer {token}"],
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if result.returncode != 0:
                 print(
-                    f"Warning: Slack token validation failed (curl error)",
+                    "Warning: Slack token validation failed (curl error)",
                     file=sys.stderr,
                 )
             else:
@@ -483,9 +495,7 @@ def write_slack_config(project_root):
 
 def _plugin_json():
     """Read the full plugin.json as a dict."""
-    plugin_path = (
-        Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
-    )
+    plugin_path = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
     return json.loads(plugin_path.read_text())
 
 
@@ -496,18 +506,26 @@ def _plugin_version():
 
 def main():
     if len(sys.argv) < 2:
-        print(json.dumps({
-            "status": "error",
-            "message": "Usage: python3 prime-setup.py <project_root> --framework rails|python",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": "Usage: python3 prime-setup.py <project_root> --framework rails|python",
+                }
+            )
+        )
         sys.exit(1)
 
     project_root = Path(sys.argv[1])
     if not project_root.is_dir():
-        print(json.dumps({
-            "status": "error",
-            "message": f"Project root not found: {sys.argv[1]}",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Project root not found: {sys.argv[1]}",
+                }
+            )
+        )
         sys.exit(1)
 
     # Parse arguments
@@ -533,10 +551,14 @@ def main():
             i += 1
 
     if not framework or not (_frameworks_dir() / framework).is_dir():
-        print(json.dumps({
-            "status": "error",
-            "message": f"Missing or invalid --framework argument: {framework}",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Missing or invalid --framework argument: {framework}",
+                }
+            )
+        )
         sys.exit(1)
 
     skills = None
@@ -544,10 +566,14 @@ def main():
         try:
             skills = json.loads(skills_json)
         except json.JSONDecodeError as e:
-            print(json.dumps({
-                "status": "error",
-                "message": f"Invalid --skills-json: {e}",
-            }))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": f"Invalid --skills-json: {e}",
+                    }
+                )
+            )
             sys.exit(1)
 
     try:
@@ -556,11 +582,16 @@ def main():
         config_hash = compute_config_hash(framework)
         setup_hash = compute_setup_hash()
         merge_settings(project_root, framework)
-        write_version_marker(project_root, version, framework,
-                             skills=skills, config_hash=config_hash,
-                             setup_hash=setup_hash,
-                             commit_format=commit_format,
-                             plugin_root=plugin_root)
+        write_version_marker(
+            project_root,
+            version,
+            framework,
+            skills=skills,
+            config_hash=config_hash,
+            setup_hash=setup_hash,
+            commit_format=commit_format,
+            plugin_root=plugin_root,
+        )
         exclude_updated = update_git_exclude(project_root)
         install_pre_commit_hook(project_root)
         write_slack_config(project_root)
@@ -576,22 +607,30 @@ def main():
         prime_result = _prime_project.prime(str(project_root), framework)
         deps_result = _create_deps.create(str(project_root), framework)
 
-        print(json.dumps({
-            "status": "ok",
-            "settings_merged": True,
-            "exclude_updated": exclude_updated,
-            "version_marker": True,
-            "hook_installed": True,
-            "launcher_installed": launcher_installed,
-            "framework": framework,
-            "prime_project": prime_result["status"],
-            "dependencies": deps_result["status"],
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "settings_merged": True,
+                    "exclude_updated": exclude_updated,
+                    "version_marker": True,
+                    "hook_installed": True,
+                    "launcher_installed": launcher_installed,
+                    "framework": framework,
+                    "prime_project": prime_result["status"],
+                    "dependencies": deps_result["status"],
+                }
+            )
+        )
     except Exception as e:
-        print(json.dumps({
-            "status": "error",
-            "message": str(e),
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": str(e),
+                }
+            )
+        )
         sys.exit(1)
 
 

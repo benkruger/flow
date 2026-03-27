@@ -23,7 +23,10 @@ def test_reset_git_runs_correct_commands():
     """reset_git() runs git reset --hard seed and force push."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr="",
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
         )
         result = _mod.reset_git("/tmp/repo")
 
@@ -40,7 +43,10 @@ def test_reset_git_failure():
     """reset_git() returns error on git failure."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="fatal: not a repo",
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="fatal: not a repo",
         )
         result = _mod.reset_git("/tmp/repo")
 
@@ -52,17 +58,26 @@ def test_reset_git_failure():
 
 def test_close_prs_closes_all_open():
     """close_prs() lists and closes all open PRs."""
-    pr_list_output = json.dumps([
-        {"number": 1}, {"number": 2},
-    ])
+    pr_list_output = json.dumps(
+        [
+            {"number": 1},
+            {"number": 2},
+        ]
+    )
 
     def side_effect(args, **kwargs):
         if "list" in args:
             return subprocess.CompletedProcess(
-                args=args, returncode=0, stdout=pr_list_output, stderr="",
+                args=args,
+                returncode=0,
+                stdout=pr_list_output,
+                stderr="",
             )
         return subprocess.CompletedProcess(
-            args=args, returncode=0, stdout="", stderr="",
+            args=args,
+            returncode=0,
+            stdout="",
+            stderr="",
         )
 
     with patch("subprocess.run", side_effect=side_effect):
@@ -75,7 +90,10 @@ def test_close_prs_no_open():
     """close_prs() returns 0 when no PRs are open."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="[]", stderr="",
+            args=[],
+            returncode=0,
+            stdout="[]",
+            stderr="",
         )
         result = _mod.close_prs("owner/repo")
 
@@ -92,10 +110,16 @@ def test_delete_remote_branches():
     def side_effect(args, **kwargs):
         if "branch" in args and "-r" in args:
             return subprocess.CompletedProcess(
-                args=args, returncode=0, stdout=branch_output, stderr="",
+                args=args,
+                returncode=0,
+                stdout=branch_output,
+                stderr="",
             )
         return subprocess.CompletedProcess(
-            args=args, returncode=0, stdout="", stderr="",
+            args=args,
+            returncode=0,
+            stdout="",
+            stderr="",
         )
 
     with patch("subprocess.run", side_effect=side_effect):
@@ -108,7 +132,10 @@ def test_delete_remote_branches_only_main():
     """delete_remote_branches() returns 0 when only main exists."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="  origin/main\n", stderr="",
+            args=[],
+            returncode=0,
+            stdout="  origin/main\n",
+            stderr="",
         )
         result = _mod.delete_remote_branches("owner/repo", "/tmp/repo")
 
@@ -130,14 +157,20 @@ def test_reset_issues_closes_and_recreates():
     def side_effect(args, **kwargs):
         if "list" in args:
             return subprocess.CompletedProcess(
-                args=args, returncode=0, stdout=issue_list, stderr="",
+                args=args,
+                returncode=0,
+                stdout=issue_list,
+                stderr="",
             )
         if "close" in args:
             call_count["close"] += 1
         if "create" in args:
             call_count["create"] += 1
         return subprocess.CompletedProcess(
-            args=args, returncode=0, stdout="", stderr="",
+            args=args,
+            returncode=0,
+            stdout="",
+            stderr="",
         )
 
     with patch("subprocess.run", side_effect=side_effect):
@@ -152,7 +185,10 @@ def test_close_prs_gh_failure():
     """close_prs() returns 0 when gh pr list fails."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="error",
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="error",
         )
         result = _mod.close_prs("owner/repo")
 
@@ -163,7 +199,10 @@ def test_delete_remote_branches_git_failure():
     """delete_remote_branches() returns 0 when git branch -r fails."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="error",
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="error",
         )
         result = _mod.delete_remote_branches("owner/repo", "/tmp/repo")
 
@@ -177,10 +216,16 @@ def test_delete_remote_branches_empty_line():
     def side_effect(args, **kwargs):
         if "branch" in args and "-r" in args:
             return subprocess.CompletedProcess(
-                args=args, returncode=0, stdout=branch_output, stderr="",
+                args=args,
+                returncode=0,
+                stdout=branch_output,
+                stderr="",
             )
         return subprocess.CompletedProcess(
-            args=args, returncode=0, stdout="", stderr="",
+            args=args,
+            returncode=0,
+            stdout="",
+            stderr="",
         )
 
     with patch("subprocess.run", side_effect=side_effect):
@@ -195,12 +240,16 @@ def test_delete_remote_branches_empty_line():
 def test_load_issue_template_success():
     """load_issue_template() decodes base64 content from GitHub API."""
     import base64
+
     content = json.dumps([{"title": "Test", "body": "Body", "labels": []}])
     encoded = base64.b64encode(content.encode()).decode()
 
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=encoded, stderr="",
+            args=[],
+            returncode=0,
+            stdout=encoded,
+            stderr="",
         )
         result = _mod.load_issue_template("owner/repo")
 
@@ -212,7 +261,10 @@ def test_load_issue_template_failure():
     """load_issue_template() returns empty list on API failure."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="not found",
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="not found",
         )
         result = _mod.load_issue_template("owner/repo")
 
@@ -223,7 +275,10 @@ def test_load_issue_template_corrupt():
     """load_issue_template() returns empty list on corrupt content."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="not-base64!!!", stderr="",
+            args=[],
+            returncode=0,
+            stdout="not-base64!!!",
+            stderr="",
         )
         result = _mod.load_issue_template("owner/repo")
 
@@ -244,10 +299,16 @@ def test_reset_issues_with_labels():
         calls.append(args)
         if "list" in args:
             return subprocess.CompletedProcess(
-                args=args, returncode=0, stdout="[]", stderr="",
+                args=args,
+                returncode=0,
+                stdout="[]",
+                stderr="",
             )
         return subprocess.CompletedProcess(
-            args=args, returncode=0, stdout="", stderr="",
+            args=args,
+            returncode=0,
+            stdout="",
+            stderr="",
         )
 
     with patch("subprocess.run", side_effect=side_effect):
@@ -289,12 +350,14 @@ def test_clean_local_missing_artifacts(tmp_path):
 
 def test_reset_full_workflow():
     """reset() calls all sub-functions in order."""
-    with patch.object(_mod, "reset_git") as mock_git, \
-         patch.object(_mod, "close_prs") as mock_prs, \
-         patch.object(_mod, "delete_remote_branches") as mock_branches, \
-         patch.object(_mod, "reset_issues") as mock_issues, \
-         patch.object(_mod, "clean_local") as mock_clean, \
-         patch.object(_mod, "load_issue_template") as mock_template:
+    with (
+        patch.object(_mod, "reset_git") as mock_git,
+        patch.object(_mod, "close_prs") as mock_prs,
+        patch.object(_mod, "delete_remote_branches") as mock_branches,
+        patch.object(_mod, "reset_issues") as mock_issues,
+        patch.object(_mod, "clean_local") as mock_clean,
+        patch.object(_mod, "load_issue_template") as mock_template,
+    ):
         mock_git.return_value = {"status": "ok"}
         mock_prs.return_value = 2
         mock_branches.return_value = 3
@@ -312,12 +375,14 @@ def test_reset_full_workflow():
 
 def test_reset_without_local_path():
     """reset() skips clean_local when no local_path provided."""
-    with patch.object(_mod, "reset_git") as mock_git, \
-         patch.object(_mod, "close_prs") as mock_prs, \
-         patch.object(_mod, "delete_remote_branches") as mock_branches, \
-         patch.object(_mod, "reset_issues") as mock_issues, \
-         patch.object(_mod, "clean_local") as mock_clean, \
-         patch.object(_mod, "load_issue_template") as mock_template:
+    with (
+        patch.object(_mod, "reset_git") as mock_git,
+        patch.object(_mod, "close_prs") as mock_prs,
+        patch.object(_mod, "delete_remote_branches") as mock_branches,
+        patch.object(_mod, "reset_issues") as mock_issues,
+        patch.object(_mod, "clean_local") as mock_clean,
+        patch.object(_mod, "load_issue_template") as mock_template,
+    ):
         mock_git.return_value = {"status": "ok"}
         mock_prs.return_value = 0
         mock_branches.return_value = 0
@@ -345,11 +410,12 @@ def test_reset_git_failure_stops_early():
 
 def test_main_success():
     """main() prints JSON and exits 0 on success."""
-    with patch.object(_mod, "reset") as mock_reset, \
-         patch("sys.argv", ["qa-reset", "--repo", "owner/repo"]):
+    with patch.object(_mod, "reset") as mock_reset, patch("sys.argv", ["qa-reset", "--repo", "owner/repo"]):
         mock_reset.return_value = {
-            "status": "ok", "prs_closed": 0,
-            "branches_deleted": 0, "issues_reset": 0,
+            "status": "ok",
+            "prs_closed": 0,
+            "branches_deleted": 0,
+            "issues_reset": 0,
         }
         _mod.main()
 
@@ -358,12 +424,15 @@ def test_main_success():
 
 def test_main_with_local_path():
     """main() passes local_path when provided."""
-    with patch.object(_mod, "reset") as mock_reset, \
-         patch("sys.argv", ["qa-reset", "--repo", "owner/repo",
-                            "--local-path", "/tmp/repo"]):
+    with (
+        patch.object(_mod, "reset") as mock_reset,
+        patch("sys.argv", ["qa-reset", "--repo", "owner/repo", "--local-path", "/tmp/repo"]),
+    ):
         mock_reset.return_value = {
-            "status": "ok", "prs_closed": 0,
-            "branches_deleted": 0, "issues_reset": 0,
+            "status": "ok",
+            "prs_closed": 0,
+            "branches_deleted": 0,
+            "issues_reset": 0,
         }
         _mod.main()
 
@@ -372,11 +441,14 @@ def test_main_with_local_path():
 
 def test_main_error():
     """main() exits 1 on error."""
-    with patch.object(_mod, "reset") as mock_reset, \
-         patch("sys.argv", ["qa-reset", "--repo", "owner/repo"]), \
-         pytest.raises(SystemExit) as exc_info:
+    with (
+        patch.object(_mod, "reset") as mock_reset,
+        patch("sys.argv", ["qa-reset", "--repo", "owner/repo"]),
+        pytest.raises(SystemExit) as exc_info,
+    ):
         mock_reset.return_value = {
-            "status": "error", "message": "failed",
+            "status": "error",
+            "message": "failed",
         }
         _mod.main()
 

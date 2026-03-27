@@ -19,9 +19,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    derive_feature, elapsed_since, find_state_files, format_time, load_phase_config,
-    PACIFIC, project_root, read_version, resolve_branch, COMMANDS, PHASE_NAMES,
-    PHASE_NUMBER, PHASE_ORDER,
+    COMMANDS,
+    PACIFIC,
+    PHASE_NAMES,
+    PHASE_NUMBER,
+    PHASE_ORDER,
+    derive_feature,
+    elapsed_since,
+    find_state_files,
+    format_time,
+    load_phase_config,
+    project_root,
+    read_version,
+    resolve_branch,
 )
 
 # Column width for phase name alignment
@@ -40,14 +50,15 @@ def format_panel(state, version, now=None, dev_mode=False, phase_config=None):
     phases = state.get("phases", {})
 
     # Check if all phases are complete
-    all_complete = all(
-        phases.get(key, {}).get("status") == "complete"
-        for key in order
-    )
+    all_complete = all(phases.get(key, {}).get("status") == "complete" for key in order)
 
     if all_complete:
         return _format_all_complete(
-            state, version, phases, dev_mode=dev_mode, phase_config=phase_config,
+            state,
+            version,
+            phases,
+            dev_mode=dev_mode,
+            phase_config=phase_config,
         )
 
     dev_label = " [DEV MODE]" if dev_mode else ""
@@ -142,10 +153,7 @@ def _format_all_complete(state, version, phases, dev_mode=False, phase_config=No
     lines.append(f"  PR      : {state.get('pr_url', 'N/A')}")
 
     # Total elapsed from phase timings
-    total = sum(
-        phases.get(key, {}).get("cumulative_seconds", 0)
-        for key in order
-    )
+    total = sum(phases.get(key, {}).get("cumulative_seconds", 0) for key in order)
     lines.append(f"  Elapsed : {format_time(total)}")
 
     lines.append("")
@@ -179,9 +187,14 @@ def format_multi_panel(results, version, dev_mode=False):
         phase_key = state.get("current_phase", "flow-start")
         phase_name = PHASE_NAMES.get(phase_key, phase_key)
         phase_num = PHASE_NUMBER.get(phase_key, "?")
-        phase_status = state.get("phases", {}).get(
-            phase_key, {},
-        ).get("status", "pending")
+        phase_status = (
+            state.get("phases", {})
+            .get(
+                phase_key,
+                {},
+            )
+            .get("status", "pending")
+        )
         cmd = COMMANDS.get(phase_key, f"/flow:{phase_key}")
         lines.append(f"  {i}. {derive_feature(matched_branch)}")
         lines.append(f"     Branch : {matched_branch}")
@@ -195,9 +208,9 @@ def format_multi_panel(results, version, dev_mode=False):
 
 def main():
     import argparse
+
     parser = argparse.ArgumentParser(description="Format FLOW status panel")
-    parser.add_argument("--branch", type=str, default=None,
-                        help="Override branch for state file lookup")
+    parser.add_argument("--branch", type=str, default=None, help="Override branch for state file lookup")
     args = parser.parse_args()
 
     root = project_root()

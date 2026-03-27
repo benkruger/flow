@@ -17,8 +17,8 @@ _mod = importlib.import_module("analyze-issues")
 
 # --- helpers ---
 
-def _make_issue(number, title="Test issue", body="", labels=None,
-                created_at=None, url=None):
+
+def _make_issue(number, title="Test issue", body="", labels=None, created_at=None, url=None):
     """Build a minimal gh issue list JSON entry."""
     if created_at is None:
         created_at = datetime.now().isoformat()
@@ -280,8 +280,7 @@ def test_analyze_separates_in_progress():
 
 def test_analyze_issue_fields():
     """Each analyzed issue has all expected fields."""
-    issues = [_make_issue(1, title="Test", body="Check lib/foo.py",
-                          labels=["decomposed"])]
+    issues = [_make_issue(1, title="Test", body="Check lib/foo.py", labels=["decomposed"])]
     result = _mod.analyze_issues(issues)
     issue = result["issues"][0]
     assert issue["number"] == 1
@@ -396,7 +395,10 @@ def test_main_calls_gh_when_no_file():
     gh_output = json.dumps([_make_issue(1, title="From GH")])
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=gh_output, stderr="",
+            args=[],
+            returncode=0,
+            stdout=gh_output,
+            stderr="",
         )
         with patch("sys.argv", ["analyze-issues"]):
             with patch("builtins.print") as mock_print:
@@ -416,7 +418,10 @@ def test_main_gh_failure():
     """main() exits with error when gh returns non-zero."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="auth required",
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="auth required",
         )
         with patch("sys.argv", ["analyze-issues"]):
             with patch("builtins.print") as mock_print:
@@ -516,10 +521,8 @@ def _make_filter_issues_file(tmp_path):
     issues = [
         _make_issue(1, title="Ready plain", body=""),
         _make_issue(2, title="Blocked", body="Depends on #1"),
-        _make_issue(3, title="Decomposed ready", body="",
-                    labels=["decomposed"]),
-        _make_issue(4, title="Decomposed blocked", body="Depends on #1",
-                    labels=["decomposed"]),
+        _make_issue(3, title="Decomposed ready", body="", labels=["decomposed"]),
+        _make_issue(4, title="Decomposed blocked", body="Depends on #1", labels=["decomposed"]),
     ]
     json_file = tmp_path / "issues.json"
     json_file.write_text(json.dumps(issues))

@@ -10,17 +10,14 @@ from conftest import LIB_DIR, PHASE_ORDER, make_state, write_state
 SCRIPT = str(LIB_DIR / "cleanup.py")
 
 # Import cleanup.py for in-process unit tests
-_spec = importlib.util.spec_from_file_location(
-    "cleanup", LIB_DIR / "cleanup.py"
-)
+_spec = importlib.util.spec_from_file_location("cleanup", LIB_DIR / "cleanup.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 
 def _run(project_root, branch, worktree, pr=None):
     """Run cleanup.py via subprocess."""
-    args = [sys.executable, SCRIPT, str(project_root),
-            "--branch", branch, "--worktree", worktree]
+    args = [sys.executable, SCRIPT, str(project_root), "--branch", branch, "--worktree", worktree]
     if pr:
         args.extend(["--pr", str(pr)])
     result = subprocess.run(args, capture_output=True, text=True)
@@ -33,15 +30,15 @@ def _setup_feature(git_repo, branch="test-feature"):
     wt_rel = f".worktrees/{branch}"
     subprocess.run(
         ["git", "worktree", "add", wt_rel, "-b", branch],
-        cwd=str(git_repo), capture_output=True, check=True,
+        cwd=str(git_repo),
+        capture_output=True,
+        check=True,
     )
 
     # Create state file
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(exist_ok=True)
-    state = make_state(current_phase="flow-complete", phase_statuses={
-        k: "complete" for k in PHASE_ORDER
-    })
+    state = make_state(current_phase="flow-complete", phase_statuses={k: "complete" for k in PHASE_ORDER})
     state["branch"] = branch
     state["worktree"] = wt_rel
     write_state(state_dir, branch, state)
@@ -58,7 +55,8 @@ def _setup_feature(git_repo, branch="test-feature"):
 def test_missing_args_returns_error():
     result = subprocess.run(
         [sys.executable, SCRIPT],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode != 0
 
@@ -264,7 +262,8 @@ def test_cleanup_skips_missing_worktree(git_repo):
     # Remove worktree before cleanup
     subprocess.run(
         ["git", "worktree", "remove", ".worktrees/test-feature", "--force"],
-        cwd=str(git_repo), capture_output=True,
+        cwd=str(git_repo),
+        capture_output=True,
     )
     result = _run(git_repo, "test-feature", ".worktrees/test-feature")
     data = json.loads(result.stdout)
@@ -296,7 +295,9 @@ def test_cleanup_always_deletes_local_branch(git_repo):
     # Remove worktree first so branch can be deleted
     subprocess.run(
         ["git", "worktree", "remove", wt_rel, "--force"],
-        cwd=str(git_repo), capture_output=True, check=True,
+        cwd=str(git_repo),
+        capture_output=True,
+        check=True,
     )
     result = _run(git_repo, "test-feature", wt_rel)
     data = json.loads(result.stdout)
@@ -317,7 +318,9 @@ def test_abort_deletes_local_branch(git_repo):
     # Remove worktree first so branch can be deleted
     subprocess.run(
         ["git", "worktree", "remove", wt_rel, "--force"],
-        cwd=str(git_repo), capture_output=True, check=True,
+        cwd=str(git_repo),
+        capture_output=True,
+        check=True,
     )
     result = _run(git_repo, "test-feature", wt_rel)
     data = json.loads(result.stdout)
@@ -346,6 +349,7 @@ def test_abort_pr_close_fails_gracefully(git_repo):
 def test_run_cmd_handles_exception(monkeypatch):
     def _raise(*args, **kwargs):
         raise OSError("command not found")
+
     monkeypatch.setattr(subprocess, "run", _raise)
     ok, output = _mod._run_cmd(["fake"], ".")
     assert not ok
@@ -367,6 +371,7 @@ def test_state_file_unlink_failure(git_repo, monkeypatch):
         return original_unlink(self, *args, **kwargs)
 
     from pathlib import PosixPath
+
     monkeypatch.setattr(PosixPath, "unlink", _fail_first_unlink)
     steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
     assert steps["state_file"].startswith("failed:")
@@ -387,6 +392,7 @@ def test_log_file_unlink_failure(git_repo, monkeypatch):
         return original_unlink(self, *args, **kwargs)
 
     from pathlib import PosixPath
+
     monkeypatch.setattr(PosixPath, "unlink", _fail_second_unlink)
     steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
     assert steps["log_file"].startswith("failed:")
@@ -408,6 +414,7 @@ def test_frozen_phases_unlink_failure(git_repo, monkeypatch):
         return original_unlink(self, *args, **kwargs)
 
     from pathlib import PosixPath
+
     monkeypatch.setattr(PosixPath, "unlink", _fail_third_unlink)
     steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
     assert steps["frozen_phases"].startswith("failed:")
@@ -430,6 +437,7 @@ def test_ci_sentinel_unlink_failure(git_repo, monkeypatch):
         return original_unlink(self, *args, **kwargs)
 
     from pathlib import PosixPath
+
     monkeypatch.setattr(PosixPath, "unlink", _fail_third_unlink)
     steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
     assert steps["ci_sentinel"].startswith("failed:")
@@ -452,6 +460,7 @@ def test_timings_file_unlink_failure(git_repo, monkeypatch):
         return original_unlink(self, *args, **kwargs)
 
     from pathlib import PosixPath
+
     monkeypatch.setattr(PosixPath, "unlink", _fail_third_unlink)
     steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
     assert steps["timings_file"].startswith("failed:")
@@ -474,6 +483,7 @@ def test_plan_file_unlink_failure(git_repo, monkeypatch):
         return original_unlink(self, *args, **kwargs)
 
     from pathlib import PosixPath
+
     monkeypatch.setattr(PosixPath, "unlink", _fail_second_unlink)
     steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
     assert steps["plan_file"].startswith("failed:")
@@ -496,6 +506,7 @@ def test_dag_file_unlink_failure(git_repo, monkeypatch):
         return original_unlink(self, *args, **kwargs)
 
     from pathlib import PosixPath
+
     monkeypatch.setattr(PosixPath, "unlink", _fail_second_unlink)
     steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
     assert steps["dag_file"].startswith("failed:")
@@ -518,6 +529,7 @@ def test_closed_issues_file_unlink_failure(git_repo, monkeypatch):
         return original_unlink(self, *args, **kwargs)
 
     from pathlib import PosixPath
+
     monkeypatch.setattr(PosixPath, "unlink", _fail_third_unlink)
     steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
     assert steps["closed_issues_file"].startswith("failed:")
@@ -540,6 +552,7 @@ def test_issues_file_unlink_failure(git_repo, monkeypatch):
         return original_unlink(self, *args, **kwargs)
 
     from pathlib import PosixPath
+
     monkeypatch.setattr(PosixPath, "unlink", _fail_third_unlink)
     steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
     assert steps["issues_file"].startswith("failed:")
@@ -586,6 +599,7 @@ def test_cleanup_skips_missing_worktree_tmp(git_repo):
 def test_cleanup_tmp_rmtree_failure(git_repo, monkeypatch):
     """rmtree failure is reported gracefully."""
     import shutil
+
     wt_rel = _setup_feature(git_repo)
     (git_repo / "flow-phases.json").write_text("{}")
     wt_tmp = git_repo / wt_rel / "tmp"

@@ -24,7 +24,10 @@ def _run_cmd(args, cwd):
     """Run a command, returning (success, output)."""
     try:
         result = subprocess.run(
-            args, capture_output=True, text=True, cwd=str(cwd),
+            args,
+            capture_output=True,
+            text=True,
+            cwd=str(cwd),
         )
         if result.returncode != 0:
             error = result.stderr.strip() or result.stdout.strip()
@@ -198,10 +201,14 @@ def main():
 
     root = Path(args.project_root)
     if not root.is_dir():
-        print(json.dumps({
-            "status": "error",
-            "message": f"Project root not found: {args.project_root}",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Project root not found: {args.project_root}",
+                }
+            )
+        )
         sys.exit(1)
 
     steps = cleanup(root, args.branch, args.worktree, args.pr)

@@ -56,13 +56,7 @@ def _subprocess_coverage():
     path and sets COVERAGE_PROCESS_START so the coverage .pth hook
     activates in every subprocess.
     """
-    config = (
-        "[run]\n"
-        f"data_file = {REPO_ROOT / '.coverage'}\n"
-        "parallel = true\n"
-        f"source =\n"
-        f"    {LIB_DIR}\n"
-    )
+    config = f"[run]\ndata_file = {REPO_ROOT / '.coverage'}\nparallel = true\nsource =\n    {LIB_DIR}\n"
     fd, config_path = tempfile.mkstemp(suffix=".ini", prefix="cov_subprocess_")
     os.write(fd, config.encode())
     os.close(fd)
@@ -78,18 +72,19 @@ def _git_repo_template(tmp_path_factory):
     """Create a git repo template once per worker for copying."""
     template = tmp_path_factory.mktemp("git-template")
     subprocess.run(
-        ["git", "-c", "init.defaultBranch=main", "init"], cwd=template,
-        capture_output=True, check=True,
+        ["git", "-c", "init.defaultBranch=main", "init"],
+        cwd=template,
+        capture_output=True,
+        check=True,
     )
     config_path = template / ".git" / "config"
     with open(config_path, "a") as f:
-        f.write(
-            "[user]\n\temail = test@test.com\n\tname = Test\n"
-            "[commit]\n\tgpgsign = false\n"
-        )
+        f.write("[user]\n\temail = test@test.com\n\tname = Test\n[commit]\n\tgpgsign = false\n")
     subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "init"], cwd=template,
-        capture_output=True, check=True,
+        ["git", "commit", "--allow-empty", "-m", "init"],
+        cwd=template,
+        capture_output=True,
+        check=True,
     )
     return template
 
@@ -129,14 +124,10 @@ def target_project(git_repo):
     """
     bin_dir = git_repo / "bin"
     bin_dir.mkdir()
-    (bin_dir / "ci").write_text(
-        "#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n"
-    )
+    (bin_dir / "ci").write_text("#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n")
     (bin_dir / "ci").chmod(0o755)
-    subprocess.run(["git", "add", "-A"], cwd=str(git_repo), check=True,
-                   capture_output=True)
-    subprocess.run(["git", "commit", "-m", "add bin/ci"], cwd=str(git_repo),
-                   check=True, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=str(git_repo), check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "add bin/ci"], cwd=str(git_repo), check=True, capture_output=True)
     return git_repo
 
 
@@ -194,8 +185,9 @@ def write_state(state_dir, branch, state_dict):
     return path
 
 
-def make_flow_json(project_root, bot_token=None, channel=None, notify="auto",
-                   version="0.36.2", framework="rails", skills=None):
+def make_flow_json(
+    project_root, bot_token=None, channel=None, notify="auto", version="0.36.2", framework="rails", skills=None
+):
     """Write a .flow.json file with optional Slack config.
 
     If bot_token and channel are both provided, writes a slack config block.

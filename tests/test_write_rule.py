@@ -140,11 +140,16 @@ def test_cli_happy_path(tmp_path, monkeypatch, capsys):
     content_file.write_text("# Rule\n\nDo it.\n")
     target = tmp_path / ".claude" / "rules" / "topic.md"
 
-    monkeypatch.setattr("sys.argv", [
-        "write-rule.py",
-        "--path", str(target),
-        "--content-file", str(content_file),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "write-rule.py",
+            "--path",
+            str(target),
+            "--content-file",
+            str(content_file),
+        ],
+    )
 
     _mod.main()
 
@@ -159,11 +164,16 @@ def test_cli_missing_content_file(tmp_path, monkeypatch, capsys):
     """CLI exits non-zero when content file does not exist."""
     target = tmp_path / "rule.md"
 
-    monkeypatch.setattr("sys.argv", [
-        "write-rule.py",
-        "--path", str(target),
-        "--content-file", str(tmp_path / "nonexistent.md"),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "write-rule.py",
+            "--path",
+            str(target),
+            "--content-file",
+            str(tmp_path / "nonexistent.md"),
+        ],
+    )
 
     with pytest.raises(SystemExit) as exc_info:
         _mod.main()
@@ -183,11 +193,16 @@ def test_cli_write_error(tmp_path, monkeypatch, capsys):
     readonly_dir.chmod(0o444)
     target = readonly_dir / "rule.md"
 
-    monkeypatch.setattr("sys.argv", [
-        "write-rule.py",
-        "--path", str(target),
-        "--content-file", str(content_file),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "write-rule.py",
+            "--path",
+            str(target),
+            "--content-file",
+            str(content_file),
+        ],
+    )
 
     with pytest.raises(SystemExit) as exc_info:
         _mod.main()

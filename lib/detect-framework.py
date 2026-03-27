@@ -36,10 +36,12 @@ def detect(project_root, frameworks_dir=None):
     for config in configs:
         for glob_pattern in config["detect_globs"]:
             if any(project.glob(glob_pattern)):
-                detected.append({
-                    "name": config["name"],
-                    "display_name": config["display_name"],
-                })
+                detected.append(
+                    {
+                        "name": config["name"],
+                        "display_name": config["display_name"],
+                    }
+                )
                 break
     return detected
 
@@ -54,18 +56,26 @@ def available_frameworks(frameworks_dir=None):
 
 def main():
     if len(sys.argv) < 2:
-        print(json.dumps({
-            "status": "error",
-            "message": "Usage: bin/flow detect-framework <project_root>",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": "Usage: bin/flow detect-framework <project_root>",
+                }
+            )
+        )
         sys.exit(1)
 
     project_root = Path(sys.argv[1])
     if not project_root.is_dir():
-        print(json.dumps({
-            "status": "error",
-            "message": f"Project root not found: {sys.argv[1]}",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Project root not found: {sys.argv[1]}",
+                }
+            )
+        )
         sys.exit(1)
 
     frameworks_dir = str(_frameworks_dir())
@@ -76,19 +86,25 @@ def main():
     for config in configs:
         for glob_pattern in config["detect_globs"]:
             if any(project.glob(glob_pattern)):
-                detected.append({
-                    "name": config["name"],
-                    "display_name": config["display_name"],
-                })
+                detected.append(
+                    {
+                        "name": config["name"],
+                        "display_name": config["display_name"],
+                    }
+                )
                 break
 
     available = [{"name": c["name"], "display_name": c["display_name"]} for c in configs]
 
-    print(json.dumps({
-        "status": "ok",
-        "detected": detected,
-        "available": available,
-    }))
+    print(
+        json.dumps(
+            {
+                "status": "ok",
+                "detected": detected,
+                "available": available,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

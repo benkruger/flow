@@ -7,8 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 from conftest import LIB_DIR
 
 SCRIPT = str(LIB_DIR / "upgrade-check.py")
@@ -23,11 +21,7 @@ def _current_plugin_version():
 def _make_fake_gh(tmp_path, stdout="", exit_code=0):
     """Create a fake gh script that echoes controlled output."""
     fake_gh = tmp_path / "gh"
-    fake_gh.write_text(
-        f"#!/usr/bin/env bash\n"
-        f"echo '{stdout}'\n"
-        f"exit {exit_code}\n"
-    )
+    fake_gh.write_text(f"#!/usr/bin/env bash\necho '{stdout}'\nexit {exit_code}\n")
     fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IEXEC)
     return str(tmp_path)
 
@@ -41,7 +35,9 @@ def _run(gh_dir=None, extra_env=None):
         env.update(extra_env)
     result = subprocess.run(
         [sys.executable, SCRIPT],
-        capture_output=True, text=True, env=env,
+        capture_output=True,
+        text=True,
+        env=env,
     )
     return result
 
@@ -77,7 +73,9 @@ def test_gh_not_found(tmp_path):
     env["PATH"] = str(tmp_path)
     result = subprocess.run(
         [sys.executable, SCRIPT],
-        capture_output=True, text=True, env=env,
+        capture_output=True,
+        text=True,
+        env=env,
     )
     assert result.returncode == 0
     data = json.loads(result.stdout)
@@ -129,11 +127,7 @@ def test_no_repository_url(tmp_path):
 def test_timeout(tmp_path):
     """Returns 'unknown' when gh takes too long."""
     fake_gh = tmp_path / "gh"
-    fake_gh.write_text(
-        "#!/usr/bin/env bash\n"
-        "sleep 10\n"
-        "echo 'v1.0.0'\n"
-    )
+    fake_gh.write_text("#!/usr/bin/env bash\nsleep 10\necho 'v1.0.0'\n")
     fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IEXEC)
     result = _run(
         gh_dir=str(tmp_path),

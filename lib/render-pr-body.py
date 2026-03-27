@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import project_root, current_branch
+from flow_utils import current_branch, project_root
 
 
 def _load_sibling(name, filename):
@@ -141,9 +141,7 @@ def render_body(state, project_dir):
     # 4. DAG Analysis (conditional, always text format)
     if dag_path and dag_path.exists():
         content = dag_path.read_text().rstrip("\n")
-        sections.append(
-            _build_details("DAG Analysis", "Decompose plugin output", content, "text")
-        )
+        sections.append(_build_details("DAG Analysis", "Decompose plugin output", content, "text"))
         section_names.append("DAG Analysis")
 
     # 5. Phase Timings (always, started phases only)
@@ -154,9 +152,7 @@ def render_body(state, project_dir):
     # 6. State File (always)
     state_json = json.dumps(state, indent=2)
     branch = state.get("branch", "unknown")
-    sections.append(
-        _build_details("State File", f".flow-states/{branch}.json", state_json, "json")
-    )
+    sections.append(_build_details("State File", f".flow-states/{branch}.json", state_json, "json"))
     section_names.append("State File")
 
     # 7. Session Log (conditional)
@@ -167,9 +163,7 @@ def render_body(state, project_dir):
     if log_path and log_path.exists():
         log_rel = files.get("log") or f".flow-states/{state.get('branch', 'unknown')}.log"
         content = log_path.read_text().rstrip("\n")
-        sections.append(
-            _build_details("Session Log", log_rel, content, "text")
-        )
+        sections.append(_build_details("Session Log", log_rel, content, "text"))
         section_names.append("Session Log")
 
     # 8. Issues Filed (conditional)
@@ -185,8 +179,7 @@ def main():
     parser = argparse.ArgumentParser(description="Render complete PR body from state")
     parser.add_argument("--pr", type=int, required=True, help="PR number")
     parser.add_argument("--state-file", help="Path to state file (auto-detected if omitted)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Generate body and return sections without updating PR")
+    parser.add_argument("--dry-run", action="store_true", help="Generate body and return sections without updating PR")
 
     args = parser.parse_args()
 

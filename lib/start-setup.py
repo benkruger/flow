@@ -14,7 +14,6 @@ Output (JSON to stdout):
 
 import argparse
 import json
-import os
 import re
 import subprocess
 import sys
@@ -23,11 +22,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    AUTO_SKILLS, build_initial_phases, derive_feature, detect_repo,
-    freeze_phases, mutate_state, now, read_flow_json, read_prompt_file,
+    AUTO_SKILLS,
+    build_initial_phases,
+    derive_feature,
+    detect_repo,
+    freeze_phases,
+    mutate_state,
+    now,
+    read_flow_json,
+    read_prompt_file,
 )
 from log import append_log
-
 
 
 def _branch_name(feature_words):
@@ -44,12 +49,14 @@ def _branch_name(feature_words):
     return name[:32]
 
 
-
 def _run_cmd(args, cwd, step_name, timeout=None):
     """Run a shell command, returning (stdout, stderr). Raises on failure."""
     try:
         result = subprocess.run(
-            args, capture_output=True, text=True, cwd=str(cwd),
+            args,
+            capture_output=True,
+            text=True,
+            cwd=str(cwd),
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -78,7 +85,8 @@ def _create_worktree(project_root, branch):
     wt_path = project_root / ".worktrees" / branch
     _run_cmd(
         ["git", "worktree", "add", str(wt_path), "-b", branch],
-        project_root, "worktree",
+        project_root,
+        "worktree",
     )
     venv_dir = project_root / ".venv"
     if venv_dir.is_dir():
@@ -93,22 +101,24 @@ def _initial_commit_push_pr(wt_path, branch, feature_title, prompt):
         commit_msg_path.write_text(f"Start {branch} branch")
         _run_cmd(
             ["git", "commit", "--allow-empty", "-F", ".flow-commit-msg"],
-            wt_path, "commit",
+            wt_path,
+            "commit",
         )
     finally:
         commit_msg_path.unlink(missing_ok=True)
     _run_cmd(
         ["git", "push", "-u", "origin", branch],
-        wt_path, "push", timeout=60,
+        wt_path,
+        "push",
+        timeout=60,
     )
 
     pr_body = f"## What\n\n{prompt}."
     stdout, _ = _run_cmd(
-        ["gh", "pr", "create",
-         "--title", feature_title,
-         "--body", pr_body,
-         "--base", "main"],
-        wt_path, "pr_create", timeout=60,
+        ["gh", "pr", "create", "--title", feature_title, "--body", pr_body, "--base", "main"],
+        wt_path,
+        "pr_create",
+        timeout=60,
     )
 
     pr_url = stdout.strip()
@@ -128,9 +138,9 @@ def _extract_pr_number(pr_url):
     return 0
 
 
-
-def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                       framework="rails", skills=None, prompt="", repo=None):
+def _create_state_file(
+    project_root, branch, feature_title, pr_url, pr_number, framework="rails", skills=None, prompt="", repo=None
+):
     """Create the FLOW state file."""
     current_time = now()
     phases = build_initial_phases(current_time)
@@ -170,33 +180,39 @@ def _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
 def main():
     parser = argparse.ArgumentParser(description="FLOW Start phase setup")
     parser.add_argument("feature_name", nargs="?", help="Feature name words")
-    parser.add_argument("--prompt", default=None,
-                        help="Full start prompt (preserved verbatim in state file)")
-    parser.add_argument("--prompt-file", default=None,
-                        help="Path to file containing start prompt (file is deleted after reading)")
-    parser.add_argument("--skip-pull", action="store_true",
-                        help="Skip git pull (caller already pulled main)")
-    parser.add_argument("--auto", action="store_true",
-                        help="Override all skills to fully autonomous preset")
+    parser.add_argument("--prompt", default=None, help="Full start prompt (preserved verbatim in state file)")
+    parser.add_argument(
+        "--prompt-file", default=None, help="Path to file containing start prompt (file is deleted after reading)"
+    )
+    parser.add_argument("--skip-pull", action="store_true", help="Skip git pull (caller already pulled main)")
+    parser.add_argument("--auto", action="store_true", help="Override all skills to fully autonomous preset")
     args = parser.parse_args()
 
     if not args.feature_name:
-        print(json.dumps({
-            "status": "error",
-            "step": "args",
-            "message": "Feature name required. Usage: python3 start-setup.py \"<feature name>\"",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "step": "args",
+                    "message": 'Feature name required. Usage: python3 start-setup.py "<feature name>"',
+                }
+            )
+        )
         sys.exit(1)
 
     feature_words = args.feature_name
     if args.prompt_file:
         raw_prompt, read_error = read_prompt_file(args.prompt_file)
         if read_error:
-            print(json.dumps({
-                "status": "error",
-                "step": "prompt_file",
-                "message": read_error,
-            }))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "step": "prompt_file",
+                        "message": read_error,
+                    }
+                )
+            )
             sys.exit(1)
     elif args.prompt is not None:
         raw_prompt = args.prompt
@@ -241,13 +257,22 @@ def main():
                 state["pr_url"] = pr_url
                 state["repo"] = repo
                 state["prompt"] = raw_prompt
+
             mutate_state(state_path, _backfill)
             append_log(branch, f"[Phase 1] backfill .flow-states/{branch}.json (exit 0)")
         else:
             # Fallback: create state file from scratch (no init-state)
-            _create_state_file(project_root, branch, feature_title, pr_url, pr_number,
-                               framework=framework, skills=skills, prompt=raw_prompt,
-                               repo=repo)
+            _create_state_file(
+                project_root,
+                branch,
+                feature_title,
+                pr_url,
+                pr_number,
+                framework=framework,
+                skills=skills,
+                prompt=raw_prompt,
+                repo=repo,
+            )
             append_log(branch, f"[Phase 1] create .flow-states/{branch}.json (exit 0)")
 
             # Freeze phase config (only needed when init-state didn't run)
@@ -265,11 +290,15 @@ def main():
         print(json.dumps(output))
 
     except SetupError as e:
-        print(json.dumps({
-            "status": "error",
-            "step": e.step,
-            "message": e.message,
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "step": e.step,
+                    "message": e.message,
+                }
+            )
+        )
 
 
 if __name__ == "__main__":
