@@ -425,24 +425,10 @@ class TestCreateIssueEnhanced:
     """Tests for create_issue returning dict with number and id."""
 
     def test_returns_dict_with_url_number_id(self):
-        create_result = subprocess.CompletedProcess(
-            args=[], returncode=0,
-            stdout="https://github.com/owner/repo/issues/42\n",
-            stderr="",
-        )
-        api_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="123456789\n", stderr="",
-        )
-
-        def side_effect(cmd, **kwargs):
-            if cmd[1] == "issue":
-                return create_result
-            if cmd[1] == "api":
-                return api_result
-            raise ValueError(f"Unexpected command: {cmd}")
-
         with patch.object(issue_mod.subprocess, "run",
-                          side_effect=side_effect):
+                          side_effect=_make_subprocess_router(
+                              "https://github.com/owner/repo/issues/42\n",
+                              api_stdout="123456789\n")):
             result, error = issue_mod.create_issue(
                 "owner/repo", "Test title",
             )
@@ -453,24 +439,10 @@ class TestCreateIssueEnhanced:
         assert result["id"] == 123456789
 
     def test_id_is_none_when_api_fails(self):
-        create_result = subprocess.CompletedProcess(
-            args=[], returncode=0,
-            stdout="https://github.com/owner/repo/issues/42\n",
-            stderr="",
-        )
-        api_result = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="Not Found",
-        )
-
-        def side_effect(cmd, **kwargs):
-            if cmd[1] == "issue":
-                return create_result
-            if cmd[1] == "api":
-                return api_result
-            raise ValueError(f"Unexpected command: {cmd}")
-
         with patch.object(issue_mod.subprocess, "run",
-                          side_effect=side_effect):
+                          side_effect=_make_subprocess_router(
+                              "https://github.com/owner/repo/issues/42\n",
+                              api_rc=1, api_stderr="Not Found")):
             result, error = issue_mod.create_issue(
                 "owner/repo", "Test title",
             )
@@ -498,24 +470,10 @@ class TestMainEnhanced:
     """Tests for main() output including number and id fields."""
 
     def test_main_outputs_number_and_id(self, capsys):
-        create_result = subprocess.CompletedProcess(
-            args=[], returncode=0,
-            stdout="https://github.com/owner/repo/issues/42\n",
-            stderr="",
-        )
-        api_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="123456789\n", stderr="",
-        )
-
-        def side_effect(cmd, **kwargs):
-            if cmd[1] == "issue":
-                return create_result
-            if cmd[1] == "api":
-                return api_result
-            raise ValueError(f"Unexpected command: {cmd}")
-
         with patch.object(issue_mod.subprocess, "run",
-                          side_effect=side_effect), \
+                          side_effect=_make_subprocess_router(
+                              "https://github.com/owner/repo/issues/42\n",
+                              api_stdout="123456789\n")), \
              patch("sys.argv", ["issue.py", "--repo", "owner/repo",
                                 "--title", "Test"]):
             issue_mod.main()
@@ -527,24 +485,10 @@ class TestMainEnhanced:
         assert output["id"] == 123456789
 
     def test_main_id_null_on_api_failure(self, capsys):
-        create_result = subprocess.CompletedProcess(
-            args=[], returncode=0,
-            stdout="https://github.com/owner/repo/issues/42\n",
-            stderr="",
-        )
-        api_result = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="Not Found",
-        )
-
-        def side_effect(cmd, **kwargs):
-            if cmd[1] == "issue":
-                return create_result
-            if cmd[1] == "api":
-                return api_result
-            raise ValueError(f"Unexpected command: {cmd}")
-
         with patch.object(issue_mod.subprocess, "run",
-                          side_effect=side_effect), \
+                          side_effect=_make_subprocess_router(
+                              "https://github.com/owner/repo/issues/42\n",
+                              api_rc=1, api_stderr="Not Found")), \
              patch("sys.argv", ["issue.py", "--repo", "owner/repo",
                                 "--title", "Test"]):
             issue_mod.main()
