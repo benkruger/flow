@@ -124,10 +124,14 @@ def main():
 
     if args.start:
         if not args.local_path:
-            print(json.dumps({
-                "status": "error",
-                "message": "--local-path is required with --start",
-            }))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": "--local-path is required with --start",
+                    }
+                )
+            )
             sys.exit(1)
         result = start(flow_json_path, args.local_path)
     else:

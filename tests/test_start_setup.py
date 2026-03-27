@@ -9,15 +9,12 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from conftest import LIB_DIR, PHASE_ORDER
 
 SCRIPT = str(LIB_DIR / "start-setup.py")
 
 # Import start-setup.py for in-process unit tests of edge cases
-_spec = importlib.util.spec_from_file_location(
-    "start_setup", LIB_DIR / "start-setup.py"
-)
+_spec = importlib.util.spec_from_file_location("start_setup", LIB_DIR / "start-setup.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -31,25 +28,28 @@ def _git_repo_with_remote_template(tmp_path_factory):
 
     subprocess.run(
         ["git", "init", "--bare", "-b", "main", str(bare)],
-        capture_output=True, check=True,
+        capture_output=True,
+        check=True,
     )
     subprocess.run(
         ["git", "clone", str(bare), str(repo)],
-        capture_output=True, check=True,
+        capture_output=True,
+        check=True,
     )
     config_path = repo / ".git" / "config"
     with open(config_path, "a") as f:
-        f.write(
-            "[user]\n\temail = test@test.com\n\tname = Test\n"
-            "[commit]\n\tgpgsign = false\n"
-        )
+        f.write("[user]\n\temail = test@test.com\n\tname = Test\n[commit]\n\tgpgsign = false\n")
     subprocess.run(
         ["git", "commit", "--allow-empty", "-m", "init"],
-        cwd=str(repo), capture_output=True, check=True,
+        cwd=str(repo),
+        capture_output=True,
+        check=True,
     )
     subprocess.run(
         ["git", "push", "-u", "origin", "main"],
-        cwd=str(repo), capture_output=True, check=True,
+        cwd=str(repo),
+        capture_output=True,
+        check=True,
     )
     return parent
 
@@ -63,9 +63,7 @@ def git_repo_with_remote(_git_repo_with_remote_template, tmp_path):
     bare = parent_copy / "bare.git"
     config_path = repo / ".git" / "config"
     config_text = config_path.read_text()
-    config_text = config_text.replace(
-        str(_git_repo_with_remote_template / "bare.git"), str(bare)
-    )
+    config_text = config_text.replace(str(_git_repo_with_remote_template / "bare.git"), str(bare))
     config_path.write_text(config_text)
     return repo
 
@@ -80,7 +78,10 @@ def _run(cwd, feature_name, env_extra=None, prompt=None):
         cmd.extend(["--prompt", prompt])
     result = subprocess.run(
         cmd,
-        capture_output=True, text=True, cwd=str(cwd), env=env,
+        capture_output=True,
+        text=True,
+        cwd=str(cwd),
+        env=env,
     )
     return result
 
@@ -99,8 +100,7 @@ def _write_flow_json(repo, version, framework="rails", skills=None):
     (repo / ".flow.json").write_text(json.dumps(data))
 
 
-def _run_no_gh(cwd, feature_name, framework="rails", prompt=None,
-               prompt_file=None, skip_pull=False, auto=False):
+def _run_no_gh(cwd, feature_name, framework="rails", prompt=None, prompt_file=None, skip_pull=False, auto=False):
     """Run start-setup.py with gh stubbed out and flow.json initialized."""
     # Ensure flow.json exists with correct version for the version gate
     _write_flow_json(cwd, _current_plugin_version(), framework)
@@ -110,10 +110,7 @@ def _run_no_gh(cwd, feature_name, framework="rails", prompt=None,
     stub_dir = cwd / ".stub-bin"
     stub_dir.mkdir(exist_ok=True)
     gh_stub = stub_dir / "gh"
-    gh_stub.write_text(
-        '#!/bin/bash\n'
-        'echo "https://github.com/test/repo/pull/42"\n'
-    )
+    gh_stub.write_text('#!/bin/bash\necho "https://github.com/test/repo/pull/42"\n')
     gh_stub.chmod(0o755)
     env["PATH"] = f"{stub_dir}:{env['PATH']}"
     cmd = [sys.executable, SCRIPT, feature_name]
@@ -127,7 +124,10 @@ def _run_no_gh(cwd, feature_name, framework="rails", prompt=None,
         cmd.append("--auto")
     result = subprocess.run(
         cmd,
-        capture_output=True, text=True, cwd=str(cwd), env=env,
+        capture_output=True,
+        text=True,
+        cwd=str(cwd),
+        env=env,
     )
     return result
 
@@ -142,9 +142,7 @@ def _default_run(_git_repo_with_remote_template, tmp_path_factory):
     bare = parent_copy / "bare.git"
     config_path = repo / ".git" / "config"
     config_text = config_path.read_text()
-    config_text = config_text.replace(
-        str(_git_repo_with_remote_template / "bare.git"), str(bare)
-    )
+    config_text = config_text.replace(str(_git_repo_with_remote_template / "bare.git"), str(bare))
     config_path.write_text(config_text)
     result = _run_no_gh(repo, "test feature")
     assert result.returncode == 0, result.stderr
@@ -204,17 +202,19 @@ def test_happy_path_returns_ok_json(_default_run):
 def test_git_pull_failure_returns_error(tmp_path):
     """When git pull fails (no remote), returns error JSON."""
     subprocess.run(
-        ["git", "init"], cwd=tmp_path, capture_output=True, check=True,
+        ["git", "init"],
+        cwd=tmp_path,
+        capture_output=True,
+        check=True,
     )
     config_path = tmp_path / ".git" / "config"
     with open(config_path, "a") as f:
-        f.write(
-            "[user]\n\temail = test@test.com\n\tname = Test\n"
-            "[commit]\n\tgpgsign = false\n"
-        )
+        f.write("[user]\n\temail = test@test.com\n\tname = Test\n[commit]\n\tgpgsign = false\n")
     subprocess.run(
         ["git", "commit", "--allow-empty", "-m", "init"],
-        cwd=tmp_path, capture_output=True, check=True,
+        cwd=tmp_path,
+        capture_output=True,
+        check=True,
     )
     _write_flow_json(tmp_path, _current_plugin_version())
     result = _run(tmp_path, "test feature")
@@ -227,17 +227,19 @@ def test_git_pull_failure_returns_error(tmp_path):
 def test_missing_flow_json_returns_error(tmp_path):
     """When .flow.json is missing, returns error JSON."""
     subprocess.run(
-        ["git", "init"], cwd=tmp_path, capture_output=True, check=True,
+        ["git", "init"],
+        cwd=tmp_path,
+        capture_output=True,
+        check=True,
     )
     config_path = tmp_path / ".git" / "config"
     with open(config_path, "a") as f:
-        f.write(
-            "[user]\n\temail = test@test.com\n\tname = Test\n"
-            "[commit]\n\tgpgsign = false\n"
-        )
+        f.write("[user]\n\temail = test@test.com\n\tname = Test\n[commit]\n\tgpgsign = false\n")
     subprocess.run(
         ["git", "commit", "--allow-empty", "-m", "init"],
-        cwd=tmp_path, capture_output=True, check=True,
+        cwd=tmp_path,
+        capture_output=True,
+        check=True,
     )
     # No _write_flow_json — .flow.json is absent
     result = _run(tmp_path, "test feature", prompt="test")
@@ -279,8 +281,12 @@ def test_state_file_has_all_6_phases(_default_run):
     data, state, log, repo = _default_run
 
     expected_names = {
-        "flow-start": "Start", "flow-plan": "Plan", "flow-code": "Code",
-        "flow-code-review": "Code Review", "flow-learn": "Learn", "flow-complete": "Complete",
+        "flow-start": "Start",
+        "flow-plan": "Plan",
+        "flow-code": "Code",
+        "flow-code-review": "Code Review",
+        "flow-learn": "Learn",
+        "flow-complete": "Complete",
     }
     assert len(state["phases"]) == 6
     for key, name in expected_names.items():
@@ -292,8 +298,13 @@ def test_state_file_phase_fields(_default_run):
     data, state, log, repo = _default_run
 
     required_fields = [
-        "name", "status", "started_at", "completed_at",
-        "session_started_at", "cumulative_seconds", "visit_count",
+        "name",
+        "status",
+        "started_at",
+        "completed_at",
+        "session_started_at",
+        "cumulative_seconds",
+        "visit_count",
     ]
     for key in PHASE_ORDER:
         phase = state["phases"][key]
@@ -362,13 +373,14 @@ def test_missing_feature_name_fails(tmp_path):
     """Running without a feature name exits with error."""
     result = subprocess.run(
         [sys.executable, SCRIPT],
-        capture_output=True, text=True, cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),
     )
     assert result.returncode == 1
     data = json.loads(result.stdout)
     assert data["status"] == "error"
     assert "feature name" in data["message"].lower()
-
 
 
 def test_extract_pr_number_malformed_url():
@@ -492,16 +504,16 @@ def test_state_file_includes_skills_from_flow_json(git_repo_with_remote):
     stub_dir = git_repo_with_remote / ".stub-bin"
     stub_dir.mkdir(exist_ok=True)
     gh_stub = stub_dir / "gh"
-    gh_stub.write_text(
-        '#!/bin/bash\n'
-        'echo "https://github.com/test/repo/pull/42"\n'
-    )
+    gh_stub.write_text('#!/bin/bash\necho "https://github.com/test/repo/pull/42"\n')
     gh_stub.chmod(0o755)
     env["PATH"] = f"{stub_dir}:{env['PATH']}"
 
     result = subprocess.run(
         [sys.executable, SCRIPT, "skills test"],
-        capture_output=True, text=True, cwd=str(git_repo_with_remote), env=env,
+        capture_output=True,
+        text=True,
+        cwd=str(git_repo_with_remote),
+        env=env,
     )
     assert result.returncode == 0, result.stderr
     state_path = git_repo_with_remote / ".flow-states" / "skills-test.json"
@@ -537,16 +549,16 @@ def test_auto_flag_overrides_skills_to_fully_autonomous(git_repo_with_remote):
     stub_dir = git_repo_with_remote / ".stub-bin"
     stub_dir.mkdir(exist_ok=True)
     gh_stub = stub_dir / "gh"
-    gh_stub.write_text(
-        '#!/bin/bash\n'
-        'echo "https://github.com/test/repo/pull/42"\n'
-    )
+    gh_stub.write_text('#!/bin/bash\necho "https://github.com/test/repo/pull/42"\n')
     gh_stub.chmod(0o755)
     env["PATH"] = f"{stub_dir}:{env['PATH']}"
 
     result = subprocess.run(
         [sys.executable, SCRIPT, "auto override test", "--auto"],
-        capture_output=True, text=True, cwd=str(git_repo_with_remote), env=env,
+        capture_output=True,
+        text=True,
+        cwd=str(git_repo_with_remote),
+        env=env,
     )
     assert result.returncode == 0, result.stderr
     state_path = git_repo_with_remote / ".flow-states" / "auto-override-test.json"
@@ -658,14 +670,12 @@ def test_branch_name_strips_mixed_special_chars():
 def test_prompt_flag_preserves_issue_references(git_repo_with_remote):
     """--prompt stores verbatim text including #N issue references."""
     result = _run_no_gh(
-        git_repo_with_remote, "fix issue pre-commit hook",
+        git_repo_with_remote,
+        "fix issue pre-commit hook",
         prompt="fix issue pre-commit hook #106",
     )
     assert result.returncode == 0, result.stderr
-    state_path = (
-        git_repo_with_remote / ".flow-states"
-        / "fix-issue-pre-commit-hook.json"
-    )
+    state_path = git_repo_with_remote / ".flow-states" / "fix-issue-pre-commit-hook.json"
     state = json.loads(state_path.read_text())
     assert state["prompt"] == "fix issue pre-commit hook #106"
 
@@ -674,9 +684,7 @@ def test_prompt_flag_omitted_falls_back_to_feature_words(git_repo_with_remote):
     """Without --prompt, prompt field falls back to the feature name."""
     result = _run_no_gh(git_repo_with_remote, "some feature")
     assert result.returncode == 0, result.stderr
-    state_path = (
-        git_repo_with_remote / ".flow-states" / "some-feature.json"
-    )
+    state_path = git_repo_with_remote / ".flow-states" / "some-feature.json"
     state = json.loads(state_path.read_text())
     assert state["prompt"] == "some feature"
 
@@ -687,7 +695,8 @@ def test_prompt_flag_omitted_falls_back_to_feature_words(git_repo_with_remote):
 def test_prompt_file_not_found_returns_error_json(git_repo_with_remote):
     """--prompt-file with nonexistent path returns error JSON."""
     result = _run_no_gh(
-        git_repo_with_remote, "error test",
+        git_repo_with_remote,
+        "error test",
         prompt_file="/nonexistent/path/.flow-start-prompt",
     )
     assert result.returncode == 1
@@ -702,13 +711,12 @@ def test_prompt_file_stores_content_in_state(git_repo_with_remote):
     prompt_path = git_repo_with_remote / ".flow-start-prompt"
     prompt_path.write_text("fix issue #228 with URLs https://github.com/org/repo")
     result = _run_no_gh(
-        git_repo_with_remote, "prompt file test",
+        git_repo_with_remote,
+        "prompt file test",
         prompt_file=str(prompt_path),
     )
     assert result.returncode == 0, result.stderr
-    state_path = (
-        git_repo_with_remote / ".flow-states" / "prompt-file-test.json"
-    )
+    state_path = git_repo_with_remote / ".flow-states" / "prompt-file-test.json"
     state = json.loads(state_path.read_text())
     assert state["prompt"] == "fix issue #228 with URLs https://github.com/org/repo"
     assert not prompt_path.exists()
@@ -719,14 +727,13 @@ def test_prompt_file_takes_precedence_over_prompt(git_repo_with_remote):
     prompt_path = git_repo_with_remote / ".flow-start-prompt"
     prompt_path.write_text("from file")
     result = _run_no_gh(
-        git_repo_with_remote, "precedence test",
+        git_repo_with_remote,
+        "precedence test",
         prompt="from flag",
         prompt_file=str(prompt_path),
     )
     assert result.returncode == 0, result.stderr
-    state_path = (
-        git_repo_with_remote / ".flow-states" / "precedence-test.json"
-    )
+    state_path = git_repo_with_remote / ".flow-states" / "precedence-test.json"
     state = json.loads(state_path.read_text())
     assert state["prompt"] == "from file"
 
@@ -736,9 +743,7 @@ def test_prompt_file_takes_precedence_over_prompt(git_repo_with_remote):
 
 def _install_pre_commit_hook(repo):
     """Install the FLOW pre-commit hook in a test repo."""
-    spec = importlib.util.spec_from_file_location(
-        "prime_setup", LIB_DIR / "prime-setup.py"
-    )
+    spec = importlib.util.spec_from_file_location("prime_setup", LIB_DIR / "prime-setup.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     mod.install_pre_commit_hook(repo)
@@ -797,7 +802,10 @@ def _pre_seed_state(cwd, feature_name, framework="rails", auto=False):
     if auto:
         cmd.append("--auto")
     result = subprocess.run(
-        cmd, capture_output=True, text=True, cwd=str(cwd),
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=str(cwd),
     )
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
@@ -842,15 +850,14 @@ def test_backfill_preserves_existing_fields(git_repo_with_remote):
 def test_backfill_skips_frozen_phases(git_repo_with_remote):
     """start-setup does not overwrite frozen phases created by init-state."""
     _pre_seed_state(git_repo_with_remote, "frozen skip test")
-    frozen_path = (git_repo_with_remote / ".flow-states"
-                   / "frozen-skip-test-phases.json")
+    frozen_path = git_repo_with_remote / ".flow-states" / "frozen-skip-test-phases.json"
     assert frozen_path.exists()
     original_mtime = frozen_path.stat().st_mtime
 
     import time
+
     time.sleep(0.05)
 
-    result = _run_no_gh(git_repo_with_remote, "frozen skip test",
-                        skip_pull=True)
+    result = _run_no_gh(git_repo_with_remote, "frozen skip test", skip_pull=True)
     assert result.returncode == 0, result.stderr
     assert frozen_path.stat().st_mtime == original_mtime

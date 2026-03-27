@@ -65,13 +65,15 @@ def _detect_branch_from_cwd():
     cwd = str(Path.cwd())
     marker_pos = cwd.find(WORKTREE_MARKER)
     if marker_pos != -1:
-        after_marker = cwd[marker_pos + len(WORKTREE_MARKER):]
+        after_marker = cwd[marker_pos + len(WORKTREE_MARKER) :]
         branch = after_marker.split("/")[0]
         return branch if branch else None
     try:
         result = subprocess.run(
             ["git", "branch", "--show-current"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return result.stdout.strip() or None
     except Exception:
@@ -124,24 +126,29 @@ def validate(command, settings=None, flow_active=True):
     """
     # Block compound commands (&&, ;, |)
     if "&&" in command or re.search(r"(?<!\\);", command) or "|" in command:
-        return (False,
-                "BLOCKED: Compound commands (&&, ;, |) are not allowed. "
-                "Use separate Bash calls for each command.")
+        return (
+            False,
+            "BLOCKED: Compound commands (&&, ;, |) are not allowed. Use separate Bash calls for each command.",
+        )
 
     # Block shell redirection operators (>, >>, 2>, etc.)
     if re.search(r"(?<![=\-])>{1,2}", command):
-        return (False,
-                "BLOCKED: Shell redirection (>, >>) is not allowed. "
-                "Use the Read tool to view file contents and the "
-                "Write tool to create files.")
+        return (
+            False,
+            "BLOCKED: Shell redirection (>, >>) is not allowed. "
+            "Use the Read tool to view file contents and the "
+            "Write tool to create files.",
+        )
 
     # Block blanket restore (git restore . wipes all changes without review)
     stripped = command.strip()
     if stripped == "git restore .":
-        return (False,
-                "BLOCKED: 'git restore .' discards ALL changes without review. "
-                "Use 'git restore <file>' for each file individually. "
-                "Before restoring, run 'git diff' to capture what will be lost.")
+        return (
+            False,
+            "BLOCKED: 'git restore .' discards ALL changes without review. "
+            "Use 'git restore <file>' for each file individually. "
+            "Before restoring, run 'git diff' to capture what will be lost.",
+        )
 
     # Deny-list check — deny always wins over allow
     if settings is not None:
@@ -149,18 +156,21 @@ def validate(command, settings=None, flow_active=True):
         if deny_regexes:
             for regex in deny_regexes:
                 if regex.match(stripped):
-                    return (False,
-                            f"BLOCKED: Command matches deny list: '{command}'. "
-                            f"This operation is explicitly forbidden.")
+                    return (
+                        False,
+                        f"BLOCKED: Command matches deny list: '{command}'. This operation is explicitly forbidden.",
+                    )
 
     # Block file-read commands
     first_word = stripped.split()[0] if stripped else ""
     if first_word in FILE_READ_COMMANDS:
-        return (False,
-                f"BLOCKED: '{first_word}' is not allowed. "
-                f"Use the dedicated tool instead "
-                f"(Read for cat/head/tail, Grep for grep/rg, "
-                f"Glob for find/ls).")
+        return (
+            False,
+            f"BLOCKED: '{first_word}' is not allowed. "
+            f"Use the dedicated tool instead "
+            f"(Read for cat/head/tail, Grep for grep/rg, "
+            f"Glob for find/ls).",
+        )
 
     # Whitelist check — only during an active flow
     if settings is not None and flow_active:
@@ -168,9 +178,10 @@ def validate(command, settings=None, flow_active=True):
         if regexes:
             matched = any(r.match(command) for r in regexes)
             if not matched:
-                return (False,
-                        f"BLOCKED: Command not in allow list: '{command}'. "
-                        f"Check .claude/settings.json allow patterns.")
+                return (
+                    False,
+                    f"BLOCKED: Command not in allow list: '{command}'. Check .claude/settings.json allow patterns.",
+                )
 
     return (True, "")
 

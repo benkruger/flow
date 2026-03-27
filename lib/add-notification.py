@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import mutate_state, now, project_root, resolve_branch, PHASE_NAMES
+from flow_utils import PHASE_NAMES, mutate_state, now, project_root, resolve_branch
 
 MAX_PREVIEW_LENGTH = 100
 
@@ -34,14 +34,16 @@ def add_notification(state_path, phase, ts, thread_ts, message):
     def transform(state):
         if "slack_notifications" not in state:
             state["slack_notifications"] = []
-        state["slack_notifications"].append({
-            "phase": phase,
-            "phase_name": PHASE_NAMES.get(phase, phase),
-            "ts": ts,
-            "thread_ts": thread_ts,
-            "message_preview": preview,
-            "timestamp": now(),
-        })
+        state["slack_notifications"].append(
+            {
+                "phase": phase,
+                "phase_name": PHASE_NAMES.get(phase, phase),
+                "ts": ts,
+                "thread_ts": thread_ts,
+                "message_preview": preview,
+                "timestamp": now(),
+            }
+        )
 
     return mutate_state(state_path, transform)
 
@@ -60,16 +62,24 @@ def main():
 
     if branch is None:
         if candidates:
-            print(json.dumps({
-                "status": "error",
-                "message": "Multiple active features. Pass --branch.",
-                "candidates": candidates,
-            }))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": "Multiple active features. Pass --branch.",
+                        "candidates": candidates,
+                    }
+                )
+            )
         else:
-            print(json.dumps({
-                "status": "error",
-                "message": "Could not determine current branch",
-            }))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": "Could not determine current branch",
+                    }
+                )
+            )
         sys.exit(1)
 
     state_path = root / ".flow-states" / f"{branch}.json"
@@ -79,25 +89,36 @@ def main():
         sys.exit(0)
 
     try:
-        state = add_notification(state_path, args.phase, args.ts,
-                                 args.thread_ts, args.message)
+        state = add_notification(state_path, args.phase, args.ts, args.thread_ts, args.message)
     except (json.JSONDecodeError, FileNotFoundError) as exc:
-        print(json.dumps({
-            "status": "error",
-            "message": f"Could not read state file: {exc}",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Could not read state file: {exc}",
+                }
+            )
+        )
         sys.exit(1)
     except Exception as exc:
-        print(json.dumps({
-            "status": "error",
-            "message": f"Failed to add notification: {exc}",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Failed to add notification: {exc}",
+                }
+            )
+        )
         sys.exit(1)
 
-    print(json.dumps({
-        "status": "ok",
-        "notification_count": len(state["slack_notifications"]),
-    }))
+    print(
+        json.dumps(
+            {
+                "status": "ok",
+                "notification_count": len(state["slack_notifications"]),
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

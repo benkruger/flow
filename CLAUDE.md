@@ -128,6 +128,7 @@ CI will fail if these are missing:
 - Python virtualenv at `.venv/` — `bin/ci` uses `.venv/bin/python3` automatically
 - Run tests with `bin/ci` only — never invoke pytest directly
 - **Use `bin/test <path>` for targeted test runs during development** — `bin/ci` runs the full suite and is the gate before committing. `bin/test tests/test_specific.py` runs a subset via the same venv. Never call pytest directly — always use one of the two wrappers.
+- `ruff` enforces Python linting (E+F+W+I rules) and formatting at `line-length = 120` — configured in `ruff.toml`, runs inside `bin/ci`
 - Dependencies managed in the venv, not system Python
 
 ## Architecture
@@ -306,15 +307,18 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 
 ## CI Failure Fix Order
 
-1. Lint violations — read the lint output carefully, fix the code
-2. Test failures — understand the root cause, fix the code not the test
-3. Coverage gaps — write the missing test
+1. Ruff violations — run `ruff check lib/ tests/` and fix each violation
+2. Ruff format — run `ruff format lib/ tests/` to auto-fix formatting
+3. Lint violations — read the pymarkdown output carefully, fix the markdown
+4. Test failures — understand the root cause, fix the code not the test
+5. Coverage gaps — write the missing test
 
 ## Hard Rules
 
 - Always read module imports before modifying any module.
 - Always check `conftest.py` for existing fixtures before creating new ones.
 - Never add lint exclusions — fix the code, not the linter configuration.
+- Never add `# noqa` comments — fix the code instead. Justified E402 exceptions are handled centrally in `ruff.toml` per-file-ignores.
 
 ## Dependency Management
 

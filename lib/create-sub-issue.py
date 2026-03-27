@@ -40,12 +40,17 @@ def create_sub_issue(repo, parent_number, child_number):
     try:
         result = subprocess.run(
             [
-                "gh", "api",
+                "gh",
+                "api",
                 f"repos/{repo}/issues/{parent_number}/sub_issues",
-                "--method", "POST",
-                "-f", f"sub_issue_id={child_id}",
+                "--method",
+                "POST",
+                "-f",
+                f"sub_issue_id={child_id}",
             ],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
     except subprocess.TimeoutExpired:
         return None, "Link creation timed out after 30 seconds"
@@ -58,18 +63,16 @@ def create_sub_issue(repo, parent_number, child_number):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Create a GitHub sub-issue relationship")
-    parser.add_argument("--repo", required=True,
-                        help="Repository (owner/name)")
-    parser.add_argument("--parent-number", required=True, type=int,
-                        help="Parent issue number")
-    parser.add_argument("--child-number", required=True, type=int,
-                        help="Child issue number")
+    parser = argparse.ArgumentParser(description="Create a GitHub sub-issue relationship")
+    parser.add_argument("--repo", required=True, help="Repository (owner/name)")
+    parser.add_argument("--parent-number", required=True, type=int, help="Parent issue number")
+    parser.add_argument("--child-number", required=True, type=int, help="Child issue number")
     args = parser.parse_args()
 
     result, error = create_sub_issue(
-        args.repo, args.parent_number, args.child_number,
+        args.repo,
+        args.parent_number,
+        args.child_number,
     )
 
     if error:

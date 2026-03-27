@@ -9,7 +9,8 @@ Usage:
 
 Output (JSON to stdout):
   Enter:    {"status": "ok", "phase": "plan", "action": "enter", "visit_count": 1, "first_visit": true}
-  Complete: {"status": "ok", "phase": "plan", "action": "complete", "cumulative_seconds": 300, "formatted_time": "5m", "next_phase": "code"}
+  Complete: {"status": "ok", "phase": "plan", "action": "complete",
+            "cumulative_seconds": 300, "formatted_time": "5m", "next_phase": "code"}
   Error:    {"status": "error", "message": "..."}
 """
 
@@ -23,8 +24,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    COMMANDS, PACIFIC, format_time, load_phase_config, now, project_root,
-    resolve_branch, PHASE_ORDER,
+    COMMANDS,
+    PACIFIC,
+    PHASE_ORDER,
+    format_time,
+    load_phase_config,
+    now,
+    project_root,
+    resolve_branch,
 )
 
 
@@ -37,7 +44,9 @@ def _capture_diff_stats():
     try:
         result = subprocess.run(
             ["git", "diff", "--stat", "main...HEAD"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode != 0:
             return {"files_changed": 0, "insertions": 0, "deletions": 0, "captured_at": now()}
@@ -103,8 +112,7 @@ def phase_enter(state, phase, reason=None):
     }
 
 
-def phase_complete(state, phase, next_phase=None, phase_order=None,
-                    phase_commands=None):
+def phase_complete(state, phase, next_phase=None, phase_order=None, phase_commands=None):
     """Apply phase completion mutations. Returns (state, result_dict)."""
     phase_data = state["phases"][phase]
 
@@ -171,23 +179,24 @@ _VALID_PHASES = PHASE_ORDER
 
 def main():
     parser = argparse.ArgumentParser(description="Phase entry/completion transitions")
-    parser.add_argument("--phase", type=str, required=True,
-                        help="Phase name (e.g. start, plan, code)")
-    parser.add_argument("--action", required=True, choices=["enter", "complete"],
-                        help="Action: enter or complete")
-    parser.add_argument("--next-phase", type=str, default=None,
-                        help="Override next phase name (default: next in order)")
-    parser.add_argument("--branch", type=str, default=None,
-                        help="Override branch for state file lookup")
-    parser.add_argument("--reason", type=str, default=None,
-                        help="Optional reason for backward transitions")
+    parser.add_argument("--phase", type=str, required=True, help="Phase name (e.g. start, plan, code)")
+    parser.add_argument("--action", required=True, choices=["enter", "complete"], help="Action: enter or complete")
+    parser.add_argument(
+        "--next-phase", type=str, default=None, help="Override next phase name (default: next in order)"
+    )
+    parser.add_argument("--branch", type=str, default=None, help="Override branch for state file lookup")
+    parser.add_argument("--reason", type=str, default=None, help="Optional reason for backward transitions")
     args = parser.parse_args()
 
     if args.phase not in _VALID_PHASES:
-        print(json.dumps({
-            "status": "error",
-            "message": f"Invalid phase: {args.phase}. Must be one of: {', '.join(_VALID_PHASES)}",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Invalid phase: {args.phase}. Must be one of: {', '.join(_VALID_PHASES)}",
+                }
+            )
+        )
         sys.exit(1)
 
     root = project_root()
@@ -195,41 +204,61 @@ def main():
 
     if branch is None:
         if candidates:
-            print(json.dumps({
-                "status": "error",
-                "message": "Multiple active features. Pass --branch.",
-                "candidates": candidates,
-            }))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": "Multiple active features. Pass --branch.",
+                        "candidates": candidates,
+                    }
+                )
+            )
         else:
-            print(json.dumps({
-                "status": "error",
-                "message": "Could not determine current branch",
-            }))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": "Could not determine current branch",
+                    }
+                )
+            )
         sys.exit(1)
 
     state_path = root / ".flow-states" / f"{branch}.json"
 
     if not state_path.exists():
-        print(json.dumps({
-            "status": "error",
-            "message": f"No state file found: {state_path}",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"No state file found: {state_path}",
+                }
+            )
+        )
         sys.exit(1)
 
     try:
         state = json.loads(state_path.read_text())
     except Exception as e:
-        print(json.dumps({
-            "status": "error",
-            "message": f"Could not read state file: {e}",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Could not read state file: {e}",
+                }
+            )
+        )
         sys.exit(1)
 
     if "phases" not in state or args.phase not in state["phases"]:
-        print(json.dumps({
-            "status": "error",
-            "message": f"Phase {args.phase} not found in state file",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Phase {args.phase} not found in state file",
+                }
+            )
+        )
         sys.exit(1)
 
     # Load frozen phase config if available, fall back to module-level constants
@@ -243,7 +272,9 @@ def main():
         state, result = phase_enter(state, args.phase, reason=args.reason)
     else:
         state, result = phase_complete(
-            state, args.phase, args.next_phase,
+            state,
+            args.phase,
+            args.next_phase,
             phase_order=frozen_order,
             phase_commands=frozen_commands,
         )

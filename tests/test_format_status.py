@@ -2,18 +2,14 @@
 
 import importlib.util
 import json
-import sys
 from datetime import datetime, timezone
 
 import pytest
-
 from conftest import LIB_DIR, PHASE_ORDER, make_state, write_state
 from flow_utils import elapsed_since, read_version, read_version_from
 
 # Import format-status.py for in-process unit tests
-_spec = importlib.util.spec_from_file_location(
-    "format_status", LIB_DIR / "format-status.py"
-)
+_spec = importlib.util.spec_from_file_location("format_status", LIB_DIR / "format-status.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -254,7 +250,12 @@ def test_panel_all_complete_shows_timing():
 def test_panel_timing_formats():
     state = make_state(
         current_phase="flow-code-review",
-        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-code-review": "in_progress"},
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
     )
     state["phases"]["flow-start"]["cumulative_seconds"] = 30
     state["phases"]["flow-plan"]["cumulative_seconds"] = 3660
@@ -317,9 +318,13 @@ def test_format_panel_uses_frozen_phase_config():
     custom_commands = {"flow-start": "/t:begin", "flow-plan": "/t:design"}
     config = (custom_order, custom_names, custom_numbers, custom_commands)
 
-    state = make_state(current_phase="flow-plan", phase_statuses={
-        "flow-start": "complete", "flow-plan": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "in_progress",
+        },
+    )
     panel = _mod.format_panel(state, VERSION, phase_config=config)
     assert "Begin" in panel
     assert "Design" in panel
@@ -335,9 +340,13 @@ def test_format_panel_all_complete_uses_frozen_phase_config():
     custom_commands = {"flow-start": "/t:begin", "flow-plan": "/t:design"}
     config = (custom_order, custom_names, custom_numbers, custom_commands)
 
-    state = make_state(current_phase="flow-plan", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-    })
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+        },
+    )
     panel = _mod.format_panel(state, VERSION, phase_config=config)
     assert "All Phases Complete" in panel
     assert "Begin" in panel
@@ -347,14 +356,19 @@ def test_format_panel_all_complete_uses_frozen_phase_config():
 def test_cli_uses_frozen_phases_file(state_dir, git_repo, branch, monkeypatch, capsys):
     """CLI loads frozen phases file when it exists."""
     import shutil
+
     source = LIB_DIR.parent / "flow-phases.json"
     frozen = state_dir / f"{branch}-phases.json"
     state_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(str(source), str(frozen))
 
-    state = make_state(current_phase="flow-plan", phase_statuses={
-        "flow-start": "complete", "flow-plan": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "in_progress",
+        },
+    )
     write_state(state_dir, branch, state)
     monkeypatch.chdir(git_repo)
     monkeypatch.setattr("sys.argv", ["format-status"])
@@ -366,7 +380,9 @@ def test_cli_uses_frozen_phases_file(state_dir, git_repo, branch, monkeypatch, c
 def test_wrong_branch_multiple_features_returns_panel(state_dir, git_repo, branch, monkeypatch, capsys):
     """When on wrong branch with multiple state files, returns panel text."""
     for name in ["feature-a", "feature-b"]:
-        state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
+        state = make_state(
+            current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"}
+        )
         state["branch"] = name
         write_state(state_dir, name, state)
     monkeypatch.chdir(git_repo)
@@ -406,11 +422,15 @@ def test_cli_dev_mode_from_flow_json_with_backup(state_dir, git_repo, branch, mo
         phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
     )
     write_state(state_dir, branch, state)
-    (git_repo / ".flow.json").write_text(json.dumps({
-        "flow_version": "0.39.0",
-        "plugin_root": "/local/path",
-        "plugin_root_backup": "/cache/path",
-    }))
+    (git_repo / ".flow.json").write_text(
+        json.dumps(
+            {
+                "flow_version": "0.39.0",
+                "plugin_root": "/local/path",
+                "plugin_root_backup": "/cache/path",
+            }
+        )
+    )
     monkeypatch.chdir(git_repo)
     monkeypatch.setattr("sys.argv", ["format-status"])
     _mod.main()
@@ -425,10 +445,14 @@ def test_cli_no_dev_mode_without_backup(state_dir, git_repo, branch, monkeypatch
         phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
     )
     write_state(state_dir, branch, state)
-    (git_repo / ".flow.json").write_text(json.dumps({
-        "flow_version": "0.39.0",
-        "plugin_root": "/cache/path",
-    }))
+    (git_repo / ".flow.json").write_text(
+        json.dumps(
+            {
+                "flow_version": "0.39.0",
+                "plugin_root": "/cache/path",
+            }
+        )
+    )
     monkeypatch.chdir(git_repo)
     monkeypatch.setattr("sys.argv", ["format-status"])
     _mod.main()

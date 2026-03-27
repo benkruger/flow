@@ -25,7 +25,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import PHASE_NAMES, project_root, read_flow_json
 
-
 SLACK_API_URL = "https://slack.com/api/chat.postMessage"
 
 
@@ -74,10 +73,17 @@ def post_message(bot_token, channel, text, thread_ts=None):
         payload["thread_ts"] = thread_ts
 
     cmd = [
-        "curl", "-s", "-X", "POST", SLACK_API_URL,
-        "-H", f"Authorization: Bearer {bot_token}",
-        "-H", "Content-Type: application/json; charset=utf-8",
-        "-d", json.dumps(payload),
+        "curl",
+        "-s",
+        "-X",
+        "POST",
+        SLACK_API_URL,
+        "-H",
+        f"Authorization: Bearer {bot_token}",
+        "-H",
+        "Content-Type: application/json; charset=utf-8",
+        "-d",
+        json.dumps(payload),
     ]
 
     try:
@@ -118,10 +124,8 @@ def notify(parsed, root):
     if config is None:
         return {"status": "skipped", "reason": "no slack config"}
 
-    text = format_message(parsed.phase, parsed.message,
-                          feature=parsed.feature, pr_url=parsed.pr_url)
-    return post_message(config["bot_token"], config["channel"], text,
-                        thread_ts=parsed.thread_ts)
+    text = format_message(parsed.phase, parsed.message, feature=parsed.feature, pr_url=parsed.pr_url)
+    return post_message(config["bot_token"], config["channel"], text, thread_ts=parsed.thread_ts)
 
 
 def main_with_args(args, root_override=None):

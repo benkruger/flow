@@ -109,8 +109,7 @@ def _locked_by_winner(lock_file):
     """Re-read after losing a race; return a locked result for whoever won."""
     existing, _ = _read_lock(lock_file)
     if existing is None:
-        return {"status": "locked", "feature": "unknown", "pid": 0,
-                "acquired_at": "unknown"}
+        return {"status": "locked", "feature": "unknown", "pid": 0, "acquired_at": "unknown"}
     return {
         "status": "locked",
         "feature": existing["feature"],

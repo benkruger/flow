@@ -2,10 +2,8 @@
 
 import json
 import subprocess
-import sys
 
 import pytest
-
 from conftest import import_lib, make_state, write_state
 
 
@@ -13,7 +11,9 @@ def _get_branch(git_repo):
     """Get the current branch name from a git repo."""
     result = subprocess.run(
         ["git", "branch", "--show-current"],
-        capture_output=True, text=True, cwd=str(git_repo),
+        capture_output=True,
+        text=True,
+        cwd=str(git_repo),
     )
     return result.stdout.strip()
 
@@ -24,15 +24,21 @@ def _get_branch(git_repo):
 def test_append_to_empty_notifications(tmp_path):
     """add_notification creates slack_notifications array and appends first entry."""
     mod = import_lib("add-notification.py")
-    state = make_state(current_phase="flow-start", phase_statuses={
-        "flow-start": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={
+            "flow-start": "in_progress",
+        },
+    )
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
 
     updated = mod.add_notification(
-        state_path, "flow-start", "1234567890.123456",
-        "1234567890.123456", "Feature started",
+        state_path,
+        "flow-start",
+        "1234567890.123456",
+        "1234567890.123456",
+        "Feature started",
     )
 
     assert len(updated["slack_notifications"]) == 1
@@ -48,23 +54,32 @@ def test_append_to_empty_notifications(tmp_path):
 def test_append_to_existing_notifications(tmp_path):
     """add_notification preserves existing entries and appends new one."""
     mod = import_lib("add-notification.py")
-    state = make_state(current_phase="flow-plan", phase_statuses={
-        "flow-start": "complete", "flow-plan": "in_progress",
-    })
-    state["slack_notifications"] = [{
-        "phase": "flow-start",
-        "phase_name": "Start",
-        "ts": "1111111111.111111",
-        "thread_ts": "1111111111.111111",
-        "message_preview": "Started",
-        "timestamp": "2026-01-01T00:00:00-08:00",
-    }]
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "in_progress",
+        },
+    )
+    state["slack_notifications"] = [
+        {
+            "phase": "flow-start",
+            "phase_name": "Start",
+            "ts": "1111111111.111111",
+            "thread_ts": "1111111111.111111",
+            "message_preview": "Started",
+            "timestamp": "2026-01-01T00:00:00-08:00",
+        }
+    ]
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
 
     updated = mod.add_notification(
-        state_path, "flow-plan", "2222222222.222222",
-        "1111111111.111111", "Plan complete",
+        state_path,
+        "flow-plan",
+        "2222222222.222222",
+        "1111111111.111111",
+        "Plan complete",
     )
 
     assert len(updated["slack_notifications"]) == 2
@@ -80,8 +95,11 @@ def test_creates_array_if_missing(tmp_path):
     state_path.write_text(json.dumps(state))
 
     updated = mod.add_notification(
-        state_path, "flow-code", "3333333333.333333",
-        "1111111111.111111", "Task 1/5 complete",
+        state_path,
+        "flow-code",
+        "3333333333.333333",
+        "1111111111.111111",
+        "Task 1/5 complete",
     )
 
     assert len(updated["slack_notifications"]) == 1
@@ -90,16 +108,23 @@ def test_creates_array_if_missing(tmp_path):
 def test_persists_to_disk(tmp_path):
     """add_notification writes the updated state back to disk."""
     mod = import_lib("add-notification.py")
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
 
     mod.add_notification(
-        state_path, "flow-code", "4444444444.444444",
-        "1111111111.111111", "Task complete",
+        state_path,
+        "flow-code",
+        "4444444444.444444",
+        "1111111111.111111",
+        "Task complete",
     )
 
     on_disk = json.loads(state_path.read_text())
@@ -110,17 +135,24 @@ def test_persists_to_disk(tmp_path):
 def test_truncates_long_message_preview(tmp_path):
     """message_preview is truncated to 100 characters."""
     mod = import_lib("add-notification.py")
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
 
     long_message = "x" * 200
     updated = mod.add_notification(
-        state_path, "flow-code", "5555555555.555555",
-        "1111111111.111111", long_message,
+        state_path,
+        "flow-code",
+        "5555555555.555555",
+        "1111111111.111111",
+        long_message,
     )
 
     preview = updated["slack_notifications"][0]["message_preview"]
@@ -135,11 +167,20 @@ def test_cli_no_branch_returns_error(tmp_path, monkeypatch, capsys):
     """Running outside a git repo returns an error."""
     mod = import_lib("add-notification.py")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("sys.argv", [
-        "add-notification",
-        "--phase", "flow-start", "--ts", "111.111",
-        "--thread-ts", "111.111", "--message", "test",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "add-notification",
+            "--phase",
+            "flow-start",
+            "--ts",
+            "111.111",
+            "--thread-ts",
+            "111.111",
+            "--message",
+            "test",
+        ],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
     assert exc_info.value.code == 1
@@ -151,11 +192,20 @@ def test_cli_no_state_file_returns_no_state(git_repo, monkeypatch, capsys):
     """Running with no state file returns no_state."""
     mod = import_lib("add-notification.py")
     monkeypatch.chdir(git_repo)
-    monkeypatch.setattr("sys.argv", [
-        "add-notification",
-        "--phase", "flow-start", "--ts", "111.111",
-        "--thread-ts", "111.111", "--message", "test",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "add-notification",
+            "--phase",
+            "flow-start",
+            "--ts",
+            "111.111",
+            "--thread-ts",
+            "111.111",
+            "--message",
+            "test",
+        ],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
     assert exc_info.value.code == 0
@@ -167,17 +217,29 @@ def test_cli_happy_path(state_dir, git_repo, monkeypatch, capsys):
     """Full CLI round-trip: write state, run CLI, verify output."""
     mod = import_lib("add-notification.py")
     branch_name = _get_branch(git_repo)
-    state = make_state(current_phase="flow-start", phase_statuses={
-        "flow-start": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={
+            "flow-start": "in_progress",
+        },
+    )
     write_state(state_dir, branch_name, state)
 
     monkeypatch.chdir(git_repo)
-    monkeypatch.setattr("sys.argv", [
-        "add-notification",
-        "--phase", "flow-start", "--ts", "1234567890.123456",
-        "--thread-ts", "1234567890.123456", "--message", "Feature started",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "add-notification",
+            "--phase",
+            "flow-start",
+            "--ts",
+            "1234567890.123456",
+            "--thread-ts",
+            "1234567890.123456",
+            "--message",
+            "Feature started",
+        ],
+    )
     mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -188,19 +250,33 @@ def test_cli_happy_path(state_dir, git_repo, monkeypatch, capsys):
 def test_cli_branch_flag(state_dir, git_repo, monkeypatch, capsys):
     """--branch flag finds the state file for a different branch."""
     mod = import_lib("add-notification.py")
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     write_state(state_dir, "other-feature", state)
 
     monkeypatch.chdir(git_repo)
-    monkeypatch.setattr("sys.argv", [
-        "add-notification",
-        "--phase", "flow-code", "--ts", "111.111",
-        "--thread-ts", "111.111", "--message", "test",
-        "--branch", "other-feature",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "add-notification",
+            "--phase",
+            "flow-code",
+            "--ts",
+            "111.111",
+            "--thread-ts",
+            "111.111",
+            "--message",
+            "test",
+            "--branch",
+            "other-feature",
+        ],
+    )
     mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -211,18 +287,31 @@ def test_cli_ambiguous_multiple_state_files(state_dir, git_repo, monkeypatch, ca
     """Multiple state files with no exact match returns ambiguity error."""
     mod = import_lib("add-notification.py")
     for name in ["feat-a", "feat-b"]:
-        state = make_state(current_phase="flow-code", phase_statuses={
-            "flow-start": "complete", "flow-plan": "complete",
-            "flow-code": "in_progress",
-        })
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
         write_state(state_dir, name, state)
 
     monkeypatch.chdir(git_repo)
-    monkeypatch.setattr("sys.argv", [
-        "add-notification",
-        "--phase", "flow-code", "--ts", "111.111",
-        "--thread-ts", "111.111", "--message", "test",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "add-notification",
+            "--phase",
+            "flow-code",
+            "--ts",
+            "111.111",
+            "--thread-ts",
+            "111.111",
+            "--message",
+            "test",
+        ],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
     assert exc_info.value.code == 1
@@ -235,18 +324,30 @@ def test_cli_write_failure_returns_error(state_dir, git_repo, monkeypatch, capsy
     """Read-only state file returns a write error."""
     mod = import_lib("add-notification.py")
     branch_name = _get_branch(git_repo)
-    state = make_state(current_phase="flow-start", phase_statuses={
-        "flow-start": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={
+            "flow-start": "in_progress",
+        },
+    )
     path = write_state(state_dir, branch_name, state)
     path.chmod(0o444)
 
     monkeypatch.chdir(git_repo)
-    monkeypatch.setattr("sys.argv", [
-        "add-notification",
-        "--phase", "flow-start", "--ts", "111.111",
-        "--thread-ts", "111.111", "--message", "test",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "add-notification",
+            "--phase",
+            "flow-start",
+            "--ts",
+            "111.111",
+            "--thread-ts",
+            "111.111",
+            "--message",
+            "test",
+        ],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
 
@@ -264,11 +365,20 @@ def test_cli_corrupt_state_returns_error(state_dir, git_repo, monkeypatch, capsy
     bad_file.write_text("{bad json")
 
     monkeypatch.chdir(git_repo)
-    monkeypatch.setattr("sys.argv", [
-        "add-notification",
-        "--phase", "flow-start", "--ts", "111.111",
-        "--thread-ts", "111.111", "--message", "test",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "add-notification",
+            "--phase",
+            "flow-start",
+            "--ts",
+            "111.111",
+            "--thread-ts",
+            "111.111",
+            "--message",
+            "test",
+        ],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
     assert exc_info.value.code == 1

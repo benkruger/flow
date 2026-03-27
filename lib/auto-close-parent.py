@@ -45,9 +45,13 @@ def _fetch_issue_fields(repo, issue_number):
     Returns (parent_number_or_None, milestone_number_or_None).
     Best-effort: returns (None, None) on any failure.
     """
-    result, error = _run_api([
-        "gh", "api", f"repos/{repo}/issues/{issue_number}",
-    ])
+    result, error = _run_api(
+        [
+            "gh",
+            "api",
+            f"repos/{repo}/issues/{issue_number}",
+        ]
+    )
     if error:
         return None, None
 
@@ -82,10 +86,15 @@ def check_parent_closed(repo, issue_number, parent_number=None):
     """
     if parent_number is None:
         # Standalone call — fetch the parent number
-        result, error = _run_api([
-            "gh", "api", f"repos/{repo}/issues/{issue_number}",
-            "--jq", ".parent_issue.number",
-        ])
+        result, error = _run_api(
+            [
+                "gh",
+                "api",
+                f"repos/{repo}/issues/{issue_number}",
+                "--jq",
+                ".parent_issue.number",
+            ]
+        )
         if error:
             return False
         parent_str = result.stdout.strip()
@@ -97,9 +106,13 @@ def check_parent_closed(repo, issue_number, parent_number=None):
             return False
 
     # Get all sub-issues of the parent
-    result, error = _run_api([
-        "gh", "api", f"repos/{repo}/issues/{parent_number}/sub_issues",
-    ])
+    result, error = _run_api(
+        [
+            "gh",
+            "api",
+            f"repos/{repo}/issues/{parent_number}/sub_issues",
+        ]
+    )
     if error:
         return False
 
@@ -115,9 +128,16 @@ def check_parent_closed(repo, issue_number, parent_number=None):
         return False
 
     # All closed — close the parent
-    result, error = _run_api([
-        "gh", "issue", "close", str(parent_number), "--repo", repo,
-    ])
+    result, error = _run_api(
+        [
+            "gh",
+            "issue",
+            "close",
+            str(parent_number),
+            "--repo",
+            repo,
+        ]
+    )
     return error is None
 
 
@@ -130,10 +150,15 @@ def check_milestone_closed(repo, issue_number, milestone_number=None):
     """
     if milestone_number is None:
         # Standalone call — fetch the milestone number
-        result, error = _run_api([
-            "gh", "api", f"repos/{repo}/issues/{issue_number}",
-            "--jq", ".milestone.number",
-        ])
+        result, error = _run_api(
+            [
+                "gh",
+                "api",
+                f"repos/{repo}/issues/{issue_number}",
+                "--jq",
+                ".milestone.number",
+            ]
+        )
         if error:
             return False
         milestone_str = result.stdout.strip()
@@ -146,9 +171,13 @@ def check_milestone_closed(repo, issue_number, milestone_number=None):
 
     # Check milestone open_issues count — default to 1 so a missing
     # field is treated as open, never accidentally closing
-    result, error = _run_api([
-        "gh", "api", f"repos/{repo}/milestones/{milestone_number}",
-    ])
+    result, error = _run_api(
+        [
+            "gh",
+            "api",
+            f"repos/{repo}/milestones/{milestone_number}",
+        ]
+    )
     if error:
         return False
 
@@ -161,39 +190,52 @@ def check_milestone_closed(repo, issue_number, milestone_number=None):
         return False
 
     # All closed — close the milestone
-    result, error = _run_api([
-        "gh", "api", f"repos/{repo}/milestones/{milestone_number}",
-        "--method", "PATCH", "-f", "state=closed",
-    ])
+    result, error = _run_api(
+        [
+            "gh",
+            "api",
+            f"repos/{repo}/milestones/{milestone_number}",
+            "--method",
+            "PATCH",
+            "-f",
+            "state=closed",
+        ]
+    )
     return error is None
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Auto-close parent issue and milestone")
-    parser.add_argument("--repo", required=True,
-                        help="Repository (owner/name)")
-    parser.add_argument("--issue-number", required=True, type=int,
-                        help="Issue number to check")
+    parser = argparse.ArgumentParser(description="Auto-close parent issue and milestone")
+    parser.add_argument("--repo", required=True, help="Repository (owner/name)")
+    parser.add_argument("--issue-number", required=True, type=int, help="Issue number to check")
     args = parser.parse_args()
 
     # Fetch both fields in one API call to avoid redundant requests
     parent_number, milestone_number = _fetch_issue_fields(
-        args.repo, args.issue_number,
+        args.repo,
+        args.issue_number,
     )
 
     parent_closed = check_parent_closed(
-        args.repo, args.issue_number, parent_number=parent_number,
+        args.repo,
+        args.issue_number,
+        parent_number=parent_number,
     )
     milestone_closed = check_milestone_closed(
-        args.repo, args.issue_number, milestone_number=milestone_number,
+        args.repo,
+        args.issue_number,
+        milestone_number=milestone_number,
     )
 
-    print(json.dumps({
-        "status": "ok",
-        "parent_closed": parent_closed,
-        "milestone_closed": milestone_closed,
-    }))
+    print(
+        json.dumps(
+            {
+                "status": "ok",
+                "parent_closed": parent_closed,
+                "milestone_closed": milestone_closed,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

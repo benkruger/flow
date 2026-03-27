@@ -20,12 +20,19 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import derive_feature, derive_worktree, find_state_files, project_root, read_version, resolve_branch, COMMANDS, PHASE_NAMES
+from flow_utils import (
+    COMMANDS,
+    PHASE_NAMES,
+    derive_feature,
+    derive_worktree,
+    find_state_files,
+    project_root,
+    read_version,
+    resolve_branch,
+)
 
 # Import format_panel from format-status.py (same pattern as tests)
-_spec = importlib.util.spec_from_file_location(
-    "format_status", Path(__file__).resolve().parent / "format-status.py"
-)
+_spec = importlib.util.spec_from_file_location("format_status", Path(__file__).resolve().parent / "format-status.py")
 _fs_mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_fs_mod)
 
@@ -34,9 +41,9 @@ format_panel = _fs_mod.format_panel
 
 def main():
     import argparse
+
     parser = argparse.ArgumentParser(description="Build continue-context")
-    parser.add_argument("--branch", type=str, default=None,
-                        help="Override branch for state file lookup")
+    parser.add_argument("--branch", type=str, default=None, help="Override branch for state file lookup")
     args = parser.parse_args()
 
     root = project_root()
@@ -46,10 +53,14 @@ def main():
         # Ambiguous — show all candidates via find_state_files
         results = find_state_files(root, "")
     elif not branch:
-        print(json.dumps({
-            "status": "error",
-            "message": "Could not determine current branch",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": "Could not determine current branch",
+                }
+            )
+        )
         sys.exit(1)
     else:
         results = find_state_files(root, branch)
@@ -61,19 +72,23 @@ def main():
     if len(results) > 1:
         features = []
         for path, state, matched_branch in results:
-            features.append({
-                "feature": derive_feature(matched_branch),
-                "branch": matched_branch,
-                "current_phase": state.get("current_phase", "flow-start"),
-                "phase_name": PHASE_NAMES.get(
-                    state.get("current_phase", "flow-start"), "?"
-                ),
-                "worktree": derive_worktree(matched_branch),
-            })
-        print(json.dumps({
-            "status": "multiple_features",
-            "features": features,
-        }))
+            features.append(
+                {
+                    "feature": derive_feature(matched_branch),
+                    "branch": matched_branch,
+                    "current_phase": state.get("current_phase", "flow-start"),
+                    "phase_name": PHASE_NAMES.get(state.get("current_phase", "flow-start"), "?"),
+                    "worktree": derive_worktree(matched_branch),
+                }
+            )
+        print(
+            json.dumps(
+                {
+                    "status": "multiple_features",
+                    "features": features,
+                }
+            )
+        )
         sys.exit(0)
 
     state_path, state, matched_branch = results[0]
@@ -82,15 +97,19 @@ def main():
     panel = format_panel(state, version)
 
     current_phase = state.get("current_phase", "flow-start")
-    print(json.dumps({
-        "status": "ok",
-        "panel": panel,
-        "branch": matched_branch,
-        "worktree": derive_worktree(matched_branch),
-        "current_phase": current_phase,
-        "phase_name": PHASE_NAMES.get(current_phase, current_phase),
-        "phase_command": COMMANDS.get(current_phase, f"/flow:{current_phase}"),
-    }))
+    print(
+        json.dumps(
+            {
+                "status": "ok",
+                "panel": panel,
+                "branch": matched_branch,
+                "worktree": derive_worktree(matched_branch),
+                "current_phase": current_phase,
+                "phase_name": PHASE_NAMES.get(current_phase, current_phase),
+                "phase_command": COMMANDS.get(current_phase, f"/flow:{current_phase}"),
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

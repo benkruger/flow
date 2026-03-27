@@ -6,8 +6,6 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 import importlib
@@ -16,7 +14,6 @@ _mod = importlib.import_module("label-issues")
 
 from conftest import make_state
 
-
 # --- label_issues (add) ---
 
 
@@ -24,14 +21,19 @@ def test_add_label_to_single_issue():
     """Adds Flow In-Progress label to a single issue referenced in prompt."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr="",
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
         )
         result = _mod.label_issues([83], action="add")
 
     assert result == {"labeled": [83], "failed": []}
     mock_run.assert_called_once_with(
         ["gh", "issue", "edit", "83", "--add-label", "Flow In-Progress"],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
 
 
@@ -39,14 +41,19 @@ def test_remove_label_from_single_issue():
     """Removes Flow In-Progress label from a single issue."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr="",
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
         )
         result = _mod.label_issues([83], action="remove")
 
     assert result == {"labeled": [83], "failed": []}
     mock_run.assert_called_once_with(
         ["gh", "issue", "edit", "83", "--remove-label", "Flow In-Progress"],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
 
 
@@ -54,7 +61,10 @@ def test_multiple_issues_in_prompt():
     """Labels multiple issues referenced in the prompt."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr="",
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
         )
         result = _mod.label_issues([83, 89], action="add")
 
@@ -73,14 +83,21 @@ def test_no_issues_no_gh_calls():
 
 def test_partial_failure():
     """One label succeeds, one fails — both attempted."""
+
     def side_effect(args, **kwargs):
         issue_num = args[3]
         if issue_num == "83":
             return subprocess.CompletedProcess(
-                args=args, returncode=0, stdout="", stderr="",
+                args=args,
+                returncode=0,
+                stdout="",
+                stderr="",
             )
         return subprocess.CompletedProcess(
-            args=args, returncode=1, stdout="", stderr="not found",
+            args=args,
+            returncode=1,
+            stdout="",
+            stderr="not found",
         )
 
     with patch("subprocess.run", side_effect=side_effect):

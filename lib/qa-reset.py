@@ -29,13 +29,15 @@ def reset_git(local_path):
     ]
     for cmd in commands:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, cwd=local_path,
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=local_path,
         )
         if result.returncode != 0:
             return {
                 "status": "error",
-                "message": f"{' '.join(cmd[:3])} failed: "
-                           f"{result.stderr.strip()}",
+                "message": f"{' '.join(cmd[:3])} failed: {result.stderr.strip()}",
             }
     return {"status": "ok"}
 
@@ -43,9 +45,9 @@ def reset_git(local_path):
 def close_prs(repo):
     """Close all open PRs in the repo."""
     result = subprocess.run(
-        ["gh", "pr", "list", "--repo", repo, "--state", "open",
-         "--json", "number"],
-        capture_output=True, text=True,
+        ["gh", "pr", "list", "--repo", repo, "--state", "open", "--json", "number"],
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         return 0
@@ -55,7 +57,8 @@ def close_prs(repo):
     for pr in prs:
         r = subprocess.run(
             ["gh", "pr", "close", str(pr["number"]), "--repo", repo],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if r.returncode == 0:
             closed += 1
@@ -66,7 +69,9 @@ def delete_remote_branches(repo, local_path):
     """Delete all remote branches except main."""
     result = subprocess.run(
         ["git", "branch", "-r"],
-        capture_output=True, text=True, cwd=local_path,
+        capture_output=True,
+        text=True,
+        cwd=local_path,
     )
     if result.returncode != 0:
         return 0
@@ -86,7 +91,9 @@ def delete_remote_branches(repo, local_path):
     for branch in branches:
         r = subprocess.run(
             ["git", "push", "origin", "--delete", branch],
-            capture_output=True, text=True, cwd=local_path,
+            capture_output=True,
+            text=True,
+            cwd=local_path,
         )
         if r.returncode == 0:
             deleted += 1
@@ -96,9 +103,9 @@ def delete_remote_branches(repo, local_path):
 def load_issue_template(repo):
     """Load the .qa/issues.json template from the repo."""
     result = subprocess.run(
-        ["gh", "api", f"repos/{repo}/contents/.qa/issues.json",
-         "--jq", ".content"],
-        capture_output=True, text=True,
+        ["gh", "api", f"repos/{repo}/contents/.qa/issues.json", "--jq", ".content"],
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         return []
@@ -114,27 +121,32 @@ def reset_issues(repo, template):
     """Close all existing issues and recreate from template."""
     # Close existing issues
     result = subprocess.run(
-        ["gh", "issue", "list", "--repo", repo, "--state", "all",
-         "--json", "number"],
-        capture_output=True, text=True,
+        ["gh", "issue", "list", "--repo", repo, "--state", "all", "--json", "number"],
+        capture_output=True,
+        text=True,
     )
     if result.returncode == 0 and result.stdout.strip():
         issues = json.loads(result.stdout)
         for issue in issues:
             subprocess.run(
-                ["gh", "issue", "close", str(issue["number"]),
-                 "--repo", repo],
-                capture_output=True, text=True,
+                ["gh", "issue", "close", str(issue["number"]), "--repo", repo],
+                capture_output=True,
+                text=True,
             )
 
     # Create new issues from template
     created = 0
     for issue in template:
         cmd = [
-            "gh", "issue", "create",
-            "--repo", repo,
-            "--title", issue["title"],
-            "--body", issue["body"],
+            "gh",
+            "issue",
+            "create",
+            "--repo",
+            repo,
+            "--title",
+            issue["title"],
+            "--body",
+            issue["body"],
         ]
         for label in issue.get("labels", []):
             cmd.extend(["--label", label])
@@ -186,10 +198,8 @@ def reset(repo, local_path=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Reset a QA repo")
-    parser.add_argument("--repo", required=True,
-                        help="GitHub repo (owner/name)")
-    parser.add_argument("--local-path", default=None,
-                        help="Local clone path")
+    parser.add_argument("--repo", required=True, help="GitHub repo (owner/name)")
+    parser.add_argument("--local-path", default=None, help="Local clone path")
     args = parser.parse_args()
 
     result = reset(args.repo, local_path=args.local_path)

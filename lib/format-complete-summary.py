@@ -15,8 +15,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    derive_feature, format_time, read_version, short_issue_ref,
-    PHASE_NAMES, PHASE_ORDER,
+    PHASE_NAMES,
+    PHASE_ORDER,
+    derive_feature,
+    format_time,
+    read_version,
+    short_issue_ref,
 )
 
 MAX_PROMPT_LENGTH = 80
@@ -138,11 +142,15 @@ def main():
 
         result = format_complete_summary(state, closed_issues=closed_issues)
 
-        print(json.dumps({
-            "status": "ok",
-            "summary": result["summary"],
-            "total_seconds": result["total_seconds"],
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "summary": result["summary"],
+                    "total_seconds": result["total_seconds"],
+                }
+            )
+        )
 
     except Exception as exc:
         print(json.dumps({"status": "error", "message": str(exc)}))

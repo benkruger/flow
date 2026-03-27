@@ -4,10 +4,9 @@ import json
 import os
 import subprocess
 import sys
+from importlib.util import module_from_spec, spec_from_file_location
 
 from conftest import LIB_DIR, make_state, write_state
-
-from importlib.util import spec_from_file_location, module_from_spec
 
 SCRIPT = LIB_DIR / "validate-ask-user.py"
 

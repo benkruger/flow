@@ -12,7 +12,6 @@ Output (JSON to stdout):
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -28,9 +27,7 @@ def find_templates(framework, templates_dir=None):
     templates_dir defaults to qa/templates/ relative to this script's repo root.
     """
     if templates_dir is None:
-        templates_dir = str(
-            Path(__file__).resolve().parent.parent / "qa" / "templates"
-        )
+        templates_dir = str(Path(__file__).resolve().parent.parent / "qa" / "templates")
     framework_dir = Path(templates_dir) / framework
     if not framework_dir.is_dir():
         raise ValueError(f"Unknown framework: {framework}")
@@ -56,7 +53,8 @@ def scaffold(framework, repo, templates_dir=None, clone_dir=None):
     # Create GitHub repo
     result = subprocess.run(
         ["gh", "repo", "create", repo, "--public", "--confirm"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         return {
@@ -92,35 +90,43 @@ def scaffold(framework, repo, templates_dir=None, clone_dir=None):
         ["git", "add", "-A"],
         ["git", "commit", "-m", "Initial commit"],
         ["git", "tag", "seed"],
-        ["git", "remote", "add", "origin",
-         f"https://github.com/{repo}.git"],
+        ["git", "remote", "add", "origin", f"https://github.com/{repo}.git"],
         ["git", "push", "-u", "origin", "main", "--tags"],
     ]
     for cmd in git_commands:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, cwd=str(clone_path),
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(clone_path),
         )
         if result.returncode != 0:
             return {
                 "status": "error",
-                "message": f"{' '.join(cmd[:3])} failed: "
-                           f"{result.stderr.strip()}",
+                "message": f"{' '.join(cmd[:3])} failed: {result.stderr.strip()}",
             }
 
     # Create issues from template
     issues_created = 0
     for issue in issues_data:
         cmd = [
-            "gh", "issue", "create",
-            "--repo", repo,
-            "--title", issue["title"],
-            "--body", issue["body"],
+            "gh",
+            "issue",
+            "create",
+            "--repo",
+            repo,
+            "--title",
+            issue["title"],
+            "--body",
+            issue["body"],
         ]
         for label in issue.get("labels", []):
             cmd.extend(["--label", label])
 
         result = subprocess.run(
-            cmd, capture_output=True, text=True,
+            cmd,
+            capture_output=True,
+            text=True,
         )
         if result.returncode == 0:
             issues_created += 1
@@ -134,10 +140,8 @@ def scaffold(framework, repo, templates_dir=None, clone_dir=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Create a QA repo")
-    parser.add_argument("--framework", required=True,
-                        help="Framework name (rails, python, ios)")
-    parser.add_argument("--repo", required=True,
-                        help="GitHub repo (owner/name)")
+    parser.add_argument("--framework", required=True, help="Framework name (rails, python, ios)")
+    parser.add_argument("--repo", required=True, help="GitHub repo (owner/name)")
     args = parser.parse_args()
 
     result = scaffold(args.framework, args.repo)

@@ -6,7 +6,6 @@ import subprocess
 import sys
 
 import pytest
-
 from conftest import LIB_DIR
 
 
@@ -21,10 +20,8 @@ def ci_project(git_repo):
     bin_dir.mkdir()
     (bin_dir / "ci").write_text("#!/usr/bin/env bash\nexit 0\n")
     (bin_dir / "ci").chmod(0o755)
-    subprocess.run(["git", "add", "-A"], cwd=str(git_repo), check=True,
-                   capture_output=True)
-    subprocess.run(["git", "commit", "-m", "add bin/ci"], cwd=str(git_repo),
-                   check=True, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=str(git_repo), check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "add bin/ci"], cwd=str(git_repo), check=True, capture_output=True)
     return git_repo
 
 
@@ -53,8 +50,11 @@ def _run(project_dir, args=None, extra_env=None):
     if args:
         cmd.extend(args)
     result = subprocess.run(
-        cmd, capture_output=True, text=True,
-        cwd=str(project_dir), env=env,
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=str(project_dir),
+        env=env,
     )
     return result
 
@@ -69,7 +69,10 @@ def _branch_name(project_dir):
     """Get the current branch name in the project directory."""
     result = subprocess.run(
         ["git", "branch", "--show-current"],
-        cwd=str(project_dir), capture_output=True, text=True, check=True,
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return result.stdout.strip()
 
@@ -135,10 +138,10 @@ def test_default_skips_after_commit(ci_project_excluded):
     """After committing and running CI, second run skips (HEAD in snapshot)."""
     # Create a new file and commit it
     (ci_project_excluded / "feature.py").write_text("# new feature\n")
-    subprocess.run(["git", "add", "-A"], cwd=str(ci_project_excluded), check=True,
-                   capture_output=True)
-    subprocess.run(["git", "commit", "-m", "add feature"], cwd=str(ci_project_excluded),
-                   check=True, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=str(ci_project_excluded), check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "add feature"], cwd=str(ci_project_excluded), check=True, capture_output=True
+    )
     # Run CI — creates sentinel with post-commit snapshot
     first = _run(ci_project_excluded)
     assert first.returncode == 0
@@ -155,11 +158,16 @@ def test_runs_without_branch_detection(ci_project):
     """Detached HEAD: CI runs but no sentinel is created."""
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"],
-        cwd=str(ci_project), capture_output=True, text=True, check=True,
+        cwd=str(ci_project),
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     subprocess.run(
         ["git", "checkout", head],
-        cwd=str(ci_project), capture_output=True, check=True,
+        cwd=str(ci_project),
+        capture_output=True,
+        check=True,
     )
     result = _run(ci_project)
     assert result.returncode == 0
@@ -220,9 +228,7 @@ def test_non_bash_ci_skips_on_second_run(target_project):
 
 def test_non_bash_ci_failure(target_project):
     """Non-bash CI script that fails is detected correctly."""
-    (target_project / "bin" / "ci").write_text(
-        "#!/usr/bin/env python3\nimport sys\nsys.exit(1)\n"
-    )
+    (target_project / "bin" / "ci").write_text("#!/usr/bin/env python3\nimport sys\nsys.exit(1)\n")
     result = _run(target_project)
     assert result.returncode == 1
     output = _parse(result)
@@ -282,10 +288,8 @@ def test_detects_tracked_file_content_change(ci_project_excluded):
     """Editing an already-modified tracked file must change the snapshot."""
     # Create and commit a tracked file
     (ci_project_excluded / "app.py").write_text("version = 1\n")
-    subprocess.run(["git", "add", "-A"], cwd=str(ci_project_excluded), check=True,
-                   capture_output=True)
-    subprocess.run(["git", "commit", "-m", "add app"], cwd=str(ci_project_excluded),
-                   check=True, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=str(ci_project_excluded), check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "add app"], cwd=str(ci_project_excluded), check=True, capture_output=True)
     # Modify the tracked file (status: M)
     (ci_project_excluded / "app.py").write_text("version = 2\n")
     # Run CI — creates sentinel with "version = 2" content
@@ -320,16 +324,14 @@ def test_detects_staged_content_change(ci_project_excluded):
     """Re-staging a file with different content must change the snapshot."""
     # Create a file, stage it
     (ci_project_excluded / "config.py").write_text("setting = 'a'\n")
-    subprocess.run(["git", "add", "config.py"], cwd=str(ci_project_excluded),
-                   check=True, capture_output=True)
+    subprocess.run(["git", "add", "config.py"], cwd=str(ci_project_excluded), check=True, capture_output=True)
     # Run CI — creates sentinel
     first = _run(ci_project_excluded)
     assert first.returncode == 0
     assert _parse(first)["skipped"] is False
     # Replace content and re-stage — status stays "A" but content differs
     (ci_project_excluded / "config.py").write_text("setting = 'b'\n")
-    subprocess.run(["git", "add", "config.py"], cwd=str(ci_project_excluded),
-                   check=True, capture_output=True)
+    subprocess.run(["git", "add", "config.py"], cwd=str(ci_project_excluded), check=True, capture_output=True)
     # Must NOT skip — staged content changed
     second = _run(ci_project_excluded)
     assert second.returncode == 0
@@ -345,9 +347,7 @@ def test_detects_untracked_file_rename(ci_project_excluded):
     assert first.returncode == 0
     assert _parse(first)["skipped"] is False
     # Rename without changing content
-    (ci_project_excluded / "old_name.txt").rename(
-        ci_project_excluded / "new_name.txt"
-    )
+    (ci_project_excluded / "old_name.txt").rename(ci_project_excluded / "new_name.txt")
     # Must NOT skip — file was renamed
     second = _run(ci_project_excluded)
     assert second.returncode == 0
@@ -357,9 +357,7 @@ def test_detects_untracked_file_rename(ci_project_excluded):
 def test_simulate_branch_sets_env_var_for_child(ci_project):
     """--simulate-branch sets FLOW_SIMULATE_BRANCH in the child process env."""
     # Replace bin/ci with a script that echoes the env var
-    (ci_project / "bin" / "ci").write_text(
-        '#!/usr/bin/env bash\necho "SIM=$FLOW_SIMULATE_BRANCH"\nexit 0\n'
-    )
+    (ci_project / "bin" / "ci").write_text('#!/usr/bin/env bash\necho "SIM=$FLOW_SIMULATE_BRANCH"\nexit 0\n')
     result = _run(ci_project, args=["--force", "--simulate-branch", "main"])
     assert result.returncode == 0
     assert "SIM=main" in result.stdout
@@ -370,7 +368,9 @@ def test_simulate_branch_does_not_affect_sentinel_name(ci_project):
     # Create and switch to a feature branch so it differs from simulated "main"
     subprocess.run(
         ["git", "switch", "-c", "my-feature"],
-        cwd=str(ci_project), check=True, capture_output=True,
+        cwd=str(ci_project),
+        check=True,
+        capture_output=True,
     )
     branch = _branch_name(ci_project)
     result = _run(ci_project, args=["--force", "--simulate-branch", "main"])

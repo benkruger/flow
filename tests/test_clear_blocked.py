@@ -10,9 +10,7 @@ from conftest import LIB_DIR, make_state, write_state
 
 SCRIPT = LIB_DIR / "clear-blocked.py"
 
-_spec = importlib.util.spec_from_file_location(
-    "clear_blocked", SCRIPT
-)
+_spec = importlib.util.spec_from_file_location("clear_blocked", SCRIPT)
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 

@@ -2,10 +2,9 @@
 
 import fcntl
 import importlib
-import json
 import sys
 from pathlib import Path
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -24,15 +23,14 @@ def test_appends_to_existing_log(tmp_path):
     log_file = log_dir / "my-feature.log"
     log_file.write_text("existing line\n")
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T00:00:00-08:00"):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T00:00:00-08:00"),
+    ):
         _mod.append_log("my-feature", "[Phase 1] Step 5 — test (exit 0)")
 
     content = log_file.read_text()
-    assert content == (
-        "existing line\n"
-        "2026-01-01T00:00:00-08:00 [Phase 1] Step 5 — test (exit 0)\n"
-    )
+    assert content == ("existing line\n2026-01-01T00:00:00-08:00 [Phase 1] Step 5 — test (exit 0)\n")
 
 
 def test_creates_new_log_file(tmp_path):
@@ -40,8 +38,10 @@ def test_creates_new_log_file(tmp_path):
     log_dir = tmp_path / ".flow-states"
     log_dir.mkdir()
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-03-14T10:00:00-07:00"):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-03-14T10:00:00-07:00"),
+    ):
         _mod.append_log("feat-branch", "[Phase 1] test message")
 
     log_file = log_dir / "feat-branch.log"
@@ -51,8 +51,10 @@ def test_creates_new_log_file(tmp_path):
 
 def test_creates_directory_if_missing(tmp_path):
     """Creates .flow-states/ directory when it does not exist."""
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T00:00:00-08:00"):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T00:00:00-08:00"),
+    ):
         _mod.append_log("branch", "message")
 
     assert (tmp_path / ".flow-states").is_dir()
@@ -64,8 +66,10 @@ def test_multiple_appends(tmp_path):
     log_dir = tmp_path / ".flow-states"
     log_dir.mkdir()
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T00:00:00-08:00"):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T00:00:00-08:00"),
+    ):
         _mod.append_log("branch", "first")
         _mod.append_log("branch", "second")
 
@@ -81,18 +85,16 @@ def test_append_log_uses_file_locking(tmp_path):
     log_dir = tmp_path / ".flow-states"
     log_dir.mkdir()
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T00:00:00-08:00"), \
-         patch.object(_mod.fcntl, "flock") as mock_flock:
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T00:00:00-08:00"),
+        patch.object(_mod.fcntl, "flock") as mock_flock,
+    ):
         _mod.append_log("branch", "test message")
 
     # Must have been called with LOCK_EX at least once
-    lock_calls = [c for c in mock_flock.call_args_list
-                  if c[0][1] == fcntl.LOCK_EX]
-    assert len(lock_calls) == 1, (
-        f"Expected exactly 1 LOCK_EX call, got {len(lock_calls)}: "
-        f"{mock_flock.call_args_list}"
-    )
+    lock_calls = [c for c in mock_flock.call_args_list if c[0][1] == fcntl.LOCK_EX]
+    assert len(lock_calls) == 1, f"Expected exactly 1 LOCK_EX call, got {len(lock_calls)}: {mock_flock.call_args_list}"
 
 
 # --- CLI integration ---
@@ -104,8 +106,7 @@ def test_cli_integration(git_repo, monkeypatch, capsys):
     state_dir.mkdir()
 
     monkeypatch.chdir(git_repo)
-    monkeypatch.setattr("sys.argv", ["log", "test-branch",
-                                     "[Phase 1] Step 5 — bin/dependencies (exit 0)"])
+    monkeypatch.setattr("sys.argv", ["log", "test-branch", "[Phase 1] Step 5 — bin/dependencies (exit 0)"])
     _mod.main()
 
     log_file = state_dir / "test-branch.log"

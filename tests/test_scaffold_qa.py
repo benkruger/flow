@@ -5,7 +5,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -70,35 +70,36 @@ def test_find_templates_preserves_content():
 
 def test_scaffold_creates_repo_and_issues(tmp_path):
     """scaffold() calls gh repo create, writes files, tags, and creates issues."""
-    with patch.object(_mod, "find_templates") as mock_templates, \
-         patch("subprocess.run") as mock_run:
+    with patch.object(_mod, "find_templates") as mock_templates, patch("subprocess.run") as mock_run:
         mock_templates.return_value = {
             "Gemfile": "source 'https://rubygems.org'\n",
             "bin/ci": "#!/usr/bin/env ruby\nexit 0\n",
-            ".qa/issues.json": json.dumps([
-                {"title": "Issue 1", "body": "Body 1", "labels": []},
-                {"title": "Issue 2", "body": "Body 2", "labels": ["bug"]},
-            ]),
+            ".qa/issues.json": json.dumps(
+                [
+                    {"title": "Issue 1", "body": "Body 1", "labels": []},
+                    {"title": "Issue 2", "body": "Body 2", "labels": ["bug"]},
+                ]
+            ),
         }
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr="",
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
         )
 
-        result = _mod.scaffold("rails", "owner/flow-qa-rails",
-                               clone_dir=str(tmp_path / "clone"))
+        result = _mod.scaffold("rails", "owner/flow-qa-rails", clone_dir=str(tmp_path / "clone"))
 
     assert result["status"] == "ok"
     assert result["repo"] == "owner/flow-qa-rails"
     assert result["issues_created"] == 2
 
     # Verify gh repo create was called
-    create_calls = [c for c in mock_run.call_args_list
-                    if "repo" in str(c) and "create" in str(c)]
+    create_calls = [c for c in mock_run.call_args_list if "repo" in str(c) and "create" in str(c)]
     assert len(create_calls) >= 1
 
     # Verify gh issue create was called for each issue
-    issue_calls = [c for c in mock_run.call_args_list
-                   if "issue" in str(c) and "create" in str(c)]
+    issue_calls = [c for c in mock_run.call_args_list if "issue" in str(c) and "create" in str(c)]
     assert len(issue_calls) == 2
 
 
@@ -106,15 +107,17 @@ def test_scaffold_writes_template_files(tmp_path):
     """scaffold() writes all template files to the clone directory."""
     clone_dir = tmp_path / "clone"
 
-    with patch.object(_mod, "find_templates") as mock_templates, \
-         patch("subprocess.run") as mock_run:
+    with patch.object(_mod, "find_templates") as mock_templates, patch("subprocess.run") as mock_run:
         mock_templates.return_value = {
             "Gemfile": "gem content\n",
             "bin/ci": "#!/usr/bin/env ruby\n",
             ".qa/issues.json": json.dumps([]),
         }
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr="",
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
         )
 
         _mod.scaffold("rails", "owner/repo", clone_dir=str(clone_dir))
@@ -125,11 +128,13 @@ def test_scaffold_writes_template_files(tmp_path):
 
 def test_scaffold_gh_create_failure():
     """scaffold() returns error when gh repo create fails."""
-    with patch.object(_mod, "find_templates") as mock_templates, \
-         patch("subprocess.run") as mock_run:
+    with patch.object(_mod, "find_templates") as mock_templates, patch("subprocess.run") as mock_run:
         mock_templates.return_value = {".qa/issues.json": "[]"}
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="already exists",
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="already exists",
         )
 
         result = _mod.scaffold("rails", "owner/repo")
@@ -150,20 +155,27 @@ def test_scaffold_git_command_failure(tmp_path):
         # Let gh repo create succeed, fail on git init
         if cmd[0] == "gh":
             return subprocess.CompletedProcess(
-                args=cmd, returncode=0, stdout="", stderr="",
+                args=cmd,
+                returncode=0,
+                stdout="",
+                stderr="",
             )
         # Fail on first git command
         return subprocess.CompletedProcess(
-            args=cmd, returncode=1, stdout="", stderr="git init failed",
+            args=cmd,
+            returncode=1,
+            stdout="",
+            stderr="git init failed",
         )
 
-    with patch.object(_mod, "find_templates") as mock_templates, \
-         patch("subprocess.run", side_effect=mock_run_side_effect):
+    with (
+        patch.object(_mod, "find_templates") as mock_templates,
+        patch("subprocess.run", side_effect=mock_run_side_effect),
+    ):
         mock_templates.return_value = {
             ".qa/issues.json": json.dumps([]),
         }
-        result = _mod.scaffold("rails", "owner/repo",
-                               clone_dir=str(clone_dir))
+        result = _mod.scaffold("rails", "owner/repo", clone_dir=str(clone_dir))
 
     assert result["status"] == "error"
     assert "failed" in result["message"]
@@ -171,15 +183,19 @@ def test_scaffold_git_command_failure(tmp_path):
 
 def test_scaffold_default_clone_dir(tmp_path):
     """scaffold() creates a temp directory when clone_dir is not provided."""
-    with patch.object(_mod, "find_templates") as mock_templates, \
-         patch("subprocess.run") as mock_run, \
-         patch.object(_mod.tempfile, "mkdtemp",
-                      return_value=str(tmp_path / "auto")):
+    with (
+        patch.object(_mod, "find_templates") as mock_templates,
+        patch("subprocess.run") as mock_run,
+        patch.object(_mod.tempfile, "mkdtemp", return_value=str(tmp_path / "auto")),
+    ):
         mock_templates.return_value = {
             ".qa/issues.json": json.dumps([]),
         }
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr="",
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
         )
         result = _mod.scaffold("rails", "owner/repo")
 
@@ -196,14 +212,16 @@ def test_scaffold_sets_bin_ci_executable(tmp_path):
     """scaffold() makes bin/ci executable."""
     clone_dir = tmp_path / "clone"
 
-    with patch.object(_mod, "find_templates") as mock_templates, \
-         patch("subprocess.run") as mock_run:
+    with patch.object(_mod, "find_templates") as mock_templates, patch("subprocess.run") as mock_run:
         mock_templates.return_value = {
             "bin/ci": "#!/usr/bin/env ruby\n",
             ".qa/issues.json": json.dumps([]),
         }
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr="",
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
         )
 
         _mod.scaffold("rails", "owner/repo", clone_dir=str(clone_dir))
@@ -216,8 +234,7 @@ def test_scaffold_sets_all_bin_scripts_executable(tmp_path):
     """scaffold() makes all bin/* scripts executable, not just bin/ci."""
     clone_dir = tmp_path / "clone"
 
-    with patch.object(_mod, "find_templates") as mock_templates, \
-         patch("subprocess.run") as mock_run:
+    with patch.object(_mod, "find_templates") as mock_templates, patch("subprocess.run") as mock_run:
         mock_templates.return_value = {
             "bin/ci": "#!/usr/bin/env bash\n",
             "bin/test": "#!/usr/bin/env bash\n",
@@ -225,7 +242,10 @@ def test_scaffold_sets_all_bin_scripts_executable(tmp_path):
             ".qa/issues.json": json.dumps([]),
         }
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr="",
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
         )
 
         _mod.scaffold("ios", "owner/repo", clone_dir=str(clone_dir))
@@ -248,11 +268,14 @@ def test_cli_missing_args(monkeypatch):
 
 def test_main_success():
     """main() prints JSON and exits 0 on success."""
-    with patch.object(_mod, "scaffold") as mock_scaffold, \
-         patch("sys.argv", ["scaffold-qa", "--framework", "rails",
-                            "--repo", "owner/repo"]):
+    with (
+        patch.object(_mod, "scaffold") as mock_scaffold,
+        patch("sys.argv", ["scaffold-qa", "--framework", "rails", "--repo", "owner/repo"]),
+    ):
         mock_scaffold.return_value = {
-            "status": "ok", "repo": "owner/repo", "issues_created": 2,
+            "status": "ok",
+            "repo": "owner/repo",
+            "issues_created": 2,
         }
         _mod.main()
 
@@ -261,12 +284,14 @@ def test_main_success():
 
 def test_main_error():
     """main() exits 1 on error."""
-    with patch.object(_mod, "scaffold") as mock_scaffold, \
-         patch("sys.argv", ["scaffold-qa", "--framework", "rails",
-                            "--repo", "owner/repo"]), \
-         pytest.raises(SystemExit) as exc_info:
+    with (
+        patch.object(_mod, "scaffold") as mock_scaffold,
+        patch("sys.argv", ["scaffold-qa", "--framework", "rails", "--repo", "owner/repo"]),
+        pytest.raises(SystemExit) as exc_info,
+    ):
         mock_scaffold.return_value = {
-            "status": "error", "message": "failed",
+            "status": "error",
+            "message": "failed",
         }
         _mod.main()
 

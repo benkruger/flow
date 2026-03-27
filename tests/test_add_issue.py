@@ -2,10 +2,8 @@
 
 import json
 import subprocess
-import sys
 
 import pytest
-
 from conftest import import_lib, make_state, write_state
 
 
@@ -13,7 +11,9 @@ def _get_branch(git_repo):
     """Get the current branch name from a git repo."""
     result = subprocess.run(
         ["git", "branch", "--show-current"],
-        capture_output=True, text=True, cwd=str(git_repo),
+        capture_output=True,
+        text=True,
+        cwd=str(git_repo),
     )
     return result.stdout.strip()
 
@@ -24,15 +24,22 @@ def _get_branch(git_repo):
 def test_append_to_empty_issues_filed(tmp_path):
     """add_issue creates issues_filed array and appends first entry."""
     mod = import_lib("add-issue.py")
-    state = make_state(current_phase="flow-learn", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "complete", "flow-code-review": "complete",
-        "flow-learn": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-learn",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "complete",
+            "flow-learn": "in_progress",
+        },
+    )
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
 
-    updated = mod.add_issue(state_path, "Rule", "Add rule: use git -C", "https://github.com/test/test/issues/1", "flow-learn")
+    updated = mod.add_issue(
+        state_path, "Rule", "Add rule: use git -C", "https://github.com/test/test/issues/1", "flow-learn"
+    )
 
     assert len(updated["issues_filed"]) == 1
     issue = updated["issues_filed"][0]
@@ -47,19 +54,26 @@ def test_append_to_empty_issues_filed(tmp_path):
 def test_append_to_existing_issues_filed(tmp_path):
     """add_issue preserves existing entries and appends new one."""
     mod = import_lib("add-issue.py")
-    state = make_state(current_phase="flow-learn", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "complete", "flow-code-review": "complete",
-        "flow-learn": "in_progress",
-    })
-    state["issues_filed"] = [{
-        "label": "Flaky Test",
-        "title": "Existing issue",
-        "url": "https://github.com/test/test/issues/1",
-        "phase": "flow-code",
-        "phase_name": "Code",
-        "timestamp": "2026-01-01T00:00:00-08:00",
-    }]
+    state = make_state(
+        current_phase="flow-learn",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "complete",
+            "flow-learn": "in_progress",
+        },
+    )
+    state["issues_filed"] = [
+        {
+            "label": "Flaky Test",
+            "title": "Existing issue",
+            "url": "https://github.com/test/test/issues/1",
+            "phase": "flow-code",
+            "phase_name": "Code",
+            "timestamp": "2026-01-01T00:00:00-08:00",
+        }
+    ]
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
 
@@ -85,10 +99,14 @@ def test_creates_issues_filed_array_if_missing(tmp_path):
 def test_persists_to_disk(tmp_path):
     """add_issue writes the updated state back to disk."""
     mod = import_lib("add-issue.py")
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state))
 
@@ -106,8 +124,10 @@ def test_no_branch_returns_error(tmp_path, monkeypatch, capsys):
     """Running outside a git repo returns an error."""
     mod = import_lib("add-issue.py")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Rule", "--title", "test",
-                                     "--url", "https://example.com", "--phase", "flow-learn"])
+    monkeypatch.setattr(
+        "sys.argv",
+        ["add-issue", "--label", "Rule", "--title", "test", "--url", "https://example.com", "--phase", "flow-learn"],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
     assert exc_info.value.code == 1
@@ -120,8 +140,10 @@ def test_no_state_file_returns_no_state(git_repo, monkeypatch, capsys):
     """Running with no state file returns no_state."""
     mod = import_lib("add-issue.py")
     monkeypatch.chdir(git_repo)
-    monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Rule", "--title", "test",
-                                     "--url", "https://example.com", "--phase", "flow-learn"])
+    monkeypatch.setattr(
+        "sys.argv",
+        ["add-issue", "--label", "Rule", "--title", "test", "--url", "https://example.com", "--phase", "flow-learn"],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
     assert exc_info.value.code == 0
@@ -133,18 +155,33 @@ def test_cli_happy_path(state_dir, git_repo, monkeypatch, capsys):
     """Full CLI round-trip: write state, run CLI, verify output."""
     mod = import_lib("add-issue.py")
     branch_name = _get_branch(git_repo)
-    state = make_state(current_phase="flow-learn", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "complete", "flow-code-review": "complete",
-        "flow-learn": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-learn",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "complete",
+            "flow-learn": "in_progress",
+        },
+    )
     path = write_state(state_dir, branch_name, state)
 
     monkeypatch.chdir(git_repo)
-    monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Rule",
-                                     "--title", "Add rule: check imports",
-                                     "--url", "https://github.com/test/test/issues/10",
-                                     "--phase", "flow-learn"])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "add-issue",
+            "--label",
+            "Rule",
+            "--title",
+            "Add rule: check imports",
+            "--url",
+            "https://github.com/test/test/issues/10",
+            "--phase",
+            "flow-learn",
+        ],
+    )
     mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -158,18 +195,33 @@ def test_cli_happy_path(state_dir, git_repo, monkeypatch, capsys):
 def test_cli_branch_flag(state_dir, git_repo, monkeypatch, capsys):
     """--branch flag finds the state file for a different branch."""
     mod = import_lib("add-issue.py")
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     write_state(state_dir, "other-feature", state)
 
     monkeypatch.chdir(git_repo)
-    monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Tech Debt",
-                                     "--title", "Clean up handler",
-                                     "--url", "https://github.com/test/test/issues/5",
-                                     "--phase", "flow-code",
-                                     "--branch", "other-feature"])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "add-issue",
+            "--label",
+            "Tech Debt",
+            "--title",
+            "Clean up handler",
+            "--url",
+            "https://github.com/test/test/issues/5",
+            "--phase",
+            "flow-code",
+            "--branch",
+            "other-feature",
+        ],
+    )
     mod.main()
 
     data = json.loads(capsys.readouterr().out)
@@ -185,8 +237,10 @@ def test_corrupt_state_file_returns_error(state_dir, git_repo, monkeypatch, caps
     bad_file.write_text("{bad json")
 
     monkeypatch.chdir(git_repo)
-    monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Rule", "--title", "test",
-                                     "--url", "https://example.com", "--phase", "flow-learn"])
+    monkeypatch.setattr(
+        "sys.argv",
+        ["add-issue", "--label", "Rule", "--title", "test", "--url", "https://example.com", "--phase", "flow-learn"],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
     assert exc_info.value.code == 1
@@ -199,17 +253,24 @@ def test_write_failure_returns_error(state_dir, git_repo, monkeypatch, capsys):
     """Read-only state file returns a write error."""
     mod = import_lib("add-issue.py")
     branch_name = _get_branch(git_repo)
-    state = make_state(current_phase="flow-learn", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "complete", "flow-code-review": "complete",
-        "flow-learn": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-learn",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "complete",
+            "flow-learn": "in_progress",
+        },
+    )
     path = write_state(state_dir, branch_name, state)
     path.chmod(0o444)
 
     monkeypatch.chdir(git_repo)
-    monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Rule", "--title", "test",
-                                     "--url", "https://example.com", "--phase", "flow-learn"])
+    monkeypatch.setattr(
+        "sys.argv",
+        ["add-issue", "--label", "Rule", "--title", "test", "--url", "https://example.com", "--phase", "flow-learn"],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
     path.chmod(0o644)
@@ -223,15 +284,21 @@ def test_noop_ambiguous_multiple_state_files(state_dir, git_repo, monkeypatch, c
     """Multiple state files with no exact match returns no_state (silent no-op)."""
     mod = import_lib("add-issue.py")
     for name in ["feat-a", "feat-b"]:
-        state = make_state(current_phase="flow-code", phase_statuses={
-            "flow-start": "complete", "flow-plan": "complete",
-            "flow-code": "in_progress",
-        })
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
         write_state(state_dir, name, state)
 
     monkeypatch.chdir(git_repo)
-    monkeypatch.setattr("sys.argv", ["add-issue", "--label", "Rule", "--title", "test",
-                                     "--url", "https://example.com", "--phase", "flow-learn"])
+    monkeypatch.setattr(
+        "sys.argv",
+        ["add-issue", "--label", "Rule", "--title", "test", "--url", "https://example.com", "--phase", "flow-learn"],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
     assert exc_info.value.code == 0

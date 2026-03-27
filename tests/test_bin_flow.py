@@ -6,7 +6,6 @@ import subprocess
 
 from conftest import BIN_DIR, LIB_DIR, REPO_ROOT
 
-
 SCRIPT = str(BIN_DIR / "flow")
 
 
@@ -17,7 +16,8 @@ def _run(*args, cwd=None, extra_env=None):
         env = {**os.environ, **extra_env}
     result = subprocess.run(
         ["bash", SCRIPT, *args],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
         cwd=cwd or str(REPO_ROOT),
         env=env,
     )
@@ -81,7 +81,4 @@ def test_every_lib_script_is_reachable():
     for script in scripts:
         subcmd = script.stem
         resolved = LIB_DIR / f"{subcmd}.py"
-        assert resolved.is_file(), (
-            f"bin/flow cannot find subcommand '{subcmd}' — "
-            f"expected {resolved} to exist"
-        )
+        assert resolved.is_file(), f"bin/flow cannot find subcommand '{subcmd}' — expected {resolved} to exist"

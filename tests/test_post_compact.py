@@ -6,15 +6,11 @@ import os
 import subprocess
 import sys
 
-import pytest
-
 from conftest import LIB_DIR, make_state, write_state
 
 SCRIPT = LIB_DIR / "post-compact.py"
 
-_spec = importlib.util.spec_from_file_location(
-    "post_compact", SCRIPT
-)
+_spec = importlib.util.spec_from_file_location("post_compact", SCRIPT)
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -25,16 +21,22 @@ _spec.loader.exec_module(_mod)
 class TestCaptureCompactData:
     def test_writes_summary_and_cwd(self, git_repo, state_dir, branch, monkeypatch):
         monkeypatch.chdir(git_repo)
-        state = make_state(current_phase="flow-code", phase_statuses={
-            "flow-start": "complete", "flow-plan": "complete",
-            "flow-code": "in_progress",
-        })
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
         write_state(state_dir, branch, state)
 
-        _mod.capture_compact_data({
-            "compact_summary": "User was writing tests for webhook handler.",
-            "cwd": "/Users/ben/code/myapp",
-        })
+        _mod.capture_compact_data(
+            {
+                "compact_summary": "User was writing tests for webhook handler.",
+                "cwd": "/Users/ben/code/myapp",
+            }
+        )
 
         updated = json.loads((state_dir / f"{branch}.json").read_text())
         assert updated["compact_summary"] == "User was writing tests for webhook handler."
@@ -45,9 +47,11 @@ class TestCaptureCompactData:
         state = make_state(current_phase="flow-code")
         write_state(state_dir, branch, state)
 
-        _mod.capture_compact_data({
-            "compact_summary": "Working on feature.",
-        })
+        _mod.capture_compact_data(
+            {
+                "compact_summary": "Working on feature.",
+            }
+        )
 
         updated = json.loads((state_dir / f"{branch}.json").read_text())
         assert updated["compact_count"] == 1
@@ -58,9 +62,11 @@ class TestCaptureCompactData:
         state["compact_count"] = 3
         write_state(state_dir, branch, state)
 
-        _mod.capture_compact_data({
-            "compact_summary": "Another compaction.",
-        })
+        _mod.capture_compact_data(
+            {
+                "compact_summary": "Another compaction.",
+            }
+        )
 
         updated = json.loads((state_dir / f"{branch}.json").read_text())
         assert updated["compact_count"] == 4
@@ -70,9 +76,11 @@ class TestCaptureCompactData:
         state = make_state(current_phase="flow-code")
         write_state(state_dir, branch, state)
 
-        _mod.capture_compact_data({
-            "compact_summary": "Just a summary.",
-        })
+        _mod.capture_compact_data(
+            {
+                "compact_summary": "Just a summary.",
+            }
+        )
 
         updated = json.loads((state_dir / f"{branch}.json").read_text())
         assert updated["compact_summary"] == "Just a summary."
@@ -83,10 +91,12 @@ class TestCaptureCompactData:
         state = make_state(current_phase="flow-code")
         write_state(state_dir, branch, state)
 
-        _mod.capture_compact_data({
-            "compact_summary": "",
-            "cwd": "/some/path",
-        })
+        _mod.capture_compact_data(
+            {
+                "compact_summary": "",
+                "cwd": "/some/path",
+            }
+        )
 
         updated = json.loads((state_dir / f"{branch}.json").read_text())
         assert "compact_summary" not in updated
@@ -106,24 +116,30 @@ class TestCaptureCompactData:
     def test_no_state_dir(self, git_repo, monkeypatch):
         monkeypatch.chdir(git_repo)
 
-        _mod.capture_compact_data({
-            "compact_summary": "Summary.",
-        })
+        _mod.capture_compact_data(
+            {
+                "compact_summary": "Summary.",
+            }
+        )
 
     def test_no_state_file(self, git_repo, state_dir, monkeypatch):
         monkeypatch.chdir(git_repo)
 
-        _mod.capture_compact_data({
-            "compact_summary": "Summary.",
-        })
+        _mod.capture_compact_data(
+            {
+                "compact_summary": "Summary.",
+            }
+        )
 
     def test_corrupt_state_file(self, git_repo, state_dir, branch, monkeypatch):
         monkeypatch.chdir(git_repo)
         (state_dir / f"{branch}.json").write_text("{bad json")
 
-        _mod.capture_compact_data({
-            "compact_summary": "Summary.",
-        })
+        _mod.capture_compact_data(
+            {
+                "compact_summary": "Summary.",
+            }
+        )
 
     def test_no_branch_returns_early(self, git_repo, state_dir, branch, monkeypatch):
         monkeypatch.chdir(git_repo)
@@ -131,9 +147,11 @@ class TestCaptureCompactData:
         state = make_state(current_phase="flow-code")
         write_state(state_dir, branch, state)
 
-        _mod.capture_compact_data({
-            "compact_summary": "Summary.",
-        })
+        _mod.capture_compact_data(
+            {
+                "compact_summary": "Summary.",
+            }
+        )
 
         # State should be unchanged — early return skipped the mutation
         updated = json.loads((state_dir / f"{branch}.json").read_text())
@@ -142,23 +160,31 @@ class TestCaptureCompactData:
     def test_not_in_git_repo(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
 
-        _mod.capture_compact_data({
-            "compact_summary": "Summary.",
-        })
+        _mod.capture_compact_data(
+            {
+                "compact_summary": "Summary.",
+            }
+        )
 
     def test_preserves_existing_state_fields(self, git_repo, state_dir, branch, monkeypatch):
         monkeypatch.chdir(git_repo)
-        state = make_state(current_phase="flow-code", phase_statuses={
-            "flow-start": "complete", "flow-plan": "complete",
-            "flow-code": "in_progress",
-        })
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
         state["session_id"] = "existing-session"
         state["notes"] = [{"note": "a correction"}]
         write_state(state_dir, branch, state)
 
-        _mod.capture_compact_data({
-            "compact_summary": "Summary.",
-        })
+        _mod.capture_compact_data(
+            {
+                "compact_summary": "Summary.",
+            }
+        )
 
         updated = json.loads((state_dir / f"{branch}.json").read_text())
         assert updated["session_id"] == "existing-session"
@@ -189,11 +215,13 @@ class TestSubprocess:
         state = make_state(current_phase="flow-code")
         write_state(state_dir, branch, state)
 
-        stdin = json.dumps({
-            "compact_summary": "Working on tests.",
-            "cwd": "/Users/ben/code/myapp",
-            "trigger": "manual",
-        })
+        stdin = json.dumps(
+            {
+                "compact_summary": "Working on tests.",
+                "cwd": "/Users/ben/code/myapp",
+                "trigger": "manual",
+            }
+        )
         exit_code, stdout = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0

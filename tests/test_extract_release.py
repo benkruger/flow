@@ -2,16 +2,12 @@
 
 import importlib.util
 import sys
-from pathlib import Path
 
 import pytest
-
 from conftest import LIB_DIR, REPO_ROOT
 
 # Import the hyphenated module directly
-_spec = importlib.util.spec_from_file_location(
-    "extract_release_notes", LIB_DIR / "extract-release-notes.py"
-)
+_spec = importlib.util.spec_from_file_location("extract_release_notes", LIB_DIR / "extract-release-notes.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 extract = _mod.extract
@@ -75,7 +71,7 @@ def test_cli_writes_output_file(monkeypatch, capsys):
 
     _mod.main()
 
-    captured = capsys.readouterr()
+    capsys.readouterr()
     out_file = REPO_ROOT / "tmp" / "release-notes-v0.5.1.md"
     assert out_file.exists()
     content = out_file.read_text()

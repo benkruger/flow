@@ -1,11 +1,8 @@
 """Tests for lib/qa-mode.py — manage dev-mode plugin_root redirection."""
 
 import json
-import sys
-from pathlib import Path
 
 import pytest
-
 from conftest import import_lib
 
 
@@ -31,11 +28,14 @@ def test_start_happy_path(tmp_path):
     (local_source / "bin").mkdir()
     (local_source / "bin" / "flow").write_text("#!/bin/bash\n")
 
-    _write_flow_json(flow_json, {
-        "flow_version": "0.39.0",
-        "framework": "python",
-        "plugin_root": "/original/cache/path",
-    })
+    _write_flow_json(
+        flow_json,
+        {
+            "flow_version": "0.39.0",
+            "framework": "python",
+            "plugin_root": "/original/cache/path",
+        },
+    )
 
     result = mod.start(flow_json, local_source)
 
@@ -69,10 +69,13 @@ def test_start_missing_plugin_root(tmp_path):
     (local_source / "bin").mkdir()
     (local_source / "bin" / "flow").write_text("#!/bin/bash\n")
 
-    _write_flow_json(flow_json, {
-        "flow_version": "0.39.0",
-        "framework": "python",
-    })
+    _write_flow_json(
+        flow_json,
+        {
+            "flow_version": "0.39.0",
+            "framework": "python",
+        },
+    )
 
     result = mod.start(flow_json, local_source)
 
@@ -89,11 +92,14 @@ def test_start_already_in_dev_mode(tmp_path):
     (local_source / "bin").mkdir()
     (local_source / "bin" / "flow").write_text("#!/bin/bash\n")
 
-    _write_flow_json(flow_json, {
-        "flow_version": "0.39.0",
-        "plugin_root": "/some/path",
-        "plugin_root_backup": "/original/path",
-    })
+    _write_flow_json(
+        flow_json,
+        {
+            "flow_version": "0.39.0",
+            "plugin_root": "/some/path",
+            "plugin_root_backup": "/original/path",
+        },
+    )
 
     result = mod.start(flow_json, local_source)
 
@@ -106,10 +112,13 @@ def test_start_invalid_local_path_not_exists(tmp_path):
     mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
 
-    _write_flow_json(flow_json, {
-        "flow_version": "0.39.0",
-        "plugin_root": "/original/path",
-    })
+    _write_flow_json(
+        flow_json,
+        {
+            "flow_version": "0.39.0",
+            "plugin_root": "/original/path",
+        },
+    )
 
     result = mod.start(flow_json, tmp_path / "nonexistent")
 
@@ -124,10 +133,13 @@ def test_start_invalid_local_path_no_bin_flow(tmp_path):
     local_source = tmp_path / "flow-source"
     local_source.mkdir()
 
-    _write_flow_json(flow_json, {
-        "flow_version": "0.39.0",
-        "plugin_root": "/original/path",
-    })
+    _write_flow_json(
+        flow_json,
+        {
+            "flow_version": "0.39.0",
+            "plugin_root": "/original/path",
+        },
+    )
 
     result = mod.start(flow_json, local_source)
 
@@ -176,11 +188,14 @@ def test_stop_happy_path(tmp_path):
     mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
 
-    _write_flow_json(flow_json, {
-        "flow_version": "0.39.0",
-        "plugin_root": "/local/dev/path",
-        "plugin_root_backup": "/original/cache/path",
-    })
+    _write_flow_json(
+        flow_json,
+        {
+            "flow_version": "0.39.0",
+            "plugin_root": "/local/dev/path",
+            "plugin_root_backup": "/original/cache/path",
+        },
+    )
 
     result = mod.stop(flow_json)
 
@@ -197,10 +212,13 @@ def test_stop_not_in_dev_mode(tmp_path):
     mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
 
-    _write_flow_json(flow_json, {
-        "flow_version": "0.39.0",
-        "plugin_root": "/some/path",
-    })
+    _write_flow_json(
+        flow_json,
+        {
+            "flow_version": "0.39.0",
+            "plugin_root": "/some/path",
+        },
+    )
 
     result = mod.stop(flow_json)
 
@@ -224,14 +242,17 @@ def test_stop_preserves_other_keys(tmp_path):
     mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
 
-    _write_flow_json(flow_json, {
-        "flow_version": "0.39.0",
-        "framework": "python",
-        "config_hash": "abc123",
-        "plugin_root": "/local/dev/path",
-        "plugin_root_backup": "/original/cache/path",
-        "skills": {"flow-code": {"commit": "auto"}},
-    })
+    _write_flow_json(
+        flow_json,
+        {
+            "flow_version": "0.39.0",
+            "framework": "python",
+            "config_hash": "abc123",
+            "plugin_root": "/local/dev/path",
+            "plugin_root_backup": "/original/cache/path",
+            "skills": {"flow-code": {"commit": "auto"}},
+        },
+    )
 
     mod.stop(flow_json)
 
@@ -256,16 +277,26 @@ def test_cli_start(tmp_path, monkeypatch, capsys):
     (local_source / "bin").mkdir()
     (local_source / "bin" / "flow").write_text("#!/bin/bash\n")
 
-    _write_flow_json(flow_json, {
-        "flow_version": "0.39.0",
-        "plugin_root": "/original/path",
-    })
+    _write_flow_json(
+        flow_json,
+        {
+            "flow_version": "0.39.0",
+            "plugin_root": "/original/path",
+        },
+    )
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("sys.argv", [
-        "qa-mode", "--start", "--local-path", str(local_source),
-        "--flow-json", str(flow_json),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "qa-mode",
+            "--start",
+            "--local-path",
+            str(local_source),
+            "--flow-json",
+            str(flow_json),
+        ],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
     assert exc_info.value.code == 0
@@ -280,16 +311,25 @@ def test_cli_stop(tmp_path, monkeypatch, capsys):
     mod = import_lib("qa-mode.py")
     flow_json = tmp_path / ".flow.json"
 
-    _write_flow_json(flow_json, {
-        "flow_version": "0.39.0",
-        "plugin_root": "/dev/path",
-        "plugin_root_backup": "/original/path",
-    })
+    _write_flow_json(
+        flow_json,
+        {
+            "flow_version": "0.39.0",
+            "plugin_root": "/dev/path",
+            "plugin_root_backup": "/original/path",
+        },
+    )
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("sys.argv", [
-        "qa-mode", "--stop", "--flow-json", str(flow_json),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "qa-mode",
+            "--stop",
+            "--flow-json",
+            str(flow_json),
+        ],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
     assert exc_info.value.code == 0
@@ -305,10 +345,17 @@ def test_cli_start_error(tmp_path, monkeypatch, capsys):
     flow_json = tmp_path / ".flow.json"
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("sys.argv", [
-        "qa-mode", "--start", "--local-path", "/nonexistent",
-        "--flow-json", str(flow_json),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "qa-mode",
+            "--start",
+            "--local-path",
+            "/nonexistent",
+            "--flow-json",
+            str(flow_json),
+        ],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
     assert exc_info.value.code == 1
@@ -323,9 +370,15 @@ def test_cli_stop_error(tmp_path, monkeypatch, capsys):
     flow_json = tmp_path / ".flow.json"
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("sys.argv", [
-        "qa-mode", "--stop", "--flow-json", str(flow_json),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "qa-mode",
+            "--stop",
+            "--flow-json",
+            str(flow_json),
+        ],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
     assert exc_info.value.code == 1
@@ -341,9 +394,15 @@ def test_cli_start_missing_local_path(tmp_path, monkeypatch, capsys):
     _write_flow_json(flow_json, {"flow_version": "0.39.0", "plugin_root": "/p"})
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("sys.argv", [
-        "qa-mode", "--start", "--flow-json", str(flow_json),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "qa-mode",
+            "--start",
+            "--flow-json",
+            str(flow_json),
+        ],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
     assert exc_info.value.code == 1
@@ -362,15 +421,24 @@ def test_cli_default_flow_json(git_repo, monkeypatch, capsys):
     (local_source / "bin").mkdir()
     (local_source / "bin" / "flow").write_text("#!/bin/bash\n")
 
-    _write_flow_json(flow_json, {
-        "flow_version": "0.39.0",
-        "plugin_root": "/original/path",
-    })
+    _write_flow_json(
+        flow_json,
+        {
+            "flow_version": "0.39.0",
+            "plugin_root": "/original/path",
+        },
+    )
 
     monkeypatch.chdir(git_repo)
-    monkeypatch.setattr("sys.argv", [
-        "qa-mode", "--start", "--local-path", str(local_source),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "qa-mode",
+            "--start",
+            "--local-path",
+            str(local_source),
+        ],
+    )
     with pytest.raises(SystemExit) as exc_info:
         mod.main()
     assert exc_info.value.code == 0

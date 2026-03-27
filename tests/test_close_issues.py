@@ -35,16 +35,12 @@ def test_deduplicates_issue_numbers():
 
 def test_extracts_issue_numbers_from_urls():
     """Extracts issue numbers from GitHub URL format."""
-    assert _mod.extract_issue_numbers(
-        "fix https://github.com/owner/repo/issues/42"
-    ) == [42]
+    assert _mod.extract_issue_numbers("fix https://github.com/owner/repo/issues/42") == [42]
 
 
 def test_extracts_mixed_hash_and_url():
     """Extracts issue numbers from mixed #N and URL formats."""
-    result = _mod.extract_issue_numbers(
-        "fix #83 and https://github.com/owner/repo/issues/89"
-    )
+    result = _mod.extract_issue_numbers("fix #83 and https://github.com/owner/repo/issues/89")
     assert result == [83, 89]
 
 
@@ -55,7 +51,10 @@ def test_closes_all_extracted_issues_with_repo():
     """Calls gh issue close for each issue, includes URLs when repo provided."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr="",
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
         )
         result = _mod.close_issues([83, 89], repo="test/test")
 
@@ -69,11 +68,15 @@ def test_closes_all_extracted_issues_with_repo():
     assert mock_run.call_count == 2
     mock_run.assert_any_call(
         ["gh", "issue", "close", "83"],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     mock_run.assert_any_call(
         ["gh", "issue", "close", "89"],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
 
 
@@ -81,7 +84,10 @@ def test_closes_issues_without_repo():
     """When repo is None, closed items have number but no url."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr="",
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
         )
         result = _mod.close_issues([42])
 
@@ -102,14 +108,21 @@ def test_no_issues_no_gh_calls():
 
 def test_partial_failure():
     """One close fails, other succeeds — both attempted."""
+
     def side_effect(args, **kwargs):
         issue_num = args[3]
         if issue_num == "83":
             return subprocess.CompletedProcess(
-                args=args, returncode=0, stdout="", stderr="",
+                args=args,
+                returncode=0,
+                stdout="",
+                stderr="",
             )
         return subprocess.CompletedProcess(
-            args=args, returncode=1, stdout="", stderr="not found",
+            args=args,
+            returncode=1,
+            stdout="",
+            stderr="not found",
         )
 
     with patch("subprocess.run", side_effect=side_effect):
@@ -144,8 +157,7 @@ def test_cli_integration(tmp_path, monkeypatch, capsys):
     state_file = tmp_path / "state.json"
     state_file.write_text(json.dumps(state))
 
-    monkeypatch.setattr("sys.argv", ["close-issues.py",
-                                      "--state-file", str(state_file)])
+    monkeypatch.setattr("sys.argv", ["close-issues.py", "--state-file", str(state_file)])
 
     _mod.main()
 
@@ -161,8 +173,7 @@ def test_cli_no_prompt_field(tmp_path, monkeypatch, capsys):
     state_file = tmp_path / "state.json"
     state_file.write_text(json.dumps(state))
 
-    monkeypatch.setattr("sys.argv", ["close-issues.py",
-                                      "--state-file", str(state_file)])
+    monkeypatch.setattr("sys.argv", ["close-issues.py", "--state-file", str(state_file)])
 
     _mod.main()
 
@@ -175,8 +186,7 @@ def test_cli_corrupt_state_file(tmp_path, monkeypatch, capsys):
     state_file = tmp_path / "state.json"
     state_file.write_text("{corrupt")
 
-    monkeypatch.setattr("sys.argv", ["close-issues.py",
-                                      "--state-file", str(state_file)])
+    monkeypatch.setattr("sys.argv", ["close-issues.py", "--state-file", str(state_file)])
 
     with pytest.raises(SystemExit) as exc_info:
         _mod.main()

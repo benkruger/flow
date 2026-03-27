@@ -24,12 +24,19 @@ def create_milestone(repo, title, due_date):
     try:
         result = subprocess.run(
             [
-                "gh", "api", f"repos/{repo}/milestones",
-                "--method", "POST",
-                "-f", f"title={title}",
-                "-f", f"due_on={due_date}T00:00:00Z",
+                "gh",
+                "api",
+                f"repos/{repo}/milestones",
+                "--method",
+                "POST",
+                "-f",
+                f"title={title}",
+                "-f",
+                f"due_on={due_date}T00:00:00Z",
             ],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
     except subprocess.TimeoutExpired:
         return None, "Command timed out after 30 seconds"
@@ -45,7 +52,7 @@ def create_milestone(repo, title, due_date):
 
     number = data.get("number")
     if number is None:
-        return None, f"API response missing 'number' field"
+        return None, "API response missing 'number' field"
 
     return {
         "number": number,
@@ -57,8 +64,7 @@ def main():
     parser = argparse.ArgumentParser(description="Create a GitHub milestone")
     parser.add_argument("--repo", required=True, help="Repository (owner/name)")
     parser.add_argument("--title", required=True, help="Milestone title")
-    parser.add_argument("--due-date", required=True,
-                        help="Due date (YYYY-MM-DD)")
+    parser.add_argument("--due-date", required=True, help="Due date (YYYY-MM-DD)")
     args = parser.parse_args()
 
     result, error = create_milestone(args.repo, args.title, args.due_date)
