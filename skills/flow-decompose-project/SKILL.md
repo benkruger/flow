@@ -145,7 +145,7 @@ For each child issue, draft:
 - **Body** — Problem, Acceptance Criteria, Files to Investigate, Out of
   Scope, Context sections. Include "Depends on: #N" text for dependencies
   (numbers will be filled after creation).
-- **Labels** — `Decomposed` plus the auto-derived phase label
+- **Labels** — `decomposed` plus the auto-derived phase label
 - **Dependencies** — which other child issues this depends on (by title,
   resolved to numbers in Step 4)
 
@@ -257,7 +257,7 @@ Write the issue body to `.flow-states/decompose-project-<id>-issue-body`
 using the Write tool, then create the issue:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo <repo> --title "<title>" --body-file .flow-states/decompose-project-<id>-issue-body --label Decomposed
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo <repo> --title "<title>" --body-file .flow-states/decompose-project-<id>-issue-body --label decomposed
 ```
 
 Parse the JSON output and record `{title, number, id}` in the mapping.
@@ -265,7 +265,7 @@ Parse the JSON output and record `{title, number, id}` in the mapping.
 Record the issue (no-op if no FLOW feature is active):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label Decomposed --title "<title>" --url "<issue_url>" --phase flow-decompose-project
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<title>" --url "<issue_url>" --phase flow-decompose-project
 ```
 
 After all issues are created, write the complete mapping to the session

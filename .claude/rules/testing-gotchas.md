@@ -43,6 +43,14 @@ the most common cause of coverage data "changing" between CI runs.
 Do not attribute coverage changes to env var leaking or subprocess
 interference without first verifying the file contents are unchanged.
 
+## Test Failure After Change: Question the Change First
+
+When a test fails after your change, the first question is "is my
+change wrong?" — not "should I update the test?" Adjusting a test
+to accommodate a change that is itself the bug produces a green CI
+that hides the real problem. Only update the test after confirming
+the change is correct.
+
 ## Ambiguous Check Name Filters
 
 When filtering a list of check results by name substring (e.g.
