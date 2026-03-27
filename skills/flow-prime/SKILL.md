@@ -396,7 +396,7 @@ Do NOT proceed until the user responds.
 
 **If "Commit and push":** invoke `/flow:flow-commit`.
 
-**If "Git-exclude (keep local-only)":** use the Read tool to read `.git/info/exclude`. Check whether `CLAUDE.md` and `.claude/` are already present. For each entry that is missing, use the Edit tool to append it on a new line at the end of the file. Do NOT invoke `/flow:flow-commit`.
+**If "Git-exclude (keep local-only)":** use the Read tool to read `.git/info/exclude`. Check whether `CLAUDE.md` and `.claude/` are already present. For each entry that is missing, use the Edit tool to append it. Do NOT invoke `/flow:flow-commit`.
 
 </HARD-GATE>
 
@@ -422,7 +422,7 @@ Report:
 - Global launcher installed at `~/.local/bin/flow` — run `flow tui` from any primed project
 - Slack notifications: configured (if env vars set) or disabled (if absent)
 - If the user chose "Commit and push": Changes committed and pushed
-- If the user chose "Git-exclude": Generated files git-excluded (local-only) — `CLAUDE.md` and `.claude/` will not be tracked by git
+- If the user chose "Git-exclude": Generated files git-excluded (local-only) — `CLAUDE.md` and `.claude/` kept local to this clone
 
 Display the skills configuration as a pipe-delimited markdown table with exactly this format (not a bullet list):
 

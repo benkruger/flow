@@ -2012,10 +2012,10 @@ def test_prime_step_7_has_commit_or_exclude_gate():
 
     # Done section must have conditional reporting for both paths
     done_match = re.search(
-        r"### Done.*", content, re.DOTALL
+        r"(### Done.*?)(?=\n### |\Z)", content, re.DOTALL
     )
     assert done_match, "Could not find Done section in flow-prime/SKILL.md"
-    done_text = done_match.group(0)
+    done_text = done_match.group(1)
     assert "committed" in done_text.lower(), (
         "flow-prime Done section must mention committed path"
     )

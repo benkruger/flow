@@ -15,7 +15,7 @@ Four core tenets guide every design decision:
 
 In the target project:
 
-- Users choose during prime whether to commit `CLAUDE.md` and `.claude/settings.json` or git-exclude them. `.flow.json` is always git-excluded
+- Commit-or-exclude choice for `CLAUDE.md` and `.claude/settings.json` is made at prime time. `.flow.json` is always git-excluded
 - `.flow-states/` is gitignored and deleted at Complete
 - After Complete, the only permanent artifacts are the merged PR and any CLAUDE.md learnings
 - Skills are pure Markdown instructions, not executable code
