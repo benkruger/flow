@@ -359,6 +359,37 @@ def test_try_write_lock_unlink_failure_ignored(tmp_path):
     assert lock_file.exists()
 
 
+# --- _lock_path tests ---
+
+
+def test_lock_path_stable_across_cwd_changes(tmp_path):
+    """_lock_path() returns the same absolute path even when project_root changes."""
+    (tmp_path / ".flow-states").mkdir()
+    other_dir = tmp_path / "other"
+    (other_dir / ".flow-states").mkdir(parents=True)
+
+    # Simulate project_root() returning different paths on successive calls
+    # (e.g. Path(".") resolving differently after a cwd change).
+    with patch.object(_mod, "project_root", side_effect=[tmp_path, other_dir]):
+        path1 = _mod._lock_path()
+        path2 = _mod._lock_path()
+
+    assert path1 == path2
+    assert path1.is_absolute()
+
+
+def test_lock_path_absolute_when_project_root_returns_dot(tmp_path, monkeypatch):
+    """_lock_path() returns an absolute path even when project_root() falls back to Path('.')."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".flow-states").mkdir()
+
+    with patch.object(_mod, "project_root", return_value=Path(".")):
+        result = _mod._lock_path()
+
+    assert result.is_absolute()
+    assert result == tmp_path / ".flow-states" / "start.lock"
+
+
 # --- acquire_with_wait tests ---
 
 

@@ -34,12 +34,19 @@ from flow_utils import now, project_root
 LOCK_FILENAME = "start.lock"
 STALE_TIMEOUT_SECONDS = 1800  # 30 minutes
 
+_CACHED_LOCK_PATH = None
+
 
 def _lock_path():
-    """Return the path to the lock file."""
-    state_dir = project_root() / ".flow-states"
+    """Return the path to the lock file. Cached after first resolution."""
+    global _CACHED_LOCK_PATH
+    if _CACHED_LOCK_PATH is not None:
+        return _CACHED_LOCK_PATH
+    root = project_root().resolve()
+    state_dir = root / ".flow-states"
     state_dir.mkdir(parents=True, exist_ok=True)
-    return state_dir / LOCK_FILENAME
+    _CACHED_LOCK_PATH = state_dir / LOCK_FILENAME
+    return _CACHED_LOCK_PATH
 
 
 def _read_lock(lock_file):
