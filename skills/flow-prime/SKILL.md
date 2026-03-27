@@ -288,7 +288,7 @@ All permissions (universal + all framework sets) for reference:
       "Bash(git worktree *)",
       "Bash(cd *)",
       "Bash(pwd)",
-      "Bash(chmod +x bin/*)",
+      "Bash(chmod +x *)",
       "Bash(gh pr create *)",
       "Bash(gh pr edit *)",
       "Bash(gh pr close *)",

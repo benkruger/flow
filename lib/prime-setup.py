@@ -56,7 +56,7 @@ UNIVERSAL_ALLOW = [
     "Bash(git worktree *)",
     "Bash(cd *)",
     "Bash(pwd)",
-    "Bash(chmod +x bin/*)",
+    "Bash(chmod +x *)",
     "Bash(gh pr create *)",
     "Bash(gh pr edit *)",
     "Bash(gh pr close *)",
