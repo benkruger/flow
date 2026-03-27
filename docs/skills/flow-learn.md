@@ -33,8 +33,8 @@ Learnings are routed autonomously based on destination:
 
 | # | Destination | Path | Method |
 |---|-------------|------|--------|
-| 1 | Project CLAUDE.md | `CLAUDE.md` in worktree | Edit on disk |
-| 2 | `.claude/rules/` | `.claude/rules/<topic>.md` in worktree | Edit on disk |
+| 1 | Project CLAUDE.md | `CLAUDE.md` in worktree | `bin/flow write-rule` |
+| 2 | `.claude/rules/` | `.claude/rules/<topic>.md` in worktree | `bin/flow write-rule` |
 
 Both CLAUDE.md and `.claude/rules/` edits are committed to the feature branch
 via `/flow-commit --auto`. All edits target the project repo — never
@@ -65,8 +65,9 @@ Learn auto-detects its context:
 | Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow-commit --auto` | No |
 | Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | No |
 
-All three modes route both CLAUDE.md and `.claude/rules/` edits directly
-to the project repo. Both destinations are edited on disk and committed.
+All three modes route both CLAUDE.md and `.claude/rules/` changes directly
+to the project repo. Both destinations are written via `bin/flow write-rule`
+subprocess and committed.
 
 Standalone mode lets any project use `/flow-learn` without a FLOW
 feature in progress — just review the current session and apply
