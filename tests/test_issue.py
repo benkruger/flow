@@ -73,29 +73,10 @@ class TestReadBodyFile:
 class TestCreateIssue:
     """Tests for the create_issue function."""
 
-    def _make_side_effect(self, create_result, api_result=None):
-        """Build a side_effect that routes gh issue vs gh api calls."""
-        if api_result is None:
-            api_result = subprocess.CompletedProcess(
-                args=[], returncode=0, stdout="99999\n", stderr="",
-            )
-
-        def side_effect(cmd, **kwargs):
-            if cmd[1] == "issue":
-                return create_result
-            if cmd[1] == "api":
-                return api_result
-            raise ValueError(f"Unexpected command: {cmd}")
-        return side_effect
-
     def test_happy_path_with_all_args(self):
-        create_result = subprocess.CompletedProcess(
-            args=[], returncode=0,
-            stdout="https://github.com/owner/repo/issues/42\n",
-            stderr="",
-        )
         with patch.object(issue_mod.subprocess, "run",
-                          side_effect=self._make_side_effect(create_result)):
+                          side_effect=_make_subprocess_router(
+                              "https://github.com/owner/repo/issues/42\n")):
             result, error = issue_mod.create_issue(
                 "owner/repo", "Test title", label="bug", body="Test body",
             )
@@ -105,13 +86,9 @@ class TestCreateIssue:
         assert error is None
 
     def test_happy_path_minimal_args(self):
-        create_result = subprocess.CompletedProcess(
-            args=[], returncode=0,
-            stdout="https://github.com/owner/repo/issues/1\n",
-            stderr="",
-        )
         with patch.object(issue_mod.subprocess, "run",
-                          side_effect=self._make_side_effect(create_result)):
+                          side_effect=_make_subprocess_router(
+                              "https://github.com/owner/repo/issues/1\n")):
             result, error = issue_mod.create_issue("owner/repo", "Title only")
 
         assert result["url"] == "https://github.com/owner/repo/issues/1"
@@ -119,13 +96,9 @@ class TestCreateIssue:
         assert error is None
 
     def test_label_only_no_body(self):
-        create_result = subprocess.CompletedProcess(
-            args=[], returncode=0,
-            stdout="https://github.com/owner/repo/issues/5\n",
-            stderr="",
-        )
         with patch.object(issue_mod.subprocess, "run",
-                          side_effect=self._make_side_effect(create_result)):
+                          side_effect=_make_subprocess_router(
+                              "https://github.com/owner/repo/issues/5\n")):
             result, error = issue_mod.create_issue(
                 "owner/repo", "With label", label="enhancement",
             )
@@ -135,13 +108,9 @@ class TestCreateIssue:
         assert error is None
 
     def test_body_only_no_label(self):
-        create_result = subprocess.CompletedProcess(
-            args=[], returncode=0,
-            stdout="https://github.com/owner/repo/issues/7\n",
-            stderr="",
-        )
         with patch.object(issue_mod.subprocess, "run",
-                          side_effect=self._make_side_effect(create_result)):
+                          side_effect=_make_subprocess_router(
+                              "https://github.com/owner/repo/issues/7\n")):
             result, error = issue_mod.create_issue(
                 "owner/repo", "With body", body="Details here",
             )
