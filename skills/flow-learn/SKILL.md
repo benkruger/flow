@@ -246,15 +246,16 @@ Both CLAUDE.md and `.claude/rules/` edits are direct — committed in Step 4.
 For each item routed to CLAUDE.md (process rules, architecture):
 
 1. Compose a learning entry following the writing rules above
-2. Read `<worktree_path>/CLAUDE.md`, apply the addition or rewording
-3. Do not duplicate existing content
+2. Read `<worktree_path>/CLAUDE.md` using the Read tool to check
+   existing content — do not duplicate
+3. Compose the full updated CLAUDE.md content with the learning applied
+4. Write the full content to `.flow-states/<branch>-rule-content.md`
+   using the Write tool
+5. Run the write-rule script to apply the change:
 
-### Handling denied edits
-
-If the user denies an Edit tool call, treat it as "skip this learning"
-— not "stop everything." Record which destination was skipped and
-continue with the remaining learnings. A denied edit does not block
-subsequent destinations, steps, or the phase completion.
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <worktree_path>/CLAUDE.md --content-file .flow-states/<branch>-rule-content.md
+```
 
 ### Apply rules changes
 
@@ -265,10 +266,17 @@ For each item routed to `.claude/rules/` (coding anti-patterns, gotchas):
    and whether it is a new rule or an update to an existing rule
 3. Use the Glob tool to check if the file exists at
    `<worktree_path>/.claude/rules/<topic>.md`
-4. If the file exists, use the Read tool to read it, then use the Edit
-   tool to add or update the rule in the appropriate section
-5. If the file does not exist, use the Write tool to create it with a
-   markdown heading matching the topic name
+4. If the file exists, use the Read tool to read it, then compose the
+   full updated content with the rule applied. If the file does not
+   exist, compose the full content with a markdown heading matching
+   the topic name
+5. Write the content to `.flow-states/<branch>-rule-content.md` using
+   the Write tool
+6. Run the write-rule script to apply the change:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <worktree_path>/.claude/rules/<topic>.md --content-file .flow-states/<branch>-rule-content.md
+```
 
 ---
 
@@ -541,13 +549,12 @@ No phase transition, no transition question.
 - In Phase 5, read all three sources before synthesizing findings
 - Follow the learning process (Steps 1 through 6) exactly — do not skip or reorder steps
 - Decisions on destinations and wording are autonomous — do not ask the user for approval mid-process
-- If the user denies an Edit tool call during Step 3, skip that learning and continue — a denied edit means "skip this one," not "stop the phase"
 - The report in Step 6 is the user's review point — make it comprehensive
-- CLAUDE.md and `.claude/rules/` learnings are edited on disk and committed via `/flow:flow-commit --auto` (Phase 5 and Maintainer)
+- CLAUDE.md and `.claude/rules/` learnings are written via `bin/flow write-rule` subprocess and committed via `/flow:flow-commit --auto` (Phase 5 and Maintainer)
 - All edits target the project repo — never user-level `~/.claude/` paths
 - Plugin process gaps are filed as GitHub issues on the plugin repo with label "Flow"
 - Documentation drift is filed as GitHub issues on the target project with label "Documentation Drift"
-- CLAUDE.md, `.claude/settings.json`, and `.claude/rules/` files are modified on disk — never application code
+- CLAUDE.md and `.claude/rules/` files are written via `bin/flow write-rule` subprocess — never via Edit or Write tools on `.claude/` paths
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories

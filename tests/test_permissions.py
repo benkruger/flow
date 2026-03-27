@@ -170,6 +170,7 @@ PLACEHOLDER_SUBS = {
     "<child_number>": "5",
     "<epic_number>": "1",
     "<dep_number>": "3",
+    "<topic>": "testing-gotchas",
 }
 
 
