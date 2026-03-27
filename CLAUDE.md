@@ -8,14 +8,14 @@ This repo is the plugin source code. When installed in a target project, skills 
 
 Four core tenets guide every design decision:
 
-1. **Unobtrusive** — zero repo footprint, zero dependencies. Nothing is committed — `.claude/settings.json` and `.flow.json` are git-excluded. Everything else lives in `.git/` or is gitignored.
+1. **Unobtrusive** — zero repo footprint, zero dependencies. During prime, users choose whether to commit `CLAUDE.md` and `.claude/settings.json` or git-exclude them. `.flow.json` is always git-excluded. Everything else lives in `.git/` or is gitignored.
 2. **As autonomous or manual as you want** — configurable autonomy via `.flow.json` skills settings.
 3. **Safe for local env** — no containers needed, no permission prompts ever. Native tools only, no external dependencies.
 4. **N×N×N concurrent** — N engineers running N flows on N boxes at the same time is the primary use case, not an edge case. Every feature, fix, and design decision must work when multiple flows are active simultaneously — on the same machine (multiple worktrees) and across machines (shared GitHub state). Local state (`.flow-states/`, worktrees) is per-machine. Shared state (PRs, issues, labels) is coordinated through GitHub. Nothing assumes a single active flow.
 
 In the target project:
 
-- Nothing is committed — `.claude/settings.json` and `.flow.json` are git-excluded
+- Commit-or-exclude choice for `CLAUDE.md` and `.claude/settings.json` is made at prime time. `.flow.json` is always git-excluded
 - `.flow-states/` is gitignored and deleted at Complete
 - After Complete, the only permanent artifacts are the merged PR and any CLAUDE.md learnings
 - Skills are pure Markdown instructions, not executable code
@@ -282,6 +282,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 - **Prefer dedicated tools over Bash for all non-execution tasks** — Read files with the Read tool, search with Glob and Grep, create with Write, modify with Edit. Bash should only be used for commands that genuinely require shell execution: `bin/ci`, `bin/test`, `bin/flow`, `make`, and `git`. In this project's strict permission environment (`defaultMode: "plan"`), every Bash command not in the allow list triggers a permission prompt. When you need to explore, understand, or modify files, use dedicated tools — they never prompt.
 - **Always use `bin/flow issue` to file GitHub issues** — never use `gh issue create` directly. `bin/flow issue` auto-detects the repo from git remote when `--repo` is omitted; pass `--repo` only when filing against a different repo. Direct `gh` calls trigger permission prompts.
 - **All FLOW-produced rules and instructions target the project repo** — `CLAUDE.md` and `.claude/rules/` are always repo-level paths, never user-level `~/.claude/` paths. Reading user-level files is fine; writing to them is never valid during any FLOW phase.
+- **Never use `run_in_background` for Bash commands during a FLOW phase** — background commands produce stale notifications that clutter the session after the workflow advances. Use parallel foreground tool calls (multiple Bash calls in one response) instead. This applies to `bin/flow log`, `bin/flow ci`, `git` commands, and all other Bash calls.
 
 <!-- FLOW:BEGIN -->
 

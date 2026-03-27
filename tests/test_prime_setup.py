@@ -560,7 +560,7 @@ def test_universal_allow_includes_bin_glob():
 
 
 def test_universal_allow_includes_chmod():
-    assert "Bash(chmod +x bin/*)" in _mod.UNIVERSAL_ALLOW
+    assert "Bash(chmod +x *)" in _mod.UNIVERSAL_ALLOW
 
 
 def test_universal_allow_includes_claude_plugin_commands():

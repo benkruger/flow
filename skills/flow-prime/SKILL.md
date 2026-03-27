@@ -288,7 +288,7 @@ All permissions (universal + all framework sets) for reference:
       "Bash(git worktree *)",
       "Bash(cd *)",
       "Bash(pwd)",
-      "Bash(chmod +x bin/*)",
+      "Bash(chmod +x *)",
       "Bash(gh pr create *)",
       "Bash(gh pr edit *)",
       "Bash(gh pr close *)",
@@ -321,6 +321,7 @@ All permissions (universal + all framework sets) for reference:
       "Bash(gh label *)",
       "Bash(curl *)",
       "Read(~/.claude/rules/*)",
+      "Read(~/.claude/projects/**/tool-results/*)",
       "Read(//tmp/*.txt)",
       "Read(//tmp/*.diff)",
       "Read(//tmp/*.patch)",
@@ -378,11 +379,27 @@ claude plugin install decompose@decompose-marketplace
 
 If all plugins are already present, skip silently.
 
-### Step 7 — Commit and push
+### Step 7 — Commit or git-exclude
 
-Check if the working tree has changes by running `git status`. If the output contains "working tree clean", skip the commit — go straight to Done.
+Check if the working tree has changes by running `git status`. If the output contains "working tree clean", skip to Done.
 
-Otherwise, commit via `/flow:flow-commit`.
+Otherwise, the user decides whether to commit the generated files into the repo or keep them local-only.
+
+<HARD-GATE>
+Do NOT commit, exclude, or take any action without an explicit choice from the user. Use AskUserQuestion:
+
+> "FLOW generated `CLAUDE.md` and `.claude/settings.json`. How should these be handled?"
+>
+> - **Commit and push** — "Track in version control (shared with team)"
+> - **Git-exclude (keep local-only)** — "Add to .git/info/exclude (local to this clone)"
+
+Do NOT proceed until the user responds.
+
+**If "Commit and push":** invoke `/flow:flow-commit`.
+
+**If "Git-exclude (keep local-only)":** use the Read tool to read `.git/info/exclude`. Check whether `CLAUDE.md` and `.claude/` are already present. For each entry that is missing, use the Edit tool to append it. Do NOT invoke `/flow:flow-commit`.
+
+</HARD-GATE>
 
 ### Done — Complete
 
@@ -405,7 +422,8 @@ Report:
 - Pre-commit hook installed — blocks direct `git commit`, requires `/flow:flow-commit`
 - Global launcher installed at `~/.local/bin/flow` — run `flow tui` from any primed project
 - Slack notifications: configured (if env vars set) or disabled (if absent)
-- Changes committed
+- If the user chose "Commit and push": Changes committed and pushed
+- If the user chose "Git-exclude": Generated files git-excluded (local-only) — `CLAUDE.md` and `.claude/` kept local to this clone
 
 Display the skills configuration as a pipe-delimited markdown table with exactly this format (not a bullet list):
 
