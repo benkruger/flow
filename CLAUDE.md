@@ -92,6 +92,7 @@ CI will fail if these are missing:
 - `lib/close-issues.py` — closes GitHub issues referenced in the start prompt (`#N` patterns) via `gh issue close`
 - `lib/label-issues.py` — adds or removes the "Flow In-Progress" label on GitHub issues referenced by `#N` in the start prompt; used by Start (add), Complete (remove), and Abort (remove) for multi-engineer WIP detection
 - `lib/issue.py` — creates GitHub issues via `gh` subprocess (wraps `gh issue create`; resolves repo via `--state-file` cached value, then `--repo` flag, then git remote detection); returns `url`, `number`, and REST API `id` (database ID) for sub-issue linking
+- `lib/write-rule.py` — writes content to a target file path via native Python I/O; used by Learn phase to bypass Claude Code's `.claude/` permission prompts; reads content from a temp file (`--content-file`), creates parent directories, writes to target (`--path`), deletes the temp file
 - `lib/create-milestone.py` — creates GitHub milestones via `gh api` (wraps `POST /repos/O/R/milestones`)
 - `lib/create-sub-issue.py` — sets sub-issue parent/child relationships via `gh api` (resolves database IDs internally)
 - `lib/link-blocked-by.py` — sets blocked-by dependency relationships via `gh api` (resolves database IDs internally)
@@ -225,6 +226,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_format_issues_summary.py` | Issues summary formatting: empty/missing/single/multiple issues, label grouping, table output, CLI |
 | `test_analyze_issues.py` | Issue analysis: file path extraction, dependency detection, label detection, stale detection, categorization, dependency graph, body truncation, CLI integration with gh subprocess/failure/timeout |
 | `test_close_issues.py` | Issue closing: extraction of `#N` patterns from prompt, deduplication, partial failure, repo-based URL generation, no-repo fallback, CLI integration |
+| `test_write_rule.py` | Write rule: read content file (happy path, missing, delete failure), write rule (happy path, parent dirs, write error, makedirs error, overwrite), CLI integration (happy, missing content, write error) |
 | `test_label_issues.py` | Issue labeling: add/remove Flow In-Progress label, partial failure, deduplication, missing prompt, CLI integration |
 | `test_check_phase.py` | Phase guard: blocks on incomplete prerequisites, allows on complete, handles worktrees, re-entry notes |
 | `test_session_start.py` | Session hook: feature detection, timing reset, awareness injection, multi-feature handling |
