@@ -215,7 +215,7 @@ def test_whitelist_allows_leading_glob():
     assert allowed is True
 
 
-def test_whitelist_allows_chmod_bin():
+def test_whitelist_allows_chmod_absolute_path():
     mod = _load_module()
     settings = {
         "permissions": {
