@@ -93,9 +93,13 @@ def _load_framework_permissions(framework):
 def test_settings_has_all_allow_entries_rails(tmp_path):
     _mod.merge_settings(tmp_path, "rails")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+    allow = settings["permissions"]["allow"]
     expected = _mod.UNIVERSAL_ALLOW + _load_framework_permissions("rails")
     for entry in expected:
-        assert entry in settings["permissions"]["allow"]
+        # Subsumed entries are correctly omitted (e.g. Bash(bin/rails test *)
+        # is subsumed by Bash(bin/*))
+        if not _mod._is_subsumed(entry, set(allow)):
+            assert entry in allow
 
 
 def test_settings_has_all_allow_entries_python(tmp_path):
@@ -341,19 +345,29 @@ def test_git_exclude_not_updated_when_already_present(git_repo):
 # --- In-process tests ---
 
 
+def _expected_allow_count(framework):
+    """Count expected allow entries after subsumption filtering."""
+    all_entries = _mod.UNIVERSAL_ALLOW + _load_framework_permissions(framework)
+    result = []
+    seen = set()
+    for entry in all_entries:
+        if entry not in seen and not _mod._is_subsumed(entry, seen):
+            result.append(entry)
+            seen.add(entry)
+    return len(result)
+
+
 def test_merge_settings_empty_project_rails(tmp_path):
     _mod.merge_settings(tmp_path, "rails")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-    expected = _mod.UNIVERSAL_ALLOW + _load_framework_permissions("rails")
-    assert len(settings["permissions"]["allow"]) == len(expected)
+    assert len(settings["permissions"]["allow"]) == _expected_allow_count("rails")
     assert len(settings["permissions"]["deny"]) == len(_mod.FLOW_DENY)
 
 
 def test_merge_settings_empty_project_python(tmp_path):
     _mod.merge_settings(tmp_path, "python")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-    expected = _mod.UNIVERSAL_ALLOW + _load_framework_permissions("python")
-    assert len(settings["permissions"]["allow"]) == len(expected)
+    assert len(settings["permissions"]["allow"]) == _expected_allow_count("python")
     assert len(settings["permissions"]["deny"]) == len(_mod.FLOW_DENY)
 
 
@@ -570,7 +584,8 @@ def test_gh_entries_grouped_in_universal_allow():
 def test_permissions_loaded_from_framework_directory(tmp_path):
     _mod.merge_settings(tmp_path, "rails")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-    assert "Bash(bin/rails test *)" in settings["permissions"]["allow"]
+    # Bash(bin/rails test *) is subsumed by Bash(bin/*) — check a non-subsumed entry
+    assert "Bash(rails *)" in settings["permissions"]["allow"]
 
 
 def test_load_framework_permissions_returns_empty_for_unknown():

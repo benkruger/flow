@@ -229,6 +229,7 @@ def merge_settings(project_root, framework):
     for entry in _allow_list(framework):
         if entry not in existing_allow and not _is_subsumed(entry, existing_allow):
             settings["permissions"]["allow"].append(entry)
+            existing_allow.add(entry)
 
     # Merge derived permissions (project-specific, from glob detection)
     for entry in _derive_permissions(project_root, framework):
