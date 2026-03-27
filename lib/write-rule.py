@@ -25,8 +25,9 @@ def read_content_file(path):
     The file is always deleted after reading, even if empty.
     """
     try:
-        content = open(path).read()
-    except (OSError, IOError) as exc:
+        with open(path) as f:
+            content = f.read()
+    except OSError as exc:
         return None, f"Could not read content file '{path}': {exc}"
 
     try:
@@ -50,7 +51,7 @@ def write_rule(target_path, content):
     try:
         with open(target_path, "w") as f:
             f.write(content)
-    except (OSError, IOError) as exc:
+    except OSError as exc:
         return False, f"Could not write to '{target_path}': {exc}"
 
     return True, None

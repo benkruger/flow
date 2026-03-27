@@ -550,11 +550,10 @@ No phase transition, no transition question.
 - Follow the learning process (Steps 1 through 6) exactly — do not skip or reorder steps
 - Decisions on destinations and wording are autonomous — do not ask the user for approval mid-process
 - The report in Step 6 is the user's review point — make it comprehensive
-- CLAUDE.md and `.claude/rules/` learnings are written via `bin/flow write-rule` subprocess and committed via `/flow:flow-commit --auto` (Phase 5 and Maintainer)
+- CLAUDE.md and `.claude/rules/` files are written via `bin/flow write-rule` subprocess and committed via `/flow:flow-commit --auto` (Phase 5 and Maintainer) — never via Edit or Write tools on `.claude/` paths
 - All edits target the project repo — never user-level `~/.claude/` paths
 - Plugin process gaps are filed as GitHub issues on the plugin repo with label "Flow"
 - Documentation drift is filed as GitHub issues on the target project with label "Documentation Drift"
-- CLAUDE.md and `.claude/rules/` files are written via `bin/flow write-rule` subprocess — never via Edit or Write tools on `.claude/` paths
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories
