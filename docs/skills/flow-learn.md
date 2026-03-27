@@ -67,7 +67,7 @@ Learn auto-detects its context:
 
 All three modes route both CLAUDE.md and `.claude/rules/` changes directly
 to the project repo. Both destinations are written via `bin/flow write-rule`
-subprocess and committed.
+and committed.
 
 Standalone mode lets any project use `/flow-learn` without a FLOW
 feature in progress — just review the current session and apply

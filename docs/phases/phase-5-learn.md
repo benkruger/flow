@@ -37,8 +37,8 @@ Claude decides destinations autonomously using content-type heuristics:
 | `.claude/rules/` | Coding anti-patterns and gotchas | `bin/flow write-rule`, committed via PR |
 
 Both CLAUDE.md and `.claude/rules/` are written via `bin/flow write-rule`
-subprocess and committed to the feature branch. All edits target the project
-repo — never user-level `~/.claude/` paths.
+and committed to the feature branch. All edits target the project repo —
+never user-level `~/.claude/` paths.
 
 **GitHub issues** — filed during Learn:
 
