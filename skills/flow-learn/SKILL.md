@@ -210,10 +210,32 @@ without asking the user.
 
 ### Destinations and routing
 
-| Learning type | Destination | Method |
+For each learning, follow this decision procedure to choose the destination:
+
+1. **Identify the topic.** Name the specific domain the learning applies to
+   (testing, concurrency, state files, skill authoring, etc.) or identify it
+   as project-wide knowledge (architecture, key files, universal conventions).
+2. **Check existing rules files.** Use the Glob tool to list files at
+   `<worktree_path>/.claude/rules/*.md`. If an existing file covers this
+   topic, route to that file (update it).
+3. **Apply the scope test.** Ask: "Would every Claude session in this project
+   need this knowledge, regardless of what it is working on?"
+   - If yes → Project CLAUDE.md (`CLAUDE.md`) — Edit on disk
+   - If no (only relevant in a specific area) → `.claude/rules/<topic>.md` — Edit on disk
+4. **Default to rules when ambiguous.** If the scope test is unclear, route to
+   `.claude/rules/`. CLAUDE.md is loaded into every session (token cost
+   compounds). Rules files are loaded on demand (zero cost when irrelevant).
+   The economic default favors rules.
+
+**Routing examples:**
+
+| Learning | Route to | Reason |
 |---|---|---|
-| Process rule or architecture | Project CLAUDE.md (`CLAUDE.md`) | Edit on disk |
-| Coding anti-pattern or gotcha | `.claude/rules/<topic>.md` | Edit on disk |
+| "Never use `replace_all=True` on JSON state files when the old_string appears in multiple contexts" | `.claude/rules/state-files.md` | Domain-specific — only relevant when editing state files |
+| "All timestamps use Pacific Time via `flow_utils.now()`" | `CLAUDE.md` | Every session needs this — any phase could generate timestamps |
+| "Never create symlinks to real binaries in test fixtures" | `.claude/rules/testing-gotchas.md` | Domain-specific — only relevant when writing tests |
+| "Skills are pure Markdown, not executable code" | `CLAUDE.md` | Architectural knowledge every session needs |
+| "Never use `cd <path> && git` — use `git -C`" | `.claude/rules/worktree-commands.md` | Domain-specific — only relevant when running git in worktrees |
 
 **Process gap routing:** Learnings about FLOW skill or process behavior
 (e.g. how a phase skill should present output, when a skill should
