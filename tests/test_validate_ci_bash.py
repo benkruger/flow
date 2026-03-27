@@ -219,11 +219,14 @@ def test_whitelist_allows_chmod_bin():
     mod = _load_module()
     settings = {
         "permissions": {
-            "allow": ["Bash(chmod +x bin/*)"],
+            "allow": ["Bash(chmod +x *)"],
             "deny": [],
         }
     }
-    allowed, message = mod.validate("chmod +x bin/ci-ios", settings=settings)
+    allowed, message = mod.validate(
+        "chmod +x /Users/ben/code/hh/.worktrees/feature/bin/qa",
+        settings=settings,
+    )
     assert allowed is True
     assert message == ""
 
