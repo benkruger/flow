@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import LOCAL_TIMEOUT, detect_repo
+from flow_utils import LOCAL_TIMEOUT, detect_repo, project_root
 
 
 def read_body_file(path):
@@ -31,6 +31,9 @@ def read_body_file(path):
     Returns (body_text, error_message). On success error is None.
     The file is always deleted after reading, even if empty.
     """
+    if not os.path.isabs(path):
+        path = str(project_root() / path)
+
     try:
         body = open(path).read()
     except (OSError, IOError) as exc:

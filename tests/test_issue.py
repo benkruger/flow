@@ -70,6 +70,48 @@ class TestReadBodyFile:
         assert error is None
 
 
+class TestReadBodyFilePathResolution:
+    """Tests for read_body_file path resolution against project_root."""
+
+    def test_relative_path_resolved_against_project_root(self, tmp_path):
+        """Relative path resolves against project_root(), not CWD."""
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        body_file = project_dir / ".flow-issue-body"
+        body_file.write_text("Resolved body")
+
+        # CWD is tmp_path (not project_dir), so bare open() would fail
+        with patch.object(issue_mod, "project_root", return_value=project_dir):
+            body, error = issue_mod.read_body_file(".flow-issue-body")
+
+        assert body == "Resolved body"
+        assert error is None
+        assert not body_file.exists()  # cleanup uses resolved path too
+
+    def test_absolute_path_used_as_is(self, tmp_path):
+        """Absolute path bypasses project_root() resolution."""
+        body_file = tmp_path / ".flow-issue-body"
+        body_file.write_text("Absolute body")
+
+        with patch.object(issue_mod, "project_root") as mock_pr:
+            body, error = issue_mod.read_body_file(str(body_file))
+
+        assert body == "Absolute body"
+        assert error is None
+        mock_pr.assert_not_called()
+
+    def test_relative_path_missing_returns_error(self, tmp_path):
+        """Relative path that doesn't exist at project_root returns error."""
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        with patch.object(issue_mod, "project_root", return_value=project_dir):
+            body, error = issue_mod.read_body_file("nonexistent.md")
+
+        assert body is None
+        assert "Could not read body file" in error
+
+
 class TestCreateIssue:
     """Tests for the create_issue function."""
 
