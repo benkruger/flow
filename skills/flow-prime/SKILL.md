@@ -321,6 +321,7 @@ All permissions (universal + all framework sets) for reference:
       "Bash(gh label *)",
       "Bash(curl *)",
       "Read(~/.claude/rules/*)",
+      "Read(~/.claude/projects/**/tool-results/*)",
       "Read(//tmp/*.txt)",
       "Read(//tmp/*.diff)",
       "Read(//tmp/*.patch)",
