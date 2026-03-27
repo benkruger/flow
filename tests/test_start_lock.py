@@ -4,6 +4,7 @@ import importlib
 import json
 import os
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -552,6 +553,25 @@ def test_release_deletes_lock_file(tmp_path):
     assert not lock_file.exists()
 
 
+def test_release_returns_error_when_lock_persists(tmp_path):
+    """Release returns error when lock file still exists after unlink attempt."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    lock_file = state_dir / "start.lock"
+    lock_file.write_text(json.dumps({"pid": 1, "feature": "f", "acquired_at": "t"}))
+
+    # Make unlink a no-op so the file persists
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(Path, "unlink"),
+    ):
+        result = _mod.release()
+
+    assert result["status"] == "error"
+    assert "lock_path" in result
+    assert lock_file.exists()
+
+
 def test_release_idempotent_when_no_lock(tmp_path):
     """Release succeeds even when no lock file exists."""
     state_dir = tmp_path / ".flow-states"
@@ -627,6 +647,49 @@ def test_check_when_locked(tmp_path):
     assert result["status"] == "locked"
     assert result["feature"] == "some-feature"
     assert result["pid"] == 55555
+
+
+# --- real-clock stale detection ---
+
+
+def test_check_stale_real_clock(tmp_path):
+    """Check detects stale lock using real clock (no now() mock)."""
+    from flow_utils import now
+
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    # Create a lock timestamped 31 minutes in the past using real time
+    real_now = datetime.fromisoformat(now())
+    past = real_now - timedelta(seconds=_mod.STALE_TIMEOUT_SECONDS + 60)
+    lock_data = {"pid": 99999, "feature": "old-feature", "acquired_at": past.isoformat()}
+    (state_dir / "start.lock").write_text(json.dumps(lock_data))
+
+    with patch.object(_mod, "project_root", return_value=tmp_path):
+        result = _mod.check()
+
+    assert result["status"] == "free"
+
+
+def test_acquire_stale_real_clock(tmp_path):
+    """Acquire breaks stale lock using real clock (no now() mock)."""
+    from flow_utils import now
+
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    real_now = datetime.fromisoformat(now())
+    past = real_now - timedelta(seconds=_mod.STALE_TIMEOUT_SECONDS + 60)
+    lock_data = {"pid": 99999, "feature": "old-feature", "acquired_at": past.isoformat()}
+    (state_dir / "start.lock").write_text(json.dumps(lock_data))
+
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch("os.getppid", return_value=12345),
+    ):
+        result = _mod.acquire("new-feature")
+
+    assert result["status"] == "acquired"
+    assert result["stale_broken"] is True
+    assert result["stale_feature"] == "old-feature"
 
 
 # --- CLI integration ---

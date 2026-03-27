@@ -192,7 +192,9 @@ def release():
     """Release the start lock."""
     lock_file = _lock_path()
     lock_file.unlink(missing_ok=True)
-    return {"status": "released"}
+    if lock_file.exists():
+        return {"status": "error", "message": "Lock file persists after unlink", "lock_path": str(lock_file)}
+    return {"status": "released", "lock_path": str(lock_file)}
 
 
 def check():
