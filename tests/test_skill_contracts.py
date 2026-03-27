@@ -1991,6 +1991,39 @@ def test_prime_commit_step_enforces_flow_commit_exclusively():
             )
 
 
+def test_prime_step_7_has_commit_or_exclude_gate():
+    """flow-prime Step 7 must have a HARD-GATE asking commit vs git-exclude."""
+    content = _read_skill("flow-prime")
+    step_match = re.search(
+        r"### Step 7.*?\n(.*?)(?=\n### Done)", content, re.DOTALL
+    )
+    assert step_match, "Could not find Step 7 in flow-prime/SKILL.md"
+    step_text = step_match.group(1)
+
+    assert "<HARD-GATE>" in step_text, (
+        "flow-prime Step 7 must have a <HARD-GATE> for commit/exclude decision"
+    )
+    assert "Commit and push" in step_text, (
+        "flow-prime Step 7 HARD-GATE must offer 'Commit and push' option"
+    )
+    assert "Git-exclude" in step_text, (
+        "flow-prime Step 7 HARD-GATE must offer 'Git-exclude' option"
+    )
+
+    # Done section must have conditional reporting for both paths
+    done_match = re.search(
+        r"(### Done.*?)(?=\n### |\Z)", content, re.DOTALL
+    )
+    assert done_match, "Could not find Done section in flow-prime/SKILL.md"
+    done_text = done_match.group(1)
+    assert "committed" in done_text.lower(), (
+        "flow-prime Done section must mention committed path"
+    )
+    assert "excluded" in done_text.lower() or "local-only" in done_text.lower(), (
+        "flow-prime Done section must mention excluded/local-only path"
+    )
+
+
 def test_prime_has_plugin_installation_step():
     """flow-prime must have a step installing the code-review plugin."""
     content = _read_skill("flow-prime")
