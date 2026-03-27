@@ -237,6 +237,167 @@ class TestCreateIssue:
         assert "timed out" in error.lower()
 
 
+class TestCreateIssueLabelRetry:
+    """Tests for label-not-found retry logic in create_issue."""
+
+    def _label_not_found_effect(self, retry_result, label_create_rc=0):
+        """Build side_effect: first call fails with label error, then handles
+        label create, then retries issue create."""
+        call_count = {"n": 0}
+
+        def side_effect(cmd, **kwargs):
+            call_count["n"] += 1
+            if cmd[1] == "issue" and call_count["n"] == 1:
+                # First issue create fails with label error
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=1, stdout="",
+                    stderr="could not add label: 'Flaky Test' not found",
+                )
+            if cmd[1] == "label":
+                # Label creation attempt
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=label_create_rc, stdout="", stderr="",
+                )
+            if cmd[1] == "issue":
+                # Retry issue create
+                return retry_result
+            if cmd[1] == "api":
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="99999\n", stderr="",
+                )
+            raise ValueError(f"Unexpected command: {cmd}")
+        return side_effect
+
+    def test_label_not_found_creates_label_and_retries(self):
+        """Label-not-found triggers gh label create, then retries with label."""
+        retry_result = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout="https://github.com/owner/repo/issues/42\n", stderr="",
+        )
+        with patch.object(issue_mod.subprocess, "run",
+                          side_effect=self._label_not_found_effect(retry_result)):
+            result, error = issue_mod.create_issue(
+                "owner/repo", "Test", label="Flaky Test",
+            )
+
+        assert error is None
+        assert result["url"] == "https://github.com/owner/repo/issues/42"
+
+    def test_label_create_fails_retries_without_label(self):
+        """If label creation fails, retry issue create without the label."""
+        retry_result = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout="https://github.com/owner/repo/issues/42\n", stderr="",
+        )
+        with patch.object(issue_mod.subprocess, "run",
+                          side_effect=self._label_not_found_effect(
+                              retry_result, label_create_rc=1)) as mock_run:
+            result, error = issue_mod.create_issue(
+                "owner/repo", "Test", label="Flaky Test",
+            )
+
+        assert error is None
+        assert result["url"] == "https://github.com/owner/repo/issues/42"
+        # The retry call should NOT contain --label
+        retry_call = mock_run.call_args_list[2]  # 3rd call = retry
+        assert "--label" not in retry_call[0][0]
+
+    def test_non_label_error_returns_immediately(self):
+        """Non-label errors are not retried."""
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="",
+            stderr="HTTP 422: Validation Failed",
+        )
+        with patch.object(issue_mod.subprocess, "run",
+                          return_value=fake_result) as mock_run:
+            result, error = issue_mod.create_issue(
+                "owner/repo", "Test", label="bug",
+            )
+
+        assert result is None
+        assert error == "HTTP 422: Validation Failed"
+        # Only one call — no retry
+        assert mock_run.call_count == 1
+
+    def test_label_create_timeout_retries_without_label(self):
+        """If gh label create times out, retry issue create without label."""
+        call_count = {"n": 0}
+
+        def side_effect(cmd, **kwargs):
+            call_count["n"] += 1
+            if cmd[1] == "issue" and call_count["n"] == 1:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=1, stdout="",
+                    stderr="could not add label: 'Flaky Test' not found",
+                )
+            if cmd[1] == "label":
+                raise subprocess.TimeoutExpired(cmd="gh", timeout=30)
+            if cmd[1] == "issue":
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0,
+                    stdout="https://github.com/owner/repo/issues/42\n",
+                    stderr="",
+                )
+            if cmd[1] == "api":
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="99999\n", stderr="",
+                )
+            raise ValueError(f"Unexpected command: {cmd}")
+
+        with patch.object(issue_mod.subprocess, "run", side_effect=side_effect):
+            result, error = issue_mod.create_issue(
+                "owner/repo", "Test", label="Flaky Test",
+            )
+
+        assert error is None
+        assert result["url"] == "https://github.com/owner/repo/issues/42"
+
+    def test_retry_failure_returns_error(self):
+        """If the retry also fails, return the retry error."""
+        call_count = {"n": 0}
+
+        def side_effect(cmd, **kwargs):
+            call_count["n"] += 1
+            if cmd[1] == "issue" and call_count["n"] == 1:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=1, stdout="",
+                    stderr="could not add label: 'Flaky Test' not found",
+                )
+            if cmd[1] == "label":
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="", stderr="",
+                )
+            if cmd[1] == "issue":
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=1, stdout="",
+                    stderr="HTTP 500: Internal Server Error",
+                )
+            raise ValueError(f"Unexpected command: {cmd}")
+
+        with patch.object(issue_mod.subprocess, "run", side_effect=side_effect):
+            result, error = issue_mod.create_issue(
+                "owner/repo", "Test", label="Flaky Test",
+            )
+
+        assert result is None
+        assert error == "HTTP 500: Internal Server Error"
+
+    def test_no_label_no_retry_on_failure(self):
+        """Without a label, label retry logic is not triggered."""
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="",
+            stderr="could not add label: 'bug' not found",
+        )
+        with patch.object(issue_mod.subprocess, "run",
+                          return_value=fake_result) as mock_run:
+            result, error = issue_mod.create_issue(
+                "owner/repo", "Test",  # no label arg
+            )
+
+        assert result is None
+        assert mock_run.call_count == 1
+
+
 def _make_subprocess_router(create_stdout, api_stdout="99999\n",
                             create_rc=0, api_rc=0,
                             create_stderr="", api_stderr=""):

@@ -103,7 +103,36 @@ def create_issue(repo, title, label=None, body=None):
 
     if result.returncode != 0:
         error = result.stderr.strip() or result.stdout.strip() or "Unknown error"
-        return None, error
+
+        # Label-not-found: try creating the label, then retry
+        if label and "label" in error.lower() and "not found" in error.lower():
+            try:
+                label_result = subprocess.run(
+                    ["gh", "label", "create", label, "--repo", repo],
+                    capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
+                )
+            except subprocess.TimeoutExpired:
+                label_result = None
+
+            if label_result and label_result.returncode == 0:
+                # Label created — retry with label
+                retry = subprocess.run(cmd, capture_output=True, text=True,
+                                       timeout=LOCAL_TIMEOUT)
+            else:
+                # Label creation failed — retry without label
+                retry_cmd = [c for c in cmd if c != "--label" and c != label]
+                retry = subprocess.run(retry_cmd, capture_output=True,
+                                       text=True, timeout=LOCAL_TIMEOUT)
+
+            if retry.returncode == 0:
+                result = retry
+            else:
+                retry_err = (retry.stderr.strip() or retry.stdout.strip()
+                             or "Unknown error")
+                return None, retry_err
+
+        else:
+            return None, error
 
     url = result.stdout.strip()
     number = parse_issue_number(url)
