@@ -20,6 +20,7 @@
       "Bash(rm .flow-*)",
       "Bash(rm -rf *.qa-repos*)",
       "Bash(rm .claude/settings.local.json)",
+      "Bash(chmod +x bin/*)",
       "Bash(cd *)",
       "Bash(pwd)",
       "Bash(make *)",
