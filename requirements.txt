@@ -2,3 +2,4 @@ pymarkdownlnt
 pytest
 pytest-cov
 pytest-xdist
+ruff
