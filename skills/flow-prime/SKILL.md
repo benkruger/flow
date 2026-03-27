@@ -295,7 +295,6 @@ All permissions (universal + all framework sets) for reference:
       "Bash(gh pr list *)",
       "Bash(bin/*)",
       "Bash(rm .flow-*)",
-      "Bash(*bin/flow *)",
       "Bash(gh pr view *)",
       "Bash(bin/rails test *)",
       "Bash(rails *)",
