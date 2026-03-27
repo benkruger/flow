@@ -81,7 +81,7 @@ def detect_labels(labels):
     label_names = {label["name"] for label in labels}
     return {
         "in_progress": "Flow In-Progress" in label_names,
-        "decomposed": "Decomposed" in label_names,
+        "decomposed": any(l.lower() == "decomposed" for l in label_names),
     }
 
 
