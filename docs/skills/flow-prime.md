@@ -30,7 +30,7 @@ One-time project setup. Configures workspace permissions in `.claude/settings.js
    - Primes the project CLAUDE.md with framework conventions from `frameworks/<name>/priming.md`
    - Creates `bin/dependencies` from the framework template
 6. Installs the `code-review` plugin from the `anthropics/claude-code` marketplace
-7. Commits `.claude/settings.json` and `.flow.json`
+7. Asks whether to commit generated files (`CLAUDE.md`, `.claude/settings.json`) or git-exclude them (keep local-only)
 
 ---
 
@@ -76,7 +76,7 @@ Derived permissions are merged into `.claude/settings.json` automatically during
 ## Gates
 
 - Must be in a git repository
-- Must be on the main branch (permissions are committed and shared with the team)
+- Must be on the main branch (setup runs against main before branching)
 
 ---
 
