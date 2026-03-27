@@ -53,10 +53,14 @@ def create(project_root, framework, frameworks_dir=None):
 
 def main():
     if len(sys.argv) < 2:
-        print(json.dumps({
-            "status": "error",
-            "message": "Usage: bin/flow create-dependencies <project_root> --framework <name>",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": "Usage: bin/flow create-dependencies <project_root> --framework <name>",
+                }
+            )
+        )
         sys.exit(1)
 
     project_root = sys.argv[1]
@@ -68,10 +72,14 @@ def main():
             break
 
     if not framework:
-        print(json.dumps({
-            "status": "error",
-            "message": "Missing --framework argument",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": "Missing --framework argument",
+                }
+            )
+        )
         sys.exit(1)
 
     result = create(project_root, framework)

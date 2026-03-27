@@ -16,8 +16,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import detect_repo, project_root, read_version, write_tab_sequences
 from tui_data import (
-    load_all_flows, load_orchestration, orchestration_summary,
-    parse_log_entries, phase_timeline,
+    load_all_flows,
+    load_orchestration,
+    orchestration_summary,
+    parse_log_entries,
+    phase_timeline,
 )
 
 # Auto-refresh interval in milliseconds
@@ -200,12 +203,12 @@ class TuiApp:
                 attr = attr | self._color(COLOR_FAILED)
             phase_info = f"{flow['phase_number']}: {flow['phase_name']}"
             pr_info = f"PR #{flow['pr_number']}" if flow["pr_number"] else ""
-            feature_display = flow['feature']
+            feature_display = flow["feature"]
             if len(feature_display) > 26:
                 feature_display = feature_display[:23] + "..."
             issue_nums = flow.get("issue_numbers", set())
             issue_info = " ".join(f"#{n}" for n in sorted(issue_nums)) + "  " if issue_nums else ""
-            elapsed_display = "Blocked" if flow["blocked"] else flow['elapsed']
+            elapsed_display = "Blocked" if flow["blocked"] else flow["elapsed"]
             line = f"{marker}{feature_display:<26s} {phase_info:<14s} {elapsed_display:<8s} {issue_info}{pr_info}"
             self._safe_addstr(row, 2, line, attr)
 
@@ -218,7 +221,10 @@ class TuiApp:
             self._draw_detail_panel(detail_start)
 
         # Footer
-        footer = " [\u2190\u2192] Tab  [\u2191\u2193] Navigate  [Enter] Worktree  [p] PR  [i] Issues  [I] Issue  [t] Tasks  [l] Log  [a] Abort  [r] Refresh  [q] Quit"
+        footer = (
+            " [\u2190\u2192] Tab  [\u2191\u2193] Navigate  [Enter] Worktree  [p] PR  [i] Issues"
+            "  [I] Issue  [t] Tasks  [l] Log  [a] Abort  [r] Refresh  [q] Quit"
+        )
         self._safe_addstr(max_y - 1, 0, footer, curses.A_DIM)
 
     def _draw_detail_panel(self, start_row):
@@ -542,7 +548,8 @@ class TuiApp:
         max_y, _ = self.stdscr.getmaxyx()
         flow = self.flows[self.selected]
         self._safe_addstr(
-            max_y - 1, 0,
+            max_y - 1,
+            0,
             f" Abort '{flow['feature']}'? [y/N] " + " " * 40,
             self._color(COLOR_FAILED) | curses.A_BOLD,
         )
@@ -567,9 +574,13 @@ class TuiApp:
         bin_flow = Path(__file__).resolve().parent.parent / "bin" / "flow"
 
         cmd = [
-            str(bin_flow), "cleanup", str(self.root),
-            "--branch", branch,
-            "--worktree", worktree,
+            str(bin_flow),
+            "cleanup",
+            str(self.root),
+            "--branch",
+            branch,
+            "--worktree",
+            worktree,
         ]
         if pr_number:
             cmd.extend(["--pr", str(pr_number)])

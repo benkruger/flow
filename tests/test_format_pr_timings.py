@@ -2,14 +2,11 @@
 
 import importlib.util
 import json
-import sys
 
 from conftest import LIB_DIR, make_state
 
 # Import format-pr-timings.py for in-process unit tests
-_spec = importlib.util.spec_from_file_location(
-    "format_pr_timings", LIB_DIR / "format-pr-timings.py"
-)
+_spec = importlib.util.spec_from_file_location("format_pr_timings", LIB_DIR / "format-pr-timings.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -136,9 +133,9 @@ def test_cli_writes_output_file(tmp_path, monkeypatch, capsys):
     state_file.write_text(json.dumps(state))
     output_file = tmp_path / "timings.md"
 
-    monkeypatch.setattr("sys.argv", ["format-pr-timings.py",
-                                      "--state-file", str(state_file),
-                                      "--output", str(output_file)])
+    monkeypatch.setattr(
+        "sys.argv", ["format-pr-timings.py", "--state-file", str(state_file), "--output", str(output_file)]
+    )
 
     _mod.main()
 
@@ -153,9 +150,10 @@ def test_cli_missing_state_file(tmp_path, monkeypatch, capsys):
     """CLI returns error when state file does not exist."""
     output_file = tmp_path / "timings.md"
 
-    monkeypatch.setattr("sys.argv", ["format-pr-timings.py",
-                                      "--state-file", str(tmp_path / "nonexistent.json"),
-                                      "--output", str(output_file)])
+    monkeypatch.setattr(
+        "sys.argv",
+        ["format-pr-timings.py", "--state-file", str(tmp_path / "nonexistent.json"), "--output", str(output_file)],
+    )
 
     _mod.main()
 
@@ -169,9 +167,9 @@ def test_cli_invalid_json_returns_error(tmp_path, monkeypatch, capsys):
     state_file.write_text("not valid json {{{")
     output_file = tmp_path / "timings.md"
 
-    monkeypatch.setattr("sys.argv", ["format-pr-timings.py",
-                                      "--state-file", str(state_file),
-                                      "--output", str(output_file)])
+    monkeypatch.setattr(
+        "sys.argv", ["format-pr-timings.py", "--state-file", str(state_file), "--output", str(output_file)]
+    )
 
     _mod.main()
 

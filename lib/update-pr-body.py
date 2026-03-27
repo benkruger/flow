@@ -6,8 +6,10 @@ Two modes:
 
 Usage:
   bin/flow update-pr-body --pr <N> --add-artifact --label "Plan file" --value "<path>"
-  bin/flow update-pr-body --pr <N> --add-artifact --label "Plan file" --value "<path>" --label "Session log" --value "<path>"
-  bin/flow update-pr-body --pr <N> --append-section --heading "State File" --summary "<name>" --content-file <path> --format json
+  bin/flow update-pr-body --pr <N> --add-artifact \
+    --label "Plan file" --value "<path>" --label "Session log" --value "<path>"
+  bin/flow update-pr-body --pr <N> --append-section \
+    --heading "State File" --summary "<name>" --content-file <path> --format json
 
 Output (JSON to stdout):
   Success: {"status": "ok", "action": "add_artifact|append_section"}
@@ -18,7 +20,6 @@ import argparse
 import json
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 
@@ -94,15 +95,7 @@ def _fence_for_content(content):
 def _build_details_block(heading, summary, content, fmt):
     """Build a collapsible details block with heading and fenced code."""
     fence = _fence_for_content(content)
-    return (
-        f"## {heading}\n\n"
-        f"<details>\n"
-        f"<summary>{summary}</summary>\n\n"
-        f"{fence}{fmt}\n"
-        f"{content}\n"
-        f"{fence}\n\n"
-        f"</details>"
-    )
+    return f"## {heading}\n\n<details>\n<summary>{summary}</summary>\n\n{fence}{fmt}\n{content}\n{fence}\n\n</details>"
 
 
 def _append_section_to_body(body, heading, summary, content, fmt):
@@ -123,7 +116,8 @@ def _gh_get_body(pr_number):
     """Read current PR body via gh."""
     result = subprocess.run(
         ["gh", "pr", "view", str(pr_number), "--json", "body", "--jq", ".body"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())
@@ -134,7 +128,8 @@ def _gh_set_body(pr_number, body):
     """Write PR body via gh."""
     result = subprocess.run(
         ["gh", "pr", "edit", str(pr_number), "--body", body],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())
@@ -145,32 +140,35 @@ def main():
     parser.add_argument("--pr", type=int, required=True, help="PR number")
 
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--add-artifact", action="store_true",
-                      help="Add artifact line to ## Artifacts section")
-    mode.add_argument("--append-section", action="store_true",
-                      help="Append collapsible details section")
+    mode.add_argument("--add-artifact", action="store_true", help="Add artifact line to ## Artifacts section")
+    mode.add_argument("--append-section", action="store_true", help="Append collapsible details section")
 
-    parser.add_argument("--label", action="append", default=[],
-                        help="Artifact label (for --add-artifact, repeatable)")
-    parser.add_argument("--value", action="append", default=[],
-                        help="Artifact value (for --add-artifact, repeatable)")
+    parser.add_argument("--label", action="append", default=[], help="Artifact label (for --add-artifact, repeatable)")
+    parser.add_argument("--value", action="append", default=[], help="Artifact value (for --add-artifact, repeatable)")
     parser.add_argument("--heading", help="Section heading (for --append-section)")
     parser.add_argument("--summary", help="Details summary (for --append-section)")
     parser.add_argument("--content-file", help="Path to content file (for --append-section)")
     parser.add_argument("--format", default="text", help="Code block format (for --append-section)")
-    parser.add_argument("--no-collapse", action="store_true",
-                        help="Render plain section instead of collapsible details (for --append-section)")
+    parser.add_argument(
+        "--no-collapse",
+        action="store_true",
+        help="Render plain section instead of collapsible details (for --append-section)",
+    )
 
     args = parser.parse_args()
 
     try:
         if args.add_artifact:
             if len(args.label) != len(args.value):
-                print(json.dumps({
-                    "status": "error",
-                    "message": f"Mismatched --label/--value count: "
-                               f"{len(args.label)} labels, {len(args.value)} values",
-                }))
+                print(
+                    json.dumps(
+                        {
+                            "status": "error",
+                            "message": f"Mismatched --label/--value count: "
+                            f"{len(args.label)} labels, {len(args.value)} values",
+                        }
+                    )
+                )
                 return
             body = _gh_get_body(args.pr)
             for label, value in zip(args.label, args.value):

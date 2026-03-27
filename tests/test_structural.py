@@ -6,7 +6,12 @@ import os
 import re
 
 from conftest import (
-    BIN_DIR, FRAMEWORKS_DIR, HOOKS_DIR, LIB_DIR, REPO_ROOT, SKILLS_DIR,
+    BIN_DIR,
+    FRAMEWORKS_DIR,
+    HOOKS_DIR,
+    LIB_DIR,
+    REPO_ROOT,
+    SKILLS_DIR,
     make_state,
 )
 
@@ -29,9 +34,7 @@ def test_commands_match_flow_pattern():
     data = _load_phases()
     for key, phase in data["phases"].items():
         cmd = phase["command"]
-        assert re.match(r"^/flow:[\w-]+$", cmd), (
-            f"Phase '{key}' command '{cmd}' doesn't match /flow:<name> pattern"
-        )
+        assert re.match(r"^/flow:[\w-]+$", cmd), f"Phase '{key}' command '{cmd}' doesn't match /flow:<name> pattern"
 
 
 def test_can_return_to_references_valid_lower_phases():
@@ -40,31 +43,19 @@ def test_can_return_to_references_valid_lower_phases():
     for key, phase in data["phases"].items():
         key_index = order.index(key)
         for target in phase["can_return_to"]:
-            assert target in data["phases"], (
-                f"Phase '{key}' can_return_to references non-existent phase '{target}'"
-            )
+            assert target in data["phases"], f"Phase '{key}' can_return_to references non-existent phase '{target}'"
             target_index = order.index(target)
-            assert target_index < key_index, (
-                f"Phase '{key}' can_return_to references same or higher phase '{target}'"
-            )
+            assert target_index < key_index, f"Phase '{key}' can_return_to references same or higher phase '{target}'"
 
 
 def test_version_matches_across_files():
-    plugin = json.loads(
-        (REPO_ROOT / ".claude-plugin" / "plugin.json").read_text()
-    )
-    marketplace = json.loads(
-        (REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text()
-    )
+    plugin = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())
+    marketplace = json.loads((REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text())
     v_plugin = plugin["version"]
     v_meta = marketplace["metadata"]["version"]
     v_entry = marketplace["plugins"][0]["version"]
-    assert v_plugin == v_meta, (
-        f"plugin.json ({v_plugin}) != marketplace metadata ({v_meta})"
-    )
-    assert v_plugin == v_entry, (
-        f"plugin.json ({v_plugin}) != marketplace plugins[0] ({v_entry})"
-    )
+    assert v_plugin == v_meta, f"plugin.json ({v_plugin}) != marketplace metadata ({v_meta})"
+    assert v_plugin == v_entry, f"plugin.json ({v_plugin}) != marketplace plugins[0] ({v_entry})"
 
 
 def test_every_skill_dir_has_skill_md():
@@ -77,36 +68,30 @@ def test_every_skill_dir_has_skill_md():
 def test_every_skill_dir_starts_with_flow_prefix():
     for d in sorted(SKILLS_DIR.iterdir()):
         if d.is_dir():
-            assert d.name.startswith("flow-"), (
-                f"skills/{d.name}/ does not start with 'flow-' prefix"
-            )
+            assert d.name.startswith("flow-"), f"skills/{d.name}/ does not start with 'flow-' prefix"
 
 
 def test_phase_names_in_flow_utils_match_flow_phases():
     """PHASE_NAMES in flow_utils.py must match flow-phases.json."""
     from flow_utils import PHASE_NAMES
+
     data = _load_phases()
     for key, phase in data["phases"].items():
-        assert key in PHASE_NAMES, (
-            f"Phase '{key}' not found in flow_utils.py PHASE_NAMES"
-        )
+        assert key in PHASE_NAMES, f"Phase '{key}' not found in flow_utils.py PHASE_NAMES"
         assert PHASE_NAMES[key] == phase["name"], (
-            f"Phase '{key}': flow_utils.py has '{PHASE_NAMES[key]}' "
-            f"but flow-phases.json has '{phase['name']}'"
+            f"Phase '{key}': flow_utils.py has '{PHASE_NAMES[key]}' but flow-phases.json has '{phase['name']}'"
         )
 
 
 def test_check_phase_commands_match_flow_phases():
     """COMMANDS in flow_utils.py must match flow-phases.json."""
     from flow_utils import COMMANDS
+
     data = _load_phases()
     for key, phase in data["phases"].items():
-        assert key in COMMANDS, (
-            f"Phase '{key}' not found in flow_utils.py COMMANDS"
-        )
+        assert key in COMMANDS, f"Phase '{key}' not found in flow_utils.py COMMANDS"
         assert COMMANDS[key] == phase["command"], (
-            f"Phase '{key}': flow_utils.py has '{COMMANDS[key]}' "
-            f"but flow-phases.json has '{phase['command']}'"
+            f"Phase '{key}': flow_utils.py has '{COMMANDS[key]}' but flow-phases.json has '{phase['command']}'"
         )
 
 
@@ -120,11 +105,10 @@ def test_hooks_json_references_existing_files():
                 resolved = cmd.replace("${CLAUDE_PLUGIN_ROOT}", str(REPO_ROOT))
                 # Extract the script path (first space-separated token)
                 script_path = resolved.split()[0]
-                assert REPO_ROOT.joinpath(
-                    script_path.replace(str(REPO_ROOT) + "/", "")
-                ).exists() or __import__("pathlib").Path(script_path).exists(), (
-                    f"Hook command references non-existent file: {cmd}"
-                )
+                assert (
+                    REPO_ROOT.joinpath(script_path.replace(str(REPO_ROOT) + "/", "")).exists()
+                    or __import__("pathlib").Path(script_path).exists()
+                ), f"Hook command references non-existent file: {cmd}"
 
 
 def test_hook_scripts_are_executable():
@@ -140,23 +124,18 @@ def test_hook_scripts_are_executable():
                 path = REPO_ROOT / script_path.replace(str(REPO_ROOT) + "/", "")
                 if path.exists() and not os.access(path, os.X_OK):
                     non_executable.append(str(path.relative_to(REPO_ROOT)))
-    assert not non_executable, (
-        f"Hook scripts missing execute permission: {', '.join(non_executable)}"
-    )
+    assert not non_executable, f"Hook scripts missing execute permission: {', '.join(non_executable)}"
 
 
 def test_hooks_json_has_pretooluse_bash_validator():
     """hooks.json must register validate-ci-bash.py as a global PreToolUse hook."""
     hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
     assert "PreToolUse" in hooks["hooks"], (
-        "hooks.json missing PreToolUse key — "
-        "the global Bash validator must be registered"
+        "hooks.json missing PreToolUse key — the global Bash validator must be registered"
     )
     matchers = hooks["hooks"]["PreToolUse"]
     bash_matchers = [m for m in matchers if m["matcher"] == "Bash"]
-    assert len(bash_matchers) == 1, (
-        f"Expected exactly 1 Bash matcher in PreToolUse, got {len(bash_matchers)}"
-    )
+    assert len(bash_matchers) == 1, f"Expected exactly 1 Bash matcher in PreToolUse, got {len(bash_matchers)}"
     commands = [h["command"] for h in bash_matchers[0]["hooks"]]
     assert any("validate-ci-bash.py" in cmd for cmd in commands), (
         "PreToolUse Bash hook must reference validate-ci-bash.py"
@@ -170,8 +149,7 @@ def test_hooks_json_has_no_exit_plan_validator():
     matchers = hooks["hooks"]["PreToolUse"]
     exit_plan_matchers = [m for m in matchers if m["matcher"] == "ExitPlanMode"]
     assert len(exit_plan_matchers) == 0, (
-        f"ExitPlanMode hook should not exist — plan mode was removed. "
-        f"Found {len(exit_plan_matchers)} matcher(s)"
+        f"ExitPlanMode hook should not exist — plan mode was removed. Found {len(exit_plan_matchers)} matcher(s)"
     )
 
 
@@ -193,8 +171,7 @@ def test_conftest_phase_names_match_flow_phases():
         fixture_name = state["phases"][key]["name"]
         canonical_name = phase["name"]
         assert fixture_name == canonical_name, (
-            f"Phase '{key}': conftest.make_state() uses '{fixture_name}' "
-            f"but flow-phases.json uses '{canonical_name}'"
+            f"Phase '{key}': conftest.make_state() uses '{fixture_name}' but flow-phases.json uses '{canonical_name}'"
         )
 
 
@@ -208,12 +185,8 @@ def test_every_script_has_a_test_file():
         if f.is_file() and os.access(f, os.X_OK):
             stem = f.stem.replace("-", "_")
             scripts[f.relative_to(REPO_ROOT)] = REPO_ROOT / "tests" / f"test_bin_{stem}.py"
-    missing = [
-        str(script) for script, test in scripts.items() if not test.exists()
-    ]
-    assert not missing, (
-        f"Scripts without test files: {', '.join(missing)}"
-    )
+    missing = [str(script) for script, test in scripts.items() if not test.exists()]
+    assert not missing, f"Scripts without test files: {', '.join(missing)}"
 
 
 def test_pytest_xdist_in_requirements():
@@ -235,8 +208,7 @@ def test_claude_md_has_no_lessons_learned_section():
     CLAUDE.md is for architecture, conventions, and project description."""
     content = (REPO_ROOT / "CLAUDE.md").read_text()
     assert "## Lessons Learned" not in content, (
-        "CLAUDE.md still has a '## Lessons Learned' section — "
-        "learnings belong in rules files, not CLAUDE.md"
+        "CLAUDE.md still has a '## Lessons Learned' section — learnings belong in rules files, not CLAUDE.md"
     )
 
 
@@ -247,12 +219,8 @@ FRAMEWORK_REQUIRED_FILES = ["detect.json", "permissions.json", "dependencies", "
 
 def _load_frameworks():
     """Return list of (name, path) for every framework directory."""
-    assert FRAMEWORKS_DIR.is_dir(), (
-        f"frameworks/ directory does not exist at {FRAMEWORKS_DIR}"
-    )
-    frameworks = [
-        (d.name, d) for d in sorted(FRAMEWORKS_DIR.iterdir()) if d.is_dir()
-    ]
+    assert FRAMEWORKS_DIR.is_dir(), f"frameworks/ directory does not exist at {FRAMEWORKS_DIR}"
+    frameworks = [(d.name, d) for d in sorted(FRAMEWORKS_DIR.iterdir()) if d.is_dir()]
     assert len(frameworks) >= 1, "frameworks/ directory has no framework subdirectories"
     return frameworks
 
@@ -262,9 +230,7 @@ def test_frameworks_directory_has_required_files():
     dependencies, and priming.md."""
     for name, path in _load_frameworks():
         for filename in FRAMEWORK_REQUIRED_FILES:
-            assert (path / filename).exists(), (
-                f"frameworks/{name}/ missing required file: {filename}"
-            )
+            assert (path / filename).exists(), f"frameworks/{name}/ missing required file: {filename}"
 
 
 def test_framework_detect_json_schema():
@@ -272,15 +238,9 @@ def test_framework_detect_json_schema():
     for name, path in _load_frameworks():
         data = json.loads((path / "detect.json").read_text())
         assert "name" in data, f"frameworks/{name}/detect.json missing 'name'"
-        assert "display_name" in data, (
-            f"frameworks/{name}/detect.json missing 'display_name'"
-        )
-        assert "detect_globs" in data, (
-            f"frameworks/{name}/detect.json missing 'detect_globs'"
-        )
-        assert isinstance(data["detect_globs"], list), (
-            f"frameworks/{name}/detect.json 'detect_globs' must be a list"
-        )
+        assert "display_name" in data, f"frameworks/{name}/detect.json missing 'display_name'"
+        assert "detect_globs" in data, f"frameworks/{name}/detect.json missing 'detect_globs'"
+        assert isinstance(data["detect_globs"], list), f"frameworks/{name}/detect.json 'detect_globs' must be a list"
         assert len(data["detect_globs"]) >= 1, (
             f"frameworks/{name}/detect.json 'detect_globs' must have at least one entry"
         )
@@ -293,19 +253,12 @@ def test_framework_permissions_json_schema():
     """Each permissions.json must have an 'allow' array of strings."""
     for name, path in _load_frameworks():
         data = json.loads((path / "permissions.json").read_text())
-        assert "allow" in data, (
-            f"frameworks/{name}/permissions.json missing 'allow'"
-        )
-        assert isinstance(data["allow"], list), (
-            f"frameworks/{name}/permissions.json 'allow' must be a list"
-        )
+        assert "allow" in data, f"frameworks/{name}/permissions.json missing 'allow'"
+        assert isinstance(data["allow"], list), f"frameworks/{name}/permissions.json 'allow' must be a list"
         for entry in data["allow"]:
-            assert isinstance(entry, str), (
-                f"frameworks/{name}/permissions.json 'allow' entries must be strings"
-            )
+            assert isinstance(entry, str), f"frameworks/{name}/permissions.json 'allow' entries must be strings"
             assert entry.startswith("Bash("), (
-                f"frameworks/{name}/permissions.json entry '{entry}' "
-                f"must start with 'Bash('"
+                f"frameworks/{name}/permissions.json entry '{entry}' must start with 'Bash('"
             )
 
 
@@ -313,9 +266,7 @@ def test_framework_dependencies_is_executable_script():
     """Each dependencies file must start with a shebang line."""
     for name, path in _load_frameworks():
         content = (path / "dependencies").read_text()
-        assert content.startswith("#!/"), (
-            f"frameworks/{name}/dependencies must start with a shebang (#!/...)"
-        )
+        assert content.startswith("#!/"), f"frameworks/{name}/dependencies must start with a shebang (#!/...)"
 
 
 def test_plugin_json_has_no_config_hash():
@@ -323,12 +274,9 @@ def test_plugin_json_has_no_config_hash():
 
     The hash is computed dynamically by prime-setup.py and prime-check.py.
     """
-    plugin = json.loads(
-        (REPO_ROOT / ".claude-plugin" / "plugin.json").read_text()
-    )
+    plugin = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())
     assert "config_hash" not in plugin, (
-        "plugin.json must not contain config_hash — "
-        "Claude Code's plugin validator rejects unrecognized keys"
+        "plugin.json must not contain config_hash — Claude Code's plugin validator rejects unrecognized keys"
     )
 
 
@@ -336,38 +284,22 @@ def test_hooks_json_has_post_compact_hook():
     """hooks.json must register post-compact.py as a PostCompact hook."""
     hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
     assert "PostCompact" in hooks["hooks"], (
-        "hooks.json missing PostCompact key — "
-        "the compaction data capture hook must be registered"
+        "hooks.json missing PostCompact key — the compaction data capture hook must be registered"
     )
     matchers = hooks["hooks"]["PostCompact"]
     assert len(matchers) >= 1, "PostCompact hook must have at least one entry"
-    commands = [
-        h["command"]
-        for entry in matchers
-        for h in entry["hooks"]
-    ]
-    assert any("post-compact.py" in cmd for cmd in commands), (
-        "PostCompact hook must reference post-compact.py"
-    )
+    commands = [h["command"] for entry in matchers for h in entry["hooks"]]
+    assert any("post-compact.py" in cmd for cmd in commands), "PostCompact hook must reference post-compact.py"
 
 
 def test_hooks_json_has_stop_continue_hook():
     """hooks.json must register stop-continue.py as a Stop hook."""
     hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
-    assert "Stop" in hooks["hooks"], (
-        "hooks.json missing Stop key — "
-        "the continuation hook must be registered"
-    )
+    assert "Stop" in hooks["hooks"], "hooks.json missing Stop key — the continuation hook must be registered"
     matchers = hooks["hooks"]["Stop"]
     assert len(matchers) >= 1, "Stop hook must have at least one entry"
-    commands = [
-        h["command"]
-        for entry in matchers
-        for h in entry["hooks"]
-    ]
-    assert any("stop-continue.py" in cmd for cmd in commands), (
-        "Stop hook must reference stop-continue.py"
-    )
+    commands = [h["command"] for entry in matchers for h in entry["hooks"]]
+    assert any("stop-continue.py" in cmd for cmd in commands), "Stop hook must reference stop-continue.py"
 
 
 def test_checksum_version_invariant():
@@ -399,6 +331,4 @@ def test_checksum_version_invariant():
     assert all(c in "0123456789abcdef" for c in config_hash)
 
     claude_md = (REPO_ROOT / "CLAUDE.md").read_text()
-    assert "Checksum → Version Invariant" in claude_md, (
-        "CLAUDE.md must document the checksum → version invariant"
-    )
+    assert "Checksum → Version Invariant" in claude_md, "CLAUDE.md must document the checksum → version invariant"

@@ -3,15 +3,11 @@
 import importlib.util
 import json
 import sys
-from pathlib import Path
 
 import pytest
-
 from conftest import FRAMEWORKS_DIR, LIB_DIR
 
-_spec = importlib.util.spec_from_file_location(
-    "detect_framework", LIB_DIR / "detect-framework.py"
-)
+_spec = importlib.util.spec_from_file_location("detect_framework", LIB_DIR / "detect-framework.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 

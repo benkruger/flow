@@ -31,10 +31,14 @@ def detect_repo_or_fail():
     repo = detect_repo()
     if repo:
         return repo
-    print(json.dumps({
-        "status": "error",
-        "message": "Could not detect repo from git remote. Use --repo owner/name.",
-    }))
+    print(
+        json.dumps(
+            {
+                "status": "error",
+                "message": "Could not detect repo from git remote. Use --repo owner/name.",
+            }
+        )
+    )
     sys.exit(1)
 
 
@@ -43,7 +47,9 @@ def close_issue_by_number(repo, number):
     try:
         result = subprocess.run(
             ["gh", "issue", "close", "--repo", repo, str(number)],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
     except subprocess.TimeoutExpired:
         return "Command timed out after 30 seconds"

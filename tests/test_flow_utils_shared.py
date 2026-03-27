@@ -5,7 +5,6 @@ from datetime import datetime
 
 from flow_utils import PACIFIC, current_branch, elapsed_since, read_version, read_version_from
 
-
 # --- elapsed_since ---
 
 
@@ -36,6 +35,7 @@ def test_elapsed_since_default_now():
 def test_elapsed_since_utc_timestamp():
     """Handles UTC timestamps (Z suffix) from old state files."""
     from datetime import timezone
+
     started = "2026-01-01T00:00:00Z"
     now = datetime(2026, 1, 1, 0, 5, 0, tzinfo=timezone.utc)
     assert elapsed_since(started, now=now) == 300

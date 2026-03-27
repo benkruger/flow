@@ -52,8 +52,7 @@ def create_state(queue, state_dir):
         if existing.get("completed_at") is None:
             return {
                 "status": "error",
-                "message": "Orchestration already in progress. "
-                "Complete or abort the current run first.",
+                "message": "Orchestration already in progress. Complete or abort the current run first.",
             }
 
     state = {
@@ -206,8 +205,12 @@ def main():
                 print(json.dumps({"status": "error", "message": "--outcome required with --record-outcome"}))
                 return
             result = record_outcome(
-                args.state_file, args.record_outcome, args.outcome,
-                pr_url=args.pr_url, branch=args.branch, reason=args.reason,
+                args.state_file,
+                args.record_outcome,
+                args.outcome,
+                pr_url=args.pr_url,
+                branch=args.branch,
+                reason=args.reason,
             )
 
         elif args.complete:

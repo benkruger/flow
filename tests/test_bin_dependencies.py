@@ -5,7 +5,6 @@ import shutil
 import subprocess
 
 import pytest
-
 from conftest import BIN_DIR
 
 
@@ -39,7 +38,10 @@ def _run_dep(project_dir):
     env = {k: v for k, v in os.environ.items() if k != "COVERAGE_PROCESS_START"}
     return subprocess.run(
         ["bash", str(project_dir / "bin" / "dependencies")],
-        capture_output=True, text=True, cwd=str(project_dir), env=env,
+        capture_output=True,
+        text=True,
+        cwd=str(project_dir),
+        env=env,
     )
 
 
@@ -53,7 +55,8 @@ def test_script_is_valid_bash(tmp_path):
     dep = BIN_DIR / "dependencies"
     result = subprocess.run(
         ["bash", "-n", str(dep)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0, f"Syntax error: {result.stderr}"
 

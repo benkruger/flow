@@ -12,8 +12,6 @@ import sys
 import time
 from pathlib import Path
 
-import pytest
-
 LIB_DIR = str(Path(__file__).resolve().parent.parent / "lib")
 
 
@@ -21,15 +19,18 @@ def _init_git_repo(path):
     """Create a minimal git repo at path for project_root() resolution."""
     subprocess.run(
         ["git", "-c", "init.defaultBranch=main", "init"],
-        cwd=str(path), capture_output=True, check=True,
+        cwd=str(path),
+        capture_output=True,
+        check=True,
     )
     config = path / ".git" / "config"
     with open(config, "a") as f:
-        f.write("[user]\n\temail = t@t.com\n\tname = T\n"
-                "[commit]\n\tgpgsign = false\n")
+        f.write("[user]\n\temail = t@t.com\n\tname = T\n[commit]\n\tgpgsign = false\n")
     subprocess.run(
         ["git", "commit", "--allow-empty", "-m", "init"],
-        cwd=str(path), capture_output=True, check=True,
+        cwd=str(path),
+        capture_output=True,
+        check=True,
     )
 
 
@@ -40,6 +41,7 @@ def _worker_mutate_increment(state_path_str, lib_dir):
     """Increment counter in state file via mutate_state."""
     sys.path.insert(0, lib_dir)
     from flow_utils import mutate_state
+
     mutate_state(
         state_path_str,
         lambda s: s.__setitem__("count", s.get("count", 0) + 1),
@@ -51,24 +53,25 @@ def _worker_log_append(repo_path_str, worker_id, lib_dir):
     sys.path.insert(0, lib_dir)
     os.chdir(repo_path_str)
     from log import append_log
+
     append_log("test-branch", f"worker-{worker_id}")
 
 
-def _worker_start_lock(repo_path_str, worker_id, results_dir_str, lib_dir,
-                       delay):
+def _worker_start_lock(repo_path_str, worker_id, results_dir_str, lib_dir, delay):
     """Acquire lock, hold briefly, release. Record timing to file."""
     time.sleep(delay)
     sys.path.insert(0, lib_dir)
     os.chdir(repo_path_str)
     import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "start_lock", os.path.join(lib_dir, "start-lock.py")
-    )
+
+    spec = importlib.util.spec_from_file_location("start_lock", os.path.join(lib_dir, "start-lock.py"))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
     result = mod.acquire_with_wait(
-        f"feature-{worker_id}", timeout=30, interval=0.1,
+        f"feature-{worker_id}",
+        timeout=30,
+        interval=0.1,
     )
     acquired_at = time.monotonic()
     time.sleep(0.3)
@@ -76,12 +79,14 @@ def _worker_start_lock(repo_path_str, worker_id, results_dir_str, lib_dir,
     mod.release()
 
     Path(results_dir_str, f"worker-{worker_id}.json").write_text(
-        json.dumps({
-            "worker_id": worker_id,
-            "status": result["status"],
-            "acquired_at": acquired_at,
-            "released_at": released_at,
-        })
+        json.dumps(
+            {
+                "worker_id": worker_id,
+                "status": result["status"],
+                "acquired_at": acquired_at,
+                "released_at": released_at,
+            }
+        )
     )
 
 
@@ -96,9 +101,8 @@ def _worker_cleanup(project_root_str, branch, worktree, lib_dir):
     """Run cleanup() on a branch."""
     sys.path.insert(0, lib_dir)
     import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "cleanup", os.path.join(lib_dir, "cleanup.py")
-    )
+
+    spec = importlib.util.spec_from_file_location("cleanup", os.path.join(lib_dir, "cleanup.py"))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     mod.cleanup(project_root_str, branch, worktree)
@@ -108,6 +112,7 @@ def _worker_mutate_flag(state_path_str, lib_dir):
     """Set mutated=True in a state file via mutate_state."""
     sys.path.insert(0, lib_dir)
     from flow_utils import mutate_state
+
     mutate_state(
         state_path_str,
         lambda s: s.__setitem__("mutated", True),
@@ -186,8 +191,7 @@ def test_start_lock_serialization(tmp_path):
     for i in range(3):
         p = multiprocessing.Process(
             target=_worker_start_lock,
-            args=(str(tmp_path), i, str(results_dir), LIB_DIR,
-                  i * 0.1),
+            args=(str(tmp_path), i, str(results_dir), LIB_DIR, i * 0.1),
         )
         workers.append(p)
 
@@ -207,8 +211,7 @@ def test_start_lock_serialization(tmp_path):
     timings.sort(key=lambda t: t["acquired_at"])
     for i in range(1, len(timings)):
         assert timings[i]["acquired_at"] >= timings[i - 1]["released_at"], (
-            f"Worker {timings[i]['worker_id']} overlaps with "
-            f"worker {timings[i - 1]['worker_id']}"
+            f"Worker {timings[i]['worker_id']} overlaps with worker {timings[i - 1]['worker_id']}"
         )
 
 

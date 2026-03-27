@@ -40,12 +40,17 @@ def link_blocked_by(repo, blocked_number, blocking_number):
     try:
         result = subprocess.run(
             [
-                "gh", "api",
+                "gh",
+                "api",
                 f"repos/{repo}/issues/{blocked_number}/dependencies/blocked_by",
-                "--method", "POST",
-                "-f", f"issue_id={blocking_id}",
+                "--method",
+                "POST",
+                "-f",
+                f"issue_id={blocking_id}",
             ],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
     except subprocess.TimeoutExpired:
         return None, "Link creation timed out after 30 seconds"
@@ -58,18 +63,16 @@ def link_blocked_by(repo, blocked_number, blocking_number):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Create a GitHub blocked-by dependency")
-    parser.add_argument("--repo", required=True,
-                        help="Repository (owner/name)")
-    parser.add_argument("--blocked-number", required=True, type=int,
-                        help="Issue that is blocked")
-    parser.add_argument("--blocking-number", required=True, type=int,
-                        help="Issue that blocks")
+    parser = argparse.ArgumentParser(description="Create a GitHub blocked-by dependency")
+    parser.add_argument("--repo", required=True, help="Repository (owner/name)")
+    parser.add_argument("--blocked-number", required=True, type=int, help="Issue that is blocked")
+    parser.add_argument("--blocking-number", required=True, type=int, help="Issue that blocks")
     args = parser.parse_args()
 
     result, error = link_blocked_by(
-        args.repo, args.blocked_number, args.blocking_number,
+        args.repo,
+        args.blocked_number,
+        args.blocking_number,
     )
 
     if error:

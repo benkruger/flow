@@ -47,12 +47,10 @@ def validate(file_path, cwd):
     if file_path.startswith(project_root + "/.flow-states/"):
         return (True, "")
 
-    relative = file_path[len(project_root) + 1:]
+    relative = file_path[len(project_root) + 1 :]
     corrected = cwd + "/" + relative
 
-    return (False,
-            f"BLOCKED: You are in worktree {cwd}. "
-            f"Use {corrected} instead of {file_path}")
+    return (False, f"BLOCKED: You are in worktree {cwd}. Use {corrected} instead of {file_path}")
 
 
 def main():

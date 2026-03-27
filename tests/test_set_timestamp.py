@@ -4,19 +4,15 @@ import importlib.util
 import json
 import re
 import subprocess
-import sys
 
 import pytest
-
 from conftest import LIB_DIR, make_state, write_state
 
 SCRIPT = str(LIB_DIR / "set-timestamp.py")
 
 ISO_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[Z+-]")
 
-_spec = importlib.util.spec_from_file_location(
-    "set_timestamp", LIB_DIR / "set-timestamp.py"
-)
+_spec = importlib.util.spec_from_file_location("set_timestamp", LIB_DIR / "set-timestamp.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -26,7 +22,10 @@ _spec.loader.exec_module(_mod)
 
 def test_simple_path_with_now():
     """design.approved_at=NOW writes a timestamp."""
-    state = make_state(current_phase="flow-code", phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"})
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
     state["design"] = {"approved_at": None}
 
     updated, updates = _mod.apply_updates(state, ["design.approved_at=NOW"])
@@ -39,7 +38,10 @@ def test_simple_path_with_now():
 
 def test_simple_path_with_string_value():
     """Non-NOW values are written as plain strings."""
-    state = make_state(current_phase="flow-code", phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"})
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
     state["design"] = {"status": "pending"}
 
     updated, updates = _mod.apply_updates(state, ["design.status=approved"])
@@ -52,9 +54,15 @@ def test_simple_path_with_string_value():
 
 def test_nested_path_with_array_index():
     """plan.tasks.0.started_at=NOW navigates into an array."""
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-code-review": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     state["plan"] = {
         "tasks": [
             {"id": 1, "status": "pending", "started_at": None},
@@ -70,9 +78,15 @@ def test_nested_path_with_array_index():
 
 def test_task_status_update():
     """plan.tasks.0.status=in_progress sets a string value on a task."""
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-code-review": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     state["plan"] = {
         "tasks": [
             {"id": 1, "status": "pending", "started_at": None},
@@ -89,19 +103,28 @@ def test_task_status_update():
 
 def test_multiple_set_args():
     """Two --set args are applied atomically in one write."""
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-code-review": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     state["plan"] = {
         "tasks": [
             {"id": 1, "status": "pending", "started_at": None},
         ],
     }
 
-    updated, updates = _mod.apply_updates(state, [
-        "plan.tasks.0.status=in_progress",
-        "plan.tasks.0.started_at=NOW",
-    ])
+    updated, updates = _mod.apply_updates(
+        state,
+        [
+            "plan.tasks.0.status=in_progress",
+            "plan.tasks.0.started_at=NOW",
+        ],
+    )
 
     assert len(updates) == 2
     assert updated["plan"]["tasks"][0]["status"] == "in_progress"
@@ -113,10 +136,15 @@ def test_multiple_set_args():
 
 def test_security_scanned_at():
     """security.scanned_at=NOW sets the scan timestamp."""
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
-        "flow-code-review": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     state["security"] = {"findings": [], "clean_checks": [], "scanned_at": None}
 
     updated, updates = _mod.apply_updates(state, ["security.scanned_at=NOW"])
@@ -129,7 +157,10 @@ def test_security_scanned_at():
 
 def test_cli_happy_path(git_repo, state_dir, branch, monkeypatch, capsys):
     """CLI happy path: write value and confirm state file updated."""
-    state = make_state(current_phase="flow-code", phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"})
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
     state["design"] = {"status": "pending"}
     write_state(state_dir, branch, state)
 
@@ -176,9 +207,15 @@ def test_error_invalid_path(git_repo, state_dir, branch, monkeypatch, capsys):
 
 def test_error_array_index_out_of_range(git_repo, state_dir, branch, monkeypatch, capsys):
     """Array index out of range returns error."""
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-code-review": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     state["plan"] = {"tasks": [{"id": 1, "status": "pending"}]}
     write_state(state_dir, branch, state)
 
@@ -227,15 +264,22 @@ def test_error_corrupt_json(git_repo, state_dir, branch, monkeypatch, capsys):
 
 def test_detached_head_auto_resolves_single_state_file(git_repo, state_dir, branch, monkeypatch, capsys):
     """Detached HEAD with a single state file auto-resolves to that branch."""
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["design"] = {"status": "pending"}
     write_state(state_dir, branch, state)
 
     subprocess.run(
         ["git", "checkout", "--detach", "HEAD"],
-        cwd=str(git_repo), capture_output=True, check=True,
+        cwd=str(git_repo),
+        capture_output=True,
+        check=True,
     )
 
     monkeypatch.chdir(git_repo)
@@ -251,7 +295,9 @@ def test_error_detached_head_no_state_files(git_repo, monkeypatch, capsys):
     monkeypatch.delenv("FLOW_SIMULATE_BRANCH", raising=False)
     subprocess.run(
         ["git", "checkout", "--detach", "HEAD"],
-        cwd=str(git_repo), capture_output=True, check=True,
+        cwd=str(git_repo),
+        capture_output=True,
+        check=True,
     )
 
     monkeypatch.chdir(git_repo)
@@ -319,10 +365,15 @@ def test_set_nested_list_final_sets_value():
 
 def test_integer_coercion_for_digit_values():
     """Pure-digit values are stored as int, not str."""
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
-        "flow-code-review": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     state["code_review_step"] = 0
 
     updated, updates = _mod.apply_updates(state, ["code_review_step=1"])
@@ -333,10 +384,15 @@ def test_integer_coercion_for_digit_values():
 
 def test_negative_integer_coercion():
     """Negative digit values like '-5' are stored as int, not str."""
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
-        "flow-code-review": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     state["offset"] = 0
 
     updated, updates = _mod.apply_updates(state, ["offset=-5"])
@@ -347,10 +403,15 @@ def test_negative_integer_coercion():
 
 def test_non_digit_values_remain_strings():
     """Non-digit values stay as strings."""
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
-        "flow-code-review": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     state["some_field"] = "old"
 
     updated, updates = _mod.apply_updates(state, ["some_field=in_progress"])
@@ -361,10 +422,15 @@ def test_non_digit_values_remain_strings():
 
 def test_now_values_remain_timestamp_strings():
     """NOW values are still stored as timestamp strings, not coerced."""
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete",
-        "flow-code-review": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     state["design"] = {"approved_at": None}
 
     updated, updates = _mod.apply_updates(state, ["design.approved_at=NOW"])
@@ -385,9 +451,14 @@ def test_set_nested_dict_key_not_found_intermediate():
 
 def test_code_task_increment_by_one_allowed():
     """code_task can increment by 1: 0→1 and 1→2."""
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["code_task"] = 0
 
     updated, updates = _mod.apply_updates(state, ["code_task=1"])
@@ -399,9 +470,14 @@ def test_code_task_increment_by_one_allowed():
 
 def test_code_task_initial_set_to_one_allowed():
     """code_task absent → 1 is allowed (first task)."""
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
 
     updated, updates = _mod.apply_updates(state, ["code_task=1"])
     assert updated["code_task"] == 1
@@ -409,9 +485,14 @@ def test_code_task_initial_set_to_one_allowed():
 
 def test_code_task_jump_blocked():
     """code_task 0→5 is blocked (batching attempt)."""
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["code_task"] = 0
 
     with pytest.raises(ValueError, match="increment by 1"):
@@ -420,9 +501,14 @@ def test_code_task_jump_blocked():
 
 def test_code_task_skip_blocked():
     """code_task 3→5 is blocked (skipped a task)."""
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["code_task"] = 3
 
     with pytest.raises(ValueError, match="increment by 1"):
@@ -431,9 +517,14 @@ def test_code_task_skip_blocked():
 
 def test_code_task_reset_to_zero_allowed():
     """code_task 3→0 is allowed (phase re-entry reset)."""
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["code_task"] = 3
 
     updated, updates = _mod.apply_updates(state, ["code_task=0"])
@@ -442,9 +533,14 @@ def test_code_task_reset_to_zero_allowed():
 
 def test_code_task_initial_jump_blocked():
     """code_task absent → 3 is blocked (must start at 1)."""
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
 
     with pytest.raises(ValueError, match="increment by 1"):
         _mod.apply_updates(state, ["code_task=3"])
@@ -452,9 +548,14 @@ def test_code_task_initial_jump_blocked():
 
 def test_code_task_non_integer_blocked():
     """code_task with a non-integer value is blocked."""
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["code_task"] = 0
 
     with pytest.raises(ValueError, match="must be an integer"):
@@ -463,9 +564,14 @@ def test_code_task_non_integer_blocked():
 
 def test_code_task_cli_increment_blocked(git_repo, state_dir, branch, monkeypatch, capsys):
     """CLI blocks code_task jump with error exit code."""
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["code_task"] = 0
     write_state(state_dir, branch, state)
 
@@ -484,9 +590,14 @@ def test_code_task_cli_increment_blocked(git_repo, state_dir, branch, monkeypatc
 
 def test_cli_branch_flag_uses_specified_state_file(git_repo, state_dir, monkeypatch, capsys):
     """--branch flag finds the state file for a different branch."""
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["design"] = {"status": "pending"}
     write_state(state_dir, "other-feature", state)
 
@@ -502,9 +613,14 @@ def test_cli_branch_flag_uses_specified_state_file(git_repo, state_dir, monkeypa
 def test_error_ambiguous_multiple_state_files(git_repo, state_dir, monkeypatch, capsys):
     """Multiple state files with no exact match returns ambiguity error."""
     for name in ["feat-a", "feat-b"]:
-        state = make_state(current_phase="flow-code", phase_statuses={
-            "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-        })
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
         write_state(state_dir, name, state)
 
     monkeypatch.chdir(git_repo)

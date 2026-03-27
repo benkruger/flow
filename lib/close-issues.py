@@ -31,7 +31,9 @@ def close_issues(issue_numbers, repo=None):
         try:
             result = subprocess.run(
                 ["gh", "issue", "close", str(num)],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             if result.returncode == 0:
                 entry = {"number": num}
@@ -53,10 +55,14 @@ def main():
     try:
         state = json.loads(Path(args.state_file).read_text())
     except Exception as exc:
-        print(json.dumps({
-            "status": "error",
-            "message": f"Could not read state file: {exc}",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Could not read state file: {exc}",
+                }
+            )
+        )
         sys.exit(1)
     prompt = state.get("prompt", "")
     repo = state.get("repo")

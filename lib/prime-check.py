@@ -41,9 +41,7 @@ def _compute_setup_hash():
 
 def _read_plugin_json():
     """Read the full plugin.json as a dict."""
-    plugin_path = (
-        Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
-    )
+    plugin_path = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
     return json.loads(plugin_path.read_text())
 
 
@@ -53,10 +51,14 @@ def main():
 
     init_data = read_flow_json(project_root)
     if init_data is None:
-        print(json.dumps({
-            "status": "error",
-            "message": "FLOW not initialized. Run /flow:flow-prime first.",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": "FLOW not initialized. Run /flow:flow-prime first.",
+                }
+            )
+        )
         return
     plugin_data = _read_plugin_json()
     plugin_version = plugin_data["version"]
@@ -76,38 +78,54 @@ def main():
             init_data["flow_version"] = plugin_version
             flow_json.write_text(json.dumps(init_data) + "\n")
 
-            print(json.dumps({
-                "status": "ok",
-                "framework": framework,
-                "auto_upgraded": True,
-                "old_version": old_version,
-                "new_version": plugin_version,
-            }))
+            print(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "framework": framework,
+                        "auto_upgraded": True,
+                        "old_version": old_version,
+                        "new_version": plugin_version,
+                    }
+                )
+            )
             return
 
-        print(json.dumps({
-            "status": "error",
-            "message": (
-                f"FLOW version mismatch: initialized for "
-                f"v{init_data.get('flow_version')}, plugin is "
-                f"v{plugin_version}. Run /flow:flow-prime --reprime to upgrade "
-                f"(keeps current config), or /flow:flow-prime to reconfigure."
-            ),
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": (
+                        f"FLOW version mismatch: initialized for "
+                        f"v{init_data.get('flow_version')}, plugin is "
+                        f"v{plugin_version}. Run /flow:flow-prime --reprime to upgrade "
+                        f"(keeps current config), or /flow:flow-prime to reconfigure."
+                    ),
+                }
+            )
+        )
         return
 
     framework = init_data.get("framework")
     if framework not in ("rails", "python", "ios"):
-        print(json.dumps({
-            "status": "error",
-            "message": "Missing framework in .flow.json. Run /flow:flow-prime to configure.",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": "Missing framework in .flow.json. Run /flow:flow-prime to configure.",
+                }
+            )
+        )
         return
 
-    print(json.dumps({
-        "status": "ok",
-        "framework": framework,
-    }))
+    print(
+        json.dumps(
+            {
+                "status": "ok",
+                "framework": framework,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

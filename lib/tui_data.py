@@ -15,9 +15,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    PACIFIC, PHASE_NAMES, PHASE_NUMBER, PHASE_ORDER,
-    derive_feature, derive_worktree, elapsed_since,
-    extract_issue_numbers, format_time, short_issue_ref,
+    PACIFIC,
+    PHASE_NAMES,
+    PHASE_NUMBER,
+    PHASE_ORDER,
+    derive_feature,
+    derive_worktree,
+    elapsed_since,
+    extract_issue_numbers,
+    format_time,
+    short_issue_ref,
 )
 
 
@@ -95,21 +102,21 @@ def phase_timeline(state):
                 parts.append(f"+{ins} -{dels}")
             annotation = ", ".join(parts)
 
-        entries.append({
-            "key": key,
-            "name": name,
-            "number": number,
-            "status": status,
-            "time": time_str,
-            "annotation": annotation,
-        })
+        entries.append(
+            {
+                "key": key,
+                "name": name,
+                "number": number,
+                "status": status,
+                "time": time_str,
+                "annotation": annotation,
+            }
+        )
 
     return entries
 
 
-_LOG_LINE_PATTERN = re.compile(
-    r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[^\s]*)\s+(.+)$"
-)
+_LOG_LINE_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[^\s]*)\s+(.+)$")
 
 
 def parse_log_entries(log_content, limit=20):
@@ -238,15 +245,17 @@ def orchestration_summary(state, now=None):
         else:
             item_elapsed = ""
 
-        items.append({
-            "icon": icon,
-            "issue_number": item.get("issue_number"),
-            "title": item.get("title", ""),
-            "elapsed": item_elapsed,
-            "pr_url": item.get("pr_url"),
-            "reason": item.get("reason"),
-            "status": status,
-        })
+        items.append(
+            {
+                "icon": icon,
+                "issue_number": item.get("issue_number"),
+                "title": item.get("title", ""),
+                "elapsed": item_elapsed,
+                "pr_url": item.get("pr_url"),
+                "reason": item.get("reason"),
+                "status": status,
+            }
+        )
 
     return {
         "elapsed": format_time(elapsed_seconds),

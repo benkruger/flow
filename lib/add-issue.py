@@ -19,22 +19,25 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import mutate_state, now, project_root, resolve_branch, PHASE_NAMES
+from flow_utils import PHASE_NAMES, mutate_state, now, project_root, resolve_branch
 
 
 def add_issue(state_path, label, title, url, phase):
     """Append an issue to the state file. Returns the updated state dict."""
+
     def transform(state):
         if "issues_filed" not in state:
             state["issues_filed"] = []
-        state["issues_filed"].append({
-            "label": label,
-            "title": title,
-            "url": url,
-            "phase": phase,
-            "phase_name": PHASE_NAMES.get(phase, phase),
-            "timestamp": now(),
-        })
+        state["issues_filed"].append(
+            {
+                "label": label,
+                "title": title,
+                "url": url,
+                "phase": phase,
+                "phase_name": PHASE_NAMES.get(phase, phase),
+                "timestamp": now(),
+            }
+        )
 
     return mutate_state(state_path, transform)
 
@@ -56,10 +59,14 @@ def main():
             print(json.dumps({"status": "no_state"}))
             sys.exit(0)
         else:
-            print(json.dumps({
-                "status": "error",
-                "message": "Could not determine current branch",
-            }))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": "Could not determine current branch",
+                    }
+                )
+            )
             sys.exit(1)
 
     state_path = root / ".flow-states" / f"{branch}.json"
@@ -71,22 +78,34 @@ def main():
     try:
         state = add_issue(state_path, args.label, args.title, args.url, args.phase)
     except (json.JSONDecodeError, FileNotFoundError) as e:
-        print(json.dumps({
-            "status": "error",
-            "message": f"Could not read state file: {e}",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Could not read state file: {e}",
+                }
+            )
+        )
         sys.exit(1)
     except Exception as e:
-        print(json.dumps({
-            "status": "error",
-            "message": f"Failed to add issue: {e}",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Failed to add issue: {e}",
+                }
+            )
+        )
         sys.exit(1)
 
-    print(json.dumps({
-        "status": "ok",
-        "issue_count": len(state["issues_filed"]),
-    }))
+    print(
+        json.dumps(
+            {
+                "status": "ok",
+                "issue_count": len(state["issues_filed"]),
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

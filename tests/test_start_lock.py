@@ -22,9 +22,11 @@ def test_acquire_when_no_lock_exists(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
-         patch("os.getppid", return_value=12345):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"),
+        patch("os.getppid", return_value=12345),
+    ):
         result = _mod.acquire("test-feature")
 
     assert result["status"] == "acquired"
@@ -41,14 +43,20 @@ def test_acquire_when_locked_within_timeout(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     lock_file = state_dir / "start.lock"
-    lock_file.write_text(json.dumps({
-        "pid": 99999,
-        "feature": "other-feature",
-        "acquired_at": "2026-01-01T10:00:00-08:00",
-    }))
+    lock_file.write_text(
+        json.dumps(
+            {
+                "pid": 99999,
+                "feature": "other-feature",
+                "acquired_at": "2026-01-01T10:00:00-08:00",
+            }
+        )
+    )
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"),
+    ):
         result = _mod.acquire("new-feature")
 
     assert result["status"] == "locked"
@@ -61,14 +69,20 @@ def test_acquire_when_locked_by_dead_pid_within_timeout(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     lock_file = state_dir / "start.lock"
-    lock_file.write_text(json.dumps({
-        "pid": 99999,
-        "feature": "dead-feature",
-        "acquired_at": "2026-01-01T10:00:00-08:00",
-    }))
+    lock_file.write_text(
+        json.dumps(
+            {
+                "pid": 99999,
+                "feature": "dead-feature",
+                "acquired_at": "2026-01-01T10:00:00-08:00",
+            }
+        )
+    )
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"),
+    ):
         result = _mod.acquire("new-feature")
 
     assert result["status"] == "locked"
@@ -81,15 +95,21 @@ def test_acquire_when_lock_exceeds_timeout(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     lock_file = state_dir / "start.lock"
-    lock_file.write_text(json.dumps({
-        "pid": 99999,
-        "feature": "old-feature",
-        "acquired_at": "2026-01-01T08:00:00-08:00",
-    }))
+    lock_file.write_text(
+        json.dumps(
+            {
+                "pid": 99999,
+                "feature": "old-feature",
+                "acquired_at": "2026-01-01T08:00:00-08:00",
+            }
+        )
+    )
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
-         patch("os.getppid", return_value=12345):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"),
+        patch("os.getppid", return_value=12345),
+    ):
         result = _mod.acquire("new-feature")
 
     assert result["status"] == "acquired"
@@ -104,9 +124,11 @@ def test_acquire_when_lock_is_corrupted_json(tmp_path):
     lock_file = state_dir / "start.lock"
     lock_file.write_text("{not valid json")
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
-         patch("os.getppid", return_value=12345):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"),
+        patch("os.getppid", return_value=12345),
+    ):
         result = _mod.acquire("new-feature")
 
     assert result["status"] == "acquired"
@@ -120,9 +142,11 @@ def test_acquire_when_lock_is_empty(tmp_path):
     lock_file = state_dir / "start.lock"
     lock_file.write_text("")
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
-         patch("os.getppid", return_value=12345):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"),
+        patch("os.getppid", return_value=12345),
+    ):
         result = _mod.acquire("new-feature")
 
     assert result["status"] == "acquired"
@@ -136,9 +160,11 @@ def test_acquire_when_lock_has_missing_keys(tmp_path):
     lock_file = state_dir / "start.lock"
     lock_file.write_text(json.dumps({"pid": 123}))  # missing feature, acquired_at
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
-         patch("os.getppid", return_value=12345):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"),
+        patch("os.getppid", return_value=12345),
+    ):
         result = _mod.acquire("new-feature")
 
     assert result["status"] == "acquired"
@@ -150,15 +176,21 @@ def test_acquire_when_timestamp_unparseable(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     lock_file = state_dir / "start.lock"
-    lock_file.write_text(json.dumps({
-        "pid": 99999,
-        "feature": "other-feature",
-        "acquired_at": "not-a-timestamp",
-    }))
+    lock_file.write_text(
+        json.dumps(
+            {
+                "pid": 99999,
+                "feature": "other-feature",
+                "acquired_at": "not-a-timestamp",
+            }
+        )
+    )
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
-         patch("os.getppid", return_value=12345):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"),
+        patch("os.getppid", return_value=12345),
+    ):
         result = _mod.acquire("new-feature")
 
     assert result["status"] == "acquired"
@@ -167,9 +199,11 @@ def test_acquire_when_timestamp_unparseable(tmp_path):
 
 def test_acquire_creates_state_dir_if_missing(tmp_path):
     """Acquire creates .flow-states/ if it does not exist."""
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
-         patch("os.getppid", return_value=12345):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"),
+        patch("os.getppid", return_value=12345),
+    ):
         result = _mod.acquire("new-feature")
 
     assert result["status"] == "acquired"
@@ -183,15 +217,20 @@ def test_acquire_race_returns_locked(tmp_path):
     lock_file = state_dir / "start.lock"
 
     # Pre-create lock file to simulate another process winning the race.
-    winner_data = {"pid": 99999, "feature": "winner-feature",
-                   "acquired_at": "2026-01-01T10:00:00-08:00"}
+    winner_data = {"pid": 99999, "feature": "winner-feature", "acquired_at": "2026-01-01T10:00:00-08:00"}
     lock_file.write_text(json.dumps(winner_data))
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "_read_lock", side_effect=[
-             (None, False),       # First call: appears free (TOCTOU window)
-             (winner_data, True),  # Second call: sees the winner
-         ]):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(
+            _mod,
+            "_read_lock",
+            side_effect=[
+                (None, False),  # First call: appears free (TOCTOU window)
+                (winner_data, True),  # Second call: sees the winner
+            ],
+        ),
+    ):
         result = _mod.acquire("my-feature")
 
     assert result["status"] == "locked"
@@ -211,11 +250,17 @@ def test_acquire_race_reread_also_fails(tmp_path):
     # Pre-create lock file so _try_write_lock fails.
     lock_file.write_text("temp")
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "_read_lock", side_effect=[
-             (None, False),  # First call: appears free
-             (None, True),   # Second call: winner already released
-         ]):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(
+            _mod,
+            "_read_lock",
+            side_effect=[
+                (None, False),  # First call: appears free
+                (None, True),  # Second call: winner already released
+            ],
+        ),
+    ):
         result = _mod.acquire("my-feature")
 
     assert result["status"] == "locked"
@@ -229,12 +274,13 @@ def test_break_and_acquire_race_returns_locked(tmp_path):
     state_dir.mkdir()
     lock_file = state_dir / "start.lock"
 
-    winner_data = {"pid": 88888, "feature": "winner-feature",
-                   "acquired_at": "2026-01-01T10:01:00-08:00"}
+    winner_data = {"pid": 88888, "feature": "winner-feature", "acquired_at": "2026-01-01T10:01:00-08:00"}
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "_try_write_lock", return_value=None), \
-         patch.object(_mod, "_read_lock", return_value=(winner_data, True)):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "_try_write_lock", return_value=None),
+        patch.object(_mod, "_read_lock", return_value=(winner_data, True)),
+    ):
         result = _mod._break_and_acquire(lock_file, "my-feature", "stale-feature")
 
     assert result["status"] == "locked"
@@ -248,9 +294,11 @@ def test_break_and_acquire_race_reread_fails(tmp_path):
     state_dir.mkdir()
     lock_file = state_dir / "start.lock"
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "_try_write_lock", return_value=None), \
-         patch.object(_mod, "_read_lock", return_value=(None, False)):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "_try_write_lock", return_value=None),
+        patch.object(_mod, "_read_lock", return_value=(None, False)),
+    ):
         result = _mod._break_and_acquire(lock_file, "my-feature")
 
     assert result["status"] == "locked"
@@ -267,9 +315,11 @@ def test_try_write_lock_write_failure_closes_fd(tmp_path):
     state_dir.mkdir()
     lock_file = state_dir / "start.lock"
 
-    with patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
-         patch("os.getppid", return_value=12345), \
-         patch("os.write", side_effect=OSError("disk full")):
+    with (
+        patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"),
+        patch("os.getppid", return_value=12345),
+        patch("os.write", side_effect=OSError("disk full")),
+    ):
         result = _mod._try_write_lock(str(lock_file), "test-feature")
 
     assert result is None
@@ -289,9 +339,11 @@ def test_try_write_lock_unlink_failure_ignored(tmp_path):
             raise OSError("permission denied")
         return original_unlink(path)
 
-    with patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
-         patch("os.getppid", return_value=12345), \
-         patch("os.unlink", side_effect=fail_unlink):
+    with (
+        patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"),
+        patch("os.getppid", return_value=12345),
+        patch("os.unlink", side_effect=fail_unlink),
+    ):
         result = _mod._try_write_lock(str(lock_file), "test-feature")
 
     assert result is not None
@@ -307,10 +359,12 @@ def test_acquire_with_wait_immediate(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"), \
-         patch("os.getppid", return_value=12345), \
-         patch.object(_mod.time, "sleep") as mock_sleep:
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"),
+        patch("os.getppid", return_value=12345),
+        patch.object(_mod.time, "sleep") as mock_sleep,
+    ):
         result = _mod.acquire_with_wait("test-feature", timeout=300, interval=10)
 
     assert result["status"] == "acquired"
@@ -322,11 +376,15 @@ def test_acquire_with_wait_succeeds_after_retry(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     lock_file = state_dir / "start.lock"
-    lock_file.write_text(json.dumps({
-        "pid": 99999,
-        "feature": "other-feature",
-        "acquired_at": "2026-01-01T10:00:00-08:00",
-    }))
+    lock_file.write_text(
+        json.dumps(
+            {
+                "pid": 99999,
+                "feature": "other-feature",
+                "acquired_at": "2026-01-01T10:00:00-08:00",
+            }
+        )
+    )
 
     sleep_args = []
 
@@ -334,11 +392,13 @@ def test_acquire_with_wait_succeeds_after_retry(tmp_path):
         sleep_args.append(seconds)
         lock_file.unlink()
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"), \
-         patch("os.getppid", return_value=12345), \
-         patch.object(_mod.time, "sleep", side_effect=mock_sleep_side_effect), \
-         patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0, 10.0]):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"),
+        patch("os.getppid", return_value=12345),
+        patch.object(_mod.time, "sleep", side_effect=mock_sleep_side_effect),
+        patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0, 10.0]),
+    ):
         result = _mod.acquire_with_wait("new-feature", timeout=300, interval=10)
 
     assert result["status"] == "acquired"
@@ -350,16 +410,22 @@ def test_acquire_with_wait_timeout(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     lock_file = state_dir / "start.lock"
-    lock_file.write_text(json.dumps({
-        "pid": 99999,
-        "feature": "blocking-feature",
-        "acquired_at": "2026-01-01T10:00:00-08:00",
-    }))
+    lock_file.write_text(
+        json.dumps(
+            {
+                "pid": 99999,
+                "feature": "blocking-feature",
+                "acquired_at": "2026-01-01T10:00:00-08:00",
+            }
+        )
+    )
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"), \
-         patch.object(_mod.time, "sleep"), \
-         patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0, 35.0]):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"),
+        patch.object(_mod.time, "sleep"),
+        patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0, 35.0]),
+    ):
         result = _mod.acquire_with_wait("new-feature", timeout=30, interval=10)
 
     assert result["status"] == "timeout"
@@ -373,23 +439,29 @@ def test_acquire_with_wait_stale_during_wait(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     lock_file = state_dir / "start.lock"
-    lock_file.write_text(json.dumps({
-        "pid": 99999,
-        "feature": "stale-feature",
-        "acquired_at": "2026-01-01T10:00:00-08:00",
-    }))
+    lock_file.write_text(
+        json.dumps(
+            {
+                "pid": 99999,
+                "feature": "stale-feature",
+                "acquired_at": "2026-01-01T10:00:00-08:00",
+            }
+        )
+    )
 
     now_calls = [
-        "2026-01-01T10:05:00-08:00",   # First acquire: within timeout → locked
-        "2026-01-01T10:35:00-08:00",   # Second acquire: timeout exceeded → break
-        "2026-01-01T10:35:00-08:00",   # _try_write_lock: new lock timestamp
+        "2026-01-01T10:05:00-08:00",  # First acquire: within timeout → locked
+        "2026-01-01T10:35:00-08:00",  # Second acquire: timeout exceeded → break
+        "2026-01-01T10:35:00-08:00",  # _try_write_lock: new lock timestamp
     ]
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", side_effect=now_calls), \
-         patch("os.getppid", return_value=12345), \
-         patch.object(_mod.time, "sleep"), \
-         patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0, 10.0]):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", side_effect=now_calls),
+        patch("os.getppid", return_value=12345),
+        patch.object(_mod.time, "sleep"),
+        patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0, 10.0]),
+    ):
         result = _mod.acquire_with_wait("new-feature", timeout=300, interval=10)
 
     assert result["status"] == "acquired"
@@ -402,16 +474,22 @@ def test_acquire_with_wait_timeout_zero(tmp_path):
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
     lock_file = state_dir / "start.lock"
-    lock_file.write_text(json.dumps({
-        "pid": 99999,
-        "feature": "other-feature",
-        "acquired_at": "2026-01-01T10:00:00-08:00",
-    }))
+    lock_file.write_text(
+        json.dumps(
+            {
+                "pid": 99999,
+                "feature": "other-feature",
+                "acquired_at": "2026-01-01T10:00:00-08:00",
+            }
+        )
+    )
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"), \
-         patch.object(_mod.time, "sleep") as mock_sleep, \
-         patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0]):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"),
+        patch.object(_mod.time, "sleep") as mock_sleep,
+        patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0]),
+    ):
         result = _mod.acquire_with_wait("new-feature", timeout=0, interval=10)
 
     assert result["status"] == "timeout"
@@ -464,12 +542,13 @@ def test_check_when_dead_pid_within_timeout(tmp_path):
     """Check returns locked even when PID is dead — only timeout matters."""
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
-    lock_data = {"pid": 99999, "feature": "dead-feature",
-                 "acquired_at": "2026-01-01T10:00:00-08:00"}
+    lock_data = {"pid": 99999, "feature": "dead-feature", "acquired_at": "2026-01-01T10:00:00-08:00"}
     (state_dir / "start.lock").write_text(json.dumps(lock_data))
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"),
+    ):
         result = _mod.check()
 
     assert result["status"] == "locked"
@@ -481,12 +560,13 @@ def test_check_when_timed_out(tmp_path):
     """Check returns free when lock has exceeded the 30-minute timeout."""
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
-    lock_data = {"pid": 99999, "feature": "old-feature",
-                 "acquired_at": "2026-01-01T08:00:00-08:00"}
+    lock_data = {"pid": 99999, "feature": "old-feature", "acquired_at": "2026-01-01T08:00:00-08:00"}
     (state_dir / "start.lock").write_text(json.dumps(lock_data))
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:00:00-08:00"),
+    ):
         result = _mod.check()
 
     assert result["status"] == "free"
@@ -496,12 +576,13 @@ def test_check_when_locked(tmp_path):
     """Check returns lock details when lock file exists."""
     state_dir = tmp_path / ".flow-states"
     state_dir.mkdir()
-    lock_data = {"pid": 55555, "feature": "some-feature",
-                 "acquired_at": "2026-01-01T10:00:00-08:00"}
+    lock_data = {"pid": 55555, "feature": "some-feature", "acquired_at": "2026-01-01T10:00:00-08:00"}
     (state_dir / "start.lock").write_text(json.dumps(lock_data))
 
-    with patch.object(_mod, "project_root", return_value=tmp_path), \
-         patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"):
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(_mod, "now", return_value="2026-01-01T10:05:00-08:00"),
+    ):
         result = _mod.check()
 
     assert result["status"] == "locked"
@@ -530,9 +611,7 @@ def test_cli_release(target_project, monkeypatch, capsys):
     """CLI release deletes lock file."""
     state_dir = target_project / ".flow-states"
     state_dir.mkdir()
-    (state_dir / "start.lock").write_text(
-        json.dumps({"pid": 1, "feature": "f", "acquired_at": "t"})
-    )
+    (state_dir / "start.lock").write_text(json.dumps({"pid": 1, "feature": "f", "acquired_at": "t"}))
 
     monkeypatch.chdir(target_project)
     monkeypatch.setattr("sys.argv", ["start-lock", "--release"])
@@ -586,11 +665,18 @@ def test_cli_acquire_wait(target_project, monkeypatch, capsys):
     state_dir.mkdir()
 
     monkeypatch.chdir(target_project)
-    monkeypatch.setattr("sys.argv", [
-        "start-lock",
-        "--acquire", "--wait", "--timeout", "1",
-        "--feature", "cli-wait-feature",
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "start-lock",
+            "--acquire",
+            "--wait",
+            "--timeout",
+            "1",
+            "--feature",
+            "cli-wait-feature",
+        ],
+    )
     _mod.main()
 
     output = json.loads(capsys.readouterr().out)

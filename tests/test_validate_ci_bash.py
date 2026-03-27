@@ -5,10 +5,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from conftest import LIB_DIR, REPO_ROOT
+from conftest import LIB_DIR
 
 sys.path.insert(0, str(LIB_DIR))
-from importlib.util import spec_from_file_location, module_from_spec
+from importlib.util import module_from_spec, spec_from_file_location
 
 SCRIPT = LIB_DIR / "validate-ci-bash.py"
 
@@ -209,9 +209,7 @@ def test_whitelist_allows_bin_glob():
 
 def test_whitelist_allows_leading_glob():
     mod = _load_module()
-    allowed, message = mod.validate(
-        "/usr/local/bin/flow ci", settings=SAMPLE_SETTINGS
-    )
+    allowed, message = mod.validate("/usr/local/bin/flow ci", settings=SAMPLE_SETTINGS)
     assert allowed is True
 
 
@@ -268,9 +266,7 @@ def test_whitelist_skipped_when_empty_allow():
 def test_flow_active_false_allows_unlisted_command():
     """When flow_active=False, unlisted commands pass through (no whitelist)."""
     mod = _load_module()
-    allowed, message = mod.validate(
-        "npm test", settings=SAMPLE_SETTINGS, flow_active=False
-    )
+    allowed, message = mod.validate("npm test", settings=SAMPLE_SETTINGS, flow_active=False)
     assert allowed is True
     assert message == ""
 
@@ -278,9 +274,7 @@ def test_flow_active_false_allows_unlisted_command():
 def test_flow_active_true_blocks_unlisted_command():
     """When flow_active=True, unlisted commands are blocked (whitelist enforced)."""
     mod = _load_module()
-    allowed, message = mod.validate(
-        "npm test", settings=SAMPLE_SETTINGS, flow_active=True
-    )
+    allowed, message = mod.validate("npm test", settings=SAMPLE_SETTINGS, flow_active=True)
     assert allowed is False
     assert "not in allow list" in message
 
@@ -288,9 +282,7 @@ def test_flow_active_true_blocks_unlisted_command():
 def test_flow_active_false_still_blocks_compound():
     """Layers 1-5 enforced regardless of flow_active."""
     mod = _load_module()
-    allowed, message = mod.validate(
-        "git status && git diff", settings=SAMPLE_SETTINGS, flow_active=False
-    )
+    allowed, message = mod.validate("git status && git diff", settings=SAMPLE_SETTINGS, flow_active=False)
     assert allowed is False
     assert "Compound commands" in message
 
@@ -298,9 +290,7 @@ def test_flow_active_false_still_blocks_compound():
 def test_flow_active_false_still_blocks_file_read():
     """File-read commands blocked even when flow_active=False."""
     mod = _load_module()
-    allowed, message = mod.validate(
-        "cat README.md", settings=SAMPLE_SETTINGS, flow_active=False
-    )
+    allowed, message = mod.validate("cat README.md", settings=SAMPLE_SETTINGS, flow_active=False)
     assert allowed is False
     assert "Read" in message
 
@@ -308,9 +298,7 @@ def test_flow_active_false_still_blocks_file_read():
 def test_flow_active_false_still_blocks_deny():
     """Deny list enforced even when flow_active=False."""
     mod = _load_module()
-    allowed, message = mod.validate(
-        "git rebase main", settings=DENY_SETTINGS, flow_active=False
-    )
+    allowed, message = mod.validate("git rebase main", settings=DENY_SETTINGS, flow_active=False)
     assert allowed is False
     assert "deny" in message.lower()
 
@@ -318,9 +306,7 @@ def test_flow_active_false_still_blocks_deny():
 def test_flow_active_false_still_blocks_redirect():
     """Redirection blocked even when flow_active=False."""
     mod = _load_module()
-    allowed, message = mod.validate(
-        "git log > /tmp/out.txt", settings=SAMPLE_SETTINGS, flow_active=False
-    )
+    allowed, message = mod.validate("git log > /tmp/out.txt", settings=SAMPLE_SETTINGS, flow_active=False)
     assert allowed is False
     assert "redirection" in message.lower()
 
@@ -336,9 +322,7 @@ def test_flow_active_default_is_true():
 def test_compound_blocked_before_whitelist():
     """Compound commands are caught by fast-path before whitelist check."""
     mod = _load_module()
-    allowed, message = mod.validate(
-        "git status && git diff", settings=SAMPLE_SETTINGS
-    )
+    allowed, message = mod.validate("git status && git diff", settings=SAMPLE_SETTINGS)
     assert allowed is False
     assert "Compound commands" in message
 
@@ -547,9 +531,7 @@ def test_deny_blocks_matching_command():
 def test_deny_overrides_allow():
     """Command matching both allow and deny is blocked — deny wins."""
     mod = _load_module()
-    allowed, message = mod.validate(
-        "git checkout feature-branch", settings=DENY_SETTINGS
-    )
+    allowed, message = mod.validate("git checkout feature-branch", settings=DENY_SETTINGS)
     assert allowed is False
     assert "deny" in message.lower()
 
@@ -557,9 +539,7 @@ def test_deny_overrides_allow():
 def test_deny_blocks_force_push():
     """git push --force matches deny pattern."""
     mod = _load_module()
-    allowed, message = mod.validate(
-        "git push --force origin main", settings=DENY_SETTINGS
-    )
+    allowed, message = mod.validate("git push --force origin main", settings=DENY_SETTINGS)
     assert allowed is False
     assert "deny" in message.lower()
 
@@ -567,9 +547,7 @@ def test_deny_blocks_force_push():
 def test_deny_blocks_hard_reset():
     """git reset --hard matches deny pattern."""
     mod = _load_module()
-    allowed, message = mod.validate(
-        "git reset --hard HEAD~1", settings=DENY_SETTINGS
-    )
+    allowed, message = mod.validate("git reset --hard HEAD~1", settings=DENY_SETTINGS)
     assert allowed is False
     assert "deny" in message.lower()
 
@@ -734,6 +712,7 @@ def test_detect_branch_from_cwd_worktree(tmp_path):
     worktree_dir.mkdir(parents=True)
 
     import os
+
     old_cwd = os.getcwd()
     try:
         os.chdir(worktree_dir)
@@ -750,6 +729,7 @@ def test_detect_branch_from_cwd_worktree_subdir(tmp_path):
     subdir.mkdir(parents=True)
 
     import os
+
     old_cwd = os.getcwd()
     try:
         os.chdir(subdir)
@@ -763,12 +743,7 @@ def test_detect_branch_from_cwd_non_worktree(tmp_path, monkeypatch):
     """Falls back to git branch --show-current when not in a worktree."""
     mod = _load_module()
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        mod.subprocess, "run",
-        lambda *a, **kw: type("R", (), {
-            "stdout": "main\n", "returncode": 0
-        })()
-    )
+    monkeypatch.setattr(mod.subprocess, "run", lambda *a, **kw: type("R", (), {"stdout": "main\n", "returncode": 0})())
     result = mod._detect_branch_from_cwd()
     assert result == "main"
 
@@ -777,12 +752,7 @@ def test_detect_branch_from_cwd_detached_head(tmp_path, monkeypatch):
     """Returns None when git returns empty (detached HEAD)."""
     mod = _load_module()
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        mod.subprocess, "run",
-        lambda *a, **kw: type("R", (), {
-            "stdout": "\n", "returncode": 0
-        })()
-    )
+    monkeypatch.setattr(mod.subprocess, "run", lambda *a, **kw: type("R", (), {"stdout": "\n", "returncode": 0})())
     result = mod._detect_branch_from_cwd()
     assert result is None
 

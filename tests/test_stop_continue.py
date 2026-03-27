@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from conftest import LIB_DIR, make_state, write_state
 from flow_utils import (
     format_tab_color,
@@ -17,9 +16,7 @@ from flow_utils import (
 
 SCRIPT = LIB_DIR / "stop-continue.py"
 
-_spec = importlib.util.spec_from_file_location(
-    "stop_continue", SCRIPT
-)
+_spec = importlib.util.spec_from_file_location("stop_continue", SCRIPT)
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -27,11 +24,15 @@ _spec.loader.exec_module(_mod)
 def _mock_tty(monkeypatch):
     """Set up a fake /dev/tty and return the list that captures writes."""
     written = []
-    fake_tty = type("FakeTTY", (), {
-        "write": lambda self, data: written.append(data),
-        "__enter__": lambda self: self,
-        "__exit__": lambda self, *a: None,
-    })()
+    fake_tty = type(
+        "FakeTTY",
+        (),
+        {
+            "write": lambda self, data: written.append(data),
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        },
+    )()
 
     original_open = open
 
@@ -53,10 +54,12 @@ class TestCaptureSessionId:
         state = make_state(current_phase="flow-start")
         write_state(state_dir, branch, state)
 
-        _mod.capture_session_id({
-            "session_id": "abc123",
-            "transcript_path": "/path/to/transcript.jsonl",
-        })
+        _mod.capture_session_id(
+            {
+                "session_id": "abc123",
+                "transcript_path": "/path/to/transcript.jsonl",
+            }
+        )
 
         updated = json.loads((state_dir / f"{branch}.json").read_text())
         assert updated["session_id"] == "abc123"
@@ -112,10 +115,12 @@ class TestCaptureSessionId:
         state = make_state(current_phase="flow-start")
         write_state(state_dir, branch, state)
 
-        _mod.capture_session_id({
-            "session_id": "xyz789",
-            "transcript_path": "/home/user/.claude/projects/abc/xyz789.jsonl",
-        })
+        _mod.capture_session_id(
+            {
+                "session_id": "xyz789",
+                "transcript_path": "/home/user/.claude/projects/abc/xyz789.jsonl",
+            }
+        )
 
         updated = json.loads((state_dir / f"{branch}.json").read_text())
         assert updated["transcript_path"] == "/home/user/.claude/projects/abc/xyz789.jsonl"
@@ -595,10 +600,12 @@ class TestSubprocess:
         state = make_state(current_phase="flow-start")
         write_state(state_dir, branch, state)
 
-        stdin = json.dumps({
-            "session_id": "from-stdin-test",
-            "transcript_path": "/path/to/from-stdin.jsonl",
-        })
+        stdin = json.dumps(
+            {
+                "session_id": "from-stdin-test",
+                "transcript_path": "/path/to/from-stdin.jsonl",
+            }
+        )
         exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
 
         assert exit_code == 0
@@ -614,10 +621,15 @@ class TestSessionIsolation:
     def test_stale_session_clears_flag(self, git_repo, state_dir, branch, monkeypatch):
         """Flag set by old session → check_continue with new session_id clears it."""
         monkeypatch.chdir(git_repo)
-        state = make_state(current_phase="flow-code-review", phase_statuses={
-            "flow-start": "complete", "flow-plan": "complete",
-            "flow-code": "complete", "flow-code-review": "in_progress",
-        })
+        state = make_state(
+            current_phase="flow-code-review",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "complete",
+                "flow-code-review": "in_progress",
+            },
+        )
         state["session_id"] = "old-session"
         state["_continue_pending"] = "simplify"
         state["_continue_context"] = "Resume at step 2."
@@ -636,10 +648,15 @@ class TestSessionIsolation:
     def test_matching_session_fires_flag(self, git_repo, state_dir, branch, monkeypatch):
         """Flag set by same session → check_continue blocks."""
         monkeypatch.chdir(git_repo)
-        state = make_state(current_phase="flow-code-review", phase_statuses={
-            "flow-start": "complete", "flow-plan": "complete",
-            "flow-code": "complete", "flow-code-review": "in_progress",
-        })
+        state = make_state(
+            current_phase="flow-code-review",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "complete",
+                "flow-code-review": "in_progress",
+            },
+        )
         state["session_id"] = "same-session"
         state["_continue_pending"] = "simplify"
         write_state(state_dir, branch, state)
@@ -688,10 +705,15 @@ class TestSessionIsolation:
 
     def test_subprocess_stale_session_no_block(self, git_repo, state_dir, branch):
         """Subprocess: stale session_id → no block output."""
-        state = make_state(current_phase="flow-code-review", phase_statuses={
-            "flow-start": "complete", "flow-plan": "complete",
-            "flow-code": "complete", "flow-code-review": "in_progress",
-        })
+        state = make_state(
+            current_phase="flow-code-review",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "complete",
+                "flow-code-review": "in_progress",
+            },
+        )
         state["session_id"] = "old-session"
         state["_continue_pending"] = "simplify"
         write_state(state_dir, branch, state)
@@ -704,10 +726,15 @@ class TestSessionIsolation:
 
     def test_main_reorder_capture_after_check(self, git_repo, state_dir, branch):
         """After main(): stale flag cleared AND session_id updated to new (proves check before capture)."""
-        state = make_state(current_phase="flow-code-review", phase_statuses={
-            "flow-start": "complete", "flow-plan": "complete",
-            "flow-code": "complete", "flow-code-review": "in_progress",
-        })
+        state = make_state(
+            current_phase="flow-code-review",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "complete",
+                "flow-code-review": "in_progress",
+            },
+        )
         state["session_id"] = "old-session"
         state["_continue_pending"] = "simplify"
         write_state(state_dir, branch, state)
@@ -728,9 +755,13 @@ class TestCheckQaPending:
     def test_blocks_when_file_exists(self, git_repo):
         state_dir = git_repo / ".flow-states"
         state_dir.mkdir(exist_ok=True)
-        (state_dir / "qa-pending.json").write_text(json.dumps({
-            "_continue_context": "Return to FLOW repo and verify.",
-        }))
+        (state_dir / "qa-pending.json").write_text(
+            json.dumps(
+                {
+                    "_continue_context": "Return to FLOW repo and verify.",
+                }
+            )
+        )
 
         should_block, context = _mod.check_qa_pending(root=git_repo)
 
@@ -746,9 +777,13 @@ class TestCheckQaPending:
     def test_allows_when_empty_context(self, git_repo):
         state_dir = git_repo / ".flow-states"
         state_dir.mkdir(exist_ok=True)
-        (state_dir / "qa-pending.json").write_text(json.dumps({
-            "_continue_context": "",
-        }))
+        (state_dir / "qa-pending.json").write_text(
+            json.dumps(
+                {
+                    "_continue_context": "",
+                }
+            )
+        )
 
         should_block, context = _mod.check_qa_pending(root=git_repo)
 
@@ -769,9 +804,13 @@ class TestCheckQaPending:
         state_dir = git_repo / ".flow-states"
         state_dir.mkdir(exist_ok=True)
         qa_path = state_dir / "qa-pending.json"
-        qa_path.write_text(json.dumps({
-            "_continue_context": "Verify results.",
-        }))
+        qa_path.write_text(
+            json.dumps(
+                {
+                    "_continue_context": "Verify results.",
+                }
+            )
+        )
 
         _mod.check_qa_pending(root=git_repo)
 
@@ -781,9 +820,13 @@ class TestCheckQaPending:
         monkeypatch.chdir(git_repo)
         state_dir = git_repo / ".flow-states"
         state_dir.mkdir(exist_ok=True)
-        (state_dir / "qa-pending.json").write_text(json.dumps({
-            "_continue_context": "Verify results.",
-        }))
+        (state_dir / "qa-pending.json").write_text(
+            json.dumps(
+                {
+                    "_continue_context": "Verify results.",
+                }
+            )
+        )
 
         should_block, context = _mod.check_qa_pending()
 
@@ -794,9 +837,13 @@ class TestCheckQaPending:
         """main() blocks via qa-pending fallback when no branch state file."""
         state_dir = git_repo / ".flow-states"
         state_dir.mkdir(exist_ok=True)
-        (state_dir / "qa-pending.json").write_text(json.dumps({
-            "_continue_context": "Return to FLOW repo and verify.",
-        }))
+        (state_dir / "qa-pending.json").write_text(
+            json.dumps(
+                {
+                    "_continue_context": "Return to FLOW repo and verify.",
+                }
+            )
+        )
 
         stdin = json.dumps({})
         exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
@@ -931,9 +978,7 @@ class TestSetTabTitle:
         assert len(written) == 1
         r, g, b = format_tab_color(repo="test/test")
         expected = (
-            f"\033]6;1;bg;red;brightness;{r}\007"
-            f"\033]6;1;bg;green;brightness;{g}\007"
-            f"\033]6;1;bg;blue;brightness;{b}\007"
+            f"\033]6;1;bg;red;brightness;{r}\007\033]6;1;bg;green;brightness;{g}\007\033]6;1;bg;blue;brightness;{b}\007"
         )
         assert written[0] == expected
         # No title escape in the output
@@ -995,9 +1040,7 @@ class TestSetTabTitle:
         assert len(written) == 1
         r, g, b = format_tab_color(state)
         expected = (
-            f"\033]6;1;bg;red;brightness;{r}\007"
-            f"\033]6;1;bg;green;brightness;{g}\007"
-            f"\033]6;1;bg;blue;brightness;{b}\007"
+            f"\033]6;1;bg;red;brightness;{r}\007\033]6;1;bg;green;brightness;{g}\007\033]6;1;bg;blue;brightness;{b}\007"
         )
         assert written[0] == expected
         assert "\033]1;" not in written[0]
@@ -1059,32 +1102,30 @@ class TestCheckContinueWithParams:
         write_state(state_dir, branch, state)
 
         # Call from tmp_path (not git_repo) to prove no subprocess is used
-        should_block, skill_name, context = _mod.check_continue(
-            hook_input=None, root=git_repo, branch=branch
-        )
+        should_block, skill_name, context = _mod.check_continue(hook_input=None, root=git_repo, branch=branch)
 
         assert should_block is True
         assert skill_name == "commit"
 
     def test_no_state_file_with_params(self, git_repo, branch):
         """When root/branch point to nonexistent state file, allows stop."""
-        should_block, skill_name, context = _mod.check_continue(
-            hook_input=None, root=git_repo, branch=branch
-        )
+        should_block, skill_name, context = _mod.check_continue(hook_input=None, root=git_repo, branch=branch)
 
         assert should_block is False
         assert skill_name is None
 
     def test_none_branch_param_allows(self, git_repo):
         """When branch param is None, allows stop."""
-        should_block, skill_name, context = _mod.check_continue(
-            hook_input=None, root=git_repo, branch=None
-        )
+        should_block, skill_name, context = _mod.check_continue(hook_input=None, root=git_repo, branch=None)
 
         assert should_block is False
 
     def test_none_branch_does_not_modify_state(
-        self, git_repo, state_dir, branch, monkeypatch,
+        self,
+        git_repo,
+        state_dir,
+        branch,
+        monkeypatch,
     ):
         """When branch=None is passed explicitly, state file must not be touched.
 
@@ -1103,9 +1144,7 @@ class TestCheckContinueWithParams:
         write_state(state_dir, branch, state)
         original = (state_dir / f"{branch}.json").read_text()
 
-        should_block, skill_name, context = _mod.check_continue(
-            hook_input=None, root=git_repo, branch=None
-        )
+        should_block, skill_name, context = _mod.check_continue(hook_input=None, root=git_repo, branch=None)
 
         assert should_block is False
         assert (state_dir / f"{branch}.json").read_text() == original
@@ -1121,7 +1160,8 @@ class TestCaptureSessionIdWithParams:
 
         _mod.capture_session_id(
             {"session_id": "via-params", "transcript_path": "/p.jsonl"},
-            root=git_repo, branch=branch,
+            root=git_repo,
+            branch=branch,
         )
 
         updated = json.loads((state_dir / f"{branch}.json").read_text())
@@ -1129,7 +1169,11 @@ class TestCaptureSessionIdWithParams:
         assert updated["transcript_path"] == "/p.jsonl"
 
     def test_none_branch_param_skips(
-        self, git_repo, state_dir, branch, monkeypatch,
+        self,
+        git_repo,
+        state_dir,
+        branch,
+        monkeypatch,
     ):
         """When branch param is None, function returns without error.
 
@@ -1144,7 +1188,8 @@ class TestCaptureSessionIdWithParams:
 
         _mod.capture_session_id(
             {"session_id": "via-params"},
-            root=git_repo, branch=None,
+            root=git_repo,
+            branch=None,
         )
 
         assert (state_dir / f"{branch}.json").read_text() == original
@@ -1313,12 +1358,14 @@ class TestMainErrorHandling:
 
     def test_project_root_failure_allows_stop(self, monkeypatch):
         """When project_root raises, main exits 0 with no output (fail-open)."""
+
         def raise_error():
             raise OSError("git not found")
 
         monkeypatch.setattr(_mod, "project_root", raise_error)
 
         import io
+
         monkeypatch.setattr("sys.stdin", io.StringIO("{}"))
 
         _mod.main()
@@ -1330,6 +1377,7 @@ class TestMainErrorHandling:
         monkeypatch.setattr(_mod, "current_branch", lambda: None)
 
         import io
+
         monkeypatch.setattr("sys.stdin", io.StringIO("{}"))
 
         _mod.main()

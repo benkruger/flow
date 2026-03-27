@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 def validate_version(version: str) -> bool:
-    return bool(re.match(r'^\d+\.\d+\.\d+$', version))
+    return bool(re.match(r"^\d+\.\d+\.\d+$", version))
 
 
 def read_current_version(plugin_json: Path) -> str:

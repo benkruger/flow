@@ -3,8 +3,6 @@
 import json
 import subprocess
 
-import pytest
-
 from conftest import HOOKS_DIR, make_orchestrate_state, make_state, write_state
 
 SCRIPT = str(HOOKS_DIR / "session-start.sh")
@@ -14,7 +12,9 @@ def _run(git_repo):
     """Run session-start.sh inside the given git repo."""
     result = subprocess.run(
         ["bash", SCRIPT],
-        capture_output=True, text=True, cwd=str(git_repo),
+        capture_output=True,
+        text=True,
+        cwd=str(git_repo),
     )
     return result
 
@@ -23,7 +23,9 @@ def _switch(git_repo, branch_name):
     """Switch the test git repo to a named branch (for branch isolation)."""
     subprocess.run(
         ["git", "checkout", "-b", branch_name],
-        cwd=str(git_repo), capture_output=True, check=True,
+        cwd=str(git_repo),
+        capture_output=True,
+        check=True,
     )
 
 
@@ -31,7 +33,9 @@ def _detach(git_repo):
     """Detach HEAD in the test git repo (triggers fallback to scan-all)."""
     subprocess.run(
         ["git", "checkout", "--detach"],
-        cwd=str(git_repo), capture_output=True, check=True,
+        cwd=str(git_repo),
+        capture_output=True,
+        check=True,
     )
 
 
@@ -134,9 +138,14 @@ def test_multi_feature_preserves_all_timing(git_repo):
     s1["phases"]["flow-plan"]["cumulative_seconds"] = 0
     write_state(state_dir, "feature-alpha", s1)
 
-    s2 = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    s2 = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     s2["phases"]["flow-code"]["session_started_at"] = "2026-01-15T12:00:00Z"
     s2["phases"]["flow-code"]["cumulative_seconds"] = 0
     write_state(state_dir, "feature-beta", s2)
@@ -166,9 +175,15 @@ def test_multiple_features_mentions_both(git_repo):
     s1["branch"] = "feature-alpha"
     write_state(state_dir, "feature-alpha", s1)
 
-    s2 = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "complete", "flow-code-review": "in_progress",
-    })
+    s2 = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     s2["branch"] = "feature-beta"
     write_state(state_dir, "feature-beta", s2)
 
@@ -297,9 +312,14 @@ def test_multiple_features_does_not_force_action(git_repo):
     s1 = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
     write_state(state_dir, "feature-one", s1)
 
-    s2 = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    s2 = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     write_state(state_dir, "feature-two", s2)
 
     _detach(git_repo)
@@ -318,9 +338,14 @@ def test_multiple_features_includes_note_instruction(git_repo):
     s1 = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
     write_state(state_dir, "feature-one", s1)
 
-    s2 = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    s2 = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     write_state(state_dir, "feature-two", s2)
 
     _detach(git_repo)
@@ -385,9 +410,14 @@ def test_phases_json_files_are_ignored(git_repo):
     state_dir.mkdir(parents=True)
 
     # Real state file
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["branch"] = "real-feature"
     write_state(state_dir, "real-feature", state)
 
@@ -413,9 +443,14 @@ def test_multiple_features_plan_approved_instructs_auto_continue(git_repo):
     s1["branch"] = "plan-ready"
     write_state(state_dir, "plan-ready", s1)
 
-    s2 = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    s2 = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     s2["branch"] = "other-work"
     write_state(state_dir, "other-work", s2)
 
@@ -432,9 +467,14 @@ def test_single_feature_no_plan_includes_implementation_guardrail(git_repo):
     """Single feature without plan approved must include implementation guardrail."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     write_state(state_dir, "my-feature", state)
 
     _switch(git_repo, "my-feature")
@@ -452,9 +492,14 @@ def test_multiple_features_includes_implementation_guardrail(git_repo):
     s1 = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
     write_state(state_dir, "feature-a", s1)
 
-    s2 = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    s2 = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     write_state(state_dir, "feature-b", s2)
 
     _detach(git_repo)
@@ -483,10 +528,15 @@ def test_code_review_with_step_tracking_shows_progress(git_repo):
     """Code Review at step 2 → context mentions step progress."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "complete", "flow-code-review": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     state["code_review_step"] = 2
     write_state(state_dir, "step-tracking", state)
 
@@ -502,10 +552,15 @@ def test_code_review_without_step_tracking_still_works(git_repo):
     """Code Review without code_review_step → normal phase display, no step info."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "complete", "flow-code-review": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     state["branch"] = "no-steps"
     write_state(state_dir, "no-steps", state)
 
@@ -523,16 +578,26 @@ def test_multi_feature_code_review_step_tracking(git_repo):
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
 
-    s1 = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "complete", "flow-code-review": "in_progress",
-    })
+    s1 = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     s1["code_review_step"] = 3
     write_state(state_dir, "review-feature", s1)
 
-    s2 = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    s2 = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     write_state(state_dir, "other-feature", s2)
 
     _detach(git_repo)
@@ -547,10 +612,15 @@ def test_code_review_bad_step_does_not_crash(git_repo):
     """Non-integer code_review_step → no crash, no step suffix in context."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "complete", "flow-code-review": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     state["code_review_step"] = "bad"
     state["branch"] = "bad-step"
     write_state(state_dir, "bad-step", state)
@@ -568,10 +638,15 @@ def test_code_review_empty_string_step_does_not_crash(git_repo):
     """Empty string code_review_step → no crash, no step suffix in context."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "complete", "flow-code-review": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     state["code_review_step"] = ""
     state["branch"] = "empty-step"
     write_state(state_dir, "empty-step", state)
@@ -589,10 +664,15 @@ def test_code_review_float_string_step_does_not_crash(git_repo):
     """Float string code_review_step → no crash, no step suffix in context."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code-review", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "complete", "flow-code-review": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
     state["code_review_step"] = "2.5"
     state["branch"] = "float-step"
     write_state(state_dir, "float-step", state)
@@ -611,9 +691,13 @@ def test_never_entered_phase_instructs_auto_continue(git_repo):
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
     # current_phase advanced to flow-code by Plan completion, but phase_enter never ran
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+        },
+    )
     write_state(state_dir, "auto-continue", state)
 
     _switch(git_repo, "auto-continue")
@@ -664,10 +748,14 @@ def test_compact_summary_injected_into_context(git_repo):
     """State with compact_summary → context includes the summary in a compact-summary block."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["compact_summary"] = "User was writing tests for webhook handler."
     write_state(state_dir, "my-feature", state)
 
@@ -683,10 +771,14 @@ def test_compact_summary_cleared_from_state_after_injection(git_repo):
     """After SessionStart injects compact_summary, it must be cleared from the state file."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["compact_summary"] = "Summary to consume."
     state["compact_cwd"] = "/some/path"
     write_state(state_dir, "my-feature", state)
@@ -703,10 +795,14 @@ def test_compact_cwd_mismatch_shows_warning(git_repo):
     """When compact_cwd does not match worktree, context includes a CWD drift warning."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["compact_cwd"] = "/wrong/directory"
     state["worktree"] = ".worktrees/test-feature"
     write_state(state_dir, "my-feature", state)
@@ -723,10 +819,14 @@ def test_compact_cwd_matches_worktree_no_warning(git_repo):
     """When compact_cwd matches worktree, no CWD drift warning appears."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["compact_summary"] = "Summary."
     state["compact_cwd"] = ".worktrees/test-feature"
     state["worktree"] = ".worktrees/test-feature"
@@ -744,10 +844,14 @@ def test_no_compact_data_no_compact_block(git_repo):
     """State without compact_summary → no compact-summary block in context."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     write_state(state_dir, "my-feature", state)
 
     _switch(git_repo, "my-feature")
@@ -763,16 +867,24 @@ def test_multi_feature_compact_summary_injected(git_repo):
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
 
-    s1 = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete",
-        "flow-code": "in_progress",
-    })
+    s1 = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     s1["compact_summary"] = "Was debugging the payment flow."
     write_state(state_dir, "feature-alpha", s1)
 
-    s2 = make_state(current_phase="flow-plan", phase_statuses={
-        "flow-start": "complete", "flow-plan": "in_progress",
-    })
+    s2 = make_state(
+        current_phase="flow-plan",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "in_progress",
+        },
+    )
     write_state(state_dir, "feature-beta", s2)
 
     _detach(git_repo)
@@ -789,9 +901,14 @@ def test_ignores_state_file_for_different_branch(git_repo):
     """State file for feature-alpha, session on main → silent exit (no context)."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["feature"] = "Feature Alpha"
     write_state(state_dir, "feature-alpha", state)
 
@@ -806,15 +923,24 @@ def test_processes_only_matching_branch_state(git_repo):
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
 
-    s1 = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    s1 = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     s1["branch"] = "feature-alpha"
     write_state(state_dir, "feature-alpha", s1)
 
-    s2 = make_state(current_phase="flow-plan", phase_statuses={
-        "flow-start": "complete", "flow-plan": "in_progress",
-    })
+    s2 = make_state(
+        current_phase="flow-plan",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "in_progress",
+        },
+    )
     s2["branch"] = "feature-beta"
     write_state(state_dir, "feature-beta", s2)
 
@@ -832,9 +958,14 @@ def test_detached_head_single_file_fallback(git_repo):
     """Detached HEAD with single state file → fallback to old behavior (processes it)."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["branch"] = "solo-feature"
     write_state(state_dir, "solo-feature", state)
 
@@ -851,15 +982,24 @@ def test_detached_head_multiple_files_fallback(git_repo):
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
 
-    s1 = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    s1 = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     s1["branch"] = "feature-one"
     write_state(state_dir, "feature-one", s1)
 
-    s2 = make_state(current_phase="flow-plan", phase_statuses={
-        "flow-start": "complete", "flow-plan": "in_progress",
-    })
+    s2 = make_state(
+        current_phase="flow-plan",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "in_progress",
+        },
+    )
     s2["branch"] = "feature-two"
     write_state(state_dir, "feature-two", s2)
 
@@ -880,9 +1020,14 @@ def test_tab_title_does_not_appear_in_stdout(git_repo):
     """Tab title escape sequence must not appear in stdout (it goes to /dev/tty)."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["branch"] = "tab-title-test"
     write_state(state_dir, "tab-title-test", state)
 
@@ -903,9 +1048,14 @@ def test_tab_title_with_issue_numbers_does_not_appear_in_stdout(git_repo):
     """Tab title with issue prefix from prompt must not appear in stdout."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["branch"] = "tab-issue-test"
     state["prompt"] = "work on issue #342"
     write_state(state_dir, "tab-issue-test", state)
@@ -936,12 +1086,9 @@ def test_orchestrate_in_progress_injects_resume(git_repo):
     orch_state = _make_orch_state(
         current_index=1,
         queue=[
-            {"issue_number": 42, "title": "Add PDF export", "status": "completed",
-             "outcome": "completed"},
-            {"issue_number": 43, "title": "Fix login timeout", "status": "in_progress",
-             "outcome": None},
-            {"issue_number": 44, "title": "Refactor auth", "status": "pending",
-             "outcome": None},
+            {"issue_number": 42, "title": "Add PDF export", "status": "completed", "outcome": "completed"},
+            {"issue_number": 43, "title": "Fix login timeout", "status": "in_progress", "outcome": None},
+            {"issue_number": 44, "title": "Refactor auth", "status": "pending", "outcome": None},
         ],
     )
     (state_dir / "orchestrate.json").write_text(json.dumps(orch_state))
@@ -962,8 +1109,7 @@ def test_orchestrate_completed_injects_report(git_repo):
     orch_state = _make_orch_state(
         completed_at="2026-03-21T06:00:00-07:00",
         queue=[
-            {"issue_number": 42, "title": "Add PDF export", "status": "completed",
-             "outcome": "completed"},
+            {"issue_number": 42, "title": "Add PDF export", "status": "completed", "outcome": "completed"},
         ],
     )
     (state_dir / "orchestrate.json").write_text(json.dumps(orch_state))
@@ -1009,16 +1155,20 @@ def test_orchestrate_coexists_with_feature(git_repo):
     orch_state = _make_orch_state(
         current_index=0,
         queue=[
-            {"issue_number": 42, "title": "Add PDF export", "status": "in_progress",
-             "outcome": None},
+            {"issue_number": 42, "title": "Add PDF export", "status": "in_progress", "outcome": None},
         ],
     )
     (state_dir / "orchestrate.json").write_text(json.dumps(orch_state))
 
     # Feature state
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["branch"] = "some-feature"
     write_state(state_dir, "some-feature", state)
 
@@ -1060,12 +1210,9 @@ def test_orchestrate_all_processed_no_resume(git_repo):
     orch_state = _make_orch_state(
         current_index=2,
         queue=[
-            {"issue_number": 42, "title": "Add PDF export", "status": "completed",
-             "outcome": "completed"},
-            {"issue_number": 43, "title": "Fix login timeout", "status": "failed",
-             "outcome": "failed"},
-            {"issue_number": 44, "title": "Refactor auth", "status": "completed",
-             "outcome": "completed"},
+            {"issue_number": 42, "title": "Add PDF export", "status": "completed", "outcome": "completed"},
+            {"issue_number": 43, "title": "Fix login timeout", "status": "failed", "outcome": "failed"},
+            {"issue_number": 44, "title": "Refactor auth", "status": "completed", "outcome": "completed"},
         ],
     )
     (state_dir / "orchestrate.json").write_text(json.dumps(orch_state))
@@ -1080,9 +1227,14 @@ def test_no_orchestrate_file_existing_behavior(git_repo):
     """No orchestrate.json → existing behavior unchanged, no orchestration context."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["branch"] = "normal-feature"
     write_state(state_dir, "normal-feature", state)
 
@@ -1119,9 +1271,14 @@ def test_active_flow_color_sequences_not_in_stdout(git_repo):
     """Color escape sequences must not appear in stdout (they go to /dev/tty)."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["branch"] = "color-test"
     write_state(state_dir, "color-test", state)
 
@@ -1149,17 +1306,26 @@ def test_dev_mode_preamble_when_plugin_root_backup_present(git_repo):
     """Dev mode preamble appears when .flow.json has plugin_root_backup."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["branch"] = "dev-mode-test"
     write_state(state_dir, "dev-mode-test", state)
 
-    (git_repo / ".flow.json").write_text(json.dumps({
-        "flow_version": "0.39.0",
-        "plugin_root": "/local/path",
-        "plugin_root_backup": "/cache/path",
-    }))
+    (git_repo / ".flow.json").write_text(
+        json.dumps(
+            {
+                "flow_version": "0.39.0",
+                "plugin_root": "/local/path",
+                "plugin_root_backup": "/cache/path",
+            }
+        )
+    )
 
     _switch(git_repo, "dev-mode-test")
     result = _run(git_repo)
@@ -1172,16 +1338,25 @@ def test_no_dev_mode_preamble_without_plugin_root_backup(git_repo):
     """No dev mode preamble when .flow.json has no plugin_root_backup."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["branch"] = "no-dev-mode"
     write_state(state_dir, "no-dev-mode", state)
 
-    (git_repo / ".flow.json").write_text(json.dumps({
-        "flow_version": "0.39.0",
-        "plugin_root": "/cache/path",
-    }))
+    (git_repo / ".flow.json").write_text(
+        json.dumps(
+            {
+                "flow_version": "0.39.0",
+                "plugin_root": "/cache/path",
+            }
+        )
+    )
 
     _switch(git_repo, "no-dev-mode")
     result = _run(git_repo)
@@ -1194,9 +1369,14 @@ def test_no_dev_mode_preamble_without_flow_json(git_repo):
     """No dev mode preamble when .flow.json does not exist."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["branch"] = "no-flow-json"
     write_state(state_dir, "no-flow-json", state)
 
@@ -1211,9 +1391,14 @@ def test_no_dev_mode_preamble_with_malformed_flow_json(git_repo):
     """No dev mode preamble when .flow.json is malformed."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-code", phase_statuses={
-        "flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress",
-    })
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
     state["branch"] = "bad-json"
     write_state(state_dir, "bad-json", state)
 

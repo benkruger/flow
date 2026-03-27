@@ -3,16 +3,12 @@
 import importlib.util
 import json
 import sys
-from pathlib import Path
 
 import pytest
-
 from conftest import LIB_DIR
 
 # Import the hyphenated module directly
-_spec = importlib.util.spec_from_file_location(
-    "bump_version", LIB_DIR / "bump-version.py"
-)
+_spec = importlib.util.spec_from_file_location("bump_version", LIB_DIR / "bump-version.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 validate_version = _mod.validate_version
@@ -28,40 +24,39 @@ def fake_repo(tmp_path):
     plugin_dir.mkdir()
 
     plugin_json = plugin_dir / "plugin.json"
-    plugin_json.write_text(json.dumps({
-        "name": "flow",
-        "version": "1.0.0",
-    }, indent=2))
+    plugin_json.write_text(
+        json.dumps(
+            {
+                "name": "flow",
+                "version": "1.0.0",
+            },
+            indent=2,
+        )
+    )
 
     marketplace_json = plugin_dir / "marketplace.json"
-    marketplace_json.write_text(json.dumps({
-        "name": "flow-marketplace",
-        "metadata": {"version": "1.0.0"},
-        "plugins": [{"name": "flow", "version": "1.0.0"}],
-    }, indent=2))
+    marketplace_json.write_text(
+        json.dumps(
+            {
+                "name": "flow-marketplace",
+                "metadata": {"version": "1.0.0"},
+                "plugins": [{"name": "flow", "version": "1.0.0"}],
+            },
+            indent=2,
+        )
+    )
 
     skills_dir = tmp_path / "skills"
     for name in ("flow-start", "flow-code"):
         skill_dir = skills_dir / name
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text(
-            "# Skill\n\n"
-            "```\n"
-            "  FLOW v1.0.0 — Phase — STARTING\n"
-            "```\n\n"
-            "```\n"
-            "  FLOW v1.0.0 — Phase — COMPLETE\n"
-            "```\n"
+            "# Skill\n\n```\n  FLOW v1.0.0 — Phase — STARTING\n```\n\n```\n  FLOW v1.0.0 — Phase — COMPLETE\n```\n"
         )
 
     release_dir = tmp_path / ".claude" / "skills" / "flow-release"
     release_dir.mkdir(parents=True)
-    (release_dir / "SKILL.md").write_text(
-        "# Release\n\n"
-        "```\n"
-        "  FLOW v1.0.0 — release — STARTING\n"
-        "```\n"
-    )
+    (release_dir / "SKILL.md").write_text("# Release\n\n```\n  FLOW v1.0.0 — release — STARTING\n```\n")
 
     return tmp_path
 

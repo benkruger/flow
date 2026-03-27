@@ -12,7 +12,6 @@ Output (JSON to stdout):
 import argparse
 import json
 import subprocess
-import sys
 from pathlib import Path
 
 
@@ -22,9 +21,9 @@ def _find_state_files(project_root):
     if not state_dir.is_dir():
         return []
     return [
-        f for f in state_dir.glob("*.json")
-        if not f.name.startswith("orchestrate")
-        and not f.name.endswith("-phases.json")
+        f
+        for f in state_dir.glob("*.json")
+        if not f.name.startswith("orchestrate") and not f.name.endswith("-phases.json")
     ]
 
 
@@ -38,64 +37,63 @@ def verify(framework, repo, project_root):
 
     # State files should be cleaned up after Complete
     state_files = _find_state_files(project_root)
-    checks.append({
-        "name": "State files cleaned up",
-        "passed": len(state_files) == 0,
-        "detail": "No leftover state files"
-        if len(state_files) == 0
-        else f"Found {len(state_files)} leftover state file(s)",
-    })
+    checks.append(
+        {
+            "name": "State files cleaned up",
+            "passed": len(state_files) == 0,
+            "detail": "No leftover state files"
+            if len(state_files) == 0
+            else f"Found {len(state_files)} leftover state file(s)",
+        }
+    )
 
     # Worktrees should be cleaned up after Complete
     worktrees_dir = Path(project_root) / ".worktrees"
-    worktree_count = (
-        len(list(worktrees_dir.iterdir())) if worktrees_dir.is_dir() else 0
+    worktree_count = len(list(worktrees_dir.iterdir())) if worktrees_dir.is_dir() else 0
+    checks.append(
+        {
+            "name": "Worktrees cleaned up",
+            "passed": worktree_count == 0,
+            "detail": "No leftover worktrees"
+            if worktree_count == 0
+            else f"Found {worktree_count} leftover worktree(s)",
+        }
     )
-    checks.append({
-        "name": "Worktrees cleaned up",
-        "passed": worktree_count == 0,
-        "detail": "No leftover worktrees"
-        if worktree_count == 0
-        else f"Found {worktree_count} leftover worktree(s)",
-    })
 
     # At least one PR should be merged
     result = subprocess.run(
-        ["gh", "pr", "list", "--repo", repo, "--state", "merged",
-         "--limit", "1", "--json", "number"],
-        capture_output=True, text=True,
+        ["gh", "pr", "list", "--repo", repo, "--state", "merged", "--limit", "1", "--json", "number"],
+        capture_output=True,
+        text=True,
     )
     if result.returncode == 0:
         pr_list = json.loads(result.stdout)
         has_merged = len(pr_list) >= 1
-        detail = (
-            f"PR #{pr_list[0]['number']} merged"
-            if has_merged
-            else "No merged PRs found"
+        detail = f"PR #{pr_list[0]['number']} merged" if has_merged else "No merged PRs found"
+        checks.append(
+            {
+                "name": "PR merged",
+                "passed": has_merged,
+                "detail": detail,
+            }
         )
-        checks.append({
-            "name": "PR merged",
-            "passed": has_merged,
-            "detail": detail,
-        })
     else:
-        checks.append({
-            "name": "PR merged",
-            "passed": False,
-            "detail": "Could not fetch merged PRs",
-        })
+        checks.append(
+            {
+                "name": "PR merged",
+                "passed": False,
+                "detail": "Could not fetch merged PRs",
+            }
+        )
 
     return {"status": "ok", "checks": checks}
 
 
 def main():
     parser = argparse.ArgumentParser(description="Verify QA assertions")
-    parser.add_argument("--framework", default=None,
-                        help="Framework name (reserved for future use)")
-    parser.add_argument("--repo", required=True,
-                        help="GitHub repo (owner/name)")
-    parser.add_argument("--project-root", default=".",
-                        help="Project root path")
+    parser.add_argument("--framework", default=None, help="Framework name (reserved for future use)")
+    parser.add_argument("--repo", required=True, help="GitHub repo (owner/name)")
+    parser.add_argument("--project-root", default=".", help="Project root path")
     args = parser.parse_args()
 
     result = verify(args.framework, args.repo, args.project_root)

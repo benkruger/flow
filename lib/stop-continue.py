@@ -19,10 +19,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
-    current_branch, detect_repo, mutate_state, now, project_root,
+    current_branch,
+    detect_repo,
+    mutate_state,
+    now,
+    project_root,
     write_tab_sequences,
 )
-
 
 _UNSET = object()
 
@@ -39,9 +42,7 @@ def _log(root, branch, message):
         if root and branch:
             log_path = root / ".flow-states" / f"{branch}.log"
             with open(log_path, "a") as log_file:
-                log_file.write(
-                    f"{now()} [stop-continue] {message}\n"
-                )
+                log_file.write(f"{now()} [stop-continue] {message}\n")
     except Exception:
         pass
 
@@ -114,8 +115,10 @@ def check_continue(hook_input=None, root=None, branch=_UNSET):
             return (False, None, None)
 
         result = {
-            "should_block": False, "skill": None,
-            "context": None, "decision": None,
+            "should_block": False,
+            "skill": None,
+            "context": None,
+            "decision": None,
         }
 
         def transform(state):
@@ -128,10 +131,7 @@ def check_continue(hook_input=None, root=None, branch=_UNSET):
             if state_sid and hook_sid and state_sid != hook_sid:
                 state["_continue_pending"] = ""
                 state["_continue_context"] = ""
-                result["decision"] = (
-                    f"session mismatch (state={state_sid} "
-                    f"hook={hook_sid}), cleared pending={pending}"
-                )
+                result["decision"] = f"session mismatch (state={state_sid} hook={hook_sid}), cleared pending={pending}"
                 return
 
             result["context"] = state.get("_continue_context", "") or None
@@ -244,9 +244,7 @@ def main():
     if not branch:
         return
 
-    should_block, skill_name, context = check_continue(
-        hook_input, root=root, branch=branch
-    )
+    should_block, skill_name, context = check_continue(hook_input, root=root, branch=branch)
 
     capture_session_id(hook_input, root=root, branch=branch)
 
@@ -264,10 +262,7 @@ def main():
             context = qa_context
 
     if should_block:
-        reason = (
-            f"Continue parent phase — child skill '{skill_name}' "
-            f"has returned."
-        )
+        reason = f"Continue parent phase — child skill '{skill_name}' has returned."
         if context:
             reason += f"\n\nNext steps:\n{context}"
         else:

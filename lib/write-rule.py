@@ -60,8 +60,9 @@ def write_rule(target_path, content):
 def main():
     parser = argparse.ArgumentParser(description="Write content to a target file")
     parser.add_argument("--path", required=True, help="Target file path")
-    parser.add_argument("--content-file", required=True,
-                        help="Path to file containing content (file is deleted after reading)")
+    parser.add_argument(
+        "--content-file", required=True, help="Path to file containing content (file is deleted after reading)"
+    )
     args = parser.parse_args()
 
     content, read_error = read_content_file(args.content_file)

@@ -41,15 +41,21 @@ def _tree_snapshot(root):
     """
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"],
-        cwd=str(root), capture_output=True, text=True,
+        cwd=str(root),
+        capture_output=True,
+        text=True,
     )
     diff = subprocess.run(
         ["git", "diff", "HEAD"],
-        cwd=str(root), capture_output=True, text=True,
+        cwd=str(root),
+        capture_output=True,
+        text=True,
     )
     untracked = subprocess.run(
         ["git", "ls-files", "--others", "--exclude-standard"],
-        cwd=str(root), capture_output=True, text=True,
+        cwd=str(root),
+        capture_output=True,
+        text=True,
     )
     untracked_hash = ""
     untracked_files = untracked.stdout.strip()
@@ -57,7 +63,9 @@ def _tree_snapshot(root):
         hash_result = subprocess.run(
             ["git", "hash-object", "--stdin-paths"],
             input=untracked_files,
-            cwd=str(root), capture_output=True, text=True,
+            cwd=str(root),
+            capture_output=True,
+            text=True,
         )
         untracked_hash = hash_result.stdout
 
@@ -87,7 +95,7 @@ def main():
         idx = args.index("--branch")
         if idx + 1 < len(args):
             branch_override = args[idx + 1]
-            args = args[:idx] + args[idx + 2:]
+            args = args[:idx] + args[idx + 2 :]
 
     # Extract --simulate-branch from args (set in child env, not sentinel)
     simulate_branch = None
@@ -95,13 +103,10 @@ def main():
         idx = args.index("--simulate-branch")
         if idx + 1 < len(args):
             simulate_branch = args[idx + 1]
-            args = args[:idx] + args[idx + 2:]
+            args = args[:idx] + args[idx + 2 :]
 
     branch, _ = resolve_branch(branch_override)
-    sentinel = (
-        root / ".flow-states" / f"{branch}-ci-passed"
-        if branch else None
-    )
+    sentinel = root / ".flow-states" / f"{branch}-ci-passed" if branch else None
 
     if not bin_ci.exists():
         print(json.dumps({"status": "error", "message": "bin/ci not found"}))

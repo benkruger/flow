@@ -41,7 +41,9 @@ def finalize_commit(message_file, branch):
     try:
         result = subprocess.run(
             ["git", "commit", "-F", message_file],
-            capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
+            capture_output=True,
+            text=True,
+            timeout=LOCAL_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
         _remove_message_file(message_file)
@@ -55,7 +57,9 @@ def finalize_commit(message_file, branch):
     try:
         result = subprocess.run(
             ["git", "pull", "origin", branch],
-            capture_output=True, text=True, timeout=NETWORK_TIMEOUT,
+            capture_output=True,
+            text=True,
+            timeout=NETWORK_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
         return {"status": "error", "step": "pull", "message": f"git pull timed out after {NETWORK_TIMEOUT}s"}
@@ -63,7 +67,9 @@ def finalize_commit(message_file, branch):
         try:
             status = subprocess.run(
                 ["git", "status", "--porcelain"],
-                capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
+                capture_output=True,
+                text=True,
+                timeout=LOCAL_TIMEOUT,
             )
         except subprocess.TimeoutExpired:
             return {"status": "error", "step": "pull", "message": result.stderr.strip()}
@@ -76,7 +82,9 @@ def finalize_commit(message_file, branch):
     try:
         result = subprocess.run(
             ["git", "push"],
-            capture_output=True, text=True, timeout=NETWORK_TIMEOUT,
+            capture_output=True,
+            text=True,
+            timeout=NETWORK_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
         return {"status": "error", "step": "push", "message": f"git push timed out after {NETWORK_TIMEOUT}s"}
@@ -86,7 +94,9 @@ def finalize_commit(message_file, branch):
     try:
         sha = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=LOCAL_TIMEOUT,
+            capture_output=True,
+            text=True,
+            timeout=LOCAL_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
         return {"status": "ok", "sha": "", "warning": "commit succeeded but SHA retrieval timed out"}
@@ -98,11 +108,15 @@ def finalize_commit(message_file, branch):
 
 def main():
     if len(sys.argv) < 3:
-        print(json.dumps({
-            "status": "error",
-            "step": "args",
-            "message": "Usage: bin/flow finalize-commit <message-file> <branch>",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "step": "args",
+                    "message": "Usage: bin/flow finalize-commit <message-file> <branch>",
+                }
+            )
+        )
         sys.exit(1)
 
     message_file = sys.argv[1]

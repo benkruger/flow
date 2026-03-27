@@ -2,22 +2,17 @@
 
 import importlib.util
 import json
-import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
-
 from conftest import LIB_DIR, PHASE_ORDER, make_flow_json
 
 SCRIPT = str(LIB_DIR / "init-state.py")
 
 # Import init-state.py for in-process unit tests of edge cases
-_spec = importlib.util.spec_from_file_location(
-    "init_state", LIB_DIR / "init-state.py"
-)
+_spec = importlib.util.spec_from_file_location("init_state", LIB_DIR / "init-state.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -36,7 +31,10 @@ def _run(cwd, feature_name, prompt_file=None, auto=False):
     if auto:
         cmd.append("--auto")
     result = subprocess.run(
-        cmd, capture_output=True, text=True, cwd=str(cwd),
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=str(cwd),
     )
     return result
 
@@ -46,8 +44,7 @@ def _run(cwd, feature_name, prompt_file=None, auto=False):
 
 def test_happy_path_returns_ok_json(target_project):
     """Successful run returns JSON with status, branch, state_file."""
-    make_flow_json(target_project, version=_current_plugin_version(),
-                   framework="rails")
+    make_flow_json(target_project, version=_current_plugin_version(), framework="rails")
     result = _run(target_project, "test feature")
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)
@@ -85,8 +82,11 @@ def test_state_file_has_all_6_phases(target_project):
     state_path = target_project / ".flow-states" / "six-phases-test.json"
     state = json.loads(state_path.read_text())
     expected_names = {
-        "flow-start": "Start", "flow-plan": "Plan", "flow-code": "Code",
-        "flow-code-review": "Code Review", "flow-learn": "Learn",
+        "flow-start": "Start",
+        "flow-plan": "Plan",
+        "flow-code": "Code",
+        "flow-code-review": "Code Review",
+        "flow-learn": "Learn",
         "flow-complete": "Complete",
     }
     assert len(state["phases"]) == 6
@@ -156,8 +156,7 @@ def test_state_file_has_files_block(target_project):
 
 def test_framework_from_flow_json(target_project):
     """Framework reads from .flow.json."""
-    make_flow_json(target_project, version=_current_plugin_version(),
-                   framework="python")
+    make_flow_json(target_project, version=_current_plugin_version(), framework="python")
     _run(target_project, "python framework")
     state_path = target_project / ".flow-states" / "python-framework.json"
     state = json.loads(state_path.read_text())
@@ -179,8 +178,7 @@ def test_framework_defaults_to_rails(target_project):
 def test_skills_from_flow_json(target_project):
     """Skills config copied from .flow.json to state file."""
     skills = {"flow-start": {"continue": "manual"}}
-    make_flow_json(target_project, version=_current_plugin_version(),
-                   skills=skills)
+    make_flow_json(target_project, version=_current_plugin_version(), skills=skills)
     _run(target_project, "skills config")
     state_path = target_project / ".flow-states" / "skills-config.json"
     state = json.loads(state_path.read_text())
@@ -202,8 +200,7 @@ def test_skills_omitted_when_not_in_flow_json(target_project):
 def test_auto_flag_overrides_skills(target_project):
     """--auto flag overrides skills to fully autonomous preset."""
     manual_skills = {"flow-start": {"continue": "manual"}}
-    make_flow_json(target_project, version=_current_plugin_version(),
-                   skills=manual_skills)
+    make_flow_json(target_project, version=_current_plugin_version(), skills=manual_skills)
     _run(target_project, "auto override", auto=True)
     state_path = target_project / ".flow-states" / "auto-override.json"
     state = json.loads(state_path.read_text())
@@ -231,8 +228,7 @@ def test_prompt_from_prompt_file(target_project):
     prompt_path = target_project / ".flow-states" / "test-prompt-file"
     prompt_path.parent.mkdir(parents=True, exist_ok=True)
     prompt_path.write_text("fix issue #42 with special chars: && | ;")
-    result = _run(target_project, "prompt file test",
-                  prompt_file=str(prompt_path))
+    result = _run(target_project, "prompt file test", prompt_file=str(prompt_path))
     assert result.returncode == 0, result.stderr
     state_path = target_project / ".flow-states" / "prompt-file-test.json"
     state = json.loads(state_path.read_text())
@@ -252,8 +248,7 @@ def test_prompt_defaults_to_feature_name(target_project):
 def test_prompt_file_not_found_returns_error(target_project):
     """--prompt-file with nonexistent path returns error."""
     make_flow_json(target_project, version=_current_plugin_version())
-    result = _run(target_project, "error test",
-                  prompt_file="/nonexistent/prompt-file")
+    result = _run(target_project, "error test", prompt_file="/nonexistent/prompt-file")
     assert result.returncode == 1
     data = json.loads(result.stdout)
     assert data["status"] == "error"
@@ -336,8 +331,7 @@ def test_branch_name_derived_from_feature(target_project):
 def test_branch_name_truncated_at_32(target_project):
     """Branch names exceeding 32 chars truncated at word boundary."""
     make_flow_json(target_project, version=_current_plugin_version())
-    result = _run(target_project,
-                  "this is a very long feature name that exceeds limit")
+    result = _run(target_project, "this is a very long feature name that exceeds limit")
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)
     assert len(data["branch"]) <= 32
@@ -360,7 +354,9 @@ def test_cli_via_bin_flow(target_project, monkeypatch):
     bin_flow = Path(__file__).resolve().parent.parent / "bin" / "flow"
     result = subprocess.run(
         [str(bin_flow), "init-state", "cli integration test"],
-        capture_output=True, text=True, cwd=str(target_project),
+        capture_output=True,
+        text=True,
+        cwd=str(target_project),
     )
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)

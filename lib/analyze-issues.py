@@ -25,18 +25,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import extract_issue_numbers
 
-
 # File path patterns: known directory prefixes or paths with file extensions
 _DIR_PREFIXES = (
-    "lib/", "skills/", "tests/", "docs/", "hooks/", "frameworks/",
-    ".claude/", "bin/", "agents/", "src/", "config/", "app/",
+    "lib/",
+    "skills/",
+    "tests/",
+    "docs/",
+    "hooks/",
+    "frameworks/",
+    ".claude/",
+    "bin/",
+    "agents/",
+    "src/",
+    "config/",
+    "app/",
 )
 _FILE_EXT_RE = re.compile(
-    r"(?<!\w)"                       # not preceded by word char
-    r"([\w./\-]+/"                   # at least one directory component
-    r"[\w.\-]+"                      # filename
+    r"(?<!\w)"  # not preceded by word char
+    r"([\w./\-]+/"  # at least one directory component
+    r"[\w.\-]+"  # filename
     r"\.(?:py|md|json|sh|yml|yaml|rb|js|ts|html|css|toml))"  # extension
-    r"(?!\w)"                        # not followed by word char
+    r"(?!\w)"  # not followed by word char
 )
 
 
@@ -69,8 +78,7 @@ def extract_dependencies(body, open_numbers, own_number=None):
     for the raw #N and URL pattern extraction.
     """
     all_refs = extract_issue_numbers(body)
-    return [num for num in all_refs
-            if num in open_numbers and num != own_number]
+    return [num for num in all_refs if num in open_numbers and num != own_number]
 
 
 def detect_labels(labels):
@@ -81,18 +89,14 @@ def detect_labels(labels):
     label_names = {label["name"] for label in labels}
     return {
         "in_progress": "Flow In-Progress" in label_names,
-        "decomposed": any(l.lower() == "decomposed" for l in label_names),
+        "decomposed": any(name.lower() == "decomposed" for name in label_names),
     }
 
 
 _LABEL_CATEGORIES = {"Rule", "Flow", "Flaky Test", "Tech Debt", "Documentation Drift"}
 
-_BUG_KEYWORDS = re.compile(
-    r"\b(bug|fix|crash|error|broken|fail|wrong|incorrect)\b", re.IGNORECASE
-)
-_ENHANCEMENT_KEYWORDS = re.compile(
-    r"\b(add|new|feature|enhance|improve|support|implement)\b", re.IGNORECASE
-)
+_BUG_KEYWORDS = re.compile(r"\b(bug|fix|crash|error|broken|fail|wrong|incorrect)\b", re.IGNORECASE)
+_ENHANCEMENT_KEYWORDS = re.compile(r"\b(add|new|feature|enhance|improve|support|implement)\b", re.IGNORECASE)
 
 
 def categorize(label_names, title, body):
@@ -194,11 +198,13 @@ def analyze_issues(issues):
         label_flags = detect_labels(issue.get("labels", []))
 
         if label_flags["in_progress"]:
-            in_progress.append({
-                "number": number,
-                "title": issue["title"],
-                "url": issue.get("url", ""),
-            })
+            in_progress.append(
+                {
+                    "number": number,
+                    "title": issue["title"],
+                    "url": issue.get("url", ""),
+                }
+            )
             continue
 
         file_paths = extract_file_paths(body)
@@ -251,19 +257,31 @@ def main():
     )
     filter_group = parser.add_mutually_exclusive_group()
     filter_group.add_argument(
-        "--ready", action="store_const", const="ready", dest="filter",
+        "--ready",
+        action="store_const",
+        const="ready",
+        dest="filter",
         help="Show only issues with no dependencies",
     )
     filter_group.add_argument(
-        "--blocked", action="store_const", const="blocked", dest="filter",
+        "--blocked",
+        action="store_const",
+        const="blocked",
+        dest="filter",
         help="Show only issues with dependencies",
     )
     filter_group.add_argument(
-        "--decomposed", action="store_const", const="decomposed", dest="filter",
+        "--decomposed",
+        action="store_const",
+        const="decomposed",
+        dest="filter",
         help="Show only decomposed issues",
     )
     filter_group.add_argument(
-        "--quick-start", action="store_const", const="quick-start", dest="filter",
+        "--quick-start",
+        action="store_const",
+        const="quick-start",
+        dest="filter",
         help="Show only decomposed issues with no dependencies",
     )
     args = parser.parse_args()
@@ -272,43 +290,66 @@ def main():
         try:
             raw = Path(args.issues_json).read_text()
         except Exception as exc:
-            print(json.dumps({
-                "status": "error",
-                "message": f"Could not read issues file: {exc}",
-            }))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": f"Could not read issues file: {exc}",
+                    }
+                )
+            )
             sys.exit(1)
     else:
         try:
             result = subprocess.run(
                 [
-                    "gh", "issue", "list",
-                    "--state", "open",
-                    "--json", "number,title,labels,createdAt,body,url",
-                    "--limit", "100",
+                    "gh",
+                    "issue",
+                    "list",
+                    "--state",
+                    "open",
+                    "--json",
+                    "number,title,labels,createdAt,body,url",
+                    "--limit",
+                    "100",
                 ],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             if result.returncode != 0:
-                print(json.dumps({
-                    "status": "error",
-                    "message": f"gh issue list failed: {result.stderr.strip()}",
-                }))
+                print(
+                    json.dumps(
+                        {
+                            "status": "error",
+                            "message": f"gh issue list failed: {result.stderr.strip()}",
+                        }
+                    )
+                )
                 sys.exit(1)
             raw = result.stdout
         except subprocess.TimeoutExpired:
-            print(json.dumps({
-                "status": "error",
-                "message": "gh issue list timed out",
-            }))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": "gh issue list timed out",
+                    }
+                )
+            )
             sys.exit(1)
 
     try:
         issues = json.loads(raw)
     except json.JSONDecodeError as exc:
-        print(json.dumps({
-            "status": "error",
-            "message": f"Invalid JSON: {exc}",
-        }))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Invalid JSON: {exc}",
+                }
+            )
+        )
         sys.exit(1)
 
     output = analyze_issues(issues)

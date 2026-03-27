@@ -14,9 +14,7 @@ from conftest import LIB_DIR, REPO_ROOT, SKILLS_DIR
 from flow_utils import permission_to_regex as _permission_to_regex_impl
 
 # Import prime-setup.py for dynamic pattern generation
-_ps_spec = importlib.util.spec_from_file_location(
-    "prime_setup", LIB_DIR / "prime-setup.py"
-)
+_ps_spec = importlib.util.spec_from_file_location("prime_setup", LIB_DIR / "prime-setup.py")
 _ps_mod = importlib.util.module_from_spec(_ps_spec)
 _ps_spec.loader.exec_module(_ps_mod)
 
@@ -67,9 +65,7 @@ def _logging_skills():
         content = _read_skill(name)
         if "## Logging" not in content:
             continue
-        match = re.search(
-            r"## Logging\n(.*?)(?=\n## |\n---|\Z)", content, re.DOTALL
-        )
+        match = re.search(r"## Logging\n(.*?)(?=\n## |\n---|\Z)", content, re.DOTALL)
         if match and "No logging" in match.group(1):
             continue
         result.append(name)
@@ -82,7 +78,7 @@ def _extract_prime_permissions_block():
     blocks = re.findall(r"```json\s*\n(.*?)```", content, re.DOTALL)
     for block in blocks:
         if '"permissions"' in block and '"allow"' in block:
-            cleaned = re.sub(r'<[^>]+>', 'placeholder', block)
+            cleaned = re.sub(r"<[^>]+>", "placeholder", block)
             try:
                 parsed = json.loads(cleaned)
                 return parsed["permissions"]
@@ -205,7 +201,7 @@ def _extract_primary_command(bash_block):
 
     # Strip leading blockquote markers (> ) from blockquoted examples
     lines = line.split("\n")
-    lines = [re.sub(r'^>\s*', '', l) for l in lines]
+    lines = [re.sub(r"^>\s*", "", ln) for ln in lines]
     line = "\n".join(lines).strip()
 
     # Skip template placeholders
@@ -218,7 +214,7 @@ def _extract_primary_command(bash_block):
         return None
 
     # Strip cd prefix: cd <path> && REST -> REST
-    line = re.sub(r'^cd\s+\S+\s*&&\s*', '', line)
+    line = re.sub(r"^cd\s+\S+\s*&&\s*", "", line)
 
     # Take only the first command in a chain (before ;)
     # But handle git commit -F /tmp/... && rm ... as one unit
@@ -229,7 +225,7 @@ def _extract_primary_command(bash_block):
     line = line.strip()
 
     # Collapse multi-line (backslash continuation)
-    line = re.sub(r'\s*\\\n\s*', ' ', line)
+    line = re.sub(r"\s*\\\n\s*", " ", line)
 
     # Take only the first line (multi-line blocks list alternatives)
     if "\n" in line:
@@ -247,7 +243,7 @@ def _extract_full_command(bash_block):
     line = bash_block.strip()
 
     lines = line.split("\n")
-    lines = [re.sub(r'^>\s*', '', l) for l in lines]
+    lines = [re.sub(r"^>\s*", "", ln) for ln in lines]
     line = "\n".join(lines).strip()
 
     if "COMMAND" in line:
@@ -264,7 +260,7 @@ def _extract_full_command(bash_block):
         line = line.split(";")[0]
 
     line = line.strip()
-    line = re.sub(r'\s*\\\n\s*', ' ', line)
+    line = re.sub(r"\s*\\\n\s*", " ", line)
 
     # Take only the first line (multi-line blocks list alternatives)
     if "\n" in line:
@@ -295,15 +291,12 @@ def test_no_bash_commands_reference_tmp():
         for block in bash_blocks:
             if "/tmp/" in block:
                 cmd = block.strip().split("\n")[0]
-                errors.append(
-                    f"{filepath}: bash block references /tmp/: '{cmd}'"
-                )
+                errors.append(f"{filepath}: bash block references /tmp/: '{cmd}'")
 
     assert not errors, (
         f"Found {len(errors)} bash block(s) referencing /tmp/. Paths outside "
         f"the project trigger permission prompts that settings.json cannot "
-        f"suppress. Use project-local paths instead.\n"
-        + "\n".join(f"  - {e}" for e in errors)
+        f"suppress. Use project-local paths instead.\n" + "\n".join(f"  - {e}" for e in errors)
     )
 
 
@@ -325,16 +318,13 @@ def test_no_command_substitution_in_bash_blocks():
         for block in bash_blocks:
             if "$(" in block:
                 cmd = block.strip().split("\n")[0]
-                errors.append(
-                    f"{filepath}: bash block contains $(): '{cmd}'"
-                )
+                errors.append(f"{filepath}: bash block contains $(): '{cmd}'")
 
     assert not errors, (
         f"Found {len(errors)} bash block(s) containing $(). Command "
         f"substitution triggers Claude Code's security prompt, which "
         f"settings.json cannot suppress. Use the Read+Write logging "
-        f"pattern instead.\n"
-        + "\n".join(f"  - {e}" for e in errors)
+        f"pattern instead.\n" + "\n".join(f"  - {e}" for e in errors)
     )
 
 
@@ -356,16 +346,13 @@ def test_no_bash_redirects_to_dot_claude():
         for block in bash_blocks:
             if ">>" in block and ".claude/" in block:
                 cmd = block.strip().split("\n")[0]
-                errors.append(
-                    f"{filepath}: bash block redirects to .claude/: '{cmd}'"
-                )
+                errors.append(f"{filepath}: bash block redirects to .claude/: '{cmd}'")
 
     assert not errors, (
         f"Found {len(errors)} bash block(s) using >> to redirect into .claude/ "
         f"paths. Claude Code's built-in .claude/ directory protection triggers "
         f"permission prompts that settings.json cannot suppress. Use Read + "
-        f"Write tools instead of Bash >>.\n"
-        + "\n".join(f"  - {e}" for e in errors)
+        f"Write tools instead of Bash >>.\n" + "\n".join(f"  - {e}" for e in errors)
     )
 
 
@@ -375,19 +362,15 @@ def test_logging_uses_project_local_path():
     for name in _logging_skills():
         content = _read_skill(name)
         # Find the ## Logging section
-        logging_match = re.search(
-            r"## Logging\n(.*?)(?=\n## |\n---|\Z)", content, re.DOTALL
-        )
+        logging_match = re.search(r"## Logging\n(.*?)(?=\n## |\n---|\Z)", content, re.DOTALL)
         assert logging_match, f"skills/{name}/SKILL.md has ## Logging header but no content"
         logging_section = logging_match.group(1)
 
         assert "/tmp/" not in logging_section, (
-            f"skills/{name}/SKILL.md ## Logging section references /tmp/ — "
-            f"must use .flow-states/<branch>.log instead"
+            f"skills/{name}/SKILL.md ## Logging section references /tmp/ — must use .flow-states/<branch>.log instead"
         )
         assert ".flow-states/" in logging_section, (
-            f"skills/{name}/SKILL.md ## Logging section does not reference "
-            f".flow-states/ for the log path"
+            f"skills/{name}/SKILL.md ## Logging section does not reference .flow-states/ for the log path"
         )
 
 
@@ -396,9 +379,7 @@ def test_logging_template_is_command_first():
     or bin/flow log, not with date."""
     for name in _logging_skills():
         content = _read_skill(name)
-        logging_match = re.search(
-            r"## Logging\n(.*?)(?=\n## |\n---|\Z)", content, re.DOTALL
-        )
+        logging_match = re.search(r"## Logging\n(.*?)(?=\n## |\n---|\Z)", content, re.DOTALL)
         assert logging_match, f"skills/{name}/SKILL.md has ## Logging header but no content"
         logging_section = logging_match.group(1)
 
@@ -407,8 +388,7 @@ def test_logging_template_is_command_first():
         assert bash_match, f"skills/{name}/SKILL.md ## Logging has no ```bash``` block"
         bash_content = bash_match.group(1).strip()
 
-        valid = (bash_content.startswith("COMMAND")
-                or "bin/flow log" in bash_content.split("\n")[0])
+        valid = bash_content.startswith("COMMAND") or "bin/flow log" in bash_content.split("\n")[0]
         assert valid, (
             f"skills/{name}/SKILL.md ## Logging bash template must start "
             f"with COMMAND or contain bin/flow log, not '{bash_content[:50]}...'"
@@ -432,13 +412,10 @@ def test_plugin_skills_use_plugin_root_for_bin_flow():
                 stripped = line.strip()
                 if stripped.startswith("bin/flow"):
                     errors.append(
-                        f"{rel}: bare 'bin/flow' must use "
-                        f"${{CLAUDE_PLUGIN_ROOT}}/bin/flow — "
-                        f"got: {stripped[:60]}"
+                        f"{rel}: bare 'bin/flow' must use ${{CLAUDE_PLUGIN_ROOT}}/bin/flow — got: {stripped[:60]}"
                     )
-    assert not errors, (
-        "Plugin skill bash blocks must not use bare bin/flow "
-        "(fails in target projects):\n" + "\n".join(errors)
+    assert not errors, "Plugin skill bash blocks must not use bare bin/flow (fails in target projects):\n" + "\n".join(
+        errors
     )
 
 
@@ -460,17 +437,14 @@ def test_no_exit_in_bash_blocks():
         for block in bash_blocks:
             if "; exit" in block or "exit $" in block:
                 cmd = block.strip().split("\n")[0]
-                errors.append(
-                    f"{filepath}: bash block contains exit: '{cmd}'"
-                )
+                errors.append(f"{filepath}: bash block contains exit: '{cmd}'")
 
     assert not errors, (
         f"Found {len(errors)} bash block(s) containing exit commands. "
         f"Chained exit commands ('; EC=$?; exit $EC') break permission "
         f"matching (compound commands don't match simple patterns) and "
         f"kill the shell (breaking working directory persistence). The "
-        f"Bash tool returns exit codes natively — just run COMMAND alone.\n"
-        + "\n".join(f"  - {e}" for e in errors)
+        f"Bash tool returns exit codes natively — just run COMMAND alone.\n" + "\n".join(f"  - {e}" for e in errors)
     )
 
 
@@ -492,16 +466,13 @@ def test_no_heredoc_in_bash_blocks():
         for block in bash_blocks:
             if "<<" in block:
                 cmd = block.strip().split("\n")[0]
-                errors.append(
-                    f"{filepath}: bash block contains heredoc (<<): '{cmd}'"
-                )
+                errors.append(f"{filepath}: bash block contains heredoc (<<): '{cmd}'")
 
     assert not errors, (
         f"Found {len(errors)} bash block(s) containing heredoc syntax (<<). "
         f"Heredoc triggers Claude Code's shell expansion heuristic, causing "
         f"permission prompts that settings.json cannot suppress. Output "
-        f"banners as text in the response, not via Bash.\n"
-        + "\n".join(f"  - {e}" for e in errors)
+        f"banners as text in the response, not via Bash.\n" + "\n".join(f"  - {e}" for e in errors)
     )
 
 
@@ -520,18 +491,15 @@ def test_no_cd_compound_in_bash_blocks():
     for filepath, content in files_to_check:
         bash_blocks = re.findall(r"```bash\s*\n(.*?)```", content, re.DOTALL)
         for block in bash_blocks:
-            if re.search(r'\bcd\s+\S+\s*&&', block):
+            if re.search(r"\bcd\s+\S+\s*&&", block):
                 cmd = block.strip().split("\n")[0]
-                errors.append(
-                    f"{filepath}: bash block contains cd && compound: '{cmd}'"
-                )
+                errors.append(f"{filepath}: bash block contains cd && compound: '{cmd}'")
 
     assert not errors, (
         f"Found {len(errors)} bash block(s) containing cd && compound commands. "
         f"Claude Code's 'bare repository attacks' heuristic fires on cd <path> && "
         f"git commands, causing permission prompts that settings.json cannot "
-        f"suppress. Use git -C <path> instead.\n"
-        + "\n".join(f"  - {e}" for e in errors)
+        f"suppress. Use git -C <path> instead.\n" + "\n".join(f"  - {e}" for e in errors)
     )
 
 
@@ -580,9 +548,8 @@ def test_all_bash_commands_have_permission_coverage():
                     f"entry to the permissions block."
                 )
 
-    assert not errors, (
-        f"Found {len(errors)} Bash command(s) without permission coverage:\n"
-        + "\n".join(f"  - {e}" for e in errors)
+    assert not errors, f"Found {len(errors)} Bash command(s) without permission coverage:\n" + "\n".join(
+        f"  - {e}" for e in errors
     )
 
 
@@ -594,7 +561,7 @@ def test_cd_prefixed_commands_have_full_permission_coverage():
     regexes = [_permission_to_regex(p) for p in permissions]
     regexes = [r for r in regexes if r is not None]
 
-    cd_pattern = re.compile(r'^cd\s+\S+\s*&&\s*')
+    cd_pattern = re.compile(r"^cd\s+\S+\s*&&\s*")
     errors = []
 
     files_to_check = _all_plugin_skill_files()
@@ -619,9 +586,8 @@ def test_cd_prefixed_commands_have_full_permission_coverage():
                     f"'Bash(git -C *)' to cover worktree commands."
                 )
 
-    assert not errors, (
-        f"Found {len(errors)} cd-prefixed command(s) without permission coverage:\n"
-        + "\n".join(f"  - {e}" for e in errors)
+    assert not errors, f"Found {len(errors)} cd-prefixed command(s) without permission coverage:\n" + "\n".join(
+        f"  - {e}" for e in errors
     )
 
 
@@ -636,28 +602,22 @@ def test_worktree_cd_persists_no_repeated_cd():
     bare_cd_count = 0
     compound_cd_blocks = []
 
-    for match in re.finditer(
-        r'### Step (\d+) — .*?\n(.*?)(?=### Step \d+|### Done|\Z)',
-        content, re.DOTALL
-    ):
+    for match in re.finditer(r"### Step (\d+) — .*?\n(.*?)(?=### Step \d+|### Done|\Z)", content, re.DOTALL):
         step_num = int(match.group(1))
         step_content = match.group(2)
         bash_blocks = re.findall(r"```bash\s*\n(.*?)```", step_content, re.DOTALL)
         for block in bash_blocks:
             stripped = block.strip()
-            if 'cd .worktrees/' not in stripped:
+            if "cd .worktrees/" not in stripped:
                 continue
             # Bare cd (just changes directory, no compound command)
-            if stripped.startswith('cd .worktrees/') and '&&' not in stripped:
+            if stripped.startswith("cd .worktrees/") and "&&" not in stripped:
                 bare_cd_count += 1
             else:
-                compound_cd_blocks.append(
-                    f"Step {step_num}: '{stripped.split(chr(10))[0]}'"
-                )
+                compound_cd_blocks.append(f"Step {step_num}: '{stripped.split(chr(10))[0]}'")
 
     assert bare_cd_count == 1, (
-        f"Expected exactly 1 bare 'cd .worktrees/' block (to set persistent "
-        f"working directory), found {bare_cd_count}"
+        f"Expected exactly 1 bare 'cd .worktrees/' block (to set persistent working directory), found {bare_cd_count}"
     )
 
     assert not compound_cd_blocks, (
@@ -665,8 +625,7 @@ def test_worktree_cd_persists_no_repeated_cd():
         f"block(s). The Bash tool persists working directory, so after the "
         f"initial cd, all commands run inside the worktree automatically. "
         f"Repeating cd .worktrees/ breaks because it looks for a nested "
-        f".worktrees/ inside the worktree.\n"
-        + "\n".join(f"  - {b}" for b in compound_cd_blocks)
+        f".worktrees/ inside the worktree.\n" + "\n".join(f"  - {b}" for b in compound_cd_blocks)
     )
 
 
@@ -734,8 +693,7 @@ def test_maintainer_bash_commands_have_settings_coverage():
 
     assert not errors, (
         f"Found {len(errors)} maintainer Bash command(s) without "
-        f".claude/settings.json coverage:\n"
-        + "\n".join(f"  - {e}" for e in errors)
+        f".claude/settings.json coverage:\n" + "\n".join(f"  - {e}" for e in errors)
     )
 
 
@@ -771,8 +729,7 @@ def test_plugin_permissions_deny_destructive_git():
     written to the target project must do the same."""
     permissions = _extract_prime_permissions_block()
     assert "deny" in permissions, (
-        "prime/SKILL.md permissions JSON has no 'deny' list. "
-        "Add deny entries for destructive git operations."
+        "prime/SKILL.md permissions JSON has no 'deny' list. Add deny entries for destructive git operations."
     )
     deny = permissions["deny"]
     for entry in REQUIRED_DENY_ENTRIES:
@@ -782,9 +739,7 @@ def test_plugin_permissions_deny_destructive_git():
 def test_maintainer_permissions_deny_destructive_git():
     """Maintainer settings.json must deny destructive git operations."""
     data = json.loads(SETTINGS_JSON.read_text())
-    assert "deny" in data["permissions"], (
-        ".claude/settings.json has no 'deny' list."
-    )
+    assert "deny" in data["permissions"], ".claude/settings.json has no 'deny' list."
     deny = data["permissions"]["deny"]
     for entry in REQUIRED_DENY_ENTRIES:
         assert entry in deny, f"Missing deny entry in settings.json: {entry}"
@@ -809,7 +764,7 @@ def test_no_unrecognized_placeholders_in_bash_blocks():
 
             # Strip leading blockquote markers from blockquoted examples
             lines = line.split("\n")
-            lines = [re.sub(r'^>\s*', '', l) for l in lines]
+            lines = [re.sub(r"^>\s*", "", ln) for ln in lines]
             line = "\n".join(lines).strip()
 
             # Skip COMMAND templates (logging templates)
@@ -834,8 +789,7 @@ def test_no_unrecognized_placeholders_in_bash_blocks():
         f"Found {len(errors)} bash block(s) with unrecognized placeholders. "
         f"These commands are silently skipped by permission tests, meaning "
         f"they have NO coverage. Add the missing placeholders to "
-        f"PLACEHOLDER_SUBS:\n"
-        + "\n".join(f"  - {e}" for e in errors)
+        f"PLACEHOLDER_SUBS:\n" + "\n".join(f"  - {e}" for e in errors)
     )
 
 
@@ -913,8 +867,7 @@ def test_no_skill_command_matches_deny():
     assert not errors, (
         f"Found {len(errors)} command(s) matching deny patterns. "
         f"Deny always wins — these commands will trigger permission prompts "
-        f"regardless of allow entries:\n"
-        + "\n".join(f"  - {e}" for e in errors)
+        f"regardless of allow entries:\n" + "\n".join(f"  - {e}" for e in errors)
     )
 
 
@@ -942,9 +895,8 @@ def test_no_maintainer_command_matches_deny():
                     )
                     break
 
-    assert not errors, (
-        f"Found {len(errors)} maintainer command(s) matching deny patterns:\n"
-        + "\n".join(f"  - {e}" for e in errors)
+    assert not errors, f"Found {len(errors)} maintainer command(s) matching deny patterns:\n" + "\n".join(
+        f"  - {e}" for e in errors
     )
 
 
@@ -973,10 +925,8 @@ def test_no_allow_deny_overlap_in_plugin_permissions():
                 )
                 break
 
-    assert not errors, (
-        f"Found {len(errors)} allow/deny overlap(s) in prime/SKILL.md "
-        f"permissions:\n"
-        + "\n".join(f"  - {e}" for e in errors)
+    assert not errors, f"Found {len(errors)} allow/deny overlap(s) in prime/SKILL.md permissions:\n" + "\n".join(
+        f"  - {e}" for e in errors
     )
 
 
@@ -1002,9 +952,8 @@ def test_no_allow_deny_overlap_in_maintainer_settings():
                 )
                 break
 
-    assert not errors, (
-        f"Found {len(errors)} allow/deny overlap(s) in .claude/settings.json:\n"
-        + "\n".join(f"  - {e}" for e in errors)
+    assert not errors, f"Found {len(errors)} allow/deny overlap(s) in .claude/settings.json:\n" + "\n".join(
+        f"  - {e}" for e in errors
     )
 
 
@@ -1055,8 +1004,7 @@ def test_no_dedicated_tool_commands_in_bash_blocks():
 
     assert not errors, (
         f"Found {len(errors)} bash block(s) using commands that have "
-        f"dedicated tool alternatives:\n"
-        + "\n".join(f"  - {e}" for e in errors)
+        f"dedicated tool alternatives:\n" + "\n".join(f"  - {e}" for e in errors)
     )
 
 
@@ -1068,9 +1016,7 @@ def test_prime_setup_lists_match_skill_md_reference():
     If they drift, the docs lie about what gets installed."""
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location(
-        "prime_setup", LIB_DIR / "prime-setup.py"
-    )
+    spec = importlib.util.spec_from_file_location("prime_setup", LIB_DIR / "prime-setup.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
@@ -1091,36 +1037,23 @@ def test_prime_setup_lists_match_skill_md_reference():
 
     only_in_code_allow = code_allow - skill_allow
     if only_in_code_allow:
-        errors.append(
-            f"In prime-setup.py allow but not prime/SKILL.md: "
-            f"{sorted(only_in_code_allow)}"
-        )
+        errors.append(f"In prime-setup.py allow but not prime/SKILL.md: {sorted(only_in_code_allow)}")
 
     only_in_skill_allow = skill_allow - code_allow
     if only_in_skill_allow:
-        errors.append(
-            f"In prime/SKILL.md allow but not prime-setup.py: "
-            f"{sorted(only_in_skill_allow)}"
-        )
+        errors.append(f"In prime/SKILL.md allow but not prime-setup.py: {sorted(only_in_skill_allow)}")
 
     only_in_code_deny = code_deny - skill_deny
     if only_in_code_deny:
-        errors.append(
-            f"In prime-setup.py deny but not prime/SKILL.md: "
-            f"{sorted(only_in_code_deny)}"
-        )
+        errors.append(f"In prime-setup.py deny but not prime/SKILL.md: {sorted(only_in_code_deny)}")
 
     only_in_skill_deny = skill_deny - code_deny
     if only_in_skill_deny:
-        errors.append(
-            f"In prime/SKILL.md deny but not prime-setup.py: "
-            f"{sorted(only_in_skill_deny)}"
-        )
+        errors.append(f"In prime/SKILL.md deny but not prime-setup.py: {sorted(only_in_skill_deny)}")
 
     assert not errors, (
-        f"Permission lists out of sync between lib/prime-setup.py (runtime "
-        f"source) and skills/prime/SKILL.md (reference docs):\n"
-        + "\n".join(f"  - {e}" for e in errors)
+        "Permission lists out of sync between lib/prime-setup.py (runtime "
+        "source) and skills/prime/SKILL.md (reference docs):\n" + "\n".join(f"  - {e}" for e in errors)
     )
 
 
@@ -1168,8 +1101,7 @@ def test_settings_allow_list_ordered_by_category():
         category = _categorize_entry(entry)
         if category is None:
             errors.append(
-                f"Entry '{entry}' does not match any known category. "
-                f"Add a prefix pattern to SETTINGS_ALLOW_CATEGORIES."
+                f"Entry '{entry}' does not match any known category. Add a prefix pattern to SETTINGS_ALLOW_CATEGORIES."
             )
             continue
 
@@ -1184,7 +1116,6 @@ def test_settings_allow_list_ordered_by_category():
             last_category_index = index
             last_category_name = category
 
-    assert not errors, (
-        f"Allow list in .claude/settings.json is not ordered by category:\n"
-        + "\n".join(f"  - {e}" for e in errors)
+    assert not errors, "Allow list in .claude/settings.json is not ordered by category:\n" + "\n".join(
+        f"  - {e}" for e in errors
     )

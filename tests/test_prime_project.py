@@ -5,12 +5,9 @@ import json
 import sys
 
 import pytest
-
 from conftest import FRAMEWORKS_DIR, LIB_DIR
 
-_spec = importlib.util.spec_from_file_location(
-    "prime_project", LIB_DIR / "prime-project.py"
-)
+_spec = importlib.util.spec_from_file_location("prime_project", LIB_DIR / "prime-project.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -80,16 +77,15 @@ def test_blank_line_after_begin_marker(tmp_path):
     claude_md.write_text("# My Project\n")
     _mod.prime(str(tmp_path), "rails", str(FRAMEWORKS_DIR))
     content = claude_md.read_text()
-    assert f"{MARKER_BEGIN}\n\n" in content, (
-        "Expected blank line after <!-- FLOW:BEGIN --> for MD022 compliance"
-    )
+    assert f"{MARKER_BEGIN}\n\n" in content, "Expected blank line after <!-- FLOW:BEGIN --> for MD022 compliance"
 
 
 def test_main_success(tmp_path, capsys, monkeypatch):
     claude_md = tmp_path / "CLAUDE.md"
     claude_md.write_text("# My Project\n")
     monkeypatch.setattr(
-        sys, "argv",
+        sys,
+        "argv",
         ["prime-project", str(tmp_path), "--framework", "rails"],
     )
     _mod.main()
@@ -117,7 +113,8 @@ def test_main_missing_framework(tmp_path, capsys, monkeypatch):
 
 def test_main_prime_error_exits_with_1(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(
-        sys, "argv",
+        sys,
+        "argv",
         ["prime-project", str(tmp_path), "--framework", "rails"],
     )
     with pytest.raises(SystemExit) as exc_info:

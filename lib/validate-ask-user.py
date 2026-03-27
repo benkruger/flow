@@ -54,8 +54,7 @@ def validate(state_path):
     if not auto_cmd:
         return (True, "")
 
-    return (False,
-            f"BLOCKED: Auto-continue is active. Invoke {auto_cmd} now.")
+    return (False, f"BLOCKED: Auto-continue is active. Invoke {auto_cmd} now.")
 
 
 def main():
