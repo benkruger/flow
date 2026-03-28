@@ -366,6 +366,23 @@ def test_learn_uses_onboarding_subagent():
     assert '"flow:onboarding"' in content, "skills/flow-learn/SKILL.md must reference flow:onboarding sub-agent"
 
 
+def test_reviewer_agent_exists():
+    """agents/reviewer.md must exist with required frontmatter fields."""
+    agent_file = REPO_ROOT / "agents" / "reviewer.md"
+    assert agent_file.exists(), "agents/reviewer.md does not exist"
+    content = agent_file.read_text()
+    assert "name: reviewer" in content, "agents/reviewer.md missing 'name: reviewer' in frontmatter"
+    assert "PreToolUse" in content, "agents/reviewer.md missing PreToolUse hook"
+    assert "validate-ci-bash" in content, "agents/reviewer.md missing reference to validate-ci-bash"
+    # Reviewer agent must be read-only — no Edit or Write tools
+    assert "Edit" not in content.split("---")[1], (
+        "agents/reviewer.md must not include Edit tool — reviewer is read-only"
+    )
+    assert "Write" not in content.split("---")[1], (
+        "agents/reviewer.md must not include Write tool — reviewer is read-only"
+    )
+
+
 def test_code_review_has_inline_correctness_review():
     """Code Review skill must perform inline correctness review in Step 2."""
     content = _read_skill("flow-code-review")
@@ -1577,15 +1594,26 @@ def test_code_review_steps_have_continuation_directives():
         "flow-code-review Step 4 must contain 'continue to Step 5' directive"
     )
 
-    # Step 5 must continue to Done
+    # Step 5 must continue to Step 6
     step5_match = re.search(
-        r"## Step 5.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
+        r"## Step 5.*?\n(.*?)(?=\n## Step 6)",
         content,
         re.DOTALL,
     )
     assert step5_match, "Could not find Step 5 in flow-code-review/SKILL.md"
-    assert "continue to Done" in step5_match.group(1), (
-        "flow-code-review Step 5 must contain 'continue to Done' directive"
+    assert "continue to Step 6" in step5_match.group(1), (
+        "flow-code-review Step 5 must contain 'continue to Step 6' directive"
+    )
+
+    # Step 6 must continue to Done
+    step6_match = re.search(
+        r"## Step 6.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
+        content,
+        re.DOTALL,
+    )
+    assert step6_match, "Could not find Step 6 in flow-code-review/SKILL.md"
+    assert "continue to Done" in step6_match.group(1), (
+        "flow-code-review Step 6 must contain 'continue to Done' directive"
     )
 
 
@@ -1598,7 +1626,7 @@ def test_code_review_hard_rules_require_step_continuation():
     assert re.search(r"never pause", hard_rules, re.IGNORECASE), (
         "flow-code-review Hard Rules must contain 'never pause' language"
     )
-    for step_name in ["Simplify", "Review", "Security", "Code Review Plugin", "Pre-Mortem"]:
+    for step_name in ["Simplify", "Review", "Security", "Code Review Plugin", "Context-Isolated Review", "Pre-Mortem"]:
         assert step_name in hard_rules, f"flow-code-review Hard Rules must mention '{step_name}' step"
 
 
@@ -1651,12 +1679,24 @@ def test_code_review_step_5_handles_no_findings():
     """Step 5 must explicitly handle the no-findings path."""
     content = _read_skill("flow-code-review")
     step5_match = re.search(
-        r"## Step 5.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
+        r"## Step 5.*?\n(.*?)(?=\n## Step 6)",
         content,
         re.DOTALL,
     )
     assert step5_match, "Could not find Step 5 in flow-code-review/SKILL.md"
     assert "no findings" in step5_match.group(1).lower(), "flow-code-review Step 5 must handle the no-findings path"
+
+
+def test_code_review_step_6_handles_no_findings():
+    """Step 6 must explicitly handle the no-findings path."""
+    content = _read_skill("flow-code-review")
+    step6_match = re.search(
+        r"## Step 6.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
+        content,
+        re.DOTALL,
+    )
+    assert step6_match, "Could not find Step 6 in flow-code-review/SKILL.md"
+    assert "no findings" in step6_match.group(1).lower(), "flow-code-review Step 6 must handle the no-findings path"
 
 
 def test_code_review_has_resume_check():
@@ -1671,8 +1711,8 @@ def test_code_review_has_resume_check():
 def _code_review_steps():
     """Yield (step_num, step_text) for each Code Review step section."""
     content = _read_skill("flow-code-review")
-    for step_num in range(1, 6):
-        if step_num < 5:
+    for step_num in range(1, 7):
+        if step_num < 6:
             next_header = f"## Step {step_num + 1}"
         else:
             next_header = "## Back Navigation|## Done"
@@ -1702,7 +1742,7 @@ def test_code_review_steps_self_invoke():
 
 
 def test_code_review_steps_await_background_agents():
-    """Steps 4-5 must instruct waiting for background agents (Steps 1-3 use inline review passes)."""
+    """Steps 4-6 must instruct waiting for background agents (Steps 1-3 use inline review passes)."""
     for step_num, step_text in _code_review_steps():
         if step_num in (1, 2, 3):
             continue
@@ -1710,8 +1750,8 @@ def test_code_review_steps_await_background_agents():
             assert "background agent" in step_text.lower(), (
                 f"Step {step_num} must contain background agent wait instructions"
             )
-        elif step_num == 5:
-            assert "agent" in step_text.lower(), f"Step {step_num} must reference the pre-mortem agent"
+        elif step_num in (5, 6):
+            assert "agent" in step_text.lower(), f"Step {step_num} must reference an agent"
 
 
 def test_code_review_has_self_invocation_check():
