@@ -145,7 +145,24 @@ def link_blocked_by(repo, blocked_number, blocking_number):
         error = result.stderr.strip() or result.stdout.strip() or "Unknown error"
         return None, error
 
-    return {"blocked": blocked_number, "blocking": blocking_number}, None
+    result = {"blocked": blocked_number, "blocking": blocking_number}
+
+    # Best-effort body update — never fail the overall operation
+    body, fetch_err = fetch_issue_body(repo, blocked_number)
+    if fetch_err:
+        result["body_warning"] = f"Could not fetch body: {fetch_err}"
+        return result, None
+
+    new_body = build_blocked_by_section(body, blocking_number)
+    if new_body == body:
+        # Duplicate — reference already exists, skip update
+        return result, None
+
+    update_err = update_issue_body(repo, blocked_number, new_body)
+    if update_err:
+        result["body_warning"] = f"Could not update body: {update_err}"
+
+    return result, None
 
 
 def main():

@@ -13,13 +13,25 @@ blocked_mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(blocked_mod)
 
 
-def _make_api_router(blocked_id=100, blocking_id=200, link_ok=True, blocked_fail=False, blocking_fail=False):
+def _make_api_router(
+    blocked_id=100,
+    blocking_id=200,
+    link_ok=True,
+    blocked_fail=False,
+    blocking_fail=False,
+    body_text="Existing body",
+    body_fetch_fail=False,
+    body_update_fail=False,
+    body_update_timeout=False,
+):
     """Build a side_effect routing gh api calls."""
     call_count = {"n": 0}
 
     def side_effect(cmd, **kwargs):
         call_count["n"] += 1
         url = cmd[2]
+
+        # Link creation
         if "/dependencies/blocked_by" in url:
             if not link_ok:
                 return subprocess.CompletedProcess(
@@ -34,6 +46,43 @@ def _make_api_router(blocked_id=100, blocking_id=200, link_ok=True, blocked_fail
                 stdout="{}",
                 stderr="",
             )
+
+        # Body fetch (--jq .body)
+        if "--jq" in cmd and ".body" in cmd:
+            if body_fetch_fail:
+                return subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=1,
+                    stdout="",
+                    stderr="Body fetch failed",
+                )
+            stdout = "null\n" if body_text is None else f"{body_text}\n"
+            return subprocess.CompletedProcess(
+                args=cmd,
+                returncode=0,
+                stdout=stdout,
+                stderr="",
+            )
+
+        # Body update (--method PATCH)
+        if "--method" in cmd and "PATCH" in cmd:
+            if body_update_timeout:
+                raise subprocess.TimeoutExpired(cmd="gh", timeout=30)
+            if body_update_fail:
+                return subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=1,
+                    stdout="",
+                    stderr="Body update failed",
+                )
+            return subprocess.CompletedProcess(
+                args=cmd,
+                returncode=0,
+                stdout="{}",
+                stderr="",
+            )
+
+        # ID resolution (call-count based)
         if call_count["n"] == 1:
             if blocked_fail:
                 return subprocess.CompletedProcess(
@@ -155,6 +204,50 @@ class TestLinkBlockedBy:
 
         assert result is None
         assert "timed out" in error.lower()
+
+    def test_body_update_happy_path(self):
+        with patch.object(blocked_mod.subprocess, "run", side_effect=_make_api_router(body_text="Some body")):
+            result, error = blocked_mod.link_blocked_by("o/r", 10, 20)
+
+        assert error is None
+        assert result["blocked"] == 10
+        assert result["blocking"] == 20
+        assert "body_warning" not in result
+
+    def test_body_update_skips_duplicate(self):
+        # Body already has the reference — no update needed
+        with patch.object(
+            blocked_mod.subprocess, "run", side_effect=_make_api_router(body_text="Issue.\n\n## Blocked by\n\n- #20\n")
+        ):
+            result, error = blocked_mod.link_blocked_by("o/r", 10, 20)
+
+        assert error is None
+        assert result["blocked"] == 10
+        assert "body_warning" not in result
+
+    def test_body_fetch_failure_returns_warning(self):
+        with patch.object(blocked_mod.subprocess, "run", side_effect=_make_api_router(body_fetch_fail=True)):
+            result, error = blocked_mod.link_blocked_by("o/r", 10, 20)
+
+        assert error is None
+        assert result["blocked"] == 10
+        assert "body_warning" in result
+
+    def test_body_update_failure_returns_warning(self):
+        with patch.object(blocked_mod.subprocess, "run", side_effect=_make_api_router(body_update_fail=True)):
+            result, error = blocked_mod.link_blocked_by("o/r", 10, 20)
+
+        assert error is None
+        assert result["blocked"] == 10
+        assert "body_warning" in result
+
+    def test_body_update_timeout_returns_warning(self):
+        with patch.object(blocked_mod.subprocess, "run", side_effect=_make_api_router(body_update_timeout=True)):
+            result, error = blocked_mod.link_blocked_by("o/r", 10, 20)
+
+        assert error is None
+        assert result["blocked"] == 10
+        assert "body_warning" in result
 
 
 class TestMain:
