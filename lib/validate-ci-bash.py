@@ -12,10 +12,12 @@ Validation layers (in order):
 1. Compound commands (&&, ;, |) — "Use separate Bash calls instead"
 2. Shell redirection (>, >>, 2>, etc.) — "Use Read/Write tools instead"
 3. Blanket restore (git restore .) — "Restore files individually"
-4. Deny list — command matches a deny pattern in settings.json
-5. File-read commands (cat, head, tail, grep, rg, find, ls) —
+4. Git diff with file args (git diff ... -- <file>) —
+   "Use Read/Grep tools instead"
+5. Deny list — command matches a deny pattern in settings.json
+6. File-read commands (cat, head, tail, grep, rg, find, ls) —
    "Use Read/Glob/Grep tools instead"
-6. Whitelist — command must match a Bash(...) allow pattern in
+7. Whitelist — command must match a Bash(...) allow pattern in
    .claude/settings.json. If settings.json is missing or unparseable,
    fall through (don't break non-FLOW projects).
 """
@@ -115,11 +117,11 @@ def validate(command, settings=None, flow_active=True):
     Returns (allowed: bool, message: str).
     message is empty if allowed, otherwise explains why blocked.
 
-    Layers 1-5 (compound commands, redirection, blanket restore, deny
-    list, file-read commands) are always enforced regardless of
-    flow_active.
+    Layers 1-6 (compound commands, redirection, blanket restore, git
+    diff with file args, deny list, file-read commands) are always
+    enforced regardless of flow_active.
 
-    Layer 6 (whitelist enforcement) is only enforced when both settings
+    Layer 7 (whitelist enforcement) is only enforced when both settings
     are provided AND flow_active is True. When flow_active is False,
     unlisted commands fall through to Claude Code's native permission
     system.
