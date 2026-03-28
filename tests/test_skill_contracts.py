@@ -337,6 +337,7 @@ def test_code_review_has_inline_correctness_review():
     assert "Logic Correctness" in step2_content, "Step 2 must include Logic Correctness pass"
     assert "Test Coverage" in step2_content, "Step 2 must include Test Coverage pass"
     assert "API Contracts" in step2_content, "Step 2 must include API Contracts pass"
+    assert "Rule Compliance" in step2_content, "Step 2 must include Rule Compliance pass"
     assert "git diff origin/main..HEAD" in step2_content, "Step 2 must get the branch diff inline"
 
 
