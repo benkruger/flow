@@ -1208,12 +1208,12 @@ def test_learning_edits_rules_directly():
 
 
 def test_learning_files_flow_issues_not_learning():
-    """Learn Step 5 must use label 'Flow', not 'learning'."""
-    step5_text = _learn_step_text(5)
-    assert "--label" in step5_text, "Learn Step 5 must specify a --label for issue filing"
-    assert "Flow" in step5_text, "Learn Step 5 must use label 'Flow' for process gap issues"
-    assert "learning" not in step5_text.split("--label")[1].split("\n")[0].lower(), (
-        "Learn Step 5 must not use label 'learning' — use 'Flow' instead"
+    """Learn Step 6 must use label 'Flow', not 'learning'."""
+    step6_text = _learn_step_text(6)
+    assert "--label" in step6_text, "Learn Step 6 must specify a --label for issue filing"
+    assert "Flow" in step6_text, "Learn Step 6 must use label 'Flow' for process gap issues"
+    assert "learning" not in step6_text.split("--label")[1].split("\n")[0].lower(), (
+        "Learn Step 6 must not use label 'learning' — use 'Flow' instead"
     )
 
 
@@ -1850,7 +1850,7 @@ def test_learn_has_self_invocation_check():
 def _learn_step_text(step_num):
     """Extract Learn step section text by number."""
     content = _read_skill("flow-learn")
-    if step_num < 6:
+    if step_num < 7:
         next_header = f"## Step {step_num + 1}"
     else:
         next_header = "## Done"
@@ -1863,11 +1863,17 @@ def _learn_step_text(step_num):
     return step_match.group(1)
 
 
-def test_learn_step_4_self_invokes():
-    """Learn Step 4 (commit) must self-invoke flow:flow-learn --continue-step."""
+def test_learn_step_4_promotes_permissions():
+    """Learn Step 4 must call promote-permissions."""
     step_text = _learn_step_text(4)
+    assert "promote-permissions" in step_text, "Step 4 must contain 'promote-permissions'"
+
+
+def test_learn_step_5_self_invokes():
+    """Learn Step 5 (commit) must self-invoke flow:flow-learn --continue-step."""
+    step_text = _learn_step_text(5)
     assert "flow:flow-learn --continue-step" in step_text, (
-        "Step 4 must self-invoke via 'flow:flow-learn --continue-step'"
+        "Step 5 must self-invoke via 'flow:flow-learn --continue-step'"
     )
 
 
@@ -1886,10 +1892,9 @@ def test_learn_sets_continue_pending_before_child_skills():
 
 
 def test_learn_steps_record_completion():
-    """Learn Step 4 (commit) must record completion via set-timestamp."""
-    step_text = _learn_step_text(4)
-    assert "learn_step=4" in step_text, "Step 4 must contain 'learn_step=4' marker"
-    assert "learn_step=3" in step_text, "Step 4 must contain 'learn_step=3' for the skip-commit path"
+    """Learn Step 5 (commit) must record completion via set-timestamp."""
+    step_text = _learn_step_text(5)
+    assert "learn_step=5" in step_text, "Step 5 must contain 'learn_step=5' marker"
 
 
 def test_plan_skill_does_not_reference_transcript_path():
@@ -2410,17 +2415,17 @@ def test_create_issue_usage_documents_step_flag():
     assert usage_match, "Could not find Usage section"
     usage_text = usage_match.group(1)
     assert "--step 2" in usage_text, "Usage must document --step 2 form"
-    assert "--step 3" in usage_text, "Usage must document --step 3 form"
-    assert "--step 4" not in usage_text, "Usage must not document --step 4 (skill has 3 steps)"
+    assert "--step 3" not in usage_text, "Usage must not document --step 3 (skill has 2 steps)"
+    assert "--step 4" not in usage_text, "Usage must not document --step 4 (skill has 2 steps)"
 
 
 def test_create_issue_steps_have_banners():
     """Each flow-create-issue step must have a step banner."""
     steps = _create_issue_steps()
-    assert len(steps) == 3, f"Expected 3 steps, found {len(steps)}"
+    assert len(steps) == 2, f"Expected 2 steps, found {len(steps)}"
     for step_num, step_text in steps:
-        assert re.search(rf"Step {step_num} of 3", step_text), (
-            f"Step {step_num} must have a banner containing 'Step {step_num} of 3'"
+        assert re.search(rf"Step {step_num} of 2", step_text), (
+            f"Step {step_num} must have a banner containing 'Step {step_num} of 2'"
         )
 
 
@@ -2432,11 +2437,11 @@ def test_create_issue_steps_1_2_have_ask_user():
             assert "AskUserQuestion" in step_text, f"Step {step_num} must contain AskUserQuestion"
 
 
-def test_create_issue_steps_1_2_self_invoke():
-    """Steps 1-2 must self-invoke flow:flow-create-issue with --step flag."""
+def test_create_issue_step_1_self_invokes():
+    """Step 1 must self-invoke flow:flow-create-issue with --step flag."""
     steps = _create_issue_steps()
     for step_num, step_text in steps:
-        if step_num <= 2:
+        if step_num == 1:
             assert "flow:flow-create-issue" in step_text, f"Step {step_num} must self-invoke flow:flow-create-issue"
             assert "--step" in step_text, f"Step {step_num} must use --step flag for self-invocation"
 
@@ -2474,10 +2479,10 @@ def test_create_issue_has_repo_routing():
         "flow-create-issue must have a bash block with '--repo benkruger/flow' "
         "for filing FLOW plugin bugs against the plugin repo"
     )
-    # The repo routing decision must be wrapped in a HARD-GATE
-    step3_match = re.search(r"## Step 3.*?(?=\n## )", content, re.DOTALL)
-    assert step3_match, "flow-create-issue must have a Step 3 section"
-    step3_text = step3_match.group(0)
-    assert "<HARD-GATE>" in step3_text and "AskUserQuestion" in step3_text, (
-        "Step 3 must have a HARD-GATE with AskUserQuestion for repo routing"
+    # The repo routing decision must be wrapped in a HARD-GATE in Step 2
+    step2_match = re.search(r"## Step 2.*?(?=\n## )", content, re.DOTALL)
+    assert step2_match, "flow-create-issue must have a Step 2 section"
+    step2_text = step2_match.group(0)
+    assert "<HARD-GATE>" in step2_text and "AskUserQuestion" in step2_text, (
+        "Step 2 must have a HARD-GATE with AskUserQuestion for repo routing"
     )
