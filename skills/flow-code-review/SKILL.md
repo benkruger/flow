@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — three review lenses (clarity via inline review, correctness via inline review, safety via inline security review) plus an optional fourth (CLAUDE.md compliance via code-review:code-review plugin, configurable). Commits after each step."
+description: "Phase 4: Code Review — four review lenses (clarity via inline review passes, convention compliance via inline review, correctness via inline review, safety via inline security review). Commits after each step."
 ---
 
 # FLOW Code Review — Phase 4: Code Review
@@ -59,17 +59,6 @@ shared state must be idempotent.
 3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-code-review.commit` and `skills.flow-code-review.continue`.
 4. If the state file has no `skills` key → use built-in defaults: commit=manual, continue=manual
 
-## Code Review Plugin Mode Resolution
-
-1. Read `skills.flow-code-review.code_review_plugin` from the state file at `<project_root>/.flow-states/<branch>.json`.
-2. Valid values: `"always"` (default), `"auto"`, `"never"`.
-3. If the key does not exist → use built-in default: `"always"`.
-
-When `code_review_plugin` is `"never"`, Step 4 (the code-review:code-review plugin) is
-skipped entirely and the phase completes after Step 3.
-
-When `code_review_plugin` is `"auto"` or `"always"`, Step 4 runs as normal.
-
 ## Self-Invocation Check
 
 If `--continue-step` was passed, this is a self-invocation from a
@@ -120,18 +109,13 @@ Read `code_review_step` from the state file (default `0` if absent).
 
 - If `1` — Step 1 is done. Skip to Step 2.
 - If `2` — Steps 1-2 are done. Skip to Step 3.
-- If `3` — Steps 1-3 are done. Check Code Review Plugin Mode Resolution:
-  if `code_review_plugin` is `"never"`, skip to Done.
-  Otherwise, skip to Step 4.
-- If `4` — All steps are done. Skip to Done.
+- If `3` — All steps are done. Skip to Done.
 
 ## Framework Conventions
 
 Read the project's CLAUDE.md for framework-specific conventions. The
-first three review steps perform inline review passes against the branch
-diff. When enabled via Code Review Plugin Mode Resolution, a fourth step
-uses the code-review plugin for multi-agent validation. The CLAUDE.md
-conventions inform fix decisions.
+three review steps perform inline review passes against the branch
+diff. The CLAUDE.md conventions inform fix decisions.
 
 ---
 
@@ -143,7 +127,7 @@ Get the full branch diff to use as review context:
 git diff origin/main..HEAD
 ```
 
-Perform three review passes on the diff output. Execute each pass
+Perform four review passes on the diff output. Execute each pass
 sequentially, aggregating findings as you go.
 
 **Pass 1 — Code Reuse:** Review the diff for duplicated logic, missed
@@ -159,7 +143,13 @@ could be clearer, and abstractions that add complexity without value.
 redundant operations, and performance patterns. Identify operations that
 could be avoided or simplified without changing behavior.
 
-After all three passes, aggregate the findings. Apply fixes
+**Pass 4 — Convention Compliance:** Review the diff against the project's
+`CLAUDE.md` and `.claude/rules/` conventions. Identify deviations from
+documented coding standards, architectural patterns, naming conventions,
+and process rules. Flag anything that contradicts an explicit rule in
+the project's conventions.
+
+After all four passes, aggregate the findings. Apply fixes
 for any valid findings that improve the code without changing behavior.
 It is safe to refactor here because Phase 3 (Code) tests already
 verified all behavior.
@@ -474,7 +464,7 @@ finding until the current fix passes `bin/flow ci` and is committed.
 Repeat until all findings are fixed.
 
 If no findings, skip the commit. Show the Security summary with zero
-findings, then without pausing continue to Step 4.
+findings, then without pausing continue to Done.
 
 ### Security summary
 
@@ -504,116 +494,6 @@ Record step completion:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=3
-```
-
-Check Code Review Plugin Mode Resolution:
-
-- If `code_review_plugin` is `"never"` — the plugin is skipped. Invoke
-  `flow:flow-code-review --continue-step` using the Skill tool as your
-  final action. The Resume Check will route to Done.
-- If `code_review_plugin` is `"always"` or `"auto"` — invoke
-  `flow:flow-code-review --continue-step` using the Skill tool as your
-  final action. The Resume Check will route to Step 4.
-
-If commit=auto was resolved, pass `--auto` as well. Do not output
-anything else after this invocation.
-
----
-
-## Step 4 — Code Review Plugin
-
-Set the continuation context and flag before invoking the child skill:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Wait for all pending background agents to complete. Then process code-review findings, fix issues, run bin/flow ci, then commit if fixes were made."
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=code-review:code-review
-```
-
-Invoke the `code-review:code-review` plugin using the Skill tool with no
-flags or arguments.
-
-This runs a multi-agent review: 4 parallel agents (2x CLAUDE.md
-compliance, 1x bug scan, 1x security/logic scan) with a validation layer
-that re-validates each finding at 80+ confidence. It produces high-signal
-findings only.
-
-If the plugin returns early (pre-flight skip, e.g. "no review needed" or
-"already reviewed"), treat this as no findings.
-
-### Background agent check
-
-Plugins may launch background review agents that run asynchronously.
-After the child skill returns and the stop-continue hook resumes you,
-check for any pending background agent notifications. Wait for ALL
-background agents to complete before proceeding. Do not evaluate "no
-findings" until every agent has reported. Treat agent findings the same
-as direct findings from the child skill.
-
-If the plugin reports no findings, skip the commit. Show the Code Review
-Plugin summary with zero findings, then without pausing continue to Done.
-
-### Fix every finding
-
-For each finding from the code-review plugin, fix the issue in code, then
-run CI:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci
-```
-
-Set the continuation context and flag:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Continue fixing remaining code-review findings."
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
-```
-
-If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise
-invoke `/flow:flow-commit`.
-
-Move to the next finding.
-
-<HARD-GATE>
-`bin/flow ci` must be green after every fix. Do not move to the next
-finding until the current fix passes `bin/flow ci` and is committed.
-</HARD-GATE>
-
-Repeat until all findings are fixed.
-
-### Code Review Plugin summary
-
-Show a summary of what was found and fixed inside a fenced code block:
-
-````markdown
-```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  FLOW — Code Review — Step 4: Code Review Plugin — SUMMARY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Findings         : N
-  Fixed            : N
-
-  Findings
-  --------
-  - [FIXED] <description of finding>
-  - [FIXED] <description of finding>
-
-  bin/flow ci      : ✓ green
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-````
-
-Record step completion:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=4
 ```
 
 To continue to Done, invoke `flow:flow-code-review --continue-step` using
@@ -720,9 +600,9 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
 - Always run `bin/flow ci` after any fix made during Code Review
 - Never transition to Learn unless `bin/flow ci` is green
-- Fix every finding from inline correctness review, inline security review, and (when enabled) `code-review:code-review` — do not leave findings unaddressed
+- Fix every finding from inline review passes, inline correctness review, and inline security review — do not leave findings unaddressed
 - Follow the project CLAUDE.md conventions when fixing
-- Each active step (Simplify, Review, Security, and Code Review Plugin when enabled) gets its own commit when changes are made
+- Each active step (Simplify, Review, Security) gets its own commit when changes are made
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories
