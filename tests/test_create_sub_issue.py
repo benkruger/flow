@@ -152,6 +152,18 @@ class TestCreateSubIssue:
         assert result is None
         assert "Link failed" in error
 
+    def test_uses_integer_flag_for_sub_issue_id(self):
+        with patch.object(sub_issue_mod.subprocess, "run", side_effect=_make_api_router(100, 200)) as mock_run:
+            sub_issue_mod.create_sub_issue("o/r", 1, 2)
+
+        # Find the API creation call (the one hitting /sub_issues)
+        link_calls = [c for c in mock_run.call_args_list if "/sub_issues" in str(c)]
+        assert len(link_calls) == 1, f"Expected 1 link call, got {len(link_calls)}"
+        cmd = link_calls[0].args[0]
+        # The flag before sub_issue_id= must be -F (integer type), not -f (string type)
+        sub_issue_idx = next(i for i, arg in enumerate(cmd) if arg.startswith("sub_issue_id="))
+        assert cmd[sub_issue_idx - 1] == "-F", f"Expected -F before sub_issue_id, got {cmd[sub_issue_idx - 1]}"
+
     def test_link_creation_timeout(self):
         call_count = {"n": 0}
 
