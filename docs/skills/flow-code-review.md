@@ -10,11 +10,10 @@ parent: Skills
 
 **Usage:** `/flow-code-review`, `/flow-code-review --auto`, or `/flow-code-review --manual`
 
-Five review steps — clarity with convention compliance, correctness with
-rule compliance, safety, CLAUDE.md compliance, and pre-mortem incident
-analysis. Combines inline review passes, a multi-agent compliance plugin,
-and a context-isolated pre-mortem agent into a single phase with up to
-five ordered steps, each with its own commit checkpoint.
+Four review steps — clarity with convention compliance, correctness with
+rule compliance, safety, and pre-mortem incident analysis. Combines inline
+review passes and a context-isolated pre-mortem agent into a single phase
+with four ordered steps, each with its own commit checkpoint.
 
 ---
 
@@ -45,19 +44,7 @@ lenses: input validation, authentication and authorization, and data
 exposure. If no findings, skips to the next step. Every finding is fixed,
 `bin/flow ci` is run, and changes are committed via `/flow-commit`.
 
-### Step 4 — Code Review Plugin (CLAUDE.md compliance, configurable)
-
-Controlled by the `code_review_plugin` config axis. When set to `"never"`,
-this step is skipped and the phase proceeds to Step 5.
-
-When enabled (`"always"` or `"auto"`), invokes the `code-review:code-review`
-plugin for multi-agent validation. Four parallel agents (2x CLAUDE.md
-compliance, 1x bug scan, 1x security/logic scan) with a validation layer
-that filters false positives. Waits for all background agents to complete
-before evaluating findings. If no findings, skips to Step 5. Every finding is
-fixed, `bin/flow ci` is run, and changes are committed via `/flow-commit`.
-
-### Step 5 — Pre-Mortem (incident analysis)
+### Step 4 — Pre-Mortem (incident analysis)
 
 Launches the `pre-mortem` custom agent — a context-isolated sub-agent that
 receives only the branch diff and codebase access, with no conversation
@@ -90,8 +77,7 @@ configurable independently:
 - **continue** — `"auto"` or `"manual"` (default). Controls phase advancement.
 
 In auto mode, findings are auto-fixed and the phase transition advances to
-Learn without asking. When `code_review_plugin` is `"never"`, Step 4 is
-skipped but Step 5 (Pre-Mortem) still runs.
+Learn without asking.
 
 ---
 
@@ -105,10 +91,8 @@ Announce banner and phase entry update, proceeding directly to the Resume
 Check which dispatches to the next step.
 
 Steps 1-3 perform inline review passes sequentially within the response
-turn. Step 4 invokes the code-review plugin which may launch background
-agents — it waits for all background agents to complete before evaluating
-findings. Step 5 launches the pre-mortem agent for context-isolated
-incident analysis.
+turn. Step 4 launches the pre-mortem agent for context-isolated incident
+analysis.
 
 ---
 

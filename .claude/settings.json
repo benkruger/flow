@@ -34,7 +34,6 @@
       "Read(//tmp/*.diff)",
       "Read(//tmp/*.patch)",
       "Read(//tmp/*.md)",
-      "Skill(code-review:code-review)",
       "Skill(decompose:decompose)",
       "Agent(flow:ci-fixer)"
     ],

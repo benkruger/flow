@@ -11,8 +11,8 @@ is what you are building.
 ## Sub-Agent Scoping
 
 When launching sub-agents during any FLOW phase — including
-agents spawned by third-party plugins like code-review:code-review
-— scope all file searches to the repo/worktree. Never instruct
+agents spawned by third-party plugins — scope all file searches
+to the repo/worktree. Never instruct
 sub-agents to search `~/.claude/`, `/tmp/`, or paths outside the
 project directory. Pass the repo root explicitly in the agent
 prompt when the agent needs to discover files (e.g. CLAUDE.md).

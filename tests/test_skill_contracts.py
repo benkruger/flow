@@ -1534,40 +1534,31 @@ def test_code_review_steps_have_continuation_directives():
         "flow-code-review Step 2 must contain 'continue to Step 3' directive"
     )
 
-    # Step 3 must route to Step 4 (or Step 5 when plugin is skipped)
+    # Step 3 must continue to Step 4
     step3_match = re.search(
         r"## Step 3.*?\n(.*?)(?=\n## Step 4)",
         content,
         re.DOTALL,
     )
     assert step3_match, "Could not find Step 3 in flow-code-review/SKILL.md"
-    assert "route to Step 4" in step3_match.group(1), "flow-code-review Step 3 must contain 'route to Step 4' directive"
+    assert "continue to Step 4" in step3_match.group(1), (
+        "flow-code-review Step 3 must contain 'continue to Step 4' directive"
+    )
 
-    # Step 4 must continue to Step 5
+    # Step 4 must continue to Done
     step4_match = re.search(
-        r"## Step 4.*?\n(.*?)(?=\n## Step 5)",
+        r"## Step 4.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
         content,
         re.DOTALL,
     )
     assert step4_match, "Could not find Step 4 in flow-code-review/SKILL.md"
-    assert "continue to Step 5" in step4_match.group(1), (
-        "flow-code-review Step 4 must contain 'continue to Step 5' directive"
-    )
-
-    # Step 5 must continue to Done
-    step5_match = re.search(
-        r"## Step 5.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
-        content,
-        re.DOTALL,
-    )
-    assert step5_match, "Could not find Step 5 in flow-code-review/SKILL.md"
-    assert "continue to Done" in step5_match.group(1), (
-        "flow-code-review Step 5 must contain 'continue to Done' directive"
+    assert "continue to Done" in step4_match.group(1), (
+        "flow-code-review Step 4 must contain 'continue to Done' directive"
     )
 
 
 def test_code_review_hard_rules_require_step_continuation():
-    """Hard Rules must require immediate continuation between all 5 steps."""
+    """Hard Rules must require immediate continuation between all 4 steps."""
     content = _read_skill("flow-code-review")
     hard_rules_match = re.search(r"## Hard Rules\n(.*)", content, re.DOTALL)
     assert hard_rules_match, "Could not find Hard Rules in flow-code-review/SKILL.md"
@@ -1575,7 +1566,7 @@ def test_code_review_hard_rules_require_step_continuation():
     assert re.search(r"never pause", hard_rules, re.IGNORECASE), (
         "flow-code-review Hard Rules must contain 'never pause' language"
     )
-    for step_name in ["Simplify", "Review", "Security", "Code Review Plugin", "Pre-Mortem"]:
+    for step_name in ["Simplify", "Review", "Security", "Pre-Mortem"]:
         assert step_name in hard_rules, f"flow-code-review Hard Rules must mention '{step_name}' step"
 
 
@@ -1590,7 +1581,7 @@ def test_code_review_step_2_handles_no_findings():
 def test_code_review_step_3_handles_no_findings():
     """Step 3 must explicitly handle the no-findings path."""
     content = _read_skill("flow-code-review")
-    step3_match = re.search(r"## Step 3.*?\n(.*?)(?=\n## Back Navigation)", content, re.DOTALL)
+    step3_match = re.search(r"## Step 3.*?\n(.*?)(?=\n## Step 4)", content, re.DOTALL)
     assert step3_match, "Could not find Step 3 in flow-code-review/SKILL.md"
     assert "no findings" in step3_match.group(1).lower(), "flow-code-review Step 3 must handle the no-findings path"
 
@@ -1603,37 +1594,36 @@ def test_code_review_step_1_has_convention_compliance_pass():
     assert "convention compliance" in step1_match.group(1).lower(), (
         "flow-code-review Step 1 must include a convention compliance review pass"
     )
-    assert "code-review:code-review" in content, "flow-code-review must reference code-review:code-review plugin"
 
 
-def test_code_review_does_not_use_comment_flag():
-    """Code Review must not use --comment flag with the plugin."""
+def test_code_review_no_plugin_step():
+    """Tombstone: code-review:code-review plugin was removed in PR #587. Must not return."""
     content = _read_skill("flow-code-review")
-    assert "--comment" not in content, "flow-code-review must not use --comment flag with code-review plugin"
+    assert "code-review:code-review" not in content, (
+        "flow-code-review must NOT reference code-review:code-review plugin"
+        " (removed in PR #587, resurrected via merge in PR #600)"
+    )
+
+
+def test_code_review_no_plugin_config_axis():
+    """Tombstone: code_review_plugin config axis was removed in PR #587. Must not return."""
+    content = _read_skill("flow-code-review")
+    assert "code_review_plugin" not in content, (
+        "flow-code-review must NOT reference code_review_plugin config axis"
+        " (removed in PR #587, resurrected via merge in PR #600)"
+    )
 
 
 def test_code_review_step_4_handles_no_findings():
-    """Step 4 must explicitly handle the no-findings path."""
+    """Step 4 (Pre-Mortem) must explicitly handle the no-findings path."""
     content = _read_skill("flow-code-review")
     step4_match = re.search(
-        r"## Step 4.*?\n(.*?)(?=\n## Step 5)",
+        r"## Step 4.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
         content,
         re.DOTALL,
     )
     assert step4_match, "Could not find Step 4 in flow-code-review/SKILL.md"
     assert "no findings" in step4_match.group(1).lower(), "flow-code-review Step 4 must handle the no-findings path"
-
-
-def test_code_review_step_5_handles_no_findings():
-    """Step 5 must explicitly handle the no-findings path."""
-    content = _read_skill("flow-code-review")
-    step5_match = re.search(
-        r"## Step 5.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
-        content,
-        re.DOTALL,
-    )
-    assert step5_match, "Could not find Step 5 in flow-code-review/SKILL.md"
-    assert "no findings" in step5_match.group(1).lower(), "flow-code-review Step 5 must handle the no-findings path"
 
 
 def test_code_review_has_resume_check():
@@ -1648,8 +1638,8 @@ def test_code_review_has_resume_check():
 def _code_review_steps():
     """Yield (step_num, step_text) for each Code Review step section."""
     content = _read_skill("flow-code-review")
-    for step_num in range(1, 6):
-        if step_num < 5:
+    for step_num in range(1, 5):
+        if step_num < 4:
             next_header = f"## Step {step_num + 1}"
         else:
             next_header = "## Back Navigation|## Done"
@@ -1679,15 +1669,11 @@ def test_code_review_steps_self_invoke():
 
 
 def test_code_review_steps_await_background_agents():
-    """Steps 4-5 must instruct waiting for background agents (Steps 1-3 use inline review passes)."""
+    """Step 4 (Pre-Mortem) must reference the agent (Steps 1-3 use inline review passes)."""
     for step_num, step_text in _code_review_steps():
         if step_num in (1, 2, 3):
             continue
         if step_num == 4:
-            assert "background agent" in step_text.lower(), (
-                f"Step {step_num} must contain background agent wait instructions"
-            )
-        elif step_num == 5:
             assert "agent" in step_text.lower(), f"Step {step_num} must reference the pre-mortem agent"
 
 
