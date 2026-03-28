@@ -284,6 +284,22 @@ scope beyond the plan, and deviations from the planned approach.
 edge cases, off-by-one errors, null handling gaps, incorrect error
 propagation, and race conditions.
 
+**Step numbering consistency check:** When the diff modifies files containing
+step headings (`### Step N` or `## Step N`), read the full resulting file —
+not just the diff — and verify two things:
+
+**(a) Sequential numbering:** Step headings must be numbered sequentially
+starting from 1 with no gaps or duplicates.
+
+**(b) Cross-reference resolution:** Every internal cross-reference matching
+`Step N` must resolve to a step heading that exists in the same file. Check
+all six cross-reference patterns: skip/route (`Skip to Step N`,
+`continue to Step N`), forward (`needed for Step N`, `Keep ... for Step N`),
+jump (`Jump to Step N`), back (`from Step N`, `value from Step N`,
+`output from Step N`), range (`Steps M–N`), and prose (`Step N` followed by
+other words). Each referenced number must correspond to an actual step heading
+in the file.
+
 **Pass 3 — Test Coverage:** Review the diff for untested code paths.
 Identify missing assertions, untested error paths, boundary conditions
 without tests, and tests that do not verify what they claim.

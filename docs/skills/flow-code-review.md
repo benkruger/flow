@@ -32,8 +32,10 @@ no changes, skips to Step 2.
 
 Performs an inline correctness review of the branch diff using five review
 passes: plan alignment, logic correctness, test coverage, API contracts,
-and rule compliance. Uses the plan file as context. If no findings, skips
-to the next step.
+and rule compliance. Uses the plan file as context. When the diff modifies
+files containing step headings, the logic correctness pass also reads the
+full resulting file to verify sequential step numbering and cross-reference
+consistency. If no findings, skips to the next step.
 Every finding is fixed, `bin/flow ci` is run, and changes are committed
 via `/flow-commit`.
 
