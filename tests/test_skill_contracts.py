@@ -1208,12 +1208,12 @@ def test_learning_edits_rules_directly():
 
 
 def test_learning_files_flow_issues_not_learning():
-    """Learn Step 5 must use label 'Flow', not 'learning'."""
-    step5_text = _learn_step_text(5)
-    assert "--label" in step5_text, "Learn Step 5 must specify a --label for issue filing"
-    assert "Flow" in step5_text, "Learn Step 5 must use label 'Flow' for process gap issues"
-    assert "learning" not in step5_text.split("--label")[1].split("\n")[0].lower(), (
-        "Learn Step 5 must not use label 'learning' — use 'Flow' instead"
+    """Learn Step 6 must use label 'Flow', not 'learning'."""
+    step6_text = _learn_step_text(6)
+    assert "--label" in step6_text, "Learn Step 6 must specify a --label for issue filing"
+    assert "Flow" in step6_text, "Learn Step 6 must use label 'Flow' for process gap issues"
+    assert "learning" not in step6_text.split("--label")[1].split("\n")[0].lower(), (
+        "Learn Step 6 must not use label 'learning' — use 'Flow' instead"
     )
 
 
@@ -1850,7 +1850,7 @@ def test_learn_has_self_invocation_check():
 def _learn_step_text(step_num):
     """Extract Learn step section text by number."""
     content = _read_skill("flow-learn")
-    if step_num < 6:
+    if step_num < 7:
         next_header = f"## Step {step_num + 1}"
     else:
         next_header = "## Done"
@@ -1863,11 +1863,17 @@ def _learn_step_text(step_num):
     return step_match.group(1)
 
 
-def test_learn_step_4_self_invokes():
-    """Learn Step 4 (commit) must self-invoke flow:flow-learn --continue-step."""
+def test_learn_step_4_promotes_permissions():
+    """Learn Step 4 must call promote-permissions."""
     step_text = _learn_step_text(4)
+    assert "promote-permissions" in step_text, "Step 4 must contain 'promote-permissions'"
+
+
+def test_learn_step_5_self_invokes():
+    """Learn Step 5 (commit) must self-invoke flow:flow-learn --continue-step."""
+    step_text = _learn_step_text(5)
     assert "flow:flow-learn --continue-step" in step_text, (
-        "Step 4 must self-invoke via 'flow:flow-learn --continue-step'"
+        "Step 5 must self-invoke via 'flow:flow-learn --continue-step'"
     )
 
 
@@ -1886,10 +1892,10 @@ def test_learn_sets_continue_pending_before_child_skills():
 
 
 def test_learn_steps_record_completion():
-    """Learn Step 4 (commit) must record completion via set-timestamp."""
-    step_text = _learn_step_text(4)
-    assert "learn_step=4" in step_text, "Step 4 must contain 'learn_step=4' marker"
-    assert "learn_step=3" in step_text, "Step 4 must contain 'learn_step=3' for the skip-commit path"
+    """Learn Step 5 (commit) must record completion via set-timestamp."""
+    step_text = _learn_step_text(5)
+    assert "learn_step=5" in step_text, "Step 5 must contain 'learn_step=5' marker"
+    assert "learn_step=4" in step_text, "Step 5 must contain 'learn_step=4' for the skip-commit path"
 
 
 def test_plan_skill_does_not_reference_transcript_path():
