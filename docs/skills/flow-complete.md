@@ -47,7 +47,9 @@ SOFT-GATE and dispatches via the Resume Check.
    After the Done banner, writes a brief prose session summary describing what was accomplished
 8. Squash-merges the PR via `gh pr merge --squash`
 9. Closes any GitHub issues referenced in the start prompt (`#N` patterns)
-10. Removes the "Flow In-Progress" label from any issues referenced in the start prompt
+10. Runs four independent operations as parallel foreground Bash calls:
+    generate the summary banner, remove "Flow In-Progress" labels, auto-close
+    parent issues and milestones, and post the Slack notification
 11. Runs the cleanup process: remove worktree, delete branches, delete state file, log, and CI sentinel
 12. Pulls `origin main` so local main has the merged feature code
 
@@ -81,7 +83,7 @@ file and exits cleanly.
 | State file missing | Warns, infers from git state, proceeds (confirms if `--manual`) |
 | PR closed but not merged | Hard block, does not proceed |
 
-Every step after the merge (Steps 9-12) is best-effort. If label removal
+Every step after the merge (Steps 9-11) is best-effort. If label removal
 or issue closing fails, it continues to state file deletion. If the
 state file doesn't exist, it notes that and finishes.
 
