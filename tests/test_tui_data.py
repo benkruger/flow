@@ -287,8 +287,8 @@ def test_flow_summary_annotation_code_phase():
     assert summary["annotation"] == "task 3 of 5"
 
 
-def test_flow_summary_annotation_pending_phase():
-    """annotation is empty when active phase has no annotation."""
+def test_flow_summary_annotation_no_step_set():
+    """annotation is empty when active phase has no step set."""
     state = make_state(
         current_phase="flow-start",
         phase_statuses={"flow-start": "in_progress"},

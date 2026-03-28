@@ -201,7 +201,7 @@ class TuiApp:
             attr = curses.A_BOLD if i == self.selected else 0
             if flow["blocked"]:
                 attr = attr | self._color(COLOR_FAILED)
-            annotation = flow.get("annotation", "")
+            annotation = flow["annotation"]
             phase_info = f"{flow['phase_number']}: {flow['phase_name']}"
             if annotation:
                 phase_info += f" ({annotation})"
@@ -245,7 +245,7 @@ class TuiApp:
 
         # Phase timeline
         max_y, _ = self.stdscr.getmaxyx()
-        timeline = phase_timeline(state)
+        timeline = flow.get("timeline") or phase_timeline(state)
         for entry in timeline:
             if row >= max_y - 3:
                 break
