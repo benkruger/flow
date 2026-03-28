@@ -29,7 +29,7 @@ Before entering the filing pipeline, the skill classifies the user's input:
 
 ### Exploration Mode
 
-When the input is exploratory, the skill facilitates a design discussion instead of immediately decomposing. It explores the codebase for relevant context, presents findings and design options, and iterates interactively with the user. Exit paths are wrapped in a HARD-GATE — transitioning to the filing pipeline, ending the exploration, or canceling all require explicit user approval via AskUserQuestion. The user can also end the exploration without filing.
+When the input is exploratory, the skill facilitates a design discussion instead of immediately decomposing. It explores the codebase for relevant context, presents findings and design options, and iterates interactively with the user. Exit paths are wrapped in a HARD-GATE — transitioning to the filing pipeline (single or multiple issues), ending the exploration, or canceling all require explicit user approval via AskUserQuestion. When a brainstorm produces multiple independent issues, the user can select "File multiple issues" to draft and file all of them in a single session without losing context.
 
 ---
 
@@ -43,7 +43,7 @@ Once a concrete problem is identified (either directly or after exploration), St
 | 2 | Draft + File | AskUserQuestion: target project, FLOW plugin, revise, or re-decompose |
 
 1. **Step 1 — Decompose:** Invokes `decompose:decompose` for DAG-based problem breakdown with codebase exploration (Glob, Grep, Read). Presents the synthesis and asks the user to approve, iterate, or cancel. Generates a session ID and writes step counter to `.flow-states/create-issue-<id>.json`.
-2. **Step 2 — Draft + File:** Crafts a comprehensive issue with five sections (Problem, Acceptance Criteria, Files to Investigate, Out of Scope, Context). Presents the full draft inline and asks the user where to file in a single AskUserQuestion with four options: file against the target project, file against the FLOW plugin repo (`benkruger/flow`), revise the draft, or re-decompose from scratch. Files the issue via `bin/flow issue`, then cleans up the session-scoped state file.
+2. **Step 2 — Draft + File:** Crafts a comprehensive issue with five sections (Problem, Acceptance Criteria, Files to Investigate, Out of Scope, Context). Presents the full draft inline and asks the user where to file in a single AskUserQuestion with four options: file against the target project, file against the FLOW plugin repo (`benkruger/flow`), revise the draft, or re-decompose from scratch. Files the issue via `bin/flow issue`, then cleans up the session-scoped state file. In multi-issue mode (triggered by "File multiple issues" from Exploration Mode), Step 2 drafts all issues as a numbered set, presents them for batch review via a single HARD-GATE, and files each in sequence using indexed body files.
 
 ---
 
@@ -62,7 +62,7 @@ The filed issue contains enough detail for `/flow-start` to execute fully autono
 ## Gates
 
 - Step banners shown at entry to each step (`── Step N of 2: Name ──`)
-- HARD-GATE on Exploration Mode exit paths — prevents flow breakouts during design discussion
+- HARD-GATE on Exploration Mode exit paths — prevents flow breakouts during design discussion; includes "File multiple issues" option for batch filing
 - AskUserQuestion gates at Steps 1 and 2 — user controls the flow
 - All AskUserQuestion calls use structured parameters (question, header, options with label+description)
 - All file paths verified via codebase exploration

@@ -69,8 +69,7 @@ UNIVERSAL_ALLOW = [
     "Bash(gh issue *)",
     "Bash(gh label *)",
     "Bash(gh -C *)",
-    "Bash(bin/*)",
-    "Bash(*bin/flow *)",
+    "Bash(*bin/*)",
     "Bash(rm .flow-*)",
     "Bash(claude plugin list)",
     "Bash(claude plugin marketplace add *)",
@@ -81,6 +80,7 @@ UNIVERSAL_ALLOW = [
     "Read(//tmp/*.txt)",
     "Read(//tmp/*.diff)",
     "Read(//tmp/*.patch)",
+    "Read(//tmp/*.md)",
     "Agent(flow:ci-fixer)",
     "Skill(decompose:decompose)",
 ]
