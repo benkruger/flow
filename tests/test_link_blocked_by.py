@@ -190,3 +190,45 @@ class TestMain:
     def test_main_missing_required_args(self):
         with patch("sys.argv", ["link-blocked-by.py", "--repo", "o/r"]), pytest.raises(SystemExit, match="2"):
             blocked_mod.main()
+
+
+class TestBuildBlockedBySection:
+    """Tests for the build_blocked_by_section function."""
+
+    def test_no_existing_section(self):
+        body = "Some issue description.\n\n## Context\n\nMore info here."
+        result = blocked_mod.build_blocked_by_section(body, 42)
+        assert "## Blocked by" in result
+        assert "- #42" in result
+        # Original content preserved
+        assert body.rstrip() in result
+
+    def test_existing_section_appends(self):
+        body = "Description.\n\n## Blocked by\n\n- #10\n"
+        result = blocked_mod.build_blocked_by_section(body, 42)
+        assert "- #10" in result
+        assert "- #42" in result
+
+    def test_duplicate_prevention(self):
+        body = "Description.\n\n## Blocked by\n\n- #42\n"
+        result = blocked_mod.build_blocked_by_section(body, 42)
+        assert result == body
+
+    def test_empty_body(self):
+        result = blocked_mod.build_blocked_by_section("", 42)
+        assert "## Blocked by" in result
+        assert "- #42" in result
+
+    def test_none_body(self):
+        result = blocked_mod.build_blocked_by_section(None, 42)
+        assert "## Blocked by" in result
+        assert "- #42" in result
+
+    def test_section_not_last(self):
+        body = "Description.\n\n## Blocked by\n\n- #10\n\n## Notes\n\nSome notes."
+        result = blocked_mod.build_blocked_by_section(body, 42)
+        assert "- #10" in result
+        assert "- #42" in result
+        # Notes section preserved after
+        assert "## Notes" in result
+        assert "Some notes." in result
