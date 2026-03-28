@@ -10,11 +10,12 @@ parent: Skills
 
 **Usage:** `/flow-code-review`, `/flow-code-review --auto`, or `/flow-code-review --manual`
 
-Five review steps — clarity with convention compliance, correctness with
-rule compliance, safety, CLAUDE.md compliance, and pre-mortem incident
-analysis. Combines inline review passes, a multi-agent compliance plugin,
-and a context-isolated pre-mortem agent into a single phase with up to
-five ordered steps, each with its own commit checkpoint.
+Six review steps — clarity with convention compliance, correctness with
+rule compliance, safety, CLAUDE.md compliance, context-isolated code
+review, and pre-mortem incident analysis. Combines inline review passes,
+a multi-agent compliance plugin, and two context-isolated agents into a
+single phase with up to six ordered steps, each with its own commit
+checkpoint.
 
 ---
 
@@ -55,7 +56,19 @@ that filters false positives. Waits for all background agents to complete
 before evaluating findings. If no findings, skips to Step 5. Every finding is
 fixed, `bin/flow ci` is run, and changes are committed via `/flow-commit`.
 
-### Step 5 — Pre-Mortem (incident analysis)
+### Step 5 — Context-Isolated Review (cold reviewer)
+
+Launches the `reviewer` custom agent — a context-isolated sub-agent that
+receives the branch diff, plan file, CLAUDE.md, and `.claude/rules/` but
+no conversation history or coding rationale. The agent reviews as a cold
+reviewer: "You are reviewing code you did not write."
+
+The agent produces structured findings (severity, category, evidence,
+recommendation). The main session triages each finding as real or false
+positive. Real findings are fixed, `bin/flow ci` is run, and changes are
+committed via `/flow-commit`.
+
+### Step 6 — Pre-Mortem (incident analysis)
 
 Launches the `pre-mortem` custom agent — a context-isolated sub-agent that
 receives only the branch diff and codebase access, with no conversation
@@ -89,7 +102,7 @@ configurable independently:
 
 In auto mode, findings are auto-fixed and the phase transition advances to
 Learn without asking. When `code_review_plugin` is `"never"`, Step 4 is
-skipped but Step 5 (Pre-Mortem) still runs.
+skipped but Steps 5 (Context-Isolated Review) and 6 (Pre-Mortem) still run.
 
 ---
 
@@ -105,8 +118,9 @@ Check which dispatches to the next step.
 Steps 1-3 perform inline review passes sequentially within the response
 turn. Step 4 invokes the code-review plugin which may launch background
 agents — it waits for all background agents to complete before evaluating
-findings. Step 5 launches the pre-mortem agent for context-isolated
-incident analysis.
+findings. Step 5 launches the reviewer agent for context-isolated code
+review. Step 6 launches the pre-mortem agent for context-isolated incident
+analysis.
 
 ---
 
