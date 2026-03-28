@@ -184,6 +184,52 @@ def test_validate_allows_git_restore_specific_file():
     assert message == ""
 
 
+# --- Git diff with file-path arguments tests ---
+
+
+def test_validate_blocks_git_diff_with_file_args():
+    """git diff with -- file separator is blocked (sub-agents should use Read)."""
+    mod = _load_module()
+    allowed, message = mod.validate("git diff origin/main..HEAD -- file.py")
+    assert allowed is False
+    assert "BLOCKED" in message
+    assert "Read" in message
+
+
+def test_validate_blocks_git_diff_head_with_file_args():
+    """git diff HEAD -- path is blocked."""
+    mod = _load_module()
+    allowed, message = mod.validate("git diff HEAD -- src/lib/foo.py")
+    assert allowed is False
+    assert "BLOCKED" in message
+    assert "Read" in message
+
+
+def test_validate_blocks_git_diff_cached_with_file_args():
+    """git diff --cached -- file is blocked."""
+    mod = _load_module()
+    allowed, message = mod.validate("git diff --cached -- file.py")
+    assert allowed is False
+    assert "BLOCKED" in message
+    assert "Read" in message
+
+
+def test_validate_allows_git_diff_without_file_args():
+    """git diff without -- file separator is allowed."""
+    mod = _load_module()
+    allowed, message = mod.validate("git diff origin/main..HEAD")
+    assert allowed is True
+    assert message == ""
+
+
+def test_validate_allows_git_diff_stat():
+    """git diff --stat is allowed (--stat is a flag, not a file separator)."""
+    mod = _load_module()
+    allowed, message = mod.validate("git diff --stat")
+    assert allowed is True
+    assert message == ""
+
+
 # --- Whitelist validation tests ---
 
 
@@ -427,6 +473,13 @@ def test_hook_exit_2_for_git_restore_dot():
     assert code == 2
     assert "BLOCKED" in stderr
     assert "individually" in stderr
+
+
+def test_hook_exit_2_for_git_diff_with_file_args():
+    """Full subprocess test: git diff with -- file args is blocked."""
+    code, stderr = _run_hook("git diff HEAD -- file.py")
+    assert code == 2
+    assert "BLOCKED" in stderr
 
 
 def test_hook_exit_0_for_invalid_json():

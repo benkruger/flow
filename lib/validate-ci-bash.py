@@ -150,6 +150,15 @@ def validate(command, settings=None, flow_active=True):
             "Before restoring, run 'git diff' to capture what will be lost.",
         )
 
+    # Block git diff with file-path arguments (sub-agents should use Read/Grep)
+    if stripped.startswith("git diff") and re.search(r" -- \S", stripped):
+        return (
+            False,
+            "BLOCKED: 'git diff' with file path arguments is not allowed. "
+            "Use the Read tool to view file contents and the Grep tool "
+            "to search for patterns.",
+        )
+
     # Deny-list check — deny always wins over allow
     if settings is not None:
         deny_regexes = _build_permission_regexes(settings, "deny")
