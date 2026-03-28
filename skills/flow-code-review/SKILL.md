@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — three review lenses (clarity via foreground agents, correctness via /review, safety via /security-review, configurable) plus an optional fourth (CLAUDE.md compliance via code-review:code-review plugin, configurable). Commits after each step."
+description: "Phase 4: Code Review — three review lenses (clarity via inline review, correctness via /review, safety via /security-review, configurable) plus an optional fourth (CLAUDE.md compliance via code-review:code-review plugin, configurable). Commits after each step."
 ---
 
 # FLOW Code Review — Phase 4: Code Review
@@ -158,32 +158,30 @@ Get the full branch diff to use as review context:
 git diff origin/main..HEAD
 ```
 
-Launch three foreground review agents in parallel (one response, three
-Agent tool calls). Each agent receives the diff output as context. Do
-not use `run_in_background` — foreground agents complete within the
-response turn, guaranteeing their findings are available immediately.
+Perform three review passes on the diff output. Execute each pass
+sequentially, aggregating findings as you go.
 
-**Agent 1 — Code Reuse:** Review the diff for duplicated logic, missed
+**Pass 1 — Code Reuse:** Review the diff for duplicated logic, missed
 abstractions, and opportunities to consolidate. Identify patterns that
 appear in multiple locations and suggest how to share them.
 
-**Agent 2 — Code Quality:** Review the diff for naming clarity,
+**Pass 2 — Code Quality:** Review the diff for naming clarity,
 structural simplicity, readability improvements, and unnecessary
 complexity. Identify conditionals that could be simplified, names that
 could be clearer, and abstractions that add complexity without value.
 
-**Agent 3 — Efficiency:** Review the diff for unnecessary allocations,
+**Pass 3 — Efficiency:** Review the diff for unnecessary allocations,
 redundant operations, and performance patterns. Identify operations that
 could be avoided or simplified without changing behavior.
 
-After all three agents complete, aggregate their findings. Apply fixes
+After all three passes, aggregate the findings. Apply fixes
 for any valid findings that improve the code without changing behavior.
 It is safe to refactor here because Phase 3 (Code) tests already
 verified all behavior.
 
 ### Out-of-scope findings
 
-Review the review agents' output for any findings that are pre-existing
+Review the findings for any that are pre-existing
 (not introduced by the current PR). For each out-of-scope finding,
 classify as Tech Debt and file an issue.
 
@@ -204,7 +202,7 @@ Repeat for each out-of-scope finding. Then continue to the diff review below.
 
 ### Diff review
 
-Show the user what the review agents changed:
+Show the user what the review passes changed:
 
 ```bash
 git diff HEAD

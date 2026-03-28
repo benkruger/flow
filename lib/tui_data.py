@@ -80,6 +80,9 @@ def phase_timeline(state):
     phases = state.get("phases", {})
     code_task = state.get("code_task", 0)
     code_tasks_total = state.get("code_tasks_total", 0)
+    code_review_step = state.get("code_review_step", 0)
+    learn_step = state.get("learn_step", 0)
+    complete_step = state.get("complete_step", 0)
     diff_stats = state.get("diff_stats")
     entries = []
 
@@ -93,14 +96,21 @@ def phase_timeline(state):
         time_str = format_time(seconds) if status == "complete" else ""
 
         annotation = ""
-        if key == "flow-code" and status == "in_progress" and code_task > 0:
-            task_str = f"task {code_task} of {code_tasks_total}" if code_tasks_total > 0 else f"task {code_task}"
+        if key == "flow-code" and status == "in_progress":
+            current_task = code_task + 1
+            task_str = f"task {current_task} of {code_tasks_total}" if code_tasks_total > 0 else f"task {current_task}"
             parts = [task_str]
             if diff_stats:
                 ins = diff_stats.get("insertions", 0)
                 dels = diff_stats.get("deletions", 0)
                 parts.append(f"+{ins} -{dels}")
             annotation = ", ".join(parts)
+        elif key == "flow-code-review" and status == "in_progress" and code_review_step < 4:
+            annotation = f"step {code_review_step + 1} of 4"
+        elif key == "flow-learn" and status == "in_progress" and learn_step > 0:
+            annotation = f"step {learn_step + 1}"
+        elif key == "flow-complete" and status == "in_progress" and complete_step > 0:
+            annotation = f"step {complete_step}"
 
         entries.append(
             {
