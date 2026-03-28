@@ -12,12 +12,10 @@ Explore a design question or decompose a concrete problem into a fully detailed,
 ```text
 /flow:flow-create-issue <problem description>
 /flow:flow-create-issue --step 2 --id <id>
-/flow:flow-create-issue --step 3 --id <id>
 ```
 
 - `/flow:flow-create-issue <problem description>` — start from Step 1 (Decompose)
-- `/flow:flow-create-issue --step 2 --id <id>` — self-invocation: skip to Step 2 (Draft + Review)
-- `/flow:flow-create-issue --step 3 --id <id>` — self-invocation: skip to Step 3 (File)
+- `/flow:flow-create-issue --step 2 --id <id>` — self-invocation: skip to Step 2 (Draft + File)
 
 ## Concurrency
 
@@ -45,7 +43,6 @@ generated in Step 1. Skip the Announce banner and jump directly to the
 Resume Check, using the provided `<id>` for all file paths.
 
 - `--step 2 --id <id>` → Resume Check dispatches to Step 2
-- `--step 3 --id <id>` → Resume Check dispatches to Step 3
 
 If no `--step` flag was passed, proceed to Input Classification.
 
@@ -59,13 +56,12 @@ Classification.
 - If the file does not exist or `create_issue_step` is `0`, proceed to
   Input Classification (first run).
 - If `create_issue_step` is `1` — Step 1 is done. Skip to Step 2.
-- If `create_issue_step` is `2` — Steps 1-2 are done. Skip to Step 3.
 
 ---
 
 ## Input Classification
 
-Before entering the 3-step pipeline, evaluate the user's input to determine
+Before entering the 2-step pipeline, evaluate the user's input to determine
 whether it describes a concrete problem or an exploratory design question.
 
 **Concrete problem signals** — proceed to Step 1:
@@ -83,13 +79,14 @@ whether it describes a concrete problem or an exploratory design question.
 - No specific failure or symptom described
 - Asks about possibilities or design options rather than problems
 
-**If ambiguous** — ask the user which mode they prefer using AskUserQuestion:
+**If ambiguous** — ask the user which mode they prefer using AskUserQuestion
+with structured parameters:
 
-> "This could be explored as a design question or decomposed as a concrete
-> issue. Which would you prefer?"
->
-> - **Design exploration** — discuss the topic before filing
-> - **Decompose and file an issue** — enter the 3-step pipeline now
+- **question**: "This could be explored as a design question or decomposed as a concrete issue. Which would you prefer?"
+- **header**: "Input Mode"
+- **options**:
+  - label: "Design exploration", description: "Discuss the topic interactively before filing"
+  - label: "Decompose and file", description: "Enter the 2-step pipeline now"
 
 Route based on the user's choice.
 
@@ -116,17 +113,20 @@ Do not proceed to Step 1, propose direct edits, commit changes, or take
 any action outside this skill without explicit user approval via
 AskUserQuestion.
 
-When the discussion produces a concrete problem the user wants to file:
+When the discussion produces a concrete problem the user wants to file,
+ask using AskUserQuestion with structured parameters:
 
-- Ask "Ready to file this as an issue?" using AskUserQuestion
-- If yes — proceed to Step 1 below with the refined problem statement
-- If the user identifies multiple issues — ask which to start with, then
-  proceed to Step 1 for the chosen issue
+- **question**: "Ready to file this as an issue?"
+- **header**: "File Issue?"
+- **options**:
+  - label: "File an issue", description: "Proceed to the 2-step pipeline with the refined problem"
+  - label: "Done exploring", description: "End without filing an issue"
 
-When the user is satisfied with the exploration:
+If "File an issue" — proceed to Step 1 below with the refined problem
+statement. If the user identifies multiple issues — ask which to start
+with, then proceed to Step 1 for the chosen issue.
 
-- The user may say "that's enough", "thanks", or indicate they are done
-- Stop without filing — no issue is required
+If "Done exploring" — stop without filing. No issue is required.
 
 When the user wants to cancel:
 
@@ -142,7 +142,7 @@ Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
-  ── Step 1 of 3: Decompose ──
+  ── Step 1 of 2: Decompose ──
 ```
 ````
 
@@ -162,11 +162,28 @@ Present the full DAG synthesis to the user.
 
 <HARD-GATE>
 
-Ask the user to review the decomposition using AskUserQuestion:
+Ask the user to review the decomposition using AskUserQuestion with
+structured parameters:
 
-- **"Proceed to draft"** → generate a short session ID by running `${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool (this ID scopes all file paths for this session). Write `{"create_issue_step": 1}` to `.flow-states/create-issue-<id>.json` using the Write tool, then invoke `flow:flow-create-issue --step 2 --id <id>` using the Skill tool as your final action. Do not output anything else after this invocation.
-- **"Iterate on decomposition"** → re-invoke `decompose:decompose` with the user's feedback, present the updated synthesis, and ask again.
-- **"Cancel"** → stop. Do not file an issue.
+- **question**: "Review the decomposition above. How would you like to proceed?"
+- **header**: "Decompose"
+- **options**:
+  - label: "Proceed to draft", description: "Move to the draft and file step"
+  - label: "Iterate", description: "Re-run decompose with your feedback"
+  - label: "Cancel", description: "Stop without filing an issue"
+
+**If "Proceed to draft"** → generate a short session ID by running
+`${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool (this ID
+scopes all file paths for this session). Write
+`{"create_issue_step": 1}` to `.flow-states/create-issue-<id>.json`
+using the Write tool, then invoke `flow:flow-create-issue --step 2 --id <id>`
+using the Skill tool as your final action. Do not output anything else
+after this invocation.
+
+**If "Iterate"** → re-invoke `decompose:decompose` with the user's
+feedback, present the updated synthesis, and ask again.
+
+**If "Cancel"** → stop. Do not file an issue.
 
 Do not proceed to Step 2 without explicit user approval.
 
@@ -174,13 +191,13 @@ Do not proceed to Step 2 without explicit user approval.
 
 ---
 
-## Step 2 — Draft + Review
+## Step 2 — Draft + File
 
 Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
-  ── Step 2 of 3: Draft + Review ──
+  ── Step 2 of 2: Draft + File ──
 ```
 ````
 
@@ -220,46 +237,39 @@ Present the full draft inline in the response — both title and body. Do not te
 
 <HARD-GATE>
 
-Ask the user to review the draft using AskUserQuestion:
+Ask the user to review the draft and choose where to file using
+AskUserQuestion with structured parameters:
 
-- **"File it"** / **"Looks good"** / **"Ship it"** → persist the approved draft to `.flow-states/create-issue-<id>-draft.md` using the Write tool (title on the first line as a markdown heading, body below). Then write `{"create_issue_step": 2}` to `.flow-states/create-issue-<id>.json` using the Write tool. Then invoke `flow:flow-create-issue --step 3 --id <id>` using the Skill tool as your final action. Do not output anything else after this invocation.
-- **"Revise the draft"** / **Any feedback or change request** → revise the draft based on feedback and re-present. If the feedback is substantial (changes the problem understanding or approach), re-run `decompose:decompose` with the updated understanding. If the feedback is editorial (wording, scope adjustments), revise the draft directly. After revision, ask again with the same options.
-- **"Re-decompose"** → invoke `flow:flow-create-issue` using the Skill tool as your final action (no `--step` or `--id` flags — restart from scratch). Do not output anything else after this invocation.
-
-Iterate as many times as needed. The issue is not filed until the user explicitly approves.
-
-</HARD-GATE>
-
----
-
-## Step 3 — File
-
-Output in your response (not via Bash) inside a fenced code block:
-
-````markdown
-```text
-  ── Step 3 of 3: File ──
-```
-````
-
-Use the Read tool to read the approved draft from `.flow-states/create-issue-<id>-draft.md`. Parse the title from the first line (strip the heading prefix). The remainder is the issue body.
-
-### Repo Routing
-
-<HARD-GATE>
-
-Before filing, determine where this issue belongs. Use AskUserQuestion:
-
-> "Where should this issue be filed?"
->
-> - **Target project** — this is a bug or feature in your project
-> - **FLOW plugin (benkruger/flow)** — this is a bug in the FLOW process itself
+- **question**: "Review the draft above. Where should this issue be filed?"
+- **header**: "File Issue"
+- **options**:
+  - label: "Target project", description: "File against the current project"
+  - label: "FLOW plugin", description: "File against benkruger/flow"
+  - label: "Revise draft", description: "Edit the draft based on your feedback"
+  - label: "Re-decompose", description: "Restart from scratch with a new decomposition"
 
 Do not proceed to file the issue, propose direct edits, commit changes,
 or take any action outside this skill without explicit user approval via
 AskUserQuestion — even if the answer appears obvious from context.
 
+**If "Target project"** or **"FLOW plugin"** → file the issue (see Filing below).
+
+**If "Revise draft"** → revise the draft based on feedback and re-present.
+If the feedback is substantial (changes the problem understanding or
+approach), re-run `decompose:decompose` with the updated understanding.
+If the feedback is editorial (wording, scope adjustments), revise the
+draft directly. After revision, ask again with the same AskUserQuestion.
+
+**If "Re-decompose"** → invoke `flow:flow-create-issue` using the Skill
+tool as your final action (no `--step` or `--id` flags — restart from
+scratch). Do not output anything else after this invocation.
+
+Iterate as many times as needed. The issue is not filed until the user
+explicitly chooses a filing target.
+
 </HARD-GATE>
+
+### Filing
 
 Write the issue body to `.flow-issue-body-<id>` in the project root using the Write tool.
 
@@ -287,10 +297,10 @@ Record the issue in the state file (no-op if no FLOW feature is active):
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
 ```
 
-Clean up the state and draft files. Use the Bash tool to remove both:
+Clean up the state file:
 
 ```bash
-rm .flow-states/create-issue-<id>.json .flow-states/create-issue-<id>-draft.md
+rm .flow-states/create-issue-<id>.json
 ```
 
 Display the issue URL to the user, then output the COMPLETE banner:
@@ -305,7 +315,7 @@ Display the issue URL to the user, then output the COMPLETE banner:
 
 ## Hard Rules
 
-- Never file an issue without explicit user approval — Step 2 is the mandatory gate
+- Never file an issue without explicit user approval — the Step 2 AskUserQuestion is the mandatory gate
 - Never skip codebase exploration — every file path and code reference must be verified
 - Never tell the user to "look at" a file — render all content inline
 - Never use Bash to print banners — output them as text in your response
@@ -313,4 +323,4 @@ Display the issue URL to the user, then output the COMPLETE banner:
 - Never create sub-issues or linked issues — file a single comprehensive issue
 - Always use the Write tool to create the body file (`.flow-issue-body-<id>`) — never pass body text as a CLI argument
 - Never delete the body file — the `bin/flow issue` script handles cleanup
-- Each step ends by invoking the skill itself as the final action — never continue to the next step in the same invocation
+- Step 1 ends by invoking the skill itself as the final action — Step 2 is terminal
