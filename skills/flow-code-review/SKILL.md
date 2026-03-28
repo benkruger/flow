@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — three review lenses (clarity via inline review, correctness via /review, safety via inline security review) plus an optional fourth (CLAUDE.md compliance via code-review:code-review plugin, configurable). Commits after each step."
+description: "Phase 4: Code Review — three review lenses (clarity via inline review, correctness via inline review, safety via inline security review) plus an optional fourth (CLAUDE.md compliance via code-review:code-review plugin, configurable). Commits after each step."
 ---
 
 # FLOW Code Review — Phase 4: Code Review
@@ -128,10 +128,10 @@ Read `code_review_step` from the state file (default `0` if absent).
 ## Framework Conventions
 
 Read the project's CLAUDE.md for framework-specific conventions. The
-first three review steps use Claude's built-in commands which apply
-language-aware checks automatically. When enabled via Code Review Plugin
-Mode Resolution, a fourth step uses the code-review plugin for
-multi-agent validation. The CLAUDE.md conventions inform fix decisions.
+first three review steps perform inline review passes against the branch
+diff. When enabled via Code Review Plugin Mode Resolution, a fourth step
+uses the code-review plugin for multi-agent validation. The CLAUDE.md
+conventions inform fix decisions.
 
 ---
 
@@ -268,38 +268,38 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 
 ## Step 2 — Review
 
-Read `pr_number` from the state file. Read `files.plan` from the state
-file to get the plan file path. Use the Read tool to read the plan file.
+Read `files.plan` from the state file to get the plan file path. Use the
+Read tool to read the plan file.
 
-Set the continuation context and flag before invoking the child skill:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Wait for all pending background agents to complete. Then process review findings, fix issues, run bin/flow ci, then commit if fixes were made."
-```
+Get the full branch diff to use as review context:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=review
+git diff origin/main..HEAD
 ```
 
-Invoke Claude's built-in review command on the PR:
+Perform four correctness review passes on the diff output, using the plan
+file as context. Execute each pass sequentially, aggregating findings as
+you go.
 
-```text
-/review <pr_number>
-```
+**Pass 1 — Plan Alignment:** Review the diff against the plan. Does the
+implementation match the plan's intent? Identify missing tasks, extra
+scope beyond the plan, and deviations from the planned approach.
 
-This analyzes the full diff for code quality, correctness, and test
-coverage using Claude's language-aware analysis.
+**Pass 2 — Logic Correctness:** Review the diff for logic errors. Identify
+edge cases, off-by-one errors, null handling gaps, incorrect error
+propagation, and race conditions.
 
-### Background agent check
+**Pass 3 — Test Coverage:** Review the diff for untested code paths.
+Identify missing assertions, untested error paths, boundary conditions
+without tests, and tests that do not verify what they claim.
 
-Built-in skills may launch background review agents that run
-asynchronously. After the child skill returns and the stop-continue hook
-resumes you, check for any pending background agent notifications. Wait
-for ALL background agents to complete before proceeding. Do not evaluate
-"no findings" until every agent has reported. Treat agent findings the
-same as direct findings from the child skill.
+**Pass 4 — API Contracts:** Review the diff for interface mismatches.
+Identify function signatures that do not match their callers, inconsistent
+return types, and interfaces that do not match their documentation.
 
-If `/review` reports no findings, show the Review summary with zero
+After all four passes, aggregate the findings.
+
+If no findings were identified, show the Review summary with zero
 findings listed, then without pausing continue to Step 3.
 
 ### Fix every finding
@@ -720,7 +720,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
 - Always run `bin/flow ci` after any fix made during Code Review
 - Never transition to Learn unless `bin/flow ci` is green
-- Fix every finding from `/review`, inline security review, and (when enabled) `code-review:code-review` — do not leave findings unaddressed
+- Fix every finding from inline correctness review, inline security review, and (when enabled) `code-review:code-review` — do not leave findings unaddressed
 - Follow the project CLAUDE.md conventions when fixing
 - Each active step (Simplify, Review, Security, and Code Review Plugin when enabled) gets its own commit when changes are made
 - Never use Bash to print banners — output them as text in your response

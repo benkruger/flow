@@ -326,10 +326,18 @@ def test_ci_fixer_agent_exists():
     )
 
 
-def test_code_review_delegates_to_builtin_review():
-    """Code Review skill must delegate to Claude's built-in /review command."""
+def test_code_review_has_inline_correctness_review():
+    """Code Review skill must perform inline correctness review in Step 2."""
     content = _read_skill("flow-code-review")
-    assert "/review" in content, "skills/flow-code-review/SKILL.md must delegate to /review"
+    # Step 2 must contain inline correctness review passes
+    step2_pos = content.index("## Step 2")
+    step3_pos = content.index("## Step 3")
+    step2_content = content[step2_pos:step3_pos]
+    assert "Plan Alignment" in step2_content, "Step 2 must include Plan Alignment pass"
+    assert "Logic Correctness" in step2_content, "Step 2 must include Logic Correctness pass"
+    assert "Test Coverage" in step2_content, "Step 2 must include Test Coverage pass"
+    assert "API Contracts" in step2_content, "Step 2 must include API Contracts pass"
+    assert "git diff origin/main..HEAD" in step2_content, "Step 2 must get the branch diff inline"
 
 
 def test_code_review_has_inline_security_review():
@@ -1615,9 +1623,9 @@ def test_code_review_steps_self_invoke():
 
 
 def test_code_review_steps_await_background_agents():
-    """Steps 2 and 4 must instruct waiting for background agents (Steps 1 and 3 use inline review passes)."""
+    """Step 4 must instruct waiting for background agents (Steps 1-3 use inline review passes)."""
     for step_num, step_text in _code_review_steps():
-        if step_num in (1, 3):
+        if step_num in (1, 2, 3):
             continue
         assert "background agent" in step_text.lower(), (
             f"Step {step_num} must contain background agent wait instructions"
@@ -1763,7 +1771,6 @@ def test_code_review_sets_continue_pending_before_child_skills():
     """Each Code Review step must set _continue_pending before child skill."""
     content = _read_skill("flow-code-review")
     child_skills = [
-        ("review", "/review"),
         ("code-review:code-review", "code-review:code-review"),
     ]
     for flag_value, skill_ref in child_skills:

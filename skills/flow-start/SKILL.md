@@ -77,9 +77,9 @@ shared state must be idempotent.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → continue=auto AND override ALL skills to fully autonomous (all commits auto, all continues auto, code review plugin skipped). The `--auto` flag is passed through to `start-setup` in Step 10, which writes the autonomous preset to the state file. All downstream phases inherit the override automatically.
+1. If `--auto` was passed → continue=auto AND override ALL skills to fully autonomous (all commits auto, all continues auto, code review plugin skipped). The `--auto` flag is passed through to `start-setup` in Step 11, which writes the autonomous preset to the state file. All downstream phases inherit the override automatically.
 2. If `--manual` was passed → continue=manual
-3. Otherwise → resolved in the Done section by reading `skills.flow-start.continue` from `.flow-states/<branch>.json` (which exists after Step 10)
+3. Otherwise → resolved in the Done section by reading `skills.flow-start.continue` from `.flow-states/<branch>.json` (which exists after Step 11)
 
 ## Announce
 
@@ -96,7 +96,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ## Logging
 
 After every Bash command in Steps 2–11, log it to `.flow-states/<branch>.log`
-using `bin/flow log`. Step 10 handles its own logging internally via start-setup.
+using `bin/flow log`. Step 11 handles its own logging internally via start-setup.
 
 Run the command first, then log the result. Pipeline the log call with the
 next command where possible (run both in parallel in one response).
@@ -164,18 +164,24 @@ Do NOT proceed if version check fails. Show the error message and stop.
 
 ### Step 2 — Create early state file
 
+Write the user's original start prompt (verbatim, including `#N` issue references
+and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
+Write tool.
+
 Create the state file immediately so the TUI can see this flow during
-the locked main operations in Steps 3–9. The state file has null PR fields
-at this point — start-setup backfills them after PR creation.
+the locked main operations in Steps 4–10. The state file has null PR fields
+at this point — start-setup backfills them after PR creation. Pass the prompt
+file so the `prompt` field contains the original text with `#N` references
+(needed by Step 3 for labeling).
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>"
+${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt
 ```
 
 If `--auto` was passed to this skill invocation, also pass `--auto`:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --auto
+${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --auto
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -190,14 +196,30 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_steps_total=11
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=2
 ```
 
-Steps 3–9 serialize all main-branch work behind a lock. Only one
-flow-start runs this section at a time. Concurrent starts wait until
-the lock is released.
-
-### Step 3 — Acquire start lock
+### Step 3 — Label referenced issues
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=3
+```
+
+If the start prompt contains `#N` issue references, add the "Flow In-Progress"
+label so other engineers can see these issues are being worked on:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --add
+```
+
+Best-effort — if labeling fails, log the result and continue. Do not block
+the Start phase for a label failure.
+
+Steps 4–10 serialize all main-branch work behind a lock. Only one
+flow-start runs this section at a time. Concurrent starts wait until
+the lock is released.
+
+### Step 4 — Acquire start lock
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=4
 ```
 
 ```bash
@@ -212,20 +234,20 @@ stale notification after the workflow completes.
 - If `"status": "timeout"` — stop and report to the user that another start
   holds the lock (show the feature name and PID from the response).
 
-### Step 4 — Pull latest main
+### Step 5 — Pull latest main
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=4
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=5
 ```
 
 ```bash
 git pull origin main
 ```
 
-### Step 5 — CI baseline gate
+### Step 6 — CI baseline gate
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=5
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=6
 ```
 
 Main is pristine — nothing merges without clean CI. Any failure here is
@@ -235,7 +257,7 @@ a flaky test, not a real breakage.
 ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 ```
 
-If CI passes, continue to Step 6.
+If CI passes, continue to Step 7.
 
 If CI fails, re-run up to 2 more times (3 total). Do not make any code
 changes between attempts — just re-run:
@@ -246,7 +268,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 
 **If any subsequent attempt passes without code changes**, the failure
 was flaky. File a "Flaky Test" issue with reproduction data, then
-continue to Step 6.
+continue to Step 7.
 
 The issue body must include: the test name, the failure message, how many
 attempts it took to pass, and the context "CI baseline on pristine main
@@ -272,15 +294,15 @@ Report to the user that CI is consistently failing on pristine main.
 ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release
 ```
 
-### Step 6 — Update dependencies
+### Step 7 — Update dependencies
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=6
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=7
 ```
 
 Use the Read tool to check if `bin/dependencies` exists at `<project_root>/bin/dependencies`.
 
-If it does not exist, skip to Step 9 (release lock).
+If it does not exist, skip to Step 10 (release lock).
 
 If it exists, run it:
 
@@ -294,12 +316,12 @@ Then check if anything changed:
 git status
 ```
 
-If `git status` shows no changes, skip to Step 9 (release lock).
+If `git status` shows no changes, skip to Step 10 (release lock).
 
-### Step 7 — CI post-deps gate
+### Step 8 — CI post-deps gate
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=7
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=8
 ```
 
 If dependencies changed anything, run CI again to catch dep-induced breakage
@@ -309,7 +331,7 @@ If dependencies changed anything, run CI again to catch dep-induced breakage
 ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 ```
 
-If CI passes, continue to Step 8.
+If CI passes, continue to Step 9.
 
 If CI fails, re-run up to 2 more times (3 total). Do not make any code
 changes between attempts — just re-run:
@@ -320,7 +342,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 
 **If any subsequent attempt passes without code changes**, the failure
 was flaky. File a "Flaky Test" issue with reproduction data, then
-continue to Step 8.
+continue to Step 9.
 
 The issue body must include: the test name, the failure message, how many
 attempts it took to pass, and the context "CI post-deps gate during
@@ -351,22 +373,22 @@ knows what failed.
 
 Wait for the sub-agent to return.
 
-- **Fixed** — continue to Step 8
+- **Fixed** — continue to Step 9
 - **Not fixed** — release the lock and stop. Report to the user.
 
-### Step 8 — Commit to main
+### Step 9 — Commit to main
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=8
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=9
 ```
 
 If there are any uncommitted changes (dependency updates + CI fixes),
 commit them to main via `/flow:flow-commit --auto`.
 
-### Step 9 — Release start lock
+### Step 10 — Release start lock
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=9
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=10
 ```
 
 ```bash
@@ -374,14 +396,14 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release
 ```
 
 <HARD-GATE>
-Do NOT proceed to Step 10 until the lock is released and `bin/flow ci` is green.
+Do NOT proceed to Step 11 until the lock is released and `bin/flow ci` is green.
 Uncommitted fixes on main will not appear in the worktree.
 </HARD-GATE>
 
-### Step 10 — Set up workspace
+### Step 11 — Set up workspace
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=10
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=11
 ```
 
 Write the user's original start prompt (verbatim, including `#N` issue references
@@ -434,22 +456,6 @@ in later steps — it would look for a nested `.worktrees/` that doesn't exist.
 
 If the script returns an error, read the stderr output for details, report
 the failure to the user, and stop.
-
-### Step 11 — Label referenced issues
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=11
-```
-
-If the start prompt contains `#N` issue references, add the "Flow In-Progress"
-label so other engineers can see these issues are being worked on:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --add
-```
-
-Best-effort — if labeling fails, log the result and continue. Do not block
-the Start phase for a label failure.
 
 ### Done — Update state and complete phase
 

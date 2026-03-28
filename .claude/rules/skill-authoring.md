@@ -169,6 +169,21 @@ mechanically incremented. A skip that pointed to cleanup before the
 insertion should now point to the new step if the new step should also
 run in that path.
 
+When a step is moved (not added), range boundaries need special
+attention. "Steps 2–11" does not become "Steps 2–12" just because every
+reference was mechanically incremented — the total step count is
+unchanged if a step moved from one position to another. After all edits,
+verify the range endpoint by counting `### Step N` headings in the file.
+
+## Verify Script Behavior Claims in Issues
+
+When an issue body asserts specific script behavior (e.g. "field X is
+populated after Step Y"), verify the assertion by reading the script
+source during the Plan phase. Issue authors — including Claude in prior
+sessions — can be wrong about what a script does internally. A single
+grep of the script for the relevant field or function catches false
+assumptions before they become bugs in the implementation.
+
 ## Config Chain Integrity
 
 The autonomy config chain is: prime presets → `.flow.json` → state file → skill reads.

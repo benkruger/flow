@@ -28,11 +28,11 @@ no changes, skips to Step 2.
 
 ### Step 2 — Review (correctness)
 
-Invokes Claude Code's built-in `/review` against the PR. Waits for all
-background agents to complete before evaluating findings. Checks plan
-alignment, risk coverage, and framework anti-patterns. If no findings,
-skips to the next step. Every finding is fixed, `bin/flow ci` is run,
-and changes are committed via `/flow-commit`.
+Performs an inline correctness review of the branch diff using four review
+passes: plan alignment, logic correctness, test coverage, and API contracts.
+Uses the plan file as context. If no findings, skips to the next step.
+Every finding is fixed, `bin/flow ci` is run, and changes are committed
+via `/flow-commit`.
 
 ### Step 3 — Security (safety)
 
@@ -90,10 +90,10 @@ a conversation turn boundary. The `--continue-step` flag skips the
 Announce banner and phase entry update, proceeding directly to the Resume
 Check which dispatches to the next step.
 
-Step 1 performs inline review passes sequentially within the response turn.
-Steps 2-4 invoke built-in skills or plugins that may launch background
-agents — each of those steps waits for all background agents to complete
-before evaluating findings.
+Steps 1-3 perform inline review passes sequentially within the response
+turn. Step 4 invokes the code-review plugin which may launch background
+agents — it waits for all background agents to complete before evaluating
+findings.
 
 ---
 

@@ -28,10 +28,9 @@ step is skipped.
 
 ### Step 2 — Review (correctness)
 
-Invokes Claude Code's built-in `/review` against the PR. Waits for all
-background agents to complete before evaluating findings. Checks plan
-alignment, risk coverage, framework anti-patterns, and does a fresh
-read-through of every changed file.
+Performs an inline correctness review of the branch diff using four review
+passes: plan alignment, logic correctness, test coverage, and API contracts.
+Uses the plan file as context for implementation-vs-intent alignment.
 
 Every finding is fixed, `bin/flow ci` is run, and changes are committed
 via `/flow-commit`.
