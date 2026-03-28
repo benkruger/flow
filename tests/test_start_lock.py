@@ -4,6 +4,7 @@ import importlib
 import json
 import os
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,6 +13,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 _mod = importlib.import_module("start-lock")
+
+
+@pytest.fixture(autouse=True)
+def _reset_lock_path_cache():
+    """Reset _CACHED_LOCK_PATH between tests to prevent cache pollution."""
+    yield
+    if hasattr(_mod, "_CACHED_LOCK_PATH"):
+        _mod._CACHED_LOCK_PATH = None
 
 
 # --- acquire tests ---
@@ -30,6 +39,7 @@ def test_acquire_when_no_lock_exists(tmp_path):
         result = _mod.acquire("test-feature")
 
     assert result["status"] == "acquired"
+    assert result["lock_path"] == str(state_dir / "start.lock")
     lock_file = state_dir / "start.lock"
     assert lock_file.exists()
     lock_data = json.loads(lock_file.read_text())
@@ -320,7 +330,7 @@ def test_try_write_lock_write_failure_closes_fd(tmp_path):
         patch("os.getppid", return_value=12345),
         patch("os.write", side_effect=OSError("disk full")),
     ):
-        result = _mod._try_write_lock(str(lock_file), "test-feature")
+        result = _mod._try_write_lock(lock_file, "test-feature")
 
     assert result is None
     assert not lock_file.exists()
@@ -344,11 +354,42 @@ def test_try_write_lock_unlink_failure_ignored(tmp_path):
         patch("os.getppid", return_value=12345),
         patch("os.unlink", side_effect=fail_unlink),
     ):
-        result = _mod._try_write_lock(str(lock_file), "test-feature")
+        result = _mod._try_write_lock(lock_file, "test-feature")
 
     assert result is not None
     assert result["feature"] == "test-feature"
     assert lock_file.exists()
+
+
+# --- _lock_path tests ---
+
+
+def test_lock_path_stable_across_cwd_changes(tmp_path):
+    """_lock_path() returns the same absolute path even when project_root changes."""
+    (tmp_path / ".flow-states").mkdir()
+    other_dir = tmp_path / "other"
+    (other_dir / ".flow-states").mkdir(parents=True)
+
+    # Simulate project_root() returning different paths on successive calls
+    # (e.g. Path(".") resolving differently after a cwd change).
+    with patch.object(_mod, "project_root", side_effect=[tmp_path, other_dir]):
+        path1 = _mod._lock_path()
+        path2 = _mod._lock_path()
+
+    assert path1 == path2
+    assert path1.is_absolute()
+
+
+def test_lock_path_absolute_when_project_root_returns_dot(tmp_path, monkeypatch):
+    """_lock_path() returns an absolute path even when project_root() falls back to Path('.')."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".flow-states").mkdir()
+
+    with patch.object(_mod, "project_root", return_value=Path(".")):
+        result = _mod._lock_path()
+
+    assert result.is_absolute()
+    assert result == tmp_path / ".flow-states" / "start.lock"
 
 
 # --- acquire_with_wait tests ---
@@ -510,7 +551,27 @@ def test_release_deletes_lock_file(tmp_path):
         result = _mod.release()
 
     assert result["status"] == "released"
+    assert result["lock_path"] == str(state_dir / "start.lock")
     assert not lock_file.exists()
+
+
+def test_release_returns_error_when_lock_persists(tmp_path):
+    """Release returns error when lock file still exists after unlink attempt."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    lock_file = state_dir / "start.lock"
+    lock_file.write_text(json.dumps({"pid": 1, "feature": "f", "acquired_at": "t"}))
+
+    # Make unlink a no-op so the file persists
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(Path, "unlink"),
+    ):
+        result = _mod.release()
+
+    assert result["status"] == "error"
+    assert "lock_path" in result
+    assert lock_file.exists()
 
 
 def test_release_idempotent_when_no_lock(tmp_path):
@@ -536,6 +597,7 @@ def test_check_when_free(tmp_path):
         result = _mod.check()
 
     assert result["status"] == "free"
+    assert result["lock_path"] == str(state_dir / "start.lock")
 
 
 def test_check_when_dead_pid_within_timeout(tmp_path):
@@ -588,6 +650,49 @@ def test_check_when_locked(tmp_path):
     assert result["status"] == "locked"
     assert result["feature"] == "some-feature"
     assert result["pid"] == 55555
+
+
+# --- real-clock stale detection ---
+
+
+def test_check_stale_real_clock(tmp_path):
+    """Check detects stale lock using real clock (no now() mock)."""
+    from flow_utils import now
+
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    # Create a lock timestamped 31 minutes in the past using real time
+    real_now = datetime.fromisoformat(now())
+    past = real_now - timedelta(seconds=_mod.STALE_TIMEOUT_SECONDS + 60)
+    lock_data = {"pid": 99999, "feature": "old-feature", "acquired_at": past.isoformat()}
+    (state_dir / "start.lock").write_text(json.dumps(lock_data))
+
+    with patch.object(_mod, "project_root", return_value=tmp_path):
+        result = _mod.check()
+
+    assert result["status"] == "free"
+
+
+def test_acquire_stale_real_clock(tmp_path):
+    """Acquire breaks stale lock using real clock (no now() mock)."""
+    from flow_utils import now
+
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    real_now = datetime.fromisoformat(now())
+    past = real_now - timedelta(seconds=_mod.STALE_TIMEOUT_SECONDS + 60)
+    lock_data = {"pid": 99999, "feature": "old-feature", "acquired_at": past.isoformat()}
+    (state_dir / "start.lock").write_text(json.dumps(lock_data))
+
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch("os.getppid", return_value=12345),
+    ):
+        result = _mod.acquire("new-feature")
+
+    assert result["status"] == "acquired"
+    assert result["stale_broken"] is True
+    assert result["stale_feature"] == "old-feature"
 
 
 # --- CLI integration ---
