@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import NETWORK_TIMEOUT, detect_repo, extract_issue_numbers
+from flow_utils import extract_issue_numbers
 
 # File path patterns: known directory prefixes or paths with file extensions
 _DIR_PREFIXES = (
@@ -79,27 +79,6 @@ def extract_dependencies(body, open_numbers, own_number=None):
     """
     all_refs = extract_issue_numbers(body)
     return [num for num in all_refs if num in open_numbers and num != own_number]
-
-
-def fetch_blocked_by(number, repo):
-    """Fetch blocked-by dependencies from GitHub API.
-
-    Returns list of issue numbers that block this issue.
-    Fails open — returns [] on any error.
-    """
-    try:
-        result = subprocess.run(
-            ["gh", "api", f"repos/{repo}/issues/{number}/dependencies/blocked_by"],
-            capture_output=True,
-            text=True,
-            timeout=NETWORK_TIMEOUT,
-        )
-        if result.returncode != 0:
-            return []
-        items = json.loads(result.stdout)
-        return [item["number"] for item in items]
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, KeyError, TypeError):
-        return []
 
 
 def detect_labels(labels):
@@ -195,12 +174,8 @@ def filter_issues(issues, filter_name):
     return [i for i in issues if _FILTERS[filter_name](i)]
 
 
-def analyze_issues(issues, repo=None):
+def analyze_issues(issues):
     """Analyze a list of issues from gh issue list JSON.
-
-    When repo is provided, fetches API-based blocked-by dependencies
-    for every non-in-progress issue and merges them with text-based
-    #N dependencies.
 
     Returns structured result with in_progress and available issues.
     """
@@ -234,11 +209,7 @@ def analyze_issues(issues, repo=None):
 
         file_paths = extract_file_paths(body)
         text_deps = extract_dependencies(body, open_numbers, own_number=number)
-        api_deps = []
-        if repo:
-            raw_api_deps = fetch_blocked_by(number, repo)
-            api_deps = [n for n in raw_api_deps if n in open_numbers and n != number]
-        deps = sorted(set(text_deps + api_deps))
+        deps = sorted(set(text_deps))
         dependency_map[number] = deps
 
         created_at = datetime.fromisoformat(issue["createdAt"].replace("Z", "+00:00"))
@@ -382,8 +353,7 @@ def main():
         )
         sys.exit(1)
 
-    repo = detect_repo()
-    output = analyze_issues(issues, repo=repo)
+    output = analyze_issues(issues)
     if args.filter:
         output["issues"] = filter_issues(output["issues"], args.filter)
         output["total"] = len(output["in_progress"]) + len(output["issues"])
