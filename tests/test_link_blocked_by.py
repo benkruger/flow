@@ -232,3 +232,100 @@ class TestBuildBlockedBySection:
         # Notes section preserved after
         assert "## Notes" in result
         assert "Some notes." in result
+
+
+class TestFetchIssueBody:
+    """Tests for the fetch_issue_body function."""
+
+    def test_happy_path(self):
+        fake_result = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="Issue body content here\n",
+            stderr="",
+        )
+        with patch.object(blocked_mod.subprocess, "run", return_value=fake_result):
+            body, error = blocked_mod.fetch_issue_body("o/r", 42)
+
+        assert body == "Issue body content here"
+        assert error is None
+
+    def test_empty_body(self):
+        fake_result = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="\n",
+            stderr="",
+        )
+        with patch.object(blocked_mod.subprocess, "run", return_value=fake_result):
+            body, error = blocked_mod.fetch_issue_body("o/r", 42)
+
+        assert body == ""
+        assert error is None
+
+    def test_null_body(self):
+        fake_result = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="null\n",
+            stderr="",
+        )
+        with patch.object(blocked_mod.subprocess, "run", return_value=fake_result):
+            body, error = blocked_mod.fetch_issue_body("o/r", 42)
+
+        assert body is None
+        assert error is None
+
+    def test_api_failure(self):
+        fake_result = subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="Not Found",
+        )
+        with patch.object(blocked_mod.subprocess, "run", return_value=fake_result):
+            body, error = blocked_mod.fetch_issue_body("o/r", 42)
+
+        assert body is None
+        assert "Not Found" in error
+
+    def test_timeout(self):
+        with patch.object(blocked_mod.subprocess, "run", side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30)):
+            body, error = blocked_mod.fetch_issue_body("o/r", 42)
+
+        assert body is None
+        assert "timed out" in error.lower()
+
+
+class TestUpdateIssueBody:
+    """Tests for the update_issue_body function."""
+
+    def test_happy_path(self):
+        fake_result = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="{}",
+            stderr="",
+        )
+        with patch.object(blocked_mod.subprocess, "run", return_value=fake_result):
+            error = blocked_mod.update_issue_body("o/r", 42, "new body")
+
+        assert error is None
+
+    def test_api_failure(self):
+        fake_result = subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="Validation Failed",
+        )
+        with patch.object(blocked_mod.subprocess, "run", return_value=fake_result):
+            error = blocked_mod.update_issue_body("o/r", 42, "new body")
+
+        assert "Validation Failed" in error
+
+    def test_timeout(self):
+        with patch.object(blocked_mod.subprocess, "run", side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30)):
+            error = blocked_mod.update_issue_body("o/r", 42, "new body")
+
+        assert "timed out" in error.lower()

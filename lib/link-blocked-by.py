@@ -61,6 +61,53 @@ def build_blocked_by_section(body, blocking_number):
     return trimmed_end + f"\n{ref}\n" + ("\n" + body[insert_point:] if next_heading else "")
 
 
+def fetch_issue_body(repo, number):
+    """Fetch the current body text of a GitHub issue.
+
+    Returns (body, error). body is a string, empty string, or None (if the
+    issue body is null). On error, body is None and error is a string.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "api", f"repos/{repo}/issues/{number}", "--jq", ".body"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return None, "Fetch body timed out after 30 seconds"
+
+    if result.returncode != 0:
+        error = result.stderr.strip() or result.stdout.strip() or "Unknown error"
+        return None, error
+
+    raw = result.stdout.strip()
+    if raw == "null":
+        return None, None
+    return raw, None
+
+
+def update_issue_body(repo, number, body):
+    """Update a GitHub issue's body text.
+
+    Returns error string or None on success.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "api", f"repos/{repo}/issues/{number}", "--method", "PATCH", "-f", f"body={body}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return "Update body timed out after 30 seconds"
+
+    if result.returncode != 0:
+        return result.stderr.strip() or result.stdout.strip() or "Unknown error"
+
+    return None
+
+
 def link_blocked_by(repo, blocked_number, blocking_number):
     """Create a blocked-by dependency between two issues.
 
