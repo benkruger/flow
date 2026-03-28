@@ -99,7 +99,7 @@ CI will fail if these are missing:
 - `lib/link-blocked-by.py` — sets blocked-by dependency relationships via `gh api` (resolves database IDs internally)
 - `lib/auto-close-parent.py` — checks if parent epic and milestone should be auto-closed when all children are done; best-effort throughout
 - `lib/add-issue.py` — records filed issues in the state file's `issues_filed` array (follows `append-note.py` pattern)
-- `lib/notify-slack.py` — posts messages to Slack via curl to `chat.postMessage`; reads config from `.flow.json`; supports threading via `thread_ts`; fails open on any error
+- `lib/notify-slack.py` — posts messages to Slack via curl to `chat.postMessage`; reads config from userConfig env vars (`CLAUDE_PLUGIN_CONFIG_slack_bot_token`, `CLAUDE_PLUGIN_CONFIG_slack_channel`); supports threading via `thread_ts`; fails open on any error
 - `lib/add-notification.py` — records sent Slack notifications in the state file's `slack_notifications` array (follows `add-issue.py` pattern)
 - `lib/format-complete-summary.py` — generates the business-friendly Done banner for Complete phase (feature name, prompt, per-phase timeline, artifact counts)
 - `lib/format-issues-summary.py` — formats `issues_filed` as a markdown table and banner line for Complete phase
