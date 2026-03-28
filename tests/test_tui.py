@@ -1047,7 +1047,7 @@ def test_draw_detail_panel_code_in_progress():
     app._draw_detail_panel(10)
     calls = [str(c) for c in stdscr.addstr.call_args_list]
     text = " ".join(calls)
-    assert "task 3" in text
+    assert "task 4" in text
 
 
 def test_draw_detail_panel_no_notes_no_issues():

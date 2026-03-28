@@ -308,7 +308,7 @@ def test_phase_timeline_mixed():
 
 
 def test_phase_timeline_code_with_task_annotation():
-    """Code phase shows task annotation when code_task is set."""
+    """Code phase shows current task (code_task + 1) with diff stats."""
     state = make_state(
         current_phase="flow-code",
         phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
@@ -318,24 +318,25 @@ def test_phase_timeline_code_with_task_annotation():
 
     timeline = tui_data.phase_timeline(state)
     code_entry = timeline[2]
-    assert "task 3" in code_entry["annotation"]
+    assert "task 4" in code_entry["annotation"]
     assert "+127" in code_entry["annotation"]
     assert "-48" in code_entry["annotation"]
 
 
-def test_phase_timeline_code_no_annotation():
-    """Code phase has empty annotation when code_task is 0."""
+def test_phase_timeline_code_first_task_annotation():
+    """Code phase shows 'task 1 of 3' when code_task is 0 (working on first task)."""
     state = make_state(
         current_phase="flow-code",
         phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
+    state["code_tasks_total"] = 3
     timeline = tui_data.phase_timeline(state)
     code_entry = timeline[2]
-    assert code_entry["annotation"] == ""
+    assert code_entry["annotation"] == "task 1 of 3"
 
 
 def test_phase_timeline_code_with_total():
-    """Code phase shows 'task 3 of 8' when code_tasks_total is present."""
+    """Code phase shows 'task 4 of 8' when code_task=3 (working on task 4)."""
     state = make_state(
         current_phase="flow-code",
         phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
@@ -345,11 +346,11 @@ def test_phase_timeline_code_with_total():
 
     timeline = tui_data.phase_timeline(state)
     code_entry = timeline[2]
-    assert "task 3 of 8" in code_entry["annotation"]
+    assert "task 4 of 8" in code_entry["annotation"]
 
 
 def test_phase_timeline_code_total_absent_fallback():
-    """Falls back to 'task 3' when code_tasks_total is absent."""
+    """Falls back to 'task 4' when code_task=3 and code_tasks_total is absent."""
     state = make_state(
         current_phase="flow-code",
         phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
@@ -358,12 +359,12 @@ def test_phase_timeline_code_total_absent_fallback():
 
     timeline = tui_data.phase_timeline(state)
     code_entry = timeline[2]
-    assert code_entry["annotation"] == "task 3"
+    assert code_entry["annotation"] == "task 4"
     assert "of" not in code_entry["annotation"]
 
 
 def test_phase_timeline_code_total_with_diff_stats():
-    """Shows 'task 3 of 8, +127 -48' when all fields present."""
+    """Shows 'task 4 of 8, +127 -48' when code_task=3 and all fields present."""
     state = make_state(
         current_phase="flow-code",
         phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
@@ -374,11 +375,11 @@ def test_phase_timeline_code_total_with_diff_stats():
 
     timeline = tui_data.phase_timeline(state)
     code_entry = timeline[2]
-    assert code_entry["annotation"] == "task 3 of 8, +127 -48"
+    assert code_entry["annotation"] == "task 4 of 8, +127 -48"
 
 
 def test_phase_timeline_code_total_zero_ignored():
-    """code_tasks_total=0 treated as absent (no 'of 0')."""
+    """code_tasks_total=0 treated as absent (no 'of 0'), shows code_task+1."""
     state = make_state(
         current_phase="flow-code",
         phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
@@ -388,8 +389,139 @@ def test_phase_timeline_code_total_zero_ignored():
 
     timeline = tui_data.phase_timeline(state)
     code_entry = timeline[2]
-    assert code_entry["annotation"] == "task 3"
+    assert code_entry["annotation"] == "task 4"
     assert "of" not in code_entry["annotation"]
+
+
+# --- phase_timeline: Code Review ---
+
+
+def test_phase_timeline_code_review_step_zero():
+    """Code Review phase shows 'step 1 of 4' when code_review_step is 0 (working on first step)."""
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
+    timeline = tui_data.phase_timeline(state)
+    review_entry = timeline[3]
+    assert review_entry["annotation"] == "step 1 of 4"
+
+
+def test_phase_timeline_code_review_annotation():
+    """Code Review phase shows 'step 3 of 4' when code_review_step=2."""
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
+    state["code_review_step"] = 2
+    timeline = tui_data.phase_timeline(state)
+    review_entry = timeline[3]
+    assert review_entry["annotation"] == "step 3 of 4"
+
+
+def test_phase_timeline_code_review_complete():
+    """Code Review phase has no annotation when code_review_step=4 (all done)."""
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
+    state["code_review_step"] = 4
+    timeline = tui_data.phase_timeline(state)
+    review_entry = timeline[3]
+    assert review_entry["annotation"] == ""
+
+
+# --- phase_timeline: Learn ---
+
+
+def test_phase_timeline_learn_annotation():
+    """Learn phase shows 'step 5' when learn_step=4 (sparse checkpoint)."""
+    state = make_state(
+        current_phase="flow-learn",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "complete",
+            "flow-learn": "in_progress",
+        },
+    )
+    state["learn_step"] = 4
+    timeline = tui_data.phase_timeline(state)
+    learn_entry = timeline[4]
+    assert learn_entry["annotation"] == "step 5"
+
+
+def test_phase_timeline_learn_step_zero():
+    """Learn phase has no annotation when learn_step is 0 (no checkpoint yet)."""
+    state = make_state(
+        current_phase="flow-learn",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "complete",
+            "flow-learn": "in_progress",
+        },
+    )
+    timeline = tui_data.phase_timeline(state)
+    learn_entry = timeline[4]
+    assert learn_entry["annotation"] == ""
+
+
+# --- phase_timeline: Complete ---
+
+
+def test_phase_timeline_complete_annotation():
+    """Complete phase shows 'step 5' when complete_step=5 (direct, no +1)."""
+    state = make_state(
+        current_phase="flow-complete",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "complete",
+            "flow-learn": "complete",
+            "flow-complete": "in_progress",
+        },
+    )
+    state["complete_step"] = 5
+    timeline = tui_data.phase_timeline(state)
+    complete_entry = timeline[5]
+    assert complete_entry["annotation"] == "step 5"
+
+
+def test_phase_timeline_complete_step_zero():
+    """Complete phase has no annotation when complete_step is 0."""
+    state = make_state(
+        current_phase="flow-complete",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "complete",
+            "flow-learn": "complete",
+            "flow-complete": "in_progress",
+        },
+    )
+    timeline = tui_data.phase_timeline(state)
+    complete_entry = timeline[5]
+    assert complete_entry["annotation"] == ""
 
 
 # --- parse_log_entries ---
