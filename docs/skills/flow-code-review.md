@@ -28,9 +28,10 @@ no changes, skips to Step 2.
 
 ### Step 2 — Review (correctness)
 
-Performs an inline correctness review of the branch diff using four review
-passes: plan alignment, logic correctness, test coverage, and API contracts.
-Uses the plan file as context. If no findings, skips to the next step.
+Performs an inline correctness review of the branch diff using five review
+passes: plan alignment, logic correctness, test coverage, API contracts,
+and rule compliance. Uses the plan file as context. If no findings, skips
+to the next step.
 Every finding is fixed, `bin/flow ci` is run, and changes are committed
 via `/flow-commit`.
 
