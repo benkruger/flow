@@ -302,6 +302,18 @@ def test_hooks_json_has_stop_continue_hook():
     assert any("stop-continue.py" in cmd for cmd in commands), "Stop hook must reference stop-continue.py"
 
 
+def test_hooks_json_has_stop_failure_hook():
+    """hooks.json must register stop-failure.py as a StopFailure hook."""
+    hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
+    assert "StopFailure" in hooks["hooks"], (
+        "hooks.json missing StopFailure key — the API error capture hook must be registered"
+    )
+    matchers = hooks["hooks"]["StopFailure"]
+    assert len(matchers) >= 1, "StopFailure hook must have at least one entry"
+    commands = [h["command"] for entry in matchers for h in entry["hooks"]]
+    assert any("stop-failure.py" in cmd for cmd in commands), "StopFailure hook must reference stop-failure.py"
+
+
 def test_checksum_version_invariant():
     """Validate checksum functions exist and the upgrade mechanism is documented.
 
