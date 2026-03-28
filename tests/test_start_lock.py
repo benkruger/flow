@@ -406,7 +406,7 @@ def test_acquire_with_wait_immediate(tmp_path):
         patch("os.getppid", return_value=12345),
         patch.object(_mod.time, "sleep") as mock_sleep,
     ):
-        result = _mod.acquire_with_wait("test-feature", timeout=300, interval=10)
+        result = _mod.acquire_with_wait("test-feature", timeout=90, interval=10)
 
     assert result["status"] == "acquired"
     mock_sleep.assert_not_called()
@@ -440,7 +440,7 @@ def test_acquire_with_wait_succeeds_after_retry(tmp_path):
         patch.object(_mod.time, "sleep", side_effect=mock_sleep_side_effect),
         patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0, 10.0]),
     ):
-        result = _mod.acquire_with_wait("new-feature", timeout=300, interval=10)
+        result = _mod.acquire_with_wait("new-feature", timeout=90, interval=10)
 
     assert result["status"] == "acquired"
     assert sleep_args == [10]
@@ -503,7 +503,7 @@ def test_acquire_with_wait_stale_during_wait(tmp_path):
         patch.object(_mod.time, "sleep"),
         patch.object(_mod.time, "monotonic", side_effect=[0.0, 0.0, 10.0]),
     ):
-        result = _mod.acquire_with_wait("new-feature", timeout=300, interval=10)
+        result = _mod.acquire_with_wait("new-feature", timeout=90, interval=10)
 
     assert result["status"] == "acquired"
     assert result["stale_broken"] is True
