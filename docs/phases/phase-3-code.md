@@ -31,6 +31,16 @@ For the current task:
 
 ---
 
+## Atomic Task Groups
+
+When tasks form a circular CI dependency (e.g., adding a new CI check and
+fixing its violations), no intermediate state can pass `bin/flow ci`
+independently. The plan marks these as an **atomic group** — all tasks
+execute sequentially with their own TDD cycle and `code_task` increment,
+but CI and commit happen once after the last task in the group.
+
+---
+
 ## Framework Testing Rules
 
 Architecture checks and testing conventions are defined by the framework instructions in the skill. Each framework enforces its own rules (e.g., Rails requires test helpers and full class hierarchy reads; Python requires fixture checks and import analysis).
