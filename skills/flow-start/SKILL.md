@@ -223,7 +223,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=4
 ```
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --acquire --wait --feature <feature-name>
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --acquire --wait --timeout 90 --feature <feature-name>
 ```
 
 Do not run this command in the background. The `--wait` flag blocks until
