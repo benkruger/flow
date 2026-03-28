@@ -162,6 +162,62 @@ From the plan file, identify the next task to work on (task number
 to subsequent tasks. After committing, self-invoke to handle the next
 task in a fresh skill invocation.
 
+### Atomic Task Group
+
+When the plan marks a set of tasks as an **atomic group** (typically
+because they form a circular CI dependency — no intermediate state can
+pass `bin/flow ci` independently), handle them as a single commit
+boundary.
+
+**Detect the group.** When you reach a task that the plan marks as
+part of an atomic group, switch to the atomic flow below instead of
+the standard single-task flow. The plan will annotate which tasks
+belong to the group and explain why they cannot be committed
+individually (e.g., "Tasks 3-6 form an atomic group — adding a CI
+check requires fixing violations in the same commit").
+
+**Show a group banner.** Output in your response (not via Bash):
+
+````markdown
+```text
+  ── Atomic Group: Tasks <first>-<last> of <total> ──
+  Reason: <why these tasks cannot pass CI independently>
+```
+````
+
+**Execute all tasks in the group sequentially.** Run the full TDD
+cycle (write failing test, implement, refactor, run targeted tests)
+and the Architecture Check independently. After completing each
+task's TDD cycle, record it:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_task=<n>
+```
+
+Do NOT run `bin/flow ci` and do NOT commit after intermediate tasks.
+Proceed directly to the next task in the group.
+
+**Combined review after the last task.** Show the combined diff
+covering all tasks in the group. Run `git status` and `git diff HEAD`
+as two separate commands, then render the output inline following the
+same format as the ### Review section. If commit=auto, skip the
+AskUserQuestion and proceed to CI. Otherwise, ask for review of the
+combined diff.
+
+**Single CI gate.** Run `bin/flow ci` once for the entire group.
+If it fails, fix and retry following the standard CI failure process.
+
+**Single commit.** Use the standard Commit section flow: set the
+continuation context and `_continue_pending`, then invoke
+`/flow:flow-commit`. The commit message should reference the group:
+
+```text
+Add <what the group accomplished> — Tasks <first>-<last> of <total>
+```
+
+**Self-invoke** as usual after the group commit to continue with
+the next task after the group.
+
 ### Before Starting a Task
 
 Output in your response (not via Bash) inside a fenced code block:

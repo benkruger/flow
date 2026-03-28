@@ -111,6 +111,14 @@ BEFORE the cleanup step. The Done section runs after cleanup — by
 that point, `.flow-states/<branch>.json` has been deleted and any
 command that reads it will fail.
 
+## Numbered Lists With Fenced Code Blocks
+
+Never use numbered lists (1. 2. 3.) when fenced code blocks appear
+between items. pymarkdown MD029 treats each code block as a list
+interruption, resetting the expected prefix. Use bold paragraph
+headers (**Step name.**) instead of numbered items when steps
+contain code blocks.
+
 ## Fenced Code Blocks Before Closing Tags
 
 When a bash block ends immediately before a closing XML-like tag
