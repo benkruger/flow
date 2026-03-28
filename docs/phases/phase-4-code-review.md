@@ -7,18 +7,18 @@ nav_order: 5
 
 **Command:** `/flow-code-review`
 
-Four lenses on the same diff — clarity, correctness, safety, and CLAUDE.md
-compliance. Combines what were previously separate passes into a single phase
-with four ordered steps, each with its own commit checkpoint.
+Three steps on the same diff — clarity (with convention compliance),
+correctness, and safety. Combines what were previously separate passes into
+a single phase with three ordered steps, each with its own commit checkpoint.
 
 ---
 
-## The Four Steps
+## The Three Steps
 
-### Step 1 — Simplify (clarity)
+### Step 1 — Simplify (clarity + convention compliance)
 
-Performs three inline review passes sequentially against the branch diff:
-code reuse, code quality, and efficiency. Refactors for clarity: removes
+Performs four inline review passes sequentially against the branch diff:
+code reuse, code quality, efficiency, and convention compliance. Refactors for clarity: removes
 unnecessary abstractions, simplifies conditionals, improves naming. Never
 changes what the code does, only how.
 
@@ -28,9 +28,10 @@ step is skipped.
 
 ### Step 2 — Review (correctness)
 
-Performs an inline correctness review of the branch diff using four review
-passes: plan alignment, logic correctness, test coverage, and API contracts.
-Uses the plan file as context for implementation-vs-intent alignment.
+Performs an inline correctness review of the branch diff using five review
+passes: plan alignment, logic correctness, test coverage, API contracts,
+and rule compliance. Uses the plan file as context for
+implementation-vs-intent alignment.
 
 Every finding is fixed, `bin/flow ci` is run, and changes are committed
 via `/flow-commit`.
@@ -41,17 +42,6 @@ Performs an inline security review of the branch diff using three security
 lenses: input validation, authentication and authorization, and data
 exposure.
 
-Every finding is fixed, `bin/flow ci` is run, and changes are committed
-via `/flow-commit`.
-
-### Step 4 — Code Review Plugin (CLAUDE.md compliance)
-
-Invokes the `code-review:code-review` plugin for multi-agent validation.
-Four parallel agents (2x CLAUDE.md compliance, 1x bug scan, 1x
-security/logic scan) with a validation layer that re-validates each finding
-at 80+ confidence. Produces high-signal findings only.
-
-Waits for all background agents to complete before evaluating findings.
 Every finding is fixed, `bin/flow ci` is run, and changes are committed
 via `/flow-commit`.
 
@@ -67,10 +57,8 @@ when the model treats a built-in skill return as a conversation turn
 boundary. The Resume Check section dispatches to the correct step on
 re-entry.
 
-Step 1 performs inline review passes sequentially within the response turn.
-Steps 2-4 invoke built-in skills or plugins that may launch background
-agents — each of those steps waits for all background agents to complete
-before evaluating findings.
+All three steps perform inline review passes sequentially within the
+response turn.
 
 ---
 

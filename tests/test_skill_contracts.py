@@ -337,6 +337,7 @@ def test_code_review_has_inline_correctness_review():
     assert "Logic Correctness" in step2_content, "Step 2 must include Logic Correctness pass"
     assert "Test Coverage" in step2_content, "Step 2 must include Test Coverage pass"
     assert "API Contracts" in step2_content, "Step 2 must include API Contracts pass"
+    assert "Rule Compliance" in step2_content, "Step 2 must include Rule Compliance pass"
     assert "git diff origin/main..HEAD" in step2_content, "Step 2 must get the branch diff inline"
 
 
@@ -1504,26 +1505,15 @@ def test_code_review_steps_have_continuation_directives():
         "flow-code-review Step 2 must contain 'continue to Step 3' directive"
     )
 
-    # Step 3 must continue to Step 4
+    # Step 3 must continue to Done
     step3_match = re.search(
-        r"## Step 3.*?\n(.*?)(?=\n## Step 4)",
+        r"## Step 3.*?\n(.*?)(?=\n## Back Navigation)",
         content,
         re.DOTALL,
     )
     assert step3_match, "Could not find Step 3 in flow-code-review/SKILL.md"
-    assert "continue to Step 4" in step3_match.group(1), (
-        "flow-code-review Step 3 must contain 'continue to Step 4' directive"
-    )
-
-    # Step 4 must continue to Done
-    step4_match = re.search(
-        r"## Step 4.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
-        content,
-        re.DOTALL,
-    )
-    assert step4_match, "Could not find Step 4 in flow-code-review/SKILL.md"
-    assert "continue to Done" in step4_match.group(1), (
-        "flow-code-review Step 4 must contain 'continue to Done' directive"
+    assert "continue to Done" in step3_match.group(1), (
+        "flow-code-review Step 3 must contain 'continue to Done' directive"
     )
 
 
@@ -1536,7 +1526,7 @@ def test_code_review_hard_rules_require_step_continuation():
     assert re.search(r"never pause", hard_rules, re.IGNORECASE), (
         "flow-code-review Hard Rules must contain 'never pause' language"
     )
-    for step_name in ["Simplify", "Review", "Security", "Code Review Plugin"]:
+    for step_name in ["Simplify", "Review", "Security"]:
         assert step_name in hard_rules, f"flow-code-review Hard Rules must mention '{step_name}' step"
 
 
@@ -1551,33 +1541,19 @@ def test_code_review_step_2_handles_no_findings():
 def test_code_review_step_3_handles_no_findings():
     """Step 3 must explicitly handle the no-findings path."""
     content = _read_skill("flow-code-review")
-    step3_match = re.search(r"## Step 3.*?\n(.*?)(?=\n## Step 4)", content, re.DOTALL)
+    step3_match = re.search(r"## Step 3.*?\n(.*?)(?=\n## Back Navigation)", content, re.DOTALL)
     assert step3_match, "Could not find Step 3 in flow-code-review/SKILL.md"
     assert "no findings" in step3_match.group(1).lower(), "flow-code-review Step 3 must handle the no-findings path"
 
 
-def test_code_review_delegates_to_code_review_plugin():
-    """Code Review must invoke the code-review:code-review plugin."""
+def test_code_review_step_1_has_convention_compliance_pass():
+    """Step 1 must include a convention compliance review pass."""
     content = _read_skill("flow-code-review")
-    assert "code-review:code-review" in content, "flow-code-review must reference code-review:code-review plugin"
-
-
-def test_code_review_does_not_use_comment_flag():
-    """Code Review must not use --comment flag with the plugin."""
-    content = _read_skill("flow-code-review")
-    assert "--comment" not in content, "flow-code-review must not use --comment flag with code-review plugin"
-
-
-def test_code_review_step_4_handles_no_findings():
-    """Step 4 must explicitly handle the no-findings path."""
-    content = _read_skill("flow-code-review")
-    step4_match = re.search(
-        r"## Step 4.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
-        content,
-        re.DOTALL,
+    step1_match = re.search(r"## Step 1.*?\n(.*?)(?=\n## Step 2)", content, re.DOTALL)
+    assert step1_match, "Could not find Step 1 in flow-code-review/SKILL.md"
+    assert "convention compliance" in step1_match.group(1).lower(), (
+        "flow-code-review Step 1 must include a convention compliance review pass"
     )
-    assert step4_match, "Could not find Step 4 in flow-code-review/SKILL.md"
-    assert "no findings" in step4_match.group(1).lower(), "flow-code-review Step 4 must handle the no-findings path"
 
 
 def test_code_review_has_resume_check():
@@ -1592,8 +1568,8 @@ def test_code_review_has_resume_check():
 def _code_review_steps():
     """Yield (step_num, step_text) for each Code Review step section."""
     content = _read_skill("flow-code-review")
-    for step_num in range(1, 5):
-        if step_num < 4:
+    for step_num in range(1, 4):
+        if step_num < 3:
             next_header = f"## Step {step_num + 1}"
         else:
             next_header = "## Back Navigation|## Done"
@@ -1619,16 +1595,6 @@ def test_code_review_steps_self_invoke():
     for step_num, step_text in _code_review_steps():
         assert "flow:flow-code-review --continue-step" in step_text, (
             f"Step {step_num} must self-invoke via 'flow:flow-code-review --continue-step'"
-        )
-
-
-def test_code_review_steps_await_background_agents():
-    """Step 4 must instruct waiting for background agents (Steps 1-3 use inline review passes)."""
-    for step_num, step_text in _code_review_steps():
-        if step_num in (1, 2, 3):
-            continue
-        assert "background agent" in step_text.lower(), (
-            f"Step {step_num} must contain background agent wait instructions"
         )
 
 
@@ -1715,31 +1681,31 @@ def test_flow_start_issue_aware_branch_naming():
 def test_prime_commit_step_enforces_flow_commit_exclusively():
     """flow-prime commit step must use /flow:flow-commit and not raw git commands."""
     content = _read_skill("flow-prime")
-    step_match = re.search(r"### Step 7.*?\n(.*?)(?=\n### Done)", content, re.DOTALL)
-    assert step_match, "Could not find Step 7 (commit) in flow-prime/SKILL.md"
+    step_match = re.search(r"### Step 6.*?\n(.*?)(?=\n### Done)", content, re.DOTALL)
+    assert step_match, "Could not find Step 6 (commit) in flow-prime/SKILL.md"
     step_text = step_match.group(1)
-    assert "/flow:flow-commit" in step_text, "flow-prime Step 7 must reference /flow:flow-commit"
+    assert "/flow:flow-commit" in step_text, "flow-prime Step 6 must reference /flow:flow-commit"
     for line in step_text.splitlines():
         if "git commit" in line:
             assert re.search(r"[Nn]ever", line), (
-                f"flow-prime Step 7 mentions 'git commit' outside a prohibition: {line.strip()}"
+                f"flow-prime Step 6 mentions 'git commit' outside a prohibition: {line.strip()}"
             )
         if "git add" in line:
             assert re.search(r"[Nn]ever", line), (
-                f"flow-prime Step 7 mentions 'git add' outside a prohibition: {line.strip()}"
+                f"flow-prime Step 6 mentions 'git add' outside a prohibition: {line.strip()}"
             )
 
 
-def test_prime_step_7_has_commit_or_exclude_gate():
-    """flow-prime Step 7 must have a HARD-GATE asking commit vs git-exclude."""
+def test_prime_step_6_has_commit_or_exclude_gate():
+    """flow-prime Step 6 must have a HARD-GATE asking commit vs git-exclude."""
     content = _read_skill("flow-prime")
-    step_match = re.search(r"### Step 7.*?\n(.*?)(?=\n### Done)", content, re.DOTALL)
-    assert step_match, "Could not find Step 7 in flow-prime/SKILL.md"
+    step_match = re.search(r"### Step 6.*?\n(.*?)(?=\n### Done)", content, re.DOTALL)
+    assert step_match, "Could not find Step 6 in flow-prime/SKILL.md"
     step_text = step_match.group(1)
 
-    assert "<HARD-GATE>" in step_text, "flow-prime Step 7 must have a <HARD-GATE> for commit/exclude decision"
-    assert "Commit and push" in step_text, "flow-prime Step 7 HARD-GATE must offer 'Commit and push' option"
-    assert "Git-exclude" in step_text, "flow-prime Step 7 HARD-GATE must offer 'Git-exclude' option"
+    assert "<HARD-GATE>" in step_text, "flow-prime Step 6 must have a <HARD-GATE> for commit/exclude decision"
+    assert "Commit and push" in step_text, "flow-prime Step 6 HARD-GATE must offer 'Commit and push' option"
+    assert "Git-exclude" in step_text, "flow-prime Step 6 HARD-GATE must offer 'Git-exclude' option"
 
     # Done section must have conditional reporting for both paths
     done_match = re.search(r"(### Done.*?)(?=\n### |\Z)", content, re.DOTALL)
@@ -1751,36 +1717,12 @@ def test_prime_step_7_has_commit_or_exclude_gate():
     )
 
 
-def test_prime_has_plugin_installation_step():
-    """flow-prime must have a step installing the code-review plugin."""
-    content = _read_skill("flow-prime")
-    assert "claude plugin list" in content, "flow-prime must include 'claude plugin list' command"
-    assert "claude plugin marketplace add" in content, "flow-prime must include 'claude plugin marketplace add' command"
-    assert "claude plugin install" in content, "flow-prime must include 'claude plugin install' command"
-
-
 def test_prime_has_commit_format_prompt():
     """flow-prime must prompt the user to choose commit message format."""
     content = _read_skill("flow-prime")
     assert "commit_format" in content, "flow-prime must reference 'commit_format' config key"
     assert "title-only" in content, "flow-prime must offer 'title-only' format option"
     assert "full" in content.lower(), "flow-prime must offer 'full' format option"
-
-
-def test_code_review_sets_continue_pending_before_child_skills():
-    """Each Code Review step must set _continue_pending before child skill."""
-    content = _read_skill("flow-code-review")
-    child_skills = [
-        ("code-review:code-review", "code-review:code-review"),
-    ]
-    for flag_value, skill_ref in child_skills:
-        flag_pattern = f"_continue_pending={flag_value}"
-        assert flag_pattern in content, (
-            f"Code Review must set _continue_pending={flag_value} before invoking {skill_ref}"
-        )
-        flag_pos = content.index(flag_pattern)
-        skill_pos = content.index(skill_ref, flag_pos)
-        assert flag_pos < skill_pos, f"_continue_pending={flag_value} must appear before {skill_ref} invocation"
 
 
 def test_code_skill_sets_continue_pending_before_commit():
@@ -2406,35 +2348,6 @@ def test_flow_abort_removes_labels():
     content = _read_skill("flow-abort")
     assert "label-issues" in content, "flow-abort/SKILL.md must reference label-issues"
     assert "--remove" in content, "flow-abort/SKILL.md must use --remove flag for label-issues"
-
-
-# --- code_review_plugin config axis ---
-
-
-def test_code_review_skill_has_plugin_mode_resolution():
-    """Code Review SKILL.md must reference code_review_plugin config."""
-    content = _read_skill("flow-code-review")
-    assert "skills.flow-code-review.code_review_plugin" in content, (
-        "flow-code-review/SKILL.md Mode Resolution must reference 'skills.flow-code-review.code_review_plugin' key"
-    )
-
-
-def test_prime_has_independent_code_review_plugin_question():
-    """flow-prime must ask about code_review_plugin as an independent step."""
-    content = _read_skill("flow-prime")
-    assert "Code Review Plugin mode" in content, (
-        "flow-prime/SKILL.md must contain an independent AskUserQuestion about 'Code Review Plugin mode'"
-    )
-    for option in ["Always", "Auto", "Never"]:
-        assert option in content, f"flow-prime/SKILL.md code review plugin question must include '{option}' option"
-    json_blocks = re.findall(r"```json\n(\{.*?\})\n```", content, re.DOTALL)
-    assert len(json_blocks) >= 3, f"Expected at least 3 JSON preset blocks, found {len(json_blocks)}"
-    for i, name in enumerate(["fully autonomous", "fully manual", "recommended"]):
-        parsed = json.loads(json_blocks[i])
-        cr_config = parsed.get("flow-code-review", {})
-        assert "code_review_plugin" not in cr_config, (
-            f"'code_review_plugin' must NOT be in {name} preset — it is now an independent question"
-        )
 
 
 # --- flow-create-issue self-invocation and step gates ---

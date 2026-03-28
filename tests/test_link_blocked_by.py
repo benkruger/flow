@@ -184,6 +184,18 @@ class TestLinkBlockedBy:
         assert result is None
         assert "Link failed" in error
 
+    def test_uses_integer_flag_for_issue_id(self):
+        with patch.object(blocked_mod.subprocess, "run", side_effect=_make_api_router(100, 200)) as mock_run:
+            blocked_mod.link_blocked_by("o/r", 10, 20)
+
+        # Find the API creation call (the one hitting /dependencies/blocked_by)
+        link_calls = [c for c in mock_run.call_args_list if "/dependencies/blocked_by" in str(c)]
+        assert len(link_calls) == 1, f"Expected 1 link call, got {len(link_calls)}"
+        cmd = link_calls[0].args[0]
+        # The flag before issue_id= must be -F (integer type), not -f (string type)
+        issue_id_idx = next(i for i, arg in enumerate(cmd) if arg.startswith("issue_id="))
+        assert cmd[issue_id_idx - 1] == "-F", f"Expected -F before issue_id, got {cmd[issue_id_idx - 1]}"
+
     def test_link_creation_timeout(self):
         call_count = {"n": 0}
 

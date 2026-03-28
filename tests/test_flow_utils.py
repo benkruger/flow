@@ -646,11 +646,6 @@ def test_auto_skills_abort_and_complete_are_strings():
     assert _mod.AUTO_SKILLS["flow-complete"] == "auto"
 
 
-def test_auto_skills_code_review_plugin_never():
-    """Auto mode skips the code review plugin."""
-    assert _mod.AUTO_SKILLS["flow-code-review"]["code_review_plugin"] == "never"
-
-
 # --- freeze_phases ---
 
 

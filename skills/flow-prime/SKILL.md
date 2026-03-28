@@ -35,8 +35,8 @@ If `--reprime` was passed:
 1. Use the Read tool to read `.flow.json` from the project root.
    - If the file does not exist, stop with: "No existing config to reprime from. Run `/flow:flow-prime` instead."
 2. Extract `framework`, `skills`, and `commit_format` from the JSON.
-3. Run `claude plugin list` to check plugin state (needed for Step 6).
-4. Skip Steps 1–4 entirely. Jump to Step 5 with the extracted values.
+3. Run `claude plugin list` to check plugin state (needed for Step 5).
+4. Skip Steps 1–3 entirely. Jump to Step 4 with the extracted values.
 
 ## Steps
 
@@ -187,27 +187,9 @@ For **abort** and **complete** (single mode), ask one AskUserQuestion each:
 > - **Auto (Recommended)** — "Skip confirmation prompt"
 > - **Manual** — "Require confirmation prompt"
 
-Store the result as `skills_dict` for Step 5.
+Store the result as `skills_dict` for Step 4.
 
-### Step 3 — Choose code review plugin mode
-
-The code-review plugin provides multi-agent validation as Step 4 of the Code Review phase. Its mode controls whether that step runs.
-
-Ask the user which mode to use with AskUserQuestion:
-
-> "Code Review Plugin mode? (multi-agent validation via code-review:code-review)"
->
-> - **Always (Default)** — "Always run the code-review plugin step"
-> - **Auto** — "Run plugin based on change complexity"
-> - **Never** — "Skip the code-review plugin step"
-
-Store the result by injecting into `skills_dict["flow-code-review"]["code_review_plugin"]`:
-
-- "Always" → `"always"`
-- "Auto" → `"auto"`
-- "Never" → `"never"`
-
-### Step 4 — Choose commit message format
+### Step 3 — Choose commit message format
 
 FLOW supports two commit message formats:
 
@@ -226,10 +208,10 @@ Store the result as `commit_format`:
 - "Title only" → `"title-only"`
 - "Full format" → `"full"`
 
-### Step 5 — Run prime setup script
+### Step 4 — Run prime setup script
 
 Serialize `skills_dict` from Step 2 as a JSON string for the `--skills-json` argument.
-Pass the `commit_format` value from Step 4 via `--commit-format`.
+Pass the `commit_format` value from Step 3 via `--commit-format`.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --framework <framework> --skills-json '<skills_dict_json>' --commit-format <commit_format> --plugin-root ${CLAUDE_PLUGIN_ROOT}
@@ -346,23 +328,9 @@ All permissions (universal + all framework sets) for reference:
 }
 ```
 
-### Step 6 — Install plugins
+### Step 5 — Install plugins
 
 Use the `claude plugin list` output from Step 1 (do not re-run it).
-
-**Code-review plugin:**
-
-If the output does not contain `claude-code-plugins`, add the marketplace source:
-
-```bash
-claude plugin marketplace add anthropics/claude-code
-```
-
-If the output does not contain `code-review`, install it:
-
-```bash
-claude plugin install code-review@claude-code-plugins
-```
 
 **Decompose plugin (DAG planning):**
 
@@ -380,7 +348,7 @@ claude plugin install decompose@decompose-marketplace
 
 If all plugins are already present, skip silently.
 
-### Step 7 — Commit or git-exclude
+### Step 6 — Commit or git-exclude
 
 Check if the working tree has changes by running `git status`. If the output contains "working tree clean", skip to Done.
 
