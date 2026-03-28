@@ -166,12 +166,15 @@ task in a fresh skill invocation.
 
 When the plan marks a set of tasks as an **atomic group** (typically
 because they form a circular CI dependency — no intermediate state can
-pass `bin/flow ci` independently), handle them as a single unit.
+pass `bin/flow ci` independently), handle them as a single commit
+boundary.
 
-**Detect the group.** The plan will annotate which tasks belong to
-the group and explain why they cannot be committed individually (e.g.,
-"Tasks 3-6 form an atomic group — adding a CI check requires fixing
-violations in the same commit").
+**Detect the group.** When you reach a task that the plan marks as
+part of an atomic group, switch to the atomic flow below instead of
+the standard single-task flow. The plan will annotate which tasks
+belong to the group and explain why they cannot be committed
+individually (e.g., "Tasks 3-6 form an atomic group — adding a CI
+check requires fixing violations in the same commit").
 
 **Show a group banner.** Output in your response (not via Bash):
 
@@ -197,7 +200,7 @@ Proceed directly to the next task in the group.
 **Combined review after the last task.** Show the combined diff
 covering all tasks in the group. Run `git status` and `git diff HEAD`
 as two separate commands, then render the output inline following the
-same format as the standard Review section. If commit=auto, skip the
+same format as the ### Review section. If commit=auto, skip the
 AskUserQuestion and proceed to CI. Otherwise, ask for review of the
 combined diff.
 
