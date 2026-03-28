@@ -332,10 +332,16 @@ def test_code_review_delegates_to_builtin_review():
     assert "/review" in content, "skills/flow-code-review/SKILL.md must delegate to /review"
 
 
-def test_code_review_delegates_to_builtin_security_review():
-    """Code Review skill must delegate to Claude's built-in /security-review."""
+def test_code_review_has_inline_security_review():
+    """Code Review skill must perform inline security review in Step 3."""
     content = _read_skill("flow-code-review")
-    assert "/security-review" in content, "skills/flow-code-review/SKILL.md must delegate to /security-review"
+    # Step 3 must contain inline security review passes
+    step3_pos = content.index("## Step 3")
+    step3_content = content[step3_pos:]
+    assert "Input Validation" in step3_content, "Step 3 must include Input Validation pass"
+    assert "Authentication" in step3_content, "Step 3 must include Authentication pass"
+    assert "Data Exposure" in step3_content, "Step 3 must include Data Exposure pass"
+    assert "git diff origin/main..HEAD" in step3_content, "Step 3 must get the branch diff inline"
 
 
 def test_phase_skills_have_tool_restriction_in_hard_rules():
@@ -1609,9 +1615,9 @@ def test_code_review_steps_self_invoke():
 
 
 def test_code_review_steps_await_background_agents():
-    """Steps 2-4 must instruct waiting for background agents (Step 1 uses inline review passes)."""
+    """Steps 2 and 4 must instruct waiting for background agents (Steps 1 and 3 use inline review passes)."""
     for step_num, step_text in _code_review_steps():
-        if step_num == 1:
+        if step_num in (1, 3):
             continue
         assert "background agent" in step_text.lower(), (
             f"Step {step_num} must contain background agent wait instructions"
@@ -1758,7 +1764,6 @@ def test_code_review_sets_continue_pending_before_child_skills():
     content = _read_skill("flow-code-review")
     child_skills = [
         ("review", "/review"),
-        ("security-review", "/security-review"),
         ("code-review:code-review", "code-review:code-review"),
     ]
     for flag_value, skill_ref in child_skills:
