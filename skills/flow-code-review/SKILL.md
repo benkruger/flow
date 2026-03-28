@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — three review lenses (clarity via inline review, correctness via /review, safety via /security-review) plus an optional fourth (CLAUDE.md compliance via code-review:code-review plugin, configurable). Commits after each step."
+description: "Phase 4: Code Review — three review lenses (clarity via inline review, correctness via /review, safety via /security-review, configurable) plus an optional fourth (CLAUDE.md compliance via code-review:code-review plugin, configurable). Commits after each step."
 ---
 
 # FLOW Code Review — Phase 4: Code Review
@@ -70,6 +70,18 @@ skipped entirely and the phase completes after Step 3.
 
 When `code_review_plugin` is `"auto"` or `"always"`, Step 4 runs as normal.
 
+## Security Review Mode Resolution
+
+1. Read `skills.flow-code-review.security_review` from the state file at `<project_root>/.flow-states/<branch>.json`.
+2. Valid values: `"always"` (default), `"auto"`, `"never"`.
+3. If the key does not exist → use built-in default: `"always"`.
+
+When `security_review` is `"never"`, Step 3 (the built-in /security-review) is
+skipped entirely. The phase proceeds to Step 4 or Done depending on the
+Code Review Plugin Mode Resolution.
+
+When `security_review` is `"auto"` or `"always"`, Step 3 runs as normal.
+
 ## Self-Invocation Check
 
 If `--continue-step` was passed, this is a self-invocation from a
@@ -119,7 +131,10 @@ Get `<branch>` from the state file.
 Read `code_review_step` from the state file (default `0` if absent).
 
 - If `1` — Step 1 is done. Skip to Step 2.
-- If `2` — Steps 1-2 are done. Skip to Step 3.
+- If `2` — Steps 1-2 are done. Check Security Review Mode Resolution:
+  if `security_review` is `"never"`, check Code Review Plugin Mode Resolution:
+  if `code_review_plugin` is `"never"`, skip to Done. Otherwise, skip to Step 4.
+  If `security_review` is `"auto"` or `"always"`, skip to Step 3.
 - If `3` — Steps 1-3 are done. Check Code Review Plugin Mode Resolution:
   if `code_review_plugin` is `"never"`, skip to Done.
   Otherwise, skip to Step 4.
@@ -415,6 +430,21 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 ---
 
 ## Step 3 — Security
+
+Check Security Review Mode Resolution. If `security_review` is `"never"`,
+skip this entire step. Record step completion and self-invoke:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=3
+```
+
+Invoke `flow:flow-code-review --continue-step` using the Skill tool as
+your final action. If commit=auto was resolved, pass `--auto` as well.
+The Resume Check will route to Step 4 or Done based on
+Code Review Plugin Mode Resolution.
+
+If `security_review` is `"auto"` or `"always"`, proceed with the
+security review below.
 
 Set the continuation context and flag before invoking the child skill:
 

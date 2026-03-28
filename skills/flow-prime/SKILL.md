@@ -35,8 +35,8 @@ If `--reprime` was passed:
 1. Use the Read tool to read `.flow.json` from the project root.
    - If the file does not exist, stop with: "No existing config to reprime from. Run `/flow:flow-prime` instead."
 2. Extract `framework`, `skills`, and `commit_format` from the JSON.
-3. Run `claude plugin list` to check plugin state (needed for Step 6).
-4. Skip Steps 1–4 entirely. Jump to Step 5 with the extracted values.
+3. Run `claude plugin list` to check plugin state (needed for Step 7).
+4. Skip Steps 1–5 entirely. Jump to Step 6 with the extracted values.
 
 ## Steps
 
@@ -52,7 +52,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow detect-framework <project_root>
 claude plugin list
 ```
 
-Keep the plugin list output for Step 6 — do not re-run it.
+Keep the plugin list output for Step 7 — do not re-run it.
 
 Parse the detect-framework JSON output. The `detected` array contains frameworks matched
 by file presence, and `available` lists all supported frameworks.
@@ -187,7 +187,7 @@ For **abort** and **complete** (single mode), ask one AskUserQuestion each:
 > - **Auto (Recommended)** — "Skip confirmation prompt"
 > - **Manual** — "Require confirmation prompt"
 
-Store the result as `skills_dict` for Step 5.
+Store the result as `skills_dict` for Step 6.
 
 ### Step 3 — Choose code review plugin mode
 
@@ -207,7 +207,25 @@ Store the result by injecting into `skills_dict["flow-code-review"]["code_review
 - "Auto" → `"auto"`
 - "Never" → `"never"`
 
-### Step 4 — Choose commit message format
+### Step 4 — Choose security review mode
+
+The built-in `/security-review` runs as Step 3 of the Code Review phase. Its mode controls whether that step runs.
+
+Ask the user which mode to use with AskUserQuestion:
+
+> "Security Review mode? (built-in /security-review during Code Review)"
+>
+> - **Always (Default)** — "Always run the security review step"
+> - **Auto** — "Run security review based on change complexity"
+> - **Never** — "Skip the security review step"
+
+Store the result by injecting into `skills_dict["flow-code-review"]["security_review"]`:
+
+- "Always" → `"always"`
+- "Auto" → `"auto"`
+- "Never" → `"never"`
+
+### Step 5 — Choose commit message format
 
 FLOW supports two commit message formats:
 
@@ -226,10 +244,10 @@ Store the result as `commit_format`:
 - "Title only" → `"title-only"`
 - "Full format" → `"full"`
 
-### Step 5 — Run prime setup script
+### Step 6 — Run prime setup script
 
 Serialize `skills_dict` from Step 2 as a JSON string for the `--skills-json` argument.
-Pass the `commit_format` value from Step 4 via `--commit-format`.
+Pass the `commit_format` value from Step 5 via `--commit-format`.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --framework <framework> --skills-json '<skills_dict_json>' --commit-format <commit_format> --plugin-root ${CLAUDE_PLUGIN_ROOT}
@@ -347,7 +365,7 @@ All permissions (universal + all framework sets) for reference:
 }
 ```
 
-### Step 6 — Install plugins
+### Step 7 — Install plugins
 
 Use the `claude plugin list` output from Step 1 (do not re-run it).
 
@@ -381,7 +399,7 @@ claude plugin install decompose@decompose-marketplace
 
 If all plugins are already present, skip silently.
 
-### Step 7 — Commit or git-exclude
+### Step 8 — Commit or git-exclude
 
 Check if the working tree has changes by running `git status`. If the output contains "working tree clean", skip to Done.
 
