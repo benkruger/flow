@@ -266,6 +266,17 @@ def test_complete_uses_ci_fixer_subagent():
     )
 
 
+def test_code_review_step1_no_general_purpose_agents():
+    """Code Review Step 1 must not use Agent tool — inline review passes only."""
+    for step_num, step_text in _code_review_steps():
+        if step_num != 1:
+            continue
+        assert "Agent tool" not in step_text, (
+            "Code Review Step 1 must not reference 'Agent tool' — use inline review passes instead"
+        )
+        assert '"general-purpose"' not in step_text, "Code Review Step 1 must not reference general-purpose sub-agents"
+
+
 def test_complete_merge_command_no_delete_branch():
     """Complete skill merge command must not include --delete-branch."""
     content = _read_skill("flow-complete")
@@ -1598,7 +1609,7 @@ def test_code_review_steps_self_invoke():
 
 
 def test_code_review_steps_await_background_agents():
-    """Steps 2-4 must instruct waiting for background agents (Step 1 uses foreground agents)."""
+    """Steps 2-4 must instruct waiting for background agents (Step 1 uses inline review passes)."""
     for step_num, step_text in _code_review_steps():
         if step_num == 1:
             continue
