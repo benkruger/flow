@@ -206,7 +206,7 @@ def test_auto_flag_overrides_skills(target_project):
     state = json.loads(state_path.read_text())
     assert state["skills"]["flow-start"]["continue"] == "auto"
     assert state["skills"]["flow-code"]["commit"] == "auto"
-    assert state["skills"]["flow-code-review"]["code_review_plugin"] == "never"
+    assert state["skills"]["flow-code-review"]["commit"] == "auto"
 
 
 def test_auto_flag_sets_skills_when_absent(target_project):

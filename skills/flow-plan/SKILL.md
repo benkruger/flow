@@ -303,6 +303,24 @@ with the "decomposed" label), use it as a head start for plan writing:
 - The issue body has already been validated by the user — do not
   re-evaluate the problem statement
 
+### Script Behavior Verification
+
+When an issue body asserts specific script behavior (e.g. "field X is
+populated after Step Y", "script A reads B from C"), verify each assertion
+by reading or grepping the relevant script source before building the plan
+on that assumption. Issue authors — including Claude in prior sessions —
+can be wrong about what a script does internally. A single grep of the
+script for the claimed field or function catches false assumptions before
+they become bugs in the implementation.
+
+For each behavioral assertion found in the issue body:
+
+- Identify the script and field or function referenced
+- Use the Read or Grep tool to check the actual source
+- If the claim is accurate, proceed with it in the plan
+- If the claim is false, note the discrepancy in the Risks section and
+  adjust the plan accordingly
+
 ### Target Path Validation
 
 During exploration, verify that each file target identified for editing
