@@ -149,8 +149,9 @@ gh pr view <branch> --json state --jq .state
 
 **If `MERGED`** — the PR is already merged. Skip directly to Step 7
 (archive artifacts to PR). After Step 7, continue to Step 9 (close
-issues), then Step 10 (remove labels), then continue through cleanup
-(Steps 12-13) — skip Step 8 (merge) since the PR is already merged.
+issues), then Step 10 (parallel post-merge operations), then continue
+through cleanup (Steps 11-12) — skip Step 8 (merge) since the PR is
+already merged.
 
 **If `OPEN`** — continue to Step 3 to merge.
 
@@ -533,9 +534,17 @@ If any issues were closed (the `closed` array is non-empty), write the
 `closed` array to `.flow-states/<branch>-closed-issues.json` using the
 Write tool. Each item in the array is a dict with `number` and `url` keys.
 
-**Generate the summary** while the state file still exists:
+### Step 10 — Parallel post-merge operations
 
-If closed issues were written to a file, include the file path:
+Run the following operations as parallel foreground Bash tool calls in a
+single response. All four are independent of each other — they only depend
+on Step 9's close-issues output (for format-complete-summary and
+auto-close-parent) or on the state file (for label-issues and notify-slack).
+Every operation is best-effort — if one fails, continue with the results
+from the others.
+
+**Generate the summary** while the state file still exists. If closed
+issues were written to a file in Step 9, include the file path:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow format-complete-summary --state-file <project_root>/.flow-states/<branch>.json --closed-issues-file <project_root>/.flow-states/<branch>-closed-issues.json
@@ -547,50 +556,42 @@ If no issues were closed, omit the closed-issues-file arg:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow format-complete-summary --state-file <project_root>/.flow-states/<branch>.json
 ```
 
-Parse the JSON output. Keep the `summary` field — use it in the Done
-banner below.
-
-### Step 10 — Remove In-Progress labels
-
-Remove the "Flow In-Progress" label from any issues referenced in the start
-prompt. This is best-effort — continue to cleanup even if removal fails.
+**Remove In-Progress labels** from any issues referenced in the start prompt:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --remove
 ```
 
-### Step 11 — Auto-close parent issues and milestones
-
-For each closed issue from Step 9, check if its parent epic or milestone
-should be auto-closed. Best-effort — report closures in the Done banner,
-continue silently on failure.
-
-If Step 9 closed any issues (the `closed` array was non-empty), run for
-each closed issue number:
+**Auto-close parent issues and milestones** for each closed issue from
+Step 9. If Step 9 closed any issues (the `closed` array was non-empty),
+run for each closed issue number:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow auto-close-parent --repo <repo> --issue-number <N>
 ```
 
-Parse the JSON output. If `parent_closed` or `milestone_closed` is true,
-note it for the Done banner. If the command fails, continue to the next
-issue.
-
-### Slack Notification
-
-Read `slack_thread_ts` from the state file. If present, post the final thread reply with end-to-end timeline before cleanup deletes the state file. Best-effort — skip silently on failure.
+**Post Slack notification** if `slack_thread_ts` is present in the state
+file. Post the final thread reply with end-to-end timeline before cleanup
+deletes the state file:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-complete --message "<message_text>" --thread-ts <thread_ts>
 ```
 
-If `"status": "ok"`, record the notification:
+After all parallel calls return, process the results:
+
+- Parse the `format-complete-summary` JSON output. Keep the `summary`
+  field — use it in the Done banner below.
+- If `auto-close-parent` reported `parent_closed` or `milestone_closed`
+  as true for any issue, note it for the Done banner.
+- If `notify-slack` returned `"status": "ok"`, record the notification:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-complete --ts <ts> --thread-ts <thread_ts> --message "<message_text>"
 ```
 
-If `"status": "skipped"` or `"status": "error"`, continue without error.
+If `notify-slack` returned `"status": "skipped"` or `"status": "error"`,
+continue without error.
 
 ### Navigate to project root
 
@@ -602,7 +603,7 @@ and pull) run from the project root on main.
 cd <project_root>
 ```
 
-### Step 12 — Run cleanup script
+### Step 11 — Run cleanup script
 
 Run the cleanup script from the project root:
 
@@ -617,7 +618,7 @@ resource (worktree, state\_file, log\_file, ci\_sentinel). Each step reports
 Report the results to the user: what was cleaned, what was already gone,
 and what failed.
 
-### Step 13 — Pull merged changes
+### Step 12 — Pull merged changes
 
 The worktree is removed and you are on main. Pull to get the merged
 feature code:
@@ -659,11 +660,11 @@ run any commands. This is a narrative recap, not a structured template.
 
 ## Rules
 
-- Steps 1-11 run from the worktree (feature branch); Steps 12-13 run from the project root after an explicit cd before Step 12
+- Steps 1-10 run from the worktree (feature branch); Steps 11-12 run from the project root after an explicit cd before Step 11
 - If the merge fails, never retry with additional flags or elevated privileges — report to the user and stop
 - Confirm with the user only when mode is **manual**
 - State file deletion is what resets the session hook — do not skip it
-- Every step after the merge (Steps 9-12) is best-effort — if one fails, continue to the next
+- Every step after the merge (Steps 9-11) is best-effort — if one fails, continue to the next
 - The skill is idempotent: safe to re-invoke via `/loop` after a "pending CI" stop
 - Never use `general-purpose` sub-agents — use `"flow:ci-fixer"` for CI failures
 - Never use Bash to print banners — output them as text in your response
