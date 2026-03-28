@@ -20,20 +20,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import PHASE_NAMES, PHASE_ORDER, now, read_flow_json, read_prompt_file
+from flow_utils import AUTO_SKILLS, PHASE_NAMES, PHASE_ORDER, now, read_flow_json, read_prompt_file
 from log import append_log
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
-
-AUTO_SKILLS = {
-    "flow-start": {"continue": "auto"},
-    "flow-plan": {"continue": "auto", "dag": "auto"},
-    "flow-code": {"commit": "auto", "continue": "auto"},
-    "flow-code-review": {"commit": "auto", "continue": "auto", "code_review_plugin": "never"},
-    "flow-learn": {"commit": "auto", "continue": "auto"},
-    "flow-abort": "auto",
-    "flow-complete": "auto",
-}
 
 
 def _branch_name(feature_words):
