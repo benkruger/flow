@@ -430,70 +430,6 @@ def check_launcher_path():
         )
 
 
-SLACK_AUTH_URL = "https://slack.com/api/auth.test"
-
-
-def write_slack_config(project_root):
-    """Read Slack env vars and write config to .flow.json.
-
-    If both FLOW_SLACK_TOKEN and FLOW_SLACK_CHANNEL are set, writes
-    slack.bot_token and slack.channel to .flow.json and sets notify=auto.
-    Validates the token with auth.test (warn on failure, don't block).
-
-    If either env var is absent, removes the slack key and sets notify=never.
-    Does nothing if .flow.json doesn't exist.
-    """
-    flow_json = project_root / ".flow.json"
-    if not flow_json.exists():
-        return
-
-    data = json.loads(flow_json.read_text())
-
-    token = os.environ.get("FLOW_SLACK_TOKEN")
-    channel = os.environ.get("FLOW_SLACK_CHANNEL")
-
-    if token and channel:
-        data["slack"] = {"bot_token": token, "channel": channel}
-        data["notify"] = "auto"
-
-        try:
-            result = subprocess.run(
-                ["curl", "-s", "-X", "POST", SLACK_AUTH_URL, "-H", f"Authorization: Bearer {token}"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if result.returncode != 0:
-                print(
-                    "Warning: Slack token validation failed (curl error)",
-                    file=sys.stderr,
-                )
-            else:
-                try:
-                    resp = json.loads(result.stdout)
-                    if not resp.get("ok"):
-                        error = resp.get("error", "unknown")
-                        print(
-                            f"Warning: Slack token validation failed: {error}",
-                            file=sys.stderr,
-                        )
-                except json.JSONDecodeError:
-                    print(
-                        "Warning: Slack token validation returned invalid JSON",
-                        file=sys.stderr,
-                    )
-        except subprocess.TimeoutExpired:
-            print(
-                "Warning: Slack token validation timed out",
-                file=sys.stderr,
-            )
-    else:
-        data.pop("slack", None)
-        data["notify"] = "never"
-
-    flow_json.write_text(json.dumps(data) + "\n")
-
-
 def _plugin_json():
     """Read the full plugin.json as a dict."""
     plugin_path = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
@@ -595,7 +531,6 @@ def main():
         )
         exclude_updated = update_git_exclude(project_root)
         install_pre_commit_hook(project_root)
-        write_slack_config(project_root)
 
         launcher_installed = False
         if plugin_root is not None:
