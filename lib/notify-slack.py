@@ -1,9 +1,9 @@
 """Post a message to Slack via curl.
 
-Reads slack config from .flow.json in the project root. Posts to
-chat.postMessage API. Supports threading via thread_ts parameter.
-Fails open — if config is missing, token is invalid, or curl fails,
-returns a status without raising.
+Reads slack config from userConfig env vars (CLAUDE_PLUGIN_CONFIG_slack_bot_token
+and CLAUDE_PLUGIN_CONFIG_slack_channel). Posts to chat.postMessage API. Supports
+threading via thread_ts parameter. Fails open — if config is missing, token is
+invalid, or curl fails, returns a status without raising.
 
 Usage:
   bin/flow notify-slack --phase <phase> --message <text> [--thread-ts <ts>]
@@ -17,32 +17,28 @@ Output (JSON to stdout):
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import PHASE_NAMES, project_root, read_flow_json
+from flow_utils import PHASE_NAMES
 
 SLACK_API_URL = "https://slack.com/api/chat.postMessage"
 
+TOKEN_ENV = "CLAUDE_PLUGIN_CONFIG_slack_bot_token"
+CHANNEL_ENV = "CLAUDE_PLUGIN_CONFIG_slack_channel"
 
-def read_slack_config(root):
-    """Read slack config from .flow.json.
+
+def read_slack_config():
+    """Read slack config from userConfig env vars.
 
     Returns dict with bot_token and channel, or None if not configured.
     """
-    data = read_flow_json(root)
-    if data is None:
-        return None
-
-    slack = data.get("slack")
-    if not isinstance(slack, dict):
-        return None
-
-    bot_token = slack.get("bot_token")
-    channel = slack.get("channel")
+    bot_token = os.environ.get(TOKEN_ENV, "")
+    channel = os.environ.get(CHANNEL_ENV, "")
     if not bot_token or not channel:
         return None
 
@@ -118,9 +114,9 @@ def _parse_args(args=None):
     return parser.parse_args(args)
 
 
-def notify(parsed, root):
+def notify(parsed):
     """Core notification logic. Returns result dict."""
-    config = read_slack_config(root)
+    config = read_slack_config()
     if config is None:
         return {"status": "skipped", "reason": "no slack config"}
 
@@ -128,20 +124,18 @@ def notify(parsed, root):
     return post_message(config["bot_token"], config["channel"], text, thread_ts=parsed.thread_ts)
 
 
-def main_with_args(args, root_override=None):
-    """Run the notify-slack logic with explicit args and project root.
+def main_with_args(args):
+    """Run the notify-slack logic with explicit args.
 
     Used by tests to avoid subprocess overhead while testing the full flow.
     """
     parsed = _parse_args(args)
-    root = root_override or project_root()
-    return notify(parsed, root)
+    return notify(parsed)
 
 
 def main():
     parsed = _parse_args()
-    root = project_root()
-    result = notify(parsed, root)
+    result = notify(parsed)
     print(json.dumps(result))
 
 
