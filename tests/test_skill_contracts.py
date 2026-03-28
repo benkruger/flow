@@ -326,6 +326,23 @@ def test_ci_fixer_agent_exists():
     )
 
 
+def test_pre_mortem_agent_exists():
+    """agents/pre-mortem.md must exist with required frontmatter fields."""
+    agent_file = REPO_ROOT / "agents" / "pre-mortem.md"
+    assert agent_file.exists(), "agents/pre-mortem.md does not exist"
+    content = agent_file.read_text()
+    assert "name: pre-mortem" in content, "agents/pre-mortem.md missing 'name: pre-mortem' in frontmatter"
+    assert "PreToolUse" in content, "agents/pre-mortem.md missing PreToolUse hook"
+    assert "validate-ci-bash" in content, "agents/pre-mortem.md missing reference to validate-ci-bash"
+    # Pre-mortem agent must be read-only — no Edit or Write tools
+    assert "Edit" not in content.split("---")[1], (
+        "agents/pre-mortem.md must not include Edit tool — pre-mortem is read-only"
+    )
+    assert "Write" not in content.split("---")[1], (
+        "agents/pre-mortem.md must not include Write tool — pre-mortem is read-only"
+    )
+
+
 def test_code_review_has_inline_correctness_review():
     """Code Review skill must perform inline correctness review in Step 2."""
     content = _read_skill("flow-code-review")
