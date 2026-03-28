@@ -862,6 +862,81 @@ def test_no_compact_data_no_compact_block(git_repo):
     assert "WARNING" not in ctx
 
 
+def test_last_failure_injected_into_context(git_repo):
+    """State with _last_failure → context includes failure info text."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
+    state["_last_failure"] = {
+        "type": "rate_limit",
+        "message": "429 Too Many Requests",
+        "timestamp": "2026-03-28T14:23:00-07:00",
+    }
+    write_state(state_dir, "my-feature", state)
+
+    _switch(git_repo, "my-feature")
+    result = _run(git_repo)
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "rate_limit" in ctx
+    assert "2026-03-28T14:23:00-07:00" in ctx
+
+
+def test_last_failure_cleared_from_state_after_injection(git_repo):
+    """After SessionStart injects _last_failure, it must be cleared from the state file."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
+    state["_last_failure"] = {
+        "type": "auth_failure",
+        "message": "Invalid API key",
+        "timestamp": "2026-03-28T14:23:00-07:00",
+    }
+    write_state(state_dir, "my-feature", state)
+
+    _switch(git_repo, "my-feature")
+    _run(git_repo)
+
+    updated = json.loads((state_dir / "my-feature.json").read_text())
+    assert "_last_failure" not in updated
+
+
+def test_no_last_failure_no_failure_block(git_repo):
+    """State without _last_failure → no failure context in output."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
+    write_state(state_dir, "my-feature", state)
+
+    _switch(git_repo, "my-feature")
+    result = _run(git_repo)
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "previous session" not in ctx.lower()
+    assert "failure" not in ctx.lower()
+
+
 def test_multi_feature_compact_summary_injected(git_repo):
     """Multi-feature: compact_summary on one feature → included in context."""
     state_dir = git_repo / ".flow-states"
