@@ -272,6 +272,43 @@ def test_flow_summary_plan_path_absent():
     assert summary["plan_path"] is None
 
 
+# --- flow_summary: annotation ---
+
+
+def test_flow_summary_annotation_code_phase():
+    """annotation field contains active phase annotation for Code."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["code_task"] = 2
+    state["code_tasks_total"] = 5
+    summary = tui_data.flow_summary(state)
+    assert summary["annotation"] == "task 3 of 5"
+
+
+def test_flow_summary_annotation_no_step_set():
+    """annotation is empty when active phase has no step set."""
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={"flow-start": "in_progress"},
+    )
+    summary = tui_data.flow_summary(state)
+    assert summary["annotation"] == ""
+
+
+def test_flow_summary_annotation_start_phase():
+    """annotation includes Start step tracking."""
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={"flow-start": "in_progress"},
+    )
+    state["start_step"] = 5
+    state["start_steps_total"] = 11
+    summary = tui_data.flow_summary(state)
+    assert summary["annotation"] == "step 5 of 11"
+
+
 # --- phase_timeline ---
 
 
@@ -305,6 +342,93 @@ def test_phase_timeline_mixed():
     assert timeline[2]["name"] == "Code"
 
     assert timeline[3]["status"] == "pending"
+
+
+# --- phase_timeline: Start ---
+
+
+def test_phase_timeline_start_annotation():
+    """Start phase shows 'step 3 of 11' when start_step=3 and start_steps_total=11."""
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={"flow-start": "in_progress"},
+    )
+    state["start_step"] = 3
+    state["start_steps_total"] = 11
+
+    timeline = tui_data.phase_timeline(state)
+    start_entry = timeline[0]
+    assert start_entry["annotation"] == "step 3 of 11"
+
+
+def test_phase_timeline_start_step_zero():
+    """Start phase has no annotation when start_step is 0."""
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={"flow-start": "in_progress"},
+    )
+
+    timeline = tui_data.phase_timeline(state)
+    start_entry = timeline[0]
+    assert start_entry["annotation"] == ""
+
+
+def test_phase_timeline_start_no_total():
+    """Start phase shows 'step 3' when start_step=3 but start_steps_total is absent."""
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={"flow-start": "in_progress"},
+    )
+    state["start_step"] = 3
+
+    timeline = tui_data.phase_timeline(state)
+    start_entry = timeline[0]
+    assert start_entry["annotation"] == "step 3"
+
+
+# --- phase_timeline: Plan ---
+
+
+def test_phase_timeline_plan_annotation():
+    """Plan phase shows 'step 2 of 4' when plan_step=2 and plan_steps_total=4."""
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
+    )
+    state["plan_step"] = 2
+    state["plan_steps_total"] = 4
+
+    timeline = tui_data.phase_timeline(state)
+    plan_entry = timeline[1]
+    assert plan_entry["annotation"] == "step 2 of 4"
+
+
+def test_phase_timeline_plan_step_zero():
+    """Plan phase has no annotation when plan_step is 0."""
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
+    )
+
+    timeline = tui_data.phase_timeline(state)
+    plan_entry = timeline[1]
+    assert plan_entry["annotation"] == ""
+
+
+def test_phase_timeline_plan_no_total():
+    """Plan phase shows 'step 2' when plan_step=2 but plan_steps_total is absent."""
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"},
+    )
+    state["plan_step"] = 2
+
+    timeline = tui_data.phase_timeline(state)
+    plan_entry = timeline[1]
+    assert plan_entry["annotation"] == "step 2"
+
+
+# --- phase_timeline: Code ---
 
 
 def test_phase_timeline_code_with_task_annotation():
@@ -391,6 +515,37 @@ def test_phase_timeline_code_total_zero_ignored():
     code_entry = timeline[2]
     assert code_entry["annotation"] == "task 4"
     assert "of" not in code_entry["annotation"]
+
+
+# --- phase_timeline: Code overflow cap ---
+
+
+def test_phase_timeline_code_task_overflow_capped():
+    """When code_task == code_tasks_total, display shows total, not total+1."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["code_task"] = 3
+    state["code_tasks_total"] = 3
+
+    timeline = tui_data.phase_timeline(state)
+    code_entry = timeline[2]
+    assert code_entry["annotation"] == "task 3 of 3"
+
+
+def test_phase_timeline_code_task_overflow_exceeds_total():
+    """When code_task > code_tasks_total, display is capped at total."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["code_task"] = 5
+    state["code_tasks_total"] = 3
+
+    timeline = tui_data.phase_timeline(state)
+    code_entry = timeline[2]
+    assert code_entry["annotation"] == "task 3 of 3"
 
 
 # --- phase_timeline: Code Review ---

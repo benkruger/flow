@@ -53,6 +53,9 @@ def flow_summary(state, now=None):
     files = state.get("files", {})
     plan_path = files.get("plan") or state.get("plan_file")
 
+    timeline = phase_timeline(state)
+    annotation = next((e["annotation"] for e in timeline if e["key"] == current_phase), "")
+
     return {
         "feature": derive_feature(branch),
         "branch": branch,
@@ -70,14 +73,27 @@ def flow_summary(state, now=None):
         "blocked": bool(state.get("_blocked")),
         "issue_numbers": set(extract_issue_numbers(state.get("prompt", ""))),
         "plan_path": plan_path,
+        "annotation": annotation,
+        "timeline": timeline,
         "phases": state.get("phases", {}),
         "state": state,
     }
 
 
+def _step_annotation(step, total):
+    """Return 'step N of M' or 'step N' or '' depending on what's populated."""
+    if step <= 0:
+        return ""
+    return f"step {step} of {total}" if total > 0 else f"step {step}"
+
+
 def phase_timeline(state):
     """Build a list of phase display entries from a state dict."""
     phases = state.get("phases", {})
+    start_step = state.get("start_step", 0)
+    start_steps_total = state.get("start_steps_total", 0)
+    plan_step = state.get("plan_step", 0)
+    plan_steps_total = state.get("plan_steps_total", 0)
     code_task = state.get("code_task", 0)
     code_tasks_total = state.get("code_tasks_total", 0)
     code_review_step = state.get("code_review_step", 0)
@@ -96,8 +112,14 @@ def phase_timeline(state):
         time_str = format_time(seconds) if status == "complete" else ""
 
         annotation = ""
-        if key == "flow-code" and status == "in_progress":
+        if key == "flow-start" and status == "in_progress":
+            annotation = _step_annotation(start_step, start_steps_total)
+        elif key == "flow-plan" and status == "in_progress":
+            annotation = _step_annotation(plan_step, plan_steps_total)
+        elif key == "flow-code" and status == "in_progress":
             current_task = code_task + 1
+            if code_tasks_total > 0:
+                current_task = min(current_task, code_tasks_total)
             task_str = f"task {current_task} of {code_tasks_total}" if code_tasks_total > 0 else f"task {current_task}"
             parts = [task_str]
             if diff_stats:
