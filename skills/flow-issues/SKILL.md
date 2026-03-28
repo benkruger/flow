@@ -173,8 +173,16 @@ The `Rationale` column explains why this issue is at this position:
 
 ### Start Commands
 
-After the work order table, list a copy-paste start command for each issue:
-`/flow:flow-start work on issue #N`
+After the work order table, list a copy-paste start command for each issue
+in the work order. Below each command, add the issue title as a comment
+line. Separate each command+comment pair with a blank line.
+
+Format:
+
+```text
+/flow:flow-start work on issue #N
+# <issue title>
+```
 
 After the start commands are displayed, output the following banner in your response (not via Bash) inside a fenced code block:
 
