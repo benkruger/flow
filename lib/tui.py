@@ -170,7 +170,7 @@ class TuiApp:
             repo_col = 2 + len(version_text) + 1
             self._safe_addstr(0, repo_col, self.repo_name.upper(), self._color(COLOR_ACTIVE) | curses.A_BOLD)
         self._draw_tab_bar(2)
-        self._safe_addstr(3, 2, "\u2500" * min(54, max_x - 4), curses.A_DIM)
+        self._safe_addstr(3, 2, "\u2500" * (max_x - 4), curses.A_DIM)
 
     def _draw_list_view(self):
         """Draw the flow list and detail panel."""
@@ -186,6 +186,10 @@ class TuiApp:
 
         # Cross-tab indicator: find flow matching in-progress orchestration issue
         orch_issue = self._get_orch_issue_in_progress()
+
+        # Responsive feature column: floor of 26, scales with terminal width
+        # Overhead: 2 (col offset) + 2 (marker) + 1 + 14 (phase) + 1 + 8 (elapsed) + 1 + 20 (issue/PR reserve) = 49
+        feature_width = max(26, max_x - 49)
 
         # Flow list — reserve ~16 lines for header, separator, detail panel, and footer
         list_end = min(len(self.flows), max_y - 18)
@@ -207,17 +211,18 @@ class TuiApp:
                 phase_info += f" ({annotation})"
             pr_info = f"PR #{flow['pr_number']}" if flow["pr_number"] else ""
             feature_display = flow["feature"]
-            if len(feature_display) > 26:
-                feature_display = feature_display[:23] + "..."
+            if len(feature_display) > feature_width:
+                feature_display = feature_display[: feature_width - 3] + "..."
             issue_nums = flow.get("issue_numbers", set())
             issue_info = " ".join(f"#{n}" for n in sorted(issue_nums)) + "  " if issue_nums else ""
             elapsed_display = "Blocked" if flow["blocked"] else flow["elapsed"]
-            line = f"{marker}{feature_display:<26s} {phase_info:<14s} {elapsed_display:<8s} {issue_info}{pr_info}"
+            feat = f"{feature_display:<{feature_width}s}"
+            line = f"{marker}{feat} {phase_info:<14s} {elapsed_display:<8s} {issue_info}{pr_info}"
             self._safe_addstr(row, 2, line, attr)
 
         # Separator
         detail_start = 4 + list_end + 1
-        self._safe_addstr(detail_start - 1, 2, "\u2500" * min(54, max_x - 4), curses.A_DIM)
+        self._safe_addstr(detail_start - 1, 2, "\u2500" * (max_x - 4), curses.A_DIM)
 
         # Detail panel for selected flow
         if self.flows:
@@ -618,6 +623,11 @@ class TuiApp:
         items = self.orch_data["items"]
         list_start = 7
         list_end = min(len(items), max_y - 6)
+
+        # Responsive orchestration title column: floor of 30, scales with terminal width
+        # Overhead: 2 (col offset) + 2 (marker) + icon + " #NNN  " (~10) + 30 (elapsed/PR reserve) + 2 = 44
+        orch_title_width = max(30, max_x - 44)
+
         for i in range(list_end):
             item = items[i]
             row = list_start + i
@@ -637,7 +647,8 @@ class TuiApp:
             pr_str = ""
             if item["pr_url"]:
                 pr_str = f"  PR {item['pr_url'].rstrip('/').rsplit('/', 1)[-1]}"
-            line = f"{marker}{item['icon']} #{item['issue_number']}  {item['title']:<30s}{elapsed_str}{pr_str}"
+            title = f"{item['title']:<{orch_title_width}s}"
+            line = f"{marker}{item['icon']} #{item['issue_number']}  {title}{elapsed_str}{pr_str}"
             self._safe_addstr(row, 2, line, attr)
 
         # Detail panel for selected item
