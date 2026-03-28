@@ -2,12 +2,12 @@
 """
 PreToolUse hook for AskUserQuestion — enforces auto-continue.
 
-Blocks AskUserQuestion when `_auto_continue` is set in the state file.
-This prevents the model from prompting the user when autonomous phase
+When `_auto_continue` is set in the state file, answers AskUserQuestion
+automatically via `updatedInput` (JSON on stdout with exit 0). This
+prevents the model from prompting the user when autonomous phase
 transitions are configured.
 
-Exit 0 — allow
-Exit 2 — block (error message on stderr)
+Exit 0 — allow (optionally with JSON on stdout for updatedInput)
 """
 
 import json
@@ -38,23 +38,32 @@ def set_blocked(state_path):
 
 
 def validate(state_path):
-    """Validate that auto-continue is not active.
+    """Check auto-continue state and return hook response if active.
 
-    Returns (allowed: bool, message: str).
+    Returns (allowed: bool, message: str, hook_response: dict | None).
+    When hook_response is not None, main() prints it as JSON to stdout
+    so Claude Code receives it as an updatedInput answer.
     """
     if state_path is None or not Path(state_path).exists():
-        return (True, "")
+        return (True, "", None)
 
     try:
         state = json.loads(Path(state_path).read_text())
     except (json.JSONDecodeError, ValueError):
-        return (True, "")
+        return (True, "", None)
 
     auto_cmd = state.get("_auto_continue")
     if not auto_cmd:
-        return (True, "")
+        return (True, "", None)
 
-    return (False, f"BLOCKED: Auto-continue is active. Invoke {auto_cmd} now.")
+    return (
+        True,
+        "",
+        {
+            "permissionDecision": "allow",
+            "updatedInput": f"Yes, proceed. Invoke {auto_cmd} now.",
+        },
+    )
 
 
 def main():
@@ -72,10 +81,10 @@ def main():
         sys.exit(0)
 
     state_path = project_root() / ".flow-states" / f"{branch}.json"
-    allowed, message = validate(str(state_path))
-    if not allowed:
-        print(message, file=sys.stderr)
-        sys.exit(2)
+    allowed, message, hook_response = validate(str(state_path))
+    if hook_response:
+        print(json.dumps(hook_response))
+        sys.exit(0)
 
     set_blocked(str(state_path))
     sys.exit(0)
