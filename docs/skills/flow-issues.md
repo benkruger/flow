@@ -28,7 +28,7 @@ Fetches all open issues for the current repository, analyzes them via Python scr
 2. Reads the condensed per-issue briefs and ranks by impact using LLM judgment — considering what unblocks the most work, what has the broadest effect, and what is urgent
 3. Displays a summary line with total issue count
 4. Prints an In Progress table for WIP issues (linked `[#N](url)`, Title columns)
-5. Prints a single Recommended Work Order table with columns: Order, Impact, Labels, # (linked), Title, Rationale — excluding in-progress issues. Sorting respects explicit dependency ordering (prerequisites before dependents) and impact ranking. Each entry gets a copy-paste `/flow:flow-start` command listed after the table, with the issue title as a comment on the following line
+5. Prints a single Recommended Work Order table with columns: Order, Impact, Labels, # (linked), Title, Rationale — excluding in-progress issues. Sorting respects explicit dependency ordering (prerequisites before dependents) and impact ranking. A Start Commands table follows the work order with columns for ordinal, `/flow:flow-start` command, and issue title
 
 ---
 
