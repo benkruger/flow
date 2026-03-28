@@ -187,14 +187,40 @@ class TuiApp:
         # Cross-tab indicator: find flow matching in-progress orchestration issue
         orch_issue = self._get_orch_issue_in_progress()
 
-        # Responsive feature column: floor of 26, scales with terminal width
-        # Overhead: 2 (col offset) + 2 (marker) + 1 + 14 (phase) + 1 + 8 (elapsed) + 1 + 20 (issue/PR reserve) = 49
-        feature_width = max(26, max_x - 49)
-
         # Flow list — reserve ~16 lines for header, separator, detail panel, and footer
         list_end = min(len(self.flows), max_y - 18)
+        visible_flows = self.flows[:list_end]
+
+        # Pre-compute column content for all visible flows to find max widths
+        col_data = []
+        for flow in visible_flows:
+            annotation = flow["annotation"]
+            phase_info = f"{flow['phase_number']}: {flow['phase_name']}"
+            if annotation:
+                phase_info += f" ({annotation})"
+            pr_info = f"PR #{flow['pr_number']}" if flow["pr_number"] else ""
+            issue_nums = flow.get("issue_numbers", set())
+            issue_info = " ".join(f"#{n}" for n in sorted(issue_nums)) if issue_nums else ""
+            elapsed_display = "Blocked" if flow["blocked"] else flow["elapsed"]
+            col_data.append((phase_info, elapsed_display, issue_info, pr_info))
+
+        # Dynamic column widths based on actual content (floors prevent collapse)
+        phase_width = max((len(d[0]) for d in col_data), default=14)
+        phase_width = max(phase_width, 14)
+        issue_width = max((len(d[2]) for d in col_data), default=0)
+        pr_width = max((len(d[3]) for d in col_data), default=0)
+
+        # Responsive feature column: floor of 26, scales with terminal width
+        # Overhead: 2 (col offset) + 2 (marker) + 3 (gap) + phase + 3 (gap) + 7 (elapsed) + 3 (gap) + 2 (right margin)
+        overhead = 2 + 2 + 3 + phase_width + 3 + 7 + 3 + 2
+        if issue_width:
+            overhead += issue_width + 3
+        if pr_width:
+            overhead += pr_width + (2 if not issue_width else 0)
+        feature_width = max(26, max_x - overhead)
+
         for i in range(list_end):
-            flow = self.flows[i]
+            flow = visible_flows[i]
             row = 4 + i
             if i == self.selected:
                 marker = "\u25b8 "
@@ -205,19 +231,21 @@ class TuiApp:
             attr = curses.A_BOLD if i == self.selected else 0
             if flow["blocked"]:
                 attr = attr | self._color(COLOR_FAILED)
-            annotation = flow["annotation"]
-            phase_info = f"{flow['phase_number']}: {flow['phase_name']}"
-            if annotation:
-                phase_info += f" ({annotation})"
-            pr_info = f"PR #{flow['pr_number']}" if flow["pr_number"] else ""
+            phase_info, elapsed_display, issue_info, pr_info = col_data[i]
             feature_display = flow["feature"]
             if len(feature_display) > feature_width:
                 feature_display = feature_display[: feature_width - 3] + "..."
-            issue_nums = flow.get("issue_numbers", set())
-            issue_info = " ".join(f"#{n}" for n in sorted(issue_nums)) + "  " if issue_nums else ""
-            elapsed_display = "Blocked" if flow["blocked"] else flow["elapsed"]
             feat = f"{feature_display:<{feature_width}s}"
-            line = f"{marker}{feat} {phase_info:<14s} {elapsed_display:<8s} {issue_info}{pr_info}"
+            phase = f"{phase_info:<{phase_width}s}"
+            elapsed = f"{elapsed_display:>7s}"
+            parts = [marker, feat, "   ", phase, "   ", elapsed]
+            if issue_width:
+                parts.append("   ")
+                parts.append(f"{issue_info:<{issue_width}s}")
+            if pr_width:
+                parts.append("  ")
+                parts.append(f"{pr_info:<{pr_width}s}")
+            line = "".join(parts)
             self._safe_addstr(row, 2, line, attr)
 
         # Separator

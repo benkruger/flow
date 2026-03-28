@@ -7,7 +7,7 @@ reports the lock.
 Usage:
     bin/flow start-lock --acquire --feature <name>
     bin/flow start-lock --acquire --wait --feature <name>
-    bin/flow start-lock --acquire --wait --timeout 300 --feature <name>
+    bin/flow start-lock --acquire --wait --timeout 90 --feature <name>
     bin/flow start-lock --release
     bin/flow start-lock --check
 
@@ -177,7 +177,7 @@ def acquire(feature):
     }
 
 
-def acquire_with_wait(feature, timeout=300, interval=10):
+def acquire_with_wait(feature, timeout=90, interval=10):
     """Acquire the lock, retrying with sleep until acquired or timed out."""
     start = time.monotonic()
     result = acquire(feature)
@@ -237,7 +237,7 @@ def main():
     parser.add_argument("--check", action="store_true", help="Check lock status")
     parser.add_argument("--feature", default=None, help="Feature name (required for --acquire)")
     parser.add_argument("--wait", action="store_true", help="Wait for lock to be released")
-    parser.add_argument("--timeout", type=int, default=300, help="Max seconds to wait (default 300)")
+    parser.add_argument("--timeout", type=int, default=90, help="Max seconds to wait (default 90)")
     args = parser.parse_args()
 
     if args.acquire:

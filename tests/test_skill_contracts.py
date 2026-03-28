@@ -381,6 +381,18 @@ def test_code_review_has_inline_correctness_review():
     assert "git diff origin/main..HEAD" in step2_content, "Step 2 must get the branch diff inline"
 
 
+def test_code_review_step2_has_step_numbering_verification():
+    """Code Review Step 2 must verify step numbering consistency when diff contains step headings."""
+    content = _read_skill("flow-code-review")
+    step2_pos = content.index("## Step 2")
+    step3_pos = content.index("## Step 3")
+    step2_content = content[step2_pos:step3_pos]
+    assert "step heading" in step2_content.lower(), "Step 2 must mention step headings as a trigger condition"
+    assert "sequential" in step2_content.lower(), "Step 2 must verify sequential step numbering"
+    assert "cross-reference" in step2_content.lower(), "Step 2 must verify cross-reference consistency"
+    assert "read the full" in step2_content.lower(), "Step 2 must instruct reading the full file (not just the diff)"
+
+
 def test_code_review_has_inline_security_review():
     """Code Review skill must perform inline security review in Step 3."""
     content = _read_skill("flow-code-review")
