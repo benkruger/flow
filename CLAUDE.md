@@ -63,7 +63,7 @@ CI will fail if these are missing:
 
 - `flow-phases.json` — state machine: phase names, commands, valid back-transitions
 - `skills/<name>/SKILL.md` — each skill's instructions
-- `hooks/hooks.json` — hook registration (SessionStart, PreToolUse, PostToolUse, PostCompact, Stop)
+- `hooks/hooks.json` — hook registration (SessionStart, PreToolUse, PostToolUse, PostCompact, Stop, StopFailure)
 - `hooks/session-start.sh` — detects in-progress features, injects awareness context
 - `lib/check-freshness.py` — pre-merge freshness check: fetches main, checks if branch is up-to-date, returns JSON status (up_to_date, merged, conflict, max_retries); manages retry counting via state file
 - `lib/check-phase.py` — reusable phase entry guard
@@ -107,6 +107,7 @@ CI will fail if these are missing:
 - `lib/render-pr-body.py` — idempotent PR body renderer: reads state file + artifact files, generates complete body in canonical section order (What, Artifacts, Plan, DAG Analysis, Phase Timings, State File, Session Log, Issues Filed)
 - `lib/update-pr-body.py` — updates PR body: `--add-artifact` for list items, `--append-section` for collapsible/plain sections
 - `lib/stop-continue.py` — Stop hook script that forces continuation when `_continue_pending` flag is set in the state file; reads `_continue_context` for specific next-step instructions in the block reason
+- `lib/stop-failure.py` — StopFailure hook that captures API error context (`_last_failure` with type, message, timestamp) in the state file; fail-open, consumed and cleared by SessionStart on resume
 - `lib/post-compact.py` — PostCompact hook that captures `compact_summary`, `compact_cwd`, and `compact_count` in the state file for SessionStart to inject
 - `lib/tui_data.py` — pure data layer for TUI: loads state files, computes flow summaries, phase timelines, parses log entries
 - `lib/tui.py` — curses-based interactive TUI for viewing and managing active flows (`flow tui`)
