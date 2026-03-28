@@ -61,9 +61,10 @@ CI will fail if these are missing:
 
 ## Key Files
 
+- `config.json` — plugin-level maintainer config: `claude_code_audited` tracks the last Claude Code version audited for plugin-relevant changes
 - `flow-phases.json` — state machine: phase names, commands, valid back-transitions
 - `skills/<name>/SKILL.md` — each skill's instructions
-- `hooks/hooks.json` — hook registration (SessionStart, PreToolUse, PostToolUse, PostCompact, Stop, StopFailure)
+- `hooks/hooks.json` — hook registration (SessionStart, PreToolUse, PermissionRequest, PostToolUse, PostCompact, Stop, StopFailure)
 - `hooks/session-start.sh` — detects in-progress features, injects awareness context
 - `lib/check-freshness.py` — pre-merge freshness check: fetches main, checks if branch is up-to-date, returns JSON status (up_to_date, merged, conflict, max_retries); manages retry counting via state file
 - `lib/check-phase.py` — reusable phase entry guard
@@ -99,7 +100,7 @@ CI will fail if these are missing:
 - `lib/link-blocked-by.py` — sets blocked-by dependency relationships via `gh api` (resolves database IDs internally)
 - `lib/auto-close-parent.py` — checks if parent epic and milestone should be auto-closed when all children are done; best-effort throughout
 - `lib/add-issue.py` — records filed issues in the state file's `issues_filed` array (follows `append-note.py` pattern)
-- `lib/notify-slack.py` — posts messages to Slack via curl to `chat.postMessage`; reads config from `.flow.json`; supports threading via `thread_ts`; fails open on any error
+- `lib/notify-slack.py` — posts messages to Slack via curl to `chat.postMessage`; reads config from userConfig env vars (`CLAUDE_PLUGIN_CONFIG_slack_bot_token`, `CLAUDE_PLUGIN_CONFIG_slack_channel`); supports threading via `thread_ts`; fails open on any error
 - `lib/add-notification.py` — records sent Slack notifications in the state file's `slack_notifications` array (follows `add-issue.py` pattern)
 - `lib/format-complete-summary.py` — generates the business-friendly Done banner for Complete phase (feature name, prompt, per-phase timeline, artifact counts)
 - `lib/format-issues-summary.py` — formats `issues_filed` as a markdown table and banner line for Complete phase
@@ -113,7 +114,8 @@ CI will fail if these are missing:
 - `lib/tui.py` — curses-based interactive TUI for viewing and managing active flows (`flow tui`)
 - `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands, shell redirection, and file-read commands in all Bash calls)
 - `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (answers prompts via `updatedInput` when `_auto_continue` is set in state file; writes `_blocked` timestamp when allowing through)
-- `lib/clear-blocked.py` — PostToolUse hook on AskUserQuestion that clears `_blocked` from the state file after the user responds; fail-open
+- `lib/set-blocked.py` — PermissionRequest hook on Bash|Edit|Write that sets `_blocked = now()` in the state file when a permission prompt appears; fail-open
+- `lib/clear-blocked.py` — PostToolUse hook on AskUserQuestion|Bash|Edit|Write that clears `_blocked` from the state file after the user responds or tool completes; fail-open
 - `lib/scaffold-qa.py` — creates QA repos from per-framework templates (`qa/templates/`); CLI: `bin/flow scaffold-qa --framework <name> --repo <owner/repo>`
 - `lib/qa-reset.py` — resets QA repos to seed state (git reset, close PRs, delete branches, recreate issues); CLI: `bin/flow qa-reset --repo <owner/repo> [--local-path <path>]`
 - `lib/qa-verify.py` — verifies QA assertions after a completed flow (cleanup, worktrees, merged PR); CLI: `bin/flow qa-verify --framework <name> --repo <owner/repo>`
@@ -166,7 +168,7 @@ State files (`.flow-states/`) are local to each machine. In a multi-engineer tea
 
 FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Step 8) and Complete (Steps 4 and 5). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands, shell redirection, and file-read commands in all Bash calls — including those from built-in skills' sub-agents. The ci-fixer also retains its own hook declaration for defense in depth.
 
-Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition — no plan mode. Code Review performs three inline review passes for clarity (code reuse, quality, efficiency), then delegates to built-in `/review` for correctness and performs inline security review for safety, and optionally the `code-review:code-review` plugin for multi-agent validation (controlled by the `code_review_plugin` config axis: `"always"`, `"auto"`, or `"never"`). Code and Learn have no sub-agents. Complete uses ci-fixer for CI failures.
+Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition — no plan mode. Code Review performs three inline review passes for clarity (code reuse, quality, efficiency), then performs inline correctness review for correctness and inline security review for safety, and optionally the `code-review:code-review` plugin for multi-agent validation (controlled by the `code_review_plugin` config axis: `"always"`, `"auto"`, or `"never"`). Code and Learn have no sub-agents. Complete uses ci-fixer for CI failures.
 
 ### Orchestration
 
@@ -250,7 +252,8 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_prime_setup.py` | Prime setup: data-driven permissions, settings merge, version marker, git exclude, pre-commit hook |
 | `test_validate_ci_bash.py` | Bash hook validator: compound commands, redirection, blanket restore, deny list, file-read commands, whitelist enforcement (flow-active gating, worktree branch detection, settings+root resolution), in-process and subprocess integration |
 | `test_validate_ask_user.py` | AskUserQuestion hook: answers prompts via `updatedInput` when `_auto_continue` set, allows when absent/empty, `_blocked` write on allow, subprocess integration |
-| `test_clear_blocked.py` | PostToolUse hook: clears `_blocked` from state, noop when absent, fail-open on errors, subprocess integration |
+| `test_set_blocked.py` | PermissionRequest hook: sets `_blocked` timestamp, no state file noop, None path noop, corrupt JSON fail-open, preserves fields, overwrites existing, subprocess integration, main() error path |
+| `test_clear_blocked.py` | PostToolUse hook: clears `_blocked` from state, noop when absent, fail-open on errors, Bash/Edit/Write tool name coverage, subprocess integration |
 | `test_post_compact.py` | PostCompact hook: compact_summary/cwd/count written to state, fail-open on errors, subprocess integration |
 | `test_stop_failure.py` | StopFailure hook: _last_failure written to state (type, message, timestamp), fail-open on errors, missing key/state/branch handling, overwrite, subprocess integration |
 | `test_finalize_commit.py` | Commit finalization: happy path, commit/pull/push failures, merge conflict detection, message file cleanup, CLI |
@@ -272,6 +275,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 
 - `/flow-qa` — `.claude/skills/flow-qa/SKILL.md` — clone QA repos, prime, run a full lifecycle, and verify results. **Always run `/flow-qa --start` before `/flow:flow-start` when developing FLOW.** The installed marketplace plugin enforces its own phase count and skill gates, which conflict with the source being developed and break the workflow mid-feature.
 - `/flow-release` — `.claude/skills/flow-release/SKILL.md` — bump version, tag, push, create GitHub Release
+- `/flow-changelog-audit` — `.claude/skills/flow-changelog-audit/SKILL.md` — audit Claude Code CHANGELOG.md for plugin-relevant changes, categorize as Adopt/Remove/Adapt, file issues
 
 ## Conventions
 
