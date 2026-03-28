@@ -259,10 +259,33 @@ Example:
 
 Present the full draft inline in the response — both title and body. Do not tell the user to look at a file. Render it as a formatted markdown block so the user can review every detail.
 
+### Repo Detection
+
+Before presenting the filing options, detect the current repository:
+
+```bash
+git remote get-url origin
+```
+
+If the URL contains `benkruger/flow`, this is the FLOW plugin repo itself.
+Both "Target project" and "FLOW plugin" would resolve to the same
+repository, so skip the repo selection and present a simplified prompt.
+
 <HARD-GATE>
 
-Ask the user to review the draft and choose where to file using
-AskUserQuestion with structured parameters:
+**If the current repo is `benkruger/flow`**, ask the user to review the
+draft using AskUserQuestion with structured parameters:
+
+- **question**: "Review the draft above. Ready to file?"
+- **header**: "File Issue"
+- **options**:
+  - label: "File issue", description: "File against the current project with decomposed label"
+  - label: "Revise draft", description: "Edit the draft based on your feedback"
+  - label: "Re-decompose", description: "Restart from scratch with a new decomposition"
+
+**If the current repo is NOT `benkruger/flow`**, ask the user to review
+the draft and choose where to file using AskUserQuestion with structured
+parameters:
 
 - **question**: "Review the draft above. Where should this issue be filed?"
 - **header**: "File Issue"
@@ -276,7 +299,11 @@ Do not proceed to file the issue, propose direct edits, commit changes,
 or take any action outside this skill without explicit user approval via
 AskUserQuestion — even if the answer appears obvious from context.
 
-**If "Target project"** or **"FLOW plugin"** → file the issue (see Filing below).
+**If "File issue"** (FLOW repo) or **"Target project"** → file the issue
+using the target project path (see Filing below).
+
+**If "FLOW plugin"** → file the issue using the FLOW plugin path (see
+Filing below).
 
 **If "Revise draft"** → revise the draft based on feedback and re-present.
 If the feedback is substantial (changes the problem understanding or
