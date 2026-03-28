@@ -10,10 +10,10 @@ parent: Skills
 
 **Usage:** `/flow-code-review`, `/flow-code-review --auto`, or `/flow-code-review --manual`
 
-Three review lenses (clarity, correctness, safety) plus an optional fourth
-(CLAUDE.md compliance via the code-review:code-review plugin). Combines
-clarity review, code review, and security review into a single phase with
-up to four ordered steps, each with its own commit checkpoint.
+Five review steps — clarity, correctness, safety, CLAUDE.md compliance, and
+pre-mortem incident analysis. Combines inline review passes, a multi-agent
+compliance plugin, and a context-isolated pre-mortem agent into a single
+phase with up to five ordered steps, each with its own commit checkpoint.
 
 ---
 
@@ -44,14 +44,26 @@ exposure. If no findings, skips to the next step. Every finding is fixed,
 ### Step 4 — Code Review Plugin (CLAUDE.md compliance, configurable)
 
 Controlled by the `code_review_plugin` config axis. When set to `"never"`,
-this step is skipped and the phase completes after Step 3.
+this step is skipped and the phase proceeds to Step 5.
 
 When enabled (`"always"` or `"auto"`), invokes the `code-review:code-review`
 plugin for multi-agent validation. Four parallel agents (2x CLAUDE.md
 compliance, 1x bug scan, 1x security/logic scan) with a validation layer
 that filters false positives. Waits for all background agents to complete
-before evaluating findings. If no findings, skips to Done. Every finding is
+before evaluating findings. If no findings, skips to Step 5. Every finding is
 fixed, `bin/flow ci` is run, and changes are committed via `/flow-commit`.
+
+### Step 5 — Pre-Mortem (incident analysis)
+
+Launches the `pre-mortem` custom agent — a context-isolated sub-agent that
+receives only the branch diff and codebase access, with no conversation
+history or coding rationale. The agent frames the review as an incident
+investigation: "This PR was merged and caused a production incident."
+
+The agent produces a structured incident report (root cause hypothesis,
+blast radius, what tests missed, severity, evidence). The main session
+triages each finding as real or false positive. Real findings are fixed,
+`bin/flow ci` is run, and changes are committed via `/flow-commit`.
 
 ---
 
@@ -76,8 +88,8 @@ configurable independently:
   Controls whether Step 4 (the code-review:code-review plugin) runs.
 
 In auto mode, findings are auto-fixed and the phase transition advances to
-Learn without asking. When `code_review_plugin` is `"never"`, the phase
-completes after Step 3.
+Learn without asking. When `code_review_plugin` is `"never"`, Step 4 is
+skipped but Step 5 (Pre-Mortem) still runs.
 
 ---
 
@@ -93,7 +105,8 @@ Check which dispatches to the next step.
 Steps 1-3 perform inline review passes sequentially within the response
 turn. Step 4 invokes the code-review plugin which may launch background
 agents — it waits for all background agents to complete before evaluating
-findings.
+findings. Step 5 launches the pre-mortem agent for context-isolated
+incident analysis.
 
 ---
 

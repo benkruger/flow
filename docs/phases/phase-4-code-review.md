@@ -7,13 +7,15 @@ nav_order: 5
 
 **Command:** `/flow-code-review`
 
-Four lenses on the same diff — clarity, correctness, safety, and CLAUDE.md
-compliance. Combines what were previously separate passes into a single phase
-with four ordered steps, each with its own commit checkpoint.
+Five lenses on the same diff — clarity, correctness, safety, CLAUDE.md
+compliance, and pre-mortem incident analysis. Combines inline review passes,
+a multi-agent compliance plugin, and a context-isolated pre-mortem agent
+into a single phase with five ordered steps, each with its own commit
+checkpoint.
 
 ---
 
-## The Four Steps
+## The Five Steps
 
 ### Step 1 — Simplify (clarity)
 
@@ -55,6 +57,18 @@ Waits for all background agents to complete before evaluating findings.
 Every finding is fixed, `bin/flow ci` is run, and changes are committed
 via `/flow-commit`.
 
+### Step 5 — Pre-Mortem (incident analysis)
+
+Launches the `pre-mortem` custom agent — a context-isolated sub-agent that
+receives only the branch diff and codebase access, with no conversation
+history or coding rationale. The agent frames the review as an incident
+investigation: "This PR was merged and caused a production incident."
+
+The agent produces a structured incident report (root cause hypothesis,
+blast radius, what tests missed, severity, evidence). The main session
+triages each finding as real or false positive. Real findings are fixed,
+`bin/flow ci` is run, and changes are committed via `/flow-commit`.
+
 ---
 
 ## Step Advancement
@@ -70,7 +84,8 @@ re-entry.
 Step 1 performs inline review passes sequentially within the response turn.
 Steps 2-4 invoke built-in skills or plugins that may launch background
 agents — each of those steps waits for all background agents to complete
-before evaluating findings.
+before evaluating findings. Step 5 launches the pre-mortem agent for
+context-isolated incident analysis.
 
 ---
 
