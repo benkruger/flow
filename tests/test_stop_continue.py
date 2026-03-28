@@ -879,7 +879,7 @@ class TestSetTabTitle:
             f"\033]6;1;bg;red;brightness;{r}\007"
             f"\033]6;1;bg;green;brightness;{g}\007"
             f"\033]6;1;bg;blue;brightness;{b}\007"
-            f"\033]1;Test Feature \u2014 P3: Code\007"
+            f"\033]1;Test Feature \u2014 P3: Code (1)\007"
         )
         assert written[0] == expected
 

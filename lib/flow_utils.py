@@ -432,12 +432,20 @@ def format_tab_title(state):
     step = ""
     if phase == "flow-code":
         task = state.get("code_task", 0)
-        if isinstance(task, int) and task > 0:
-            step = f" ({task})"
+        if isinstance(task, int):
+            step = f" ({task + 1})"
     elif phase == "flow-code-review":
         review_step = state.get("code_review_step", 0)
-        if isinstance(review_step, int) and 0 < review_step < 4:
-            step = f" ({review_step}/4)"
+        if isinstance(review_step, int) and review_step < 4:
+            step = f" ({review_step + 1}/4)"
+    elif phase == "flow-learn":
+        learn_step = state.get("learn_step", 0)
+        if isinstance(learn_step, int) and learn_step > 0:
+            step = f" ({learn_step + 1})"
+    elif phase == "flow-complete":
+        complete_step = state.get("complete_step", 0)
+        if isinstance(complete_step, int) and complete_step > 0:
+            step = f" ({complete_step})"
 
     feature = derive_feature(branch)
     issue_numbers = extract_issue_numbers(state.get("prompt", ""))

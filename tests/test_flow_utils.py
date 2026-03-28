@@ -769,11 +769,11 @@ class TestFormatTabTitle:
 
     def test_phase_3_code(self):
         title = format_tab_title(self._state("flow-code"))
-        assert title == "Test Feature \u2014 P3: Code"
+        assert title == "Test Feature \u2014 P3: Code (1)"
 
     def test_phase_4_code_review(self):
         title = format_tab_title(self._state("flow-code-review"))
-        assert title == "Test Feature \u2014 P4: Code Review"
+        assert title == "Test Feature \u2014 P4: Code Review (1/4)"
 
     def test_phase_5_learn(self):
         title = format_tab_title(self._state("flow-learn"))
@@ -785,12 +785,12 @@ class TestFormatTabTitle:
 
     def test_code_with_task(self):
         title = format_tab_title(self._state("flow-code", code_task=2))
-        assert title == "Test Feature \u2014 P3: Code (2)"
+        assert title == "Test Feature \u2014 P3: Code (3)"
 
     def test_code_with_task_zero(self):
-        """code_task=0 means no task started — no step info."""
+        """code_task=0 means working on first task — shows (1)."""
         title = format_tab_title(self._state("flow-code", code_task=0))
-        assert title == "Test Feature \u2014 P3: Code"
+        assert title == "Test Feature \u2014 P3: Code (1)"
 
     def test_code_with_string_task(self):
         """Non-integer code_task is ignored — no step info."""
@@ -799,17 +799,37 @@ class TestFormatTabTitle:
 
     def test_code_review_with_step(self):
         title = format_tab_title(self._state("flow-code-review", code_review_step=2))
-        assert title == "Test Feature \u2014 P4: Code Review (2/4)"
+        assert title == "Test Feature \u2014 P4: Code Review (3/4)"
 
     def test_code_review_with_step_zero(self):
-        """code_review_step=0 means not started — no step info."""
+        """code_review_step=0 means working on first step — shows (1/4)."""
         title = format_tab_title(self._state("flow-code-review", code_review_step=0))
-        assert title == "Test Feature \u2014 P4: Code Review"
+        assert title == "Test Feature \u2014 P4: Code Review (1/4)"
 
     def test_code_review_with_step_four(self):
         """code_review_step=4 means all done — no step info."""
         title = format_tab_title(self._state("flow-code-review", code_review_step=4))
         assert title == "Test Feature \u2014 P4: Code Review"
+
+    def test_learn_with_step(self):
+        """learn_step=4 means checkpoint 4 done — shows (5)."""
+        title = format_tab_title(self._state("flow-learn", learn_step=4))
+        assert title == "Test Feature \u2014 P5: Learn (5)"
+
+    def test_learn_with_step_zero(self):
+        """learn_step=0 means no checkpoint — no step info."""
+        title = format_tab_title(self._state("flow-learn", learn_step=0))
+        assert title == "Test Feature \u2014 P5: Learn"
+
+    def test_complete_with_step(self):
+        """complete_step=5 means resuming at step 5 — shows (5) directly."""
+        title = format_tab_title(self._state("flow-complete", complete_step=5))
+        assert title == "Test Feature \u2014 P6: Complete (5)"
+
+    def test_complete_with_step_zero(self):
+        """complete_step=0 means no resume point — no step info."""
+        title = format_tab_title(self._state("flow-complete", complete_step=0))
+        assert title == "Test Feature \u2014 P6: Complete"
 
     def test_missing_current_phase(self):
         assert format_tab_title({"branch": "test-feature"}) is None
@@ -827,21 +847,21 @@ class TestFormatTabTitle:
 
     def test_prompt_with_one_issue(self):
         title = format_tab_title(self._state("flow-code", prompt="work on issue #342"))
-        assert title == "#342 Test Feature \u2014 P3: Code"
+        assert title == "#342 Test Feature \u2014 P3: Code (1)"
 
     def test_prompt_with_multiple_issues(self):
         title = format_tab_title(self._state("flow-code", prompt="work on #83 and #89"))
-        assert title == "#83 #89 Test Feature \u2014 P3: Code"
+        assert title == "#83 #89 Test Feature \u2014 P3: Code (1)"
 
     def test_prompt_with_no_issue_numbers(self):
         title = format_tab_title(self._state("flow-code", prompt="fix login timeout"))
-        assert title == "Test Feature \u2014 P3: Code"
+        assert title == "Test Feature \u2014 P3: Code (1)"
 
     def test_prompt_missing(self):
         """No prompt key in state — no issue prefix."""
         state = {"current_phase": "flow-code", "branch": "test-feature"}
         title = format_tab_title(state)
-        assert title == "Test Feature \u2014 P3: Code"
+        assert title == "Test Feature \u2014 P3: Code (1)"
 
 
 # --- format_tab_color tests ---
