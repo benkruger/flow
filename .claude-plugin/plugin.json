@@ -8,18 +8,5 @@
   "homepage": "https://benkruger.github.io/flow",
   "repository": "https://github.com/benkruger/flow",
   "license": "MIT",
-  "keywords": ["rails", "python", "tdd", "workflow", "sdlc"],
-  "userConfig": {
-    "slack_bot_token": {
-      "type": "string",
-      "description": "Slack bot token (xoxb-...) for phase notifications",
-      "required": false,
-      "sensitive": true
-    },
-    "slack_channel": {
-      "type": "string",
-      "description": "Slack channel ID (C...) for phase notifications",
-      "required": false
-    }
-  }
+  "keywords": ["rails", "python", "tdd", "workflow", "sdlc"]
 }
