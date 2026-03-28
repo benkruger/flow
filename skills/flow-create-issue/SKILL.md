@@ -53,8 +53,7 @@ Use the Read tool to read `.flow-states/create-issue-<id>.json`, where
 was passed (first run), there is no file to read — proceed to Input
 Classification.
 
-- If the file does not exist or `create_issue_step` is `0`, proceed to
-  Input Classification (first run).
+- If the file does not exist, proceed to Input Classification (first run).
 - If `create_issue_step` is `1` — Step 1 is done. Skip to Step 2.
 
 ---
@@ -260,9 +259,15 @@ approach), re-run `decompose:decompose` with the updated understanding.
 If the feedback is editorial (wording, scope adjustments), revise the
 draft directly. After revision, ask again with the same AskUserQuestion.
 
-**If "Re-decompose"** → invoke `flow:flow-create-issue` using the Skill
-tool as your final action (no `--step` or `--id` flags — restart from
-scratch). Do not output anything else after this invocation.
+**If "Re-decompose"** → clean up the session state file first:
+
+```bash
+rm .flow-states/create-issue-<id>.json
+```
+
+Then invoke `flow:flow-create-issue` using the Skill tool as your final
+action (no `--step` or `--id` flags — restart from scratch). Do not
+output anything else after this invocation.
 
 Iterate as many times as needed. The issue is not filed until the user
 explicitly chooses a filing target.

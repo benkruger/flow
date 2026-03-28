@@ -2436,7 +2436,7 @@ def test_create_issue_step_1_self_invokes():
     """Step 1 must self-invoke flow:flow-create-issue with --step flag."""
     steps = _create_issue_steps()
     for step_num, step_text in steps:
-        if step_num <= 1:
+        if step_num == 1:
             assert "flow:flow-create-issue" in step_text, f"Step {step_num} must self-invoke flow:flow-create-issue"
             assert "--step" in step_text, f"Step {step_num} must use --step flag for self-invocation"
 
