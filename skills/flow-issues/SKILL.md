@@ -154,7 +154,11 @@ If no issues are in progress, skip this section.
 ### Recommended Work Order
 
 Print a "Recommended Work Order" section as a single markdown table.
-Columns: `Order`, `Impact`, `Labels`, `#`, `Title`, `Rationale`.
+Columns: `Order`, `Status`, `Impact`, `Labels`, `#`, `Title`, `Rationale`.
+
+The `Status` column shows readiness: `Ready` or `Blocked`. Status is
+determined by the `dependencies` field — empty = `Ready`, non-empty =
+`Blocked`.
 
 The `Impact` column shows your assessment: `High`, `Medium`, or `Low`.
 
@@ -171,11 +175,17 @@ The `Rationale` column explains why this issue is at this position:
 - If decomposed: "decomposed — ready for autonomous execution"
 - Otherwise: brief reason based on your impact assessment
 
+**Ordering:** All ready issues appear first, sorted by impact with
+dependency ordering respected. Blocked issues appear after all ready
+issues, maintaining the same dependency-respecting impact order within the
+blocked group.
+
 ### Start Commands
 
-After the work order table, print a "Start Commands" table with one row per
-issue in the work order. Columns: `#` (ordinal matching work order position),
-`Command`, `Title` (the issue title).
+After the work order table, print a "Start Commands" table with only the
+ready issues from the work order. Columns: `#` (matching the issue's
+`Order` position in the work order table), `Command`, `Title` (the issue
+title). Do not include blocked issues in this table.
 
 | # | Command | Title |
 |---|---------|-------|
