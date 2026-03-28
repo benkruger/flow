@@ -180,11 +180,25 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --auto
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
 
+Set the step tracking fields for TUI progress display:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_steps_total=11
+```
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=2
+```
+
 Steps 3–9 serialize all main-branch work behind a lock. Only one
 flow-start runs this section at a time. Concurrent starts wait until
 the lock is released.
 
 ### Step 3 — Acquire start lock
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=3
+```
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --acquire --wait --feature <feature-name>
@@ -201,10 +215,18 @@ stale notification after the workflow completes.
 ### Step 4 — Pull latest main
 
 ```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=4
+```
+
+```bash
 git pull origin main
 ```
 
 ### Step 5 — CI baseline gate
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=5
+```
 
 Main is pristine — nothing merges without clean CI. Any failure here is
 a flaky test, not a real breakage.
@@ -252,6 +274,10 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release
 
 ### Step 6 — Update dependencies
 
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=6
+```
+
 Use the Read tool to check if `bin/dependencies` exists at `<project_root>/bin/dependencies`.
 
 If it does not exist, skip to Step 9 (release lock).
@@ -271,6 +297,10 @@ git status
 If `git status` shows no changes, skip to Step 9 (release lock).
 
 ### Step 7 — CI post-deps gate
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=7
+```
 
 If dependencies changed anything, run CI again to catch dep-induced breakage
 (rubocop violations, breaking changes, etc.):
@@ -326,10 +356,18 @@ Wait for the sub-agent to return.
 
 ### Step 8 — Commit to main
 
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=8
+```
+
 If there are any uncommitted changes (dependency updates + CI fixes),
 commit them to main via `/flow:flow-commit --auto`.
 
 ### Step 9 — Release start lock
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=9
+```
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release
@@ -341,6 +379,10 @@ Uncommitted fixes on main will not appear in the worktree.
 </HARD-GATE>
 
 ### Step 10 — Set up workspace
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=10
+```
 
 Write the user's original start prompt (verbatim, including `#N` issue references
 and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
@@ -394,6 +436,10 @@ If the script returns an error, read the stderr output for details, report
 the failure to the user, and stop.
 
 ### Step 11 — Label referenced issues
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=11
+```
 
 If the start prompt contains `#N` issue references, add the "Flow In-Progress"
 label so other engineers can see these issues are being worked on:

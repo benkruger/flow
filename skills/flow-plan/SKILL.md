@@ -93,6 +93,12 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-plan --action enter
 Parse the JSON output to confirm `"status": "ok"`.
 If `"status": "error"`, report the error and stop.
 
+Set the step tracking fields for TUI progress display:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_steps_total=4
+```
+
 ## Logging
 
 After every Bash command in Steps 1–4, log it to `.flow-states/<branch>.log`
@@ -138,6 +144,10 @@ Check `files.plan` and `files.dag` in the state file:
 
 ## Step 1 — Feature description and issue context
 
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_step=1
+```
+
 Use the `prompt` from the state file as the feature description. This is the
 full text the user passed to `/flow:flow-start` — it describes what to build.
 
@@ -179,6 +189,10 @@ Proceed to Step 2.
 ---
 
 ## Step 2 — DAG decomposition
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_step=2
+```
 
 ### Pre-decomposed issue skip
 
@@ -266,6 +280,10 @@ final action. Do not output anything else after this invocation.
 
 ## Step 3 — Explore and write the plan
 
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_step=3
+```
+
 Explore the codebase, validate the DAG against reality (if DAG was
 produced), and write the implementation plan to a plan file.
 
@@ -347,6 +365,10 @@ Proceed to Step 4.
 ---
 
 ## Step 4 — Store plan file and complete phase
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_step=4
+```
 
 Store the plan file path in the state file:
 
