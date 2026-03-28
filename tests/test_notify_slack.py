@@ -4,58 +4,57 @@ import json
 import subprocess
 from unittest.mock import patch
 
-from conftest import import_lib, make_flow_json
+from conftest import import_lib
+
+TOKEN_ENV = "CLAUDE_PLUGIN_CONFIG_slack_bot_token"
+CHANNEL_ENV = "CLAUDE_PLUGIN_CONFIG_slack_channel"
 
 # --- read_slack_config ---
 
 
-def test_read_config_with_both_values(tmp_path):
-    """Returns bot_token and channel when both are present in .flow.json."""
+def test_read_config_from_env(monkeypatch):
+    """Returns bot_token and channel when both env vars are set."""
     mod = import_lib("notify-slack.py")
-    make_flow_json(tmp_path, bot_token="xoxb-test-token", channel="C12345")
-    config = mod.read_slack_config(tmp_path)
+    monkeypatch.setenv(TOKEN_ENV, "xoxb-test-token")
+    monkeypatch.setenv(CHANNEL_ENV, "C12345")
+    config = mod.read_slack_config()
     assert config["bot_token"] == "xoxb-test-token"
     assert config["channel"] == "C12345"
 
 
-def test_read_config_missing_slack_key(tmp_path):
-    """Returns None when .flow.json has no slack key."""
+def test_read_config_missing_token(monkeypatch):
+    """Returns None when bot token env var is absent."""
     mod = import_lib("notify-slack.py")
-    make_flow_json(tmp_path)  # No bot_token/channel → no slack block
-    config = mod.read_slack_config(tmp_path)
+    monkeypatch.delenv(TOKEN_ENV, raising=False)
+    monkeypatch.setenv(CHANNEL_ENV, "C12345")
+    config = mod.read_slack_config()
     assert config is None
 
 
-def test_read_config_missing_file(tmp_path):
-    """Returns None when .flow.json does not exist."""
+def test_read_config_missing_channel(monkeypatch):
+    """Returns None when channel env var is absent."""
     mod = import_lib("notify-slack.py")
-    config = mod.read_slack_config(tmp_path)
+    monkeypatch.setenv(TOKEN_ENV, "xoxb-test")
+    monkeypatch.delenv(CHANNEL_ENV, raising=False)
+    config = mod.read_slack_config()
     assert config is None
 
 
-def test_read_config_corrupt_json(tmp_path):
-    """Returns None when .flow.json is corrupt."""
+def test_read_config_both_missing(monkeypatch):
+    """Returns None when both env vars are absent."""
     mod = import_lib("notify-slack.py")
-    (tmp_path / ".flow.json").write_text("{bad json")
-    config = mod.read_slack_config(tmp_path)
+    monkeypatch.delenv(TOKEN_ENV, raising=False)
+    monkeypatch.delenv(CHANNEL_ENV, raising=False)
+    config = mod.read_slack_config()
     assert config is None
 
 
-def test_read_config_missing_bot_token(tmp_path):
-    """Returns None when slack block has channel but no bot_token."""
+def test_read_config_empty_values(monkeypatch):
+    """Returns None when env vars are set but empty."""
     mod = import_lib("notify-slack.py")
-    data = {"flow_version": "0.36.2", "framework": "rails", "slack": {"channel": "C12345"}}
-    (tmp_path / ".flow.json").write_text(json.dumps(data))
-    config = mod.read_slack_config(tmp_path)
-    assert config is None
-
-
-def test_read_config_missing_channel(tmp_path):
-    """Returns None when slack block has bot_token but no channel."""
-    mod = import_lib("notify-slack.py")
-    data = {"flow_version": "0.36.2", "framework": "rails", "slack": {"bot_token": "xoxb-test"}}
-    (tmp_path / ".flow.json").write_text(json.dumps(data))
-    config = mod.read_slack_config(tmp_path)
+    monkeypatch.setenv(TOKEN_ENV, "")
+    monkeypatch.setenv(CHANNEL_ENV, "")
+    config = mod.read_slack_config()
     assert config is None
 
 
@@ -184,10 +183,11 @@ def test_post_message_invalid_json_response():
 # --- CLI integration ---
 
 
-def test_cli_no_config_returns_skipped(tmp_path, monkeypatch, capsys):
-    """CLI returns skipped when no .flow.json exists."""
+def test_cli_no_config_returns_skipped(monkeypatch, capsys):
+    """CLI returns skipped when no env vars are set."""
     mod = import_lib("notify-slack.py")
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv(TOKEN_ENV, raising=False)
+    monkeypatch.delenv(CHANNEL_ENV, raising=False)
     monkeypatch.setattr("sys.argv", ["notify-slack.py", "--phase", "flow-start", "--message", "test"])
 
     mod.main()
@@ -196,10 +196,12 @@ def test_cli_no_config_returns_skipped(tmp_path, monkeypatch, capsys):
     assert data["status"] == "skipped"
 
 
-def test_cli_with_config_posts_message(tmp_path):
-    """CLI posts message when config exists (mocked curl)."""
-    make_flow_json(tmp_path, bot_token="xoxb-test", channel="C12345")
+def test_cli_with_config_posts_message(monkeypatch):
+    """CLI posts message when env vars are set (mocked curl)."""
     slack_response = {"ok": True, "ts": "1234567890.123456"}
+
+    monkeypatch.setenv(TOKEN_ENV, "xoxb-test")
+    monkeypatch.setenv(CHANNEL_ENV, "C12345")
 
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
@@ -211,16 +213,17 @@ def test_cli_with_config_posts_message(tmp_path):
         mod = import_lib("notify-slack.py")
         result = mod.main_with_args(
             ["--phase", "flow-start", "--message", "test"],
-            root_override=tmp_path,
         )
     assert result["status"] == "ok"
     assert result["ts"] == "1234567890.123456"
 
 
-def test_cli_with_thread_ts(tmp_path):
+def test_cli_with_thread_ts(monkeypatch):
     """CLI passes thread_ts for replies."""
-    make_flow_json(tmp_path, bot_token="xoxb-test", channel="C12345")
     slack_response = {"ok": True, "ts": "1234567890.654321"}
+
+    monkeypatch.setenv(TOKEN_ENV, "xoxb-test")
+    monkeypatch.setenv(CHANNEL_ENV, "C12345")
 
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
@@ -232,15 +235,15 @@ def test_cli_with_thread_ts(tmp_path):
         mod = import_lib("notify-slack.py")
         result = mod.main_with_args(
             ["--phase", "flow-plan", "--message", "Plan complete", "--thread-ts", "1234567890.123456"],
-            root_override=tmp_path,
         )
     assert result["status"] == "ok"
 
 
-def test_cli_returns_valid_json(tmp_path, monkeypatch, capsys):
+def test_cli_returns_valid_json(monkeypatch, capsys):
     """CLI produces valid JSON on stdout."""
     mod = import_lib("notify-slack.py")
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv(TOKEN_ENV, raising=False)
+    monkeypatch.delenv(CHANNEL_ENV, raising=False)
     monkeypatch.setattr("sys.argv", ["notify-slack.py", "--phase", "flow-start", "--message", "test"])
 
     mod.main()
@@ -249,20 +252,22 @@ def test_cli_returns_valid_json(tmp_path, monkeypatch, capsys):
     assert "status" in data
 
 
-def test_main_with_args_no_config_returns_skipped(tmp_path):
-    """main_with_args returns skipped when no config exists."""
+def test_main_with_args_no_config_returns_skipped(monkeypatch):
+    """main_with_args returns skipped when no env vars are set."""
     mod = import_lib("notify-slack.py")
+    monkeypatch.delenv(TOKEN_ENV, raising=False)
+    monkeypatch.delenv(CHANNEL_ENV, raising=False)
     result = mod.main_with_args(
         ["--phase", "flow-start", "--message", "test"],
-        root_override=tmp_path,
     )
     assert result["status"] == "skipped"
 
 
-def test_notify_function_directly(tmp_path):
-    """notify() returns ok with mocked curl when config exists."""
+def test_notify_function_directly(monkeypatch):
+    """notify() returns ok with mocked curl when env vars are set."""
     mod = import_lib("notify-slack.py")
-    make_flow_json(tmp_path, bot_token="xoxb-test", channel="C12345")
+    monkeypatch.setenv(TOKEN_ENV, "xoxb-test")
+    monkeypatch.setenv(CHANNEL_ENV, "C12345")
     parsed = mod._parse_args(["--phase", "flow-start", "--message", "test"])
     slack_response = {"ok": True, "ts": "1234567890.999999"}
     with patch("subprocess.run") as mock_run:
@@ -272,6 +277,6 @@ def test_notify_function_directly(tmp_path):
             stdout=json.dumps(slack_response),
             stderr="",
         )
-        result = mod.notify(parsed, tmp_path)
+        result = mod.notify(parsed)
     assert result["status"] == "ok"
     assert result["ts"] == "1234567890.999999"
