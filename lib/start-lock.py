@@ -11,11 +11,15 @@ Usage:
     bin/flow start-lock --release
     bin/flow start-lock --check
 
-Output (JSON to stdout):
-    Acquire: {"status": "acquired"} or {"status": "locked", "feature": ..., "pid": ..., "acquired_at": ...}
-    Acquire --wait: {"status": "acquired"} or {"status": "timeout", "feature": ..., "pid": ..., "waited_seconds": ...}
-    Release: {"status": "released"}
-    Check:   {"status": "free"} or {"status": "locked", ...}
+Output (JSON to stdout, all responses include "lock_path"):
+    Acquire: {"status": "acquired", "lock_path": ...}
+             or {"status": "locked", "feature": ..., "lock_path": ...}
+    Acquire --wait: {"status": "acquired", ...}
+             or {"status": "timeout", ..., "lock_path": ...}
+    Release: {"status": "released", "lock_path": ...}
+             or {"status": "error", "message": ..., "lock_path": ...}
+    Check:   {"status": "free", "lock_path": ...}
+             or {"status": "locked", ..., "lock_path": ...}
 """
 
 import argparse
@@ -34,12 +38,19 @@ from flow_utils import now, project_root
 LOCK_FILENAME = "start.lock"
 STALE_TIMEOUT_SECONDS = 1800  # 30 minutes
 
+_CACHED_LOCK_PATH = None
+
 
 def _lock_path():
-    """Return the path to the lock file."""
-    state_dir = project_root() / ".flow-states"
+    """Return the path to the lock file. Cached after first resolution."""
+    global _CACHED_LOCK_PATH
+    if _CACHED_LOCK_PATH is not None:
+        return _CACHED_LOCK_PATH
+    root = project_root().resolve()
+    state_dir = root / ".flow-states"
     state_dir.mkdir(parents=True, exist_ok=True)
-    return state_dir / LOCK_FILENAME
+    _CACHED_LOCK_PATH = state_dir / LOCK_FILENAME
+    return _CACHED_LOCK_PATH
 
 
 def _read_lock(lock_file):
@@ -86,7 +97,7 @@ def _try_write_lock(lock_file, feature):
         "feature": feature,
         "acquired_at": now(),
     }
-    lock_dir = str(Path(lock_file).parent)
+    lock_dir = str(lock_file.parent)
     fd, tmp_path = tempfile.mkstemp(dir=lock_dir, prefix=".start-lock-")
     try:
         os.write(fd, json.dumps(lock_data, indent=2).encode())
@@ -109,12 +120,19 @@ def _locked_by_winner(lock_file):
     """Re-read after losing a race; return a locked result for whoever won."""
     existing, _ = _read_lock(lock_file)
     if existing is None:
-        return {"status": "locked", "feature": "unknown", "pid": 0, "acquired_at": "unknown"}
+        return {
+            "status": "locked",
+            "feature": "unknown",
+            "pid": 0,
+            "acquired_at": "unknown",
+            "lock_path": str(lock_file),
+        }
     return {
         "status": "locked",
         "feature": existing["feature"],
         "pid": existing["pid"],
         "acquired_at": existing["acquired_at"],
+        "lock_path": str(lock_file),
     }
 
 
@@ -124,7 +142,7 @@ def _break_and_acquire(lock_file, feature, stale_feature=None):
     lock_data = _try_write_lock(lock_file, feature)
     if lock_data is None:
         return _locked_by_winner(lock_file)
-    result = {"status": "acquired", "stale_broken": True}
+    result = {"status": "acquired", "stale_broken": True, "lock_path": str(lock_file)}
     if stale_feature is not None:
         result["stale_feature"] = stale_feature
     return result
@@ -140,7 +158,7 @@ def acquire(feature):
             return _break_and_acquire(lock_file, feature)
         lock_data = _try_write_lock(lock_file, feature)
         if lock_data is not None:
-            return {"status": "acquired"}
+            return {"status": "acquired", "lock_path": str(lock_file)}
         return _locked_by_winner(lock_file)
 
     pid = existing["pid"]
@@ -155,6 +173,7 @@ def acquire(feature):
         "feature": existing_feature,
         "pid": pid,
         "acquired_at": acquired_at,
+        "lock_path": str(lock_file),
     }
 
 
@@ -173,6 +192,7 @@ def acquire_with_wait(feature, timeout=300, interval=10):
                 "feature": result["feature"],
                 "pid": result["pid"],
                 "waited_seconds": int(elapsed),
+                "lock_path": result["lock_path"],
             }
         remaining = timeout - elapsed
         time.sleep(min(interval, remaining))
@@ -185,7 +205,9 @@ def release():
     """Release the start lock."""
     lock_file = _lock_path()
     lock_file.unlink(missing_ok=True)
-    return {"status": "released"}
+    if lock_file.exists():
+        return {"status": "error", "message": "Lock file persists after unlink", "lock_path": str(lock_file)}
+    return {"status": "released", "lock_path": str(lock_file)}
 
 
 def check():
@@ -194,16 +216,17 @@ def check():
     existing, _ = _read_lock(lock_file)
 
     if existing is None:
-        return {"status": "free"}
+        return {"status": "free", "lock_path": str(lock_file)}
 
     if _is_timed_out(existing["acquired_at"]):
-        return {"status": "free"}
+        return {"status": "free", "lock_path": str(lock_file)}
 
     return {
         "status": "locked",
         "feature": existing["feature"],
         "pid": existing["pid"],
         "acquired_at": existing["acquired_at"],
+        "lock_path": str(lock_file),
     }
 
 
