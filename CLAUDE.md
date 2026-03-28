@@ -63,7 +63,7 @@ CI will fail if these are missing:
 
 - `flow-phases.json` — state machine: phase names, commands, valid back-transitions
 - `skills/<name>/SKILL.md` — each skill's instructions
-- `hooks/hooks.json` — hook registration (SessionStart, PreToolUse, PostToolUse, PostCompact, Stop)
+- `hooks/hooks.json` — hook registration (SessionStart, PreToolUse, PostToolUse, PostCompact, Stop, StopFailure)
 - `hooks/session-start.sh` — detects in-progress features, injects awareness context
 - `lib/check-freshness.py` — pre-merge freshness check: fetches main, checks if branch is up-to-date, returns JSON status (up_to_date, merged, conflict, max_retries); manages retry counting via state file
 - `lib/check-phase.py` — reusable phase entry guard
@@ -107,6 +107,7 @@ CI will fail if these are missing:
 - `lib/render-pr-body.py` — idempotent PR body renderer: reads state file + artifact files, generates complete body in canonical section order (What, Artifacts, Plan, DAG Analysis, Phase Timings, State File, Session Log, Issues Filed)
 - `lib/update-pr-body.py` — updates PR body: `--add-artifact` for list items, `--append-section` for collapsible/plain sections
 - `lib/stop-continue.py` — Stop hook script that forces continuation when `_continue_pending` flag is set in the state file; reads `_continue_context` for specific next-step instructions in the block reason
+- `lib/stop-failure.py` — StopFailure hook that captures API error context (`_last_failure` with type, message, timestamp) in the state file; fail-open, consumed and cleared by SessionStart on resume
 - `lib/post-compact.py` — PostCompact hook that captures `compact_summary`, `compact_cwd`, and `compact_count` in the state file for SessionStart to inject
 - `lib/tui_data.py` — pure data layer for TUI: loads state files, computes flow summaries, phase timelines, parses log entries
 - `lib/tui.py` — curses-based interactive TUI for viewing and managing active flows (`flow tui`)
@@ -251,6 +252,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_validate_ask_user.py` | AskUserQuestion hook: answers prompts via `updatedInput` when `_auto_continue` set, allows when absent/empty, `_blocked` write on allow, subprocess integration |
 | `test_clear_blocked.py` | PostToolUse hook: clears `_blocked` from state, noop when absent, fail-open on errors, subprocess integration |
 | `test_post_compact.py` | PostCompact hook: compact_summary/cwd/count written to state, fail-open on errors, subprocess integration |
+| `test_stop_failure.py` | StopFailure hook: _last_failure written to state (type, message, timestamp), fail-open on errors, missing key/state/branch handling, overwrite, subprocess integration |
 | `test_finalize_commit.py` | Commit finalization: happy path, commit/pull/push failures, merge conflict detection, message file cleanup, CLI |
 | `test_generate_id.py` | Session ID generation: length, hex format, uniqueness, main stdout, CLI integration |
 | `test_flow_utils.py` | flow_utils functions: format_time, project_root, current_branch, find_state_files, resolve_branch, derive_feature, derive_worktree, detect_repo, mutate_state, extract_issue_numbers, short_issue_ref, parse_conflict_files, timeout constants, tab color/title/sequence formatting |
