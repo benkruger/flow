@@ -131,3 +131,42 @@ class TestSubprocess:
         exit_code, stdout = _run_hook("", cwd=git_repo)
         assert exit_code == 0
         assert stdout == ""
+
+    def test_bash_tool_clears_blocked(self, git_repo, state_dir, branch):
+        """PostToolUse on Bash clears _blocked (expanded matcher coverage)."""
+        state = make_state(current_phase="flow-code")
+        state["_blocked"] = "2026-01-01T10:00:00-08:00"
+        write_state(state_dir, branch, state)
+
+        stdin = json.dumps({"tool_name": "Bash"})
+        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+
+        assert exit_code == 0
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert "_blocked" not in updated
+
+    def test_edit_tool_clears_blocked(self, git_repo, state_dir, branch):
+        """PostToolUse on Edit clears _blocked (expanded matcher coverage)."""
+        state = make_state(current_phase="flow-code")
+        state["_blocked"] = "2026-01-01T10:00:00-08:00"
+        write_state(state_dir, branch, state)
+
+        stdin = json.dumps({"tool_name": "Edit"})
+        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+
+        assert exit_code == 0
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert "_blocked" not in updated
+
+    def test_write_tool_clears_blocked(self, git_repo, state_dir, branch):
+        """PostToolUse on Write clears _blocked (expanded matcher coverage)."""
+        state = make_state(current_phase="flow-code")
+        state["_blocked"] = "2026-01-01T10:00:00-08:00"
+        write_state(state_dir, branch, state)
+
+        stdin = json.dumps({"tool_name": "Write"})
+        exit_code, stdout = _run_hook(stdin, cwd=git_repo)
+
+        assert exit_code == 0
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert "_blocked" not in updated

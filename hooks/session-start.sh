@@ -133,6 +133,10 @@ if not files and not orchestrate_block:
 
 
 def reset_interrupted(path, state):
+    changed = False
+    if "_blocked" in state:
+        state.pop("_blocked")
+        changed = True
     cp = state.get("current_phase", "flow-start")
     phase = state.get("phases", {}).get(cp, {})
     session_started = phase.get("session_started_at")
@@ -148,6 +152,8 @@ def reset_interrupted(path, state):
         except Exception:
             pass
         state["phases"][cp]["session_started_at"] = None
+        changed = True
+    if changed:
         with open(path, "w") as f:
             json.dump(state, f, indent=2)
 

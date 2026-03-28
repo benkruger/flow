@@ -335,6 +335,7 @@ These skills and scripts live in the FLOW repo itself (`.claude/skills/` and `li
 |---------|-------------|
 | `/flow-release` | Bump version in plugin.json and marketplace.json, tag, push, create GitHub Release |
 | `/flow-qa` | End-to-end QA — clone QA repos, prime with local source, run a full 6-phase lifecycle, verify results |
+| `/flow-changelog-audit` | Audit Claude Code CHANGELOG.md for plugin-relevant changes, categorize as Adopt/Remove/Adapt, file issues |
 
 ### QA System
 

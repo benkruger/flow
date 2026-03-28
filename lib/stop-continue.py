@@ -177,6 +177,30 @@ def clear_blocked(root=None, branch=_UNSET):
         _log(root, branch, f"clear_blocked error: {exc}")
 
 
+def set_blocked_idle(root=None, branch=_UNSET):
+    """Set _blocked flag when the session is going idle.
+
+    Called by main() when no continuation is pending — the session is about
+    to wait for user input at the main prompt. Sets _blocked = now() so the
+    TUI shows the flow as blocked/waiting.
+    """
+    try:
+        root, branch = _resolve(root, branch)
+        if not branch:
+            return
+
+        state_path = root / ".flow-states" / f"{branch}.json"
+        if not state_path.exists():
+            return
+
+        def transform(state):
+            state["_blocked"] = now()
+
+        mutate_state(state_path, transform)
+    except Exception as exc:
+        _log(root, branch, f"set_blocked_idle error: {exc}")
+
+
 def set_tab_title(root=None, branch=_UNSET):
     """Write the current FLOW phase and repo color to the terminal tab via /dev/tty.
 
@@ -248,10 +272,6 @@ def main():
 
     capture_session_id(hook_input, root=root, branch=branch)
 
-    clear_blocked(root=root, branch=branch)
-
-    set_tab_title(root=root, branch=branch)
-
     # Fallback: check for QA continuation breadcrumb when no branch
     # state file blocked the stop.
     if not should_block:
@@ -260,6 +280,15 @@ def main():
             should_block = True
             skill_name = "flow-complete"
             context = qa_context
+
+    # Blocked flag: CLEAR when session is continuing (blocking),
+    # SET when session is going idle (not blocking).
+    if should_block:
+        clear_blocked(root=root, branch=branch)
+    else:
+        set_blocked_idle(root=root, branch=branch)
+
+    set_tab_title(root=root, branch=branch)
 
     if should_block:
         reason = f"Continue parent phase — child skill '{skill_name}' has returned."
