@@ -49,8 +49,8 @@ CI will fail if these are missing:
 
 ### Content sync (convention-enforced — no test catches this)
 
-- Changed skill behavior (new flag, changed steps, different workflow) — update `docs/skills/<name>.md` to match
-- Changed phase behavior — update `docs/phases/phase-<N>-<name>.md` to match
+- Changed skill behavior (new flag, changed steps, different workflow) — update `docs/skills/<name>.md` and the Description column in `docs/skills/index.md` to match
+- Changed phase behavior — update `docs/phases/phase-<N>-<name>.md` and the Description column in `docs/skills/index.md` to match
 - Changed architecture or capabilities — update `README.md` and `docs/index.html` if the change affects how FLOW is described to users
 
 ### Test requirements
