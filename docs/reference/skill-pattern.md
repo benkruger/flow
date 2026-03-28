@@ -126,9 +126,9 @@ against `.claude/settings.json` allow patterns. Commands not matching any
 its own hook declaration for defense in depth.
 
 Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`).
-Code Review performs inline review passes for clarity, then delegates to
-built-in `/review` for correctness and performs inline security review for
-safety. Code and Learn have no sub-agents.
+Code Review performs inline review passes for clarity, then performs inline
+correctness review for correctness and inline security review for safety.
+Code and Learn have no sub-agents.
 Complete uses ci-fixer for CI failures.
 
 **Code phase rationale:** By the time Code starts, the plan file contains
