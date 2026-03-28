@@ -112,18 +112,22 @@ Do not proceed to Step 1, propose direct edits, commit changes, or take
 any action outside this skill without explicit user approval via
 AskUserQuestion.
 
-When the discussion produces a concrete problem the user wants to file,
-ask using AskUserQuestion with structured parameters:
+When the discussion produces one or more concrete problems the user wants
+to file, ask using AskUserQuestion with structured parameters:
 
-- **question**: "Ready to file this as an issue?"
+- **question**: "Ready to file?"
 - **header**: "File Issue?"
 - **options**:
   - label: "File an issue", description: "Proceed to the 2-step pipeline with the refined problem"
+  - label: "File multiple issues", description: "Draft and file all refined problems as independent issues"
   - label: "Done exploring", description: "End without filing an issue"
 
-If "File an issue" — proceed to Step 1 below with the refined problem
-statement. If the user identifies multiple issues — ask which to start
-with, then proceed to Step 1 for the chosen issue.
+If "File an issue" — proceed to Step 1 below with the single refined
+problem statement.
+
+If "File multiple issues" — collect all refined problems identified during
+the exploration. For each problem, note a concise title and a summary
+paragraph describing the problem. Proceed to Step 1 with the full list.
 
 If "Done exploring" — stop without filing. No issue is required.
 
@@ -173,11 +177,25 @@ structured parameters:
 
 **If "Proceed to draft"** → generate a short session ID by running
 `${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool (this ID
-scopes all file paths for this session). Write
-`{"create_issue_step": 1}` to `.flow-states/create-issue-<id>.json`
-using the Write tool, then invoke `flow:flow-create-issue --step 2 --id <id>`
-using the Skill tool as your final action. Do not output anything else
-after this invocation.
+scopes all file paths for this session).
+
+If Step 1 received a list of problems (from "File multiple issues" in
+Exploration Mode), write the following to
+`.flow-states/create-issue-<id>.json` using the Write tool:
+
+```json
+{"create_issue_step": 1, "multi": true, "issues": [{"title": "...", "summary": "..."}]}
+```
+
+The `issues` array contains one object per problem with `title` (concise
+issue title) and `summary` (problem description paragraph).
+
+If Step 1 received a single problem, write `{"create_issue_step": 1}` to
+`.flow-states/create-issue-<id>.json` using the Write tool.
+
+In both cases, invoke `flow:flow-create-issue --step 2 --id <id>` using
+the Skill tool as your final action. Do not output anything else after
+this invocation.
 
 **If "Iterate"** → re-invoke `decompose:decompose` with the user's
 feedback, present the updated synthesis, and ask again.
@@ -199,6 +217,10 @@ Output in your response (not via Bash) inside a fenced code block:
   ── Step 2 of 2: Draft + File ──
 ```
 ````
+
+Use the Read tool to read `.flow-states/create-issue-<id>.json`. If
+`multi` is `true`, skip to the **Multi-Issue Path** section below.
+Otherwise, continue with the single-issue path.
 
 Take the decompose synthesis and craft a single GitHub issue. The issue must contain enough detail that a fresh Claude session running `/flow:flow-start work on issue #N` can execute it fully autonomously — no questions asked.
 
@@ -318,6 +340,102 @@ Display the issue URL to the user, then output the COMPLETE banner:
 ```
 ````
 
+---
+
+### Multi-Issue Path
+
+Draft all issues from the `issues` array in the session state file. For
+each issue, craft a title and full body using the Required Sections format
+(Problem, Acceptance Criteria, Files to Investigate, Out of Scope,
+Context). Use the decompose synthesis from Step 1 as the foundation.
+
+Present all drafts as a numbered set inline in the response — each issue
+clearly labeled with its number and title, followed by the full body.
+
+<HARD-GATE>
+
+Ask the user to review all drafts and choose where to file using
+AskUserQuestion with structured parameters:
+
+- **question**: "Review the drafts above. Where should these issues be filed?"
+- **header**: "File Issues"
+- **options**:
+  - label: "Target project", description: "File all against the current project"
+  - label: "FLOW plugin", description: "File all against benkruger/flow"
+  - label: "Revise drafts", description: "Edit the drafts based on your feedback"
+  - label: "Re-decompose", description: "Restart from scratch with a new decomposition"
+
+Do not proceed to file any issue, propose direct edits, commit changes,
+or take any action outside this skill without explicit user approval via
+AskUserQuestion — even if the answer appears obvious from context.
+
+**If "Target project"** or **"FLOW plugin"** → file all issues (see Multi-Issue Filing below).
+
+**If "Revise drafts"** → revise based on feedback and re-present all
+drafts. The user may drop issues, add issues, or edit individual drafts.
+After revision, ask again with the same AskUserQuestion.
+
+**If "Re-decompose"** → clean up the session state file first:
+
+```bash
+rm .flow-states/create-issue-<id>.json
+```
+
+Then invoke `flow:flow-create-issue` using the Skill tool as your final
+action (no `--step` or `--id` flags — restart from scratch). Do not
+output anything else after this invocation.
+
+Iterate as many times as needed. No issues are filed until the user
+explicitly chooses a filing target.
+
+</HARD-GATE>
+
+### Multi-Issue Filing
+
+File each issue in sequence. For each issue N (1-indexed), write the
+issue body to `.flow-issue-body-<id>-N` in the project root using the
+Write tool (e.g., `.flow-issue-body-<id>-1` for the first issue,
+`.flow-issue-body-<id>-2` for the second).
+
+**If target project**, file and record each issue:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id>-1 --label decomposed
+```
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
+```
+
+**If FLOW plugin bug**, file and record each issue:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo benkruger/flow --title "<issue_title>" --body-file .flow-issue-body-<id>-1 --label "Flow"
+```
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
+```
+
+Repeat the Write + file + record sequence for each issue, incrementing
+the body file suffix (`-1`, `-2`, `-3`, etc.).
+
+After all issues are filed, clean up the session state file:
+
+```bash
+rm .flow-states/create-issue-<id>.json
+```
+
+Display all issue URLs to the user, then output the COMPLETE banner:
+
+````markdown
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ FLOW v1.0.1 — flow:flow-create-issue — COMPLETE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+````
+
 ## Hard Rules
 
 - Never file an issue without explicit user approval — the Step 2 AskUserQuestion is the mandatory gate
@@ -325,7 +443,7 @@ Display the issue URL to the user, then output the COMPLETE banner:
 - Never tell the user to "look at" a file — render all content inline
 - Never use Bash to print banners — output them as text in your response
 - The issue body must be self-contained — a fresh session with no memory of this conversation must be able to execute it
-- Never create sub-issues or linked issues — file a single comprehensive issue
+- Never create dependency links between issues — use `flow-decompose-project` for dependent issue graphs. Independent issues from one exploration session are fine.
 - Always use the Write tool to create the body file (`.flow-issue-body-<id>`) — never pass body text as a CLI argument
 - Never delete the body file — the `bin/flow issue` script handles cleanup
 - Step 1 ends by invoking the skill itself as the final action — Step 2 is terminal
