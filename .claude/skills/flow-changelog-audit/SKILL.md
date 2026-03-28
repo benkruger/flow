@@ -24,7 +24,7 @@ Print:
 ```
 ````
 
-## Three Assessment Categories
+## Assessment Categories
 
 Every changelog entry relevant to FLOW falls into one of three categories:
 
@@ -40,6 +40,9 @@ often the highest value: less code, less maintenance, fewer failure modes.
 **Adapt** — What should FLOW do differently because the platform changed?
 A hook event that now fires at a different time, a permission syntax that
 deprecated the old form, a frontmatter field that replaces a workaround.
+
+**Not relevant** — After investigation, the entry does not apply to
+FLOW's integration surface. One-line explanation of why.
 
 ## Step 0 — Build integration surface model
 
@@ -62,12 +65,14 @@ note the matchers and which scripts handle them.
 - `lib/stop-continue.py` — what Stop hook capabilities it uses
 - `lib/stop-failure.py` — what StopFailure hook capabilities it uses
 
-**Skill frontmatter.** Read the frontmatter (first 5 lines) of 3 plugin
-skills: `skills/flow-start/SKILL.md`, `skills/flow-code/SKILL.md`, and
+**Skill frontmatter.** Read the YAML frontmatter block (between the
+opening and closing `---` delimiters) of 3 plugin skills:
+`skills/flow-start/SKILL.md`, `skills/flow-code/SKILL.md`, and
 `skills/flow-issues/SKILL.md`. Note which frontmatter fields FLOW uses.
 
-**Agent frontmatter.** Read `agents/ci-fixer.md`. Note which agent
-frontmatter fields FLOW uses (name, description, tools, maxTurns, hooks).
+**Agent frontmatter.** Read the YAML frontmatter block of
+`agents/ci-fixer.md`. Note which agent frontmatter fields FLOW uses
+(name, description, tools, maxTurns, hooks).
 
 **Permission surface.** Read `.claude/settings.json`. Note the permission
 structure: `defaultMode`, `permissions.allow`, `permissions.deny`, `exclude`.
@@ -90,7 +95,7 @@ Display the stored version in your response.
 
 Use WebFetch to fetch the Claude Code changelog:
 
-URL: `https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md`
+URL: `https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md`
 
 Prompt: "Extract all version entries. For each version, return the version
 number and the full entry text. Start from the most recent version and go
@@ -113,7 +118,8 @@ relevant if it contains any of these terms:
 `PreToolUse`, `PostToolUse`, `PostCompact`, `Stop`, `SessionStart`,
 `StopFailure`, `permission`, `sandbox`, `matcher`, `manifest`,
 `userConfig`, `AskUserQuestion`, `updatedInput`, `permissionDecision`,
-`maxTurns`, `bypassPermissions`, `defaultMode`, `exclude`, `deny`
+`maxTurns`, `bypassPermissions`, `defaultMode`, `exclude`, `deny`,
+`MCP`, `subagent`, `sub-agent`
 
 This keyword list should be expanded as new Claude Code surface areas
 emerge. When in doubt, include the entry — false positives are filtered
@@ -151,7 +157,7 @@ currently relies on. Grep confirms FLOW uses the affected API. FLOW
 may need to change how it uses it to remain correct or optimal.
 
 **Not relevant** — After grepping, the entry does not apply to FLOW's
-integration surface. Explain briefly why.
+integration surface. One-line explanation of why.
 
 In your rationale, always name the specific FLOW file(s) affected and
 explain the connection.
@@ -163,21 +169,23 @@ table where the category has zero entries.
 
 **Adopt**
 
-| Version | Entry | Rationale |
-|---------|-------|-----------|
-| v2.X.Y | Brief description of the change | Which FLOW files are affected and what the opportunity is |
+| # | Version | Entry | Rationale |
+|---|---------|-------|-----------|
+| 1 | v2.X.Y | Brief description of the change | Which FLOW files are affected and what the opportunity is |
 
 **Remove**
 
-| Version | Entry | Rationale |
-|---------|-------|-----------|
-| v2.X.Y | Brief description of the change | Which FLOW code becomes redundant and why |
+| # | Version | Entry | Rationale |
+|---|---------|-------|-----------|
+| 2 | v2.X.Y | Brief description of the change | Which FLOW code becomes redundant and why |
 
 **Adapt**
 
-| Version | Entry | Rationale |
-|---------|-------|-----------|
-| v2.X.Y | Brief description of the change | Which FLOW code needs updating and how |
+| # | Version | Entry | Rationale |
+|---|---------|-------|-----------|
+| 3 | v2.X.Y | Brief description of the change | Which FLOW code needs updating and how |
+
+Number rows sequentially across all three tables (not restarting per table).
 
 After the tables, list entries categorized as "Not relevant" with
 one-line explanations.
@@ -212,10 +220,11 @@ Do NOT update `config.json` without explicit user confirmation. Do NOT
 commit without explicit user confirmation. Do NOT take any action outside
 this skill flow.
 
-Use AskUserQuestion:
+Substitute the actual latest version from Step 2 in the prompt below,
+then use AskUserQuestion:
 
-"Audit complete. Update config.json to mark version vX.Y.Z as audited
-and commit?"
+"Audit complete. Update config.json to mark version &lt;latest version&gt;
+as audited and commit?"
 
 Options:
 - **Yes, update and commit**
