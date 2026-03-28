@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — three review lenses (clarity via foreground agents, correctness via /review, safety via /security-review) plus an optional fourth (CLAUDE.md compliance via code-review:code-review plugin, configurable). Commits after each step."
+description: "Phase 4: Code Review — three review lenses (clarity via foreground agents, correctness via /review, safety via /security-review, configurable) plus an optional fourth (CLAUDE.md compliance via code-review:code-review plugin, configurable). Commits after each step."
 ---
 
 # FLOW Code Review — Phase 4: Code Review
@@ -132,8 +132,9 @@ Read `code_review_step` from the state file (default `0` if absent).
 
 - If `1` — Step 1 is done. Skip to Step 2.
 - If `2` — Steps 1-2 are done. Check Security Review Mode Resolution:
-  if `security_review` is `"never"`, skip to the step-3-done routing below.
-  Otherwise, skip to Step 3.
+  if `security_review` is `"never"`, check Code Review Plugin Mode Resolution:
+  if `code_review_plugin` is `"never"`, skip to Done. Otherwise, skip to Step 4.
+  If `security_review` is `"auto"` or `"always"`, skip to Step 3.
 - If `3` — Steps 1-3 are done. Check Code Review Plugin Mode Resolution:
   if `code_review_plugin` is `"never"`, skip to Done.
   Otherwise, skip to Step 4.

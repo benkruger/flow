@@ -2414,6 +2414,8 @@ def test_prime_has_independent_security_review_question():
     assert "Security Review mode" in content, (
         "flow-prime/SKILL.md must contain an independent AskUserQuestion about 'Security Review mode'"
     )
+    for option in ["Always", "Auto", "Never"]:
+        assert option in content, f"flow-prime/SKILL.md security review question must include '{option}' option"
     json_blocks = re.findall(r"```json\n(\{.*?\})\n```", content, re.DOTALL)
     assert len(json_blocks) >= 3, f"Expected at least 3 JSON preset blocks, found {len(json_blocks)}"
     for i, name in enumerate(["fully autonomous", "fully manual", "recommended"]):
