@@ -42,8 +42,7 @@ SAMPLE_SETTINGS = {
         "allow": [
             "Bash(git status)",
             "Bash(git diff *)",
-            "Bash(bin/*)",
-            "Bash(*bin/flow *)",
+            "Bash(*bin/*)",
         ],
         "deny": [],
     }

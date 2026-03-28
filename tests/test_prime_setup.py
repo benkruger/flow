@@ -95,7 +95,7 @@ def test_settings_has_all_allow_entries_rails(tmp_path):
     expected = _mod.UNIVERSAL_ALLOW + _load_framework_permissions("rails")
     for entry in expected:
         # Subsumed entries are correctly omitted (e.g. Bash(bin/rails test *)
-        # is subsumed by Bash(bin/*))
+        # is subsumed by Bash(*bin/*))
         if not _mod._is_subsumed(entry, set(allow)):
             assert entry in allow
 
@@ -103,9 +103,13 @@ def test_settings_has_all_allow_entries_rails(tmp_path):
 def test_settings_has_all_allow_entries_python(tmp_path):
     _mod.merge_settings(tmp_path, "python")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+    allow = settings["permissions"]["allow"]
     expected = _mod.UNIVERSAL_ALLOW + _load_framework_permissions("python")
     for entry in expected:
-        assert entry in settings["permissions"]["allow"]
+        # Subsumed entries are correctly omitted (e.g. Bash(.venv/bin/pip install *)
+        # is subsumed by Bash(*bin/*))
+        if not _mod._is_subsumed(entry, set(allow)):
+            assert entry in allow
 
 
 def test_settings_has_all_deny_entries(tmp_path):
@@ -555,7 +559,7 @@ def test_version_marker_with_empty_skills_dict(tmp_path):
 
 
 def test_universal_allow_includes_bin_glob():
-    assert "Bash(bin/*)" in _mod.UNIVERSAL_ALLOW
+    assert "Bash(*bin/*)" in _mod.UNIVERSAL_ALLOW
 
 
 def test_universal_allow_includes_chmod():
@@ -578,7 +582,7 @@ def test_gh_entries_grouped_in_universal_allow():
 def test_permissions_loaded_from_framework_directory(tmp_path):
     _mod.merge_settings(tmp_path, "rails")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-    # Bash(bin/rails test *) is subsumed by Bash(bin/*) — check a non-subsumed entry
+    # Bash(bin/rails test *) is subsumed by Bash(*bin/*) — check a non-subsumed entry
     assert "Bash(rails *)" in settings["permissions"]["allow"]
 
 
@@ -846,12 +850,12 @@ def test_cli_derives_permissions_from_project(git_repo, monkeypatch, capsys):
 # --- Dynamic plugin patterns (in-process) ---
 
 
-def test_merge_settings_includes_static_bin_flow_pattern(tmp_path):
-    """Static Bash(*bin/flow *) pattern is included in allow list."""
+def test_merge_settings_includes_static_bin_pattern(tmp_path):
+    """Static Bash(*bin/*) pattern is included in allow list."""
     _mod.merge_settings(tmp_path, "rails")
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
     allow = settings["permissions"]["allow"]
-    assert "Bash(*bin/flow *)" in allow
+    assert "Bash(*bin/*)" in allow
 
 
 def test_merge_settings_no_dynamic_plugin_patterns(tmp_path):
