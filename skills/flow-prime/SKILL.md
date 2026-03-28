@@ -293,8 +293,7 @@ All permissions (universal + all framework sets) for reference:
       "Bash(gh pr edit *)",
       "Bash(gh pr close *)",
       "Bash(gh pr list *)",
-      "Bash(bin/*)",
-      "Bash(*bin/flow *)",
+      "Bash(*bin/*)",
       "Bash(rm .flow-*)",
       "Bash(gh pr view *)",
       "Bash(bin/rails test *)",
@@ -327,6 +326,7 @@ All permissions (universal + all framework sets) for reference:
       "Read(//tmp/*.txt)",
       "Read(//tmp/*.diff)",
       "Read(//tmp/*.patch)",
+      "Read(//tmp/*.md)",
       "Agent(flow:ci-fixer)",
       "Skill(decompose:decompose)"
     ],
