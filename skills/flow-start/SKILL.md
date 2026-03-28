@@ -95,7 +95,7 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ## Logging
 
-After every Bash command in Steps 2–12, log it to `.flow-states/<branch>.log`
+After every Bash command in Steps 2–11, log it to `.flow-states/<branch>.log`
 using `bin/flow log`. Step 11 handles its own logging internally via start-setup.
 
 Run the command first, then log the result. Pipeline the log call with the
@@ -164,18 +164,24 @@ Do NOT proceed if version check fails. Show the error message and stop.
 
 ### Step 2 — Create early state file
 
+Write the user's original start prompt (verbatim, including `#N` issue references
+and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
+Write tool.
+
 Create the state file immediately so the TUI can see this flow during
 the locked main operations in Steps 4–10. The state file has null PR fields
-at this point — start-setup backfills them after PR creation.
+at this point — start-setup backfills them after PR creation. Pass the prompt
+file so the `prompt` field contains the original text with `#N` references
+(needed by Step 3 for labeling).
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>"
+${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt
 ```
 
 If `--auto` was passed to this skill invocation, also pass `--auto`:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --auto
+${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --auto
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
@@ -236,7 +242,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 
 **If any subsequent attempt passes without code changes**, the failure
 was flaky. File a "Flaky Test" issue with reproduction data, then
-continue to Step 6.
+continue to Step 7.
 
 The issue body must include: the test name, the failure message, how many
 attempts it took to pass, and the context "CI baseline on pristine main
@@ -302,7 +308,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
 
 **If any subsequent attempt passes without code changes**, the failure
 was flaky. File a "Flaky Test" issue with reproduction data, then
-continue to Step 8.
+continue to Step 9.
 
 The issue body must include: the test name, the failure message, how many
 attempts it took to pass, and the context "CI post-deps gate during
