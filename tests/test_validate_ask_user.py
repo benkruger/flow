@@ -36,7 +36,7 @@ def _run_hook(git_repo, stdin_json=None):
         cwd=str(git_repo),
         env=env,
     )
-    return result.returncode, result.stderr.strip()
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
 # --- In-process validate() tests ---
@@ -44,34 +44,38 @@ def _run_hook(git_repo, stdin_json=None):
 
 def test_validate_allows_no_state_file(tmp_path):
     mod = _load_module()
-    allowed, message = mod.validate(str(tmp_path / "nonexistent.json"))
+    allowed, message, hook_response = mod.validate(str(tmp_path / "nonexistent.json"))
     assert allowed is True
     assert message == ""
+    assert hook_response is None
 
 
 def test_validate_allows_none_state_path():
     mod = _load_module()
-    allowed, message = mod.validate(None)
+    allowed, message, hook_response = mod.validate(None)
     assert allowed is True
     assert message == ""
+    assert hook_response is None
 
 
 def test_validate_allows_invalid_json(tmp_path):
     mod = _load_module()
     bad_file = tmp_path / "bad.json"
     bad_file.write_text("not json at all")
-    allowed, message = mod.validate(str(bad_file))
+    allowed, message, hook_response = mod.validate(str(bad_file))
     assert allowed is True
     assert message == ""
+    assert hook_response is None
 
 
 def test_validate_allows_no_auto_continue(state_dir, branch):
     mod = _load_module()
     state = make_state(current_phase="flow-start")
     path = write_state(state_dir, branch, state)
-    allowed, message = mod.validate(str(path))
+    allowed, message, hook_response = mod.validate(str(path))
     assert allowed is True
     assert message == ""
+    assert hook_response is None
 
 
 def test_validate_allows_empty_auto_continue(state_dir, branch):
@@ -79,12 +83,13 @@ def test_validate_allows_empty_auto_continue(state_dir, branch):
     state = make_state(current_phase="flow-start")
     state["_auto_continue"] = ""
     path = write_state(state_dir, branch, state)
-    allowed, message = mod.validate(str(path))
+    allowed, message, hook_response = mod.validate(str(path))
     assert allowed is True
     assert message == ""
+    assert hook_response is None
 
 
-def test_validate_blocks_when_auto_continue_set(state_dir, branch):
+def test_validate_auto_continue_returns_hook_response(state_dir, branch):
     mod = _load_module()
     state = make_state(
         current_phase="flow-start",
@@ -92,13 +97,14 @@ def test_validate_blocks_when_auto_continue_set(state_dir, branch):
     )
     state["_auto_continue"] = "/flow:flow-plan"
     path = write_state(state_dir, branch, state)
-    allowed, message = mod.validate(str(path))
-    assert allowed is False
-    assert "BLOCKED" in message
-    assert "/flow:flow-plan" in message
+    allowed, message, hook_response = mod.validate(str(path))
+    assert allowed is True
+    assert hook_response is not None
+    assert hook_response["permissionDecision"] == "allow"
+    assert "/flow:flow-plan" in hook_response["updatedInput"]
 
 
-def test_validate_blocks_with_different_command(state_dir, branch):
+def test_validate_auto_continue_includes_command(state_dir, branch):
     mod = _load_module()
     state = make_state(
         current_phase="flow-code",
@@ -110,16 +116,18 @@ def test_validate_blocks_with_different_command(state_dir, branch):
     )
     state["_auto_continue"] = "/flow:flow-code-review"
     path = write_state(state_dir, branch, state)
-    allowed, message = mod.validate(str(path))
-    assert allowed is False
-    assert "/flow:flow-code-review" in message
+    allowed, message, hook_response = mod.validate(str(path))
+    assert allowed is True
+    assert hook_response is not None
+    assert hook_response["permissionDecision"] == "allow"
+    assert "/flow:flow-code-review" in hook_response["updatedInput"]
 
 
 # --- Subprocess (full hook) tests ---
 
 
 def test_hook_allows_no_state_file(git_repo):
-    code, stderr = _run_hook(git_repo)
+    code, _stdout, stderr = _run_hook(git_repo)
     assert code == 0
     assert stderr == ""
 
@@ -127,26 +135,27 @@ def test_hook_allows_no_state_file(git_repo):
 def test_hook_allows_without_auto_continue(git_repo, state_dir, branch):
     state = make_state(current_phase="flow-plan")
     write_state(state_dir, branch, state)
-    code, stderr = _run_hook(git_repo)
+    code, _stdout, stderr = _run_hook(git_repo)
     assert code == 0
     assert stderr == ""
 
 
-def test_hook_blocks_with_auto_continue(git_repo, state_dir, branch):
+def test_hook_auto_continue_outputs_json(git_repo, state_dir, branch):
     state = make_state(
         current_phase="flow-start",
         phase_statuses={"flow-start": "complete"},
     )
     state["_auto_continue"] = "/flow:flow-plan"
     write_state(state_dir, branch, state)
-    code, stderr = _run_hook(git_repo)
-    assert code == 2
-    assert "BLOCKED" in stderr
-    assert "/flow:flow-plan" in stderr
+    code, stdout, _stderr = _run_hook(git_repo)
+    assert code == 0
+    response = json.loads(stdout)
+    assert response["permissionDecision"] == "allow"
+    assert "/flow:flow-plan" in response["updatedInput"]
 
 
 def test_hook_allows_invalid_json_stdin(git_repo):
-    code, stderr = _run_hook(git_repo, stdin_json="not json")
+    code, _stdout, stderr = _run_hook(git_repo, stdin_json="not json")
     assert code == 0
 
 
@@ -154,7 +163,7 @@ def test_hook_allows_outside_git_repo(tmp_path):
     """Running outside a git repo — branch/root detection fails, allow through."""
     empty = tmp_path / "not-a-repo"
     empty.mkdir()
-    code, stderr = _run_hook(empty)
+    code, _stdout, stderr = _run_hook(empty)
     assert code == 0
 
 
@@ -217,19 +226,19 @@ def test_hook_writes_blocked_on_allow(git_repo, state_dir, branch):
     """Hook writes _blocked to state file when allowing through (no auto-continue)."""
     state = make_state(current_phase="flow-code")
     path = write_state(state_dir, branch, state)
-    code, stderr = _run_hook(git_repo)
+    code, _stdout, stderr = _run_hook(git_repo)
     assert code == 0
     updated = json.loads(path.read_text())
     assert "_blocked" in updated
     assert isinstance(updated["_blocked"], str)
 
 
-def test_hook_does_not_set_blocked_when_blocking(git_repo, state_dir, branch):
-    """Hook does not write _blocked when blocking due to auto-continue."""
+def test_hook_does_not_set_blocked_on_auto_continue(git_repo, state_dir, branch):
+    """Hook does not write _blocked when auto-continue answers the question."""
     state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
     state["_auto_continue"] = "/flow:flow-plan"
     path = write_state(state_dir, branch, state)
-    code, stderr = _run_hook(git_repo)
-    assert code == 2
+    code, _stdout, _stderr = _run_hook(git_repo)
+    assert code == 0
     updated = json.loads(path.read_text())
     assert "_blocked" not in updated
