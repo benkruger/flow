@@ -330,7 +330,7 @@ def test_try_write_lock_write_failure_closes_fd(tmp_path):
         patch("os.getppid", return_value=12345),
         patch("os.write", side_effect=OSError("disk full")),
     ):
-        result = _mod._try_write_lock(str(lock_file), "test-feature")
+        result = _mod._try_write_lock(lock_file, "test-feature")
 
     assert result is None
     assert not lock_file.exists()
@@ -354,7 +354,7 @@ def test_try_write_lock_unlink_failure_ignored(tmp_path):
         patch("os.getppid", return_value=12345),
         patch("os.unlink", side_effect=fail_unlink),
     ):
-        result = _mod._try_write_lock(str(lock_file), "test-feature")
+        result = _mod._try_write_lock(lock_file, "test-feature")
 
     assert result is not None
     assert result["feature"] == "test-feature"

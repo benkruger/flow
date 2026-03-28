@@ -97,7 +97,7 @@ def _try_write_lock(lock_file, feature):
         "feature": feature,
         "acquired_at": now(),
     }
-    lock_dir = str(Path(lock_file).parent)
+    lock_dir = str(lock_file.parent)
     fd, tmp_path = tempfile.mkstemp(dir=lock_dir, prefix=".start-lock-")
     try:
         os.write(fd, json.dumps(lock_data, indent=2).encode())
@@ -192,7 +192,7 @@ def acquire_with_wait(feature, timeout=300, interval=10):
                 "feature": result["feature"],
                 "pid": result["pid"],
                 "waited_seconds": int(elapsed),
-                "lock_path": str(_lock_path()),
+                "lock_path": result["lock_path"],
             }
         remaining = timeout - elapsed
         time.sleep(min(interval, remaining))
