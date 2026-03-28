@@ -72,7 +72,7 @@ Each finding is classified before fixing:
 
 ## Mode
 
-Mode is configurable via `.flow.json` (default: manual). Three axes are
+Mode is configurable via `.flow.json` (default: manual). Four axes are
 configurable independently:
 
 - **commit** — `"auto"` or `"manual"` (default). Controls diff approval.
