@@ -40,10 +40,10 @@ Once a concrete problem is identified (either directly or after exploration), St
 | Step | Name | Gate |
 |------|------|------|
 | 1 | Decompose | AskUserQuestion: proceed, iterate, or cancel |
-| 2 | Draft + File | AskUserQuestion: target project, FLOW plugin, revise, or re-decompose |
+| 2 | Draft + File | AskUserQuestion: file (3 options in FLOW repo, 4 otherwise), revise, or re-decompose |
 
 1. **Step 1 — Decompose:** Invokes `decompose:decompose` for DAG-based problem breakdown with codebase exploration (Glob, Grep, Read). Presents the synthesis and asks the user to approve, iterate, or cancel. Generates a session ID and writes step counter to `.flow-states/create-issue-<id>.json`.
-2. **Step 2 — Draft + File:** Crafts a comprehensive issue with five sections (Problem, Acceptance Criteria, Files to Investigate, Out of Scope, Context). Presents the full draft inline and asks the user where to file in a single AskUserQuestion with four options: file against the target project, file against the FLOW plugin repo (`benkruger/flow`), revise the draft, or re-decompose from scratch. Files the issue via `bin/flow issue`, then cleans up the session-scoped state file. In multi-issue mode (triggered by "File multiple issues" from Exploration Mode), Step 2 drafts all issues as a numbered set, presents them for batch review via a single HARD-GATE, and files each in sequence using indexed body files.
+2. **Step 2 — Draft + File:** Crafts a comprehensive issue with five sections (Problem, Acceptance Criteria, Files to Investigate, Out of Scope, Context). Presents the full draft inline and asks the user where to file. When the current repo is `benkruger/flow`, the skill detects this via `git remote get-url origin` and presents a simplified 3-option prompt (file issue, revise, re-decompose) — since both "Target project" and "FLOW plugin" would resolve to the same repo. In all other repos, the full 4-option prompt is shown (target project, FLOW plugin, revise, re-decompose). Files the issue via `bin/flow issue`, then cleans up the session-scoped state file. In multi-issue mode (triggered by "File multiple issues" from Exploration Mode), Step 2 drafts all issues as a numbered set, presents them for batch review via a single HARD-GATE, and files each in sequence using indexed body files.
 
 ---
 
@@ -67,5 +67,5 @@ The filed issue contains enough detail for `/flow-start` to execute fully autono
 - All AskUserQuestion calls use structured parameters (question, header, options with label+description)
 - All file paths verified via codebase exploration
 - Issues labeled `decomposed` for tracking (or `Flow` when filed against the plugin repo)
-- Repo routing integrated into Step 2 HARD-GATE — user chooses target project or FLOW plugin as part of draft review
+- Repo routing integrated into Step 2 HARD-GATE — when in the FLOW repo (`benkruger/flow`), repo selection is skipped and issues are filed with `decomposed` label; otherwise user chooses target project or FLOW plugin
 - Self-invocation from Step 1 to Step 2 enforces skill re-read at the step boundary
