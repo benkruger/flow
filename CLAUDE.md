@@ -29,7 +29,7 @@ In the target project:
 | 1 | Start | `/flow:flow-start` | Create worktree, PR, state file, configure workspace |
 | 2 | Plan | `/flow:flow-plan` | Invoke decompose plugin for DAG analysis, explore codebase, create implementation plan |
 | 3 | Code | `/flow:flow-code` | Execute plan tasks one at a time with TDD |
-| 4 | Code Review | `/flow:flow-code-review` | Four review lenses (clarity, convention compliance, correctness, safety) |
+| 4 | Code Review | `/flow:flow-code-review` | Five review lenses (clarity with convention compliance, correctness with rule compliance, safety, CLAUDE.md compliance plugin, pre-mortem incident analysis) |
 | 5 | Learn | `/flow:flow-learn` | Review mistakes, capture learnings, route to permanent homes |
 | 6 | Complete | `/flow:flow-complete` | Merge PR, remove worktree, delete state file |
 
@@ -166,9 +166,9 @@ State files (`.flow-states/`) are local to each machine. In a multi-engineer tea
 
 ### Sub-Agents
 
-FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Step 8) and Complete (Steps 4 and 5). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands, shell redirection, and file-read commands in all Bash calls — including those from built-in skills' sub-agents. The ci-fixer also retains its own hook declaration for defense in depth.
+FLOW uses two custom plugin sub-agents: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Step 8) and Complete (Steps 4 and 5), and `pre-mortem` (`agents/pre-mortem.md`) for context-isolated incident analysis in Code Review (Step 5). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands, shell redirection, and file-read commands in all Bash calls — including those from built-in skills' sub-agents. Both agents retain their own hook declarations for defense in depth. The pre-mortem agent is read-only (Read, Glob, Grep, Bash — no Edit or Write).
 
-Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition — no plan mode. Code Review performs four inline review passes for clarity (code reuse, quality, efficiency, convention compliance), then performs inline correctness review for correctness (including rule compliance) and inline security review for safety. Code and Learn have no sub-agents. Complete uses ci-fixer for CI failures.
+Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition — no plan mode. Code Review performs four inline review passes for clarity (code reuse, quality, efficiency, convention compliance), then performs inline correctness review for correctness (including rule compliance) and inline security review for safety, optionally the `code-review:code-review` plugin for multi-agent validation (controlled by the `code_review_plugin` config axis: `"always"`, `"auto"`, or `"never"`), and finally the `pre-mortem` agent for backward-reasoning incident analysis. Code and Learn have no sub-agents. Complete uses ci-fixer for CI failures.
 
 ### Orchestration
 

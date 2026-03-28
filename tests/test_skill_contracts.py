@@ -326,6 +326,23 @@ def test_ci_fixer_agent_exists():
     )
 
 
+def test_pre_mortem_agent_exists():
+    """agents/pre-mortem.md must exist with required frontmatter fields."""
+    agent_file = REPO_ROOT / "agents" / "pre-mortem.md"
+    assert agent_file.exists(), "agents/pre-mortem.md does not exist"
+    content = agent_file.read_text()
+    assert "name: pre-mortem" in content, "agents/pre-mortem.md missing 'name: pre-mortem' in frontmatter"
+    assert "PreToolUse" in content, "agents/pre-mortem.md missing PreToolUse hook"
+    assert "validate-ci-bash" in content, "agents/pre-mortem.md missing reference to validate-ci-bash"
+    # Pre-mortem agent must be read-only — no Edit or Write tools
+    assert "Edit" not in content.split("---")[1], (
+        "agents/pre-mortem.md must not include Edit tool — pre-mortem is read-only"
+    )
+    assert "Write" not in content.split("---")[1], (
+        "agents/pre-mortem.md must not include Write tool — pre-mortem is read-only"
+    )
+
+
 def test_code_review_has_inline_correctness_review():
     """Code Review skill must perform inline correctness review in Step 2."""
     content = _read_skill("flow-code-review")
@@ -1505,20 +1522,40 @@ def test_code_review_steps_have_continuation_directives():
         "flow-code-review Step 2 must contain 'continue to Step 3' directive"
     )
 
-    # Step 3 must continue to Done
+    # Step 3 must route to Step 4 (or Step 5 when plugin is skipped)
     step3_match = re.search(
-        r"## Step 3.*?\n(.*?)(?=\n## Back Navigation)",
+        r"## Step 3.*?\n(.*?)(?=\n## Step 4)",
         content,
         re.DOTALL,
     )
     assert step3_match, "Could not find Step 3 in flow-code-review/SKILL.md"
-    assert "continue to Done" in step3_match.group(1), (
-        "flow-code-review Step 3 must contain 'continue to Done' directive"
+    assert "route to Step 4" in step3_match.group(1), "flow-code-review Step 3 must contain 'route to Step 4' directive"
+
+    # Step 4 must continue to Step 5
+    step4_match = re.search(
+        r"## Step 4.*?\n(.*?)(?=\n## Step 5)",
+        content,
+        re.DOTALL,
+    )
+    assert step4_match, "Could not find Step 4 in flow-code-review/SKILL.md"
+    assert "continue to Step 5" in step4_match.group(1), (
+        "flow-code-review Step 4 must contain 'continue to Step 5' directive"
+    )
+
+    # Step 5 must continue to Done
+    step5_match = re.search(
+        r"## Step 5.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
+        content,
+        re.DOTALL,
+    )
+    assert step5_match, "Could not find Step 5 in flow-code-review/SKILL.md"
+    assert "continue to Done" in step5_match.group(1), (
+        "flow-code-review Step 5 must contain 'continue to Done' directive"
     )
 
 
 def test_code_review_hard_rules_require_step_continuation():
-    """Hard Rules must require immediate continuation between all 4 steps."""
+    """Hard Rules must require immediate continuation between all 5 steps."""
     content = _read_skill("flow-code-review")
     hard_rules_match = re.search(r"## Hard Rules\n(.*)", content, re.DOTALL)
     assert hard_rules_match, "Could not find Hard Rules in flow-code-review/SKILL.md"
@@ -1526,7 +1563,7 @@ def test_code_review_hard_rules_require_step_continuation():
     assert re.search(r"never pause", hard_rules, re.IGNORECASE), (
         "flow-code-review Hard Rules must contain 'never pause' language"
     )
-    for step_name in ["Simplify", "Review", "Security"]:
+    for step_name in ["Simplify", "Review", "Security", "Code Review Plugin", "Pre-Mortem"]:
         assert step_name in hard_rules, f"flow-code-review Hard Rules must mention '{step_name}' step"
 
 
@@ -1554,6 +1591,37 @@ def test_code_review_step_1_has_convention_compliance_pass():
     assert "convention compliance" in step1_match.group(1).lower(), (
         "flow-code-review Step 1 must include a convention compliance review pass"
     )
+    assert "code-review:code-review" in content, "flow-code-review must reference code-review:code-review plugin"
+
+
+def test_code_review_does_not_use_comment_flag():
+    """Code Review must not use --comment flag with the plugin."""
+    content = _read_skill("flow-code-review")
+    assert "--comment" not in content, "flow-code-review must not use --comment flag with code-review plugin"
+
+
+def test_code_review_step_4_handles_no_findings():
+    """Step 4 must explicitly handle the no-findings path."""
+    content = _read_skill("flow-code-review")
+    step4_match = re.search(
+        r"## Step 4.*?\n(.*?)(?=\n## Step 5)",
+        content,
+        re.DOTALL,
+    )
+    assert step4_match, "Could not find Step 4 in flow-code-review/SKILL.md"
+    assert "no findings" in step4_match.group(1).lower(), "flow-code-review Step 4 must handle the no-findings path"
+
+
+def test_code_review_step_5_handles_no_findings():
+    """Step 5 must explicitly handle the no-findings path."""
+    content = _read_skill("flow-code-review")
+    step5_match = re.search(
+        r"## Step 5.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
+        content,
+        re.DOTALL,
+    )
+    assert step5_match, "Could not find Step 5 in flow-code-review/SKILL.md"
+    assert "no findings" in step5_match.group(1).lower(), "flow-code-review Step 5 must handle the no-findings path"
 
 
 def test_code_review_has_resume_check():
@@ -1568,8 +1636,8 @@ def test_code_review_has_resume_check():
 def _code_review_steps():
     """Yield (step_num, step_text) for each Code Review step section."""
     content = _read_skill("flow-code-review")
-    for step_num in range(1, 4):
-        if step_num < 3:
+    for step_num in range(1, 6):
+        if step_num < 5:
             next_header = f"## Step {step_num + 1}"
         else:
             next_header = "## Back Navigation|## Done"
@@ -1596,6 +1664,19 @@ def test_code_review_steps_self_invoke():
         assert "flow:flow-code-review --continue-step" in step_text, (
             f"Step {step_num} must self-invoke via 'flow:flow-code-review --continue-step'"
         )
+
+
+def test_code_review_steps_await_background_agents():
+    """Steps 4-5 must instruct waiting for background agents (Steps 1-3 use inline review passes)."""
+    for step_num, step_text in _code_review_steps():
+        if step_num in (1, 2, 3):
+            continue
+        if step_num == 4:
+            assert "background agent" in step_text.lower(), (
+                f"Step {step_num} must contain background agent wait instructions"
+            )
+        elif step_num == 5:
+            assert "agent" in step_text.lower(), f"Step {step_num} must reference the pre-mortem agent"
 
 
 def test_code_review_has_self_invocation_check():

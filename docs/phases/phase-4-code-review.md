@@ -7,13 +7,15 @@ nav_order: 5
 
 **Command:** `/flow-code-review`
 
-Three steps on the same diff — clarity (with convention compliance),
-correctness, and safety. Combines what were previously separate passes into
-a single phase with three ordered steps, each with its own commit checkpoint.
+Five steps on the same diff — clarity with convention compliance,
+correctness with rule compliance, safety, CLAUDE.md compliance, and
+pre-mortem incident analysis. Combines inline review passes, a multi-agent
+compliance plugin, and a context-isolated pre-mortem agent into a single
+phase with five ordered steps, each with its own commit checkpoint.
 
 ---
 
-## The Three Steps
+## The Five Steps
 
 ### Step 1 — Simplify (clarity + convention compliance)
 
@@ -45,6 +47,29 @@ exposure.
 Every finding is fixed, `bin/flow ci` is run, and changes are committed
 via `/flow-commit`.
 
+### Step 4 — Code Review Plugin (CLAUDE.md compliance)
+
+Invokes the `code-review:code-review` plugin for multi-agent validation.
+Four parallel agents (2x CLAUDE.md compliance, 1x bug scan, 1x
+security/logic scan) with a validation layer that re-validates each finding
+at 80+ confidence. Produces high-signal findings only.
+
+Waits for all background agents to complete before evaluating findings.
+Every finding is fixed, `bin/flow ci` is run, and changes are committed
+via `/flow-commit`.
+
+### Step 5 — Pre-Mortem (incident analysis)
+
+Launches the `pre-mortem` custom agent — a context-isolated sub-agent that
+receives only the branch diff and codebase access, with no conversation
+history or coding rationale. The agent frames the review as an incident
+investigation: "This PR was merged and caused a production incident."
+
+The agent produces a structured incident report (root cause hypothesis,
+blast radius, what tests missed, severity, evidence). The main session
+triages each finding as real or false positive. Real findings are fixed,
+`bin/flow ci` is run, and changes are committed via `/flow-commit`.
+
 ---
 
 ## Step Advancement
@@ -57,8 +82,11 @@ when the model treats a built-in skill return as a conversation turn
 boundary. The Resume Check section dispatches to the correct step on
 re-entry.
 
-All three steps perform inline review passes sequentially within the
-response turn.
+Step 1 performs inline review passes sequentially within the response turn.
+Steps 2-4 invoke built-in skills or plugins that may launch background
+agents — each of those steps waits for all background agents to complete
+before evaluating findings. Step 5 launches the pre-mortem agent for
+context-isolated incident analysis.
 
 ---
 
