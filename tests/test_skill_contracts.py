@@ -2340,6 +2340,12 @@ def test_flow_issues_has_start_commands():
     assert "flow-start" in content, "flow-issues/SKILL.md must contain flow-start command in work order"
 
 
+def test_flow_issues_start_commands_include_title():
+    """flow-issues SKILL.md must instruct Claude to add issue title comments below start commands."""
+    content = _read_skill("flow-issues")
+    assert "issue title" in content.lower(), "flow-issues/SKILL.md must reference issue title in Start Commands section"
+
+
 # --- flow-issues impact analysis ---
 
 

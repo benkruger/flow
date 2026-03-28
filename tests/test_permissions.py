@@ -1063,7 +1063,7 @@ def test_prime_setup_lists_match_skill_md_reference():
 SETTINGS_ALLOW_CATEGORIES = [
     ("git", ["Bash(git "]),
     ("github-cli", ["Bash(gh "]),
-    ("bin", ["Bash(bin/", "Bash(*bin/"]),
+    ("bin", ["Bash(*bin/"]),
     ("plugins", ["Bash(claude plugin"]),
     ("cleanup", ["Bash(rm "]),
     ("build", ["Bash(cd ", "Bash(pwd)", "Bash(chmod ", "Bash(make ", "Bash(diff ", "Bash(.venv/", "Bash(curl "]),
