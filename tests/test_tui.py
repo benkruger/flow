@@ -2424,3 +2424,69 @@ def test_draw_list_view_no_annotation_when_empty():
     assert len(flow_row_calls) == 1
     # Should not contain empty parens "()"
     assert "()" not in flow_row_calls[0]
+
+
+def test_draw_list_view_columns_aligned_across_flows():
+    """Phase, elapsed, and PR columns align vertically across flows with varying phase info widths."""
+    import re
+
+    # Flow 1: Code Review with annotation (longest phase_info)
+    state1 = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
+    state1["branch"] = "alpha-feature"
+    state1["code_review_step"] = 2
+
+    # Flow 2: Start phase (short phase_info)
+    state2 = make_state(
+        current_phase="flow-start",
+        phase_statuses={"flow-start": "in_progress"},
+    )
+    state2["branch"] = "beta-feature"
+
+    # Flow 3: Code with task annotation (medium phase_info)
+    state3 = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state3["branch"] = "gamma-feature"
+    state3["code_task"] = 2
+    state3["code_tasks_total"] = 5
+
+    flows = [_flow_from_state(s) for s in [state1, state2, state3]]
+    stdscr = _make_stdscr(rows=40, cols=120)
+    app = _make_app(stdscr, flows=flows)
+    app._draw_list_view()
+
+    # Extract flow list rows (rows 4, 5, 6)
+    row_texts = []
+    for row_num in (4, 5, 6):
+        row_calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == row_num]
+        assert row_calls, f"Expected addstr call at row {row_num}"
+        row_texts.append(row_calls[0][0][2])
+
+    # Find where the phase number starts (pattern: "N: " where N is 1-6)
+    phase_positions = []
+    for text in row_texts:
+        match = re.search(r"\d: ", text)
+        assert match, f"Expected phase number pattern in: {text}"
+        phase_positions.append(match.start())
+
+    # All phase columns must start at the same position
+    assert len(set(phase_positions)) == 1, f"Phase columns misaligned: positions={phase_positions}"
+
+    # Find where "PR #" starts (all flows have pr_number=1)
+    pr_positions = []
+    for text in row_texts:
+        pr_idx = text.find("PR #")
+        assert pr_idx >= 0, f"Expected 'PR #' in: {text}"
+        pr_positions.append(pr_idx)
+
+    # All PR columns must start at the same position
+    assert len(set(pr_positions)) == 1, f"PR columns misaligned: positions={pr_positions}"
