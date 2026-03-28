@@ -68,6 +68,7 @@ UNIVERSAL_ALLOW = [
     "Bash(gh pr merge *)",
     "Bash(gh issue *)",
     "Bash(gh label *)",
+    "Bash(gh -C *)",
     "Bash(bin/*)",
     "Bash(*bin/flow *)",
     "Bash(rm .flow-*)",
