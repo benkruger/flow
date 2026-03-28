@@ -199,8 +199,8 @@ def analyze_issues(issues, repo=None):
     """Analyze a list of issues from gh issue list JSON.
 
     When repo is provided, fetches API-based blocked-by dependencies
-    for issues with issue_dependencies_summary.blocked_by > 0 and
-    merges them with text-based #N dependencies.
+    for every non-in-progress issue and merges them with text-based
+    #N dependencies.
 
     Returns structured result with in_progress and available issues.
     """
@@ -235,7 +235,7 @@ def analyze_issues(issues, repo=None):
         file_paths = extract_file_paths(body)
         text_deps = extract_dependencies(body, open_numbers, own_number=number)
         api_deps = []
-        if repo and issue.get("issue_dependencies_summary", {}).get("blocked_by", 0) > 0:
+        if repo:
             raw_api_deps = fetch_blocked_by(number, repo)
             api_deps = [n for n in raw_api_deps if n in open_numbers and n != number]
         deps = sorted(set(text_deps + api_deps))
@@ -339,7 +339,7 @@ def main():
                     "--state",
                     "open",
                     "--json",
-                    "number,title,labels,createdAt,body,url,issue_dependencies_summary",
+                    "number,title,labels,createdAt,body,url",
                     "--limit",
                     "100",
                 ],
