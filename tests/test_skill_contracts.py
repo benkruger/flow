@@ -1826,6 +1826,12 @@ def test_code_skill_uses_single_task_framing():
     assert "For each task" not in content, "flow-code must not contain 'For each task' loop language"
 
 
+def test_code_skill_has_atomic_group_handling():
+    """Code skill must have atomic task group handling for circular CI dependencies."""
+    content = _read_skill("flow-code")
+    assert "### Atomic Task Group" in content, "flow-code must have '### Atomic Task Group' subsection"
+
+
 # --- Learn phase self-invocation contracts ---
 
 
