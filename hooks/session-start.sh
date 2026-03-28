@@ -162,6 +162,28 @@ def consume_compact_data(path, state):
     return summary, cwd
 
 
+def consume_last_failure(path, state):
+    """Extract _last_failure, clear from state file."""
+    failure = state.pop("_last_failure", None)
+    if failure is not None:
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+    return failure
+
+
+def build_failure_block(failure):
+    """Build failure context block from StopFailure data."""
+    if not failure:
+        return ""
+    f_type = failure.get("type", "unknown")
+    f_ts = failure.get("timestamp", "unknown")
+    f_msg = failure.get("message", "")
+    return (
+        f"Previous session ended due to {f_type} at {f_ts}"
+        + (f": {f_msg}\n\n" if f_msg else "\n\n")
+    )
+
+
 def build_compact_block(summary, cwd, worktree):
     """Build compact context block from PostCompact data."""
     block = ""
@@ -188,7 +210,10 @@ for path in files:
         with open(path) as f:
             state = json.load(f)
         reset_interrupted(path, state)
+        failure = consume_last_failure(path, state)
         summary, cwd = consume_compact_data(path, state)
+        if failure:
+            state["_last_failure_consumed"] = failure
         if summary:
             state["_compact_summary"] = summary
         if cwd:
@@ -283,12 +308,14 @@ if len(states) == 1:
     compact_block = build_compact_block(
         s.get("_compact_summary"), s.get("_compact_cwd"), _worktree(s)
     )
+    failure_block = build_failure_block(s.get("_last_failure_consumed"))
 
     context = (
         "<flow-session-context>\n"
         f"{dev_preamble}"
         f'FLOW feature in progress: "{feature}" — {phase_name}\n'
         "\n"
+        f"{failure_block}"
         f"{compact_block}"
         f"{resume_instruction}"
         "\n"
@@ -333,8 +360,12 @@ else:
             "The user will type /flow:flow-continue when ready to resume.\n"
         )
 
+    failure_blocks = ""
     compact_blocks = ""
     for s in states:
+        f_block = build_failure_block(s.get("_last_failure_consumed"))
+        if f_block:
+            failure_blocks += f'[{_feature(s)}] {f_block}'
         block = build_compact_block(
             s.get("_compact_summary"), s.get("_compact_cwd"), _worktree(s)
         )
@@ -347,6 +378,7 @@ else:
         "Multiple FLOW features are in progress:\n"
         f"{feature_list}\n"
         "\n"
+        f"{failure_blocks}"
         f"{compact_blocks}"
         f"{resume_instruction}"
         "\n"

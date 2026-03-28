@@ -2514,3 +2514,18 @@ def test_create_issue_has_repo_routing():
     assert "<HARD-GATE>" in step2_text and "AskUserQuestion" in step2_text, (
         "Step 2 must have a HARD-GATE with AskUserQuestion for repo routing"
     )
+
+
+def test_create_issue_skips_repo_selection_in_flow_repo():
+    """flow-create-issue must skip repo selection when working in the FLOW repo."""
+    content = _read_skill("flow-create-issue")
+    step2_match = re.search(r"## Step 2.*?(?=\n## )", content, re.DOTALL)
+    assert step2_match, "flow-create-issue must have a Step 2 section"
+    step2_text = step2_match.group(0)
+    # Step 2 must detect the current repo via git remote
+    assert "git remote get-url origin" in step2_text, (
+        "Step 2 must detect the current repo via 'git remote get-url origin' "
+        "to determine if the FLOW-repo shortcut applies"
+    )
+    # Step 2 must have a conditional path for the FLOW repo case
+    assert "benkruger/flow" in step2_text, "Step 2 must reference 'benkruger/flow' for the FLOW-repo conditional"
