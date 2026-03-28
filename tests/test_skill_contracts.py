@@ -360,6 +360,12 @@ def test_onboarding_agent_exists():
     )
 
 
+def test_learn_uses_onboarding_subagent():
+    """Learn skill must reference the onboarding sub-agent."""
+    content = _read_skill("flow-learn")
+    assert '"flow:onboarding"' in content, "skills/flow-learn/SKILL.md must reference flow:onboarding sub-agent"
+
+
 def test_code_review_has_inline_correctness_review():
     """Code Review skill must perform inline correctness review in Step 2."""
     content = _read_skill("flow-code-review")
@@ -1167,10 +1173,10 @@ def test_learning_has_no_worktree_memory_rescue():
 
     Since Claude Code 2.1.63, auto-memory is shared across git worktrees
     of the same repository. Worktree-specific memory paths no longer exist,
-    so Source D rescue is obsolete."""
+    so the old rescue logic is obsolete. Note: "Source D" was reused for
+    the onboarding agent and is no longer an obsolete term."""
     content = _read_skill("flow-learn")
     obsolete_terms = [
-        "Source D",
         "worktree auto-memory",
         "Worth preserving",
         "worktree memory rescue",
