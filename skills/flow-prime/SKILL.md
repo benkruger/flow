@@ -35,8 +35,8 @@ If `--reprime` was passed:
 1. Use the Read tool to read `.flow.json` from the project root.
    - If the file does not exist, stop with: "No existing config to reprime from. Run `/flow:flow-prime` instead."
 2. Extract `framework`, `skills`, and `commit_format` from the JSON.
-3. Run `claude plugin list` to check plugin state (needed for Step 6).
-4. Skip Steps 1–4 entirely. Jump to Step 5 with the extracted values.
+3. Run `claude plugin list` to check plugin state (needed for Step 5).
+4. Skip Steps 1–3 entirely. Jump to Step 4 with the extracted values.
 
 ## Steps
 
