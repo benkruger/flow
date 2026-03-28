@@ -28,7 +28,7 @@ team passive awareness of feature progress from start to merge.
 ### 3. Copy the Bot Token
 
 After installing, copy the **Bot User OAuth Token** (starts with `xoxb-`).
-This is your `FLOW_SLACK_TOKEN`.
+You will enter this when enabling the FLOW plugin.
 
 ### 4. Invite the Bot to a Channel
 
@@ -41,27 +41,15 @@ This is your `FLOW_SLACK_TOKEN`.
 1. Right-click the channel name in Slack
 2. Click **View channel details**
 3. At the bottom of the details panel, copy the **Channel ID** (starts with `C`)
-4. This is your `FLOW_SLACK_CHANNEL`
 
-### 6. Set Environment Variables
+### 6. Enable the FLOW Plugin
 
-Set both environment variables before running `/flow:flow-prime`:
+When you enable the FLOW plugin in Claude Code, you will be prompted for:
 
-```text
-export FLOW_SLACK_TOKEN=xoxb-your-token-here
-export FLOW_SLACK_CHANNEL=C0123456789
-```
+- **Slack bot token** — the `xoxb-` token from Step 3 (stored in your system keychain)
+- **Slack channel ID** — the `C...` channel ID from Step 5
 
-For per-project configuration, use direnv or per-project shell profiles.
-
-### 7. Run Prime
-
-```text
-/flow:flow-prime
-```
-
-Prime detects the environment variables, validates the token with Slack's
-`auth.test` API, and writes the configuration to `.flow.json` (gitignored).
+Both fields are optional. Skip them to disable Slack notifications.
 
 ## How It Works
 
@@ -79,41 +67,29 @@ The thread is the complete narrative of the feature from start to merge:
 
 ## Configuration
 
-Slack configuration lives in `.flow.json` (managed by `/flow:flow-prime`):
+Slack credentials are managed by Claude Code's plugin `userConfig` system.
+The bot token is stored in your system keychain (macOS) or protected
+credentials file (other platforms) — never in plaintext on disk.
 
-```json
-{
-  "slack": {
-    "bot_token": "xoxb-...",
-    "channel": "C0123456789"
-  },
-  "notify": "auto"
-}
-```
+The plugin declares two config fields in `plugin.json`:
 
-- `notify: "auto"` — notifications are sent at each phase milestone
-- `notify: "never"` — notifications are disabled (set when env vars are absent)
+- `slack_bot_token` — sensitive, keychain-backed
+- `slack_channel` — not sensitive
+
+At runtime, these are available as environment variables
+`CLAUDE_PLUGIN_CONFIG_slack_bot_token` and `CLAUDE_PLUGIN_CONFIG_slack_channel`.
 
 ## Disabling Notifications
 
-To turn off Slack notifications:
-
-1. Unset the environment variables
-2. Run `/flow:flow-prime` (or `/flow:flow-prime --reprime`)
-
-Prime removes the `slack` key from `.flow.json` and sets `notify` to `never`.
+To turn off Slack notifications, reconfigure the plugin and clear the
+bot token and channel values.
 
 ## Troubleshooting
-
-**Token validation warning during prime:** The token was written to
-`.flow.json` but the `auth.test` check failed. Verify the token is
-correct and the workspace is accessible.
 
 **Notifications not appearing:** Check that the bot is invited to the
 channel and the channel ID is correct. FLOW fails silently (fail-open)
 on notification errors — check the session log for error details.
 
-**Multiple workspaces:** One Slack App per workspace. Engineers who
-work across multiple companies set `FLOW_SLACK_TOKEN` and
-`FLOW_SLACK_CHANNEL` per-project context (via direnv or shell profiles).
-The channel can differ per project within the same workspace.
+**Multiple workspaces:** One Slack App per workspace. The plugin
+userConfig is per Claude Code installation. Engineers who work across
+multiple workspaces reconfigure the plugin when switching contexts.
