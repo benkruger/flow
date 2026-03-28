@@ -521,7 +521,7 @@ the Skill tool as your final action. If mode was resolved to auto, pass
 ### Step 9 — Close referenced issues
 
 Close any GitHub issues referenced in the start prompt. This is best-effort —
-continue to remove-labels even if closing fails.
+continue to Step 10 even if closing fails.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow close-issues --state-file <project_root>/.flow-states/<branch>.json
