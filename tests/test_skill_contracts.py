@@ -343,6 +343,29 @@ def test_pre_mortem_agent_exists():
     )
 
 
+def test_onboarding_agent_exists():
+    """agents/onboarding.md must exist with required frontmatter fields."""
+    agent_file = REPO_ROOT / "agents" / "onboarding.md"
+    assert agent_file.exists(), "agents/onboarding.md does not exist"
+    content = agent_file.read_text()
+    assert "name: onboarding" in content, "agents/onboarding.md missing 'name: onboarding' in frontmatter"
+    assert "PreToolUse" in content, "agents/onboarding.md missing PreToolUse hook"
+    assert "validate-ci-bash" in content, "agents/onboarding.md missing reference to validate-ci-bash"
+    # Onboarding agent must be read-only — no Edit or Write tools
+    assert "Edit" not in content.split("---")[1], (
+        "agents/onboarding.md must not include Edit tool — onboarding is read-only"
+    )
+    assert "Write" not in content.split("---")[1], (
+        "agents/onboarding.md must not include Write tool — onboarding is read-only"
+    )
+
+
+def test_learn_uses_onboarding_subagent():
+    """Learn skill must reference the onboarding sub-agent."""
+    content = _read_skill("flow-learn")
+    assert '"flow:onboarding"' in content, "skills/flow-learn/SKILL.md must reference flow:onboarding sub-agent"
+
+
 def test_reviewer_agent_exists():
     """agents/reviewer.md must exist with required frontmatter fields."""
     agent_file = REPO_ROOT / "agents" / "reviewer.md"
@@ -1179,10 +1202,10 @@ def test_learning_has_no_worktree_memory_rescue():
 
     Since Claude Code 2.1.63, auto-memory is shared across git worktrees
     of the same repository. Worktree-specific memory paths no longer exist,
-    so Source D rescue is obsolete."""
+    so the old rescue logic is obsolete. Note: "Source D" was reused for
+    the onboarding agent and is no longer an obsolete term."""
     content = _read_skill("flow-learn")
     obsolete_terms = [
-        "Source D",
         "worktree auto-memory",
         "Worth preserving",
         "worktree memory rescue",
