@@ -326,6 +326,7 @@ All permissions (universal + all framework sets) for reference:
       "Read(//tmp/*.txt)",
       "Read(//tmp/*.diff)",
       "Read(//tmp/*.patch)",
+      "Read(//tmp/*.md)",
       "Agent(flow:ci-fixer)",
       "Skill(decompose:decompose)"
     ],
