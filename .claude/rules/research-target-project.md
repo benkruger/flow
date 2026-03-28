@@ -8,6 +8,15 @@ Never research the FLOW plugin source to understand the target
 project's code. The plugin is infrastructure; the target project
 is what you are building.
 
+## Sub-Agent Scoping
+
+When launching sub-agents during any FLOW phase — including
+agents spawned by third-party plugins like code-review:code-review
+— scope all file searches to the repo/worktree. Never instruct
+sub-agents to search `~/.claude/`, `/tmp/`, or paths outside the
+project directory. Pass the repo root explicitly in the agent
+prompt when the agent needs to discover files (e.g. CLAUDE.md).
+
 ## Common Mistakes
 
 - Reading `~/.claude/plugins/cache/` files to understand how
@@ -17,6 +26,8 @@ is what you are building.
   "how does X work" about their project code
 - Using FLOW's own test patterns as a reference for the
   target project's test conventions
+- Launching sub-agents that search `~/.claude/` or `/tmp/`
+  for project files like CLAUDE.md
 
 ## When Plugin Research Is Valid
 
