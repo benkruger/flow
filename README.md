@@ -46,7 +46,7 @@ Start → Plan → Code → Code Review → Learn → Complete
 | **1: Start** | `/flow-start <prompt>` | Lock, pull main, `bin/ci` baseline, upgrade dependencies, `bin/ci` post-deps, commit to main, unlock, new worktree + PR — ci-fixer sub-agent handles failures |
 | **2: Plan** | `/flow-plan` | Reads the start prompt, invokes DAG decompose plugin for dependency analysis, explores codebase, produces ordered tasks with dependency graph |
 | **3: Code** | `/flow-code` | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
-| **4: Code Review** | `/flow-code-review` | Four review lenses — clarity (inline review passes including convention compliance), correctness (inline review), safety (inline security review) |
+| **4: Code Review** | `/flow-code-review` | Four review lenses — clarity (inline review passes including convention compliance), correctness (inline review, rule compliance), safety (inline security review) |
 | **5: Learn** | `/flow-learn` | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
 | **6: Complete** | `/flow-complete` | Close issues referenced in prompt, PR merged, worktree removed, state file deleted, feature done |
 
@@ -201,7 +201,7 @@ The next time you open a Claude Code session, the session-start hook delivers a 
 
 ### Sub-Agent Architecture
 
-Start uses a Sonnet sub-agent for CI failures. Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition. Code Review performs four inline review passes for clarity (code reuse, quality, efficiency, convention compliance), then performs inline correctness review for correctness and inline security review for safety. Code has no sub-agent.
+Start uses a Sonnet sub-agent for CI failures. Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition. Code Review performs four inline review passes for clarity (code reuse, quality, efficiency, convention compliance), then performs inline correctness review for correctness (including rule compliance) and inline security review for safety. Code has no sub-agent.
 
 ```text
 Main conversation          Sub-agent (general-purpose)

@@ -168,7 +168,7 @@ State files (`.flow-states/`) are local to each machine. In a multi-engineer tea
 
 FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Step 8) and Complete (Steps 4 and 5). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands, shell redirection, and file-read commands in all Bash calls — including those from built-in skills' sub-agents. The ci-fixer also retains its own hook declaration for defense in depth.
 
-Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition — no plan mode. Code Review performs four inline review passes for clarity (code reuse, quality, efficiency, convention compliance), then performs inline correctness review for correctness and inline security review for safety. Code and Learn have no sub-agents. Complete uses ci-fixer for CI failures.
+Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition — no plan mode. Code Review performs four inline review passes for clarity (code reuse, quality, efficiency, convention compliance), then performs inline correctness review for correctness (including rule compliance) and inline security review for safety. Code and Learn have no sub-agents. Complete uses ci-fixer for CI failures.
 
 ### Orchestration
 

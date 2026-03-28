@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — four review lenses (clarity via inline review passes, convention compliance via inline review, correctness via inline review, safety via inline security review). Commits after each step."
+description: "Phase 4: Code Review — four review lenses (clarity via inline review passes, convention compliance via inline review, correctness including rule compliance via inline review, safety via inline security review). Commits after each step."
 ---
 
 # FLOW Code Review — Phase 4: Code Review
@@ -267,7 +267,7 @@ Get the full branch diff to use as review context:
 git diff origin/main..HEAD
 ```
 
-Perform four correctness review passes on the diff output, using the plan
+Perform five correctness review passes on the diff output, using the plan
 file as context. Execute each pass sequentially, aggregating findings as
 you go.
 
@@ -287,7 +287,14 @@ without tests, and tests that do not verify what they claim.
 Identify function signatures that do not match their callers, inconsistent
 return types, and interfaces that do not match their documentation.
 
-After all four passes, aggregate the findings.
+**Pass 5 — Rule Compliance:** Use the Glob tool to find all
+`.claude/rules/*.md` files in the working directory. If no files are
+found, skip this pass. Otherwise, use the Read tool to read each file.
+Treat each rule as a checklist item. Review the diff for violations of
+any accumulated project rule. Identify code that contradicts explicit
+guidance from the rules files.
+
+After all five passes, aggregate the findings.
 
 If no findings were identified, show the Review summary with zero
 findings listed, then without pausing continue to Step 3.
