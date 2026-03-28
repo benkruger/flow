@@ -21,9 +21,8 @@ up to four ordered steps, each with its own commit checkpoint.
 
 ### Step 1 — Simplify (clarity)
 
-Launches three foreground review agents in parallel (code reuse, code
-quality, efficiency) against the branch diff. All three complete within
-the response turn — no background agents. If changes are proposed,
+Performs three inline review passes sequentially (code reuse, code
+quality, efficiency) against the branch diff. If changes are proposed,
 shows the diff, commits via `/flow-commit`, and runs `bin/flow ci`. If
 no changes, skips to Step 2.
 
@@ -91,10 +90,10 @@ a conversation turn boundary. The `--continue-step` flag skips the
 Announce banner and phase entry update, proceeding directly to the Resume
 Check which dispatches to the next step.
 
-Step 1 uses foreground agents that complete within the response turn.
+Step 1 performs inline review passes sequentially within the response turn.
 Steps 2-4 invoke built-in skills or plugins that may launch background
-review agents — each of those steps waits for all background agents to
-complete before evaluating findings.
+agents — each of those steps waits for all background agents to complete
+before evaluating findings.
 
 ---
 
