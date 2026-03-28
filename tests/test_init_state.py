@@ -362,3 +362,16 @@ def test_cli_via_bin_flow(target_project, monkeypatch):
     data = json.loads(result.stdout)
     assert data["status"] == "ok"
     assert data["branch"] == "cli-integration-test"
+
+
+# --- Structural: single source of truth ---
+
+
+def test_auto_skills_imported_not_defined():
+    """init-state.py must import AUTO_SKILLS from flow_utils, not define its own."""
+    source = (LIB_DIR / "init-state.py").read_text()
+    # Must not have a top-level assignment like AUTO_SKILLS = {
+    for line in source.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("AUTO_SKILLS") and "=" in stripped and "import" not in stripped:
+            pytest.fail("init-state.py defines AUTO_SKILLS locally; it should import from flow_utils")
