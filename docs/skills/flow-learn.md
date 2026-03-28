@@ -11,9 +11,10 @@ parent: Skills
 **Usage:** `/flow-learn`, `/flow-learn --auto`, `/flow-learn --manual`, or `/flow-learn --continue-step`
 
 Autonomously synthesises what went wrong from three sources, routes each
-learning to its correct permanent home, files GitHub issues for plugin
-improvements, and presents a comprehensive report. Runs before the PR
-merges.
+learning to its correct permanent home, promotes session permissions from
+`settings.local.json` into `settings.json`, files GitHub issues for
+plugin improvements, and presents a comprehensive report. Runs before the
+PR merges.
 
 ---
 
@@ -39,6 +40,11 @@ Learnings are routed autonomously based on destination:
 Both CLAUDE.md and `.claude/rules/` edits are committed to the feature branch
 via `/flow-commit --auto`. All edits target the project repo — never
 user-level `~/.claude/` paths.
+
+**Permission promotion** — session permissions accumulated in
+`.claude/settings.local.json` are merged into `.claude/settings.json`
+via `bin/flow promote-permissions`. The local file is deleted after
+merging. Runs in all three modes.
 
 **GitHub issues** — filed during Learn:
 
