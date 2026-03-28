@@ -33,12 +33,12 @@ Claude decides destinations autonomously using content-type heuristics:
 
 | Destination | What goes here | Write method |
 |---|---|---|
-| Project CLAUDE.md | Process rules and project architecture | Edit on disk, committed via PR |
-| `.claude/rules/` | Coding anti-patterns and gotchas | Edit on disk, committed via PR |
+| Project CLAUDE.md | Process rules and project architecture | `bin/flow write-rule`, committed via PR |
+| `.claude/rules/` | Coding anti-patterns and gotchas | `bin/flow write-rule`, committed via PR |
 
-Both CLAUDE.md and `.claude/rules/` are edited directly on disk using
-dedicated tools (Edit/Write) and committed to the feature branch. All edits
-target the project repo — never user-level `~/.claude/` paths.
+Both CLAUDE.md and `.claude/rules/` are written via `bin/flow write-rule`
+and committed to the feature branch. All edits target the project repo —
+never user-level `~/.claude/` paths.
 
 **GitHub issues** — filed during Learn:
 
