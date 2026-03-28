@@ -7,14 +7,27 @@
 2. Call `bin/flow issue --title "..." --body-file .flow-issue-body`
 3. The script reads the file, deletes it, then creates the issue
 
+## Editing Existing Issues
+
+Use the same `.flow-issue-body` temp file pattern:
+
+1. Write the updated body to `.flow-issue-body` using the Write tool
+2. Call `gh issue edit <number> --repo <owner/repo> --body-file .flow-issue-body`
+3. Delete `.flow-issue-body` yourself — `gh issue edit` does not
+   auto-delete
+
+Never write temp files to `/tmp/` — the project's `defaultMode:
+"plan"` has no allow-list pattern for `/tmp/` paths, triggering
+permission prompts.
+
 ## Rules
 
 - Never pass body text as a command line argument — special
   characters trigger the Bash hook validator
-- Never delete `.flow-issue-body` yourself — the script handles
-  cleanup after reading
-- Always use `bin/flow issue` — never call `gh issue create`
-  directly
+- Never delete `.flow-issue-body` yourself when creating — the
+  script handles cleanup after reading
+- Always use `bin/flow issue` for creating — never call
+  `gh issue create` directly
 
 ## Content Standards
 
