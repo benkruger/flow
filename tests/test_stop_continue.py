@@ -1425,3 +1425,94 @@ class TestClearBlocked:
 
         captured = capsys.readouterr()
         assert "[FLOW stop-continue] clear_blocked error:" in captured.err
+
+
+class TestSetBlockedIdle:
+    def test_sets_blocked_timestamp(self, git_repo, state_dir, branch, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        write_state(state_dir, branch, state)
+
+        _mod.set_blocked_idle(root=git_repo, branch=branch)
+
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert "_blocked" in updated
+        assert isinstance(updated["_blocked"], str)
+
+    def test_overwrites_existing_blocked(self, git_repo, state_dir, branch, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_blocked"] = "2026-01-01T10:00:00-08:00"
+        write_state(state_dir, branch, state)
+
+        _mod.set_blocked_idle(root=git_repo, branch=branch)
+
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert updated["_blocked"] != "2026-01-01T10:00:00-08:00"
+
+    def test_no_state_file_noop(self, git_repo, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        _mod.set_blocked_idle(root=git_repo, branch="nonexistent")
+
+    def test_no_branch_noop(self):
+        _mod.set_blocked_idle(root=Path("/tmp"), branch=None)
+
+    def test_corrupt_state_file_noop(self, git_repo, state_dir, branch, monkeypatch, capsys):
+        monkeypatch.chdir(git_repo)
+        (state_dir / f"{branch}.json").write_text("{bad json")
+
+        _mod.set_blocked_idle(root=git_repo, branch=branch)
+
+        captured = capsys.readouterr()
+        assert "[FLOW stop-continue] set_blocked_idle error:" in captured.err
+
+
+class TestMainBlockedConditional:
+    def test_main_sets_blocked_when_idle(self, git_repo, state_dir, branch):
+        """Stop hook SETS _blocked when session is going idle (not blocking)."""
+        state = make_state(current_phase="flow-code")
+        write_state(state_dir, branch, state)
+
+        stdin = json.dumps({"session_id": "test-session"})
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
+
+        assert exit_code == 0
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert "_blocked" in updated
+        assert isinstance(updated["_blocked"], str)
+
+    def test_main_clears_blocked_when_blocking_for_continue(self, git_repo, state_dir, branch):
+        """Stop hook CLEARS _blocked when blocking for _continue_pending."""
+        state = make_state(current_phase="flow-code")
+        state["session_id"] = "test-session"
+        state["_continue_pending"] = "decompose"
+        state["_continue_context"] = "Resume after decompose."
+        state["_blocked"] = "2026-01-01T10:00:00-08:00"
+        write_state(state_dir, branch, state)
+
+        stdin = json.dumps({"session_id": "test-session"})
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
+
+        assert exit_code == 0
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert "_blocked" not in updated
+
+    def test_main_clears_blocked_when_blocking_for_qa(self, git_repo, state_dir, branch):
+        """Stop hook CLEARS _blocked when blocking for QA continuation."""
+        state = make_state(current_phase="flow-code")
+        write_state(state_dir, branch, state)
+
+        # Create QA pending breadcrumb
+        qa_path = state_dir / "qa-pending.json"
+        qa_path.write_text(json.dumps({"_continue_context": "QA resume context"}))
+
+        # Set _blocked so we can verify it gets cleared
+        state["_blocked"] = "2026-01-01T10:00:00-08:00"
+        write_state(state_dir, branch, state)
+
+        stdin = json.dumps({"session_id": "test-session"})
+        exit_code, stdout, _ = _run_hook(stdin, cwd=git_repo)
+
+        assert exit_code == 0
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert "_blocked" not in updated

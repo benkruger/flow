@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — three review lenses (clarity via inline review, correctness via /review, safety via /security-review) plus an optional fourth (CLAUDE.md compliance via code-review:code-review plugin, configurable). Commits after each step."
+description: "Phase 4: Code Review — three review lenses (clarity via inline review, correctness via /review, safety via inline security review) plus an optional fourth (CLAUDE.md compliance via code-review:code-review plugin, configurable). Commits after each step."
 ---
 
 # FLOW Code Review — Phase 4: Code Review
@@ -416,33 +416,31 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 
 ## Step 3 — Security
 
-Set the continuation context and flag before invoking the child skill:
+Get the full branch diff to use as security review context:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Wait for all pending background agents to complete. Then process security findings, fix issues, run bin/flow ci, then commit if fixes were made."
+git diff origin/main..HEAD
 ```
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=security-review
-```
+Perform three security review passes on the diff output. Execute each pass
+sequentially, aggregating findings as you go.
 
-Invoke Claude's built-in security review command:
+**Pass 1 — Input Validation:** Review the diff for injection vulnerabilities,
+unsanitized user input, command injection, path traversal, and unsafe
+deserialization. Identify any place where external input flows into sensitive
+operations without validation or escaping.
 
-```text
-/security-review
-```
+**Pass 2 — Authentication & Authorization:** Review the diff for
+authentication bypasses, missing access controls, insecure session handling,
+and privilege escalation. Identify any place where identity or permissions
+are checked incorrectly or not at all.
 
-This analyzes the branch diff for security vulnerabilities using Claude's
-language-aware security analysis.
+**Pass 3 — Data Exposure:** Review the diff for sensitive data leaks,
+hardcoded secrets, insecure storage, weak cryptography, and information
+disclosure. Identify any place where confidential data could be exposed
+to unauthorized parties.
 
-### Background agent check
-
-Built-in skills may launch background review agents that run
-asynchronously. After the child skill returns and the stop-continue hook
-resumes you, check for any pending background agent notifications. Wait
-for ALL background agents to complete before proceeding. Do not evaluate
-"no findings" until every agent has reported. Treat agent findings the
-same as direct findings from the child skill.
+After all three passes, aggregate the findings.
 
 ### Fix every finding
 
@@ -722,7 +720,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
 - Always run `bin/flow ci` after any fix made during Code Review
 - Never transition to Learn unless `bin/flow ci` is green
-- Fix every finding from `/review`, `/security-review`, and (when enabled) `code-review:code-review` — do not leave findings unaddressed
+- Fix every finding from `/review`, inline security review, and (when enabled) `code-review:code-review` — do not leave findings unaddressed
 - Follow the project CLAUDE.md conventions when fixing
 - Each active step (Simplify, Review, Security, and Code Review Plugin when enabled) gets its own commit when changes are made
 - Never use Bash to print banners — output them as text in your response
