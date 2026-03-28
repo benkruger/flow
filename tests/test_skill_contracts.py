@@ -2397,6 +2397,33 @@ def test_prime_has_independent_code_review_plugin_question():
         )
 
 
+# --- security_review config axis ---
+
+
+def test_code_review_skill_has_security_review_mode_resolution():
+    """Code Review SKILL.md must reference security_review config."""
+    content = _read_skill("flow-code-review")
+    assert "skills.flow-code-review.security_review" in content, (
+        "flow-code-review/SKILL.md Mode Resolution must reference 'skills.flow-code-review.security_review' key"
+    )
+
+
+def test_prime_has_independent_security_review_question():
+    """flow-prime must ask about security_review as an independent step."""
+    content = _read_skill("flow-prime")
+    assert "Security Review mode" in content, (
+        "flow-prime/SKILL.md must contain an independent AskUserQuestion about 'Security Review mode'"
+    )
+    json_blocks = re.findall(r"```json\n(\{.*?\})\n```", content, re.DOTALL)
+    assert len(json_blocks) >= 3, f"Expected at least 3 JSON preset blocks, found {len(json_blocks)}"
+    for i, name in enumerate(["fully autonomous", "fully manual", "recommended"]):
+        parsed = json.loads(json_blocks[i])
+        cr_config = parsed.get("flow-code-review", {})
+        assert "security_review" not in cr_config, (
+            f"'security_review' must NOT be in {name} preset — it is an independent question"
+        )
+
+
 # --- flow-create-issue self-invocation and step gates ---
 
 
