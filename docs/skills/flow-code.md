@@ -35,6 +35,20 @@ For the current task:
 
 ---
 
+## Atomic Task Groups
+
+When tasks form a circular CI dependency (e.g., adding a new CI check and
+fixing its violations in the same PR), no intermediate state can pass
+`bin/flow ci` independently. The plan marks these tasks as an **atomic
+group** with the reason they cannot be committed individually.
+
+All tasks in the group are executed sequentially — each gets a full TDD
+cycle and its own `code_task` increment — but `bin/flow ci` and commit
+happen once after the last task. The `code_task` counter still increments
+by exactly 1 per task; only the commit is deferred.
+
+---
+
 ## Framework Architecture Enforced
 
 Architecture checks are defined by the framework instructions in the skill. Each framework enforces its own rules for reading code before writing, using test infrastructure correctly, and following framework conventions.
