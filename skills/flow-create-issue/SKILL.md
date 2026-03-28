@@ -54,7 +54,7 @@ was passed (first run), there is no file to read — proceed to Input
 Classification.
 
 - If the file does not exist, proceed to Input Classification (first run).
-- If `create_issue_step` is `1` — Step 1 is done. Skip to Step 2.
+- If `create_issue_step` is `1` — Step 1 is done. Skip to Step 2 (which re-reads the file to determine single vs. multi-issue mode).
 
 ---
 
@@ -149,7 +149,10 @@ Output in your response (not via Bash) inside a fenced code block:
 ```
 ````
 
-Invoke the `decompose:decompose` plugin with the user's problem description via the Skill tool.
+Invoke the `decompose:decompose` plugin with the user's problem description
+via the Skill tool. If Step 1 received a list of problems (from "File
+multiple issues"), invoke decompose once with all problems described
+together — the DAG analysis should consider interactions between them.
 
 The decomposition **must** include deep codebase exploration. During DAG execution:
 
@@ -392,35 +395,42 @@ explicitly chooses a filing target.
 
 ### Multi-Issue Filing
 
-File each issue in sequence. For each issue N (1-indexed), write the
-issue body to `.flow-issue-body-<id>-N` in the project root using the
-Write tool (e.g., `.flow-issue-body-<id>-1` for the first issue,
-`.flow-issue-body-<id>-2` for the second).
+Write all body files first using parallel Write tool calls — one per
+issue, each to `.flow-issue-body-<id>-N` in the project root (e.g.,
+`.flow-issue-body-<id>-1` for the first issue, `.flow-issue-body-<id>-2`
+for the second).
 
-**If target project**, file and record each issue:
+Then file all issues in parallel using multiple Bash calls in one
+response. Each `bin/flow issue` call is independent (different body
+file, different GitHub API call).
+
+**If target project**, file each issue:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id>-1 --label decomposed
 ```
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
-```
-
-**If FLOW plugin bug**, file and record each issue:
+**If FLOW plugin bug**, file each issue:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo benkruger/flow --title "<issue_title>" --body-file .flow-issue-body-<id>-1 --label "Flow"
 ```
 
+After all issues are filed, record each one sequentially (no-op if no
+FLOW feature is active — the `add-issue` calls mutate a shared state
+file and must run one at a time). Use the same label as the filing call:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
+```
+
+Or for FLOW plugin issues:
+
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
 ```
 
-Repeat the Write + file + record sequence for each issue, incrementing
-the body file suffix (`-1`, `-2`, `-3`, etc.).
-
-After all issues are filed, clean up the session state file:
+After recording all issues, clean up the session state file:
 
 ```bash
 rm .flow-states/create-issue-<id>.json
@@ -444,6 +454,6 @@ Display all issue URLs to the user, then output the COMPLETE banner:
 - Never use Bash to print banners — output them as text in your response
 - The issue body must be self-contained — a fresh session with no memory of this conversation must be able to execute it
 - Never create dependency links between issues — use `flow-decompose-project` for dependent issue graphs. Independent issues from one exploration session are fine.
-- Always use the Write tool to create the body file (`.flow-issue-body-<id>`) — never pass body text as a CLI argument
+- Always use the Write tool to create body files (`.flow-issue-body-<id>` or `.flow-issue-body-<id>-N`) — never pass body text as a CLI argument
 - Never delete the body file — the `bin/flow issue` script handles cleanup
 - Step 1 ends by invoking the skill itself as the final action — Step 2 is terminal
