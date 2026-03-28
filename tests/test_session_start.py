@@ -128,6 +128,42 @@ def test_reset_interrupted_null_session_started_at_no_change(git_repo):
     assert updated["phases"]["flow-plan"]["cumulative_seconds"] == 300
 
 
+def test_reset_interrupted_clears_blocked(git_repo):
+    """_blocked must be cleared during reset_interrupted even when session_started_at is None."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
+    state["phases"]["flow-plan"]["session_started_at"] = None
+    state["phases"]["flow-plan"]["cumulative_seconds"] = 300
+    state["_blocked"] = "2026-01-15T10:00:00-08:00"
+    write_state(state_dir, "my-feature", state)
+
+    _switch(git_repo, "my-feature")
+    _run(git_repo)
+
+    updated = json.loads((state_dir / "my-feature.json").read_text())
+    assert "_blocked" not in updated
+    assert updated["phases"]["flow-plan"]["cumulative_seconds"] == 300
+
+
+def test_reset_interrupted_clears_blocked_with_timing(git_repo):
+    """_blocked must be cleared alongside timing accumulation."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
+    state["phases"]["flow-plan"]["session_started_at"] = "2026-01-15T10:00:00Z"
+    state["phases"]["flow-plan"]["cumulative_seconds"] = 0
+    state["_blocked"] = "2026-01-15T10:00:00-08:00"
+    write_state(state_dir, "my-feature", state)
+
+    _switch(git_repo, "my-feature")
+    _run(git_repo)
+
+    updated = json.loads((state_dir / "my-feature.json").read_text())
+    assert "_blocked" not in updated
+    assert updated["phases"]["flow-plan"]["cumulative_seconds"] > 0
+
+
 def test_multi_feature_preserves_all_timing(git_repo):
     """All features must have their interrupted timing accumulated, not just the first."""
     state_dir = git_repo / ".flow-states"
