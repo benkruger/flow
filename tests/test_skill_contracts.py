@@ -2407,6 +2407,31 @@ def test_flow_issues_has_impact_ranking():
     assert "impact" in content.lower(), "flow-issues/SKILL.md must contain impact ranking logic"
 
 
+# --- flow-issues blocked status ---
+
+
+def test_flow_issues_has_status_column():
+    """flow-issues SKILL.md must have a Status column in the work order table."""
+    content = _read_skill("flow-issues")
+    assert "Status" in content, "flow-issues/SKILL.md must contain 'Status' column in work order"
+
+
+def test_flow_issues_has_ready_and_blocked_values():
+    """flow-issues SKILL.md must define Ready and Blocked status values."""
+    content = _read_skill("flow-issues")
+    assert "`Ready`" in content, "flow-issues/SKILL.md must define Ready status value"
+    assert "`Blocked`" in content, "flow-issues/SKILL.md must define Blocked status value"
+
+
+def test_flow_issues_start_commands_exclude_blocked():
+    """flow-issues SKILL.md must exclude blocked issues from Start Commands."""
+    content = _read_skill("flow-issues")
+    # The Start Commands section should mention only including ready issues
+    assert "ready issues" in content.lower(), (
+        "flow-issues/SKILL.md must reference 'ready issues' to exclude blocked from Start Commands"
+    )
+
+
 # --- label-issues integration in Start, Complete, Abort ---
 
 
