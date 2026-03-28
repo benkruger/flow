@@ -117,6 +117,38 @@ def test_draw_header_no_repo_name():
     assert "FLOW" in text
 
 
+def test_draw_header_separator_spans_terminal_width():
+    """Header tab-bar separator spans max_x - 4 on wide terminals, not capped at 54."""
+    stdscr = _make_stdscr(rows=10, cols=120)
+    app = _make_app(stdscr)
+    app._draw_header()
+    # Row 3 is the tab-bar separator
+    sep_calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == 3]
+    assert sep_calls, "Expected a separator call at row 3"
+    sep_text = sep_calls[0][0][2]
+    # Should be 116 chars (120 - 4), not capped at 54
+    assert len(sep_text) == 116
+
+
+def test_draw_list_view_separator_spans_terminal_width():
+    """List/detail separator spans max_x - 4 on wide terminals, not capped at 54."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=120)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+    # The list/detail separator is at row = 4 + list_end (1 flow) = row 5
+    # It renders at detail_start - 1 = 5
+    sep_calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == 5 and "\u2500" in str(c[0][2])]
+    assert sep_calls, "Expected a separator call at the list/detail boundary"
+    sep_text = sep_calls[0][0][2]
+    # Should be 116 chars (120 - 4), not capped at 54
+    assert len(sep_text) == 116
+
+
 # --- _init_colors ---
 
 
@@ -375,8 +407,60 @@ def test_draw_list_view_small_terminal():
     app._draw_list_view()
 
 
+def test_draw_list_view_feature_expands_on_wide_terminal():
+    """Feature names are NOT truncated on wide terminals when they fit."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    # "Analyze Issues Blocked By Api" = 30 chars — fits at 120 cols
+    state["branch"] = "analyze-issues-blocked-by-api"
+    flow = _flow_from_state(state)
+    full_name = flow["feature"]
+    assert len(full_name) > 26, f"Test setup: need >26 chars, got {len(full_name)}"
+
+    stdscr = _make_stdscr(rows=40, cols=120)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+
+    # Find the list row (row 4 for the first flow)
+    list_row_calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == 4]
+    assert list_row_calls, "Expected a call at row 4 for the flow list entry"
+    list_row_text = list_row_calls[0][0][2]
+
+    # On a wide terminal, the full name should appear without "..."
+    assert full_name in list_row_text
+    assert "..." not in list_row_text
+
+
+def test_draw_list_view_feature_truncated_on_narrow_terminal():
+    """Feature names are still truncated on narrow terminals."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    # "Showcase Slack Orchestrate Tui" = 30 chars — won't fit at 60 cols
+    state["branch"] = "showcase-slack-orchestrate-tui"
+    flow = _flow_from_state(state)
+    full_name = flow["feature"]
+    assert len(full_name) > 26, f"Test setup: need >26 chars, got {len(full_name)}"
+
+    stdscr = _make_stdscr(rows=40, cols=60)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+
+    # Find the list row (row 4 for the first flow)
+    list_row_calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == 4]
+    assert list_row_calls, "Expected a call at row 4 for the flow list entry"
+    list_row_text = list_row_calls[0][0][2]
+
+    # On a narrow terminal, the name should be truncated
+    assert "..." in list_row_text
+    assert full_name not in list_row_text
+
+
 def test_draw_list_view_long_feature_name_truncated():
-    """Truncates feature names longer than 26 chars with '...' in list view."""
+    """Truncates feature names that exceed the responsive column width on narrow terminals."""
     state = make_state(
         current_phase="flow-code",
         phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
@@ -388,7 +472,8 @@ def test_draw_list_view_long_feature_name_truncated():
     full_name = flow["feature"]
     assert len(full_name) > 26, f"Test setup: need >26 chars, got {len(full_name)}"
 
-    stdscr = _make_stdscr(rows=40, cols=80)
+    # At 60 cols, feature_width = max(26, 60 - 49) = 26, so 30-char name is truncated
+    stdscr = _make_stdscr(rows=40, cols=60)
     app = _make_app(stdscr, flows=[flow])
     app._draw_list_view()
 
@@ -401,7 +486,7 @@ def test_draw_list_view_long_feature_name_truncated():
     assert list_row_calls, "Expected a call at row 4 for the flow list entry"
     list_row_text = list_row_calls[0][0][2]
 
-    # List row should have truncated name with "..." and fit within 26 chars
+    # List row should have truncated name with "..."
     assert "..." in list_row_text
     assert full_name not in list_row_text
 
@@ -1760,6 +1845,29 @@ def test_draw_orchestration_view_with_queue():
     assert "\u25b6" in text
     assert "#42" in text
     assert "Add PDF export" in text
+
+
+def test_draw_orchestration_view_title_expands_on_wide_terminal():
+    """Orchestration title column padding scales with terminal width on wide terminals."""
+    short_title = "Fix login"  # 9 chars — well under any width
+    items = [_make_orch_item(42, short_title, icon="\u25b6", status="in_progress", elapsed="38m")]
+    orch = _make_orch_data(items=items)
+    stdscr = _make_stdscr(rows=30, cols=120)
+    app = _make_app(stdscr, flows=[], orch_data=orch)
+    app.active_tab = 1
+    app._draw_orchestration_view()
+    # Find the item row with #42
+    item_calls = [c for c in stdscr.addstr.call_args_list if "#42" in str(c[0][2])]
+    assert item_calls, "Expected an orchestration item call with #42"
+    item_text = item_calls[0][0][2]
+    # At 120 cols, the title column should be padded wider than the default 30
+    # orch_title_width = max(30, 120 - 44) = 76
+    # The title "Fix login" (9 chars) should be padded to 76 chars in the column
+    # Verify the elapsed "38m" appears further right than it would at 30-char padding
+    elapsed_pos = item_text.index("38m")
+    # With 30-char title column: prefix (~12) + 30 + "  " = ~44
+    # With 76-char title column: prefix (~12) + 76 + "  " = ~90
+    assert elapsed_pos > 50, f"Elapsed '38m' should be pushed right by wider title column, found at pos {elapsed_pos}"
 
 
 def test_orch_completed_item_green():
