@@ -1680,31 +1680,31 @@ def test_flow_start_issue_aware_branch_naming():
 def test_prime_commit_step_enforces_flow_commit_exclusively():
     """flow-prime commit step must use /flow:flow-commit and not raw git commands."""
     content = _read_skill("flow-prime")
-    step_match = re.search(r"### Step 7.*?\n(.*?)(?=\n### Done)", content, re.DOTALL)
-    assert step_match, "Could not find Step 7 (commit) in flow-prime/SKILL.md"
+    step_match = re.search(r"### Step 6.*?\n(.*?)(?=\n### Done)", content, re.DOTALL)
+    assert step_match, "Could not find Step 6 (commit) in flow-prime/SKILL.md"
     step_text = step_match.group(1)
-    assert "/flow:flow-commit" in step_text, "flow-prime Step 7 must reference /flow:flow-commit"
+    assert "/flow:flow-commit" in step_text, "flow-prime Step 6 must reference /flow:flow-commit"
     for line in step_text.splitlines():
         if "git commit" in line:
             assert re.search(r"[Nn]ever", line), (
-                f"flow-prime Step 7 mentions 'git commit' outside a prohibition: {line.strip()}"
+                f"flow-prime Step 6 mentions 'git commit' outside a prohibition: {line.strip()}"
             )
         if "git add" in line:
             assert re.search(r"[Nn]ever", line), (
-                f"flow-prime Step 7 mentions 'git add' outside a prohibition: {line.strip()}"
+                f"flow-prime Step 6 mentions 'git add' outside a prohibition: {line.strip()}"
             )
 
 
-def test_prime_step_7_has_commit_or_exclude_gate():
-    """flow-prime Step 7 must have a HARD-GATE asking commit vs git-exclude."""
+def test_prime_step_6_has_commit_or_exclude_gate():
+    """flow-prime Step 6 must have a HARD-GATE asking commit vs git-exclude."""
     content = _read_skill("flow-prime")
-    step_match = re.search(r"### Step 7.*?\n(.*?)(?=\n### Done)", content, re.DOTALL)
-    assert step_match, "Could not find Step 7 in flow-prime/SKILL.md"
+    step_match = re.search(r"### Step 6.*?\n(.*?)(?=\n### Done)", content, re.DOTALL)
+    assert step_match, "Could not find Step 6 in flow-prime/SKILL.md"
     step_text = step_match.group(1)
 
-    assert "<HARD-GATE>" in step_text, "flow-prime Step 7 must have a <HARD-GATE> for commit/exclude decision"
-    assert "Commit and push" in step_text, "flow-prime Step 7 HARD-GATE must offer 'Commit and push' option"
-    assert "Git-exclude" in step_text, "flow-prime Step 7 HARD-GATE must offer 'Git-exclude' option"
+    assert "<HARD-GATE>" in step_text, "flow-prime Step 6 must have a <HARD-GATE> for commit/exclude decision"
+    assert "Commit and push" in step_text, "flow-prime Step 6 HARD-GATE must offer 'Commit and push' option"
+    assert "Git-exclude" in step_text, "flow-prime Step 6 HARD-GATE must offer 'Git-exclude' option"
 
     # Done section must have conditional reporting for both paths
     done_match = re.search(r"(### Done.*?)(?=\n### |\Z)", content, re.DOTALL)
@@ -1714,14 +1714,6 @@ def test_prime_step_7_has_commit_or_exclude_gate():
     assert "excluded" in done_text.lower() or "local-only" in done_text.lower(), (
         "flow-prime Done section must mention excluded/local-only path"
     )
-
-
-def test_prime_has_plugin_installation_step():
-    """flow-prime must have a step installing the code-review plugin."""
-    content = _read_skill("flow-prime")
-    assert "claude plugin list" in content, "flow-prime must include 'claude plugin list' command"
-    assert "claude plugin marketplace add" in content, "flow-prime must include 'claude plugin marketplace add' command"
-    assert "claude plugin install" in content, "flow-prime must include 'claude plugin install' command"
 
 
 def test_prime_has_commit_format_prompt():
