@@ -112,7 +112,7 @@ CI will fail if these are missing:
 - `lib/tui_data.py` — pure data layer for TUI: loads state files, computes flow summaries, phase timelines, parses log entries
 - `lib/tui.py` — curses-based interactive TUI for viewing and managing active flows (`flow tui`)
 - `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands, shell redirection, and file-read commands in all Bash calls)
-- `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (blocks prompts when `_auto_continue` is set in state file; writes `_blocked` timestamp when allowing through)
+- `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (answers prompts via `updatedInput` when `_auto_continue` is set in state file; writes `_blocked` timestamp when allowing through)
 - `lib/clear-blocked.py` — PostToolUse hook on AskUserQuestion that clears `_blocked` from the state file after the user responds; fail-open
 - `lib/scaffold-qa.py` — creates QA repos from per-framework templates (`qa/templates/`); CLI: `bin/flow scaffold-qa --framework <name> --repo <owner/repo>`
 - `lib/qa-reset.py` — resets QA repos to seed state (git reset, close PRs, delete branches, recreate issues); CLI: `bin/flow qa-reset --repo <owner/repo> [--local-path <path>]`
@@ -249,7 +249,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_create_dependencies.py` | Dependency template: file creation, skip-if-exists, chmod, CLI |
 | `test_prime_setup.py` | Prime setup: data-driven permissions, settings merge, version marker, git exclude, pre-commit hook |
 | `test_validate_ci_bash.py` | Bash hook validator: compound commands, redirection, blanket restore, deny list, file-read commands, whitelist enforcement (flow-active gating, worktree branch detection, settings+root resolution), in-process and subprocess integration |
-| `test_validate_ask_user.py` | AskUserQuestion hook: blocks prompts when `_auto_continue` set, allows when absent/empty, `_blocked` write on allow, subprocess integration |
+| `test_validate_ask_user.py` | AskUserQuestion hook: answers prompts via `updatedInput` when `_auto_continue` set, allows when absent/empty, `_blocked` write on allow, subprocess integration |
 | `test_clear_blocked.py` | PostToolUse hook: clears `_blocked` from state, noop when absent, fail-open on errors, subprocess integration |
 | `test_post_compact.py` | PostCompact hook: compact_summary/cwd/count written to state, fail-open on errors, subprocess integration |
 | `test_stop_failure.py` | StopFailure hook: _last_failure written to state (type, message, timestamp), fail-open on errors, missing key/state/branch handling, overwrite, subprocess integration |

@@ -88,26 +88,13 @@ def _load_framework_permissions(framework):
     return json.loads(permissions_path.read_text())["allow"]
 
 
-def test_settings_has_all_allow_entries_rails(tmp_path):
-    _mod.merge_settings(tmp_path, "rails")
+@pytest.mark.parametrize("framework", ["rails", "python", "ios"])
+def test_settings_has_all_allow_entries(tmp_path, framework):
+    _mod.merge_settings(tmp_path, framework)
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
     allow = settings["permissions"]["allow"]
-    expected = _mod.UNIVERSAL_ALLOW + _load_framework_permissions("rails")
+    expected = _mod.UNIVERSAL_ALLOW + _load_framework_permissions(framework)
     for entry in expected:
-        # Subsumed entries are correctly omitted (e.g. Bash(bin/rails test *)
-        # is subsumed by Bash(*bin/*))
-        if not _mod._is_subsumed(entry, set(allow)):
-            assert entry in allow
-
-
-def test_settings_has_all_allow_entries_python(tmp_path):
-    _mod.merge_settings(tmp_path, "python")
-    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-    allow = settings["permissions"]["allow"]
-    expected = _mod.UNIVERSAL_ALLOW + _load_framework_permissions("python")
-    for entry in expected:
-        # Subsumed entries are correctly omitted (e.g. Bash(.venv/bin/pip install *)
-        # is subsumed by Bash(*bin/*))
         if not _mod._is_subsumed(entry, set(allow)):
             assert entry in allow
 
@@ -464,14 +451,6 @@ def test_python_framework_excludes_rails_permissions(tmp_path):
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
     for entry in _load_framework_permissions("rails"):
         assert entry not in settings["permissions"]["allow"]
-
-
-def test_settings_has_all_allow_entries_ios(tmp_path):
-    _mod.merge_settings(tmp_path, "ios")
-    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-    expected = _mod.UNIVERSAL_ALLOW + _load_framework_permissions("ios")
-    for entry in expected:
-        assert entry in settings["permissions"]["allow"]
 
 
 def test_flow_json_includes_framework_ios(tmp_path):
