@@ -68,6 +68,17 @@ filing against the plugin repo. Two skills support this:
 When in doubt, ask the user. Filing against the wrong repo is
 worse than one extra question.
 
+## Dependencies
+
+When filing an issue that depends on another issue, include
+a `Blocked by #N` line in the issue body. This ensures
+`flow-issues` can detect the dependency via text parsing.
+
+- `bin/flow link-blocked-by` adds these references
+  automatically for decomposed issues
+- Manually filed issues need the reference added by the
+  author
+
 ## Never Include
 
 - Root cause analysis — a guess is not analysis
