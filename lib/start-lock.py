@@ -11,11 +11,15 @@ Usage:
     bin/flow start-lock --release
     bin/flow start-lock --check
 
-Output (JSON to stdout):
-    Acquire: {"status": "acquired"} or {"status": "locked", "feature": ..., "pid": ..., "acquired_at": ...}
-    Acquire --wait: {"status": "acquired"} or {"status": "timeout", "feature": ..., "pid": ..., "waited_seconds": ...}
-    Release: {"status": "released"}
-    Check:   {"status": "free"} or {"status": "locked", ...}
+Output (JSON to stdout, all responses include "lock_path"):
+    Acquire: {"status": "acquired", "lock_path": ...}
+             or {"status": "locked", "feature": ..., "lock_path": ...}
+    Acquire --wait: {"status": "acquired", ...}
+             or {"status": "timeout", ..., "lock_path": ...}
+    Release: {"status": "released", "lock_path": ...}
+             or {"status": "error", "message": ..., "lock_path": ...}
+    Check:   {"status": "free", "lock_path": ...}
+             or {"status": "locked", ..., "lock_path": ...}
 """
 
 import argparse
@@ -116,12 +120,19 @@ def _locked_by_winner(lock_file):
     """Re-read after losing a race; return a locked result for whoever won."""
     existing, _ = _read_lock(lock_file)
     if existing is None:
-        return {"status": "locked", "feature": "unknown", "pid": 0, "acquired_at": "unknown"}
+        return {
+            "status": "locked",
+            "feature": "unknown",
+            "pid": 0,
+            "acquired_at": "unknown",
+            "lock_path": str(lock_file),
+        }
     return {
         "status": "locked",
         "feature": existing["feature"],
         "pid": existing["pid"],
         "acquired_at": existing["acquired_at"],
+        "lock_path": str(lock_file),
     }
 
 
@@ -131,7 +142,7 @@ def _break_and_acquire(lock_file, feature, stale_feature=None):
     lock_data = _try_write_lock(lock_file, feature)
     if lock_data is None:
         return _locked_by_winner(lock_file)
-    result = {"status": "acquired", "stale_broken": True}
+    result = {"status": "acquired", "stale_broken": True, "lock_path": str(lock_file)}
     if stale_feature is not None:
         result["stale_feature"] = stale_feature
     return result
@@ -147,7 +158,7 @@ def acquire(feature):
             return _break_and_acquire(lock_file, feature)
         lock_data = _try_write_lock(lock_file, feature)
         if lock_data is not None:
-            return {"status": "acquired"}
+            return {"status": "acquired", "lock_path": str(lock_file)}
         return _locked_by_winner(lock_file)
 
     pid = existing["pid"]
@@ -162,6 +173,7 @@ def acquire(feature):
         "feature": existing_feature,
         "pid": pid,
         "acquired_at": acquired_at,
+        "lock_path": str(lock_file),
     }
 
 
@@ -180,6 +192,7 @@ def acquire_with_wait(feature, timeout=300, interval=10):
                 "feature": result["feature"],
                 "pid": result["pid"],
                 "waited_seconds": int(elapsed),
+                "lock_path": str(_lock_path()),
             }
         remaining = timeout - elapsed
         time.sleep(min(interval, remaining))
@@ -203,16 +216,17 @@ def check():
     existing, _ = _read_lock(lock_file)
 
     if existing is None:
-        return {"status": "free"}
+        return {"status": "free", "lock_path": str(lock_file)}
 
     if _is_timed_out(existing["acquired_at"]):
-        return {"status": "free"}
+        return {"status": "free", "lock_path": str(lock_file)}
 
     return {
         "status": "locked",
         "feature": existing["feature"],
         "pid": existing["pid"],
         "acquired_at": existing["acquired_at"],
+        "lock_path": str(lock_file),
     }
 
 

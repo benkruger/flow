@@ -39,6 +39,7 @@ def test_acquire_when_no_lock_exists(tmp_path):
         result = _mod.acquire("test-feature")
 
     assert result["status"] == "acquired"
+    assert result["lock_path"] == str(state_dir / "start.lock")
     lock_file = state_dir / "start.lock"
     assert lock_file.exists()
     lock_data = json.loads(lock_file.read_text())
@@ -550,6 +551,7 @@ def test_release_deletes_lock_file(tmp_path):
         result = _mod.release()
 
     assert result["status"] == "released"
+    assert result["lock_path"] == str(state_dir / "start.lock")
     assert not lock_file.exists()
 
 
@@ -595,6 +597,7 @@ def test_check_when_free(tmp_path):
         result = _mod.check()
 
     assert result["status"] == "free"
+    assert result["lock_path"] == str(state_dir / "start.lock")
 
 
 def test_check_when_dead_pid_within_timeout(tmp_path):
