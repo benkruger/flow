@@ -10,27 +10,29 @@ parent: Skills
 
 **Usage:** `/flow-code-review`, `/flow-code-review --auto`, or `/flow-code-review --manual`
 
-Five review steps — clarity, correctness, safety, CLAUDE.md compliance, and
-pre-mortem incident analysis. Combines inline review passes, a multi-agent
-compliance plugin, and a context-isolated pre-mortem agent into a single
-phase with up to five ordered steps, each with its own commit checkpoint.
+Five review steps — clarity with convention compliance, correctness with
+rule compliance, safety, CLAUDE.md compliance, and pre-mortem incident
+analysis. Combines inline review passes, a multi-agent compliance plugin,
+and a context-isolated pre-mortem agent into a single phase with up to
+five ordered steps, each with its own commit checkpoint.
 
 ---
 
 ## Steps
 
-### Step 1 — Simplify (clarity)
+### Step 1 — Simplify (clarity + convention compliance)
 
-Performs three inline review passes sequentially (code reuse, code
-quality, efficiency) against the branch diff. If changes are proposed,
+Performs four inline review passes sequentially (code reuse, code
+quality, efficiency, convention compliance) against the branch diff. If changes are proposed,
 shows the diff, commits via `/flow-commit`, and runs `bin/flow ci`. If
 no changes, skips to Step 2.
 
 ### Step 2 — Review (correctness)
 
-Performs an inline correctness review of the branch diff using four review
-passes: plan alignment, logic correctness, test coverage, and API contracts.
-Uses the plan file as context. If no findings, skips to the next step.
+Performs an inline correctness review of the branch diff using five review
+passes: plan alignment, logic correctness, test coverage, API contracts,
+and rule compliance. Uses the plan file as context. If no findings, skips
+to the next step.
 Every finding is fixed, `bin/flow ci` is run, and changes are committed
 via `/flow-commit`.
 
@@ -79,13 +81,11 @@ Each finding is classified before fixing:
 
 ## Mode
 
-Mode is configurable via `.flow.json` (default: manual). Three axes are
+Mode is configurable via `.flow.json` (default: manual). Two axes are
 configurable independently:
 
 - **commit** — `"auto"` or `"manual"` (default). Controls diff approval.
 - **continue** — `"auto"` or `"manual"` (default). Controls phase advancement.
-- **code\_review\_plugin** — `"always"` (default), `"auto"`, or `"never"`.
-  Controls whether Step 4 (the code-review:code-review plugin) runs.
 
 In auto mode, findings are auto-fixed and the phase transition advances to
 Learn without asking. When `code_review_plugin` is `"never"`, Step 4 is

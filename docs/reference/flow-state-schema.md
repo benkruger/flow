@@ -53,7 +53,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
     "flow-start": {"continue": "manual"},
     "flow-plan": {"continue": "auto", "dag": "auto"},
     "flow-code": {"commit": "manual", "continue": "manual"},
-    "flow-code-review": {"commit": "auto", "continue": "auto", "code_review_plugin": "always"},
+    "flow-code-review": {"commit": "auto", "continue": "auto"},
     "flow-learn": {"commit": "auto", "continue": "auto"},
     "flow-abort": "auto",
     "flow-complete": "auto"
@@ -172,7 +172,7 @@ Present only when `.flow.json` contains a `skills` key (i.e., after running `/fl
 "skills": {
   "flow-start": {"continue": "manual"},
   "flow-code": {"commit": "manual", "continue": "manual"},
-  "flow-code-review": {"commit": "auto", "continue": "auto", "code_review_plugin": "always"},
+  "flow-code-review": {"commit": "auto", "continue": "auto"},
   "flow-learn": {"commit": "auto", "continue": "auto"},
   "flow-abort": "auto",
   "flow-complete": "auto"

@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — five review steps: clarity (inline review), correctness (inline review), safety (inline security review), CLAUDE.md compliance (code-review:code-review plugin, configurable), and pre-mortem incident analysis (custom agent). Commits after each step."
+description: "Phase 4: Code Review — five review steps: clarity with convention compliance (inline review passes), correctness with rule compliance (inline review), safety (inline security review), CLAUDE.md compliance (code-review:code-review plugin, configurable), and pre-mortem incident analysis (custom agent). Commits after each step."
 ---
 
 # FLOW Code Review — Phase 4: Code Review
@@ -58,17 +58,6 @@ shared state must be idempotent.
 2. If `--manual` was passed → commit=manual, continue=manual
 3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-code-review.commit` and `skills.flow-code-review.continue`.
 4. If the state file has no `skills` key → use built-in defaults: commit=manual, continue=manual
-
-## Code Review Plugin Mode Resolution
-
-1. Read `skills.flow-code-review.code_review_plugin` from the state file at `<project_root>/.flow-states/<branch>.json`.
-2. Valid values: `"always"` (default), `"auto"`, `"never"`.
-3. If the key does not exist → use built-in default: `"always"`.
-
-When `code_review_plugin` is `"never"`, Step 4 (the code-review:code-review plugin) is
-skipped entirely and the phase completes after Step 3.
-
-When `code_review_plugin` is `"auto"` or `"always"`, Step 4 runs as normal.
 
 ## Self-Invocation Check
 
@@ -129,10 +118,8 @@ Read `code_review_step` from the state file (default `0` if absent).
 ## Framework Conventions
 
 Read the project's CLAUDE.md for framework-specific conventions. The
-first three review steps perform inline review passes against the branch
-diff. When enabled via Code Review Plugin Mode Resolution, a fourth step
-uses the code-review plugin for multi-agent validation. The CLAUDE.md
-conventions inform fix decisions.
+five review steps perform inline review passes against the branch
+diff. The CLAUDE.md conventions inform fix decisions.
 
 ---
 
@@ -144,7 +131,7 @@ Get the full branch diff to use as review context:
 git diff origin/main..HEAD
 ```
 
-Perform three review passes on the diff output. Execute each pass
+Perform four review passes on the diff output. Execute each pass
 sequentially, aggregating findings as you go.
 
 **Pass 1 — Code Reuse:** Review the diff for duplicated logic, missed
@@ -160,7 +147,13 @@ could be clearer, and abstractions that add complexity without value.
 redundant operations, and performance patterns. Identify operations that
 could be avoided or simplified without changing behavior.
 
-After all three passes, aggregate the findings. Apply fixes
+**Pass 4 — Convention Compliance:** Review the diff against the project's
+`CLAUDE.md` and `.claude/rules/` conventions. Identify deviations from
+documented coding standards, architectural patterns, naming conventions,
+and process rules. Flag anything that contradicts an explicit rule in
+the project's conventions.
+
+After all four passes, aggregate the findings. Apply fixes
 for any valid findings that improve the code without changing behavior.
 It is safe to refactor here because Phase 3 (Code) tests already
 verified all behavior.
@@ -278,7 +271,7 @@ Get the full branch diff to use as review context:
 git diff origin/main..HEAD
 ```
 
-Perform four correctness review passes on the diff output, using the plan
+Perform five correctness review passes on the diff output, using the plan
 file as context. Execute each pass sequentially, aggregating findings as
 you go.
 
@@ -298,7 +291,14 @@ without tests, and tests that do not verify what they claim.
 Identify function signatures that do not match their callers, inconsistent
 return types, and interfaces that do not match their documentation.
 
-After all four passes, aggregate the findings.
+**Pass 5 — Rule Compliance:** Use the Glob tool to find all
+`.claude/rules/*.md` files in the working directory. If no files are
+found, skip this pass. Otherwise, use the Read tool to read each file.
+Treat each rule as a checklist item. Review the diff for violations of
+any accumulated project rule. Identify code that contradicts explicit
+guidance from the rules files.
+
+After all five passes, aggregate the findings.
 
 If no findings were identified, show the Review summary with zero
 findings listed, then without pausing continue to Step 3.
@@ -475,7 +475,7 @@ finding until the current fix passes `bin/flow ci` and is committed.
 Repeat until all findings are fixed.
 
 If no findings, skip the commit. Show the Security summary with zero
-findings, then without pausing continue to Step 4.
+findings, then without pausing continue to Done.
 
 ### Security summary
 
@@ -554,7 +554,7 @@ findings" until every agent has reported. Treat agent findings the same
 as direct findings from the child skill.
 
 If the plugin reports no findings, skip the commit. Show the Code Review
-Plugin summary with zero findings, then without pausing continue to Done.
+Plugin summary with zero findings, then without pausing continue to Step 5.
 
 ### Fix every finding
 
@@ -825,7 +825,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
 - Always run `bin/flow ci` after any fix made during Code Review
 - Never transition to Learn unless `bin/flow ci` is green
-- Fix every finding from inline correctness review, inline security review, and (when enabled) `code-review:code-review` — do not leave findings unaddressed
+- Fix every finding from inline review passes, inline correctness review, and inline security review — do not leave findings unaddressed
 - Follow the project CLAUDE.md conventions when fixing
 - Each active step (Simplify, Review, Security, Code Review Plugin when enabled, and Pre-Mortem) gets its own commit when changes are made
 - Never use Bash to print banners — output them as text in your response

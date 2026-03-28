@@ -7,20 +7,20 @@ nav_order: 5
 
 **Command:** `/flow-code-review`
 
-Five lenses on the same diff — clarity, correctness, safety, CLAUDE.md
-compliance, and pre-mortem incident analysis. Combines inline review passes,
-a multi-agent compliance plugin, and a context-isolated pre-mortem agent
-into a single phase with five ordered steps, each with its own commit
-checkpoint.
+Five steps on the same diff — clarity with convention compliance,
+correctness with rule compliance, safety, CLAUDE.md compliance, and
+pre-mortem incident analysis. Combines inline review passes, a multi-agent
+compliance plugin, and a context-isolated pre-mortem agent into a single
+phase with five ordered steps, each with its own commit checkpoint.
 
 ---
 
 ## The Five Steps
 
-### Step 1 — Simplify (clarity)
+### Step 1 — Simplify (clarity + convention compliance)
 
-Performs three inline review passes sequentially against the branch diff:
-code reuse, code quality, and efficiency. Refactors for clarity: removes
+Performs four inline review passes sequentially against the branch diff:
+code reuse, code quality, efficiency, and convention compliance. Refactors for clarity: removes
 unnecessary abstractions, simplifies conditionals, improves naming. Never
 changes what the code does, only how.
 
@@ -30,9 +30,10 @@ step is skipped.
 
 ### Step 2 — Review (correctness)
 
-Performs an inline correctness review of the branch diff using four review
-passes: plan alignment, logic correctness, test coverage, and API contracts.
-Uses the plan file as context for implementation-vs-intent alignment.
+Performs an inline correctness review of the branch diff using five review
+passes: plan alignment, logic correctness, test coverage, API contracts,
+and rule compliance. Uses the plan file as context for
+implementation-vs-intent alignment.
 
 Every finding is fixed, `bin/flow ci` is run, and changes are committed
 via `/flow-commit`.
