@@ -2275,6 +2275,23 @@ def test_plan_validates_target_file_paths():
     assert "Risks section" in section, "Target Path Validation must instruct flagging in the Risks section"
 
 
+def test_plan_verifies_script_behavior_assertions():
+    """Plan SKILL.md must have a Script Behavior Verification subsection."""
+    content = _read_skill("flow-plan")
+    assert "### Script Behavior Verification" in content, (
+        "flow-plan/SKILL.md must have a '### Script Behavior Verification' subsection in Step 3"
+    )
+    section_match = re.search(
+        r"### Script Behavior Verification\n(.*?)(?=\n### |\n## )",
+        content,
+        re.DOTALL,
+    )
+    assert section_match, "Could not extract Script Behavior Verification section content"
+    section = section_match.group(1)
+    assert "issue bod" in section, "Script Behavior Verification must reference issue bodies as the source of claims"
+    assert "script" in section.lower(), "Script Behavior Verification must reference verifying against script source"
+
+
 def test_prime_presets_include_dag_config():
     """All 3 prime presets must include 'dag' key in flow-plan config."""
     content = _read_skill("flow-prime")

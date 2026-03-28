@@ -21,9 +21,11 @@ ordered implementation plan with explicit dependency tracking.
    (nodes, dependencies, topological ordering)
 3. The DAG output is stored to `.flow-states/<branch>-dag.md`
 4. Claude explores the codebase to validate the DAG against reality
-5. Claude writes the plan file with a Dependency Graph section and
+5. Claude verifies script behavior assertions from issue bodies by
+   reading the relevant source code
+6. Claude writes the plan file with a Dependency Graph section and
    ordered tasks derived from the DAG
-6. The plan file path is stored in the state file and the phase completes
+7. The plan file path is stored in the state file and the phase completes
 
 DAG decomposition is configurable via `skills.flow-plan.dag` in
 `.flow.json` — set to `"never"` to skip it.
