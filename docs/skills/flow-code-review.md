@@ -36,9 +36,9 @@ and changes are committed via `/flow-commit`.
 
 ### Step 3 — Security (safety)
 
-Invokes Claude Code's built-in `/security-review` against the PR diff.
-Waits for all background agents to complete before evaluating findings.
-If no findings, skips to the next step. Every finding is fixed,
+Performs an inline security review of the branch diff using three security
+lenses: input validation, authentication and authorization, and data
+exposure. If no findings, skips to the next step. Every finding is fixed,
 `bin/flow ci` is run, and changes are committed via `/flow-commit`.
 
 ### Step 4 — Code Review Plugin (CLAUDE.md compliance, configurable)
