@@ -30,8 +30,9 @@ and PR number. If the state file is missing, infer from git state
 
 Check whether the PR is already merged. If merged, skip directly to
 archive artifacts (step 7), then continue to close issues (step 9) and
-remove labels (step 10) — skipping the merge since it already happened. If open, continue to merge
-flow. If closed but not merged, stop with an error.
+parallel post-merge operations (step 10) — skipping the merge since it
+already happened. If open, continue to merge flow. If closed but not
+merged, stop with an error.
 
 ### 3. Merge main into branch
 
@@ -90,10 +91,12 @@ If the `/flow-start` prompt contained `#N` issue references (e.g.,
 "fix #83 and #89"), those issues are closed via `gh issue close` after
 the merge succeeds. Best-effort — cleanup continues even if closing fails.
 
-### 10. Remove In-Progress labels
+### 10. Parallel post-merge operations
 
-Removes the "Flow In-Progress" label from any issues referenced in the
-start prompt. Best-effort — continues to cleanup even if removal fails.
+Runs four independent operations as parallel foreground Bash calls:
+generate the summary banner, remove "Flow In-Progress" labels, auto-close
+parent issues and milestones, and post the Slack notification. All are
+best-effort — continues to cleanup even if any fail.
 
 ### 11. Run cleanup
 
@@ -152,7 +155,7 @@ The skill is safe to re-invoke (e.g., via `/loop 15s /flow:flow-complete`):
 | State file missing | Warns, infers from git, proceeds (confirms if `--manual`) |
 | PR not open or merged | Hard block, does not proceed |
 
-Every step after the merge (Steps 9-12) is best-effort — if one fails,
+Every step after the merge (Steps 9-11) is best-effort — if one fails,
 continue to the next.
 
 ---
