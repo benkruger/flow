@@ -633,7 +633,7 @@ No phase transition, no transition question.
 
 - Never commit application code in Learn — only CLAUDE.md and .claude/
 - Always read CLAUDE.md and conversation context before synthesizing findings
-- In Phase 5, read all three sources before synthesizing findings
+- In Phase 5, read all four sources before synthesizing findings
 - Follow the learning process (Steps 1 through 7) exactly — do not skip or reorder steps
 - Decisions on destinations and wording are autonomous — do not ask the user for approval mid-process
 - The report in Step 7 is the user's review point — make it comprehensive
