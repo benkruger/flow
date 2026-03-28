@@ -60,3 +60,13 @@ substring is unique across all check names. A broad substring like
 completed" and "All flows completed all phases"), causing assertions
 to validate the wrong check. Use the most specific distinguishing
 substring.
+
+## Mocked Subprocess Blind Spots
+
+When tests mock `subprocess.run` for an external CLI tool (`gh`,
+`curl`, `git`), the mock accepts any arguments — it cannot catch
+invalid flags, unknown fields, or misspelled subcommands. If the
+code constructs CLI arguments dynamically (e.g. `--json` field
+lists), verify the field names are valid against the tool's actual
+interface, not just against what the mock returns. Passing tests
+with mocked subprocesses do not prove the command works.
