@@ -201,7 +201,10 @@ class TuiApp:
             attr = curses.A_BOLD if i == self.selected else 0
             if flow["blocked"]:
                 attr = attr | self._color(COLOR_FAILED)
+            annotation = flow.get("annotation", "")
             phase_info = f"{flow['phase_number']}: {flow['phase_name']}"
+            if annotation:
+                phase_info += f" ({annotation})"
             pr_info = f"PR #{flow['pr_number']}" if flow["pr_number"] else ""
             feature_display = flow["feature"]
             if len(feature_display) > 26:

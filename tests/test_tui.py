@@ -2277,3 +2277,42 @@ def test_handle_input_tasks_view_ignores_unknown_keys():
     app.view = "tasks"
     app._handle_input(ord("x"))
     assert app.view == "tasks"
+
+
+# --- List view annotation ---
+
+
+def test_draw_list_view_shows_annotation():
+    """List view flow row renders phase annotation inline with phase info."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["code_task"] = 2
+    state["code_tasks_total"] = 5
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=120)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+    # The flow list row is at row 4 (after header). Find that specific row.
+    row_4_calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == 4]
+    row_4_text = " ".join(str(c[0][2]) for c in row_4_calls)
+    assert "task 3 of 5" in row_4_text
+
+
+def test_draw_list_view_no_annotation_when_empty():
+    """List view does not add parens when annotation is empty."""
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={"flow-start": "in_progress"},
+    )
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    # Find the flow row (contains "Start")
+    flow_row_calls = [c for c in calls if "Start" in c and "Test Feature" in c]
+    assert len(flow_row_calls) == 1
+    # Should not contain empty parens "()"
+    assert "()" not in flow_row_calls[0]
