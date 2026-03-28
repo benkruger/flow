@@ -45,7 +45,7 @@ def link_blocked_by(repo, blocked_number, blocking_number):
                 f"repos/{repo}/issues/{blocked_number}/dependencies/blocked_by",
                 "--method",
                 "POST",
-                "-f",
+                "-F",
                 f"issue_id={blocking_id}",
             ],
             capture_output=True,

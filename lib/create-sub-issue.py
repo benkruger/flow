@@ -45,7 +45,7 @@ def create_sub_issue(repo, parent_number, child_number):
                 f"repos/{repo}/issues/{parent_number}/sub_issues",
                 "--method",
                 "POST",
-                "-f",
+                "-F",
                 f"sub_issue_id={child_id}",
             ],
             capture_output=True,
