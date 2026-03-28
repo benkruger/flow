@@ -34,16 +34,12 @@ alignment, risk coverage, and framework anti-patterns. If no findings,
 skips to the next step. Every finding is fixed, `bin/flow ci` is run,
 and changes are committed via `/flow-commit`.
 
-### Step 3 — Security (safety, configurable)
+### Step 3 — Security (safety)
 
-Controlled by the `security_review` config axis. When set to `"never"`,
-this step is skipped.
-
-When enabled (`"always"` or `"auto"`), invokes Claude Code's built-in
-`/security-review` against the PR diff. Waits for all background agents
-to complete before evaluating findings. If no findings, skips to the next
-step. Every finding is fixed, `bin/flow ci` is run, and changes are
-committed via `/flow-commit`.
+Invokes Claude Code's built-in `/security-review` against the PR diff.
+Waits for all background agents to complete before evaluating findings.
+If no findings, skips to the next step. Every finding is fixed,
+`bin/flow ci` is run, and changes are committed via `/flow-commit`.
 
 ### Step 4 — Code Review Plugin (CLAUDE.md compliance, configurable)
 
@@ -71,19 +67,17 @@ Each finding is classified before fixing:
 
 ## Mode
 
-Mode is configurable via `.flow.json` (default: manual). Four axes are
+Mode is configurable via `.flow.json` (default: manual). Three axes are
 configurable independently:
 
 - **commit** — `"auto"` or `"manual"` (default). Controls diff approval.
 - **continue** — `"auto"` or `"manual"` (default). Controls phase advancement.
-- **security\_review** — `"always"` (default), `"auto"`, or `"never"`.
-  Controls whether Step 3 (the built-in /security-review) runs.
 - **code\_review\_plugin** — `"always"` (default), `"auto"`, or `"never"`.
   Controls whether Step 4 (the code-review:code-review plugin) runs.
 
 In auto mode, findings are auto-fixed and the phase transition advances to
-Learn without asking. When `security_review` is `"never"`, Step 3 is skipped.
-When `code_review_plugin` is `"never"`, Step 4 is skipped.
+Learn without asking. When `code_review_plugin` is `"never"`, the phase
+completes after Step 3.
 
 ---
 

@@ -36,15 +36,12 @@ read-through of every changed file.
 Every finding is fixed, `bin/flow ci` is run, and changes are committed
 via `/flow-commit`.
 
-### Step 3 — Security (safety, configurable)
+### Step 3 — Security (safety)
 
-Controlled by the `security_review` config axis. When set to `"never"`,
-this step is skipped entirely.
-
-When enabled, invokes Claude Code's built-in `/security-review` against
-the PR diff. Waits for all background agents to complete before evaluating
-findings. Scans for vulnerabilities, authentication gaps, data exposure,
-and injection risks.
+Invokes Claude Code's built-in `/security-review` against the PR diff.
+Waits for all background agents to complete before evaluating findings.
+Scans for vulnerabilities, authentication gaps, data exposure, and
+injection risks.
 
 Every finding is fixed, `bin/flow ci` is run, and changes are committed
 via `/flow-commit`.
