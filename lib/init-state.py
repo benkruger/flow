@@ -29,12 +29,7 @@ AUTO_SKILLS = {
     "flow-start": {"continue": "auto"},
     "flow-plan": {"continue": "auto", "dag": "auto"},
     "flow-code": {"commit": "auto", "continue": "auto"},
-    "flow-code-review": {
-        "commit": "auto",
-        "continue": "auto",
-        "code_review_plugin": "never",
-        "security_review": "never",
-    },
+    "flow-code-review": {"commit": "auto", "continue": "auto", "code_review_plugin": "never"},
     "flow-learn": {"commit": "auto", "continue": "auto"},
     "flow-abort": "auto",
     "flow-complete": "auto",
