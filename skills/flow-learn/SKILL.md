@@ -337,7 +337,7 @@ If no changes were made in Steps 3-4, record step completion and
 self-invoke to skip the commit:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=4
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=5
 ```
 
 Then invoke `flow:flow-learn --continue-step` using the Skill tool as

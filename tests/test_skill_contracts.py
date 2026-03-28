@@ -1895,7 +1895,6 @@ def test_learn_steps_record_completion():
     """Learn Step 5 (commit) must record completion via set-timestamp."""
     step_text = _learn_step_text(5)
     assert "learn_step=5" in step_text, "Step 5 must contain 'learn_step=5' marker"
-    assert "learn_step=4" in step_text, "Step 5 must contain 'learn_step=4' for the skip-commit path"
 
 
 def test_plan_skill_does_not_reference_transcript_path():

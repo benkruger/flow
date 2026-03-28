@@ -5,6 +5,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 import importlib
@@ -260,8 +262,6 @@ def test_cli_integration_error_exit(tmp_path, monkeypatch, capsys):
             str(tmp_path),
         ],
     )
-
-    import pytest
 
     with pytest.raises(SystemExit) as exc_info:
         _mod.main()
