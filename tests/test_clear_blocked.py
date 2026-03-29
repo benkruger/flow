@@ -85,6 +85,93 @@ class TestClearBlocked:
         assert updated["notes"] == [{"note": "a correction"}]
 
 
+# --- Tab title reassertion tests ---
+
+
+def _mock_tty(monkeypatch):
+    """Set up a fake /dev/tty and return the list that captures writes."""
+    written = []
+    fake_tty = type(
+        "FakeTTY",
+        (),
+        {
+            "write": lambda self, data: written.append(data),
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        },
+    )()
+
+    original_open = open
+
+    def mock_open(path, *args, **kwargs):
+        if str(path) == "/dev/tty":
+            return fake_tty
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", mock_open)
+    return written
+
+
+class TestTabTitleReassert:
+    def test_writes_tab_sequences_after_clearing(self, git_repo, state_dir, branch, monkeypatch):
+        """clear_blocked writes tab title escape sequences after clearing _blocked."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_blocked"] = "2026-01-01T10:00:00-08:00"
+        write_state(state_dir, branch, state)
+
+        written = _mock_tty(monkeypatch)
+        _mod.clear_blocked({})
+
+        # _blocked cleared
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert "_blocked" not in updated
+
+        # Tab sequences written — must include title escape
+        assert len(written) == 1
+        assert "\033]1;" in written[0]
+
+    def test_writes_tab_sequences_on_main_fallback(self, git_repo, state_dir, monkeypatch):
+        """On main with another branch's state file → tab title written via fallback."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["branch"] = "some-feature"
+        state["_blocked"] = "2026-01-01T10:00:00-08:00"
+        write_state(state_dir, "some-feature", state)
+
+        # current_branch() returns "main" — no main.json, should fallback
+        written = _mock_tty(monkeypatch)
+        _mod.clear_blocked({})
+
+        # Tab sequences written with title from the fallback state
+        assert len(written) == 1
+        assert "\033]1;" in written[0]
+        assert "Some Feature" in written[0]
+
+    def test_tab_sequences_fail_open(self, git_repo, state_dir, branch, monkeypatch):
+        """If tty write fails, clear_blocked still clears _blocked without error."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(current_phase="flow-code")
+        state["_blocked"] = "2026-01-01T10:00:00-08:00"
+        write_state(state_dir, branch, state)
+
+        original_open = open
+
+        def mock_open(path, *args, **kwargs):
+            if str(path) == "/dev/tty":
+                raise OSError("No tty available")
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+
+        # Should not raise
+        _mod.clear_blocked({})
+
+        # _blocked still cleared despite tty failure
+        updated = json.loads((state_dir / f"{branch}.json").read_text())
+        assert "_blocked" not in updated
+
+
 # --- Subprocess integration tests ---
 
 
