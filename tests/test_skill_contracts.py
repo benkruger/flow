@@ -2240,10 +2240,20 @@ def test_complete_commit_points_self_invoke():
 
 
 def test_complete_commit_points_record_step():
-    """Complete Steps 3, 4, 5, and 6 must record complete_step via set-timestamp."""
+    """Every Complete step must record complete_step via set-timestamp for TUI display."""
     content = _read_skill("flow-complete")
-    assert "complete_step=4" in content, "Complete must record complete_step=4 after Step 3 and CI commits"
-    assert "complete_step=5" in content, "Complete must record complete_step=5 for Step 5 GitHub CI gate"
+    for step_val in range(1, 13):
+        assert f"complete_step={step_val}" in content, (
+            f"flow-complete/SKILL.md must contain 'complete_step={step_val}' for TUI step {step_val} display"
+        )
+
+
+def test_complete_skill_sets_steps_total():
+    """Complete Update State must set complete_steps_total=12 for TUI progress display."""
+    content = _read_skill("flow-complete")
+    assert "complete_steps_total=12" in content, (
+        "flow-complete/SKILL.md must contain 'complete_steps_total=12' in the Update State section"
+    )
 
 
 def test_continue_context_includes_mode_flag():

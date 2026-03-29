@@ -101,6 +101,12 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-complete --action e
 
 Parse the JSON output and confirm `status` is `"ok"`.
 
+Set the step tracking fields for TUI progress display:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_steps_total=12
+```
+
 ---
 
 ## Resume Check
@@ -118,6 +124,10 @@ Read `complete_step` from the state file (default `0` if absent).
 
 ### Step 1 — Handle missing state file
 
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=1
+```
+
 This step only runs if the SOFT-GATE found no state file. If the state
 file existed, the SOFT-GATE already extracted all needed values — skip
 to Step 2.
@@ -132,6 +142,10 @@ Tell the user what was inferred:
 > worktree '<path>'."
 
 ### Step 2 — Check PR status
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=2
+```
 
 Check the current PR status:
 
@@ -162,6 +176,10 @@ already merged.
 > "Could not find a PR for this branch."
 
 ### Step 3 — Merge main into branch
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=3
+```
 
 Fetch the latest main and merge it into the feature branch:
 
@@ -330,6 +348,10 @@ If still failing after 3 attempts, stop and report.
 
 ### Step 6 — Confirm with user (manual mode only)
 
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=6
+```
+
 Skip this step if mode is **auto** — proceed directly to Step 7.
 
 <HARD-GATE>
@@ -391,6 +413,10 @@ after this invocation.
 
 ### Step 7 — Archive artifacts to PR
 
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=7
+```
+
 Record phase completion in the state file so Phase Timings includes
 the Complete row:
 
@@ -422,6 +448,10 @@ Parse the JSON output. Keep the `banner_line` — use it in the Done
 banner below. If `has_issues` is `false`, there is no banner line.
 
 ### Step 8 — Freshness check and merge PR
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=8
+```
 
 Verify the branch is up-to-date with main before merging. If main has
 moved since the CI gate, merge it in and loop back through CI.
@@ -520,6 +550,10 @@ the Skill tool as your final action. If mode was resolved to auto, pass
 
 ### Step 9 — Close referenced issues
 
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=9
+```
+
 Close any GitHub issues referenced in the start prompt. This is best-effort —
 continue to Step 10 even if closing fails.
 
@@ -535,6 +569,10 @@ If any issues were closed (the `closed` array is non-empty), write the
 Write tool. Each item in the array is a dict with `number` and `url` keys.
 
 ### Step 10 — Parallel post-merge operations
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=10
+```
 
 Run the following operations as parallel foreground Bash tool calls in a
 single response. All four are independent of each other — they only depend
@@ -605,6 +643,10 @@ cd <project_root>
 
 ### Step 11 — Run cleanup script
 
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=11
+```
+
 Run the cleanup script from the project root:
 
 ```bash
@@ -619,6 +661,10 @@ Report the results to the user: what was cleaned, what was already gone,
 and what failed.
 
 ### Step 12 — Pull merged changes
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=12
+```
 
 The worktree is removed and you are on main. Pull to get the merged
 feature code:
