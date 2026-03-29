@@ -30,7 +30,7 @@ step is skipped.
 
 ### Step 2 — Review (correctness)
 
-Performs an inline correctness review of the branch diff using six review
+Performs an inline correctness review of the branch diff using five review
 passes: plan alignment, logic correctness, test coverage, API contracts,
 and rule compliance. Uses the plan file as context for
 implementation-vs-intent alignment.

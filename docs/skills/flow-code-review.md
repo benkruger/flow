@@ -29,7 +29,7 @@ no changes, skips to Step 2.
 
 ### Step 2 — Review (correctness)
 
-Performs an inline correctness review of the branch diff using six review
+Performs an inline correctness review of the branch diff using five review
 passes: plan alignment, logic correctness, test coverage, API contracts,
 and rule compliance. Uses the plan file as context. When the diff modifies
 files containing step headings, the logic correctness pass also reads the
