@@ -27,6 +27,46 @@ from flow_utils import (
     short_issue_ref,
 )
 
+# Static mapping of (phase_key, display_step_number) → short step name.
+# Display step number is what the user sees in the annotation.
+# Source: skill SKILL.md step headings (## Step N — Name).
+STEP_NAMES = {
+    "flow-start": {
+        2: "state file",
+        3: "label issues",
+        4: "lock",
+        5: "pull main",
+        6: "ci gate",
+        7: "dependencies",
+        8: "ci post-deps",
+        9: "commit",
+        10: "release lock",
+        11: "workspace",
+    },
+    "flow-plan": {
+        1: "feature desc",
+        2: "dag decompose",
+        3: "explore & plan",
+        4: "store plan",
+    },
+    "flow-code-review": {
+        1: "simplify",
+        2: "review",
+        3: "security",
+        4: "cr plugin",
+        5: "isolated review",
+        6: "pre-mortem",
+    },
+    "flow-learn": {
+        5: "commit",
+        6: "file issues",
+    },
+    "flow-complete": {
+        4: "ci gate",
+        5: "gh ci",
+    },
+}
+
 
 def flow_summary(state, now=None):
     """Convert a state dict to a display-ready summary dict."""
@@ -80,11 +120,12 @@ def flow_summary(state, now=None):
     }
 
 
-def _step_annotation(step, total):
-    """Return 'step N of M' or 'step N' or '' depending on what's populated."""
+def _step_annotation(step, total=0, name=""):
+    """Return 'name - step N of M' or 'step N of M' or '' depending on what's populated."""
     if step <= 0:
         return ""
-    return f"step {step} of {total}" if total > 0 else f"step {step}"
+    step_str = f"step {step} of {total}" if total > 0 else f"step {step}"
+    return f"{name} - {step_str}" if name else step_str
 
 
 def phase_timeline(state):
@@ -113,9 +154,11 @@ def phase_timeline(state):
 
         annotation = ""
         if key == "flow-start" and status == "in_progress":
-            annotation = _step_annotation(start_step, start_steps_total)
+            step_name = STEP_NAMES.get("flow-start", {}).get(start_step, "")
+            annotation = _step_annotation(start_step, start_steps_total, step_name)
         elif key == "flow-plan" and status == "in_progress":
-            annotation = _step_annotation(plan_step, plan_steps_total)
+            step_name = STEP_NAMES.get("flow-plan", {}).get(plan_step, "")
+            annotation = _step_annotation(plan_step, plan_steps_total, step_name)
         elif key == "flow-code" and status == "in_progress":
             current_task = code_task + 1
             if code_tasks_total > 0:
@@ -127,12 +170,19 @@ def phase_timeline(state):
                 dels = diff_stats.get("deletions", 0)
                 parts.append(f"+{ins} -{dels}")
             annotation = ", ".join(parts)
-        elif key == "flow-code-review" and status == "in_progress" and code_review_step < 4:
-            annotation = f"step {code_review_step + 1} of 4"
+        elif key == "flow-code-review" and status == "in_progress":
+            cr_total = len(STEP_NAMES.get("flow-code-review", {}))
+            display_step = code_review_step + 1
+            if display_step <= cr_total:
+                step_name = STEP_NAMES.get("flow-code-review", {}).get(display_step, "")
+                annotation = _step_annotation(display_step, cr_total, step_name)
         elif key == "flow-learn" and status == "in_progress" and learn_step > 0:
-            annotation = f"step {learn_step + 1}"
+            display_step = learn_step + 1
+            step_name = STEP_NAMES.get("flow-learn", {}).get(display_step, "")
+            annotation = _step_annotation(display_step, name=step_name)
         elif key == "flow-complete" and status == "in_progress" and complete_step > 0:
-            annotation = f"step {complete_step}"
+            step_name = STEP_NAMES.get("flow-complete", {}).get(complete_step, "")
+            annotation = _step_annotation(complete_step, name=step_name)
 
         entries.append(
             {
