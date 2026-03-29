@@ -36,17 +36,17 @@ def clear_blocked(hook_input):
         state_path = root / ".flow-states" / f"{branch}.json"
 
         # Clear _blocked only from the exact branch's state file
+        tab_state = None
         if state_path.exists():
 
             def transform(state):
                 state.pop("_blocked", None)
 
-            mutate_state(state_path, transform)
+            tab_state = mutate_state(state_path, transform)
 
         # Reassert tab title after every PostToolUse to reduce flicker
         try:
-            if state_path.exists():
-                tab_state = json.loads(state_path.read_text())
+            if tab_state:
                 write_tab_sequences(tab_state, root=root)
             else:
                 results = find_state_files(root, branch)
