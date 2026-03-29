@@ -189,7 +189,7 @@ Create the state file immediately so the TUI can see this flow during
 the locked main operations in Steps 1–10. The state file has null PR fields
 at this point — start-setup backfills them after PR creation. Pass the prompt
 file so the `prompt` field contains the original text with `#N` references
-(needed by Step 3 for labeling).
+(needed by Step 4 for labeling).
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt
