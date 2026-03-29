@@ -2348,6 +2348,34 @@ def test_done_hardgates_reread_state_file():
         )
 
 
+def test_done_hard_gates_auto_path_has_final_action_language():
+    """Phases 1-5 Done HARD-GATEs auto path must have strengthened language."""
+    phase_skills = _phase_skills()
+    for key in PHASE_ORDER[:-1]:  # Exclude flow-complete (terminal)
+        skill_name = phase_skills[key]
+        content = _read_skill(skill_name)
+
+        hard_gates = re.findall(r"<HARD-GATE>(.*?)</HARD-GATE>", content, re.DOTALL)
+
+        continue_gates = [gate for gate in hard_gates if "continue=auto" in gate and "continue=manual" in gate]
+        assert continue_gates, (
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) has no continue-mode HARD-GATE "
+            f"(prerequisite for auto-path check)"
+        )
+
+        has_final = any("FINAL action" in gate for gate in continue_gates)
+        assert has_final, (
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) Done HARD-GATE auto path must "
+            f"contain 'FINAL action' language to prevent model from ignoring auto-continue"
+        )
+
+        has_skill_tool = any("using the Skill tool" in gate for gate in continue_gates)
+        assert has_skill_tool, (
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) Done HARD-GATE auto path must "
+            f"contain 'using the Skill tool' to be explicit about invocation method"
+        )
+
+
 def test_plan_skill_has_dag_mode_resolution():
     """Plan SKILL.md Mode Resolution must reference dag config."""
     content = _read_skill("flow-plan")
