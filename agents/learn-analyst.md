@@ -28,7 +28,7 @@ biased by self-reporting.
 
 Your prompt contains these labeled sections:
 
-- **DIFF** — the full `git diff origin/main..HEAD`
+- **DIFF** — the full `git diff origin/main...HEAD`
 - **STATE FILE DATA** — phase timings, visit counts, and notes from
   `/flow:flow-note` captured during the session
 - **PLAN** — the implementation plan the developer followed
