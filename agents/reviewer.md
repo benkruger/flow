@@ -3,12 +3,6 @@ name: reviewer
 description: "Context-isolated code review. Receives diff and project conventions, produces structured findings."
 tools: Read, Glob, Grep, Bash
 maxTurns: 25
-hooks:
-  PreToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "${CLAUDE_PLUGIN_ROOT}/lib/validate-ci-bash.py"
 ---
 
 # Context-Isolated Code Review

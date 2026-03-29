@@ -3,12 +3,6 @@ name: adversarial
 description: "Adversarial test generation. Writes tests designed to break the implementation, runs them, and reports failures as findings."
 tools: Read, Glob, Grep, Write, Bash
 maxTurns: 20
-hooks:
-  PreToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "${CLAUDE_PLUGIN_ROOT}/lib/validate-ci-bash.py"
 ---
 
 # Adversarial Test Generation

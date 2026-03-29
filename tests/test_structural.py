@@ -314,6 +314,45 @@ def test_hooks_json_has_stop_failure_hook():
     assert any("stop-failure.py" in cmd for cmd in commands), "StopFailure hook must reference stop-failure.py"
 
 
+AGENTS_DIR = REPO_ROOT / "agents"
+
+SUPPORTED_AGENT_FRONTMATTER_KEYS = {
+    "name",
+    "description",
+    "model",
+    "effort",
+    "maxTurns",
+    "tools",
+    "disallowedTools",
+    "skills",
+    "memory",
+    "background",
+    "isolation",
+}
+
+
+def test_agent_frontmatter_only_supported_keys():
+    """Agent frontmatter must only use keys supported by Claude Code's plugin agent system.
+
+    Unsupported keys (e.g. hooks, mcpServers, permissionMode) may cause
+    agent loading failures in Claude Code versions that validate frontmatter
+    strictly. The global PreToolUse hook in hooks.json provides Bash enforcement.
+    """
+    import yaml
+
+    for agent_file in sorted(AGENTS_DIR.glob("*.md")):
+        content = agent_file.read_text()
+        parts = content.split("---", 2)
+        assert len(parts) >= 3, f"{agent_file.name} missing YAML frontmatter delimiters"
+        frontmatter = yaml.safe_load(parts[1])
+        assert isinstance(frontmatter, dict), f"{agent_file.name} frontmatter is not a dict"
+        unsupported = set(frontmatter.keys()) - SUPPORTED_AGENT_FRONTMATTER_KEYS
+        assert not unsupported, (
+            f"{agent_file.name} has unsupported frontmatter keys: {unsupported}. "
+            f"Supported keys: {sorted(SUPPORTED_AGENT_FRONTMATTER_KEYS)}"
+        )
+
+
 def test_checksum_version_invariant():
     """Validate checksum functions exist and the upgrade mechanism is documented.
 

@@ -316,8 +316,6 @@ def test_ci_fixer_agent_exists():
     assert agent_file.exists(), "agents/ci-fixer.md does not exist"
     content = agent_file.read_text()
     assert "name: ci-fixer" in content, "agents/ci-fixer.md missing 'name: ci-fixer' in frontmatter"
-    assert "PreToolUse" in content, "agents/ci-fixer.md missing PreToolUse hook"
-    assert "validate-ci-bash" in content, "agents/ci-fixer.md missing reference to validate-ci-bash"
     # CI re-run must use an explicit bash block with plugin root prefix
     assert "```bash" in content, "agents/ci-fixer.md missing explicit bash block for bin/flow ci"
     assert "${CLAUDE_PLUGIN_ROOT}/bin/flow ci" in content, (
@@ -332,8 +330,6 @@ def test_pre_mortem_agent_exists():
     assert agent_file.exists(), "agents/pre-mortem.md does not exist"
     content = agent_file.read_text()
     assert "name: pre-mortem" in content, "agents/pre-mortem.md missing 'name: pre-mortem' in frontmatter"
-    assert "PreToolUse" in content, "agents/pre-mortem.md missing PreToolUse hook"
-    assert "validate-ci-bash" in content, "agents/pre-mortem.md missing reference to validate-ci-bash"
     # Pre-mortem agent must be read-only — no Edit or Write tools
     assert "Edit" not in content.split("---")[1], (
         "agents/pre-mortem.md must not include Edit tool — pre-mortem is read-only"
@@ -349,8 +345,6 @@ def test_onboarding_agent_exists():
     assert agent_file.exists(), "agents/onboarding.md does not exist"
     content = agent_file.read_text()
     assert "name: onboarding" in content, "agents/onboarding.md missing 'name: onboarding' in frontmatter"
-    assert "PreToolUse" in content, "agents/onboarding.md missing PreToolUse hook"
-    assert "validate-ci-bash" in content, "agents/onboarding.md missing reference to validate-ci-bash"
     # Onboarding agent must be read-only — no Edit or Write tools
     assert "Edit" not in content.split("---")[1], (
         "agents/onboarding.md must not include Edit tool — onboarding is read-only"
@@ -372,14 +366,26 @@ def test_reviewer_agent_exists():
     assert agent_file.exists(), "agents/reviewer.md does not exist"
     content = agent_file.read_text()
     assert "name: reviewer" in content, "agents/reviewer.md missing 'name: reviewer' in frontmatter"
-    assert "PreToolUse" in content, "agents/reviewer.md missing PreToolUse hook"
-    assert "validate-ci-bash" in content, "agents/reviewer.md missing reference to validate-ci-bash"
     # Reviewer agent must be read-only — no Edit or Write tools
     assert "Edit" not in content.split("---")[1], (
         "agents/reviewer.md must not include Edit tool — reviewer is read-only"
     )
     assert "Write" not in content.split("---")[1], (
         "agents/reviewer.md must not include Write tool — reviewer is read-only"
+    )
+
+
+def test_adversarial_agent_exists():
+    """agents/adversarial.md must exist with required frontmatter fields."""
+    agent_file = REPO_ROOT / "agents" / "adversarial.md"
+    assert agent_file.exists(), "agents/adversarial.md does not exist"
+    content = agent_file.read_text()
+    assert "name: adversarial" in content, "agents/adversarial.md missing 'name: adversarial' in frontmatter"
+    # Adversarial agent needs Write (for temp test files) but not Edit
+    frontmatter = content.split("---")[1]
+    assert "Write" in frontmatter, "agents/adversarial.md must include Write tool for temp test files"
+    assert "Edit" not in frontmatter, (
+        "agents/adversarial.md must not include Edit tool — adversarial only writes new files"
     )
 
 
