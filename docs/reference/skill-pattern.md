@@ -164,8 +164,8 @@ prompt catches things the user thought of but didn't say.
 
 - Never skip the HARD-GATE
 - Always cd into the worktree before running any commands
-- Always invoke `flow:flow-status` before the transition question
-- Always use AskUserQuestion for the transition — never print "type /flow-next"
+- **If continue=auto** → invoke next skill directly via Skill tool as the final action — no `flow:flow-status`, no AskUserQuestion
+- **If continue=manual** → invoke `flow:flow-status`, then use AskUserQuestion for the transition
 - Yes → invoke next skill via Skill tool
 - Not yet → paused banner only
 - **Always run `bin/flow ci` before any state transition that touches code**
