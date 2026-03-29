@@ -32,38 +32,52 @@ from flow_utils import (
 # Source: skill SKILL.md step headings (## Step N — Name).
 STEP_NAMES = {
     "flow-start": {
-        2: "state file",
-        3: "label issues",
-        4: "lock",
-        5: "pull main",
-        6: "ci gate",
-        7: "dependencies",
-        8: "ci post-deps",
-        9: "commit",
-        10: "release lock",
-        11: "workspace",
+        3: "creating state",
+        4: "labeling issues",
+        5: "pulling main",
+        6: "running CI",
+        7: "updating deps",
+        8: "CI after deps",
+        9: "committing",
+        10: "releasing lock",
+        11: "setting up workspace",
     },
     "flow-plan": {
-        1: "feature desc",
-        2: "dag decompose",
-        3: "explore & plan",
-        4: "store plan",
+        1: "reading context",
+        2: "decomposing",
+        3: "writing plan",
+        4: "storing plan",
     },
     "flow-code-review": {
-        1: "simplify",
-        2: "review",
-        3: "security",
-        4: "cr plugin",
-        5: "isolated review",
-        6: "pre-mortem",
+        1: "simplifying",
+        2: "reviewing",
+        3: "security review",
+        4: "isolated review",
+        5: "pre-mortem",
+        6: "adversarial tests",
     },
     "flow-learn": {
-        5: "commit",
-        6: "file issues",
+        1: "gathering sources",
+        2: "synthesizing",
+        3: "applying learnings",
+        4: "promoting perms",
+        5: "committing",
+        6: "filing issues",
+        7: "presenting report",
     },
     "flow-complete": {
-        4: "ci gate",
-        5: "gh ci",
+        1: "checking state",
+        2: "checking PR",
+        3: "merging main",
+        4: "running CI",
+        5: "checking GitHub CI",
+        6: "confirming merge",
+        7: "archiving to PR",
+        8: "merging PR",
+        9: "closing issues",
+        10: "post-merge ops",
+        11: "cleaning up",
+        12: "pulling changes",
     },
 }
 
@@ -140,7 +154,9 @@ def phase_timeline(state):
     code_task_name = state.get("code_task_name", "")
     code_review_step = state.get("code_review_step", 0)
     learn_step = state.get("learn_step", 0)
+    learn_steps_total = state.get("learn_steps_total", 0)
     complete_step = state.get("complete_step", 0)
+    complete_steps_total = state.get("complete_steps_total", 0)
     diff_stats = state.get("diff_stats")
     entries = []
 
@@ -180,13 +196,13 @@ def phase_timeline(state):
             if display_step <= cr_total:
                 step_name = STEP_NAMES.get("flow-code-review", {}).get(display_step, "")
                 annotation = _step_annotation(display_step, cr_total, step_name)
-        elif key == "flow-learn" and status == "in_progress" and learn_step > 0:
+        elif key == "flow-learn" and status == "in_progress":
             display_step = learn_step + 1
             step_name = STEP_NAMES.get("flow-learn", {}).get(display_step, "")
-            annotation = _step_annotation(display_step, name=step_name)
-        elif key == "flow-complete" and status == "in_progress" and complete_step > 0:
+            annotation = _step_annotation(display_step, learn_steps_total, step_name)
+        elif key == "flow-complete" and status == "in_progress":
             step_name = STEP_NAMES.get("flow-complete", {}).get(complete_step, "")
-            annotation = _step_annotation(complete_step, name=step_name)
+            annotation = _step_annotation(complete_step, complete_steps_total, step_name)
 
         entries.append(
             {

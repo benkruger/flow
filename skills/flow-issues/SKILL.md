@@ -6,9 +6,9 @@ description: "Fetch open issues, analyze mechanically, rank by impact, and displ
 # FLOW Issues
 
 Fetch all open issues for the current repository, analyze them via Python
-script (file paths, dependencies, labels, stale detection), then rank by
-impact using judgment and display a dashboard. Read-only — never create,
-edit, or close issues.
+script (file paths, labels, stale detection), then rank by impact using
+judgment and display a dashboard. Read-only — never create, edit, or
+close issues.
 
 ## Usage
 
@@ -25,10 +25,10 @@ edit, or close issues.
 Optional flags filter the issue list by readiness. Flags are mutually
 exclusive — pass at most one.
 
-- `--ready` — issues with no dependencies (can start immediately)
-- `--blocked` — issues with unresolved dependencies (waiting on other work)
+- `--ready` — issues without the "Blocked" label (can start immediately)
+- `--blocked` — issues with the "Blocked" label (waiting on other work)
 - `--decomposed` — issues with the "Decomposed" label (work-ready with prior analysis)
-- `--quick-start` — decomposed issues with no dependencies (best candidates for autonomous execution)
+- `--quick-start` — decomposed issues without the "Blocked" label (best candidates for autonomous execution)
 
 No flag returns all issues (current default behavior).
 
@@ -57,10 +57,9 @@ At the very start, output the following banner in your response (not via Bash) i
 ## Step 1 — Fetch and Analyze
 
 Run the analysis script, which calls `gh issue list` internally, parses the
-JSON, extracts file paths, detects `#N` dependency cross-references between
-open issues, detects "Flow In-Progress" and "decomposed" labels, checks for
-stale issues (older than 60 days with missing file references), and outputs
-condensed per-issue briefs:
+JSON, extracts file paths, detects "Flow In-Progress", "Decomposed", and
+"Blocked" labels, checks for stale issues (older than 60 days with missing
+file references), and outputs condensed per-issue briefs:
 
 If a readiness filter flag was passed to this skill, append it to the command:
 
@@ -103,10 +102,9 @@ Parse the JSON output. The structure is:
       "category": "Enhancement",
       "age_days": 5,
       "decomposed": true,
+      "blocked": false,
       "stale": false,
       "stale_missing": 0,
-      "dependencies": [3],
-      "dependents": [4],
       "file_paths": ["lib/foo.py"],
       "brief": "First ~200 chars of body..."
     }
@@ -126,9 +124,8 @@ all other issues available for work.
 Read the condensed briefs from Step 1. For each issue, assess its impact
 using your judgment — not a formula. Consider:
 
-- **What would unblock the most work?** Issues with dependents block other
-  issues from starting. Issues that are prerequisites for many others have
-  high impact.
+- **What would unblock the most work?** Issues that are prerequisites for
+  others have high impact.
 - **What has the broadest effect?** Issues touching many files or areas of
   the codebase have wider impact than narrowly scoped changes.
 - **What is urgent?** Bugs, flaky tests, and issues blocking active work
@@ -136,9 +133,7 @@ using your judgment — not a formula. Consider:
 - **Is it ready for autonomous execution?** Decomposed issues are work-ready
   and can be started immediately without a planning phase.
 
-Sort by highest impact, respecting dependency ordering: if issue A depends
-on issue B (from the `dependencies` field), B must appear before A
-regardless of impact assessment.
+Sort by highest impact. Ready issues appear before blocked issues.
 
 ## Step 3 — Display
 
@@ -157,8 +152,7 @@ Print a "Recommended Work Order" section as a single markdown table.
 Columns: `Order`, `Status`, `Impact`, `Labels`, `#`, `Title`, `Rationale`.
 
 The `Status` column shows readiness: `Ready` or `Blocked`. Status is
-determined by the `dependencies` field — empty = `Ready`, non-empty =
-`Blocked`.
+determined by the `blocked` field — `false` = `Ready`, `true` = `Blocked`.
 
 The `Impact` column shows your assessment: `High`, `Medium`, or `Low`.
 
@@ -171,14 +165,13 @@ is the `stale_missing` count.
 
 The `Rationale` column explains why this issue is at this position:
 
-- If dependency-ordered: "prerequisite for #N" or "depends on #N"
+- If blocked: "has Blocked label"
 - If decomposed: "decomposed — ready for autonomous execution"
 - Otherwise: brief reason based on your impact assessment
 
-**Ordering:** All ready issues appear first, sorted by impact with
-dependency ordering respected. Blocked issues appear after all ready
-issues, maintaining the same dependency-respecting impact order within the
-blocked group.
+**Ordering:** All ready issues appear first, sorted by impact. Blocked
+issues appear after all ready issues, sorted by impact within the blocked
+group.
 
 ### Start Commands
 

@@ -264,7 +264,7 @@ Every correction and observation has a path to becoming a permanent, reusable pa
 User corrects Claude → /flow-note captures it in state["notes"]
 Claude writes observations → auto-memory (shared across worktrees)
        ↓
-Learn reads three sources (CLAUDE.md rules, conversation context, state/plan data)
+Learn reads four sources in Phase 5 (CLAUDE.md rules, learn-analyst agent, state/plan data, onboarding agent)
        ↓
 Each learning is routed to the right repo-local destination:
     → Project CLAUDE.md   (process rules and architecture — committed via PR)

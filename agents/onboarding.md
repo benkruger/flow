@@ -1,6 +1,7 @@
 ---
 name: onboarding
 description: "Onboarding perspective analysis. Receives diff and codebase context, produces confusion report of comprehension barriers."
+model: sonnet
 tools: Read, Glob, Grep, Bash
 maxTurns: 15
 ---

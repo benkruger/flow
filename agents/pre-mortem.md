@@ -1,6 +1,7 @@
 ---
 name: pre-mortem
 description: "Pre-mortem incident analysis. Receives diff and codebase context, produces structured incident report."
+model: sonnet
 tools: Read, Glob, Grep, Bash
 maxTurns: 25
 ---

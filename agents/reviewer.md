@@ -1,6 +1,7 @@
 ---
 name: reviewer
 description: "Context-isolated code review. Receives diff and project conventions, produces structured findings."
+model: sonnet
 tools: Read, Glob, Grep, Bash
 maxTurns: 25
 ---
