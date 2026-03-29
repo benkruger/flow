@@ -406,6 +406,27 @@ def test_reviewer_agent_exists():
     )
 
 
+def test_investigation_agents_no_inline_context():
+    """Guard: pre-mortem and onboarding agents must NOT receive inline context.
+
+    These agents intentionally receive only the diff and must investigate the
+    codebase themselves. Pre-supplied context (plan, CLAUDE.md, rules) masks
+    failure modes by priming the agent with the same assumptions the author had.
+    The reviewer agent receives inline context because it checks against known
+    standards — a fundamentally different task. See agents/pre-mortem.md Design
+    Note for the full rationale.
+    """
+    for agent_name in ("pre-mortem", "onboarding", "adversarial"):
+        agent_file = REPO_ROOT / "agents" / f"{agent_name}.md"
+        content = agent_file.read_text()
+        # Split on frontmatter delimiter to check body only
+        body = content.split("---", 2)[2] if content.startswith("---") else content
+        assert "provided inline" not in body.lower(), (
+            f"agents/{agent_name}.md must NOT contain 'provided inline' — "
+            f"this agent intentionally receives only the diff to force independent investigation"
+        )
+
+
 def test_code_review_has_inline_correctness_review():
     """Code Review skill must perform inline correctness review in Step 2."""
     content = _read_skill("flow-code-review")
