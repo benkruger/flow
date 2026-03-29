@@ -334,7 +334,7 @@ coding anti-patterns. Skip them in this step and let Step 6 handle them.
 
 ### Mandatory output constraint
 
-If Step 2 identified Claude mistakes, every mistake must produce at least
+If Step 2 identified mistakes, every mistake must produce at least
 one concrete artifact — a CLAUDE.md edit, a `.claude/rules/` edit, or a
 Flow issue. A rule that existed but failed to prevent the mistake is not
 sufficient coverage. When an existing rule failed to prevent the mistake,
@@ -540,8 +540,8 @@ Present the full report to the user:
     added an early return in the worker
   - ...
 
-  Claude mistakes
-  ---------------
+  Mistakes
+  --------
   - Suggested git rebase (forbidden — corrected immediately)
   - ...
 
