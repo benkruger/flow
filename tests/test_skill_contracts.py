@@ -1534,10 +1534,10 @@ def test_phase_1_hard_gate_requires_rerun_with_arguments():
 
 
 def test_start_step_2_has_ci_fix_subagent():
-    """Locked section (Steps 3–9) must launch ci-fixer sub-agent for CI failures."""
+    """Locked section (Steps 1–10) must launch ci-fixer sub-agent for CI failures."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
+    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
     locked_text = locked_match.group(1)
     assert "ci-fixer" in locked_text, (
         "flow-start locked section must reference the ci-fixer sub-agent for automatic CI fix"
@@ -1548,10 +1548,10 @@ def test_start_step_2_has_ci_fix_subagent():
 
 
 def test_start_ci_fixes_committed_via_flow_commit():
-    """CI fixes on main must be committed via /flow:flow-commit (Steps 3–9)."""
+    """CI fixes on main must be committed via /flow:flow-commit (Steps 1–10)."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
+    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
     locked_text = locked_match.group(1)
     assert "/flow:flow-commit" in locked_text, "flow-start locked section must commit CI fixes via /flow:flow-commit"
 
@@ -1574,14 +1574,16 @@ def test_code_review_steps_have_continuation_directives():
         "flow-code-review Step 2 must contain 'continue to Step 3' directive"
     )
 
-    # Step 3 must route to Step 4 (or Step 5 when plugin is skipped)
+    # Step 3 must continue to Step 4
     step3_match = re.search(
         r"## Step 3.*?\n(.*?)(?=\n## Step 4)",
         content,
         re.DOTALL,
     )
     assert step3_match, "Could not find Step 3 in flow-code-review/SKILL.md"
-    assert "route to Step 4" in step3_match.group(1), "flow-code-review Step 3 must contain 'route to Step 4' directive"
+    assert "continue to Step 4" in step3_match.group(1), (
+        "flow-code-review Step 3 must contain 'continue to Step 4' directive"
+    )
 
     # Step 4 must continue to Step 5
     step4_match = re.search(
@@ -1594,26 +1596,15 @@ def test_code_review_steps_have_continuation_directives():
         "flow-code-review Step 4 must contain 'continue to Step 5' directive"
     )
 
-    # Step 5 must continue to Step 6
+    # Step 5 must continue to Done
     step5_match = re.search(
-        r"## Step 5.*?\n(.*?)(?=\n## Step 6)",
+        r"## Step 5.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
         content,
         re.DOTALL,
     )
     assert step5_match, "Could not find Step 5 in flow-code-review/SKILL.md"
-    assert "continue to Step 6" in step5_match.group(1), (
-        "flow-code-review Step 5 must contain 'continue to Step 6' directive"
-    )
-
-    # Step 6 must continue to Done
-    step6_match = re.search(
-        r"## Step 6.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
-        content,
-        re.DOTALL,
-    )
-    assert step6_match, "Could not find Step 6 in flow-code-review/SKILL.md"
-    assert "continue to Done" in step6_match.group(1), (
-        "flow-code-review Step 6 must contain 'continue to Done' directive"
+    assert "continue to Done" in step5_match.group(1), (
+        "flow-code-review Step 5 must contain 'continue to Done' directive"
     )
 
 
@@ -1626,7 +1617,7 @@ def test_code_review_hard_rules_require_step_continuation():
     assert re.search(r"never pause", hard_rules, re.IGNORECASE), (
         "flow-code-review Hard Rules must contain 'never pause' language"
     )
-    for step_name in ["Simplify", "Review", "Security", "Code Review Plugin", "Context-Isolated Review", "Pre-Mortem"]:
+    for step_name in ["Simplify", "Review", "Security", "Context-Isolated Review", "Pre-Mortem"]:
         assert step_name in hard_rules, f"flow-code-review Hard Rules must mention '{step_name}' step"
 
 
@@ -1641,7 +1632,7 @@ def test_code_review_step_2_handles_no_findings():
 def test_code_review_step_3_handles_no_findings():
     """Step 3 must explicitly handle the no-findings path."""
     content = _read_skill("flow-code-review")
-    step3_match = re.search(r"## Step 3.*?\n(.*?)(?=\n## Back Navigation)", content, re.DOTALL)
+    step3_match = re.search(r"## Step 3.*?\n(.*?)(?=\n## Step 4)", content, re.DOTALL)
     assert step3_match, "Could not find Step 3 in flow-code-review/SKILL.md"
     assert "no findings" in step3_match.group(1).lower(), "flow-code-review Step 3 must handle the no-findings path"
 
@@ -1654,17 +1645,28 @@ def test_code_review_step_1_has_convention_compliance_pass():
     assert "convention compliance" in step1_match.group(1).lower(), (
         "flow-code-review Step 1 must include a convention compliance review pass"
     )
-    assert "code-review:code-review" in content, "flow-code-review must reference code-review:code-review plugin"
 
 
-def test_code_review_does_not_use_comment_flag():
-    """Code Review must not use --comment flag with the plugin."""
+def test_code_review_no_plugin_step():
+    """Tombstone: code-review:code-review plugin was removed in PR #587. Must not return."""
     content = _read_skill("flow-code-review")
-    assert "--comment" not in content, "flow-code-review must not use --comment flag with code-review plugin"
+    assert "code-review:code-review" not in content, (
+        "flow-code-review must NOT reference code-review:code-review plugin"
+        " (removed in PR #587, resurrected via merge in PR #600)"
+    )
+
+
+def test_code_review_no_plugin_config_axis():
+    """Tombstone: code_review_plugin config axis was removed in PR #587. Must not return."""
+    content = _read_skill("flow-code-review")
+    assert "code_review_plugin" not in content, (
+        "flow-code-review must NOT reference code_review_plugin config axis"
+        " (removed in PR #587, resurrected via merge in PR #600)"
+    )
 
 
 def test_code_review_step_4_handles_no_findings():
-    """Step 4 must explicitly handle the no-findings path."""
+    """Step 4 (Context-Isolated Review) must explicitly handle the no-findings path."""
     content = _read_skill("flow-code-review")
     step4_match = re.search(
         r"## Step 4.*?\n(.*?)(?=\n## Step 5)",
@@ -1676,27 +1678,15 @@ def test_code_review_step_4_handles_no_findings():
 
 
 def test_code_review_step_5_handles_no_findings():
-    """Step 5 must explicitly handle the no-findings path."""
+    """Step 5 (Pre-Mortem) must explicitly handle the no-findings path."""
     content = _read_skill("flow-code-review")
     step5_match = re.search(
-        r"## Step 5.*?\n(.*?)(?=\n## Step 6)",
+        r"## Step 5.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
         content,
         re.DOTALL,
     )
     assert step5_match, "Could not find Step 5 in flow-code-review/SKILL.md"
     assert "no findings" in step5_match.group(1).lower(), "flow-code-review Step 5 must handle the no-findings path"
-
-
-def test_code_review_step_6_handles_no_findings():
-    """Step 6 must explicitly handle the no-findings path."""
-    content = _read_skill("flow-code-review")
-    step6_match = re.search(
-        r"## Step 6.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
-        content,
-        re.DOTALL,
-    )
-    assert step6_match, "Could not find Step 6 in flow-code-review/SKILL.md"
-    assert "no findings" in step6_match.group(1).lower(), "flow-code-review Step 6 must handle the no-findings path"
 
 
 def test_code_review_has_resume_check():
@@ -1711,8 +1701,8 @@ def test_code_review_has_resume_check():
 def _code_review_steps():
     """Yield (step_num, step_text) for each Code Review step section."""
     content = _read_skill("flow-code-review")
-    for step_num in range(1, 7):
-        if step_num < 6:
+    for step_num in range(1, 6):
+        if step_num < 5:
             next_header = f"## Step {step_num + 1}"
         else:
             next_header = "## Back Navigation|## Done"
@@ -1742,16 +1732,14 @@ def test_code_review_steps_self_invoke():
 
 
 def test_code_review_steps_await_background_agents():
-    """Steps 4-6 must instruct waiting for background agents (Steps 1-3 use inline review passes)."""
+    """Steps 4-5 must reference agents (Steps 1-3 use inline review passes)."""
     for step_num, step_text in _code_review_steps():
         if step_num in (1, 2, 3):
             continue
         if step_num == 4:
-            assert "background agent" in step_text.lower(), (
-                f"Step {step_num} must contain background agent wait instructions"
-            )
-        elif step_num in (5, 6):
-            assert "agent" in step_text.lower(), f"Step {step_num} must reference an agent"
+            assert "agent" in step_text.lower(), f"Step {step_num} must reference the reviewer agent"
+        elif step_num == 5:
+            assert "agent" in step_text.lower(), f"Step {step_num} must reference the pre-mortem agent"
 
 
 def test_code_review_has_self_invocation_check():
@@ -1764,19 +1752,19 @@ def test_code_review_has_self_invocation_check():
 
 
 def test_start_step_2_acquires_lock():
-    """Locked section (Steps 3–9) must acquire start lock before CI work."""
+    """Locked section (Steps 1–10) must acquire start lock before CI work."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
+    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
     locked_text = locked_match.group(1)
     assert "start-lock" in locked_text, "flow-start locked section must reference start-lock for serialization"
 
 
 def test_start_step_2_has_two_ci_gates():
-    """Locked section (Steps 3–9) must have two bin/flow ci calls."""
+    """Locked section (Steps 1–10) must have two bin/flow ci calls."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
+    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
     locked_text = locked_match.group(1)
     ci_count = locked_text.count("bin/flow ci")
     assert ci_count >= 2, (
@@ -1785,10 +1773,10 @@ def test_start_step_2_has_two_ci_gates():
 
 
 def test_start_files_flaky_test_issues():
-    """Locked section (Steps 3–9) must file Flaky Test issues for intermittent CI failures."""
+    """Locked section (Steps 1–10) must file Flaky Test issues for intermittent CI failures."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
+    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
     locked_text = locked_match.group(1)
     assert "Flaky Test" in locked_text, "flow-start locked section must detect and file 'Flaky Test' issues"
     assert "bin/flow issue" in locked_text, (
@@ -2345,6 +2333,34 @@ def test_done_hardgates_reread_state_file():
         assert has_reread, (
             f"Phase {PHASE_NUMBER[key]} ({skill_name}) Done HARD-GATE must "
             f"re-read continue mode from state file (contain 'Re-read')"
+        )
+
+
+def test_done_hard_gates_auto_path_has_final_action_language():
+    """Phases 1-5 Done HARD-GATEs auto path must have strengthened language."""
+    phase_skills = _phase_skills()
+    for key in PHASE_ORDER[:-1]:  # Exclude flow-complete (terminal)
+        skill_name = phase_skills[key]
+        content = _read_skill(skill_name)
+
+        hard_gates = re.findall(r"<HARD-GATE>(.*?)</HARD-GATE>", content, re.DOTALL)
+
+        continue_gates = [gate for gate in hard_gates if "continue=auto" in gate and "continue=manual" in gate]
+        assert continue_gates, (
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) has no continue-mode HARD-GATE "
+            f"(prerequisite for auto-path check)"
+        )
+
+        has_final = any("FINAL action" in gate for gate in continue_gates)
+        assert has_final, (
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) Done HARD-GATE auto path must "
+            f"contain 'FINAL action' language to prevent model from ignoring auto-continue"
+        )
+
+        has_skill_tool = any("using the Skill tool" in gate for gate in continue_gates)
+        assert has_skill_tool, (
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) Done HARD-GATE auto path must "
+            f"contain 'using the Skill tool' to be explicit about invocation method"
         )
 
 

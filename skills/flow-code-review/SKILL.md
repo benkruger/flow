@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — six review steps: clarity with convention compliance (inline review passes), correctness with rule compliance (inline review), safety (inline security review), CLAUDE.md compliance (code-review:code-review plugin, configurable), context-isolated code review (custom agent), and pre-mortem incident analysis (custom agent). Commits after each step."
+description: "Phase 4: Code Review — five review steps: clarity with convention compliance (inline review passes), correctness with rule compliance (inline review), safety (inline security review), context-isolated code review (custom agent), and pre-mortem incident analysis (custom agent). Commits after each step."
 ---
 
 # FLOW Code Review — Phase 4: Code Review
@@ -109,17 +109,14 @@ Read `code_review_step` from the state file (default `0` if absent).
 
 - If `1` — Step 1 is done. Skip to Step 2.
 - If `2` — Steps 1-2 are done. Skip to Step 3.
-- If `3` — Steps 1-3 are done. Check Code Review Plugin Mode Resolution:
-  if `code_review_plugin` is `"never"`, skip to Step 5.
-  Otherwise, skip to Step 4.
+- If `3` — Steps 1-3 are done. Skip to Step 4.
 - If `4` — Steps 1-4 are done. Skip to Step 5.
-- If `5` — Steps 1-5 are done. Skip to Step 6.
-- If `6` — All steps are done. Skip to Done.
+- If `5` — All steps are done. Skip to Done.
 
 ## Framework Conventions
 
 Read the project's CLAUDE.md for framework-specific conventions. The
-six review steps perform inline review passes against the branch
+five review steps perform inline review passes against the branch
 diff. The CLAUDE.md conventions inform fix decisions.
 
 ---
@@ -524,123 +521,13 @@ Record step completion:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=3
 ```
 
-Check Code Review Plugin Mode Resolution:
-
-- If `code_review_plugin` is `"never"` — the plugin is skipped. Invoke
-  `flow:flow-code-review --continue-step` using the Skill tool as your
-  final action. The Resume Check will route to Step 5.
-- If `code_review_plugin` is `"always"` or `"auto"` — invoke
-  `flow:flow-code-review --continue-step` using the Skill tool as your
-  final action. The Resume Check will route to Step 4.
-
-If commit=auto was resolved, pass `--auto` as well. Do not output
-anything else after this invocation.
-
----
-
-## Step 4 — Code Review Plugin
-
-Set the continuation context and flag before invoking the child skill:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Wait for all pending background agents to complete. Then process code-review findings, fix issues, run bin/flow ci, then commit if fixes were made."
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=code-review:code-review
-```
-
-Invoke the `code-review:code-review` plugin using the Skill tool with no
-flags or arguments.
-
-This runs a multi-agent review: 4 parallel agents (2x CLAUDE.md
-compliance, 1x bug scan, 1x security/logic scan) with a validation layer
-that re-validates each finding at 80+ confidence. It produces high-signal
-findings only.
-
-If the plugin returns early (pre-flight skip, e.g. "no review needed" or
-"already reviewed"), treat this as no findings.
-
-### Background agent check
-
-Plugins may launch background review agents that run asynchronously.
-After the child skill returns and the stop-continue hook resumes you,
-check for any pending background agent notifications. Wait for ALL
-background agents to complete before proceeding. Do not evaluate "no
-findings" until every agent has reported. Treat agent findings the same
-as direct findings from the child skill.
-
-If the plugin reports no findings, skip the commit. Show the Code Review
-Plugin summary with zero findings, then without pausing continue to Step 5.
-
-### Fix every finding
-
-For each finding from the code-review plugin, fix the issue in code, then
-run CI:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci
-```
-
-Set the continuation context and flag:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Continue fixing remaining code-review findings."
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
-```
-
-If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise
-invoke `/flow:flow-commit`.
-
-Move to the next finding.
-
-<HARD-GATE>
-`bin/flow ci` must be green after every fix. Do not move to the next
-finding until the current fix passes `bin/flow ci` and is committed.
-</HARD-GATE>
-
-Repeat until all findings are fixed.
-
-### Code Review Plugin summary
-
-Show a summary of what was found and fixed inside a fenced code block:
-
-````markdown
-```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  FLOW — Code Review — Step 4: Code Review Plugin — SUMMARY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Findings         : N
-  Fixed            : N
-
-  Findings
-  --------
-  - [FIXED] <description of finding>
-  - [FIXED] <description of finding>
-
-  bin/flow ci      : ✓ green
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-````
-
-Record step completion:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=4
-```
-
-To continue to Step 5, invoke `flow:flow-code-review --continue-step` using
+To continue to Step 4, invoke `flow:flow-code-review --continue-step` using
 the Skill tool as your final action. If commit=auto was resolved, pass
 `--auto` as well. Do not output anything else after this invocation.
 
 ---
 
-## Step 5 — Context-Isolated Review
+## Step 4 — Context-Isolated Review
 
 Get the full branch diff to provide to the reviewer agent:
 
@@ -679,7 +566,7 @@ Show each finding with your triage decision and rationale.
 
 If the agent reports no findings, skip the commit. Show the
 Context-Isolated Review summary with zero findings, then without pausing
-continue to Step 6.
+continue to Step 5.
 
 ### Fix every real finding
 
@@ -719,7 +606,7 @@ Show a summary of what was found and triaged inside a fenced code block:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  FLOW — Code Review — Step 5: Context-Isolated Review — SUMMARY
+  FLOW — Code Review — Step 4: Context-Isolated Review — SUMMARY
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Agent findings  : N
@@ -741,16 +628,16 @@ Show a summary of what was found and triaged inside a fenced code block:
 Record step completion:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=5
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=4
 ```
 
-To continue to Step 6, invoke `flow:flow-code-review --continue-step` using
+To continue to Step 5, invoke `flow:flow-code-review --continue-step` using
 the Skill tool as your final action. If commit=auto was resolved, pass
 `--auto` as well. Do not output anything else after this invocation.
 
 ---
 
-## Step 6 — Pre-Mortem
+## Step 5 — Pre-Mortem
 
 Get the full branch diff to provide to the pre-mortem agent:
 
@@ -823,7 +710,7 @@ Show a summary of what was found and triaged inside a fenced code block:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  FLOW — Code Review — Step 6: Pre-Mortem — SUMMARY
+  FLOW — Code Review — Step 5: Pre-Mortem — SUMMARY
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Agent findings  : N
@@ -845,7 +732,7 @@ Show a summary of what was found and triaged inside a fenced code block:
 Record step completion:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=6
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=5
 ```
 
 To continue to Done, invoke `flow:flow-code-review --continue-step` using
@@ -916,8 +803,9 @@ has its own mode.
 1. If `--auto` was passed to this skill invocation → continue=auto.
    If `--manual` was passed → continue=manual.
    Otherwise, use the value from the state file. If absent → default to manual.
-2. If continue=auto → invoke `flow:flow-learn` directly.
+2. If continue=auto → invoke `flow:flow-learn` directly using the Skill tool.
    Do NOT invoke `flow:flow-status`. Do NOT use AskUserQuestion.
+   This is the FINAL action in this response — nothing else follows.
 3. If continue=manual → you MUST do all of the following before proceeding:
    a. Invoke `flow:flow-status`
    b. Use AskUserQuestion:
@@ -954,7 +842,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 - Never transition to Learn unless `bin/flow ci` is green
 - Fix every finding from inline review passes, inline correctness review, and inline security review — do not leave findings unaddressed
 - Follow the project CLAUDE.md conventions when fixing
-- Each active step (Simplify, Review, Security, Code Review Plugin when enabled, Context-Isolated Review, and Pre-Mortem) gets its own commit when changes are made
+- Each active step (Simplify, Review, Security, Context-Isolated Review, and Pre-Mortem) gets its own commit when changes are made
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories

@@ -44,10 +44,11 @@ def test_basic_summary():
         assert f"{name}:" in summary
     assert "Total:" in summary
     assert result["total_seconds"] == 20 + 300 + 2700 + 720 + 120 + 45
+    assert "issues_links" in result
 
 
 def test_summary_with_issues():
-    """Summary includes issues filed with #N shorthand from short_issue_ref."""
+    """Summary shows issue count; issues_links has clickable links outside code block."""
     mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     state["issues_filed"] = [
@@ -72,16 +73,18 @@ def test_summary_with_issues():
     result = mod.format_complete_summary(state)
 
     assert "Issues filed: 2" in result["summary"]
-    # #N shorthand appears in the label line
-    assert "[Rule] #1 Test rule" in result["summary"]
-    assert "[Tech Debt] #2 Refactor X" in result["summary"]
-    # URLs still on next line
-    assert "https://github.com/test/test/issues/1" in result["summary"]
-    assert "https://github.com/test/test/issues/2" in result["summary"]
+    # Per-issue details are NOT in the banner summary
+    assert "https://github.com/test/test/issues/1" not in result["summary"]
+    assert "https://github.com/test/test/issues/2" not in result["summary"]
+    # They are in issues_links as clickable markdown
+    assert "[Rule] #1 Test rule" in result["issues_links"]
+    assert "https://github.com/test/test/issues/1" in result["issues_links"]
+    assert "[Tech Debt] #2 Refactor X" in result["issues_links"]
+    assert "https://github.com/test/test/issues/2" in result["issues_links"]
 
 
 def test_summary_with_single_issue():
-    """Summary lists a single issue with label, #N shorthand, and title."""
+    """Single issue: count in banner, clickable link in issues_links."""
     mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     state["issues_filed"] = [
@@ -98,12 +101,13 @@ def test_summary_with_single_issue():
     result = mod.format_complete_summary(state)
 
     assert "Issues filed: 1" in result["summary"]
-    assert "[Flow] #42 Fix routing logic" in result["summary"]
-    assert "https://github.com/test/test/issues/42" in result["summary"]
+    assert "https://github.com/test/test/issues/42" not in result["summary"]
+    assert "[Flow] #42 Fix routing logic" in result["issues_links"]
+    assert "https://github.com/test/test/issues/42" in result["issues_links"]
 
 
 def test_summary_with_issues_url_without_number():
-    """Issues with non-standard URLs fall back to full URL."""
+    """Issues with non-standard URLs fall back to full URL in issues_links."""
     mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     state["issues_filed"] = [
@@ -120,10 +124,9 @@ def test_summary_with_issues_url_without_number():
     result = mod.format_complete_summary(state)
 
     assert "Issues filed: 1" in result["summary"]
-    assert "[Rule] Some rule" in result["summary"]
-    assert "https://example.com/custom-path" in result["summary"]
-    # Old colon-joined format must not appear
-    assert "https://example.com/custom-path: Some rule" not in result["summary"]
+    assert "https://example.com/custom-path" not in result["summary"]
+    assert "[Rule] Some rule" in result["issues_links"]
+    assert "https://example.com/custom-path" in result["issues_links"]
 
 
 def test_summary_with_resolved_issues():
@@ -169,7 +172,7 @@ def test_summary_no_resolved_issues():
 
 
 def test_summary_with_resolved_and_filed():
-    """Summary includes both Resolved and Issues filed sections."""
+    """Resolved in banner; filed issues in issues_links."""
     mod = import_lib("format-complete-summary.py")
     state = _all_complete_state()
     state["issues_filed"] = [
@@ -191,7 +194,8 @@ def test_summary_with_resolved_and_filed():
     assert "Resolved" in result["summary"]
     assert "#407" in result["summary"]
     assert "Issues filed: 1" in result["summary"]
-    assert "[Tech Debt] #50 Refactor X" in result["summary"]
+    assert "[Tech Debt] #50 Refactor X" in result["issues_links"]
+    assert "https://github.com/test/test/issues/50" in result["issues_links"]
 
 
 def test_summary_resolved_without_url():
@@ -236,6 +240,29 @@ def test_summary_no_issues_no_notes():
 
     assert "Issues filed" not in result["summary"]
     assert "Notes captured" not in result["summary"]
+    assert result["issues_links"] == ""
+
+
+def test_issues_links_without_url():
+    """Issue without URL shows title only in issues_links."""
+    mod = import_lib("format-complete-summary.py")
+    state = _all_complete_state()
+    state["issues_filed"] = [
+        {
+            "label": "Tech Debt",
+            "title": "Missing test",
+            "url": "",
+            "phase": "flow-code-review",
+            "phase_name": "Code Review",
+            "timestamp": "2026-01-01T00:00:00-08:00",
+        },
+    ]
+
+    result = mod.format_complete_summary(state)
+
+    assert "[Tech Debt] Missing test" in result["issues_links"]
+    # No URL separator when URL is empty
+    assert "—" not in result["issues_links"]
 
 
 def test_summary_truncates_long_prompt():
@@ -334,6 +361,7 @@ def test_cli_happy_path(tmp_path, monkeypatch, capsys):
     assert data["status"] == "ok"
     assert "Test Feature" in data["summary"]
     assert isinstance(data["total_seconds"], int)
+    assert "issues_links" in data
 
 
 def test_cli_with_closed_issues_file(tmp_path, monkeypatch, capsys):
