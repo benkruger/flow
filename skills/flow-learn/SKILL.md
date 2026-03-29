@@ -114,6 +114,12 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-learn --action ente
 Parse the JSON output to confirm `"status": "ok"`.
 If `"status": "error"`, report the error and stop.
 
+Set the step tracking fields for TUI progress display:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_steps_total=7
+```
+
 ## Logging
 
 No logging for this phase. Learn runs no Bash commands beyond the entry
@@ -126,10 +132,15 @@ Read `learn_step` from the state file (default `0` if absent).
 - If `3` → Step 3 is done. Skip to Step 4.
 - If `4` → Steps 3-4 are done. Skip to Step 5.
 - If `5` → Steps 3-5 are done. Skip to Step 6.
+- If `6` → Steps 3-6 are done. Skip to Step 7.
 
 ---
 
 ## Step 1 — Gather sources
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=0
+```
 
 Read and synthesise before doing anything else.
 
@@ -211,6 +222,10 @@ deficiency).
 
 ## Step 2 — Synthesize findings
 
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=1
+```
+
 Organize all gathered evidence into categories:
 
 **Process violations** — existing rules in CLAUDE.md that were broken or
@@ -241,6 +256,10 @@ gaps if the skill that launched the agents lacks follow-up instructions.
 ---
 
 ## Step 3 — Route and apply
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=2
+```
 
 This step is fully autonomous — decide destinations and apply all changes
 without asking the user.
@@ -342,6 +361,10 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <worktree_path>/.claude/rules/<
 
 ## Step 4 — Promote permissions
 
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=3
+```
+
 Promote any session permissions accumulated in `.claude/settings.local.json`
 into the persistent `.claude/settings.json`. This runs in all three modes
 (Phase 5, Maintainer, Standalone).
@@ -421,6 +444,10 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 
 ## Step 6 — File GitHub issues (Phase 5 only)
 
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=5
+```
+
 Skip for Maintainer and Standalone.
 
 ### Process gap issues
@@ -471,6 +498,10 @@ If there are no process gap or documentation drift items, skip this step.
 ---
 
 ## Step 7 — Present report
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=6
+```
 
 Present the full report to the user:
 
