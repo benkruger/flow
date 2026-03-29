@@ -20,6 +20,27 @@ The full diff (`git diff origin/main..HEAD`) is provided in your prompt.
 Use it as your primary evidence. Use Read, Glob, and Grep tools to
 investigate the surrounding codebase for context.
 
+## Design Note
+
+This agent intentionally receives only the diff — not the plan,
+CLAUDE.md, or project rules. The reviewer agent receives those
+inline because it checks against known standards (conventions,
+plan alignment, rule compliance). The pre-mortem agent must
+investigate the codebase itself to discover unknown failure modes.
+
+Pre-supplied context masks failure modes by priming the agent with
+the same assumptions the author had. When the agent already knows
+the plan's intent, it reasons forward from intent to confirmation
+instead of backward from failure to cause. Investigation-based
+context forces the agent to form its own understanding, which
+surfaces risks that pre-supplied context would filter out.
+
+The onboarding agent follows the same pattern for the same reason.
+
+Do not add inline context to this agent. Doing so defeats the
+debiasing mechanism and will fail the
+`test_investigation_agents_no_inline_context` guard test.
+
 ## Workflow
 
 **Read the diff.** Identify every behavioral change — new code paths,
