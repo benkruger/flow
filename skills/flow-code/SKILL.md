@@ -188,10 +188,14 @@ check requires fixing violations in the same commit").
 **Execute all tasks in the group sequentially.** Run the full TDD
 cycle (write failing test, implement, refactor, run targeted tests)
 and the Architecture Check independently. After completing each
-task's TDD cycle, record it:
+task's TDD cycle, record it and persist the task name for TUI display:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_task=<n>
+```
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_task_name="<description>"
 ```
 
 Do NOT run `bin/flow ci` and do NOT commit after intermediate tasks.
@@ -219,6 +223,12 @@ Add <what the group accomplished> — Tasks <first>-<last> of <total>
 the next task after the group.
 
 ### Before Starting a Task
+
+Persist the task name to the state file for TUI display:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_task_name="<description>"
+```
 
 Output in your response (not via Bash) inside a fenced code block:
 

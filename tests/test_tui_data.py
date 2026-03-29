@@ -549,6 +549,86 @@ def test_phase_timeline_code_task_overflow_exceeds_total():
     assert code_entry["annotation"] == "task 3 of 3"
 
 
+# --- phase_timeline: Code task name ---
+
+
+def test_phase_timeline_code_with_task_name():
+    """Code phase shows 'name - task N of M' when code_task_name is present."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["code_task"] = 1
+    state["code_tasks_total"] = 3
+    state["code_task_name"] = "Update contract tests"
+
+    timeline = tui_data.phase_timeline(state)
+    code_entry = timeline[2]
+    assert code_entry["annotation"] == "Update contract tests - task 2 of 3"
+
+
+def test_phase_timeline_code_task_name_absent():
+    """Backward compat: no code_task_name in state shows plain 'task N of M'."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["code_task"] = 1
+    state["code_tasks_total"] = 3
+
+    timeline = tui_data.phase_timeline(state)
+    code_entry = timeline[2]
+    assert code_entry["annotation"] == "task 2 of 3"
+
+
+def test_phase_timeline_code_task_name_with_diff_stats():
+    """Code phase shows 'name - task N of M, +X -Y' with task name and diff stats."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["code_task"] = 1
+    state["code_tasks_total"] = 3
+    state["code_task_name"] = "Update contract tests"
+    state["diff_stats"] = {"insertions": 127, "deletions": 48}
+
+    timeline = tui_data.phase_timeline(state)
+    code_entry = timeline[2]
+    assert code_entry["annotation"] == "Update contract tests - task 2 of 3, +127 -48"
+
+
+def test_phase_timeline_code_task_name_truncated():
+    """Long task names are truncated with '...' at 30 chars."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["code_task"] = 0
+    state["code_tasks_total"] = 3
+    state["code_task_name"] = "Implement the very long task description that exceeds limit"
+
+    timeline = tui_data.phase_timeline(state)
+    code_entry = timeline[2]
+    name_part = code_entry["annotation"].split(" - task ")[0]
+    assert len(name_part) == 30
+    assert name_part.endswith("...")
+
+
+def test_phase_timeline_code_task_name_empty_string():
+    """Empty code_task_name falls back to plain 'task N of M'."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["code_task"] = 1
+    state["code_tasks_total"] = 3
+    state["code_task_name"] = ""
+
+    timeline = tui_data.phase_timeline(state)
+    code_entry = timeline[2]
+    assert code_entry["annotation"] == "task 2 of 3"
+
+
 # --- phase_timeline: Code Review ---
 
 
