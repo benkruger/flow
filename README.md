@@ -252,6 +252,7 @@ The hook also handles:
 - **Compaction recovery** — consumes `compact_summary` and `compact_cwd` from the state file to inject richer context after `/compact`
 - **Orchestration awareness** — detects in-progress or completed orchestration runs and delivers the morning report
 - **Correction capture** — injects the instruction to invoke `/flow-note` whenever the user corrects Claude
+- **Tab color** — sets a deterministic terminal tab color based on the repo name (pinned colors for known repos, hash-based for others). Configurable via `tab_color` in `.flow.json`
 
 All behaviors are wired at session start without any user action.
 
