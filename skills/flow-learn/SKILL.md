@@ -178,7 +178,7 @@ Skip for Maintainer and Standalone.
 Get the full branch diff to provide to the onboarding agent:
 
 ```bash
-git diff origin/main..HEAD
+git diff origin/main...HEAD
 ```
 
 Launch the onboarding agent using the Agent tool. The agent receives only
