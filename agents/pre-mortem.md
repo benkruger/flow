@@ -2,7 +2,7 @@
 name: pre-mortem
 description: "Pre-mortem incident analysis. Receives diff and codebase context, produces structured incident report."
 tools: Read, Glob, Grep, Bash
-maxTurns: 15
+maxTurns: 25
 hooks:
   PreToolUse:
     - matcher: "Bash"
@@ -32,9 +32,17 @@ investigate the surrounding codebase for context.
 modified conditions, changed error handling, new dependencies, altered
 data flows.
 
-**Investigate the codebase.** For each behavioral change, read the
-surrounding code to understand what systems are affected. Check callers,
-tests, configuration, and integration points.
+**Investigate selectively.** For the most significant behavioral changes,
+use targeted investigation (Read, Grep) to verify your understanding of
+the immediate context. Do not trace every caller or integration point.
+Focus investigation on changes that could introduce failures, race
+conditions, or data corruption. Limit investigation to what is necessary
+to confirm or deny a suspected failure mode.
+
+**Budget your turns.** You have limited turns. Spend at most half your
+turns on investigation. Reserve the remainder for backward reasoning and
+finding production. If you are running low on turns, stop investigating
+and produce findings from what you have already seen.
 
 **Reason backward from failure.** For each behavioral change, ask:
 "If this caused a production incident, what would the failure mode be?"

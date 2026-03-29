@@ -2,7 +2,7 @@
 name: reviewer
 description: "Context-isolated code review. Receives diff and project conventions, produces structured findings."
 tools: Read, Glob, Grep, Bash
-maxTurns: 15
+maxTurns: 25
 hooks:
   PreToolUse:
     - matcher: "Bash"
@@ -19,25 +19,29 @@ know why any decision was made. You see only the result.
 
 ## Input
 
-The full diff (`git diff origin/main..HEAD`) is provided in your prompt.
-The plan file path, CLAUDE.md path, and `.claude/rules/` directory path
-are also provided. Use the Read tool to read each one. Use Glob to
-discover all files in the rules directory.
+The full diff (`git diff origin/main..HEAD`), the plan file content, the
+project CLAUDE.md content, and all `.claude/rules/*.md` file contents are
+provided inline in your prompt. Do not spend turns reading these files —
+they are already below.
 
 ## Workflow
 
-**Read the context.** Read the plan file to understand what the feature
-is supposed to accomplish. Read the project CLAUDE.md for conventions and
-architecture patterns. Read all `.claude/rules/*.md` files for coding
-rules and anti-patterns.
-
-**Read the diff.** Identify every behavioral change — new code paths,
+**Read the diff and context.** The diff, plan, CLAUDE.md, and rules are
+all in your prompt. Identify every behavioral change — new code paths,
 modified conditions, changed error handling, new dependencies, altered
 data flows.
 
-**Investigate the codebase.** For each behavioral change, read the
-surrounding code to understand what systems are affected. Check callers,
-tests, configuration, and integration points.
+**Investigate selectively.** For the most significant behavioral changes,
+use targeted investigation (Read, Grep) to verify your understanding of
+the immediate context. Do not trace every caller or integration point.
+Focus investigation on changes that could introduce bugs, break contracts,
+or violate conventions. Limit investigation to what is necessary to
+confirm or deny a suspected issue.
+
+**Budget your turns.** You have limited turns. Spend at most half your
+turns on investigation. Reserve the remainder for analysis and finding
+production. If you are running low on turns, stop investigating and
+produce findings from what you have already seen.
 
 **Review for correctness.** For each behavioral change, ask:
 
