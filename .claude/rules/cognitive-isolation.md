@@ -4,15 +4,32 @@
 
 When a phase needs debiased analysis of work done in the current
 session, run the analysis in a foreground sub-agent. The sub-agent
-receives only persisted artifacts (state file, diff, plan, notes)
-— never conversation history. The parent session stays alive to
-receive results and continue the flow.
+receives only persisted artifacts — never conversation history.
+The parent session stays alive to receive results and continue
+the flow.
 
 This pattern exists because the model that built the feature
 carries forward its emotional arc — struggles, negotiations,
 rationalizations. Inline analysis in the same session produces
 self-reporting bias: obvious mistakes get caught, but deep
 assumptions feel like facts and go unexamined.
+
+## Two-Tier Context Model
+
+Not all sub-agents receive the same artifacts. The amount of
+context is a design choice matched to the agent's task:
+
+- **Context-rich** (reviewer) — receives diff, plan, CLAUDE.md,
+  and rules inline. Its task is checking against known standards
+  where having the standards at hand saves turns.
+- **Context-sparse** (pre-mortem, onboarding) — receives only the
+  diff and must investigate the codebase itself. Less context
+  forces independent investigation, surfacing risks and
+  comprehension barriers that pre-supplied context would mask.
+
+This asymmetry is intentional. See `agents/pre-mortem.md` Design
+Note for the full rationale and `agents/reviewer.md` Design Note
+for the cross-reference.
 
 ## Never Break the Session
 
