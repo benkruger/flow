@@ -1,7 +1,7 @@
 """Analyze open GitHub issues for the flow-issues skill.
 
-Handles mechanical work: JSON parsing, file path extraction, dependency
-detection, label detection, stale detection. Outputs condensed per-issue
+Handles mechanical work: JSON parsing, file path extraction,
+label detection, stale detection. Outputs condensed per-issue
 briefs so the LLM only needs to rank by impact.
 
 Usage:
@@ -22,8 +22,6 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from flow_utils import extract_issue_numbers
 
 # File path patterns: known directory prefixes or paths with file extensions
 _DIR_PREFIXES = (
@@ -68,17 +66,6 @@ def extract_file_paths(body):
         paths.add(match.group(1))
 
     return sorted(paths)
-
-
-def extract_dependencies(body, open_numbers, own_number=None):
-    """Extract #N issue references that exist in the open set.
-
-    Returns list of issue numbers this issue depends on.
-    Excludes self-references. Reuses extract_issue_numbers from flow_utils
-    for the raw #N and URL pattern extraction.
-    """
-    all_refs = extract_issue_numbers(body)
-    return [num for num in all_refs if num in open_numbers and num != own_number]
 
 
 def detect_labels(labels):
@@ -126,19 +113,6 @@ def check_stale(file_paths, age_days):
     return {"stale": missing > 0, "stale_missing": missing}
 
 
-def build_dependents(dependency_map):
-    """Build reverse dependency map: who depends on each issue.
-
-    Input: {issue_number: [dependency_numbers]}
-    Output: {issue_number: [dependent_numbers]}
-    """
-    dependents = {}
-    for issue_num, deps in dependency_map.items():
-        for dep in deps:
-            dependents.setdefault(dep, []).append(issue_num)
-    return dependents
-
-
 def truncate_body(body, max_length=200):
     """Truncate body to max_length, adding ellipsis if needed."""
     if len(body) <= max_length:
@@ -147,10 +121,10 @@ def truncate_body(body, max_length=200):
 
 
 _FILTERS = {
-    "ready": lambda i: not i["dependencies"],
-    "blocked": lambda i: bool(i["dependencies"]),
+    "ready": lambda i: not i["blocked"],
+    "blocked": lambda i: i["blocked"],
     "decomposed": lambda i: i["decomposed"],
-    "quick-start": lambda i: i["decomposed"] and not i["dependencies"],
+    "quick-start": lambda i: i["decomposed"] and not i["blocked"],
 }
 
 
@@ -183,13 +157,8 @@ def analyze_issues(issues):
     if not issues:
         return {"status": "ok", "total": 0, "in_progress": [], "issues": []}
 
-    open_numbers = {issue["number"] for issue in issues}
     in_progress = []
     available = []
-
-    # First pass: extract data and route in-progress vs available
-    dependency_map = {}
-    available_data = {}
 
     for issue in issues:
         number = issue["number"]
@@ -209,9 +178,6 @@ def analyze_issues(issues):
             continue
 
         file_paths = extract_file_paths(body)
-        text_deps = extract_dependencies(body, open_numbers, own_number=number)
-        deps = sorted(set(text_deps))
-        dependency_map[number] = deps
 
         created_at = datetime.fromisoformat(issue["createdAt"].replace("Z", "+00:00"))
         age_days = (datetime.now(created_at.tzinfo) - created_at).days
@@ -219,29 +185,22 @@ def analyze_issues(issues):
         stale_info = check_stale(file_paths, age_days)
         category = categorize(label_names, issue["title"], body)
 
-        available_data[number] = {
-            "number": number,
-            "title": issue["title"],
-            "url": issue.get("url", ""),
-            "labels": label_list,
-            "category": category,
-            "age_days": age_days,
-            "decomposed": label_flags["decomposed"],
-            "stale": stale_info["stale"],
-            "stale_missing": stale_info["stale_missing"],
-            "dependencies": deps,
-            "dependents": [],
-            "file_paths": file_paths,
-            "brief": truncate_body(body),
-        }
-
-    # Second pass: build dependents
-    dependents_map = build_dependents(dependency_map)
-    for number, dependents in dependents_map.items():
-        if number in available_data:
-            available_data[number]["dependents"] = dependents
-
-    available = list(available_data.values())
+        available.append(
+            {
+                "number": number,
+                "title": issue["title"],
+                "url": issue.get("url", ""),
+                "labels": label_list,
+                "category": category,
+                "age_days": age_days,
+                "decomposed": label_flags["decomposed"],
+                "blocked": label_flags["blocked"],
+                "stale": stale_info["stale"],
+                "stale_missing": stale_info["stale_missing"],
+                "file_paths": file_paths,
+                "brief": truncate_body(body),
+            }
+        )
 
     return {
         "status": "ok",
@@ -263,14 +222,14 @@ def main():
         action="store_const",
         const="ready",
         dest="filter",
-        help="Show only issues with no dependencies",
+        help="Show only issues without Blocked label",
     )
     filter_group.add_argument(
         "--blocked",
         action="store_const",
         const="blocked",
         dest="filter",
-        help="Show only issues with dependencies",
+        help="Show only issues with Blocked label",
     )
     filter_group.add_argument(
         "--decomposed",
@@ -284,7 +243,7 @@ def main():
         action="store_const",
         const="quick-start",
         dest="filter",
-        help="Show only decomposed issues with no dependencies",
+        help="Show only decomposed issues without Blocked label",
     )
     args = parser.parse_args()
 

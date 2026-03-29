@@ -73,39 +73,6 @@ def test_extracts_dotprefix_paths():
     assert ".claude/rules/testing.md" in result
 
 
-# --- extract_dependencies ---
-
-
-def test_extracts_dependencies_within_open_set():
-    """Only records dependencies between issues in the open set."""
-    body = "Depends on #10 and #20"
-    open_numbers = {10, 20, 30}
-    result = _mod.extract_dependencies(body, open_numbers)
-    assert result == [10, 20]
-
-
-def test_ignores_dependencies_outside_open_set():
-    """References to closed or non-existent issues are ignored."""
-    body = "Depends on #10 and #99"
-    open_numbers = {10, 20}
-    result = _mod.extract_dependencies(body, open_numbers)
-    assert result == [10]
-
-
-def test_no_dependencies():
-    """Returns empty list when body has no #N patterns."""
-    result = _mod.extract_dependencies("Plain text", {10, 20})
-    assert result == []
-
-
-def test_self_reference_excluded():
-    """An issue referencing its own number is not a dependency."""
-    body = "This is #5, depends on #10"
-    open_numbers = {5, 10}
-    result = _mod.extract_dependencies(body, open_numbers, own_number=5)
-    assert result == [10]
-
-
 # --- detect_labels ---
 
 
@@ -249,22 +216,6 @@ def test_not_stale_when_no_file_paths():
     assert result["stale"] is False
 
 
-# --- build_dependents ---
-
-
-def test_build_dependents():
-    """Builds reverse dependency map from dependencies."""
-    deps = {1: [2, 3], 4: [2]}
-    result = _mod.build_dependents(deps)
-    assert sorted(result[2]) == [1, 4]
-    assert result[3] == [1]
-
-
-def test_build_dependents_empty():
-    """Empty dependency map returns empty dependents."""
-    assert _mod.build_dependents({}) == {}
-
-
 # --- truncate_body ---
 
 
@@ -318,25 +269,24 @@ def test_analyze_issue_fields():
     assert issue["decomposed"] is True
     assert "age_days" in issue
     assert "file_paths" in issue
-    assert "dependencies" in issue
-    assert "dependents" in issue
+    assert "blocked" in issue
     assert "brief" in issue
     assert "category" in issue
     assert "stale" in issue
     assert "stale_missing" in issue
 
 
-def test_analyze_dependency_graph():
-    """Dependencies and dependents are correctly computed."""
+def test_analyze_blocked_label():
+    """Issues with Blocked label have blocked=True, others blocked=False."""
     issues = [
-        _make_issue(1, title="Base"),
-        _make_issue(2, title="Depends on 1", body="Requires #1"),
+        _make_issue(1, title="Ready issue"),
+        _make_issue(2, title="Blocked issue", labels=["Blocked"]),
     ]
     result = _mod.analyze_issues(issues)
-    issue_2 = next(i for i in result["issues"] if i["number"] == 2)
     issue_1 = next(i for i in result["issues"] if i["number"] == 1)
-    assert 1 in issue_2["dependencies"]
-    assert 2 in issue_1["dependents"]
+    issue_2 = next(i for i in result["issues"] if i["number"] == 2)
+    assert issue_1["blocked"] is False
+    assert issue_2["blocked"] is True
 
 
 def test_analyze_stale_detection():
@@ -481,23 +431,23 @@ def test_main_gh_timeout():
 # --- filter_issues ---
 
 
-def test_filter_ready_returns_no_dependencies():
-    """Ready filter returns only issues with empty dependencies array."""
+def test_filter_ready_returns_not_blocked():
+    """Ready filter returns only issues without Blocked label."""
     issues = [
-        {"number": 1, "dependencies": [], "decomposed": False},
-        {"number": 2, "dependencies": [1], "decomposed": False},
-        {"number": 3, "dependencies": [], "decomposed": True},
+        {"number": 1, "blocked": False, "decomposed": False},
+        {"number": 2, "blocked": True, "decomposed": False},
+        {"number": 3, "blocked": False, "decomposed": True},
     ]
     result = _mod.filter_issues(issues, "ready")
     assert [i["number"] for i in result] == [1, 3]
 
 
-def test_filter_blocked_returns_has_dependencies():
-    """Blocked filter returns only issues with non-empty dependencies array."""
+def test_filter_blocked_returns_blocked_label():
+    """Blocked filter returns only issues with Blocked label."""
     issues = [
-        {"number": 1, "dependencies": [], "decomposed": False},
-        {"number": 2, "dependencies": [1], "decomposed": False},
-        {"number": 3, "dependencies": [1, 2], "decomposed": True},
+        {"number": 1, "blocked": False, "decomposed": False},
+        {"number": 2, "blocked": True, "decomposed": False},
+        {"number": 3, "blocked": True, "decomposed": True},
     ]
     result = _mod.filter_issues(issues, "blocked")
     assert [i["number"] for i in result] == [2, 3]
@@ -506,20 +456,20 @@ def test_filter_blocked_returns_has_dependencies():
 def test_filter_decomposed_returns_decomposed_true():
     """Decomposed filter returns only issues with decomposed=True."""
     issues = [
-        {"number": 1, "dependencies": [], "decomposed": False},
-        {"number": 2, "dependencies": [1], "decomposed": True},
-        {"number": 3, "dependencies": [], "decomposed": True},
+        {"number": 1, "blocked": False, "decomposed": False},
+        {"number": 2, "blocked": True, "decomposed": True},
+        {"number": 3, "blocked": False, "decomposed": True},
     ]
     result = _mod.filter_issues(issues, "decomposed")
     assert [i["number"] for i in result] == [2, 3]
 
 
-def test_filter_quick_start_returns_decomposed_and_ready():
-    """Quick-start filter returns decomposed issues with no dependencies."""
+def test_filter_quick_start_returns_decomposed_and_not_blocked():
+    """Quick-start filter returns decomposed issues without Blocked label."""
     issues = [
-        {"number": 1, "dependencies": [], "decomposed": False},
-        {"number": 2, "dependencies": [1], "decomposed": True},
-        {"number": 3, "dependencies": [], "decomposed": True},
+        {"number": 1, "blocked": False, "decomposed": False},
+        {"number": 2, "blocked": True, "decomposed": True},
+        {"number": 3, "blocked": False, "decomposed": True},
     ]
     result = _mod.filter_issues(issues, "quick-start")
     assert [i["number"] for i in result] == [3]
@@ -528,8 +478,8 @@ def test_filter_quick_start_returns_decomposed_and_ready():
 def test_filter_none_returns_all():
     """No filter returns all issues unchanged."""
     issues = [
-        {"number": 1, "dependencies": [], "decomposed": False},
-        {"number": 2, "dependencies": [1], "decomposed": True},
+        {"number": 1, "blocked": False, "decomposed": False},
+        {"number": 2, "blocked": True, "decomposed": True},
     ]
     result = _mod.filter_issues(issues, None)
     assert result == issues
@@ -548,9 +498,9 @@ def _make_filter_issues_file(tmp_path):
     """Create a JSON file with mixed issues for filter testing."""
     issues = [
         _make_issue(1, title="Ready plain", body=""),
-        _make_issue(2, title="Blocked", body="Depends on #1"),
+        _make_issue(2, title="Blocked issue", body="", labels=["Blocked"]),
         _make_issue(3, title="Decomposed ready", body="", labels=["decomposed"]),
-        _make_issue(4, title="Decomposed blocked", body="Depends on #1", labels=["decomposed"]),
+        _make_issue(4, title="Decomposed blocked", body="", labels=["decomposed", "Blocked"]),
     ]
     json_file = tmp_path / "issues.json"
     json_file.write_text(json.dumps(issues))
@@ -558,7 +508,7 @@ def _make_filter_issues_file(tmp_path):
 
 
 def test_cli_ready_flag(tmp_path, monkeypatch, capsys):
-    """--ready flag filters to issues with no dependencies."""
+    """--ready flag filters to issues without Blocked label."""
     json_file = _make_filter_issues_file(tmp_path)
     monkeypatch.setattr("sys.argv", ["analyze-issues", "--issues-json", str(json_file), "--ready"])
     _mod.main()
@@ -573,7 +523,7 @@ def test_cli_ready_flag(tmp_path, monkeypatch, capsys):
 
 
 def test_cli_blocked_flag(tmp_path, monkeypatch, capsys):
-    """--blocked flag filters to issues with dependencies."""
+    """--blocked flag filters to issues with Blocked label."""
     json_file = _make_filter_issues_file(tmp_path)
     monkeypatch.setattr("sys.argv", ["analyze-issues", "--issues-json", str(json_file), "--blocked"])
     _mod.main()
@@ -603,7 +553,7 @@ def test_cli_decomposed_flag(tmp_path, monkeypatch, capsys):
 
 
 def test_cli_quick_start_flag(tmp_path, monkeypatch, capsys):
-    """--quick-start flag filters to decomposed issues with no dependencies."""
+    """--quick-start flag filters to decomposed issues without Blocked label."""
     json_file = _make_filter_issues_file(tmp_path)
     monkeypatch.setattr("sys.argv", ["analyze-issues", "--issues-json", str(json_file), "--quick-start"])
     _mod.main()
