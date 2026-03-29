@@ -61,74 +61,21 @@ CI will fail if these are missing:
 
 ## Key Files
 
-- `config.json` — plugin-level maintainer config: `claude_code_audited` tracks the last Claude Code version audited for plugin-relevant changes
+- `config.json` — plugin-level maintainer config: `claude_code_audited` tracks the last Claude Code version audited
 - `flow-phases.json` — state machine: phase names, commands, valid back-transitions
-- `skills/<name>/SKILL.md` — each skill's instructions
+- `skills/<name>/SKILL.md` — each skill's Markdown instructions
 - `hooks/hooks.json` — hook registration (SessionStart, PreToolUse, PermissionRequest, PostToolUse, PostCompact, Stop, StopFailure)
 - `hooks/session-start.sh` — detects in-progress features, injects awareness context
-- `lib/check-freshness.py` — pre-merge freshness check: fetches main, checks if branch is up-to-date, returns JSON status (up_to_date, merged, conflict, max_retries); manages retry counting via state file
-- `lib/check-phase.py` — reusable phase entry guard
 - `.claude/settings.json` — project permissions (git rebase denied)
 - `.github/workflows/ci.yml` — GitHub Actions CI (runs `bin/ci` on push/PR to main)
 - `.github/workflows/autoupdate.yml` — auto-updates PR branches when main advances
-- `docs/` — GitHub Pages site (main /docs, static HTML)
-- `lib/extract-release-notes.py` — extracts version sections from RELEASE-NOTES.md for GitHub Releases
-- `lib/start-lock.py` — serializes concurrent flow-start operations using a file lock at `.flow-states/start.lock` (timeout-based stale detection, 30-min threshold)
-- `lib/init-state.py` — early state file creation with null PR fields for TUI visibility during Start; called before locked main operations
-- `lib/start-setup.py` — consolidated Start phase setup (worktree, PR, state file backfill, repo detection; optional git pull via `--skip-pull`)
-- `lib/flow_utils.py` — shared utilities: `now()` (Pacific Time timestamps), `PACIFIC` timezone, `format_time()`, `elapsed_since()`, `read_version()`, `read_version_from()`, `current_branch()`, `project_root()`, `read_flow_json()`, `extract_issue_numbers()`, `short_issue_ref()`, `read_prompt_file()`, `parse_conflict_files()`, `detect_repo()`, `mutate_state()`, `derive_feature()`, `derive_worktree()`, `freeze_phases()`, `build_initial_phases()`, `AUTO_SKILLS`, `PHASE_NAMES`, `COMMANDS`, `LOCAL_TIMEOUT`, `NETWORK_TIMEOUT`
-- `lib/phase-transition.py` — phase entry/completion (timing, counters, status, formatted_time, phase_transitions recording, diff_stats capture)
-- `lib/set-timestamp.py` — mid-phase timestamp fields via dot-path notation, code_task increment validation (prevents task batching)
+- `docs/` — GitHub Pages site (static HTML); `docs/reference/flow-state-schema.md` for state file schema
 - `frameworks/<name>/` — per-framework data: `detect.json`, `permissions.json`, `dependencies`, `priming.md`
-- `lib/detect-framework.py` — data-driven framework auto-detection from `frameworks/*/detect.json`
-- `lib/prime-project.py` — inserts framework conventions into target CLAUDE.md between markers
-- `lib/create-dependencies.py` — copies framework dependency template to `bin/dependencies`
-- `agents/ci-fixer.md` — custom plugin sub-agent for CI failure diagnosis and fix
-- `agents/reviewer.md` — custom plugin sub-agent for context-isolated code review (read-only, receives diff + plan + CLAUDE.md + rules)
-- `agents/adversarial.md` — custom plugin sub-agent for adversarial test generation (Write + Bash, no Edit; writes temp test files, runs them, reports failures)
-- `agents/learn-analyst.md` — custom plugin sub-agent for cognitively isolated learning analysis (read-only, receives diff + state file data + plan + CLAUDE.md rules)
-- `lib/finalize-commit.py` — consolidates commit + message-file cleanup + pull + push into one subprocess chain
-- `lib/generate-id.py` — generates an 8-character hex session ID via `uuid.uuid4().hex[:8]`; used by `flow-create-issue` and `flow-decompose-project` skills
-- `lib/log.py` — appends timestamped entries to `.flow-states/<branch>.log` via Python file append with `fcntl.LOCK_EX` locking
-- `lib/orchestrate-state.py` — manages `.flow-states/orchestrate.json` (create, start-issue, record-outcome, complete, read, next); uses `mutate_state` for atomic writes
-- `lib/orchestrate-report.py` — generates morning report from orchestration state; writes `.flow-states/orchestrate-summary.md`
-- `lib/analyze-issues.py` — mechanical analysis of open GitHub issues for the flow-issues skill: calls `gh issue list`, parses JSON, extracts file paths, detects labels (Flow In-Progress, Decomposed, Blocked), checks stale files, outputs condensed per-issue briefs as JSON
-- `lib/close-issues.py` — closes GitHub issues referenced in the start prompt (`#N` patterns) via `gh issue close`
-- `lib/label-issues.py` — adds or removes the "Flow In-Progress" label on GitHub issues referenced by `#N` in the start prompt; used by Start (add), Complete (remove), and Abort (remove) for multi-engineer WIP detection
-- `lib/issue.py` — creates GitHub issues via `gh` subprocess (wraps `gh issue create`; resolves repo via `--state-file` cached value, then `--repo` flag, then git remote detection); returns `url`, `number`, and REST API `id` (database ID) for sub-issue linking
-- `lib/promote-permissions.py` — merges `permissions.allow` entries from `.claude/settings.local.json` into `.claude/settings.json`, deletes the local file; used by Learn phase to persist session permissions
-- `lib/write-rule.py` — writes content to a target file path via native Python I/O; used by Learn phase to bypass Claude Code's `.claude/` permission prompts; reads content from a temp file (`--content-file`), creates parent directories, writes to target (`--path`), deletes the temp file
-- `lib/create-milestone.py` — creates GitHub milestones via `gh api` (wraps `POST /repos/O/R/milestones`)
-- `lib/create-sub-issue.py` — sets sub-issue parent/child relationships via `gh api` (resolves database IDs internally)
-- `lib/link-blocked-by.py` — sets blocked-by dependency relationships via `gh api` (resolves database IDs internally)
-- `lib/auto-close-parent.py` — checks if parent epic and milestone should be auto-closed when all children are done; best-effort throughout
-- `lib/add-issue.py` — records filed issues in the state file's `issues_filed` array (follows `append-note.py` pattern)
-- `lib/notify-slack.py` — posts messages to Slack via curl to `chat.postMessage`; reads config from userConfig env vars (`CLAUDE_PLUGIN_CONFIG_slack_bot_token`, `CLAUDE_PLUGIN_CONFIG_slack_channel`); supports threading via `thread_ts`; fails open on any error
-- `lib/add-notification.py` — records sent Slack notifications in the state file's `slack_notifications` array (follows `add-issue.py` pattern)
-- `lib/format-complete-summary.py` — generates the business-friendly Done banner for Complete phase (feature name, prompt, per-phase timeline, artifact counts)
-- `lib/format-issues-summary.py` — formats `issues_filed` as a markdown table and banner line for Complete phase
-- `lib/format-pr-timings.py` — reads state file, formats phase durations as a markdown table for PR body
-- `lib/render-pr-body.py` — idempotent PR body renderer: reads state file + artifact files, generates complete body in canonical section order (What, Artifacts, Plan, DAG Analysis, Phase Timings, State File, Session Log, Issues Filed)
-- `lib/update-pr-body.py` — updates PR body: `--add-artifact` for list items, `--append-section` for collapsible/plain sections
-- `lib/stop-continue.py` — Stop hook script that forces continuation when `_continue_pending` flag is set in the state file; reads `_continue_context` for specific next-step instructions in the block reason
-- `lib/stop-failure.py` — StopFailure hook that captures API error context (`_last_failure` with type, message, timestamp) in the state file; fail-open, consumed and cleared by SessionStart on resume
-- `lib/post-compact.py` — PostCompact hook that captures `compact_summary`, `compact_cwd`, and `compact_count` in the state file for SessionStart to inject
-- `lib/tui_data.py` — pure data layer for TUI: loads state files, computes flow summaries, phase timelines, parses log entries
-- `lib/tui.py` — curses-based interactive TUI for viewing and managing active flows (`flow tui`)
-- `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands, shell redirection, file-read commands, and `run_in_background` during active FLOW phases in all Bash calls)
-- `lib/validate-claude-paths.py` — PreToolUse hook on Edit|Write that blocks writes to `.claude/rules/` and `CLAUDE.md` during active FLOW phases; redirects to `bin/flow write-rule` which uses native Python I/O to bypass Claude Code's protected-path prompts
-- `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (answers prompts via `updatedInput` when `_auto_continue` is set in state file; writes `_blocked` timestamp when allowing through)
-- `lib/set-blocked.py` — PermissionRequest hook on Bash|Edit|Write that sets `_blocked = now()` in the state file when a permission prompt appears; fail-open
-- `lib/clear-blocked.py` — PostToolUse hook on AskUserQuestion|Bash|Edit|Write that clears `_blocked` from the state file after the user responds or tool completes; fail-open
-- `lib/scaffold-qa.py` — creates QA repos from per-framework templates (`qa/templates/`); CLI: `bin/flow scaffold-qa --framework <name> --repo <owner/repo>`
-- `lib/qa-reset.py` — resets QA repos to seed state (git reset, close PRs, delete branches, recreate issues); CLI: `bin/flow qa-reset --repo <owner/repo> [--local-path <path>]`
-- `lib/qa-verify.py` — verifies QA assertions after a completed flow (cleanup, worktrees, merged PR); CLI: `bin/flow qa-verify --framework <name> --repo <owner/repo>`
-- `lib/qa-mode.py` — manages dev-mode plugin_root redirection in `.flow.json` (backup/redirect/restore); CLI: `bin/flow qa-mode --start --local-path <path>` and `bin/flow qa-mode --stop`
-- `qa/templates/<framework>/` — per-framework QA repo templates (rails, python, ios) with Calculator class, tests, bin/ci, and .qa/issues.json
+- `agents/*.md` — six custom plugin sub-agents: ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, onboarding
+- `lib/flow_utils.py` — shared utilities (timestamps, branch detection, state mutation, repo detection)
+- `lib/*.py` — utility scripts invoked by `bin/flow` subcommands (read individual files for details)
 - `bin/flow` — dispatcher script routing subcommands to `lib/*.py`
-- `docs/reference/flow-state-schema.md` — state file schema reference
-- `docs/reference/skill-pattern.md` — template pattern for building new phase skills
-- `docs/integrations/slack.md` — Slack App setup guide and notification configuration
+- `qa/templates/<framework>/` — per-framework QA repo templates (rails, python, ios)
 - `.claude-plugin/marketplace.json` — marketplace registry (version must match plugin.json)
 
 ## Development Environment
@@ -155,24 +102,16 @@ The state file (`.flow-states/<branch>.json`) is the backbone. Schema reference:
 
 ### Local vs Shared State
 
-FLOW's primary use case is N engineers running N flows on N boxes simultaneously. Every feature must work under these conditions:
-
-- Multiple worktrees active on the same machine
-- Multiple engineers working the same repo from different machines
-- Multiple flows touching overlapping issues or files
-
 | Domain | Scope | Examples | Coordination |
 |--------|-------|----------|--------------|
 | Local | Per-machine | `.flow-states/`, worktrees, `.flow.json` | None needed — each machine has its own |
 | Shared | All engineers | PRs, issues, labels, branches | GitHub is the API — never assume local knowledge of other engineers' state |
 
-State files (`.flow-states/`) are local to each machine. In a multi-engineer team, each engineer's `.flow-states/` only contains their own features. GitHub (issues, PRs, labels) is the shared coordination layer. The "Flow In-Progress" label on issues is the mechanism for cross-engineer WIP detection: Start adds it, Complete and Abort remove it, and `flow-issues` reads it from the existing label fetch.
+The "Flow In-Progress" label on issues is the cross-engineer WIP detection mechanism. See `.claude/rules/concurrency-model.md` for the developer checklist.
 
 ### Sub-Agents
 
-FLOW uses six custom plugin sub-agents: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Step 8) and Complete (Steps 4 and 5), `reviewer` (`agents/reviewer.md`) for context-isolated code review in Code Review (Step 4), `pre-mortem` (`agents/pre-mortem.md`) for context-isolated incident analysis in Code Review (Step 5), `adversarial` (`agents/adversarial.md`) for adversarial test generation in Code Review (Step 6), `learn-analyst` (`agents/learn-analyst.md`) for cognitively isolated learning analysis in Learn (Step 1), and `onboarding` (`agents/onboarding.md`) for newcomer-perspective comprehension analysis in Learn (Step 1). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands, shell redirection, and file-read commands in all Bash calls — including those from built-in skills' sub-agents. Agent frontmatter must only use keys supported by Claude Code's plugin agent system (`name`, `description`, `model`, `effort`, `maxTurns`, `tools`, `disallowedTools`, `skills`, `memory`, `background`, `isolation`) — unsupported keys like `hooks` can cause agent loading failures. `test_agent_frontmatter_only_supported_keys` in `test_structural.py` enforces this. All sub-agents specify `model: sonnet` in their frontmatter to run on Sonnet instead of inheriting Opus from the parent session — their bounded-scope tasks (checklist review, test generation, debugging) do not require Opus-tier reasoning. `test_all_agents_specify_model_sonnet` enforces this. The reviewer, pre-mortem, onboarding, and learn-analyst agents are read-only (Read, Glob, Grep, Bash — no Edit or Write). The adversarial agent has Write access (to create temp test files) but no Edit access (cannot modify existing files).
-
-Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition — no plan mode. Code Review performs four inline review passes for clarity (code reuse, quality, efficiency, convention compliance), then performs inline correctness review for correctness (including rule compliance) and inline security review for safety, then the `reviewer` agent for context-isolated code review (receives diff, plan, CLAUDE.md, and rules — no conversation history), then the `pre-mortem` agent for backward-reasoning incident analysis, and finally the `adversarial` agent for adversarial test generation (writes tests designed to break the implementation, runs them, reports failures as findings). Code has no sub-agents. Learn uses the `learn-analyst` agent for cognitively isolated learning analysis (receives diff, state file data, plan, and rules — no conversation history) and the `onboarding` agent for debiased comprehension analysis. Complete uses ci-fixer for CI failures. The reviewer and learn-analyst receive inline context because they check against known standards. The pre-mortem, onboarding, and adversarial agents intentionally receive only the diff and must investigate the codebase themselves — this asymmetry is a deliberate debiasing mechanism, not a gap. See `agents/pre-mortem.md` Design Note and `.claude/rules/cognitive-isolation.md` Two-Tier Context Model for the rationale.
+Six custom plugin sub-agents in `agents/*.md`, all specifying `model: sonnet`. Agent frontmatter must only use supported keys (`name`, `description`, `model`, `effort`, `maxTurns`, `tools`, `disallowedTools`, `skills`, `memory`, `background`, `isolation`) — `test_agent_frontmatter_only_supported_keys` enforces this. The global `PreToolUse` hook (`lib/validate-ci-bash.py`) enforces Bash restrictions across all agents. See `.claude/rules/cognitive-isolation.md` for the two-tier context model and debiasing rationale.
 
 ### Orchestration
 
@@ -180,22 +119,11 @@ Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task d
 
 ### Memory and Learning System
 
-Since Claude Code 2.1.63, auto-memory is shared across git worktrees of the same repository. Memory written during feature work persists at the repo-root path and survives worktree cleanup — no rescue needed.
+Auto-memory is shared across git worktrees of the same repository (since Claude Code 2.1.63).
 
-Learn is a unified tri-modal skill. It auto-detects Phase 5 (state file with Code Review complete), Maintainer (no state file, `flow-phases.json` exists), or Standalone (no state file, no `flow-phases.json`). All three modes route learnings to 2 destinations. Phase 5 adds GitHub issues and phase transitions. Maintainer commits via `/flow:flow-commit --auto`. Standalone never commits.
+Learn is tri-modal (Phase 5, Maintainer, Standalone). Routes learnings to project CLAUDE.md and `.claude/rules/`. Also files GitHub issues for process gaps and documentation drift. All filed issues recorded via `bin/flow add-issue`.
 
-The 2 destinations:
-
-- **Project CLAUDE.md** (`CLAUDE.md` in project) — process rules, architecture, and conventions. Edited on disk, committed via PR.
-- **Project rules** (`.claude/rules/<topic>.md` in project) — coding anti-patterns and gotchas. Edited on disk, committed via PR.
-
-Learn also files GitHub issues for process gaps ("Flow" label on the plugin repo) and documentation drift ("Documentation Drift" label). All filed issues are recorded in the state file via `bin/flow add-issue` and surfaced in the Complete phase.
-
-Start and Code file "Flaky Test" issues when tests fail intermittently during CI gates. Code Review files "Tech Debt" and "Documentation Drift" issues for out-of-scope findings. All issue filing uses `bin/flow issue` and `bin/flow add-issue`.
-
-Notes captured by `/flow:flow-note` feed into the same routing mechanism.
-
-Commit is also tri-modal. It auto-detects FLOW (state file exists), Maintainer (no state file, `flow-phases.json` exists), or Standalone (neither). FLOW mode adds version banners and Python auto-approval. All three modes share the same diff/message/approval/push process.
+Commit is also tri-modal (FLOW, Maintainer, Standalone). All modes share the same diff/message/approval/push process.
 
 ### Logging
 
@@ -215,66 +143,13 @@ Claude never computes timestamps, time differences, or counter increments. All s
 
 ### Permission Invariant
 
-Every `` ```bash `` block in every skill and docs file must run without triggering a Claude Code permission prompt. Two layers enforce this:
-
-- **Test time** — `test_permissions.py` extracts every bash block, substitutes placeholders with concrete values, and verifies each command matches an allow-list pattern and does not match a deny-list pattern. New bash commands require a matching permission entry. New placeholders require a `PLACEHOLDER_SUBS` entry. Unrecognized placeholders fail the test — they are never silently skipped.
-- **Runtime** — `validate-ci-bash.py` runs as a global `PreToolUse` hook on every Bash call. It blocks compound commands, shell redirection, and file-read commands via fast-path checks regardless of flow state, and blocks `run_in_background` when a FLOW phase is active. The `.claude/settings.json` allow list is enforced as a whitelist only when a flow is active (`.flow-states/<branch>.json` exists for the current branch). Commands not matching any `Bash(...)` allow pattern are blocked with exit code 2 and a helpful error message. When no flow is active or `settings.json` is missing, the whitelist check is skipped — unlisted commands fall through to Claude Code's native permission system.
+Every bash block in every skill must run without triggering a permission prompt. `test_permissions.py` enforces at test time (placeholder substitution, allow/deny matching); `validate-ci-bash.py` enforces at runtime via global PreToolUse hook (compound commands, redirection, file-read commands blocked; whitelist enforced when a flow is active). See `.claude/rules/permissions.md` for the pattern-adding protocol.
 
 ## Test Architecture
 
 Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_project` (git repo with non-bash `bin/ci` and no `bin/flow` — simulates a Rails/non-Python target project), `state_dir` (flow-states dir inside git repo), `make_state()` (build state dicts), `write_state()` (write state JSON files). Integration tests for lib scripts that run in target projects must use `target_project`, not `git_repo`.
 
-| Test File | What It Enforces |
-|-----------|------------------|
-| `test_structural.py` | Config invariants: phases 1-6 exist, versions match across 3 locations, commands unique, hooks reference existing files |
-| `test_skill_contracts.py` | SKILL.md content: HARD-GATE presence, announce banners, state updates, ci-fixer agent, logging sections, note-capture options. Uses glob-based discovery — new skills are automatically covered |
-| `test_add_issue.py` | Issue recording: append to empty/existing array, missing state file, CLI integration |
-| `test_notify_slack.py` | Slack notification: config reading, message formatting, curl posting, threading, fail-open behavior, CLI integration |
-| `test_add_notification.py` | Notification recording: append to empty/existing array, message truncation, missing state file, CLI integration |
-| `test_format_complete_summary.py` | Complete phase summary: basic summary, issues with #N shorthand, resolved issues (closed_issues param), notes, prompt truncation, format_time usage, borders, version fallback, CLI with --closed-issues-file |
-| `test_format_issues_summary.py` | Issues summary formatting: empty/missing/single/multiple issues, label grouping, table output, CLI |
-| `test_analyze_issues.py` | Issue analysis: file path extraction, blocked label detection, label detection, stale detection, categorization, body truncation, CLI integration with gh subprocess/failure/timeout |
-| `test_close_issues.py` | Issue closing: extraction of `#N` patterns from prompt, deduplication, partial failure, repo-based URL generation, no-repo fallback, CLI integration, docstring schema validation |
-| `test_promote_permissions.py` | Permission promotion: no file (skipped), empty allow, new entries, all duplicates, mixed, preserve settings, deletion, malformed JSON (local and settings), missing keys, settings missing, no permissions key, write error, delete fails silently, CLI integration (happy, skipped, error) |
-| `test_write_rule.py` | Write rule: read content file (happy path, missing, delete failure), write rule (happy path, parent dirs, write error, makedirs error, overwrite), CLI integration (happy, missing content, write error) |
-| `test_label_issues.py` | Issue labeling: add/remove Flow In-Progress label, partial failure, deduplication, missing prompt, CLI integration |
-| `test_check_phase.py` | Phase guard: blocks on incomplete prerequisites, allows on complete, handles worktrees, re-entry notes |
-| `test_session_start.py` | Session hook: feature detection, timing reset, awareness injection, multi-feature handling |
-| `test_docs_sync.py` | Docs completeness: every skill has a docs page, every phase has a docs page, index and README mention all commands |
-| `test_permissions.py` | Permission simulation: allow/deny coverage, placeholder validation, source-of-truth sync between prime-setup.py and flow-prime/SKILL.md, regex unit tests. Unrecognized placeholders fail loudly |
-| `test_bin_ci.py` | CI runner: venv detection, pass/fail behavior |
-| `test_bin_test.py` | Test runner: venv detection, pass/fail, argument passthrough |
-| `test_init_state.py` | Init state: early state file creation, null PR fields, phase initialization, framework/skills propagation, auto flag, prompt storage, frozen phases, logging, branch name derivation, error cases, CLI integration |
-| `test_start_lock.py` | Start lock: acquire/release/check, stale PID detection, timeout, corrupted lock handling, CLI integration |
-| `test_start_setup.py` | Start setup script: branch naming, settings merge, worktree, state file backfill, logging, error paths, repo detection, subprocess timeouts |
-| `test_phase_transition.py` | Phase entry/completion: timing, counters, status, formatted_time, phase_transitions recording, diff_stats capture |
-| `test_set_timestamp.py` | Mid-phase timestamps: dot-path navigation, NOW replacement, code_task increment validation |
-| `test_extract_release.py` | Release notes extraction from RELEASE-NOTES.md |
-| `test_detect_framework.py` | Framework auto-detection: file patterns, multiple matches, defaults, CLI |
-| `test_prime_project.py` | CLAUDE.md priming: marker insertion, idempotent replacement, framework switching |
-| `test_create_dependencies.py` | Dependency template: file creation, skip-if-exists, chmod, CLI |
-| `test_prime_setup.py` | Prime setup: data-driven permissions, settings merge, version marker, git exclude, pre-commit hook |
-| `test_validate_ci_bash.py` | Bash hook validator: compound commands, redirection, blanket restore, deny list, file-read commands, run_in_background blocking (flow-active gating), whitelist enforcement (flow-active gating, worktree branch detection, settings+root resolution), in-process and subprocess integration |
-| `test_validate_claude_paths.py` | Claude path protection: blocks Edit/Write on `.claude/rules/` and `CLAUDE.md` during active FLOW phases, allows when no flow active, allows `.claude/settings.json`, redirects to write-rule, fail-open on invalid input, in-process and subprocess integration |
-| `test_validate_ask_user.py` | AskUserQuestion hook: answers prompts via `updatedInput` when `_auto_continue` set, allows when absent/empty, `_blocked` write on allow, subprocess integration |
-| `test_set_blocked.py` | PermissionRequest hook: sets `_blocked` timestamp, no state file noop, None path noop, corrupt JSON fail-open, preserves fields, overwrites existing, subprocess integration, main() error path |
-| `test_clear_blocked.py` | PostToolUse hook: clears `_blocked` from state, noop when absent, fail-open on errors, Bash/Edit/Write tool name coverage, subprocess integration |
-| `test_post_compact.py` | PostCompact hook: compact_summary/cwd/count written to state, fail-open on errors, subprocess integration |
-| `test_stop_failure.py` | StopFailure hook: _last_failure written to state (type, message, timestamp), fail-open on errors, missing key/state/branch handling, overwrite, subprocess integration |
-| `test_finalize_commit.py` | Commit finalization: happy path, commit/pull/push failures, merge conflict detection, message file cleanup, CLI |
-| `test_generate_id.py` | Session ID generation: length, hex format, uniqueness, main stdout, CLI integration |
-| `test_flow_utils.py` | flow_utils functions: format_time, project_root, current_branch, find_state_files, resolve_branch, derive_feature, derive_worktree, detect_repo, mutate_state, extract_issue_numbers, short_issue_ref, parse_conflict_files, timeout constants, tab color/sequence formatting |
-| `test_log.py` | Log append: existing file, new file, directory creation, multiple appends, file locking verification, CLI integration |
-| `test_tui_data.py` | TUI data layer: load_all_flows (0/1/N files, corrupt JSON, phases exclusion), flow_summary (all fields), phase_timeline (statuses, annotations), parse_log_entries (parsing, limits, malformed), read_version |
-| `test_tui.py` | TUI curses app: drawing (list/log/detail views), keyboard input (navigation, open worktree/PR, abort with confirm, refresh, quit), run loop (timeout, resize), edge cases (no flows, small terminal) |
-| `test_update_pr_body.py` | PR body management: artifact lines, section insertion, collapsible sections, add-artifact/append-section modes, idempotent replacement, content-file reading, CLI integration |
-| `test_orchestrate_state.py` | Orchestrate state: create, start-issue, record-outcome, complete, read, next, queue filtering, error paths, CLI |
-| `test_orchestrate_report.py` | Orchestrate report: all completed, mixed, all failed, empty queue, timing, PR URLs, failure reasons, summary file, CLI |
-| `test_concurrency.py` | Real-process concurrency: mutate_state counter integrity (20 workers), log append line integrity (20 workers), start-lock serialization (3 workers), parallel state file creation (5 workers), cleanup isolation (concurrent cleanup + mutation) |
-| `test_scaffold_qa.py` | QA repo scaffolding: template discovery per framework, file writing, subprocess mocking for gh/git, bin/ci executable bit, error paths, CLI main() |
-| `test_qa_reset.py` | QA repo reset: git reset, PR closing, branch deletion, issue template loading/recreation, local cleanup, error paths, CLI main() |
-| `test_qa_verify.py` | QA verification: post-Complete checks (cleanup, worktrees, merged PR), exclusion filters (orchestrate/phases files), error paths, CLI main() |
-| `test_qa_mode.py` | QA dev-mode: start/stop happy paths, missing .flow.json, missing plugin_root, double start, invalid path, key preservation, CLI integration |
+Key test files: `test_structural.py` (config invariants, version consistency), `test_skill_contracts.py` (SKILL.md content via glob-based discovery — new skills auto-covered), `test_permissions.py` (allow/deny simulation, placeholder validation), `test_docs_sync.py` (docs completeness), `test_concurrency.py` (real-process concurrency). Each `tests/test_*.py` corresponds to a `lib/*.py` script with 100% coverage.
 
 ## Maintainer Skills (private to this repo)
 
@@ -293,10 +168,10 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 - **Never add pymarkdown exclusions** — The `.pymarkdown.yml` disables MD013 (line length), MD025 (multiple H1 with frontmatter), MD033 (inline HTML), and MD036 (emphasis as heading) because those conflict with this repo's intentional patterns. No further rule disablements or path exclusions may be added. If a markdown file triggers a lint error, fix the file — do not suppress the rule. If a rule genuinely cannot be satisfied, surface it to the user for a decision.
 - **Skills must never instruct Claude to compute values** — no timestamp generation, no time arithmetic, no counter increments, no `date -u`. All computation goes through `bin/flow` subcommands. Skills say "run this command", never "calculate this value". `test_skill_contracts.py` enforces this: `test_phase_skills_no_inline_time_computation` fails if any phase skill contains computational instruction patterns.
 - **All timestamps use Pacific Time** — `lib/flow_utils.py` provides `now()` which returns `datetime.now(ZoneInfo("America/Los_Angeles")).isoformat(timespec="seconds")`. All scripts import `now` from `flow_utils` — never generate timestamps locally. Existing state files with UTC timestamps (`Z` suffix) are handled by `datetime.fromisoformat()` which parses both formats.
-- **Prefer dedicated tools over Bash for all non-execution tasks** — Read files with the Read tool, search with Glob and Grep, create with Write, modify with Edit. Bash should only be used for commands that genuinely require shell execution: `bin/ci`, `bin/test`, `bin/flow`, `make`, and `git`. In this project's strict permission environment (`defaultMode: "plan"`), every Bash command not in the allow list triggers a permission prompt. When you need to explore, understand, or modify files, use dedicated tools — they never prompt.
-- **Always use `bin/flow issue` to file GitHub issues** — never use `gh issue create` directly. `bin/flow issue` auto-detects the repo from git remote when `--repo` is omitted; pass `--repo` only when filing against a different repo. Direct `gh` calls trigger permission prompts.
-- **All FLOW-produced rules and instructions target the project repo** — `CLAUDE.md` and `.claude/rules/` are always repo-level paths, never user-level `~/.claude/` paths. Reading user-level files is fine; writing to them is never valid during any FLOW phase.
-- **Never use `run_in_background` for Bash commands during a FLOW phase** — background commands produce stale notifications that clutter the session after the workflow advances. Use parallel foreground tool calls (multiple Bash calls in one response) instead. This applies to `bin/flow log`, `bin/flow ci`, `git` commands, and all other Bash calls.
+- **Prefer dedicated tools over Bash** — see `.claude/rules/worktree-commands.md`
+- **Issue filing** — see `.claude/rules/filing-issues.md`
+- **Repo-level targets only** — see `.claude/rules/repo-level-only.md`
+- **No `run_in_background` during FLOW phases** — enforced by `validate-ci-bash.py` hook
 
 <!-- FLOW:BEGIN -->
 
