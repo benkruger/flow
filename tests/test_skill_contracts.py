@@ -1696,6 +1696,42 @@ def test_learn_no_two_dot_diff():
     )
 
 
+def test_reviewer_agent_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = (REPO_ROOT / "agents" / "reviewer.md").read_text()
+    assert "origin/main..HEAD" not in content, (
+        "agents/reviewer.md must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660"
+    )
+
+
+def test_pre_mortem_agent_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = (REPO_ROOT / "agents" / "pre-mortem.md").read_text()
+    assert "origin/main..HEAD" not in content, (
+        "agents/pre-mortem.md must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660"
+    )
+
+
+def test_adversarial_agent_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = (REPO_ROOT / "agents" / "adversarial.md").read_text()
+    assert "origin/main..HEAD" not in content, (
+        "agents/adversarial.md must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660"
+    )
+
+
+def test_onboarding_agent_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = (REPO_ROOT / "agents" / "onboarding.md").read_text()
+    assert "origin/main..HEAD" not in content, (
+        "agents/onboarding.md must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660"
+    )
+
+
 def test_code_review_step_4_handles_no_findings():
     """Step 4 (Context-Isolated Review) must explicitly handle the no-findings path."""
     content = _read_skill("flow-code-review")
