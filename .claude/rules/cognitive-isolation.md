@@ -22,6 +22,8 @@ context is a design choice matched to the agent's task:
 - **Context-rich** (reviewer, learn-analyst) — receives diff, plan,
   CLAUDE.md, and rules inline. Its task is checking against known
   standards where having the standards at hand saves turns.
+  Learn-analyst additionally receives state file data (visit counts,
+  timings, session notes) to detect process friction and mistakes.
 - **Context-sparse** (pre-mortem, onboarding, adversarial) —
   receives only the diff and must investigate the codebase itself.
   Less context forces independent investigation, surfacing risks,
