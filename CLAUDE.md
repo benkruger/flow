@@ -115,6 +115,7 @@ CI will fail if these are missing:
 - `lib/tui_data.py` — pure data layer for TUI: loads state files, computes flow summaries, phase timelines, parses log entries
 - `lib/tui.py` — curses-based interactive TUI for viewing and managing active flows (`flow tui`)
 - `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands, shell redirection, file-read commands, and `run_in_background` during active FLOW phases in all Bash calls)
+- `lib/validate-claude-paths.py` — PreToolUse hook on Edit|Write that blocks writes to `.claude/rules/` and `CLAUDE.md` during active FLOW phases; redirects to `bin/flow write-rule` which uses native Python I/O to bypass Claude Code's protected-path prompts
 - `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (answers prompts via `updatedInput` when `_auto_continue` is set in state file; writes `_blocked` timestamp when allowing through)
 - `lib/set-blocked.py` — PermissionRequest hook on Bash|Edit|Write that sets `_blocked = now()` in the state file when a permission prompt appears; fail-open
 - `lib/clear-blocked.py` — PostToolUse hook on AskUserQuestion|Bash|Edit|Write that clears `_blocked` from the state file after the user responds or tool completes; fail-open
@@ -253,6 +254,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_create_dependencies.py` | Dependency template: file creation, skip-if-exists, chmod, CLI |
 | `test_prime_setup.py` | Prime setup: data-driven permissions, settings merge, version marker, git exclude, pre-commit hook |
 | `test_validate_ci_bash.py` | Bash hook validator: compound commands, redirection, blanket restore, deny list, file-read commands, run_in_background blocking (flow-active gating), whitelist enforcement (flow-active gating, worktree branch detection, settings+root resolution), in-process and subprocess integration |
+| `test_validate_claude_paths.py` | Claude path protection: blocks Edit/Write on `.claude/rules/` and `CLAUDE.md` during active FLOW phases, allows when no flow active, allows `.claude/settings.json`, redirects to write-rule, fail-open on invalid input, in-process and subprocess integration |
 | `test_validate_ask_user.py` | AskUserQuestion hook: answers prompts via `updatedInput` when `_auto_continue` set, allows when absent/empty, `_blocked` write on allow, subprocess integration |
 | `test_set_blocked.py` | PermissionRequest hook: sets `_blocked` timestamp, no state file noop, None path noop, corrupt JSON fail-open, preserves fields, overwrites existing, subprocess integration, main() error path |
 | `test_clear_blocked.py` | PostToolUse hook: clears `_blocked` from state, noop when absent, fail-open on errors, Bash/Edit/Write tool name coverage, subprocess integration |

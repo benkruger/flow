@@ -28,6 +28,10 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-worktree-paths.py"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-claude-paths.py"
           }
         ]
       },
@@ -37,6 +41,10 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-worktree-paths.py"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-claude-paths.py"
           }
         ]
       },
