@@ -49,8 +49,8 @@ CI will fail if these are missing:
 
 ### Content sync (convention-enforced — no test catches this)
 
-- Changed skill behavior (new flag, changed steps, different workflow) — update `docs/skills/<name>.md` to match
-- Changed phase behavior — update `docs/phases/phase-<N>-<name>.md` to match
+- Changed skill behavior (new flag, changed steps, different workflow) — update `docs/skills/<name>.md` and the Description column in `docs/skills/index.md` to match
+- Changed phase behavior — update `docs/phases/phase-<N>-<name>.md` and the Description column in `docs/skills/index.md` to match
 - Changed architecture or capabilities — update `README.md` and `docs/index.html` if the change affects how FLOW is described to users
 
 ### Test requirements
@@ -167,9 +167,9 @@ State files (`.flow-states/`) are local to each machine. In a multi-engineer tea
 
 ### Sub-Agents
 
-FLOW uses three custom plugin sub-agents: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Step 8) and Complete (Steps 4 and 5), `reviewer` (`agents/reviewer.md`) for context-isolated code review in Code Review (Step 5), and `pre-mortem` (`agents/pre-mortem.md`) for context-isolated incident analysis in Code Review (Step 6). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands, shell redirection, and file-read commands in all Bash calls — including those from built-in skills' sub-agents. All three agents retain their own hook declarations for defense in depth. The reviewer and pre-mortem agents are read-only (Read, Glob, Grep, Bash — no Edit or Write).
+FLOW uses four custom plugin sub-agents: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Step 8) and Complete (Steps 4 and 5), `reviewer` (`agents/reviewer.md`) for context-isolated code review in Code Review (Step 5), `pre-mortem` (`agents/pre-mortem.md`) for context-isolated incident analysis in Code Review (Step 6), and `onboarding` (`agents/onboarding.md`) for newcomer-perspective comprehension analysis in Learn (Step 1). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands, shell redirection, and file-read commands in all Bash calls — including those from built-in skills' sub-agents. All four agents retain their own hook declarations for defense in depth. The reviewer, pre-mortem, and onboarding agents are read-only (Read, Glob, Grep, Bash — no Edit or Write).
 
-Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition — no plan mode. Code Review performs four inline review passes for clarity (code reuse, quality, efficiency, convention compliance), then performs inline correctness review for correctness (including rule compliance) and inline security review for safety, optionally the `code-review:code-review` plugin for multi-agent validation (controlled by the `code_review_plugin` config axis: `"always"`, `"auto"`, or `"never"`), then the `reviewer` agent for context-isolated code review (receives diff, plan, CLAUDE.md, and rules — no conversation history), and finally the `pre-mortem` agent for backward-reasoning incident analysis. Code and Learn have no sub-agents. Complete uses ci-fixer for CI failures.
+Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition — no plan mode. Code Review performs four inline review passes for clarity (code reuse, quality, efficiency, convention compliance), then performs inline correctness review for correctness (including rule compliance) and inline security review for safety, optionally the `code-review:code-review` plugin for multi-agent validation (controlled by the `code_review_plugin` config axis: `"always"`, `"auto"`, or `"never"`), then the `reviewer` agent for context-isolated code review (receives diff, plan, CLAUDE.md, and rules — no conversation history), and finally the `pre-mortem` agent for backward-reasoning incident analysis. Code has no sub-agents. Learn uses the `onboarding` agent for debiased comprehension analysis. Complete uses ci-fixer for CI failures.
 
 ### Orchestration
 

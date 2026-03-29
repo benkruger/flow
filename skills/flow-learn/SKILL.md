@@ -171,6 +171,42 @@ Read `state["notes"]` in full. These are corrections and learnings
 captured during the session via `/flow:flow-note`. They are the most direct
 signal of what went wrong.
 
+### Source D — Onboarding agent confusion report (Phase 5 only)
+
+Skip for Maintainer and Standalone.
+
+Get the full branch diff to provide to the onboarding agent:
+
+```bash
+git diff origin/main..HEAD
+```
+
+Launch the onboarding agent using the Agent tool. The agent receives only
+the diff and codebase access — no conversation history, no coding rationale,
+no plan file. This isolation is the debiasing mechanism: the agent sees
+what a newcomer sees, not what the author remembers.
+
+Use the Agent tool with:
+
+- `subagent_type`: `"flow:onboarding"`
+- `description`: `"Onboarding perspective analysis"`
+
+Provide the full diff output in the prompt, prefixed with:
+
+> "You are a new team member reading this PR for the first time. The full
+> diff is below. Investigate the codebase and write the confusion report."
+
+Wait for the agent to return its structured confusion report.
+
+If the agent reports no findings, note "no comprehension barriers found"
+and continue to Step 2.
+
+If the agent reports findings, note each finding for Step 2 synthesis.
+Confusion report findings map primarily to the "Missing rules" category
+(undocumented patterns and architectural decisions) and occasionally to
+"Process gaps" (when a comprehension barrier reveals a FLOW process
+deficiency).
+
 ---
 
 ## Step 2 — Synthesize findings
@@ -546,8 +582,9 @@ has its own mode.
 1. If `--auto` was passed to this skill invocation → continue=auto.
    If `--manual` was passed → continue=manual.
    Otherwise, use the value from the state file. If absent → default to manual.
-2. If continue=auto → invoke `flow:flow-complete` directly.
+2. If continue=auto → invoke `flow:flow-complete` directly using the Skill tool.
    Do NOT invoke `flow:flow-status`. Do NOT use AskUserQuestion.
+   This is the FINAL action in this response — nothing else follows.
 3. If continue=manual → you MUST do all of the following before proceeding:
    a. Invoke `flow:flow-status`
    b. Use AskUserQuestion:
@@ -597,7 +634,7 @@ No phase transition, no transition question.
 
 - Never commit application code in Learn — only CLAUDE.md and .claude/
 - Always read CLAUDE.md and conversation context before synthesizing findings
-- In Phase 5, read all three sources before synthesizing findings
+- In Phase 5, read all four sources before synthesizing findings
 - Follow the learning process (Steps 1 through 7) exactly — do not skip or reorder steps
 - Decisions on destinations and wording are autonomous — do not ask the user for approval mid-process
 - The report in Step 7 is the user's review point — make it comprehensive

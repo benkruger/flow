@@ -343,6 +343,29 @@ def test_pre_mortem_agent_exists():
     )
 
 
+def test_onboarding_agent_exists():
+    """agents/onboarding.md must exist with required frontmatter fields."""
+    agent_file = REPO_ROOT / "agents" / "onboarding.md"
+    assert agent_file.exists(), "agents/onboarding.md does not exist"
+    content = agent_file.read_text()
+    assert "name: onboarding" in content, "agents/onboarding.md missing 'name: onboarding' in frontmatter"
+    assert "PreToolUse" in content, "agents/onboarding.md missing PreToolUse hook"
+    assert "validate-ci-bash" in content, "agents/onboarding.md missing reference to validate-ci-bash"
+    # Onboarding agent must be read-only — no Edit or Write tools
+    assert "Edit" not in content.split("---")[1], (
+        "agents/onboarding.md must not include Edit tool — onboarding is read-only"
+    )
+    assert "Write" not in content.split("---")[1], (
+        "agents/onboarding.md must not include Write tool — onboarding is read-only"
+    )
+
+
+def test_learn_uses_onboarding_subagent():
+    """Learn skill must reference the onboarding sub-agent."""
+    content = _read_skill("flow-learn")
+    assert '"flow:onboarding"' in content, "skills/flow-learn/SKILL.md must reference flow:onboarding sub-agent"
+
+
 def test_reviewer_agent_exists():
     """agents/reviewer.md must exist with required frontmatter fields."""
     agent_file = REPO_ROOT / "agents" / "reviewer.md"
@@ -1179,10 +1202,10 @@ def test_learning_has_no_worktree_memory_rescue():
 
     Since Claude Code 2.1.63, auto-memory is shared across git worktrees
     of the same repository. Worktree-specific memory paths no longer exist,
-    so Source D rescue is obsolete."""
+    so the old rescue logic is obsolete. Note: "Source D" was reused for
+    the onboarding agent and is no longer an obsolete term."""
     content = _read_skill("flow-learn")
     obsolete_terms = [
-        "Source D",
         "worktree auto-memory",
         "Worth preserving",
         "worktree memory rescue",
@@ -1511,10 +1534,10 @@ def test_phase_1_hard_gate_requires_rerun_with_arguments():
 
 
 def test_start_step_2_has_ci_fix_subagent():
-    """Locked section (Steps 3–9) must launch ci-fixer sub-agent for CI failures."""
+    """Locked section (Steps 1–10) must launch ci-fixer sub-agent for CI failures."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
+    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
     locked_text = locked_match.group(1)
     assert "ci-fixer" in locked_text, (
         "flow-start locked section must reference the ci-fixer sub-agent for automatic CI fix"
@@ -1525,10 +1548,10 @@ def test_start_step_2_has_ci_fix_subagent():
 
 
 def test_start_ci_fixes_committed_via_flow_commit():
-    """CI fixes on main must be committed via /flow:flow-commit (Steps 3–9)."""
+    """CI fixes on main must be committed via /flow:flow-commit (Steps 1–10)."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
+    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
     locked_text = locked_match.group(1)
     assert "/flow:flow-commit" in locked_text, "flow-start locked section must commit CI fixes via /flow:flow-commit"
 
@@ -1741,19 +1764,19 @@ def test_code_review_has_self_invocation_check():
 
 
 def test_start_step_2_acquires_lock():
-    """Locked section (Steps 3–9) must acquire start lock before CI work."""
+    """Locked section (Steps 1–10) must acquire start lock before CI work."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
+    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
     locked_text = locked_match.group(1)
     assert "start-lock" in locked_text, "flow-start locked section must reference start-lock for serialization"
 
 
 def test_start_step_2_has_two_ci_gates():
-    """Locked section (Steps 3–9) must have two bin/flow ci calls."""
+    """Locked section (Steps 1–10) must have two bin/flow ci calls."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
+    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
     locked_text = locked_match.group(1)
     ci_count = locked_text.count("bin/flow ci")
     assert ci_count >= 2, (
@@ -1762,10 +1785,10 @@ def test_start_step_2_has_two_ci_gates():
 
 
 def test_start_files_flaky_test_issues():
-    """Locked section (Steps 3–9) must file Flaky Test issues for intermittent CI failures."""
+    """Locked section (Steps 1–10) must file Flaky Test issues for intermittent CI failures."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
+    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
     locked_text = locked_match.group(1)
     assert "Flaky Test" in locked_text, "flow-start locked section must detect and file 'Flaky Test' issues"
     assert "bin/flow issue" in locked_text, (
@@ -2322,6 +2345,34 @@ def test_done_hardgates_reread_state_file():
         assert has_reread, (
             f"Phase {PHASE_NUMBER[key]} ({skill_name}) Done HARD-GATE must "
             f"re-read continue mode from state file (contain 'Re-read')"
+        )
+
+
+def test_done_hard_gates_auto_path_has_final_action_language():
+    """Phases 1-5 Done HARD-GATEs auto path must have strengthened language."""
+    phase_skills = _phase_skills()
+    for key in PHASE_ORDER[:-1]:  # Exclude flow-complete (terminal)
+        skill_name = phase_skills[key]
+        content = _read_skill(skill_name)
+
+        hard_gates = re.findall(r"<HARD-GATE>(.*?)</HARD-GATE>", content, re.DOTALL)
+
+        continue_gates = [gate for gate in hard_gates if "continue=auto" in gate and "continue=manual" in gate]
+        assert continue_gates, (
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) has no continue-mode HARD-GATE "
+            f"(prerequisite for auto-path check)"
+        )
+
+        has_final = any("FINAL action" in gate for gate in continue_gates)
+        assert has_final, (
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) Done HARD-GATE auto path must "
+            f"contain 'FINAL action' language to prevent model from ignoring auto-continue"
+        )
+
+        has_skill_tool = any("using the Skill tool" in gate for gate in continue_gates)
+        assert has_skill_tool, (
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) Done HARD-GATE auto path must "
+            f"contain 'using the Skill tool' to be explicit about invocation method"
         )
 
 

@@ -916,8 +916,9 @@ has its own mode.
 1. If `--auto` was passed to this skill invocation → continue=auto.
    If `--manual` was passed → continue=manual.
    Otherwise, use the value from the state file. If absent → default to manual.
-2. If continue=auto → invoke `flow:flow-learn` directly.
+2. If continue=auto → invoke `flow:flow-learn` directly using the Skill tool.
    Do NOT invoke `flow:flow-status`. Do NOT use AskUserQuestion.
+   This is the FINAL action in this response — nothing else follows.
 3. If continue=manual → you MUST do all of the following before proceeding:
    a. Invoke `flow:flow-status`
    b. Use AskUserQuestion:
