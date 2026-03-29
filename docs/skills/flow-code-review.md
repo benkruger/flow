@@ -10,10 +10,11 @@ parent: Skills
 
 **Usage:** `/flow-code-review`, `/flow-code-review --auto`, or `/flow-code-review --manual`
 
-Four review steps — clarity with convention compliance, correctness with
-rule compliance, safety, and pre-mortem incident analysis. Combines inline
-review passes and a context-isolated pre-mortem agent into a single phase
-with four ordered steps, each with its own commit checkpoint.
+Five review steps — clarity with convention compliance, correctness with
+rule compliance, safety, context-isolated code review, and pre-mortem
+incident analysis. Combines inline review passes and two context-isolated
+agents into a single phase with five ordered steps, each with its own
+commit checkpoint.
 
 ---
 
@@ -44,7 +45,19 @@ lenses: input validation, authentication and authorization, and data
 exposure. If no findings, skips to the next step. Every finding is fixed,
 `bin/flow ci` is run, and changes are committed via `/flow-commit`.
 
-### Step 4 — Pre-Mortem (incident analysis)
+### Step 4 — Context-Isolated Review (cold reviewer)
+
+Launches the `reviewer` custom agent — a context-isolated sub-agent that
+receives the branch diff, plan file, CLAUDE.md, and `.claude/rules/` but
+no conversation history or coding rationale. The agent reviews as a cold
+reviewer: "You are reviewing code you did not write."
+
+The agent produces structured findings (severity, category, evidence,
+recommendation). The main session triages each finding as real or false
+positive. Real findings are fixed, `bin/flow ci` is run, and changes are
+committed via `/flow-commit`.
+
+### Step 5 — Pre-Mortem (incident analysis)
 
 Launches the `pre-mortem` custom agent — a context-isolated sub-agent that
 receives only the branch diff and codebase access, with no conversation
@@ -91,7 +104,8 @@ Announce banner and phase entry update, proceeding directly to the Resume
 Check which dispatches to the next step.
 
 Steps 1-3 perform inline review passes sequentially within the response
-turn. Step 4 launches the pre-mortem agent for context-isolated incident
+turn. Step 4 launches the reviewer agent for context-isolated code review.
+Step 5 launches the pre-mortem agent for context-isolated incident
 analysis.
 
 ---
