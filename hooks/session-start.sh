@@ -121,7 +121,10 @@ except Exception:
     _current = None
 
 if _current:
-    files = [f for f in files if f.stem == _current]
+    filtered = [f for f in files if f.stem == _current]
+    if filtered:
+        files = filtered
+    # else: on main (or branch without state file) — keep all files
 
 if not files and not orchestrate_block:
     if _has_flow_utils:

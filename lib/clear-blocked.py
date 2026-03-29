@@ -14,15 +14,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import current_branch, mutate_state, project_root
+from flow_utils import current_branch, detect_repo, find_state_files, mutate_state, project_root, write_tab_sequences
 
 
 def clear_blocked(hook_input):
-    """Clear _blocked from the active state file.
+    """Clear _blocked from the active state file, then reassert tab title.
 
     Uses current_branch() for direct branch resolution — not
     resolve_branch() — to avoid the scan-all-state-files fallback
     that could clear the wrong flow's flag in multi-flow environments.
+
+    Tab title reassertion uses find_state_files() fallback so the title
+    is written even when the session runs on main (no main.json).
     """
     try:
         root = project_root()
@@ -31,13 +34,29 @@ def clear_blocked(hook_input):
             return
 
         state_path = root / ".flow-states" / f"{branch}.json"
-        if not state_path.exists():
-            return
 
-        def transform(state):
-            state.pop("_blocked", None)
+        # Clear _blocked only from the exact branch's state file
+        tab_state = None
+        if state_path.exists():
 
-        mutate_state(state_path, transform)
+            def transform(state):
+                state.pop("_blocked", None)
+
+            tab_state = mutate_state(state_path, transform)
+
+        # Reassert tab title after every PostToolUse to reduce flicker
+        try:
+            if tab_state:
+                write_tab_sequences(tab_state, root=root)
+            else:
+                results = find_state_files(root, branch)
+                if results:
+                    _, tab_state, _ = results[0]
+                    write_tab_sequences(tab_state, root=root)
+                else:
+                    write_tab_sequences(repo=detect_repo(), root=root)
+        except Exception:
+            pass
     except Exception:
         pass
 

@@ -1008,8 +1008,8 @@ def test_multi_feature_compact_summary_injected(git_repo):
 # --- Branch isolation ---
 
 
-def test_ignores_state_file_for_different_branch(git_repo):
-    """State file for feature-alpha, session on main → silent exit (no context)."""
+def test_on_main_sees_feature_state_file(git_repo):
+    """State file for feature-alpha, session on main → context produced (main sees all features)."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
     state = make_state(
@@ -1020,13 +1020,15 @@ def test_ignores_state_file_for_different_branch(git_repo):
             "flow-code": "in_progress",
         },
     )
-    state["feature"] = "Feature Alpha"
+    state["branch"] = "feature-alpha"
     write_state(state_dir, "feature-alpha", state)
 
-    # git_repo is on main (default branch) — feature-alpha should not match
+    # git_repo is on main — fallback to showing all active features
     result = _run(git_repo)
     assert result.returncode == 0
-    assert result.stdout.strip() == ""
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "Feature Alpha" in ctx
 
 
 def test_processes_only_matching_branch_state(git_repo):
@@ -1122,6 +1124,61 @@ def test_detached_head_multiple_files_fallback(git_repo):
     assert "Multiple FLOW features" in ctx
     assert "Feature One" in ctx
     assert "Feature Two" in ctx
+
+
+# --- Main branch visibility ---
+
+
+def test_on_main_with_active_feature_produces_context(git_repo):
+    """On main with an active feature's state file → context produced, not early exit."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
+    state["branch"] = "some-feature"
+    write_state(state_dir, "some-feature", state)
+
+    # Stay on main — do NOT call _switch
+    result = _run(git_repo)
+    assert result.returncode == 0
+
+    # Must produce JSON context, not exit silently
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "Some Feature" in ctx
+
+
+def test_on_main_with_multiple_features_lists_all(git_repo):
+    """On main with multiple active features → multi-feature context listing all."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+
+    for name, phase in [("alpha-feature", "flow-code"), ("beta-feature", "flow-plan")]:
+        state = make_state(
+            current_phase=phase,
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete" if phase != "flow-plan" else "in_progress",
+                "flow-code": "in_progress" if phase == "flow-code" else "pending",
+            },
+        )
+        state["branch"] = name
+        write_state(state_dir, name, state)
+
+    # Stay on main
+    result = _run(git_repo)
+    assert result.returncode == 0
+
+    output = json.loads(result.stdout)
+    ctx = output["additional_context"]
+    assert "Alpha Feature" in ctx
+    assert "Beta Feature" in ctx
 
 
 # --- Tab title does not pollute stdout ---
