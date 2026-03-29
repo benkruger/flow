@@ -140,15 +140,57 @@ the rules that should have been followed. Note every rule and convention
 entry. The global CLAUDE.md is already loaded in conversation context —
 no separate read is needed.
 
-### Source B — Conversation context (all modes)
+### Source B — Learn-analyst agent (Phase 5 only) / Conversation context (Maintainer and Standalone)
 
-Review the current conversation for:
+**Phase 5 mode:** Launch the learn-analyst agent for cognitively isolated
+analysis. The agent receives only persisted artifacts — never conversation
+history. This structural separation eliminates self-reporting bias: the
+session that built the feature cannot honestly assess its own mistakes
+because it carries forward the emotional arc of the work.
+
+Get the full branch diff:
+
+```bash
+git diff origin/main..HEAD
+```
+
+Read the state file at `<project_root>/.flow-states/<branch>.json`.
+Extract: `notes`, phase `visit_count` and `cumulative_seconds` for each
+phase.
+
+Read the plan file at `<project_root>/<files.plan path>`.
+
+Read the project CLAUDE.md at `<worktree_path>/CLAUDE.md`.
+
+Read all `.claude/rules/` files using the Glob tool at
+`<worktree_path>/.claude/rules/*.md`, then read each file.
+
+Launch the learn-analyst agent using the Agent tool:
+
+- `subagent_type`: `"flow:learn-analyst"`
+- `description`: `"Cognitively isolated learning analysis"`
+
+Provide all artifacts in the prompt with labeled sections:
+
+> DIFF:
+> (full diff output)
+>
+> STATE FILE DATA:
+> (notes array, phase timings, visit counts)
+>
+> PLAN:
+> (full plan file content)
+>
+> CLAUDE.MD RULES:
+> (full CLAUDE.md content, followed by each .claude/rules/ file)
+
+Wait for the agent to return its structured findings.
+
+**Maintainer and Standalone mode:** Review the current conversation for:
 - Moments where the user corrected Claude
 - Responses where Claude was overruled or pushed back
 - Misunderstandings that required clarification
 - Suggestions Claude made that were rejected
-- Background agents launched but whose results were never checked or
-  processed (dangling async work)
 
 Note: context may have been compacted. Use what is available.
 
@@ -211,32 +253,41 @@ deficiency).
 
 ## Step 2 — Synthesize findings
 
-Organize all gathered evidence into categories:
+**Phase 5 mode:** Merge the outputs from the learn-analyst agent (Source B)
+and the onboarding agent (Source D) into a single set of categorized
+findings. The learn-analyst produces process violations, mistakes, missing
+rules, and process gaps from artifact evidence. The onboarding agent
+produces comprehension barriers from a newcomer perspective. Map each
+finding to the categories below.
+
+**Maintainer and Standalone mode:** Organize all gathered evidence from
+Sources A and B into the categories below.
 
 **Process violations** — existing rules in CLAUDE.md that were broken or
-nearly broken during the session. Quote the specific rule.
+nearly broken. Quote the specific rule and cite the evidence source
+(learn-analyst finding, note, or conversation observation).
 
-**Claude mistakes** — things Claude got wrong that the user had to correct.
-Be specific and honest. Name the mistake clearly — do not soften or hedge.
+**Mistakes** — things that went wrong during the session. In Phase 5 mode,
+these come from the learn-analyst agent's artifact-based analysis (notes,
+visit counts, timing anomalies, diff inconsistencies). In
+Maintainer/Standalone mode, these come from conversation review. For each
+mistake, state:
 
-For each mistake, state:
-1. What Claude did wrong (the actual behavior, not a euphemism)
-2. What the user said or did to correct it (quote or paraphrase)
-3. How many rounds of correction it took before Claude got it right
+- What went wrong (cite the evidence)
+- What the evidence source is (learn-analyst finding, note text, visit
+  count, timing anomaly, diff pattern, or conversation observation)
 
-If you cannot answer all three, you are probably softening the mistake.
-
-**Missing rules** — situations where Claude did the wrong thing but no
-existing rule covered it. These are gaps in CLAUDE.md.
+**Missing rules** — situations where something questionable happened but no
+existing rule covered it. In Phase 5 mode, the onboarding agent's
+comprehension barriers map primarily here (undocumented patterns and
+architectural decisions).
 
 **Process gaps** — places where the development process itself (tools,
-skills, workflows) should be improved. These are not CLAUDE.md rules —
-they are process changes.
-
-**Dangling async operations** — background agents that were launched
-but whose results were never awaited or processed. Classify these as
-Claude mistakes if Claude forgot to check the results, or as process
-gaps if the skill that launched the agents lacks follow-up instructions.
+skills, workflows) should be improved. These are not coding rules — they
+are process changes. The learn-analyst agent detects these from patterns
+like dangling async operations (background agent invocations without
+result handling), repeated friction (high visit counts), and missing
+automation.
 
 ---
 
@@ -633,8 +684,8 @@ No phase transition, no transition question.
 ## Hard Rules
 
 - Never commit application code in Learn — only CLAUDE.md and .claude/
-- Always read CLAUDE.md and conversation context before synthesizing findings
-- In Phase 5, read all four sources before synthesizing findings
+- Always read CLAUDE.md before synthesizing findings
+- In Phase 5, gather all sources (CLAUDE.md, learn-analyst agent, state/plan data, onboarding agent) before synthesizing findings
 - Follow the learning process (Steps 1 through 7) exactly — do not skip or reorder steps
 - Decisions on destinations and wording are autonomous — do not ask the user for approval mid-process
 - The report in Step 7 is the user's review point — make it comprehensive
