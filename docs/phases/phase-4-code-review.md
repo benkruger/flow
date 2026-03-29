@@ -7,15 +7,16 @@ nav_order: 5
 
 **Command:** `/flow-code-review`
 
-Five steps on the same diff — clarity with convention compliance,
-correctness with rule compliance, safety, CLAUDE.md compliance, and
-pre-mortem incident analysis. Combines inline review passes, a multi-agent
-compliance plugin, and a context-isolated pre-mortem agent into a single
-phase with five ordered steps, each with its own commit checkpoint.
+Six steps on the same diff — clarity with convention compliance,
+correctness with rule compliance, safety, CLAUDE.md compliance,
+context-isolated code review, and pre-mortem incident analysis. Combines
+inline review passes, a multi-agent compliance plugin, and two
+context-isolated agents into a single phase with six ordered steps, each
+with its own commit checkpoint.
 
 ---
 
-## The Five Steps
+## The Six Steps
 
 ### Step 1 — Simplify (clarity + convention compliance)
 
@@ -58,7 +59,19 @@ Waits for all background agents to complete before evaluating findings.
 Every finding is fixed, `bin/flow ci` is run, and changes are committed
 via `/flow-commit`.
 
-### Step 5 — Pre-Mortem (incident analysis)
+### Step 5 — Context-Isolated Review (cold reviewer)
+
+Launches the `reviewer` custom agent — a context-isolated sub-agent that
+receives the branch diff, plan file, CLAUDE.md, and `.claude/rules/` but
+no conversation history or coding rationale. The agent reviews as a cold
+reviewer: "You are reviewing code you did not write."
+
+The agent produces structured findings (severity, category, evidence,
+recommendation). The main session triages each finding as real or false
+positive. Real findings are fixed, `bin/flow ci` is run, and changes are
+committed via `/flow-commit`.
+
+### Step 6 — Pre-Mortem (incident analysis)
 
 Launches the `pre-mortem` custom agent — a context-isolated sub-agent that
 receives only the branch diff and codebase access, with no conversation
@@ -85,7 +98,8 @@ re-entry.
 Step 1 performs inline review passes sequentially within the response turn.
 Steps 2-4 invoke built-in skills or plugins that may launch background
 agents — each of those steps waits for all background agents to complete
-before evaluating findings. Step 5 launches the pre-mortem agent for
+before evaluating findings. Step 5 launches the reviewer agent for
+context-isolated code review. Step 6 launches the pre-mortem agent for
 context-isolated incident analysis.
 
 ---
