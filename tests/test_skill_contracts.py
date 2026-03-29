@@ -360,6 +360,23 @@ def test_onboarding_agent_exists():
     )
 
 
+def test_learn_analyst_agent_exists():
+    """agents/learn-analyst.md must exist with required frontmatter fields."""
+    agent_file = REPO_ROOT / "agents" / "learn-analyst.md"
+    assert agent_file.exists(), "agents/learn-analyst.md does not exist"
+    content = agent_file.read_text()
+    assert "name: learn-analyst" in content, "agents/learn-analyst.md missing 'name: learn-analyst' in frontmatter"
+    assert "PreToolUse" in content, "agents/learn-analyst.md missing PreToolUse hook"
+    assert "validate-ci-bash" in content, "agents/learn-analyst.md missing reference to validate-ci-bash"
+    # Learn-analyst agent must be read-only — no Edit or Write tools
+    assert "Edit" not in content.split("---")[1], (
+        "agents/learn-analyst.md must not include Edit tool — learn-analyst is read-only"
+    )
+    assert "Write" not in content.split("---")[1], (
+        "agents/learn-analyst.md must not include Write tool — learn-analyst is read-only"
+    )
+
+
 def test_learn_uses_onboarding_subagent():
     """Learn skill must reference the onboarding sub-agent."""
     content = _read_skill("flow-learn")
