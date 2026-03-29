@@ -431,6 +431,35 @@ def test_investigation_agents_no_inline_context():
         )
 
 
+def test_reviewer_inline_context_format_convention():
+    """Code Review Step 4 and reviewer agent must agree on labeled section format.
+
+    The producer (SKILL.md Step 4) must specify the exact section labels to use
+    when passing inline context to the reviewer agent. The consumer (reviewer.md)
+    must document the matching expected sections. This prevents unpredictable
+    prompt assembly across sessions. See issue #651.
+    """
+    # Producer side: Step 4 must contain the section labels
+    skill_content = _read_skill("flow-code-review")
+    step4_start = skill_content.index("## Step 4")
+    step5_start = skill_content.index("## Step 5")
+    step4_text = skill_content[step4_start:step5_start]
+    for label in ("DIFF:", "PLAN:", "CLAUDE.MD:", "RULES:"):
+        assert label in step4_text, (
+            f"flow-code-review Step 4 must contain '{label}' section label — "
+            f"format convention required for consistent reviewer agent prompts"
+        )
+
+    # Consumer side: reviewer agent must document expected sections
+    reviewer_content = (REPO_ROOT / "agents" / "reviewer.md").read_text()
+    body = reviewer_content.split("---", 2)[2] if reviewer_content.startswith("---") else reviewer_content
+    for label in ("DIFF", "PLAN", "CLAUDE.MD", "RULES"):
+        assert label in body, (
+            f"agents/reviewer.md must document '{label}' as an expected section — "
+            f"consumer must match producer format convention"
+        )
+
+
 def test_code_review_has_inline_correctness_review():
     """Code Review skill must perform inline correctness review in Step 2."""
     content = _read_skill("flow-code-review")
