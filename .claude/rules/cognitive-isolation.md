@@ -40,6 +40,8 @@ When adding a sub-agent for cognitive isolation:
 - Define it as a custom plugin sub-agent (`agents/<name>.md`)
 - Scope its input to persisted artifacts only
 - Make it read-only (Read, Glob, Grep, Bash — no Edit or Write)
-- Add a `PreToolUse` hook declaration for defense in depth
+- The global `PreToolUse` hook in `hooks/hooks.json` enforces
+  Bash restrictions automatically — do not add hooks to agent
+  frontmatter (unsupported by Claude Code's plugin agent system)
 - Invoke it in the foreground so the parent session receives
   results and continues
