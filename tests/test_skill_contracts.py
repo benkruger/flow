@@ -2134,9 +2134,20 @@ def test_learn_sets_continue_pending_before_child_skills():
 
 
 def test_learn_steps_record_completion():
-    """Learn Step 5 (commit) must record completion via set-timestamp."""
-    step_text = _learn_step_text(5)
-    assert "learn_step=5" in step_text, "Step 5 must contain 'learn_step=5' marker"
+    """Each Learn step must record learn_step via set-timestamp for TUI display."""
+    content = _read_skill("flow-learn")
+    for step_val in range(7):
+        assert f"learn_step={step_val}" in content, (
+            f"flow-learn/SKILL.md must contain 'learn_step={step_val}' for TUI step {step_val + 1} display"
+        )
+
+
+def test_learn_skill_sets_steps_total():
+    """Learn Update State must set learn_steps_total=7 for TUI progress display."""
+    content = _read_skill("flow-learn")
+    assert "learn_steps_total=7" in content, (
+        "flow-learn/SKILL.md must contain 'learn_steps_total=7' in the Update State section"
+    )
 
 
 def test_plan_skill_does_not_reference_transcript_path():
@@ -2331,10 +2342,20 @@ def test_complete_commit_points_self_invoke():
 
 
 def test_complete_commit_points_record_step():
-    """Complete Steps 3, 4, 5, and 6 must record complete_step via set-timestamp."""
+    """Every Complete step must record complete_step via set-timestamp for TUI display."""
     content = _read_skill("flow-complete")
-    assert "complete_step=4" in content, "Complete must record complete_step=4 after Step 3 and CI commits"
-    assert "complete_step=5" in content, "Complete must record complete_step=5 for Step 5 GitHub CI gate"
+    for step_val in range(1, 13):
+        assert f"complete_step={step_val}" in content, (
+            f"flow-complete/SKILL.md must contain 'complete_step={step_val}' for TUI step {step_val} display"
+        )
+
+
+def test_complete_skill_sets_steps_total():
+    """Complete Update State must set complete_steps_total=12 for TUI progress display."""
+    content = _read_skill("flow-complete")
+    assert "complete_steps_total=12" in content, (
+        "flow-complete/SKILL.md must contain 'complete_steps_total=12' in the Update State section"
+    )
 
 
 def test_continue_context_includes_mode_flag():

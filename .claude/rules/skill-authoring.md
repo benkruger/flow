@@ -39,6 +39,17 @@ Test permission changes before committing. If you cannot verify
 whether a pattern is valid or will be honored, say so and propose
 a testable alternative.
 
+## Platform Constraints
+
+Claude Code has built-in protections that cannot be overridden by
+settings.json entries. `.claude/` paths are protected regardless
+of `defaultMode` or allow-list patterns. When a permission prompt
+persists despite allow-list entries, the cause is a platform
+constraint — not a missing permission. Look for existing bypasses
+(like `write-rule.py` for `.claude/` writes) before proposing
+new solutions. Never propose adding permissions for paths that
+are platform-protected.
+
 ## Commit Skill Internals
 
 Never skip `git add -A` in flow:commit Step 1. The Code phase

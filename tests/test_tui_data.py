@@ -306,7 +306,7 @@ def test_flow_summary_annotation_start_phase():
     state["start_step"] = 5
     state["start_steps_total"] = 11
     summary = tui_data.flow_summary(state)
-    assert summary["annotation"] == "pull main - step 5 of 11"
+    assert summary["annotation"] == "pulling main - step 5 of 11"
 
 
 # --- phase_timeline ---
@@ -358,7 +358,7 @@ def test_phase_timeline_start_annotation():
 
     timeline = tui_data.phase_timeline(state)
     start_entry = timeline[0]
-    assert start_entry["annotation"] == "label issues - step 3 of 11"
+    assert start_entry["annotation"] == "creating state - step 3 of 11"
     assert start_entry["name"] == "Start", "step name lookup must not shadow the phase name"
 
 
@@ -384,7 +384,7 @@ def test_phase_timeline_start_no_total():
 
     timeline = tui_data.phase_timeline(state)
     start_entry = timeline[0]
-    assert start_entry["annotation"] == "label issues - step 3"
+    assert start_entry["annotation"] == "creating state - step 3"
 
 
 # --- phase_timeline: Plan ---
@@ -401,7 +401,7 @@ def test_phase_timeline_plan_annotation():
 
     timeline = tui_data.phase_timeline(state)
     plan_entry = timeline[1]
-    assert plan_entry["annotation"] == "dag decompose - step 2 of 4"
+    assert plan_entry["annotation"] == "decomposing - step 2 of 4"
 
 
 def test_phase_timeline_plan_step_zero():
@@ -426,7 +426,7 @@ def test_phase_timeline_plan_no_total():
 
     timeline = tui_data.phase_timeline(state)
     plan_entry = timeline[1]
-    assert plan_entry["annotation"] == "dag decompose - step 2"
+    assert plan_entry["annotation"] == "decomposing - step 2"
 
 
 # --- phase_timeline: Code ---
@@ -645,7 +645,7 @@ def test_phase_timeline_code_review_step_zero():
     )
     timeline = tui_data.phase_timeline(state)
     review_entry = timeline[3]
-    assert review_entry["annotation"] == "simplify - step 1 of 6"
+    assert review_entry["annotation"] == "simplifying - step 1 of 6"
 
 
 def test_phase_timeline_code_review_annotation():
@@ -662,7 +662,7 @@ def test_phase_timeline_code_review_annotation():
     state["code_review_step"] = 2
     timeline = tui_data.phase_timeline(state)
     review_entry = timeline[3]
-    assert review_entry["annotation"] == "security - step 3 of 6"
+    assert review_entry["annotation"] == "security review - step 3 of 6"
 
 
 def test_phase_timeline_code_review_complete():
@@ -683,7 +683,7 @@ def test_phase_timeline_code_review_complete():
 
 
 def test_phase_timeline_code_review_step_five():
-    """Code Review step 5 shows 'isolated review - step 5 of 6' (code_review_step=4)."""
+    """Code Review step 5 shows 'pre-mortem - step 5 of 6' (code_review_step=4)."""
     state = make_state(
         current_phase="flow-code-review",
         phase_statuses={
@@ -696,7 +696,7 @@ def test_phase_timeline_code_review_step_five():
     state["code_review_step"] = 4
     timeline = tui_data.phase_timeline(state)
     review_entry = timeline[3]
-    assert review_entry["annotation"] == "isolated review - step 5 of 6"
+    assert review_entry["annotation"] == "pre-mortem - step 5 of 6"
 
 
 # --- phase_timeline: step name fallback ---
@@ -720,7 +720,7 @@ def test_phase_timeline_unknown_step_falls_back():
 
 
 def test_phase_timeline_learn_annotation():
-    """Learn phase shows 'commit - step 5' when learn_step=4."""
+    """Learn phase shows 'committing - step 5 of 7' when learn_step=4."""
     state = make_state(
         current_phase="flow-learn",
         phase_statuses={
@@ -732,13 +732,14 @@ def test_phase_timeline_learn_annotation():
         },
     )
     state["learn_step"] = 4
+    state["learn_steps_total"] = 7
     timeline = tui_data.phase_timeline(state)
     learn_entry = timeline[4]
-    assert learn_entry["annotation"] == "commit - step 5"
+    assert learn_entry["annotation"] == "committing - step 5 of 7"
 
 
 def test_phase_timeline_learn_step_zero():
-    """Learn phase has no annotation when learn_step is 0 (no checkpoint yet)."""
+    """Learn phase shows 'gathering sources - step 1 of 7' when learn_step is 0."""
     state = make_state(
         current_phase="flow-learn",
         phase_statuses={
@@ -749,16 +750,17 @@ def test_phase_timeline_learn_step_zero():
             "flow-learn": "in_progress",
         },
     )
+    state["learn_steps_total"] = 7
     timeline = tui_data.phase_timeline(state)
     learn_entry = timeline[4]
-    assert learn_entry["annotation"] == ""
+    assert learn_entry["annotation"] == "gathering sources - step 1 of 7"
 
 
 # --- phase_timeline: Complete ---
 
 
 def test_phase_timeline_complete_annotation():
-    """Complete phase shows 'gh ci - step 5' when complete_step=5."""
+    """Complete phase shows 'checking GitHub CI - step 5 of 12' when complete_step=5."""
     state = make_state(
         current_phase="flow-complete",
         phase_statuses={
@@ -771,9 +773,10 @@ def test_phase_timeline_complete_annotation():
         },
     )
     state["complete_step"] = 5
+    state["complete_steps_total"] = 12
     timeline = tui_data.phase_timeline(state)
     complete_entry = timeline[5]
-    assert complete_entry["annotation"] == "gh ci - step 5"
+    assert complete_entry["annotation"] == "checking GitHub CI - step 5 of 12"
 
 
 def test_phase_timeline_complete_step_zero():
@@ -789,9 +792,30 @@ def test_phase_timeline_complete_step_zero():
             "flow-complete": "in_progress",
         },
     )
+    state["complete_steps_total"] = 12
     timeline = tui_data.phase_timeline(state)
     complete_entry = timeline[5]
     assert complete_entry["annotation"] == ""
+
+
+def test_phase_timeline_complete_step_one():
+    """Complete phase shows 'checking state - step 1 of 12' when complete_step=1."""
+    state = make_state(
+        current_phase="flow-complete",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "complete",
+            "flow-learn": "complete",
+            "flow-complete": "in_progress",
+        },
+    )
+    state["complete_step"] = 1
+    state["complete_steps_total"] = 12
+    timeline = tui_data.phase_timeline(state)
+    complete_entry = timeline[5]
+    assert complete_entry["annotation"] == "checking state - step 1 of 12"
 
 
 # --- parse_log_entries ---
