@@ -127,7 +127,7 @@ diff. The CLAUDE.md conventions inform fix decisions.
 Get the full branch diff to use as review context:
 
 ```bash
-git diff origin/main..HEAD
+git diff origin/main...HEAD
 ```
 
 Perform four review passes on the diff output. Execute each pass
@@ -267,7 +267,7 @@ Read tool to read the plan file.
 Get the full branch diff to use as review context:
 
 ```bash
-git diff origin/main..HEAD
+git diff origin/main...HEAD
 ```
 
 Perform five correctness review passes on the diff output, using the plan
@@ -435,7 +435,7 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 Get the full branch diff to use as security review context:
 
 ```bash
-git diff origin/main..HEAD
+git diff origin/main...HEAD
 ```
 
 Perform three security review passes on the diff output. Execute each pass
@@ -533,7 +533,7 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 Get the full branch diff to provide to the reviewer agent:
 
 ```bash
-git diff origin/main..HEAD
+git diff origin/main...HEAD
 ```
 
 Read `files.plan` from the state file to get the plan file path. Use the
@@ -648,7 +648,7 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 Get the full branch diff to provide to the pre-mortem agent:
 
 ```bash
-git diff origin/main..HEAD
+git diff origin/main...HEAD
 ```
 
 Launch the pre-mortem agent using the Agent tool. The agent receives only
@@ -759,7 +759,7 @@ step completion and self-invoke to continue to Done.
 Get the full branch diff to provide to the adversarial agent:
 
 ```bash
-git diff origin/main..HEAD
+git diff origin/main...HEAD
 ```
 
 Determine the temp test file path using the branch name from the state file:

@@ -4,15 +4,33 @@
 
 When a phase needs debiased analysis of work done in the current
 session, run the analysis in a foreground sub-agent. The sub-agent
-receives only persisted artifacts (state file, diff, plan, notes)
-— never conversation history. The parent session stays alive to
-receive results and continue the flow.
+receives only persisted artifacts — never conversation history.
+The parent session stays alive to receive results and continue
+the flow.
 
 This pattern exists because the model that built the feature
 carries forward its emotional arc — struggles, negotiations,
 rationalizations. Inline analysis in the same session produces
 self-reporting bias: obvious mistakes get caught, but deep
 assumptions feel like facts and go unexamined.
+
+## Two-Tier Context Model
+
+Not all sub-agents receive the same artifacts. The amount of
+context is a design choice matched to the agent's task:
+
+- **Context-rich** (reviewer) — receives diff, plan, CLAUDE.md,
+  and rules inline. Its task is checking against known standards
+  where having the standards at hand saves turns.
+- **Context-sparse** (pre-mortem, onboarding, adversarial) —
+  receives only the diff and must investigate the codebase itself.
+  Less context forces independent investigation, surfacing risks,
+  comprehension barriers, and coverage gaps that pre-supplied
+  context would mask.
+
+This asymmetry is intentional. See `agents/pre-mortem.md` Design
+Note for the full rationale and `agents/reviewer.md` Design Note
+for the cross-reference.
 
 ## Never Break the Session
 
@@ -40,6 +58,8 @@ When adding a sub-agent for cognitive isolation:
 - Define it as a custom plugin sub-agent (`agents/<name>.md`)
 - Scope its input to persisted artifacts only
 - Make it read-only (Read, Glob, Grep, Bash — no Edit or Write)
-- Add a `PreToolUse` hook declaration for defense in depth
+- The global `PreToolUse` hook in `hooks/hooks.json` enforces
+  Bash restrictions automatically — do not add hooks to agent
+  frontmatter (unsupported by Claude Code's plugin agent system)
 - Invoke it in the foreground so the parent session receives
   results and continues

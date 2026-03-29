@@ -3,12 +3,6 @@ name: ci-fixer
 description: "Fix CI failures. Use when bin/flow ci or bin/ci fails and needs diagnosis."
 tools: Read, Glob, Grep, Edit, Write, Bash
 maxTurns: 20
-hooks:
-  PreToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "${CLAUDE_PLUGIN_ROOT}/lib/validate-ci-bash.py"
 ---
 
 # CI Fixer

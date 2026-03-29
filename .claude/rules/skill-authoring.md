@@ -54,9 +54,9 @@ itself, causing it to be tracked in the commit.
 
 Never use `general-purpose` sub-agents in skills — they ignore
 tool restriction rules in their prompts. Use custom plugin
-sub-agents with `PreToolUse` hooks for system-level enforcement.
-See `agents/ci-fixer.md` for the pattern: the hook
-(`lib/validate-ci-bash.py`) blocks compound commands and
+sub-agents with the global `PreToolUse` hook for system-level
+enforcement. The hook (`lib/validate-ci-bash.py`) is registered
+in `hooks/hooks.json` and blocks compound commands and
 file-read commands with exit code 2, feeding helpful error
 messages back to the sub-agent so it adapts.
 

@@ -3,12 +3,6 @@ name: adversarial
 description: "Adversarial test generation. Writes tests designed to break the implementation, runs them, and reports failures as findings."
 tools: Read, Glob, Grep, Write, Bash
 maxTurns: 20
-hooks:
-  PreToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "${CLAUDE_PLUGIN_ROOT}/lib/validate-ci-bash.py"
 ---
 
 # Adversarial Test Generation
@@ -23,7 +17,7 @@ it. Only failures matter.
 
 ## Input
 
-The full diff (`git diff origin/main..HEAD`) is provided in your prompt.
+The full diff (`git diff origin/main...HEAD`) is provided in your prompt.
 The branch name and project CLAUDE.md path are also provided. Use the
 Read tool to read the CLAUDE.md for test conventions and patterns. Use
 Read, Glob, and Grep to investigate the codebase.
