@@ -202,8 +202,8 @@ def set_blocked_idle(root=None, branch=_UNSET):
         _log(root, branch, f"set_blocked_idle error: {exc}")
 
 
-def set_tab_title(root=None, branch=_UNSET):
-    """Write the current FLOW phase and repo color to the terminal tab via /dev/tty.
+def set_tab_color(root=None, branch=_UNSET):
+    """Write the repo color to the terminal tab via /dev/tty.
 
     Delegates to write_tab_sequences() for the actual escape sequence
     building and tty writing. This wrapper handles root/branch resolution
@@ -227,7 +227,7 @@ def set_tab_title(root=None, branch=_UNSET):
             else:
                 write_tab_sequences(repo=detect_repo(), root=root)
     except Exception as exc:
-        _log(root, branch, f"set_tab_title error: {exc}")
+        _log(root, branch, f"set_tab_color error: {exc}")
 
 
 def check_qa_pending(root=None):
@@ -295,7 +295,7 @@ def main():
     else:
         set_blocked_idle(root=root, branch=branch)
 
-    set_tab_title(root=root, branch=branch)
+    set_tab_color(root=root, branch=branch)
 
     if should_block:
         reason = f"Continue parent phase — child skill '{skill_name}' has returned."

@@ -412,49 +412,6 @@ def read_version():
     return read_version_from(plugin_json)
 
 
-def format_tab_title(state):
-    """Format a terminal tab title from FLOW state.
-
-    Returns a string like "#342 Feature Name — P3: Code (2)",
-    or None if the state lacks required fields. Issue numbers from the prompt
-    are prefixed to the feature name when present.
-    """
-    phase = state.get("current_phase")
-    branch = state.get("branch")
-    if not phase or not branch:
-        return None
-
-    number = PHASE_NUMBER.get(phase)
-    name = PHASE_NAMES.get(phase)
-    if number is None or name is None:
-        return None
-
-    step = ""
-    if phase == "flow-code":
-        task = state.get("code_task", 0)
-        if isinstance(task, int):
-            step = f" ({task + 1})"
-    elif phase == "flow-code-review":
-        review_step = state.get("code_review_step", 0)
-        if isinstance(review_step, int) and review_step < 4:
-            step = f" ({review_step + 1}/4)"
-    elif phase == "flow-learn":
-        learn_step = state.get("learn_step", 0)
-        if isinstance(learn_step, int) and learn_step > 0:
-            step = f" ({learn_step + 1})"
-    elif phase == "flow-complete":
-        complete_step = state.get("complete_step", 0)
-        if isinstance(complete_step, int) and complete_step > 0:
-            step = f" ({complete_step})"
-
-    feature = derive_feature(branch)
-    issue_numbers = extract_issue_numbers(state.get("prompt", ""))
-    if issue_numbers:
-        issue_prefix = " ".join(f"#{n}" for n in issue_numbers)
-        feature = f"{issue_prefix} {feature}"
-    return f"{feature} \u2014 P{number}: {name}{step}"
-
-
 TAB_COLORS = (
     (178, 34, 34),  # firebrick
     (0, 128, 128),  # teal
@@ -519,16 +476,16 @@ def read_flow_json(root=None):
 
 
 def write_tab_sequences(state=None, *, repo=None, root=None):
-    """Build and write terminal tab escape sequences to /dev/tty.
+    """Build and write terminal tab color escape sequences to /dev/tty.
 
-    Reads .flow.json for tab_color override, computes title (from state)
-    and color (from state or repo), builds OSC escape sequences, and
-    writes them to /dev/tty.
+    Reads .flow.json for tab_color override, computes color (from state
+    or repo), builds iTerm2 OSC escape sequences, and writes them to
+    /dev/tty.
 
     Does NOT catch exceptions — callers handle errors.
 
     Args:
-        state: FLOW state dict (optional). Used for title and color.
+        state: FLOW state dict (optional). Used for color lookup.
             When provided, repo is ignored for color lookup.
         repo: GitHub repo string like "owner/repo" (optional). Used for
               color when no state is provided.
@@ -537,20 +494,15 @@ def write_tab_sequences(state=None, *, repo=None, root=None):
     data = read_flow_json(root)
     override = data.get("tab_color") if data else None
 
-    title = format_tab_title(state) if state else None
     color = format_tab_color(state, repo=repo, override=override)
 
-    if not title and not color:
+    if not color:
         return
 
-    sequences = ""
-    if color:
-        r, g, b = color
-        sequences += (
-            f"\033]6;1;bg;red;brightness;{r}\007\033]6;1;bg;green;brightness;{g}\007\033]6;1;bg;blue;brightness;{b}\007"
-        )
-    if title:
-        sequences += f"\033]1;{title}\007"
+    r, g, b = color
+    sequences = (
+        f"\033]6;1;bg;red;brightness;{r}\007\033]6;1;bg;green;brightness;{g}\007\033]6;1;bg;blue;brightness;{b}\007"
+    )
 
     with open("/dev/tty", "w") as tty:
         tty.write(sequences)
