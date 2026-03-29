@@ -964,7 +964,7 @@ class TestSetTabTitle:
         _mod.set_tab_color()
 
     def test_no_state_file_writes_color_only(self, git_repo, state_dir, monkeypatch):
-        """No state file but detect_repo returns a repo — write color only, no title."""
+        """No state file but detect_repo returns a repo — write color."""
         monkeypatch.chdir(git_repo)
         monkeypatch.setattr(_mod, "detect_repo", lambda: "test/test")
 
@@ -977,7 +977,7 @@ class TestSetTabTitle:
             f"\033]6;1;bg;red;brightness;{r}\007\033]6;1;bg;green;brightness;{g}\007\033]6;1;bg;blue;brightness;{b}\007"
         )
         assert written[0] == expected
-        # No title escape in the output
+        # No title escape — only color
         assert "\033]1;" not in written[0]
 
     def test_no_state_file_no_repo_no_override_no_write(self, git_repo, state_dir, monkeypatch):
@@ -1024,7 +1024,7 @@ class TestSetTabTitle:
         _mod.set_tab_color()
 
     def test_unknown_phase_color_still_written(self, git_repo, state_dir, branch, monkeypatch):
-        """State file with unknown phase — no title, but color still written."""
+        """State file with unknown phase — color still written."""
         monkeypatch.chdir(git_repo)
         state = make_state(current_phase="flow-code")
         state["current_phase"] = "flow-unknown"
