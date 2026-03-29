@@ -37,3 +37,13 @@ Add Read(//tmp/*.diff) permission for code-review plugin
 
 This makes the allow list auditable — any pattern can be traced
 back to why it was added and what breaks if it is removed.
+
+## Never Remove Without Explicit Ask
+
+When editing `.claude/settings.json`, only add entries — never
+remove existing permission entries unless the user explicitly asks.
+An entry may serve purposes the current task does not know about.
+
+When an entry needs to be repositioned, add first in the new
+location, then remove the duplicate — and explain the two-step
+approach before starting.
