@@ -29,7 +29,7 @@ SOFT-GATE and dispatches via the Resume Check.
    If conflicts exist, sets `_continue_pending=commit` before invoking
    `/flow:flow-commit`, then self-invokes with `--continue-step` to resume
    at Step 4
-4. Runs local CI gate — `bin/flow ci --force --simulate-branch main` to
+4. Runs local CI gate — `bin/flow ci --simulate-branch main` to
    catch branch-dependent test failures before merge. If it fails,
    ci-fixer commits a fix and self-invokes to re-check
 5. Checks GitHub CI status — `gh pr checks` (waits for checks to pass,
