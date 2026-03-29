@@ -239,6 +239,10 @@ the Skill tool as your final action. If mode was resolved to auto, pass
 
 ### Step 4 — Run local CI gate
 
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+```
+
 Run CI locally with the branch name simulated as "main" to catch
 branch-dependent test failures before merge:
 
@@ -284,6 +288,10 @@ If mode was resolved to auto, pass `--auto` as well.
 If not fixed after 3 attempts, stop and report.
 
 ### Step 5 — Check GitHub CI status
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=5
+```
 
 Check the CI status on the PR:
 
