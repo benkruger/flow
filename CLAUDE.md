@@ -232,7 +232,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_format_complete_summary.py` | Complete phase summary: basic summary, issues with #N shorthand, resolved issues (closed_issues param), notes, prompt truncation, format_time usage, borders, version fallback, CLI with --closed-issues-file |
 | `test_format_issues_summary.py` | Issues summary formatting: empty/missing/single/multiple issues, label grouping, table output, CLI |
 | `test_analyze_issues.py` | Issue analysis: file path extraction, dependency detection, label detection, stale detection, categorization, dependency graph, body truncation, CLI integration with gh subprocess/failure/timeout |
-| `test_close_issues.py` | Issue closing: extraction of `#N` patterns from prompt, deduplication, partial failure, repo-based URL generation, no-repo fallback, CLI integration |
+| `test_close_issues.py` | Issue closing: extraction of `#N` patterns from prompt, deduplication, partial failure, repo-based URL generation, no-repo fallback, CLI integration, docstring schema validation |
 | `test_promote_permissions.py` | Permission promotion: no file (skipped), empty allow, new entries, all duplicates, mixed, preserve settings, deletion, malformed JSON (local and settings), missing keys, settings missing, no permissions key, write error, delete fails silently, CLI integration (happy, skipped, error) |
 | `test_write_rule.py` | Write rule: read content file (happy path, missing, delete failure), write rule (happy path, parent dirs, write error, makedirs error, overwrite), CLI integration (happy, missing content, write error) |
 | `test_label_issues.py` | Issue labeling: add/remove Flow In-Progress label, partial failure, deduplication, missing prompt, CLI integration |

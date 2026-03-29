@@ -184,6 +184,32 @@ def test_cli_no_prompt_field(tmp_path, monkeypatch, capsys):
     assert output == {"status": "ok", "closed": [], "failed": []}
 
 
+def test_docstring_output_example_matches_schema():
+    """Module docstring output example must show dict-shaped closed and failed entries."""
+    docstring = _mod.__doc__
+    # Extract JSON from the "Output (JSON to stdout):" line
+    lines = docstring.strip().splitlines()
+    json_line = None
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("{") and stripped.endswith("}"):
+            json_line = stripped
+            break
+    assert json_line is not None, "No JSON example found in module docstring"
+    example = json.loads(json_line)
+    assert "closed" in example
+    assert "failed" in example
+    # closed entries must be dicts (not plain integers)
+    for entry in example["closed"]:
+        assert isinstance(entry, dict), f"closed entry should be dict, got {type(entry).__name__}: {entry}"
+        assert "number" in entry, f"closed entry missing 'number' key: {entry}"
+    # failed entries must be dicts when non-empty
+    for entry in example["failed"]:
+        assert isinstance(entry, dict), f"failed entry should be dict, got {type(entry).__name__}: {entry}"
+        assert "number" in entry, f"failed entry missing 'number' key: {entry}"
+        assert "error" in entry, f"failed entry missing 'error' key: {entry}"
+
+
 def test_cli_corrupt_state_file(tmp_path, monkeypatch, capsys):
     """Corrupt state file returns structured error."""
     state_file = tmp_path / "state.json"
