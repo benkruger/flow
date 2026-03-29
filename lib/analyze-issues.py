@@ -69,9 +69,9 @@ def extract_file_paths(body):
 
 
 def detect_labels(labels):
-    """Check for Flow In-Progress and Decomposed labels.
+    """Check for Flow In-Progress, Decomposed, and Blocked labels.
 
-    Returns dict with in_progress and decomposed boolean flags.
+    Returns dict with in_progress, decomposed, and blocked boolean flags.
     """
     label_names = {label["name"] for label in labels}
     return {
