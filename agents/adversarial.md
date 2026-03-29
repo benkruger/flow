@@ -17,7 +17,7 @@ it. Only failures matter.
 
 ## Input
 
-The full diff (`git diff origin/main..HEAD`) is provided in your prompt.
+The full diff (`git diff origin/main...HEAD`) is provided in your prompt.
 The branch name and project CLAUDE.md path are also provided. Use the
 Read tool to read the CLAUDE.md for test conventions and patterns. Use
 Read, Glob, and Grep to investigate the codebase.

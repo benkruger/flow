@@ -422,7 +422,7 @@ def test_code_review_has_inline_correctness_review():
     assert "Test Coverage" in step2_content, "Step 2 must include Test Coverage pass"
     assert "API Contracts" in step2_content, "Step 2 must include API Contracts pass"
     assert "Rule Compliance" in step2_content, "Step 2 must include Rule Compliance pass"
-    assert "git diff origin/main..HEAD" in step2_content, "Step 2 must get the branch diff inline"
+    assert "git diff origin/main...HEAD" in step2_content, "Step 2 must get the branch diff inline (three-dot)"
 
 
 def test_code_review_step2_has_step_numbering_verification():
@@ -446,7 +446,7 @@ def test_code_review_has_inline_security_review():
     assert "Input Validation" in step3_content, "Step 3 must include Input Validation pass"
     assert "Authentication" in step3_content, "Step 3 must include Authentication pass"
     assert "Data Exposure" in step3_content, "Step 3 must include Data Exposure pass"
-    assert "git diff origin/main..HEAD" in step3_content, "Step 3 must get the branch diff inline"
+    assert "git diff origin/main...HEAD" in step3_content, "Step 3 must get the branch diff inline (three-dot)"
 
 
 def test_phase_skills_have_tool_restriction_in_hard_rules():
@@ -1700,6 +1700,62 @@ def test_code_review_no_plugin_config_axis():
     assert "code_review_plugin" not in content, (
         "flow-code-review must NOT reference code_review_plugin config axis"
         " (removed in PR #587, resurrected via merge in PR #600)"
+    )
+
+
+def test_code_review_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = _read_skill("flow-code-review")
+    assert "origin/main..HEAD" not in content, (
+        "flow-code-review must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660 to exclude "
+        "merged-from-main content"
+    )
+
+
+def test_learn_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = _read_skill("flow-learn")
+    assert "origin/main..HEAD" not in content, (
+        "flow-learn must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660 to exclude "
+        "merged-from-main content"
+    )
+
+
+def test_reviewer_agent_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = (REPO_ROOT / "agents" / "reviewer.md").read_text()
+    assert "origin/main..HEAD" not in content, (
+        "agents/reviewer.md must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660"
+    )
+
+
+def test_pre_mortem_agent_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = (REPO_ROOT / "agents" / "pre-mortem.md").read_text()
+    assert "origin/main..HEAD" not in content, (
+        "agents/pre-mortem.md must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660"
+    )
+
+
+def test_adversarial_agent_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = (REPO_ROOT / "agents" / "adversarial.md").read_text()
+    assert "origin/main..HEAD" not in content, (
+        "agents/adversarial.md must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660"
+    )
+
+
+def test_onboarding_agent_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = (REPO_ROOT / "agents" / "onboarding.md").read_text()
+    assert "origin/main..HEAD" not in content, (
+        "agents/onboarding.md must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660"
     )
 
 

@@ -19,7 +19,7 @@ context that is not in the code itself.
 
 ## Input
 
-The full diff (`git diff origin/main..HEAD`) is provided in your prompt.
+The full diff (`git diff origin/main...HEAD`) is provided in your prompt.
 Use it as your primary evidence. Use Read, Glob, and Grep tools to
 investigate the surrounding codebase for context.
 
