@@ -396,3 +396,45 @@ def test_simulate_branch_with_force(ci_project_excluded):
     )
     assert second.returncode == 0
     assert _parse(second)["skipped"] is False
+
+
+def test_simulate_branch_produces_different_snapshot(ci_project_excluded):
+    """--simulate-branch produces a different sentinel hash than a plain run."""
+    branch = _branch_name(ci_project_excluded)
+    sentinel = ci_project_excluded / ".flow-states" / f"{branch}-ci-passed"
+    # Run without simulate-branch
+    first = _run(ci_project_excluded)
+    assert first.returncode == 0
+    plain_hash = sentinel.read_text()
+    # Run with --simulate-branch main — sentinel content must differ
+    second = _run(ci_project_excluded, args=["--simulate-branch", "main"])
+    assert second.returncode == 0
+    simulate_hash = sentinel.read_text()
+    assert plain_hash != simulate_hash
+
+
+def test_simulate_branch_skips_on_matching_sentinel(ci_project_excluded):
+    """Second run with same --simulate-branch skips (sentinel matches)."""
+    # Run with --simulate-branch main to create sentinel
+    first = _run(ci_project_excluded, args=["--simulate-branch", "main"])
+    assert first.returncode == 0
+    assert _parse(first)["skipped"] is False
+    # Run again with same args — should skip
+    second = _run(ci_project_excluded, args=["--simulate-branch", "main"])
+    assert second.returncode == 0
+    output = _parse(second)
+    assert output["skipped"] is True
+    assert "no changes" in output["reason"]
+
+
+def test_simulate_branch_does_not_skip_after_plain_run(ci_project_excluded):
+    """--simulate-branch run does not skip when sentinel was from a plain run."""
+    # Run without simulate-branch to create sentinel with plain hash
+    first = _run(ci_project_excluded)
+    assert first.returncode == 0
+    assert _parse(first)["skipped"] is False
+    # Run with --simulate-branch main — must NOT skip (different hash)
+    second = _run(ci_project_excluded, args=["--simulate-branch", "main"])
+    assert second.returncode == 0
+    output = _parse(second)
+    assert output["skipped"] is False

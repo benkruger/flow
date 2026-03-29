@@ -2663,3 +2663,12 @@ def test_create_issue_skips_repo_selection_in_flow_repo():
     )
     # Step 2 must have a conditional path for the FLOW repo case
     assert "benkruger/flow" in step2_text, "Step 2 must reference 'benkruger/flow' for the FLOW-repo conditional"
+
+
+def test_complete_no_force_ci():
+    """Tombstone: --force removed from Complete Step 4 CI command in PR #637. Must not return."""
+    content = _read_skill("flow-complete")
+    assert "ci --force" not in content, (
+        "flow-complete must NOT use --force in bin/flow ci commands "
+        "(removed in PR #637 — sentinel is now simulate-branch-aware)"
+    )
