@@ -1,5 +1,17 @@
 # Skill Authoring
 
+## Simplest Approach First
+
+When designing a skill change, start with the simplest solution that
+works. If the user proposes a simple approach, do not add machinery
+(resume checks, self-invocation, state counters) unless you can
+explain in one sentence why the simple approach fails. If you cannot
+articulate the failure, the simple approach is correct.
+
+When you agree to simplify and then re-introduce the same complexity
+in the next response, you are flip-flopping. Stop, re-read what you
+agreed to, and follow through.
+
 ## Phase Structure
 
 When adding a phase, audit back-navigation in all adjacent skills.
