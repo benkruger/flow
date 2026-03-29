@@ -154,11 +154,11 @@ def phase_timeline(state):
 
         annotation = ""
         if key == "flow-start" and status == "in_progress":
-            name = STEP_NAMES.get("flow-start", {}).get(start_step, "")
-            annotation = _step_annotation(start_step, start_steps_total, name)
+            step_name = STEP_NAMES.get("flow-start", {}).get(start_step, "")
+            annotation = _step_annotation(start_step, start_steps_total, step_name)
         elif key == "flow-plan" and status == "in_progress":
-            name = STEP_NAMES.get("flow-plan", {}).get(plan_step, "")
-            annotation = _step_annotation(plan_step, plan_steps_total, name)
+            step_name = STEP_NAMES.get("flow-plan", {}).get(plan_step, "")
+            annotation = _step_annotation(plan_step, plan_steps_total, step_name)
         elif key == "flow-code" and status == "in_progress":
             current_task = code_task + 1
             if code_tasks_total > 0:
@@ -174,15 +174,15 @@ def phase_timeline(state):
             cr_total = len(STEP_NAMES.get("flow-code-review", {}))
             display_step = code_review_step + 1
             if display_step <= cr_total:
-                name = STEP_NAMES.get("flow-code-review", {}).get(display_step, "")
-                annotation = _step_annotation(display_step, cr_total, name)
+                step_name = STEP_NAMES.get("flow-code-review", {}).get(display_step, "")
+                annotation = _step_annotation(display_step, cr_total, step_name)
         elif key == "flow-learn" and status == "in_progress" and learn_step > 0:
             display_step = learn_step + 1
-            name = STEP_NAMES.get("flow-learn", {}).get(display_step, "")
-            annotation = _step_annotation(display_step, name=name)
+            step_name = STEP_NAMES.get("flow-learn", {}).get(display_step, "")
+            annotation = _step_annotation(display_step, name=step_name)
         elif key == "flow-complete" and status == "in_progress" and complete_step > 0:
-            name = STEP_NAMES.get("flow-complete", {}).get(complete_step, "")
-            annotation = _step_annotation(complete_step, name=name)
+            step_name = STEP_NAMES.get("flow-complete", {}).get(complete_step, "")
+            annotation = _step_annotation(complete_step, name=step_name)
 
         entries.append(
             {

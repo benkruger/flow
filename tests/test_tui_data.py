@@ -359,6 +359,7 @@ def test_phase_timeline_start_annotation():
     timeline = tui_data.phase_timeline(state)
     start_entry = timeline[0]
     assert start_entry["annotation"] == "label issues - step 3 of 11"
+    assert start_entry["name"] == "Start", "step name lookup must not shadow the phase name"
 
 
 def test_phase_timeline_start_step_zero():
