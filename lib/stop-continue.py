@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from flow_utils import (
     current_branch,
     detect_repo,
+    find_state_files,
     mutate_state,
     now,
     project_root,
@@ -218,7 +219,13 @@ def set_tab_title(root=None, branch=_UNSET):
             state = json.loads(state_path.read_text())
             write_tab_sequences(state, root=root)
         else:
-            write_tab_sequences(repo=detect_repo(), root=root)
+            # On main or branch without state file — find any active feature
+            results = find_state_files(root, branch)
+            if results:
+                _, state, _ = results[0]
+                write_tab_sequences(state, root=root)
+            else:
+                write_tab_sequences(repo=detect_repo(), root=root)
     except Exception as exc:
         _log(root, branch, f"set_tab_title error: {exc}")
 

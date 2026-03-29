@@ -1045,6 +1045,30 @@ class TestSetTabTitle:
         assert written[0] == expected
         assert "\033]1;" not in written[0]
 
+    def test_on_main_with_other_branch_state_writes_title(self, git_repo, state_dir, monkeypatch):
+        """On main with state file for another branch → title written via find_state_files fallback."""
+        monkeypatch.chdir(git_repo)
+        state = make_state(
+            current_phase="flow-code",
+            phase_statuses={
+                "flow-start": "complete",
+                "flow-plan": "complete",
+                "flow-code": "in_progress",
+            },
+        )
+        state["branch"] = "some-feature"
+        write_state(state_dir, "some-feature", state)
+
+        # current_branch() returns "main" (the fixture repo's default branch)
+        # No main.json exists — set_tab_title should fall back to find_state_files
+        written = _mock_tty(monkeypatch)
+        _mod.set_tab_title()
+
+        assert len(written) == 1
+        # Must contain a title escape, not just color
+        assert "\033]1;" in written[0]
+        assert "Some Feature" in written[0]
+
 
 # --- set_tab_title error logging tests ---
 
