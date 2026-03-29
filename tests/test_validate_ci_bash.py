@@ -925,3 +925,91 @@ def test_hook_subprocess_worktree_no_flow_allows(tmp_path):
     code, stderr = _run_hook("npm test", cwd=str(worktree_dir))
     assert code == 0
     assert stderr == ""
+
+
+# --- run_in_background blocking tests ---
+
+
+def _run_hook_background(command, run_in_background=True, cwd=None):
+    """Run the hook script with run_in_background in tool_input.
+
+    Returns (exit_code, stderr).
+    """
+    tool_input = {"command": command, "run_in_background": run_in_background}
+    hook_input = json.dumps({"tool_input": tool_input})
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        input=hook_input,
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+    return result.returncode, result.stderr.strip()
+
+
+def test_hook_blocks_background_when_flow_active(git_repo):
+    """Subprocess: flow-active + run_in_background=true → exit 2."""
+    claude_dir = git_repo / ".claude"
+    claude_dir.mkdir()
+    settings = {"permissions": {"allow": ["Bash(git status)"]}}
+    (claude_dir / "settings.json").write_text(json.dumps(settings))
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "main.json").write_text("{}")
+
+    code, stderr = _run_hook_background("git status", run_in_background=True, cwd=str(git_repo))
+    assert code == 2
+    assert "BLOCKED" in stderr
+    assert "run_in_background" in stderr
+
+
+def test_hook_allows_background_when_no_flow(git_repo):
+    """Subprocess: no flow + run_in_background=true → exit 0."""
+    claude_dir = git_repo / ".claude"
+    claude_dir.mkdir()
+    settings = {"permissions": {"allow": ["Bash(git status)"]}}
+    (claude_dir / "settings.json").write_text(json.dumps(settings))
+    # No .flow-states/ — flow not active
+
+    code, stderr = _run_hook_background("git status", run_in_background=True, cwd=str(git_repo))
+    assert code == 0
+    assert stderr == ""
+
+
+def test_hook_allows_foreground_when_flow_active(git_repo):
+    """Subprocess: flow-active + run_in_background=false → exit 0."""
+    claude_dir = git_repo / ".claude"
+    claude_dir.mkdir()
+    settings = {"permissions": {"allow": ["Bash(git status)"]}}
+    (claude_dir / "settings.json").write_text(json.dumps(settings))
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "main.json").write_text("{}")
+
+    code, stderr = _run_hook_background("git status", run_in_background=False, cwd=str(git_repo))
+    assert code == 0
+    assert stderr == ""
+
+
+def test_hook_allows_missing_background_key(git_repo):
+    """Subprocess: flow-active + no run_in_background key → exit 0."""
+    claude_dir = git_repo / ".claude"
+    claude_dir.mkdir()
+    settings = {"permissions": {"allow": ["Bash(git status)"]}}
+    (claude_dir / "settings.json").write_text(json.dumps(settings))
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "main.json").write_text("{}")
+
+    # Use _run_hook which does NOT include run_in_background in tool_input
+    code, stderr = _run_hook("git status", cwd=str(git_repo))
+    assert code == 0
+    assert stderr == ""
+
+
+def test_hook_allows_background_no_settings(tmp_path):
+    """Subprocess: no settings.json + run_in_background=true → exit 0."""
+    # No .claude/settings.json — no flow detection possible
+    code, stderr = _run_hook_background("git status", run_in_background=True, cwd=str(tmp_path))
+    assert code == 0
+    assert stderr == ""
