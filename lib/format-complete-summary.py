@@ -102,21 +102,26 @@ def format_complete_summary(state, closed_issues=None):
         lines.append("  " + "─" * 28)
         if issues:
             lines.append(f"  Issues filed: {len(issues)}")
-            for issue in issues:
-                url = issue.get("url", "")
-                shorthand = short_issue_ref(url) if url else ""
-                prefix = f"{shorthand} " if shorthand.startswith("#") else ""
-                lines.append(f"    [{issue['label']}] {prefix}{issue['title']}")
-                if url:
-                    lines.append(f"    {url}")
         if notes:
             lines.append(f"  Notes captured: {len(notes)}")
         lines.append("")
 
     lines.append(border)
 
+    # Build issues_links for rendering outside the code block
+    issue_link_lines = []
+    for issue in issues:
+        url = issue.get("url", "")
+        shorthand = short_issue_ref(url) if url else ""
+        prefix = f"{shorthand} " if shorthand.startswith("#") else ""
+        title_part = f"[{issue['label']}] {prefix}{issue['title']}"
+        if url:
+            issue_link_lines.append(f"  {title_part} — {url}")
+        else:
+            issue_link_lines.append(f"  {title_part}")
+
     summary = "\n".join(lines)
-    return {"summary": summary, "total_seconds": total_seconds}
+    return {"summary": summary, "total_seconds": total_seconds, "issues_links": "\n".join(issue_link_lines)}
 
 
 def main():
@@ -148,6 +153,7 @@ def main():
                     "status": "ok",
                     "summary": result["summary"],
                     "total_seconds": result["total_seconds"],
+                    "issues_links": result["issues_links"],
                 }
             )
         )

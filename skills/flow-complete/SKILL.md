@@ -581,7 +581,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-complete --message "<me
 After all parallel calls return, process the results:
 
 - Parse the `format-complete-summary` JSON output. Keep the `summary`
-  field — use it in the Done banner below.
+  and `issues_links` fields — use them in the Done banner below.
 - If `auto-close-parent` reported `parent_closed` or `milestone_closed`
   as true for any issue, note it for the Done banner.
 - If `notify-slack` returned `"status": "ok"`, record the notification:
@@ -650,13 +650,20 @@ status in your response (not via Bash) inside a single fenced code block:
 
 The summary already includes the feature name, prompt, PR: <pr_url>,
 per-phase timeline (Start:, Plan:, Code:, Code Review:, Learn:,
-Complete:, Total:), and artifact counts (issues filed, notes captured).
-Do not add a separate PR line — it is part of the summary.
+Complete:, Total:), and artifact counts (issues filed count, notes
+captured count). Do not add a separate PR line — it is part of the
+summary.
 
-After the banner, write a brief session summary in natural prose (2-3
-sentences). Describe what was built or fixed, the approach taken, and the
-outcome. Use your conversation context — do not fetch additional data or
-run any commands. This is a narrative recap, not a structured template.
+If the `format-complete-summary` JSON output has a non-empty
+`issues_links` field, render it as regular text (not inside a code
+block) immediately after the banner code block. This makes the issue
+URLs clickable — URLs inside code blocks are not rendered as links.
+
+After the banner (and issue links if any), write a brief
+session summary in natural prose (2-3 sentences). Describe what was
+built or fixed, the approach taken, and the outcome. Use your
+conversation context — do not fetch additional data or run any
+commands. This is a narrative recap, not a structured template.
 
 ## Rules
 
