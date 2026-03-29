@@ -354,10 +354,31 @@ def test_onboarding_agent_exists():
     )
 
 
+def test_learn_analyst_agent_exists():
+    """agents/learn-analyst.md must exist with required frontmatter fields."""
+    agent_file = REPO_ROOT / "agents" / "learn-analyst.md"
+    assert agent_file.exists(), "agents/learn-analyst.md does not exist"
+    content = agent_file.read_text()
+    assert "name: learn-analyst" in content, "agents/learn-analyst.md missing 'name: learn-analyst' in frontmatter"
+    # Learn-analyst agent must be read-only — no Edit or Write tools
+    assert "Edit" not in content.split("---")[1], (
+        "agents/learn-analyst.md must not include Edit tool — learn-analyst is read-only"
+    )
+    assert "Write" not in content.split("---")[1], (
+        "agents/learn-analyst.md must not include Write tool — learn-analyst is read-only"
+    )
+
+
 def test_learn_uses_onboarding_subagent():
     """Learn skill must reference the onboarding sub-agent."""
     content = _read_skill("flow-learn")
     assert '"flow:onboarding"' in content, "skills/flow-learn/SKILL.md must reference flow:onboarding sub-agent"
+
+
+def test_learn_uses_learn_analyst_subagent():
+    """Learn skill must reference the learn-analyst sub-agent."""
+    content = _read_skill("flow-learn")
+    assert '"flow:learn-analyst"' in content, "skills/flow-learn/SKILL.md must reference flow:learn-analyst sub-agent"
 
 
 def test_reviewer_agent_exists():
@@ -1297,23 +1318,21 @@ def test_learning_destinations_are_repo_only():
 
 
 def test_learning_detects_dangling_async_operations():
-    """Learn Source B must check for background agents launched but never awaited.
+    """Learn must detect dangling async operations via learn-analyst agent or Step 2.
 
-    Issue #177: Learn synthesis missed dangling background agents. Source B
-    must include a proactive signal for async operations, and Step 2 must
-    explain how to classify them."""
-    content = _read_skill("flow-learn")
-    # Source B section
-    source_b_match = re.search(r"### Source B.*?\n(.*?)(?:\n### Source C|\n---)", content, re.DOTALL)
-    assert source_b_match, "Learn skill has no Source B section"
-    source_b_text = source_b_match.group(1)
-    assert "background" in source_b_text.lower(), (
-        "Learn Source B must mention background agents as a conversation signal"
-    )
-    # Step 2 section (reuse existing helper)
+    Issue #177: Learn synthesis missed dangling background agents. The
+    learn-analyst agent now detects these from diff patterns, and Step 2
+    must include guidance on classifying dangling async findings."""
+    # Step 2 must reference dangling async detection
     step2_text = _learn_step_text(2)
     assert "dangling" in step2_text.lower() or "async" in step2_text.lower(), (
         "Learn Step 2 must include guidance on classifying dangling async findings"
+    )
+    # The learn-analyst agent definition must also cover dangling async
+    agent_file = REPO_ROOT / "agents" / "learn-analyst.md"
+    agent_content = agent_file.read_text().lower()
+    assert "dangling" in agent_content or "background agent" in agent_content, (
+        "agents/learn-analyst.md must detect dangling async or background agent patterns"
     )
 
 
