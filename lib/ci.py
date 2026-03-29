@@ -103,7 +103,7 @@ def main():
             branch_override = args[idx + 1]
             args = args[:idx] + args[idx + 2 :]
 
-    # Extract --simulate-branch from args (set in child env, not sentinel)
+    # Extract --simulate-branch from args (set in child env AND sentinel hash)
     simulate_branch = None
     if "--simulate-branch" in args:
         idx = args.index("--simulate-branch")
