@@ -110,7 +110,7 @@ def validate(file_path, flow_active=False):
     return (
         False,
         "BLOCKED: .claude/ paths are protected during FLOW phases. "
-        "Use `bin/flow write-rule --path <target> --content-file <temp>` instead. "
+        "Use `${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <target> --content-file <temp>` instead. "
         "Write the full file content to a temp file in .flow-states/, "
         "then run the write-rule command.",
     )
