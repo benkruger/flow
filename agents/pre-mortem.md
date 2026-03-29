@@ -3,12 +3,6 @@ name: pre-mortem
 description: "Pre-mortem incident analysis. Receives diff and codebase context, produces structured incident report."
 tools: Read, Glob, Grep, Bash
 maxTurns: 25
-hooks:
-  PreToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "${CLAUDE_PLUGIN_ROOT}/lib/validate-ci-bash.py"
 ---
 
 # Pre-Mortem Incident Analysis
@@ -22,7 +16,7 @@ intended, or what trade-offs were considered. You see only the code.
 
 ## Input
 
-The full diff (`git diff origin/main..HEAD`) is provided in your prompt.
+The full diff (`git diff origin/main...HEAD`) is provided in your prompt.
 Use it as your primary evidence. Use Read, Glob, and Grep tools to
 investigate the surrounding codebase for context.
 

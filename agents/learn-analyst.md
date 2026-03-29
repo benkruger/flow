@@ -3,12 +3,6 @@ name: learn-analyst
 description: "Cognitively isolated learning analysis. Receives diff, state file data, plan, and CLAUDE.md rules. Produces categorized findings: process violations, mistakes, missing rules, process gaps."
 tools: Read, Glob, Grep, Bash
 maxTurns: 15
-hooks:
-  PreToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "${CLAUDE_PLUGIN_ROOT}/lib/validate-ci-bash.py"
 ---
 
 # Learning Analysis

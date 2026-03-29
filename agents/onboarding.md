@@ -3,12 +3,6 @@ name: onboarding
 description: "Onboarding perspective analysis. Receives diff and codebase context, produces confusion report of comprehension barriers."
 tools: Read, Glob, Grep, Bash
 maxTurns: 15
-hooks:
-  PreToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "${CLAUDE_PLUGIN_ROOT}/lib/validate-ci-bash.py"
 ---
 
 # Onboarding Perspective Analysis
@@ -25,7 +19,7 @@ context that is not in the code itself.
 
 ## Input
 
-The full diff (`git diff origin/main..HEAD`) is provided in your prompt.
+The full diff (`git diff origin/main...HEAD`) is provided in your prompt.
 Use it as your primary evidence. Use Read, Glob, and Grep tools to
 investigate the surrounding codebase for context.
 

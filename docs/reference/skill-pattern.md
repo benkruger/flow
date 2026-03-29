@@ -122,8 +122,8 @@ enforcing tool restrictions on all Bash calls — including those from
 built-in skills' sub-agents. The hook validates three layers: compound
 command blocking, file-read command blocking, and whitelist enforcement
 against `.claude/settings.json` allow patterns. Commands not matching any
-`Bash(...)` pattern are blocked with exit 2. The ci-fixer also retains
-its own hook declaration for defense in depth.
+`Bash(...)` pattern are blocked with exit 2. Agent frontmatter must only
+use supported keys — unsupported keys like `hooks` can cause loading failures.
 
 Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`).
 Code Review performs inline review passes for clarity, then performs inline

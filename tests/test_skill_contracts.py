@@ -316,8 +316,6 @@ def test_ci_fixer_agent_exists():
     assert agent_file.exists(), "agents/ci-fixer.md does not exist"
     content = agent_file.read_text()
     assert "name: ci-fixer" in content, "agents/ci-fixer.md missing 'name: ci-fixer' in frontmatter"
-    assert "PreToolUse" in content, "agents/ci-fixer.md missing PreToolUse hook"
-    assert "validate-ci-bash" in content, "agents/ci-fixer.md missing reference to validate-ci-bash"
     # CI re-run must use an explicit bash block with plugin root prefix
     assert "```bash" in content, "agents/ci-fixer.md missing explicit bash block for bin/flow ci"
     assert "${CLAUDE_PLUGIN_ROOT}/bin/flow ci" in content, (
@@ -332,8 +330,6 @@ def test_pre_mortem_agent_exists():
     assert agent_file.exists(), "agents/pre-mortem.md does not exist"
     content = agent_file.read_text()
     assert "name: pre-mortem" in content, "agents/pre-mortem.md missing 'name: pre-mortem' in frontmatter"
-    assert "PreToolUse" in content, "agents/pre-mortem.md missing PreToolUse hook"
-    assert "validate-ci-bash" in content, "agents/pre-mortem.md missing reference to validate-ci-bash"
     # Pre-mortem agent must be read-only — no Edit or Write tools
     assert "Edit" not in content.split("---")[1], (
         "agents/pre-mortem.md must not include Edit tool — pre-mortem is read-only"
@@ -349,8 +345,6 @@ def test_onboarding_agent_exists():
     assert agent_file.exists(), "agents/onboarding.md does not exist"
     content = agent_file.read_text()
     assert "name: onboarding" in content, "agents/onboarding.md missing 'name: onboarding' in frontmatter"
-    assert "PreToolUse" in content, "agents/onboarding.md missing PreToolUse hook"
-    assert "validate-ci-bash" in content, "agents/onboarding.md missing reference to validate-ci-bash"
     # Onboarding agent must be read-only — no Edit or Write tools
     assert "Edit" not in content.split("---")[1], (
         "agents/onboarding.md must not include Edit tool — onboarding is read-only"
@@ -366,8 +360,6 @@ def test_learn_analyst_agent_exists():
     assert agent_file.exists(), "agents/learn-analyst.md does not exist"
     content = agent_file.read_text()
     assert "name: learn-analyst" in content, "agents/learn-analyst.md missing 'name: learn-analyst' in frontmatter"
-    assert "PreToolUse" in content, "agents/learn-analyst.md missing PreToolUse hook"
-    assert "validate-ci-bash" in content, "agents/learn-analyst.md missing reference to validate-ci-bash"
     # Learn-analyst agent must be read-only — no Edit or Write tools
     assert "Edit" not in content.split("---")[1], (
         "agents/learn-analyst.md must not include Edit tool — learn-analyst is read-only"
@@ -395,14 +387,26 @@ def test_reviewer_agent_exists():
     assert agent_file.exists(), "agents/reviewer.md does not exist"
     content = agent_file.read_text()
     assert "name: reviewer" in content, "agents/reviewer.md missing 'name: reviewer' in frontmatter"
-    assert "PreToolUse" in content, "agents/reviewer.md missing PreToolUse hook"
-    assert "validate-ci-bash" in content, "agents/reviewer.md missing reference to validate-ci-bash"
     # Reviewer agent must be read-only — no Edit or Write tools
     assert "Edit" not in content.split("---")[1], (
         "agents/reviewer.md must not include Edit tool — reviewer is read-only"
     )
     assert "Write" not in content.split("---")[1], (
         "agents/reviewer.md must not include Write tool — reviewer is read-only"
+    )
+
+
+def test_adversarial_agent_exists():
+    """agents/adversarial.md must exist with required frontmatter fields."""
+    agent_file = REPO_ROOT / "agents" / "adversarial.md"
+    assert agent_file.exists(), "agents/adversarial.md does not exist"
+    content = agent_file.read_text()
+    assert "name: adversarial" in content, "agents/adversarial.md missing 'name: adversarial' in frontmatter"
+    # Adversarial agent needs Write (for temp test files) but not Edit
+    frontmatter = content.split("---")[1]
+    assert "Write" in frontmatter, "agents/adversarial.md must include Write tool for temp test files"
+    assert "Edit" not in frontmatter, (
+        "agents/adversarial.md must not include Edit tool — adversarial only writes new files"
     )
 
 
@@ -439,7 +443,7 @@ def test_code_review_has_inline_correctness_review():
     assert "Test Coverage" in step2_content, "Step 2 must include Test Coverage pass"
     assert "API Contracts" in step2_content, "Step 2 must include API Contracts pass"
     assert "Rule Compliance" in step2_content, "Step 2 must include Rule Compliance pass"
-    assert "git diff origin/main..HEAD" in step2_content, "Step 2 must get the branch diff inline"
+    assert "git diff origin/main...HEAD" in step2_content, "Step 2 must get the branch diff inline (three-dot)"
 
 
 def test_code_review_step2_has_step_numbering_verification():
@@ -463,7 +467,7 @@ def test_code_review_has_inline_security_review():
     assert "Input Validation" in step3_content, "Step 3 must include Input Validation pass"
     assert "Authentication" in step3_content, "Step 3 must include Authentication pass"
     assert "Data Exposure" in step3_content, "Step 3 must include Data Exposure pass"
-    assert "git diff origin/main..HEAD" in step3_content, "Step 3 must get the branch diff inline"
+    assert "git diff origin/main...HEAD" in step3_content, "Step 3 must get the branch diff inline (three-dot)"
 
 
 def test_phase_skills_have_tool_restriction_in_hard_rules():
@@ -1715,6 +1719,62 @@ def test_code_review_no_plugin_config_axis():
     assert "code_review_plugin" not in content, (
         "flow-code-review must NOT reference code_review_plugin config axis"
         " (removed in PR #587, resurrected via merge in PR #600)"
+    )
+
+
+def test_code_review_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = _read_skill("flow-code-review")
+    assert "origin/main..HEAD" not in content, (
+        "flow-code-review must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660 to exclude "
+        "merged-from-main content"
+    )
+
+
+def test_learn_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = _read_skill("flow-learn")
+    assert "origin/main..HEAD" not in content, (
+        "flow-learn must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660 to exclude "
+        "merged-from-main content"
+    )
+
+
+def test_reviewer_agent_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = (REPO_ROOT / "agents" / "reviewer.md").read_text()
+    assert "origin/main..HEAD" not in content, (
+        "agents/reviewer.md must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660"
+    )
+
+
+def test_pre_mortem_agent_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = (REPO_ROOT / "agents" / "pre-mortem.md").read_text()
+    assert "origin/main..HEAD" not in content, (
+        "agents/pre-mortem.md must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660"
+    )
+
+
+def test_adversarial_agent_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = (REPO_ROOT / "agents" / "adversarial.md").read_text()
+    assert "origin/main..HEAD" not in content, (
+        "agents/adversarial.md must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660"
+    )
+
+
+def test_onboarding_agent_no_two_dot_diff():
+    """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
+    content = (REPO_ROOT / "agents" / "onboarding.md").read_text()
+    assert "origin/main..HEAD" not in content, (
+        "agents/onboarding.md must NOT use two-dot diff (origin/main..HEAD) — "
+        "replaced with three-dot (origin/main...HEAD) in PR #660"
     )
 
 
