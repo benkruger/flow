@@ -354,6 +354,26 @@ def test_agent_frontmatter_only_supported_keys():
         )
 
 
+def test_all_agents_specify_model_sonnet():
+    """All sub-agents must specify model: sonnet to avoid inheriting Opus from the parent session."""
+    import yaml
+
+    for agent_file in sorted(AGENTS_DIR.glob("*.md")):
+        content = agent_file.read_text()
+        parts = content.split("---", 2)
+        assert len(parts) >= 3, f"{agent_file.name} missing YAML frontmatter delimiters"
+        frontmatter = yaml.safe_load(parts[1])
+        assert isinstance(frontmatter, dict), f"{agent_file.name} frontmatter is not a dict"
+        assert "model" in frontmatter, (
+            f"{agent_file.name} missing 'model' key in frontmatter — "
+            f"agents without an explicit model inherit Opus from the parent session"
+        )
+        assert frontmatter["model"] == "sonnet", (
+            f"{agent_file.name} has model={frontmatter['model']!r}, expected 'sonnet' — "
+            f"all sub-agents should run on Sonnet to reduce credit consumption"
+        )
+
+
 def test_checksum_version_invariant():
     """Validate checksum functions exist and the upgrade mechanism is documented.
 
