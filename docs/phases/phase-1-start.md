@@ -15,19 +15,19 @@ This is always the first phase, for every feature without exception. It establis
 
 ## Steps
 
-### 1. Pre-flight checks
+Steps 1–9 serialize all main-branch work behind a lock. Only one flow-start runs this section at a time. Concurrent starts poll via `/loop` until the lock is released.
 
-Run `bin/flow prime-check` to verify `/flow-prime` has been run with the current plugin version. Cheapest check — runs first so a missing prime doesn't waste time on slower steps. Also checks GitHub for newer FLOW releases and displays upgrade instructions if one is available. This check is informational — it never blocks.
+### 1. Acquire start lock
 
-### 2. Label referenced issues
+Acquires a lock (`lib/start-lock.py`) using a non-blocking `--acquire` call. If the lock is already held, invokes `/loop 15s /flow:flow-start` to poll every 15 seconds until the lock is released. Since nothing has executed yet, re-running the entire skill is safe.
 
-If the start prompt contains `#N` issue references, adds the "Flow In-Progress" label immediately. This signals to other engineers (on other machines) that these issues are being worked on — before the slower locked operations begin. Best-effort — labeling failures do not block the Start phase.
+### 2. Pre-flight checks
 
-Steps 3–9 serialize all main-branch work behind a lock. Only one flow-start runs this section at a time. Concurrent starts wait for the lock — the second start finds main already clean and breezes through.
+Run `bin/flow prime-check` to verify `/flow-prime` has been run with the current plugin version. Also checks GitHub for newer FLOW releases and displays upgrade instructions if one is available.
 
-### 3. Acquire start lock
+### 3. Label referenced issues
 
-Acquires a lock (`lib/start-lock.py`) so only one flow-start runs at a time. The lock command must not run in the background — its `--wait` flag blocks until acquired or timed out.
+If the start prompt contains `#N` issue references, adds the "Flow In-Progress" label immediately. This signals to other engineers (on other machines) that these issues are being worked on. Best-effort — labeling failures do not block the Start phase.
 
 ### 4. Pull latest main
 

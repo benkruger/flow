@@ -22,8 +22,8 @@ Begins a new feature. This is always the first command run for any piece of work
 
 ## What It Does
 
-1. Pre-flight: runs version gate and upgrade check in parallel
-2. Acquires a start lock so only one start runs at a time (concurrent starts wait internally via `--wait` with a 90-second timeout)
+1. Acquires a start lock so only one start runs at a time (concurrent starts poll via `/loop` every 15 seconds until the lock is released)
+2. Pre-flight: runs version gate and upgrade check in parallel
 3. Pulls latest main
 4. Runs `bin/flow ci` for a clean baseline — retries up to 3 times for flaky tests, files a Flaky Test issue if intermittent, stops if all fail
 5. Updates dependencies on main via `bin/dependencies`
