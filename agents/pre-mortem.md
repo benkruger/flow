@@ -3,12 +3,6 @@ name: pre-mortem
 description: "Pre-mortem incident analysis. Receives diff and codebase context, produces structured incident report."
 tools: Read, Glob, Grep, Bash
 maxTurns: 25
-hooks:
-  PreToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "${CLAUDE_PLUGIN_ROOT}/lib/validate-ci-bash.py"
 ---
 
 # Pre-Mortem Incident Analysis
