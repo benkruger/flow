@@ -22,7 +22,7 @@ intended, or what trade-offs were considered. You see only the code.
 
 ## Input
 
-The full diff (`git diff origin/main..HEAD`) is provided in your prompt.
+The full diff (`git diff origin/main...HEAD`) is provided in your prompt.
 Use it as your primary evidence. Use Read, Glob, and Grep tools to
 investigate the surrounding codebase for context.
 
