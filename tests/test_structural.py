@@ -334,6 +334,7 @@ SUPPORTED_AGENT_FRONTMATTER_KEYS = {
 def test_agent_frontmatter_only_supported_keys():
     """Agent frontmatter must only use keys supported by Claude Code's plugin agent system.
 
+    Tombstone: hooks removed from agent frontmatter in PR #656. Must not return.
     Unsupported keys (e.g. hooks, mcpServers, permissionMode) may cause
     agent loading failures in Claude Code versions that validate frontmatter
     strictly. The global PreToolUse hook in hooks.json provides Bash enforcement.
