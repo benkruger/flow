@@ -13,7 +13,6 @@ from flow_utils import (
     PINNED_COLORS,
     TAB_COLORS,
     format_tab_color,
-    format_tab_title,
     read_flow_json,
     write_tab_sequences,
 )
@@ -744,121 +743,6 @@ def test_build_initial_phases_required_fields():
             assert field in phases[key], f"Phase {key} missing field {field}"
 
 
-# --- format_tab_title tests ---
-
-
-class TestFormatTabTitle:
-    def _state(self, phase, **kwargs):
-        """Build a minimal state dict for title testing."""
-        state = {"current_phase": phase, "branch": "test-feature"}
-        state.update(kwargs)
-        return state
-
-    def test_phase_1_start(self):
-        title = format_tab_title(self._state("flow-start"))
-        assert title == "Test Feature \u2014 P1: Start"
-
-    def test_phase_2_plan(self):
-        title = format_tab_title(self._state("flow-plan"))
-        assert title == "Test Feature \u2014 P2: Plan"
-
-    def test_phase_3_code(self):
-        title = format_tab_title(self._state("flow-code"))
-        assert title == "Test Feature \u2014 P3: Code (1)"
-
-    def test_phase_4_code_review(self):
-        title = format_tab_title(self._state("flow-code-review"))
-        assert title == "Test Feature \u2014 P4: Code Review (1/4)"
-
-    def test_phase_5_learn(self):
-        title = format_tab_title(self._state("flow-learn"))
-        assert title == "Test Feature \u2014 P5: Learn"
-
-    def test_phase_6_complete(self):
-        title = format_tab_title(self._state("flow-complete"))
-        assert title == "Test Feature \u2014 P6: Complete"
-
-    def test_code_with_task(self):
-        title = format_tab_title(self._state("flow-code", code_task=2))
-        assert title == "Test Feature \u2014 P3: Code (3)"
-
-    def test_code_with_task_zero(self):
-        """code_task=0 means working on first task — shows (1)."""
-        title = format_tab_title(self._state("flow-code", code_task=0))
-        assert title == "Test Feature \u2014 P3: Code (1)"
-
-    def test_code_with_string_task(self):
-        """Non-integer code_task is ignored — no step info."""
-        title = format_tab_title(self._state("flow-code", code_task="2"))
-        assert title == "Test Feature \u2014 P3: Code"
-
-    def test_code_review_with_step(self):
-        title = format_tab_title(self._state("flow-code-review", code_review_step=2))
-        assert title == "Test Feature \u2014 P4: Code Review (3/4)"
-
-    def test_code_review_with_step_zero(self):
-        """code_review_step=0 means working on first step — shows (1/4)."""
-        title = format_tab_title(self._state("flow-code-review", code_review_step=0))
-        assert title == "Test Feature \u2014 P4: Code Review (1/4)"
-
-    def test_code_review_with_step_four(self):
-        """code_review_step=4 means all done — no step info."""
-        title = format_tab_title(self._state("flow-code-review", code_review_step=4))
-        assert title == "Test Feature \u2014 P4: Code Review"
-
-    def test_learn_with_step(self):
-        """learn_step=4 means checkpoint 4 done — shows (5)."""
-        title = format_tab_title(self._state("flow-learn", learn_step=4))
-        assert title == "Test Feature \u2014 P5: Learn (5)"
-
-    def test_learn_with_step_zero(self):
-        """learn_step=0 means no checkpoint — no step info."""
-        title = format_tab_title(self._state("flow-learn", learn_step=0))
-        assert title == "Test Feature \u2014 P5: Learn"
-
-    def test_complete_with_step(self):
-        """complete_step=5 means resuming at step 5 — shows (5) directly."""
-        title = format_tab_title(self._state("flow-complete", complete_step=5))
-        assert title == "Test Feature \u2014 P6: Complete (5)"
-
-    def test_complete_with_step_zero(self):
-        """complete_step=0 means no resume point — no step info."""
-        title = format_tab_title(self._state("flow-complete", complete_step=0))
-        assert title == "Test Feature \u2014 P6: Complete"
-
-    def test_missing_current_phase(self):
-        assert format_tab_title({"branch": "test-feature"}) is None
-
-    def test_missing_branch(self):
-        assert format_tab_title({"current_phase": "flow-code"}) is None
-
-    def test_unknown_phase_key(self):
-        assert format_tab_title(self._state("flow-unknown")) is None
-
-    def test_feature_name_from_branch(self):
-        """Branch name is title-cased into the feature name."""
-        title = format_tab_title(self._state("flow-start", branch="invoice-pdf-export"))
-        assert title == "Invoice Pdf Export \u2014 P1: Start"
-
-    def test_prompt_with_one_issue(self):
-        title = format_tab_title(self._state("flow-code", prompt="work on issue #342"))
-        assert title == "#342 Test Feature \u2014 P3: Code (1)"
-
-    def test_prompt_with_multiple_issues(self):
-        title = format_tab_title(self._state("flow-code", prompt="work on #83 and #89"))
-        assert title == "#83 #89 Test Feature \u2014 P3: Code (1)"
-
-    def test_prompt_with_no_issue_numbers(self):
-        title = format_tab_title(self._state("flow-code", prompt="fix login timeout"))
-        assert title == "Test Feature \u2014 P3: Code (1)"
-
-    def test_prompt_missing(self):
-        """No prompt key in state — no issue prefix."""
-        state = {"current_phase": "flow-code", "branch": "test-feature"}
-        title = format_tab_title(state)
-        assert title == "Test Feature \u2014 P3: Code (1)"
-
-
 # --- format_tab_color tests ---
 
 
@@ -985,8 +869,8 @@ class TestWriteTabSequences:
         monkeypatch.setattr("builtins.open", mock_open)
         return written
 
-    def test_writes_color_and_title_with_state(self, tmp_path, monkeypatch):
-        """State dict with phase/branch/repo writes color + title to /dev/tty."""
+    def test_writes_color_with_state(self, tmp_path, monkeypatch):
+        """State dict with phase/branch/repo writes color to /dev/tty."""
         monkeypatch.chdir(tmp_path)
         written = self._mock_tty(monkeypatch)
 
@@ -1003,8 +887,6 @@ class TestWriteTabSequences:
         assert f"\033]6;1;bg;red;brightness;{r}\007" in written[0]
         assert f"\033]6;1;bg;green;brightness;{g}\007" in written[0]
         assert f"\033]6;1;bg;blue;brightness;{b}\007" in written[0]
-        title = format_tab_title(state)
-        assert f"\033]1;{title}\007" in written[0]
 
     def test_writes_color_only_with_repo(self, tmp_path, monkeypatch):
         """repo kwarg without state writes only color sequences, no title."""
@@ -1066,8 +948,8 @@ class TestWriteTabSequences:
         write_tab_sequences()
         assert len(opened) == 0
 
-    def test_state_with_unknown_phase_writes_color_only(self, tmp_path, monkeypatch):
-        """State with unrecognized phase writes color, no title."""
+    def test_state_with_unknown_phase_writes_color(self, tmp_path, monkeypatch):
+        """State with unrecognized phase writes color to /dev/tty."""
         monkeypatch.chdir(tmp_path)
         written = self._mock_tty(monkeypatch)
 
@@ -1079,7 +961,6 @@ class TestWriteTabSequences:
         write_tab_sequences(state)
 
         assert len(written) == 1
-        assert "\033]1;" not in written[0]
         r, g, b = format_tab_color(state)
         assert f"\033]6;1;bg;red;brightness;{r}\007" in written[0]
 

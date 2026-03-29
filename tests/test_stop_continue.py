@@ -10,7 +10,6 @@ import pytest
 from conftest import LIB_DIR, make_state, write_state
 from flow_utils import (
     format_tab_color,
-    format_tab_title,
     write_tab_sequences,
 )
 
@@ -854,7 +853,7 @@ class TestCheckQaPending:
         assert "Return to FLOW repo and verify." in output["reason"]
 
 
-# --- set_tab_title tests ---
+# --- set_tab_color tests ---
 
 
 class TestSetTabTitle:
@@ -871,15 +870,12 @@ class TestSetTabTitle:
         write_state(state_dir, branch, state)
 
         written = _mock_tty(monkeypatch)
-        _mod.set_tab_title()
+        _mod.set_tab_color()
 
         r, g, b = format_tab_color(state)
         assert len(written) == 1
         expected = (
-            f"\033]6;1;bg;red;brightness;{r}\007"
-            f"\033]6;1;bg;green;brightness;{g}\007"
-            f"\033]6;1;bg;blue;brightness;{b}\007"
-            f"\033]1;Test Feature \u2014 P3: Code (1)\007"
+            f"\033]6;1;bg;red;brightness;{r}\007\033]6;1;bg;green;brightness;{g}\007\033]6;1;bg;blue;brightness;{b}\007"
         )
         assert written[0] == expected
 
@@ -898,7 +894,7 @@ class TestSetTabTitle:
         (git_repo / ".flow.json").write_text(json.dumps({"tab_color": [99, 88, 77]}))
 
         written = _mock_tty(monkeypatch)
-        _mod.set_tab_title()
+        _mod.set_tab_color()
 
         assert len(written) == 1
         assert "\033]6;1;bg;red;brightness;99\007" in written[0]
@@ -940,7 +936,7 @@ class TestSetTabTitle:
             return original_open(path, *args, **kwargs)
 
         monkeypatch.setattr("builtins.open", mock_open)
-        _mod.set_tab_title()
+        _mod.set_tab_color()
         assert call_count >= 1
 
     def test_oserror_silently_caught(self, git_repo, state_dir, branch, monkeypatch):
@@ -965,7 +961,7 @@ class TestSetTabTitle:
 
         monkeypatch.setattr("builtins.open", mock_open)
         # Should not raise
-        _mod.set_tab_title()
+        _mod.set_tab_color()
 
     def test_no_state_file_writes_color_only(self, git_repo, state_dir, monkeypatch):
         """No state file but detect_repo returns a repo — write color only, no title."""
@@ -973,7 +969,7 @@ class TestSetTabTitle:
         monkeypatch.setattr(_mod, "detect_repo", lambda: "test/test")
 
         written = _mock_tty(monkeypatch)
-        _mod.set_tab_title()
+        _mod.set_tab_color()
 
         assert len(written) == 1
         r, g, b = format_tab_color(repo="test/test")
@@ -999,7 +995,7 @@ class TestSetTabTitle:
             return original_open(path, *args, **kwargs)
 
         monkeypatch.setattr("builtins.open", mock_open)
-        _mod.set_tab_title()
+        _mod.set_tab_color()
         assert len(written) == 0
 
     def test_no_state_file_with_flow_json_override(self, git_repo, state_dir, monkeypatch):
@@ -1009,7 +1005,7 @@ class TestSetTabTitle:
         (git_repo / ".flow.json").write_text(json.dumps({"tab_color": [50, 60, 70]}))
 
         written = _mock_tty(monkeypatch)
-        _mod.set_tab_title()
+        _mod.set_tab_color()
 
         assert len(written) == 1
         assert "\033]6;1;bg;red;brightness;50\007" in written[0]
@@ -1020,12 +1016,12 @@ class TestSetTabTitle:
         """No state file, no repo — function returns silently."""
         monkeypatch.chdir(git_repo)
         monkeypatch.setattr(_mod, "detect_repo", lambda: None)
-        _mod.set_tab_title()
+        _mod.set_tab_color()
 
     def test_no_branch_no_error(self, tmp_path, monkeypatch):
         """Not in a git repo — function returns silently."""
         monkeypatch.chdir(tmp_path)
-        _mod.set_tab_title()
+        _mod.set_tab_color()
 
     def test_unknown_phase_color_still_written(self, git_repo, state_dir, branch, monkeypatch):
         """State file with unknown phase — no title, but color still written."""
@@ -1035,7 +1031,7 @@ class TestSetTabTitle:
         write_state(state_dir, branch, state)
 
         written = _mock_tty(monkeypatch)
-        _mod.set_tab_title()
+        _mod.set_tab_color()
 
         assert len(written) == 1
         r, g, b = format_tab_color(state)
@@ -1045,8 +1041,8 @@ class TestSetTabTitle:
         assert written[0] == expected
         assert "\033]1;" not in written[0]
 
-    def test_on_main_with_other_branch_state_writes_title(self, git_repo, state_dir, monkeypatch):
-        """On main with state file for another branch → title written via find_state_files fallback."""
+    def test_on_main_with_other_branch_state_writes_color(self, git_repo, state_dir, monkeypatch):
+        """On main with state file for another branch → color written via find_state_files fallback."""
         monkeypatch.chdir(git_repo)
         state = make_state(
             current_phase="flow-code",
@@ -1060,41 +1056,40 @@ class TestSetTabTitle:
         write_state(state_dir, "some-feature", state)
 
         # current_branch() returns "main" (the fixture repo's default branch)
-        # No main.json exists — set_tab_title should fall back to find_state_files
+        # No main.json exists — set_tab_color should fall back to find_state_files
         written = _mock_tty(monkeypatch)
-        _mod.set_tab_title()
+        _mod.set_tab_color()
 
         assert len(written) == 1
-        # Must contain a title escape, not just color
-        assert "\033]1;" in written[0]
-        assert "Some Feature" in written[0]
+        r, g, b = format_tab_color(state)
+        assert f"\033]6;1;bg;red;brightness;{r}\007" in written[0]
 
 
-# --- set_tab_title error logging tests ---
+# --- set_tab_color error logging tests ---
 
 
-class TestSetTabTitleErrorLogging:
+class TestSetTabColorErrorLogging:
     def test_error_logged_to_stderr(self, git_repo, state_dir, branch, monkeypatch, capsys):
         """Corrupt state file → stderr contains error diagnostic."""
         monkeypatch.chdir(git_repo)
         (state_dir / f"{branch}.json").write_text("{bad json")
 
-        _mod.set_tab_title()
+        _mod.set_tab_color()
 
         captured = capsys.readouterr()
-        assert "[FLOW stop-continue] set_tab_title error:" in captured.err
+        assert "[FLOW stop-continue] set_tab_color error:" in captured.err
 
     def test_error_logged_to_log_file(self, git_repo, state_dir, branch, monkeypatch, capsys):
         """Corrupt state file → error logged to .flow-states/<branch>.log."""
         monkeypatch.chdir(git_repo)
         (state_dir / f"{branch}.json").write_text("{bad json")
 
-        _mod.set_tab_title()
+        _mod.set_tab_color()
 
         log_path = state_dir / f"{branch}.log"
         assert log_path.exists()
         log_content = log_path.read_text()
-        assert "[stop-continue] set_tab_title error:" in log_content
+        assert "[stop-continue] set_tab_color error:" in log_content
 
     def test_log_failure_does_not_propagate(self, git_repo, state_dir, branch, monkeypatch, capsys):
         """When both the main operation and log writing fail, no exception propagates."""
@@ -1107,10 +1102,10 @@ class TestSetTabTitleErrorLogging:
         monkeypatch.setattr(_mod, "now", raise_now)
 
         # Should not raise
-        _mod.set_tab_title()
+        _mod.set_tab_color()
 
         captured = capsys.readouterr()
-        assert "[FLOW stop-continue] set_tab_title error:" in captured.err
+        assert "[FLOW stop-continue] set_tab_color error:" in captured.err
 
 
 # --- Hoisted root/branch parameter tests ---
@@ -1220,7 +1215,7 @@ class TestCaptureSessionIdWithParams:
 
 
 class TestSetTabTitleWithParams:
-    """Tests that set_tab_title accepts root and branch params directly."""
+    """Tests that set_tab_color accepts root and branch params directly."""
 
     def test_uses_passed_root_and_branch(self, git_repo, state_dir, branch, monkeypatch):
         """When root and branch are passed, function uses them without subprocess."""
@@ -1235,15 +1230,16 @@ class TestSetTabTitleWithParams:
         write_state(state_dir, branch, state)
 
         written = _mock_tty(monkeypatch)
-        _mod.set_tab_title(root=git_repo, branch=branch)
+        _mod.set_tab_color(root=git_repo, branch=branch)
 
         assert len(written) == 1
-        assert "\033]1;" in written[0]
+        r, g, b = format_tab_color(state)
+        assert f"\033]6;1;bg;red;brightness;{r}\007" in written[0]
 
     def test_none_branch_returns_silently(self, git_repo, monkeypatch):
         """When branch param is None, function returns without error."""
         monkeypatch.setattr(_mod, "detect_repo", lambda: None)
-        _mod.set_tab_title(root=git_repo, branch=None)
+        _mod.set_tab_color(root=git_repo, branch=None)
 
 
 # --- write_tab_sequences tests ---
@@ -1252,8 +1248,8 @@ class TestSetTabTitleWithParams:
 class TestWriteTabSequences:
     """Tests for flow_utils.write_tab_sequences — shared tab escape writer."""
 
-    def test_writes_color_and_title_with_state(self, tmp_path, monkeypatch):
-        """State dict with phase/branch/repo writes color + title to /dev/tty."""
+    def test_writes_color_with_state(self, tmp_path, monkeypatch):
+        """State dict with phase/branch/repo writes color to /dev/tty."""
         monkeypatch.chdir(tmp_path)
         written = _mock_tty(monkeypatch)
 
@@ -1270,11 +1266,9 @@ class TestWriteTabSequences:
         assert f"\033]6;1;bg;red;brightness;{r}\007" in written[0]
         assert f"\033]6;1;bg;green;brightness;{g}\007" in written[0]
         assert f"\033]6;1;bg;blue;brightness;{b}\007" in written[0]
-        title = format_tab_title(state)
-        assert f"\033]1;{title}\007" in written[0]
 
     def test_writes_color_only_with_repo(self, tmp_path, monkeypatch):
-        """repo kwarg without state writes only color sequences, no title."""
+        """repo kwarg without state writes only color sequences."""
         monkeypatch.chdir(tmp_path)
         written = _mock_tty(monkeypatch)
 
@@ -1283,7 +1277,6 @@ class TestWriteTabSequences:
         assert len(written) == 1
         r, g, b = format_tab_color(repo="test/test")
         assert f"\033]6;1;bg;red;brightness;{r}\007" in written[0]
-        assert "\033]1;" not in written[0]
 
     def test_reads_flow_json_override(self, tmp_path, monkeypatch):
         """.flow.json with tab_color uses the override color."""
@@ -1333,8 +1326,8 @@ class TestWriteTabSequences:
         write_tab_sequences()
         assert len(opened) == 0
 
-    def test_state_with_unknown_phase_writes_color_only(self, tmp_path, monkeypatch):
-        """State with unrecognized phase writes color, no title."""
+    def test_state_with_unknown_phase_writes_color(self, tmp_path, monkeypatch):
+        """State with unrecognized phase writes color to /dev/tty."""
         monkeypatch.chdir(tmp_path)
         written = _mock_tty(monkeypatch)
 
@@ -1346,7 +1339,6 @@ class TestWriteTabSequences:
         write_tab_sequences(state)
 
         assert len(written) == 1
-        assert "\033]1;" not in written[0]
         r, g, b = format_tab_color(state)
         assert f"\033]6;1;bg;red;brightness;{r}\007" in written[0]
 
