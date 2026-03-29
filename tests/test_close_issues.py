@@ -67,13 +67,13 @@ def test_closes_all_extracted_issues_with_repo():
     }
     assert mock_run.call_count == 2
     mock_run.assert_any_call(
-        ["gh", "issue", "close", "83"],
+        ["gh", "issue", "close", "83", "--repo", "test/test"],
         capture_output=True,
         text=True,
         timeout=30,
     )
     mock_run.assert_any_call(
-        ["gh", "issue", "close", "89"],
+        ["gh", "issue", "close", "89", "--repo", "test/test"],
         capture_output=True,
         text=True,
         timeout=30,
@@ -81,7 +81,7 @@ def test_closes_all_extracted_issues_with_repo():
 
 
 def test_closes_issues_without_repo():
-    """When repo is None, closed items have number but no url."""
+    """When repo is None, closed items have number but no url, and no --repo flag."""
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
             args=[],
@@ -95,6 +95,9 @@ def test_closes_issues_without_repo():
         "closed": [{"number": 42}],
         "failed": [],
     }
+    # Verify --repo is NOT in the command args
+    call_args = mock_run.call_args[0][0]
+    assert "--repo" not in call_args
 
 
 def test_no_issues_no_gh_calls():
@@ -132,7 +135,7 @@ def test_partial_failure():
         "closed": [
             {"number": 83, "url": "https://github.com/test/test/issues/83"},
         ],
-        "failed": [89],
+        "failed": [{"number": 89, "error": "not found"}],
     }
 
 
@@ -141,7 +144,7 @@ def test_timeout_counts_as_failure():
     with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30)):
         result = _mod.close_issues([42], repo="test/test")
 
-    assert result == {"closed": [], "failed": [42]}
+    assert result == {"closed": [], "failed": [{"number": 42, "error": "timeout"}]}
 
 
 # --- CLI integration ---

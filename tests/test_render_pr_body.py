@@ -588,3 +588,52 @@ def test_main_error_handling(tmp_path):
         _mod.main()
     data = json.loads(captured.getvalue())
     assert data["status"] == "error"
+
+
+# --- Closing keywords ---
+
+
+def test_what_section_includes_closing_keywords(tmp_path):
+    """What section appends Closes #N when prompt references issues."""
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={"flow-start": "in_progress"},
+    )
+    state["prompt"] = "work on issue #643"
+    state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
+
+    body = _mod.render_body(state, tmp_path)
+
+    assert "work on issue #643." in body
+    assert "Closes #643" in body
+
+
+def test_what_section_no_closing_keywords_without_issues(tmp_path):
+    """What section has no Closes lines when prompt has no issue references."""
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={"flow-start": "in_progress"},
+    )
+    state["prompt"] = "add dark mode toggle"
+    state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
+
+    body = _mod.render_body(state, tmp_path)
+
+    assert "add dark mode toggle." in body
+    assert "Closes" not in body
+
+
+def test_what_section_multiple_closing_keywords(tmp_path):
+    """What section appends Closes #N for each referenced issue."""
+    state = make_state(
+        current_phase="flow-start",
+        phase_statuses={"flow-start": "in_progress"},
+    )
+    state["prompt"] = "fix #1 and #2"
+    state["phases"]["flow-start"]["started_at"] = "2026-01-01T00:00:00Z"
+
+    body = _mod.render_body(state, tmp_path)
+
+    assert "fix #1 and #2." in body
+    assert "Closes #1" in body
+    assert "Closes #2" in body

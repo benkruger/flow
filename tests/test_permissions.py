@@ -167,6 +167,7 @@ PLACEHOLDER_SUBS = {
     "<epic_number>": "1",
     "<dep_number>": "3",
     "<topic>": "testing-gotchas",
+    "<description>": "Update contract tests",
 }
 
 

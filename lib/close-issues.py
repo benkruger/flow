@@ -29,8 +29,11 @@ def close_issues(issue_numbers, repo=None):
     failed = []
     for num in issue_numbers:
         try:
+            cmd = ["gh", "issue", "close", str(num)]
+            if repo:
+                cmd.extend(["--repo", repo])
             result = subprocess.run(
-                ["gh", "issue", "close", str(num)],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -41,9 +44,9 @@ def close_issues(issue_numbers, repo=None):
                     entry["url"] = f"https://github.com/{repo}/issues/{num}"
                 closed.append(entry)
             else:
-                failed.append(num)
+                failed.append({"number": num, "error": result.stderr.strip()})
         except subprocess.TimeoutExpired:
-            failed.append(num)
+            failed.append({"number": num, "error": "timeout"})
     return {"closed": closed, "failed": failed}
 
 

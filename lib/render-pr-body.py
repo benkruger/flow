@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import current_branch, project_root
+from flow_utils import current_branch, extract_issue_numbers, project_root
 
 
 def _load_sibling(name, filename):
@@ -116,7 +116,12 @@ def render_body(state, project_dir):
     what_text = state.get("prompt")
     if not what_text:
         raise ValueError("State file missing 'prompt' field — start-setup.py should always set this")
-    sections.append(f"## What\n\n{what_text}.")
+    what_section = f"## What\n\n{what_text}."
+    issue_numbers = extract_issue_numbers(what_text)
+    if issue_numbers:
+        closing_lines = "\n".join(f"Closes #{n}" for n in issue_numbers)
+        what_section += f"\n\n{closing_lines}"
+    sections.append(what_section)
     section_names.append("What")
 
     # 2. Artifacts (always, items conditional)
