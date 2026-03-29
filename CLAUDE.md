@@ -29,7 +29,7 @@ In the target project:
 | 1 | Start | `/flow:flow-start` | Create worktree, PR, state file, configure workspace |
 | 2 | Plan | `/flow:flow-plan` | Invoke decompose plugin for DAG analysis, explore codebase, create implementation plan |
 | 3 | Code | `/flow:flow-code` | Execute plan tasks one at a time with TDD |
-| 4 | Code Review | `/flow:flow-code-review` | Five review steps: clarity with convention compliance, correctness with rule compliance, safety, context-isolated code review, and pre-mortem incident analysis |
+| 4 | Code Review | `/flow:flow-code-review` | Six review steps: clarity with convention compliance, correctness with rule compliance, safety, context-isolated code review, pre-mortem incident analysis, and adversarial test generation |
 | 5 | Learn | `/flow:flow-learn` | Review mistakes, capture learnings, route to permanent homes |
 | 6 | Complete | `/flow:flow-complete` | Merge PR, remove worktree, delete state file |
 
@@ -85,6 +85,7 @@ CI will fail if these are missing:
 - `lib/create-dependencies.py` — copies framework dependency template to `bin/dependencies`
 - `agents/ci-fixer.md` — custom plugin sub-agent for CI failure diagnosis and fix
 - `agents/reviewer.md` — custom plugin sub-agent for context-isolated code review (read-only, receives diff + plan + CLAUDE.md + rules)
+- `agents/adversarial.md` — custom plugin sub-agent for adversarial test generation (Write + Bash, no Edit; writes temp test files, runs them, reports failures)
 - `lib/finalize-commit.py` — consolidates commit + message-file cleanup + pull + push into one subprocess chain
 - `lib/generate-id.py` — generates an 8-character hex session ID via `uuid.uuid4().hex[:8]`; used by `flow-create-issue` and `flow-decompose-project` skills
 - `lib/log.py` — appends timestamped entries to `.flow-states/<branch>.log` via Python file append with `fcntl.LOCK_EX` locking
@@ -167,9 +168,9 @@ State files (`.flow-states/`) are local to each machine. In a multi-engineer tea
 
 ### Sub-Agents
 
-FLOW uses four custom plugin sub-agents: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Step 8) and Complete (Steps 4 and 5), `reviewer` (`agents/reviewer.md`) for context-isolated code review in Code Review (Step 4), `pre-mortem` (`agents/pre-mortem.md`) for context-isolated incident analysis in Code Review (Step 5), and `onboarding` (`agents/onboarding.md`) for newcomer-perspective comprehension analysis in Learn (Step 1). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands, shell redirection, and file-read commands in all Bash calls — including those from built-in skills' sub-agents. All four agents retain their own hook declarations for defense in depth. The reviewer, pre-mortem, and onboarding agents are read-only (Read, Glob, Grep, Bash — no Edit or Write).
+FLOW uses five custom plugin sub-agents: `ci-fixer` (`agents/ci-fixer.md`) for CI failure diagnosis and fix in Start (Step 8) and Complete (Steps 4 and 5), `reviewer` (`agents/reviewer.md`) for context-isolated code review in Code Review (Step 4), `pre-mortem` (`agents/pre-mortem.md`) for context-isolated incident analysis in Code Review (Step 5), `adversarial` (`agents/adversarial.md`) for adversarial test generation in Code Review (Step 6), and `onboarding` (`agents/onboarding.md`) for newcomer-perspective comprehension analysis in Learn (Step 1). Prompt-level tool restrictions are unreliable — sub-agents ignore them. The `PreToolUse` hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`, blocking compound commands, shell redirection, and file-read commands in all Bash calls — including those from built-in skills' sub-agents. All five agents retain their own hook declarations for defense in depth. The reviewer, pre-mortem, and onboarding agents are read-only (Read, Glob, Grep, Bash — no Edit or Write). The adversarial agent has Write access (to create temp test files) but no Edit access (cannot modify existing files).
 
-Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition — no plan mode. Code Review performs four inline review passes for clarity (code reuse, quality, efficiency, convention compliance), then performs inline correctness review for correctness (including rule compliance) and inline security review for safety, then the `reviewer` agent for context-isolated code review (receives diff, plan, CLAUDE.md, and rules — no conversation history), and finally the `pre-mortem` agent for backward-reasoning incident analysis. Code has no sub-agents. Learn uses the `onboarding` agent for debiased comprehension analysis. Complete uses ci-fixer for CI failures.
+Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition — no plan mode. Code Review performs four inline review passes for clarity (code reuse, quality, efficiency, convention compliance), then performs inline correctness review for correctness (including rule compliance) and inline security review for safety, then the `reviewer` agent for context-isolated code review (receives diff, plan, CLAUDE.md, and rules — no conversation history), then the `pre-mortem` agent for backward-reasoning incident analysis, and finally the `adversarial` agent for adversarial test generation (writes tests designed to break the implementation, runs them, reports failures as findings). Code has no sub-agents. Learn uses the `onboarding` agent for debiased comprehension analysis. Complete uses ci-fixer for CI failures.
 
 ### Orchestration
 

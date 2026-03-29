@@ -7,7 +7,9 @@ By default, skips if nothing changed since the last passing run.
 With --force, always runs bin/ci regardless of sentinel state.
 With --simulate-branch, sets FLOW_SIMULATE_BRANCH in the child
 environment so current_branch() returns the simulated name during
-test execution. Does not affect sentinel naming.
+test execution. The simulated branch name is incorporated into the
+sentinel snapshot hash so runs with different --simulate-branch
+values produce distinct sentinels.
 
 Output (JSON to stdout):
   Success:  {"status": "ok", "skipped": false}
@@ -26,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from flow_utils import project_root, resolve_branch
 
 
-def _tree_snapshot(root):
+def _tree_snapshot(root, simulate_branch=None):
     """Return a content-aware SHA-256 hash of the working tree state.
 
     Combines three signals into a single digest:
@@ -34,6 +36,8 @@ def _tree_snapshot(root):
     2. git diff HEAD — captures all tracked content changes (staged + unstaged)
     3. Untracked file content hashes via git hash-object — captures edits to
        untracked files that git status --porcelain would miss
+    4. simulate_branch value (if provided) — ensures runs with different
+       --simulate-branch values produce distinct hashes
 
     The old implementation used git status --porcelain which only captured
     file status (M, ??, A) without content. Editing an already-modified or
@@ -70,6 +74,8 @@ def _tree_snapshot(root):
         untracked_hash = hash_result.stdout
 
     combined = head.stdout.strip() + "\n" + diff.stdout + "\n" + untracked_files + "\n" + untracked_hash
+    if simulate_branch is not None:
+        combined += "\nsimulate:" + simulate_branch
     return hashlib.sha256(combined.encode()).hexdigest()
 
 
@@ -97,7 +103,7 @@ def main():
             branch_override = args[idx + 1]
             args = args[:idx] + args[idx + 2 :]
 
-    # Extract --simulate-branch from args (set in child env, not sentinel)
+    # Extract --simulate-branch from args (set in child env AND sentinel hash)
     simulate_branch = None
     if "--simulate-branch" in args:
         idx = args.index("--simulate-branch")
@@ -112,7 +118,7 @@ def main():
         print(json.dumps({"status": "error", "message": "bin/ci not found"}))
         sys.exit(1)
 
-    snapshot = _tree_snapshot(cwd)
+    snapshot = _tree_snapshot(cwd, simulate_branch=simulate_branch)
 
     if not force and sentinel and sentinel.exists():
         if sentinel.read_text() == snapshot:

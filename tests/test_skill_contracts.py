@@ -1596,20 +1596,31 @@ def test_code_review_steps_have_continuation_directives():
         "flow-code-review Step 4 must contain 'continue to Step 5' directive"
     )
 
-    # Step 5 must continue to Done
+    # Step 5 must continue to Step 6
     step5_match = re.search(
-        r"## Step 5.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
+        r"## Step 5.*?\n(.*?)(?=\n## Step 6)",
         content,
         re.DOTALL,
     )
     assert step5_match, "Could not find Step 5 in flow-code-review/SKILL.md"
-    assert "continue to Done" in step5_match.group(1), (
-        "flow-code-review Step 5 must contain 'continue to Done' directive"
+    assert "continue to Step 6" in step5_match.group(1), (
+        "flow-code-review Step 5 must contain 'continue to Step 6' directive"
+    )
+
+    # Step 6 must continue to Done
+    step6_match = re.search(
+        r"## Step 6.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
+        content,
+        re.DOTALL,
+    )
+    assert step6_match, "Could not find Step 6 in flow-code-review/SKILL.md"
+    assert "continue to Done" in step6_match.group(1), (
+        "flow-code-review Step 6 must contain 'continue to Done' directive"
     )
 
 
 def test_code_review_hard_rules_require_step_continuation():
-    """Hard Rules must require immediate continuation between all 5 steps."""
+    """Hard Rules must require immediate continuation between all 6 steps."""
     content = _read_skill("flow-code-review")
     hard_rules_match = re.search(r"## Hard Rules\n(.*)", content, re.DOTALL)
     assert hard_rules_match, "Could not find Hard Rules in flow-code-review/SKILL.md"
@@ -1617,7 +1628,7 @@ def test_code_review_hard_rules_require_step_continuation():
     assert re.search(r"never pause", hard_rules, re.IGNORECASE), (
         "flow-code-review Hard Rules must contain 'never pause' language"
     )
-    for step_name in ["Simplify", "Review", "Security", "Context-Isolated Review", "Pre-Mortem"]:
+    for step_name in ["Simplify", "Review", "Security", "Context-Isolated Review", "Pre-Mortem", "Adversarial"]:
         assert step_name in hard_rules, f"flow-code-review Hard Rules must mention '{step_name}' step"
 
 
@@ -1681,12 +1692,24 @@ def test_code_review_step_5_handles_no_findings():
     """Step 5 (Pre-Mortem) must explicitly handle the no-findings path."""
     content = _read_skill("flow-code-review")
     step5_match = re.search(
-        r"## Step 5.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
+        r"## Step 5.*?\n(.*?)(?=\n## Step 6)",
         content,
         re.DOTALL,
     )
     assert step5_match, "Could not find Step 5 in flow-code-review/SKILL.md"
     assert "no findings" in step5_match.group(1).lower(), "flow-code-review Step 5 must handle the no-findings path"
+
+
+def test_code_review_step_6_handles_no_findings():
+    """Step 6 (Adversarial Testing) must explicitly handle the no-findings path."""
+    content = _read_skill("flow-code-review")
+    step6_match = re.search(
+        r"## Step 6.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
+        content,
+        re.DOTALL,
+    )
+    assert step6_match, "Could not find Step 6 in flow-code-review/SKILL.md"
+    assert "no findings" in step6_match.group(1).lower(), "flow-code-review Step 6 must handle the no-findings path"
 
 
 def test_code_review_has_resume_check():
@@ -1701,8 +1724,8 @@ def test_code_review_has_resume_check():
 def _code_review_steps():
     """Yield (step_num, step_text) for each Code Review step section."""
     content = _read_skill("flow-code-review")
-    for step_num in range(1, 6):
-        if step_num < 5:
+    for step_num in range(1, 7):
+        if step_num < 6:
             next_header = f"## Step {step_num + 1}"
         else:
             next_header = "## Back Navigation|## Done"
@@ -1732,7 +1755,7 @@ def test_code_review_steps_self_invoke():
 
 
 def test_code_review_steps_await_background_agents():
-    """Steps 4-5 must reference agents (Steps 1-3 use inline review passes)."""
+    """Steps 4-6 must reference agents (Steps 1-3 use inline review passes)."""
     for step_num, step_text in _code_review_steps():
         if step_num in (1, 2, 3):
             continue
@@ -1740,6 +1763,8 @@ def test_code_review_steps_await_background_agents():
             assert "agent" in step_text.lower(), f"Step {step_num} must reference the reviewer agent"
         elif step_num == 5:
             assert "agent" in step_text.lower(), f"Step {step_num} must reference the pre-mortem agent"
+        elif step_num == 6:
+            assert "agent" in step_text.lower(), f"Step {step_num} must reference the adversarial agent"
 
 
 def test_code_review_has_self_invocation_check():
@@ -2663,3 +2688,12 @@ def test_create_issue_skips_repo_selection_in_flow_repo():
     )
     # Step 2 must have a conditional path for the FLOW repo case
     assert "benkruger/flow" in step2_text, "Step 2 must reference 'benkruger/flow' for the FLOW-repo conditional"
+
+
+def test_complete_no_force_ci():
+    """Tombstone: --force removed from Complete Step 4 CI command in PR #637. Must not return."""
+    content = _read_skill("flow-complete")
+    assert "ci --force" not in content, (
+        "flow-complete must NOT use --force in bin/flow ci commands "
+        "(removed in PR #637 — sentinel is now simulate-branch-aware)"
+    )

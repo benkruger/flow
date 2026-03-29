@@ -137,6 +137,7 @@ def phase_timeline(state):
     plan_steps_total = state.get("plan_steps_total", 0)
     code_task = state.get("code_task", 0)
     code_tasks_total = state.get("code_tasks_total", 0)
+    code_task_name = state.get("code_task_name", "")
     code_review_step = state.get("code_review_step", 0)
     learn_step = state.get("learn_step", 0)
     complete_step = state.get("complete_step", 0)
@@ -164,6 +165,9 @@ def phase_timeline(state):
             if code_tasks_total > 0:
                 current_task = min(current_task, code_tasks_total)
             task_str = f"task {current_task} of {code_tasks_total}" if code_tasks_total > 0 else f"task {current_task}"
+            if code_task_name:
+                truncated = code_task_name[:27] + "..." if len(code_task_name) > 30 else code_task_name
+                task_str = f"{truncated} - {task_str}"
             parts = [task_str]
             if diff_stats:
                 ins = diff_stats.get("insertions", 0)

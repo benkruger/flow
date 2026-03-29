@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — five review steps: clarity with convention compliance (inline review passes), correctness with rule compliance (inline review), safety (inline security review), context-isolated code review (custom agent), and pre-mortem incident analysis (custom agent). Commits after each step."
+description: "Phase 4: Code Review — six review steps: clarity with convention compliance (inline review passes), correctness with rule compliance (inline review), safety (inline security review), context-isolated code review (custom agent), pre-mortem incident analysis (custom agent), and adversarial test generation (custom agent). Commits after each step."
 ---
 
 # FLOW Code Review — Phase 4: Code Review
@@ -111,12 +111,13 @@ Read `code_review_step` from the state file (default `0` if absent).
 - If `2` — Steps 1-2 are done. Skip to Step 3.
 - If `3` — Steps 1-3 are done. Skip to Step 4.
 - If `4` — Steps 1-4 are done. Skip to Step 5.
-- If `5` — All steps are done. Skip to Done.
+- If `5` — Steps 1-5 are done. Skip to Step 6.
+- If `6` — All steps are done. Skip to Done.
 
 ## Framework Conventions
 
 Read the project's CLAUDE.md for framework-specific conventions. The
-five review steps perform inline review passes against the branch
+six review steps perform inline review passes against the branch
 diff. The CLAUDE.md conventions inform fix decisions.
 
 ---
@@ -735,6 +736,134 @@ Record step completion:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=5
 ```
 
+To continue to Step 6, invoke `flow:flow-code-review --continue-step` using
+the Skill tool as your final action. If commit=auto was resolved, pass
+`--auto` as well. Do not output anything else after this invocation.
+
+---
+
+## Step 6 — Adversarial Testing
+
+Check if `bin/test` exists in the project root. Use the Glob tool to check
+for `bin/test` at the project root.
+
+If `bin/test` does not exist, skip this step entirely. Show the Adversarial
+Testing summary with a note that `bin/test` is not available, then record
+step completion and self-invoke to continue to Done.
+
+Get the full branch diff to provide to the adversarial agent:
+
+```bash
+git diff origin/main..HEAD
+```
+
+Determine the temp test file path using the branch name from the state file:
+
+```text
+tests/test_adversarial_<branch>.py
+```
+
+Replace `<branch>` with the actual branch name (hyphens are fine in filenames).
+
+Launch the adversarial agent using the Agent tool. The agent receives only
+the diff, the temp file path, the CLAUDE.md path, and codebase access — no
+conversation history, no coding rationale, no plan file. This isolation is
+the debiasing mechanism.
+
+Use the Agent tool with:
+
+- `subagent_type`: `"flow:adversarial"`
+- `description`: `"Adversarial test generation"`
+
+Provide the full diff output in the prompt, along with:
+
+- The temp test file path
+- The path to the project CLAUDE.md
+- The branch name
+
+Wait for the agent to return its structured findings.
+
+After the agent returns, verify the temp test file was deleted. If it
+still exists, delete it:
+
+```bash
+rm tests/test_adversarial_<branch>.py
+```
+
+### Triage findings
+
+For each finding in the agent's report, evaluate it as either **real**
+(a failing test that proves a genuine coverage gap) or **false positive**
+(test is wrong, tests unrelated behavior, or gap is intentional).
+
+Show each finding with your triage decision and rationale.
+
+If the agent reports no findings, skip the commit. Show the Adversarial
+Testing summary with zero findings, then without pausing continue to Done.
+
+### Fix every real finding
+
+For each finding triaged as real, fix the issue in code, then run CI:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+```
+
+Set the continuation context and flag:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Continue fixing remaining adversarial findings."
+```
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+```
+
+If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise
+invoke `/flow:flow-commit`.
+
+Move to the next finding.
+
+<HARD-GATE>
+`bin/flow ci` must be green after every fix. Do not move to the next
+finding until the current fix passes `bin/flow ci` and is committed.
+
+</HARD-GATE>
+
+Repeat until all real findings are fixed.
+
+### Adversarial Testing summary
+
+Show a summary of what was found and triaged inside a fenced code block:
+
+````markdown
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  FLOW — Code Review — Step 6: Adversarial Testing — SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Agent findings  : N
+  Real            : N
+  False positive  : N
+  Fixed           : N
+
+  Findings
+  --------
+  - [FIXED] <description of real finding>
+  - [FALSE POSITIVE] <description and why>
+
+  bin/flow ci      : ✓ green
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+````
+
+Record step completion:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=6
+```
+
 To continue to Done, invoke `flow:flow-code-review --continue-step` using
 the Skill tool as your final action. If commit=auto was resolved, pass
 `--auto` as well. Do not output anything else after this invocation.
@@ -842,7 +971,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 - Never transition to Learn unless `bin/flow ci` is green
 - Fix every finding from inline review passes, inline correctness review, and inline security review — do not leave findings unaddressed
 - Follow the project CLAUDE.md conventions when fixing
-- Each active step (Simplify, Review, Security, Context-Isolated Review, and Pre-Mortem) gets its own commit when changes are made
+- Each active step (Simplify, Review, Security, Context-Isolated Review, Pre-Mortem, and Adversarial Testing) gets its own commit when changes are made
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories

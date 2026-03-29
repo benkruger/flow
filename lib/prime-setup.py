@@ -71,6 +71,7 @@ UNIVERSAL_ALLOW = [
     "Bash(gh -C *)",
     "Bash(*bin/*)",
     "Bash(rm .flow-*)",
+    "Bash(rm tests/test_adversarial_*)",
     "Bash(claude plugin list)",
     "Bash(claude plugin marketplace add *)",
     "Bash(claude plugin install *)",
