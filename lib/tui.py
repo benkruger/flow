@@ -579,7 +579,7 @@ class TuiApp:
                 text=True,
                 timeout=5,
             )
-            return result.returncode == 0 and "true" in result.stdout.lower()
+            return result.returncode == 0 and result.stdout.strip().lower() == "true"
         except (subprocess.TimeoutExpired, OSError):
             return False
 
