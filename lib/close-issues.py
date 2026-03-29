@@ -6,7 +6,7 @@ and closes each issue via gh CLI after the PR is merged.
 Usage: bin/flow close-issues --state-file <path>
 
 Output (JSON to stdout):
-  {"status": "ok", "closed": [83, 89], "failed": []}
+  {"status": "ok", "closed": [{"number": 83, "url": "..."}], "failed": [{"number": 89, "error": "not found"}]}
 """
 
 import argparse

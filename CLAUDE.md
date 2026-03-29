@@ -114,7 +114,7 @@ CI will fail if these are missing:
 - `lib/post-compact.py` — PostCompact hook that captures `compact_summary`, `compact_cwd`, and `compact_count` in the state file for SessionStart to inject
 - `lib/tui_data.py` — pure data layer for TUI: loads state files, computes flow summaries, phase timelines, parses log entries
 - `lib/tui.py` — curses-based interactive TUI for viewing and managing active flows (`flow tui`)
-- `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands, shell redirection, and file-read commands in all Bash calls)
+- `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands, shell redirection, file-read commands, and `run_in_background` during active FLOW phases in all Bash calls)
 - `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (answers prompts via `updatedInput` when `_auto_continue` is set in state file; writes `_blocked` timestamp when allowing through)
 - `lib/set-blocked.py` — PermissionRequest hook on Bash|Edit|Write that sets `_blocked = now()` in the state file when a permission prompt appears; fail-open
 - `lib/clear-blocked.py` — PostToolUse hook on AskUserQuestion|Bash|Edit|Write that clears `_blocked` from the state file after the user responds or tool completes; fail-open
@@ -216,7 +216,7 @@ Claude never computes timestamps, time differences, or counter increments. All s
 Every `` ```bash `` block in every skill and docs file must run without triggering a Claude Code permission prompt. Two layers enforce this:
 
 - **Test time** — `test_permissions.py` extracts every bash block, substitutes placeholders with concrete values, and verifies each command matches an allow-list pattern and does not match a deny-list pattern. New bash commands require a matching permission entry. New placeholders require a `PLACEHOLDER_SUBS` entry. Unrecognized placeholders fail the test — they are never silently skipped.
-- **Runtime** — `validate-ci-bash.py` runs as a global `PreToolUse` hook on every Bash call. It blocks compound commands, shell redirection, and file-read commands via fast-path checks regardless of flow state. The `.claude/settings.json` allow list is enforced as a whitelist only when a flow is active (`.flow-states/<branch>.json` exists for the current branch). Commands not matching any `Bash(...)` allow pattern are blocked with exit code 2 and a helpful error message. When no flow is active or `settings.json` is missing, the whitelist check is skipped — unlisted commands fall through to Claude Code's native permission system.
+- **Runtime** — `validate-ci-bash.py` runs as a global `PreToolUse` hook on every Bash call. It blocks compound commands, shell redirection, and file-read commands via fast-path checks regardless of flow state, and blocks `run_in_background` when a FLOW phase is active. The `.claude/settings.json` allow list is enforced as a whitelist only when a flow is active (`.flow-states/<branch>.json` exists for the current branch). Commands not matching any `Bash(...)` allow pattern are blocked with exit code 2 and a helpful error message. When no flow is active or `settings.json` is missing, the whitelist check is skipped — unlisted commands fall through to Claude Code's native permission system.
 
 ## Test Architecture
 
@@ -232,7 +232,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_format_complete_summary.py` | Complete phase summary: basic summary, issues with #N shorthand, resolved issues (closed_issues param), notes, prompt truncation, format_time usage, borders, version fallback, CLI with --closed-issues-file |
 | `test_format_issues_summary.py` | Issues summary formatting: empty/missing/single/multiple issues, label grouping, table output, CLI |
 | `test_analyze_issues.py` | Issue analysis: file path extraction, dependency detection, label detection, stale detection, categorization, dependency graph, body truncation, CLI integration with gh subprocess/failure/timeout |
-| `test_close_issues.py` | Issue closing: extraction of `#N` patterns from prompt, deduplication, partial failure, repo-based URL generation, no-repo fallback, CLI integration |
+| `test_close_issues.py` | Issue closing: extraction of `#N` patterns from prompt, deduplication, partial failure, repo-based URL generation, no-repo fallback, CLI integration, docstring schema validation |
 | `test_promote_permissions.py` | Permission promotion: no file (skipped), empty allow, new entries, all duplicates, mixed, preserve settings, deletion, malformed JSON (local and settings), missing keys, settings missing, no permissions key, write error, delete fails silently, CLI integration (happy, skipped, error) |
 | `test_write_rule.py` | Write rule: read content file (happy path, missing, delete failure), write rule (happy path, parent dirs, write error, makedirs error, overwrite), CLI integration (happy, missing content, write error) |
 | `test_label_issues.py` | Issue labeling: add/remove Flow In-Progress label, partial failure, deduplication, missing prompt, CLI integration |
@@ -252,7 +252,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_prime_project.py` | CLAUDE.md priming: marker insertion, idempotent replacement, framework switching |
 | `test_create_dependencies.py` | Dependency template: file creation, skip-if-exists, chmod, CLI |
 | `test_prime_setup.py` | Prime setup: data-driven permissions, settings merge, version marker, git exclude, pre-commit hook |
-| `test_validate_ci_bash.py` | Bash hook validator: compound commands, redirection, blanket restore, deny list, file-read commands, whitelist enforcement (flow-active gating, worktree branch detection, settings+root resolution), in-process and subprocess integration |
+| `test_validate_ci_bash.py` | Bash hook validator: compound commands, redirection, blanket restore, deny list, file-read commands, run_in_background blocking (flow-active gating), whitelist enforcement (flow-active gating, worktree branch detection, settings+root resolution), in-process and subprocess integration |
 | `test_validate_ask_user.py` | AskUserQuestion hook: answers prompts via `updatedInput` when `_auto_continue` set, allows when absent/empty, `_blocked` write on allow, subprocess integration |
 | `test_set_blocked.py` | PermissionRequest hook: sets `_blocked` timestamp, no state file noop, None path noop, corrupt JSON fail-open, preserves fields, overwrites existing, subprocess integration, main() error path |
 | `test_clear_blocked.py` | PostToolUse hook: clears `_blocked` from state, noop when absent, fail-open on errors, Bash/Edit/Write tool name coverage, subprocess integration |
