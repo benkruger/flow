@@ -537,7 +537,10 @@ git diff origin/main..HEAD
 ```
 
 Read `files.plan` from the state file to get the plan file path. Use the
-Read tool to read the plan file.
+Read tool to read the plan file. Use the Read tool to read the project
+CLAUDE.md. Use the Glob tool to find all `.claude/rules/*.md` files,
+then use the Read tool to read each one. Collect all content — you will
+pass it inline to the agent.
 
 Launch the reviewer agent using the Agent tool. The agent receives the
 diff, the plan, CLAUDE.md, and `.claude/rules/` — no conversation history,
@@ -548,12 +551,14 @@ Use the Agent tool with:
 - `subagent_type`: `"flow:reviewer"`
 - `description`: `"Context-isolated code review"`
 
-Provide the full diff output in the prompt, along with the plan file path,
-CLAUDE.md path, and `.claude/rules/` directory path. Prefix the prompt with:
+Provide the full diff output in the prompt, along with the full text
+content of the plan file, CLAUDE.md, and all `.claude/rules/*.md` files.
+Include each as a labeled section so the agent can distinguish them.
+Prefix the prompt with:
 
-> "You are reviewing code you did not write. The full diff is below.
-> Read the plan file, CLAUDE.md, and .claude/rules/ for context, then
-> review the diff for correctness, convention compliance, and coverage."
+> "You are reviewing code you did not write. The full diff, the plan,
+> the project CLAUDE.md, and all project rules are provided inline below.
+> Review the diff for correctness, convention compliance, and coverage."
 
 Wait for the agent to return its structured review findings.
 
