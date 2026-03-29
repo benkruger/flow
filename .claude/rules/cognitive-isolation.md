@@ -19,9 +19,9 @@ assumptions feel like facts and go unexamined.
 Not all sub-agents receive the same artifacts. The amount of
 context is a design choice matched to the agent's task:
 
-- **Context-rich** (reviewer) — receives diff, plan, CLAUDE.md,
-  and rules inline. Its task is checking against known standards
-  where having the standards at hand saves turns.
+- **Context-rich** (reviewer, learn-analyst) — receives diff, plan,
+  CLAUDE.md, and rules inline. Its task is checking against known
+  standards where having the standards at hand saves turns.
 - **Context-sparse** (pre-mortem, onboarding, adversarial) —
   receives only the diff and must investigate the codebase itself.
   Less context forces independent investigation, surfacing risks,
