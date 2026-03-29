@@ -393,7 +393,7 @@ def test_investigation_agents_no_inline_context():
     standards — a fundamentally different task. See agents/pre-mortem.md Design
     Note for the full rationale.
     """
-    for agent_name in ("pre-mortem", "onboarding"):
+    for agent_name in ("pre-mortem", "onboarding", "adversarial"):
         agent_file = REPO_ROOT / "agents" / f"{agent_name}.md"
         content = agent_file.read_text()
         # Split on frontmatter delimiter to check body only

@@ -22,10 +22,11 @@ context is a design choice matched to the agent's task:
 - **Context-rich** (reviewer) — receives diff, plan, CLAUDE.md,
   and rules inline. Its task is checking against known standards
   where having the standards at hand saves turns.
-- **Context-sparse** (pre-mortem, onboarding) — receives only the
-  diff and must investigate the codebase itself. Less context
-  forces independent investigation, surfacing risks and
-  comprehension barriers that pre-supplied context would mask.
+- **Context-sparse** (pre-mortem, onboarding, adversarial) —
+  receives only the diff and must investigate the codebase itself.
+  Less context forces independent investigation, surfacing risks,
+  comprehension barriers, and coverage gaps that pre-supplied
+  context would mask.
 
 This asymmetry is intentional. See `agents/pre-mortem.md` Design
 Note for the full rationale and `agents/reviewer.md` Design Note
