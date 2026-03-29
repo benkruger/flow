@@ -673,7 +673,18 @@ def test_activate_iterm_tab_success(tmp_path):
 
 
 def test_activate_iterm_tab_not_found(tmp_path):
-    """Returns False when osascript finds no matching tab."""
+    """Returns False when osascript runs but finds no matching tab."""
+    worktree_dir = tmp_path / ".worktrees" / "test-feature"
+    worktree_dir.mkdir(parents=True)
+    state = make_state()
+    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+    result = subprocess.CompletedProcess(args=[], returncode=0, stdout="false\n", stderr="")
+    with patch("tui.subprocess.run", return_value=result):
+        assert app._activate_iterm_tab(str(worktree_dir)) is False
+
+
+def test_activate_iterm_tab_osascript_error(tmp_path):
+    """Returns False when osascript exits with non-zero status."""
     worktree_dir = tmp_path / ".worktrees" / "test-feature"
     worktree_dir.mkdir(parents=True)
     state = make_state()

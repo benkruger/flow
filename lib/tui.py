@@ -561,7 +561,7 @@ class TuiApp:
             "        repeat with t in tabs of w\n"
             "            set s to current session of t\n"
             "            try\n"
-            f'                if (variable named "path" of s) ends with "{worktree_path}" then\n'
+            f'                if (variable named "path" of s) = "{worktree_path}" then\n'
             "                    select w\n"
             "                    select t\n"
             '                    return "true"\n'
