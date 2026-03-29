@@ -581,7 +581,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-complete --message "<me
 After all parallel calls return, process the results:
 
 - Parse the `format-complete-summary` JSON output. Keep the `summary`
-  field — use it in the Done banner below.
+  and `issues_links` fields — use them in the Done banner below.
 - If `auto-close-parent` reported `parent_closed` or `milestone_closed`
   as true for any issue, note it for the Done banner.
 - If `notify-slack` returned `"status": "ok"`, record the notification:
