@@ -548,14 +548,55 @@ class TuiApp:
             stderr=subprocess.DEVNULL,
         )
 
+    def _activate_iterm_tab(self, worktree_path):
+        """Try to activate an existing iTerm2 tab whose CWD matches worktree_path.
+
+        Uses AppleScript to iterate all iTerm2 windows/tabs and check each
+        session's path variable (set by shell integration). Returns True if
+        a matching tab was found and activated, False otherwise.
+        """
+        script = (
+            'tell application "iTerm2"\n'
+            "    repeat with w in windows\n"
+            "        repeat with t in tabs of w\n"
+            "            set s to current session of t\n"
+            "            try\n"
+            f'                if (variable named "path" of s) ends with "{worktree_path}" then\n'
+            "                    select w\n"
+            "                    select t\n"
+            '                    return "true"\n'
+            "                end if\n"
+            "            end try\n"
+            "        end repeat\n"
+            "    end repeat\n"
+            "end tell\n"
+            'return "false"'
+        )
+        try:
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            return result.returncode == 0 and "true" in result.stdout.lower()
+        except (subprocess.TimeoutExpired, OSError):
+            return False
+
     def _open_worktree(self):
-        """Open the selected flow's worktree in a new terminal tab."""
+        """Open the selected flow's worktree in a terminal tab.
+
+        For iTerm2, first tries to activate an existing tab whose CWD
+        matches the worktree path. Falls back to opening a new tab.
+        """
         if not self.flows:
             return
         flow = self.flows[self.selected]
         worktree_path = self.root / flow["worktree"]
         if worktree_path.is_dir():
             term = os.environ.get("TERM_PROGRAM", "")
+            if term == "iTerm.app" and self._activate_iterm_tab(str(worktree_path)):
+                return
             app = "iTerm" if term == "iTerm.app" else "Terminal"
             subprocess.Popen(
                 ["open", "-a", app, str(worktree_path)],
