@@ -743,6 +743,15 @@ def test_build_initial_phases_required_fields():
             assert field in phases[key], f"Phase {key} missing field {field}"
 
 
+# --- tombstone: format_tab_title removed ---
+
+
+def test_no_format_tab_title():
+    """Tombstone: removed in PR #665. Must not return."""
+    source = (LIB_DIR / "flow_utils.py").read_text()
+    assert "def format_tab_title" not in source
+
+
 # --- format_tab_color tests ---
 
 
