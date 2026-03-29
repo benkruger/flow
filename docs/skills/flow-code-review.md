@@ -10,11 +10,11 @@ parent: Skills
 
 **Usage:** `/flow-code-review`, `/flow-code-review --auto`, or `/flow-code-review --manual`
 
-Five review steps — clarity with convention compliance, correctness with
-rule compliance, safety, context-isolated code review, and pre-mortem
-incident analysis. Combines inline review passes and two context-isolated
-agents into a single phase with five ordered steps, each with its own
-commit checkpoint.
+Six review steps — clarity with convention compliance, correctness with
+rule compliance, safety, context-isolated code review, pre-mortem
+incident analysis, and adversarial test generation. Combines inline
+review passes and three context-isolated agents into a single phase with
+six ordered steps, each with its own commit checkpoint.
 
 ---
 
@@ -29,7 +29,7 @@ no changes, skips to Step 2.
 
 ### Step 2 — Review (correctness)
 
-Performs an inline correctness review of the branch diff using five review
+Performs an inline correctness review of the branch diff using six review
 passes: plan alignment, logic correctness, test coverage, API contracts,
 and rule compliance. Uses the plan file as context. When the diff modifies
 files containing step headings, the logic correctness pass also reads the
@@ -69,6 +69,19 @@ blast radius, what tests missed, severity, evidence). The main session
 triages each finding as real or false positive. Real findings are fixed,
 `bin/flow ci` is run, and changes are committed via `/flow-commit`.
 
+### Step 6 — Adversarial Testing (test generation)
+
+Launches the `adversarial` custom agent — a context-isolated sub-agent that
+writes tests designed to break the implementation. The agent receives the
+branch diff, a temp test file path, and CLAUDE.md for test conventions. It
+writes adversarial tests to a branch-scoped temp file, runs them via
+`bin/test`, and reports failures as findings. The agent has Write but no
+Edit access. The temp test file is deleted before the agent returns.
+
+The main session triages each finding as real or false positive. Real
+findings are fixed, `bin/flow ci` is run, and changes are committed via
+`/flow-commit`.
+
 ---
 
 ## Out-of-Scope Findings
@@ -106,7 +119,8 @@ Check which dispatches to the next step.
 Steps 1-3 perform inline review passes sequentially within the response
 turn. Step 4 launches the reviewer agent for context-isolated code review.
 Step 5 launches the pre-mortem agent for context-isolated incident
-analysis.
+analysis. Step 6 launches the adversarial agent for adversarial test
+generation.
 
 ---
 

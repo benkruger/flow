@@ -7,15 +7,15 @@ nav_order: 5
 
 **Command:** `/flow-code-review`
 
-Five steps on the same diff — clarity with convention compliance,
+Six steps on the same diff — clarity with convention compliance,
 correctness with rule compliance, safety, context-isolated code review,
-and pre-mortem incident analysis. Combines inline review passes and two
-context-isolated agents into a single phase with five ordered steps, each
-with its own commit checkpoint.
+pre-mortem incident analysis, and adversarial test generation. Combines
+inline review passes and three context-isolated agents into a single phase
+with six ordered steps, each with its own commit checkpoint.
 
 ---
 
-## The Five Steps
+## The Six Steps
 
 ### Step 1 — Simplify (clarity + convention compliance)
 
@@ -30,7 +30,7 @@ step is skipped.
 
 ### Step 2 — Review (correctness)
 
-Performs an inline correctness review of the branch diff using five review
+Performs an inline correctness review of the branch diff using six review
 passes: plan alignment, logic correctness, test coverage, API contracts,
 and rule compliance. Uses the plan file as context for
 implementation-vs-intent alignment.
@@ -71,6 +71,22 @@ blast radius, what tests missed, severity, evidence). The main session
 triages each finding as real or false positive. Real findings are fixed,
 `bin/flow ci` is run, and changes are committed via `/flow-commit`.
 
+### Step 6 — Adversarial Testing (test generation)
+
+Launches the `adversarial` custom agent — a context-isolated sub-agent that
+writes tests designed to break the implementation. The agent receives the
+branch diff, a temp test file path, and CLAUDE.md for test conventions. It
+writes adversarial tests to a branch-scoped temp file, runs them via
+`bin/test`, and reports failures as findings.
+
+The agent has Write access (to create temp test files) but no Edit access
+(cannot modify existing files). A failing test is a proven coverage gap. Passing
+tests are discarded. The temp test file is deleted before the agent returns.
+
+The main session triages each finding as real or false positive. Real
+findings are fixed, `bin/flow ci` is run, and changes are committed via
+`/flow-commit`.
+
 ---
 
 ## Step Advancement
@@ -86,7 +102,8 @@ re-entry.
 Steps 1-3 perform inline review passes sequentially within the response
 turn. Step 4 launches the reviewer agent for context-isolated code review.
 Step 5 launches the pre-mortem agent for context-isolated incident
-analysis.
+analysis. Step 6 launches the adversarial agent for adversarial test
+generation.
 
 ---
 
