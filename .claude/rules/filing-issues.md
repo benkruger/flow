@@ -78,14 +78,14 @@ worse than one extra question.
 
 ## Dependencies
 
-When filing an issue that depends on another issue, include
-a `Blocked by #N` line in the issue body. This ensures
-`flow-issues` can detect the dependency via text parsing.
+When filing an issue that depends on another issue, add the
+"Blocked" label to the issue. `flow-issues` reads this label
+to determine blocked status.
 
-- `bin/flow link-blocked-by` adds these references
-  automatically for decomposed issues
-- Manually filed issues need the reference added by the
-  author
+- `bin/flow link-blocked-by` sets GitHub's native blocked-by
+  relationships for decomposed issues (independent of the label)
+- For manually filed issues, add the "Blocked" label when the
+  issue cannot proceed until another issue is resolved
 
 ## Never Include
 

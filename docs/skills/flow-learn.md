@@ -10,9 +10,9 @@ parent: Skills
 
 **Usage:** `/flow-learn`, `/flow-learn --auto`, `/flow-learn --manual`, or `/flow-learn --continue-step`
 
-Autonomously synthesises what went wrong from four sources (three
-self-referential plus one context-isolated agent), routes each learning
-to its correct permanent home, promotes session permissions from
+Autonomously synthesises what went wrong from four sources (two inline
+plus two context-isolated agents in Phase 5), routes each learning to its
+correct permanent home, promotes session permissions from
 `settings.local.json` into `settings.json`, files GitHub issues for
 plugin improvements, and presents a comprehensive report. Runs before the
 PR merges.
@@ -24,7 +24,8 @@ PR merges.
 | Source | What | Survives compaction? |
 |--------|------|---------------------|
 | CLAUDE.md rules | Project rules and conventions that should have been followed | Yes |
-| Conversation context | Session back-and-forth | Only if not compacted |
+| Learn-analyst agent | Categorized findings from cognitively isolated artifact analysis (Phase 5 only) | N/A (agent output) |
+| Conversation context | Session back-and-forth (Maintainer and Standalone only) | Only if not compacted |
 | State file and plan data | Visit counts, timing, notes, plan risks (Phase 5 only) | Yes |
 | Onboarding agent | Confusion report from a context-isolated newcomer perspective (Phase 5 only) | N/A (agent output) |
 
@@ -57,7 +58,7 @@ All filed issues are recorded in the state file via `bin/flow add-issue`.
 
 **Report** — presented after all changes are applied:
 
-- Findings (4 categories: process violations, Claude mistakes, missing rules, process gaps — including onboarding agent confusion report)
+- Findings (4 categories: process violations, mistakes, missing rules, process gaps — from learn-analyst and onboarding agents in Phase 5, from conversation review in other modes)
 - Changes applied (file path + summary for each destination)
 - Issues filed (issue number + title)
 
@@ -69,9 +70,9 @@ Learn auto-detects its context:
 
 | Mode | When | Sources | Commits | GitHub issues |
 |------|------|---------|---------|---------------|
-| Phase 5 | State file with Code Review complete | All 4 (CLAUDE.md, context, state/plan, onboarding agent) | `/flow-commit --auto` | Yes |
-| Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow-commit --auto` | No |
-| Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | No |
+| Phase 5 | State file with Code Review complete | All (CLAUDE.md, learn-analyst agent, state/plan, onboarding agent) | `/flow-commit --auto` | Yes |
+| Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, conversation context) | `/flow-commit --auto` | No |
+| Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, conversation context) | None | No |
 
 All three modes route both CLAUDE.md and `.claude/rules/` changes directly
 to the project repo. Both destinations are written via `bin/flow write-rule`
