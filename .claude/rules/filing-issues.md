@@ -1,5 +1,13 @@
 # Filing Issues
 
+## Brainstorming Is Not Filing
+
+When the user says "lets brainstorm", "lets think about", or "what
+if we" — they want a discussion, not a workflow. Do not invoke
+`flow:flow-create-issue`, `decompose:decompose`, or any filing
+skill. Discuss the idea interactively. Only invoke filing skills
+when the user explicitly says "file an issue" or "create an issue."
+
 ## The Pattern
 
 1. Write the issue body to `.flow-issue-body` in the project

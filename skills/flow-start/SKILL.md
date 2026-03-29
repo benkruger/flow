@@ -111,7 +111,24 @@ Use the feature name as `<branch>` — it matches the branch name.
 
 ## Steps
 
-### Step 1 — Pre-flight checks
+Steps 1–10 serialize all main-branch work behind a lock. Only one
+flow-start runs this section at a time. Concurrent starts poll via
+`/loop` until the lock is released.
+
+### Step 1 — Acquire start lock
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --acquire --feature <feature-name>
+```
+
+- If `"status": "acquired"` — continue to Step 2. If `stale_broken` is true, log it.
+- If `"status": "locked"` — another start holds the lock. Invoke the `loop`
+  skill via the Skill tool with args `15s /flow:flow-start` and return.
+  The loop re-invokes the entire skill every 15 seconds. Since nothing has
+  executed yet, re-running is safe. When the lock is eventually acquired,
+  the skill proceeds through all steps normally.
+
+### Step 2 — Pre-flight checks
 
 Run both in parallel (one response, multiple tool calls):
 
@@ -162,17 +179,17 @@ Do NOT proceed if version check fails. Show the error message and stop.
 ```
 ````
 
-### Step 2 — Create early state file
+### Step 3 — Create early state file
 
 Write the user's original start prompt (verbatim, including `#N` issue references
 and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
 Write tool.
 
 Create the state file immediately so the TUI can see this flow during
-the locked main operations in Steps 4–10. The state file has null PR fields
+the locked main operations in Steps 1–10. The state file has null PR fields
 at this point — start-setup backfills them after PR creation. Pass the prompt
 file so the `prompt` field contains the original text with `#N` references
-(needed by Step 3 for labeling).
+(needed by Step 4 for labeling).
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt
@@ -193,13 +210,13 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_steps_total=11
 ```
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=2
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=3
 ```
 
-### Step 3 — Label referenced issues
+### Step 4 — Label referenced issues
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=3
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=4
 ```
 
 If the start prompt contains `#N` issue references, add the "Flow In-Progress"
@@ -211,28 +228,6 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-st
 
 Best-effort — if labeling fails, log the result and continue. Do not block
 the Start phase for a label failure.
-
-Steps 4–10 serialize all main-branch work behind a lock. Only one
-flow-start runs this section at a time. Concurrent starts wait until
-the lock is released.
-
-### Step 4 — Acquire start lock
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=4
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --acquire --wait --timeout 90 --feature <feature-name>
-```
-
-Do not run this command in the background. The `--wait` flag blocks until
-the lock is acquired or times out. Running it in the background causes a
-stale notification after the workflow completes.
-
-- If `"status": "acquired"` — continue. If `stale_broken` is true, log it.
-- If `"status": "timeout"` — stop and report to the user that another start
-  holds the lock (show the feature name and PID from the response).
 
 ### Step 5 — Pull latest main
 

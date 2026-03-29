@@ -1534,10 +1534,10 @@ def test_phase_1_hard_gate_requires_rerun_with_arguments():
 
 
 def test_start_step_2_has_ci_fix_subagent():
-    """Locked section (Steps 3–9) must launch ci-fixer sub-agent for CI failures."""
+    """Locked section (Steps 1–10) must launch ci-fixer sub-agent for CI failures."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
+    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
     locked_text = locked_match.group(1)
     assert "ci-fixer" in locked_text, (
         "flow-start locked section must reference the ci-fixer sub-agent for automatic CI fix"
@@ -1548,10 +1548,10 @@ def test_start_step_2_has_ci_fix_subagent():
 
 
 def test_start_ci_fixes_committed_via_flow_commit():
-    """CI fixes on main must be committed via /flow:flow-commit (Steps 3–9)."""
+    """CI fixes on main must be committed via /flow:flow-commit (Steps 1–10)."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
+    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
     locked_text = locked_match.group(1)
     assert "/flow:flow-commit" in locked_text, "flow-start locked section must commit CI fixes via /flow:flow-commit"
 
@@ -1764,19 +1764,19 @@ def test_code_review_has_self_invocation_check():
 
 
 def test_start_step_2_acquires_lock():
-    """Locked section (Steps 3–9) must acquire start lock before CI work."""
+    """Locked section (Steps 1–10) must acquire start lock before CI work."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
+    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
     locked_text = locked_match.group(1)
     assert "start-lock" in locked_text, "flow-start locked section must reference start-lock for serialization"
 
 
 def test_start_step_2_has_two_ci_gates():
-    """Locked section (Steps 3–9) must have two bin/flow ci calls."""
+    """Locked section (Steps 1–10) must have two bin/flow ci calls."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
+    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
     locked_text = locked_match.group(1)
     ci_count = locked_text.count("bin/flow ci")
     assert ci_count >= 2, (
@@ -1785,10 +1785,10 @@ def test_start_step_2_has_two_ci_gates():
 
 
 def test_start_files_flaky_test_issues():
-    """Locked section (Steps 3–9) must file Flaky Test issues for intermittent CI failures."""
+    """Locked section (Steps 1–10) must file Flaky Test issues for intermittent CI failures."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 10)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 3–9 in flow-start/SKILL.md"
+    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
+    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
     locked_text = locked_match.group(1)
     assert "Flaky Test" in locked_text, "flow-start locked section must detect and file 'Flaky Test' issues"
     assert "bin/flow issue" in locked_text, (
