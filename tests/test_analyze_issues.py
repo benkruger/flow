@@ -400,10 +400,9 @@ def test_main_calls_gh_when_no_file():
             stdout=gh_output,
             stderr="",
         )
-        with patch.object(_mod, "detect_repo", return_value=None):
-            with patch("sys.argv", ["analyze-issues"]):
-                with patch("builtins.print") as mock_print:
-                    _mod.main()
+        with patch("sys.argv", ["analyze-issues"]):
+            with patch("builtins.print") as mock_print:
+                _mod.main()
 
     mock_run.assert_called_once()
     call_args = mock_run.call_args[0][0]
@@ -597,130 +596,7 @@ def test_cli_mutually_exclusive_flags(tmp_path, monkeypatch, capsys):
     assert exc_info.value.code != 0
 
 
-# --- fetch_blocked_by ---
-
-
-def test_fetch_blocked_by_happy_path():
-    """Returns list of blocking issue numbers from API response."""
-    api_response = json.dumps([{"number": 10}, {"number": 20}])
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout=api_response, stderr="")
-        result = _mod.fetch_blocked_by(5, "owner/repo")
-
-    assert result == [10, 20]
-    call_args = mock_run.call_args[0][0]
-    assert "repos/owner/repo/issues/5/dependencies/blocked_by" in call_args
-
-
-def test_fetch_blocked_by_empty_response():
-    """Returns empty list when no blockers exist."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="[]", stderr="")
-        result = _mod.fetch_blocked_by(5, "owner/repo")
-
-    assert result == []
-
-
-def test_fetch_blocked_by_subprocess_failure():
-    """Returns empty list on non-zero exit (fail-open)."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="not found")
-        result = _mod.fetch_blocked_by(5, "owner/repo")
-
-    assert result == []
-
-
-def test_fetch_blocked_by_timeout():
-    """Returns empty list on subprocess timeout (fail-open)."""
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=10)):
-        result = _mod.fetch_blocked_by(5, "owner/repo")
-
-    assert result == []
-
-
-def test_fetch_blocked_by_malformed_json():
-    """Returns empty list on malformed JSON response (fail-open)."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="{corrupt", stderr="")
-        result = _mod.fetch_blocked_by(5, "owner/repo")
-
-    assert result == []
-
-
-# --- analyze_issues with API deps ---
-
-
-def test_analyze_api_deps_merged_with_text_deps():
-    """API deps are merged (union) with text-based #N deps, deduplicated."""
-    issues = [
-        _make_issue(1, title="Base"),
-        _make_issue(10, title="Also base"),
-        _make_issue(20, title="Also base"),
-        _make_issue(5, title="Has both", body="Depends on #10"),
-    ]
-    with patch.object(_mod, "fetch_blocked_by", return_value=[20]) as mock_fetch:
-        result = _mod.analyze_issues(issues, repo="owner/repo")
-
-    issue_5 = next(i for i in result["issues"] if i["number"] == 5)
-    assert sorted(issue_5["dependencies"]) == [10, 20]
-    # fetch_blocked_by called for every non-in-progress issue
-    assert mock_fetch.call_count == 4
-
-
-def test_analyze_api_only_deps():
-    """API deps work when issue body has no #N references."""
-    issues = [
-        _make_issue(10, title="Blocker"),
-        _make_issue(5, title="No body refs", body="Plain text"),
-    ]
-    with patch.object(_mod, "fetch_blocked_by", return_value=[10]):
-        result = _mod.analyze_issues(issues, repo="owner/repo")
-
-    issue_5 = next(i for i in result["issues"] if i["number"] == 5)
-    assert issue_5["dependencies"] == [10]
-
-
-def test_analyze_api_failure_fallback():
-    """Falls back to text-only deps when fetch_blocked_by returns []."""
-    issues = [
-        _make_issue(10, title="Base"),
-        _make_issue(5, title="API fails", body="Depends on #10"),
-    ]
-    with patch.object(_mod, "fetch_blocked_by", return_value=[]):
-        result = _mod.analyze_issues(issues, repo="owner/repo")
-
-    issue_5 = next(i for i in result["issues"] if i["number"] == 5)
-    assert issue_5["dependencies"] == [10]
-
-
-def test_analyze_api_deps_deduplicated():
-    """Same issue in both text and API deps appears only once."""
-    issues = [
-        _make_issue(10, title="Base"),
-        _make_issue(5, title="Overlap", body="Depends on #10"),
-    ]
-    with patch.object(_mod, "fetch_blocked_by", return_value=[10]):
-        result = _mod.analyze_issues(issues, repo="owner/repo")
-
-    issue_5 = next(i for i in result["issues"] if i["number"] == 5)
-    assert issue_5["dependencies"] == [10]
-
-
-def test_analyze_no_repo_skips_api():
-    """API deps skipped when repo is None."""
-    issues = [
-        _make_issue(10, title="Base"),
-        _make_issue(5, title="No repo", body="Depends on #10"),
-    ]
-    with patch.object(_mod, "fetch_blocked_by") as mock_fetch:
-        result = _mod.analyze_issues(issues, repo=None)
-
-    mock_fetch.assert_not_called()
-    issue_5 = next(i for i in result["issues"] if i["number"] == 5)
-    assert issue_5["dependencies"] == [10]
-
-
-# --- CLI: --json fields and repo detection ---
+# --- CLI: --json fields ---
 
 
 def test_main_gh_does_not_include_deps_summary_field():
@@ -728,28 +604,10 @@ def test_main_gh_does_not_include_deps_summary_field():
     gh_output = json.dumps([_make_issue(1, title="From GH")])
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout=gh_output, stderr="")
-        with patch.object(_mod, "detect_repo", return_value="owner/repo"):
-            with patch("sys.argv", ["analyze-issues"]):
-                with patch("builtins.print"):
-                    _mod.main()
+        with patch("sys.argv", ["analyze-issues"]):
+            with patch("builtins.print"):
+                _mod.main()
 
-    # Find the gh issue list call (first subprocess.run call, before fetch_blocked_by calls)
-    gh_call = mock_run.call_args_list[0][0][0]
+    gh_call = mock_run.call_args[0][0]
     json_fields = gh_call[gh_call.index("--json") + 1]
     assert "issue_dependencies_summary" not in json_fields
-
-
-def test_main_passes_repo_to_analyze():
-    """main() calls detect_repo() and passes result to analyze_issues()."""
-    gh_output = json.dumps([_make_issue(1, title="From GH")])
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout=gh_output, stderr="")
-        with patch.object(_mod, "detect_repo", return_value="owner/repo") as mock_detect:
-            with patch.object(_mod, "analyze_issues", wraps=_mod.analyze_issues) as mock_analyze:
-                with patch("sys.argv", ["analyze-issues"]):
-                    with patch("builtins.print"):
-                        _mod.main()
-
-    mock_detect.assert_called_once()
-    _, kwargs = mock_analyze.call_args
-    assert kwargs.get("repo") == "owner/repo"

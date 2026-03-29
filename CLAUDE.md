@@ -49,8 +49,8 @@ CI will fail if these are missing:
 
 ### Content sync (convention-enforced — no test catches this)
 
-- Changed skill behavior (new flag, changed steps, different workflow) — update `docs/skills/<name>.md` to match
-- Changed phase behavior — update `docs/phases/phase-<N>-<name>.md` to match
+- Changed skill behavior (new flag, changed steps, different workflow) — update `docs/skills/<name>.md` and the Description column in `docs/skills/index.md` to match
+- Changed phase behavior — update `docs/phases/phase-<N>-<name>.md` and the Description column in `docs/skills/index.md` to match
 - Changed architecture or capabilities — update `README.md` and `docs/index.html` if the change affects how FLOW is described to users
 
 ### Test requirements
@@ -84,6 +84,7 @@ CI will fail if these are missing:
 - `lib/prime-project.py` — inserts framework conventions into target CLAUDE.md between markers
 - `lib/create-dependencies.py` — copies framework dependency template to `bin/dependencies`
 - `agents/ci-fixer.md` — custom plugin sub-agent for CI failure diagnosis and fix
+- `agents/reviewer.md` — custom plugin sub-agent for context-isolated code review (read-only, receives diff + plan + CLAUDE.md + rules)
 - `lib/finalize-commit.py` — consolidates commit + message-file cleanup + pull + push into one subprocess chain
 - `lib/generate-id.py` — generates an 8-character hex session ID via `uuid.uuid4().hex[:8]`; used by `flow-create-issue` and `flow-decompose-project` skills
 - `lib/log.py` — appends timestamped entries to `.flow-states/<branch>.log` via Python file append with `fcntl.LOCK_EX` locking

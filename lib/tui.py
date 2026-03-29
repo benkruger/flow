@@ -211,8 +211,8 @@ class TuiApp:
         pr_width = max((len(d[3]) for d in col_data), default=0)
 
         # Responsive feature column: floor of 26, scales with terminal width
-        # Overhead: 2 (col offset) + 2 (marker) + 3 (gap) + phase + 3 (gap) + 7 (elapsed) + 3 (gap)
-        overhead = 2 + 2 + 3 + phase_width + 3 + 7 + 3
+        # Overhead: 2 (col offset) + 2 (marker) + 3 (gap) + phase + 3 (gap) + 7 (elapsed) + 3 (gap) + 2 (right margin)
+        overhead = 2 + 2 + 3 + phase_width + 3 + 7 + 3 + 2
         if issue_width:
             overhead += issue_width + 3
         if pr_width:
