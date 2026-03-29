@@ -41,7 +41,7 @@ are merge conflicts, resolve them inline and push the resolution.
 
 ### 4. Run local CI gate
 
-Runs `bin/flow ci --force --simulate-branch main` locally to catch
+Runs `bin/flow ci --simulate-branch main` locally to catch
 branch-dependent test failures (tests that pass on feature branches but
 fail on main because `current_branch()` resolves against the host repo).
 If it fails, launch the ci-fixer sub-agent to diagnose and fix.

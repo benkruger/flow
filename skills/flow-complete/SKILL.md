@@ -225,7 +225,7 @@ Run CI locally with the branch name simulated as "main" to catch
 branch-dependent test failures before merge:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci --force --simulate-branch main
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci --simulate-branch main
 ```
 
 If it passes, continue to Step 5.

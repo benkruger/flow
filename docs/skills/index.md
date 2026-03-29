@@ -20,7 +20,7 @@ These skills correspond directly to a workflow phase. Each one starts and ends w
 | [`/flow-start`](flow-start.md) | 1 — Start | Create the worktree, upgrade dependencies, open the PR |
 | [`/flow-plan`](flow-plan.md) | 2 — Plan | Explore codebase, design approach, produce ordered tasks via plan mode |
 | [`/flow-code`](flow-code.md) | 3 — Code | TDD task by task, diff review, `bin/flow ci` gate before each commit |
-| [`/flow-code-review`](flow-code-review.md) | 4 — Code Review | Five steps — clarity, correctness, safety, context-isolated code review, and pre-mortem |
+| [`/flow-code-review`](flow-code-review.md) | 4 — Code Review | Six steps — clarity, correctness, safety, context-isolated code review, pre-mortem, and adversarial testing |
 | [`/flow-learn`](flow-learn.md) | 5 — Learn | Extract learnings, update CLAUDE.md, note plugin gaps |
 | [`/flow-complete`](flow-complete.md) | 6 — Complete | Merge PR, remove worktree, delete state file — final phase |
 

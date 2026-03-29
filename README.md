@@ -10,7 +10,7 @@ An opinionated 6-phase development plugin for [Claude Code](https://docs.anthrop
 
 ## Why FLOW
 
-Claude Code is powerful, but undisciplined by default. FLOW imposes structure. Not bureaucracy — discipline. DAG decomposition for planning, then TDD execution, then five-lens code review, then learnings that compound. Every feature, same order.
+Claude Code is powerful, but undisciplined by default. FLOW imposes structure. Not bureaucracy — discipline. DAG decomposition for planning, then TDD execution, then six-lens code review, then learnings that compound. Every feature, same order.
 
 ---
 
@@ -46,7 +46,7 @@ Start → Plan → Code → Code Review → Learn → Complete
 | **1: Start** | `/flow-start <prompt>` | Lock, pull main, `bin/ci` baseline, upgrade dependencies, `bin/ci` post-deps, commit to main, unlock, new worktree + PR — ci-fixer sub-agent handles failures |
 | **2: Plan** | `/flow-plan` | Reads the start prompt, invokes DAG decompose plugin for dependency analysis, explores codebase, produces ordered tasks with dependency graph |
 | **3: Code** | `/flow-code` | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
-| **4: Code Review** | `/flow-code-review` | Five steps — clarity (with convention compliance), correctness (with rule compliance), safety, context-isolated code review (cold reviewer agent), and pre-mortem incident analysis (context-isolated agent) |
+| **4: Code Review** | `/flow-code-review` | Six steps — clarity (with convention compliance), correctness (with rule compliance), safety, context-isolated code review (cold reviewer agent), pre-mortem incident analysis (context-isolated agent), and adversarial test generation (context-isolated agent) |
 | **5: Learn** | `/flow-learn` | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
 | **6: Complete** | `/flow-complete` | Close issues referenced in prompt, PR merged, worktree removed, state file deleted, feature done |
 
