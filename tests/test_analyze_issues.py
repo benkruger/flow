@@ -589,3 +589,16 @@ def test_main_gh_does_not_include_deps_summary_field():
     gh_call = mock_run.call_args[0][0]
     json_fields = gh_call[gh_call.index("--json") + 1]
     assert "issue_dependencies_summary" not in json_fields
+
+
+# --- tombstone tests ---
+
+
+def test_no_extract_dependencies_function():
+    """Tombstone: extract_dependencies removed in PR #661. Must not return."""
+    assert not hasattr(_mod, "extract_dependencies"), "extract_dependencies was removed in PR #661"
+
+
+def test_no_build_dependents_function():
+    """Tombstone: build_dependents removed in PR #661. Must not return."""
+    assert not hasattr(_mod, "build_dependents"), "build_dependents was removed in PR #661"
