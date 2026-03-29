@@ -114,7 +114,7 @@ CI will fail if these are missing:
 - `lib/post-compact.py` — PostCompact hook that captures `compact_summary`, `compact_cwd`, and `compact_count` in the state file for SessionStart to inject
 - `lib/tui_data.py` — pure data layer for TUI: loads state files, computes flow summaries, phase timelines, parses log entries
 - `lib/tui.py` — curses-based interactive TUI for viewing and managing active flows (`flow tui`)
-- `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands, shell redirection, and file-read commands in all Bash calls)
+- `lib/validate-ci-bash.py` — global PreToolUse hook validator (blocks compound commands, shell redirection, file-read commands, and `run_in_background` during active FLOW phases in all Bash calls)
 - `lib/validate-ask-user.py` — PreToolUse hook on AskUserQuestion (answers prompts via `updatedInput` when `_auto_continue` is set in state file; writes `_blocked` timestamp when allowing through)
 - `lib/set-blocked.py` — PermissionRequest hook on Bash|Edit|Write that sets `_blocked = now()` in the state file when a permission prompt appears; fail-open
 - `lib/clear-blocked.py` — PostToolUse hook on AskUserQuestion|Bash|Edit|Write that clears `_blocked` from the state file after the user responds or tool completes; fail-open
