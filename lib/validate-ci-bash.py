@@ -9,6 +9,12 @@ Exit 0 — allow (command passes through to normal permission system)
 Exit 2 — block (error message on stderr is fed back to the sub-agent)
 
 Validation layers (in order):
+
+Pre-validation (in main(), before validate()):
+0. run_in_background — blocked when a FLOW phase is active.
+   "Use parallel foreground Bash calls instead"
+
+Command validation (in validate()):
 1. Compound commands (&&, ;, |) — "Use separate Bash calls instead"
 2. Shell redirection (>, >>, 2>, etc.) — "Use Read/Write tools instead"
 3. Blanket restore (git restore .) — "Restore files individually"
@@ -211,6 +217,16 @@ def main():
     settings, project_root = _find_settings_and_root()
     branch = _detect_branch_from_cwd() if settings is not None else None
     flow_active = _is_flow_active(branch, project_root)
+
+    # Block run_in_background during active FLOW phases
+    if flow_active and hook_input.get("tool_input", {}).get("run_in_background"):
+        print(
+            "BLOCKED: run_in_background is not allowed during a FLOW phase. "
+            "Use parallel foreground Bash calls instead.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
     allowed, message = validate(command, settings=settings, flow_active=flow_active)
     if not allowed:
         print(message, file=sys.stderr)

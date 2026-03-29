@@ -3,12 +3,6 @@ name: reviewer
 description: "Context-isolated code review. Receives diff and project conventions, produces structured findings."
 tools: Read, Glob, Grep, Bash
 maxTurns: 25
-hooks:
-  PreToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "${CLAUDE_PLUGIN_ROOT}/lib/validate-ci-bash.py"
 ---
 
 # Context-Isolated Code Review
@@ -19,10 +13,23 @@ know why any decision was made. You see only the result.
 
 ## Input
 
-The full diff (`git diff origin/main..HEAD`), the plan file content, the
+The full diff (`git diff origin/main...HEAD`), the plan file content, the
 project CLAUDE.md content, and all `.claude/rules/*.md` file contents are
 provided inline in your prompt. Do not spend turns reading these files —
 they are already below.
+
+## Design Note
+
+This agent receives inline context (plan, CLAUDE.md, rules) to save
+turns on standards-based review. Its task is checking against known
+standards — conventions, plan alignment, rule compliance — where
+having the standards at hand makes the review faster and more
+accurate.
+
+The pre-mortem and onboarding agents intentionally do NOT receive
+this context. They must investigate the codebase themselves to
+discover unknown risks and comprehension barriers. See the Design
+Note in `agents/pre-mortem.md` for the full rationale.
 
 ## Workflow
 
