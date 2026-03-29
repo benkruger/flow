@@ -115,6 +115,7 @@ def test_detects_in_progress_label():
     result = _mod.detect_labels(labels)
     assert result["in_progress"] is True
     assert result["decomposed"] is False
+    assert result["blocked"] is False
 
 
 def test_detects_decomposed_label():
@@ -123,6 +124,7 @@ def test_detects_decomposed_label():
     result = _mod.detect_labels(labels)
     assert result["decomposed"] is True
     assert result["in_progress"] is False
+    assert result["blocked"] is False
 
 
 def test_detects_decomposed_label_case_insensitive():
@@ -130,21 +132,47 @@ def test_detects_decomposed_label_case_insensitive():
     labels = [{"name": "Decomposed"}]
     result = _mod.detect_labels(labels)
     assert result["decomposed"] is True
+    assert result["blocked"] is False
+
+
+def test_detects_blocked_label():
+    """Issues with Blocked label are flagged."""
+    labels = [{"name": "Blocked"}, {"name": "Bug"}]
+    result = _mod.detect_labels(labels)
+    assert result["blocked"] is True
+    assert result["in_progress"] is False
+    assert result["decomposed"] is False
+
+
+def test_detects_blocked_label_case_insensitive():
+    """Blocked label detection is case-insensitive."""
+    labels = [{"name": "blocked"}]
+    result = _mod.detect_labels(labels)
+    assert result["blocked"] is True
+
+
+def test_no_blocked_label():
+    """Issues without Blocked label have blocked=False."""
+    labels = [{"name": "Enhancement"}]
+    result = _mod.detect_labels(labels)
+    assert result["blocked"] is False
 
 
 def test_no_special_labels():
-    """Issues without special labels have both flags False."""
+    """Issues without special labels have all flags False."""
     labels = [{"name": "Bug"}]
     result = _mod.detect_labels(labels)
     assert result["in_progress"] is False
     assert result["decomposed"] is False
+    assert result["blocked"] is False
 
 
 def test_empty_labels():
-    """Empty label list has both flags False."""
+    """Empty label list has all flags False."""
     result = _mod.detect_labels([])
     assert result["in_progress"] is False
     assert result["decomposed"] is False
+    assert result["blocked"] is False
 
 
 # --- categorize ---

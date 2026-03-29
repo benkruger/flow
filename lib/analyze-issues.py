@@ -90,6 +90,7 @@ def detect_labels(labels):
     return {
         "in_progress": "Flow In-Progress" in label_names,
         "decomposed": any(name.lower() == "decomposed" for name in label_names),
+        "blocked": any(name.lower() == "blocked" for name in label_names),
     }
 
 
