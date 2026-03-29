@@ -92,7 +92,7 @@ CI will fail if these are missing:
 - `lib/log.py` — appends timestamped entries to `.flow-states/<branch>.log` via Python file append with `fcntl.LOCK_EX` locking
 - `lib/orchestrate-state.py` — manages `.flow-states/orchestrate.json` (create, start-issue, record-outcome, complete, read, next); uses `mutate_state` for atomic writes
 - `lib/orchestrate-report.py` — generates morning report from orchestration state; writes `.flow-states/orchestrate-summary.md`
-- `lib/analyze-issues.py` — mechanical analysis of open GitHub issues for the flow-issues skill: calls `gh issue list`, parses JSON, extracts file paths, detects `#N` dependencies, detects labels (Flow In-Progress, Decomposed), checks stale files, outputs condensed per-issue briefs as JSON
+- `lib/analyze-issues.py` — mechanical analysis of open GitHub issues for the flow-issues skill: calls `gh issue list`, parses JSON, extracts file paths, detects labels (Flow In-Progress, Decomposed, Blocked), checks stale files, outputs condensed per-issue briefs as JSON
 - `lib/close-issues.py` — closes GitHub issues referenced in the start prompt (`#N` patterns) via `gh issue close`
 - `lib/label-issues.py` — adds or removes the "Flow In-Progress" label on GitHub issues referenced by `#N` in the start prompt; used by Start (add), Complete (remove), and Abort (remove) for multi-engineer WIP detection
 - `lib/issue.py` — creates GitHub issues via `gh` subprocess (wraps `gh issue create`; resolves repo via `--state-file` cached value, then `--repo` flag, then git remote detection); returns `url`, `number`, and REST API `id` (database ID) for sub-issue linking
@@ -232,7 +232,7 @@ Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_p
 | `test_add_notification.py` | Notification recording: append to empty/existing array, message truncation, missing state file, CLI integration |
 | `test_format_complete_summary.py` | Complete phase summary: basic summary, issues with #N shorthand, resolved issues (closed_issues param), notes, prompt truncation, format_time usage, borders, version fallback, CLI with --closed-issues-file |
 | `test_format_issues_summary.py` | Issues summary formatting: empty/missing/single/multiple issues, label grouping, table output, CLI |
-| `test_analyze_issues.py` | Issue analysis: file path extraction, dependency detection, label detection, stale detection, categorization, dependency graph, body truncation, CLI integration with gh subprocess/failure/timeout |
+| `test_analyze_issues.py` | Issue analysis: file path extraction, blocked label detection, label detection, stale detection, categorization, body truncation, CLI integration with gh subprocess/failure/timeout |
 | `test_close_issues.py` | Issue closing: extraction of `#N` patterns from prompt, deduplication, partial failure, repo-based URL generation, no-repo fallback, CLI integration, docstring schema validation |
 | `test_promote_permissions.py` | Permission promotion: no file (skipped), empty allow, new entries, all duplicates, mixed, preserve settings, deletion, malformed JSON (local and settings), missing keys, settings missing, no permissions key, write error, delete fails silently, CLI integration (happy, skipped, error) |
 | `test_write_rule.py` | Write rule: read content file (happy path, missing, delete failure), write rule (happy path, parent dirs, write error, makedirs error, overwrite), CLI integration (happy, missing content, write error) |

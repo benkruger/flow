@@ -2581,14 +2581,19 @@ def test_flow_issues_has_decomposed_detection():
     assert "decomposed" in content, "flow-issues/SKILL.md must contain 'decomposed' for decomposed label detection"
 
 
-# --- flow-issues dependency detection ---
+# --- flow-issues blocked label detection ---
 
 
-def test_flow_issues_has_dependency_detection():
-    """flow-issues SKILL.md must have cross-reference dependency detection."""
+def test_flow_issues_no_dependency_detection():
+    """Tombstone: removed in PR #661. Must not return."""
     content = _read_skill("flow-issues")
-    assert "dependency" in content.lower(), "flow-issues/SKILL.md must contain dependency detection logic"
-    assert "#N" in content, "flow-issues/SKILL.md must reference #N cross-reference patterns"
+    assert "dependencies" not in content.lower(), "flow-issues/SKILL.md must not reference dependencies (PR #661)"
+
+
+def test_flow_issues_has_blocked_label_detection():
+    """flow-issues SKILL.md must reference Blocked label for blocked status detection."""
+    content = _read_skill("flow-issues")
+    assert "Blocked" in content, "flow-issues/SKILL.md must contain Blocked label detection"
 
 
 # --- flow-issues stale detection ---
