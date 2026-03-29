@@ -19,7 +19,7 @@ know why any decision was made. You see only the result.
 
 ## Input
 
-The full diff (`git diff origin/main..HEAD`), the plan file content, the
+The full diff (`git diff origin/main...HEAD`), the plan file content, the
 project CLAUDE.md content, and all `.claude/rules/*.md` file contents are
 provided inline in your prompt. Do not spend turns reading these files —
 they are already below.
