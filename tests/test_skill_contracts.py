@@ -2502,6 +2502,21 @@ def test_plan_detects_decomposed_label():
     assert "decomposed" in content, "flow-plan/SKILL.md must reference 'decomposed' label for skip detection"
 
 
+def test_plan_step3_extracts_implementation_plan_for_decomposed():
+    """Plan Step 3 must extract Implementation Plan from DAG file for decomposed issues."""
+    content = _read_skill("flow-plan")
+    step3_match = re.search(r"## Step 3.*?(?=\n## Step 4|\n## (?!#))", content, re.DOTALL)
+    assert step3_match, "flow-plan must have a Step 3 section"
+    step3_text = step3_match.group(0)
+    assert "Implementation Plan" in step3_text, (
+        "Step 3 must reference 'Implementation Plan' for extraction from decomposed issues"
+    )
+    assert "extract" in step3_text.lower(), "Step 3 must describe extracting the plan from the DAG file"
+    assert "promote" in step3_text.lower() or "heading" in step3_text.lower(), (
+        "Step 3 must describe heading promotion (### to ##) during extraction"
+    )
+
+
 def test_done_hardgates_reread_state_file():
     """Phases 1-5 Done HARD-GATEs must re-read continue mode from state file."""
     phase_skills = _phase_skills()
@@ -2808,21 +2823,47 @@ def test_create_issue_has_resume_check():
     assert "create_issue_step" in rc_match.group(1), "Resume Check must reference create_issue_step field"
 
 
-def test_create_issue_has_input_classification():
-    """flow-create-issue must classify input before entering the step pipeline."""
+def test_create_issue_no_input_classification():
+    """Tombstone: removed in PR #677. Must not return."""
     content = _read_skill("flow-create-issue")
-    assert "## Input Classification" in content, (
-        "flow-create-issue must have an '## Input Classification' section "
-        "that routes exploratory questions to design discussion"
+    assert "## Input Classification" not in content
+
+
+def test_create_issue_no_exploration_mode():
+    """Tombstone: removed in PR #677. Must not return."""
+    content = _read_skill("flow-create-issue")
+    assert "## Exploration Mode" not in content
+
+
+def test_create_issue_no_multi_issue_path():
+    """Tombstone: removed in PR #677. Must not return."""
+    content = _read_skill("flow-create-issue")
+    assert "Multi-Issue Path" not in content
+
+
+def test_create_issue_has_conversation_gate():
+    """flow-create-issue must have a gate that rejects cold-start invocations."""
+    content = _read_skill("flow-create-issue")
+    assert "## Conversation Gate" in content, (
+        "flow-create-issue must have a '## Conversation Gate' section "
+        "that rejects invocations without prior brainstorming context"
     )
-    classification_match = re.search(r"## Input Classification\n(.*?)(?=\n## )", content, re.DOTALL)
-    assert classification_match, "Could not find Input Classification section content"
-    section_text = classification_match.group(1)
-    assert "exploratory" in section_text.lower(), "Input Classification must describe the exploratory path"
-    assert "concrete" in section_text.lower(), "Input Classification must describe the concrete path"
-    assert "## Exploration Mode" in content, (
-        "flow-create-issue must have an '## Exploration Mode' section for interactive design discussion"
-    )
+    gate_match = re.search(r"## Conversation Gate\n(.*?)(?=\n## )", content, re.DOTALL)
+    assert gate_match, "Could not find Conversation Gate section content"
+    gate_text = gate_match.group(1)
+    assert "decompose" in gate_text.lower(), "Conversation Gate must guide user to run /decompose:decompose first"
+
+
+def test_create_issue_step2_has_implementation_plan_section():
+    """Step 2 must produce an Implementation Plan section matching plan file format."""
+    content = _read_skill("flow-create-issue")
+    step2_match = re.search(r"## Step 2.*?(?=\n## Hard Rules|\Z)", content, re.DOTALL)
+    assert step2_match, "flow-create-issue must have a Step 2 section"
+    step2_text = step2_match.group(0)
+    assert "Implementation Plan" in step2_text, "Step 2 must reference Implementation Plan section"
+    assert "Context" in step2_text, "Step 2 must reference Context subsection of the plan"
+    assert "Approach" in step2_text, "Step 2 must reference Approach subsection of the plan"
+    assert "Tasks" in step2_text, "Step 2 must reference Tasks subsection of the plan"
 
 
 def test_create_issue_has_repo_routing():
