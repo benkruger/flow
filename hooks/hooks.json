@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-ci-bash.py"
+            "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-pretool.py"
           }
         ]
       },
@@ -49,25 +49,7 @@
         ]
       },
       {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-worktree-paths.py"
-          }
-        ]
-      },
-      {
-        "matcher": "Glob",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-worktree-paths.py"
-          }
-        ]
-      },
-      {
-        "matcher": "Grep",
+        "matcher": "Read|Glob|Grep",
         "hooks": [
           {
             "type": "command",
