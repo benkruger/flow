@@ -284,6 +284,37 @@ final action. Do not output anything else after this invocation.
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_step=3
 ```
 
+### Pre-Planned Issue Extraction
+
+If the DAG file (from Step 2) contains an `## Implementation Plan`
+section, the issue was filed by `/flow:flow-create-issue` and already
+contains a complete plan. Extract it instead of re-deriving.
+
+**Detection.** Use the Read tool to read the DAG file at
+`<project_root>/<files.dag path>`. Search for `## Implementation Plan`
+in the content.
+
+**If found — extract and validate:**
+
+- Extract all content between `## Implementation Plan` and the next
+  `##`-level heading (typically `## Files to Investigate`).
+- Promote all headings by one level: `###` becomes `##`, `####` becomes
+  `###`. This converts the issue's nested headings into the plan file's
+  top-level structure.
+- Write the promoted content to
+  `<project_root>/.flow-states/<branch>-plan.md` using the Write tool.
+- Light validation: use Glob and Read to verify that files referenced in
+  the Tasks section exist. Note any missing files (they may need to be
+  created by the implementation) but do not block or re-derive the plan.
+- Proceed directly to Step 4. Skip the exploration and plan-writing
+  instructions below.
+
+**If not found** — the issue is an older-format decomposed issue without
+a plan. Continue with the standard exploration and plan-writing flow
+below.
+
+### Standard Exploration
+
 Explore the codebase, validate the DAG against reality (if DAG was
 produced), and write the implementation plan to a plan file.
 
@@ -291,17 +322,6 @@ If a DAG was produced in Step 2, use it as the foundation:
 - Validate that the files and patterns the DAG references actually exist
 - Check whether the dependencies the DAG identified make sense
 - Look for patterns or constraints the DAG missed
-
-If the DAG file contains a pre-decomposed issue analysis (from an issue
-with the "decomposed" label), use it as a head start for plan writing:
-- Acceptance criteria inform task definitions — each criterion maps to
-  one or more implementation tasks
-- Files-to-investigate inform exploration starting points — read those
-  files first
-- Out-of-scope boundaries constrain the plan — do not add tasks outside
-  the stated scope
-- The issue body has already been validated by the user — do not
-  re-evaluate the problem statement
 
 ### Script Behavior Verification
 

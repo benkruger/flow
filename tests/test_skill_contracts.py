@@ -2502,6 +2502,21 @@ def test_plan_detects_decomposed_label():
     assert "decomposed" in content, "flow-plan/SKILL.md must reference 'decomposed' label for skip detection"
 
 
+def test_plan_step3_extracts_implementation_plan_for_decomposed():
+    """Plan Step 3 must extract Implementation Plan from DAG file for decomposed issues."""
+    content = _read_skill("flow-plan")
+    step3_match = re.search(r"## Step 3.*?(?=\n## Step 4|\n## (?!#))", content, re.DOTALL)
+    assert step3_match, "flow-plan must have a Step 3 section"
+    step3_text = step3_match.group(0)
+    assert "Implementation Plan" in step3_text, (
+        "Step 3 must reference 'Implementation Plan' for extraction from decomposed issues"
+    )
+    assert "extract" in step3_text.lower(), "Step 3 must describe extracting the plan from the DAG file"
+    assert "promote" in step3_text.lower() or "heading" in step3_text.lower(), (
+        "Step 3 must describe heading promotion (### to ##) during extraction"
+    )
+
+
 def test_done_hardgates_reread_state_file():
     """Phases 1-5 Done HARD-GATEs must re-read continue mode from state file."""
     phase_skills = _phase_skills()
