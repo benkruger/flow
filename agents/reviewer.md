@@ -14,10 +14,14 @@ know why any decision was made. You see only the result.
 
 ## Input
 
-The full diff (`git diff origin/main...HEAD`), the plan file content, the
-project CLAUDE.md content, and all `.claude/rules/*.md` file contents are
-provided inline in your prompt. Do not spend turns reading these files —
-they are already below.
+Your prompt contains these labeled sections:
+
+- **DIFF** — the full `git diff origin/main...HEAD`
+- **PLAN** — the implementation plan the developer followed
+- **CLAUDE.MD** — the project conventions and architecture
+- **RULES** — all `.claude/rules/*.md` file contents
+
+Do not spend turns reading these files — they are already below.
 
 ## Design Note
 

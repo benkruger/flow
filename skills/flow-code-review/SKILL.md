@@ -551,9 +551,20 @@ Use the Agent tool with:
 - `subagent_type`: `"flow:reviewer"`
 - `description`: `"Context-isolated code review"`
 
-Provide the full diff output in the prompt, along with the full text
-content of the plan file, CLAUDE.md, and all `.claude/rules/*.md` files.
-Include each as a labeled section so the agent can distinguish them.
+Provide all artifacts in the prompt with labeled sections:
+
+> DIFF:
+> (full diff output)
+>
+> PLAN:
+> (full plan file content)
+>
+> CLAUDE.MD:
+> (full CLAUDE.md content)
+>
+> RULES:
+> (each .claude/rules/ file, prefixed with its filename)
+
 Prefix the prompt with:
 
 > "You are reviewing code you did not write. The full diff, the plan,
