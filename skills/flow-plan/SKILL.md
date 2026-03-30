@@ -306,34 +306,24 @@ in the content.
 - Light validation: use Glob and Read to verify that files referenced in
   the Tasks section exist. Note any missing files (they may need to be
   created by the implementation) but do not block or re-derive the plan.
-- Proceed directly to Step 4. Skip the exploration and plan-writing
-  instructions below.
+- Run Script Behavior Verification and Target Path Validation (below)
+  on the extracted plan content, then proceed to Step 4.
 
 **If not found** — the issue is an older-format decomposed issue without
 a plan. Continue with the standard exploration and plan-writing flow
 below.
 
-### Standard Exploration
-
-Explore the codebase, validate the DAG against reality (if DAG was
-produced), and write the implementation plan to a plan file.
-
-If a DAG was produced in Step 2, use it as the foundation:
-- Validate that the files and patterns the DAG references actually exist
-- Check whether the dependencies the DAG identified make sense
-- Look for patterns or constraints the DAG missed
-
 ### Script Behavior Verification
 
-When an issue body asserts specific script behavior (e.g. "field X is
-populated after Step Y", "script A reads B from C"), verify each assertion
-by reading or grepping the relevant script source before building the plan
-on that assumption. Issue authors — including Claude in prior sessions —
-can be wrong about what a script does internally. A single grep of the
-script for the claimed field or function catches false assumptions before
-they become bugs in the implementation.
+When an issue body or extracted plan asserts specific script behavior
+(e.g. "field X is populated after Step Y", "script A reads B from C"),
+verify each assertion by reading or grepping the relevant script source
+before building the plan on that assumption. Issue authors — including
+Claude in prior sessions — can be wrong about what a script does
+internally. A single grep of the script for the claimed field or function
+catches false assumptions before they become bugs in the implementation.
 
-For each behavioral assertion found in the issue body:
+For each behavioral assertion found in the issue body or plan:
 
 - Identify the script and field or function referenced
 - Use the Read or Grep tool to check the actual source
@@ -343,11 +333,11 @@ For each behavioral assertion found in the issue body:
 
 ### Target Path Validation
 
-During exploration, verify that each file target identified for editing
-is inside the repo working tree. Files outside the repo — such as paths
-starting with `~/`, `/Users/`, or any absolute path not under the
-working directory — are not tracked by git. Changes to those files will
-not appear in `git status` or the PR diff.
+During exploration or extraction, verify that each file target identified
+for editing is inside the repo working tree. Files outside the repo —
+such as paths starting with `~/`, `/Users/`, or any absolute path not
+under the working directory — are not tracked by git. Changes to those
+files will not appear in `git status` or the PR diff.
 
 **Hard rule for `.claude/rules/` and `CLAUDE.md`:** These paths are
 ALWAYS repo-level during any FLOW phase. If a target resolves to
@@ -360,6 +350,16 @@ For other out-of-repo paths: if the prompt or issue body contains
 keywords like "repo", "version-controlled", "shared", "committed", or
 "tracked", default to the repo-local equivalent. Otherwise, note the
 out-of-repo path in the plan's Risks section so the user is aware.
+
+### Standard Exploration
+
+Explore the codebase, validate the DAG against reality (if DAG was
+produced), and write the implementation plan to a plan file.
+
+If a DAG was produced in Step 2, use it as the foundation:
+- Validate that the files and patterns the DAG references actually exist
+- Check whether the dependencies the DAG identified make sense
+- Look for patterns or constraints the DAG missed
 
 ### Framework Conventions
 

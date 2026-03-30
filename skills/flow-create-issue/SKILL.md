@@ -107,6 +107,10 @@ Output in your response (not via Bash) inside a fenced code block:
 ```
 ````
 
+Generate a short session ID by running
+`${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool. This ID
+scopes all file paths for this session.
+
 **Capture the problem sections** from the conversation context. Synthesize
 the discussion into these structured sections — do not re-analyze or
 re-explore, just distill what was already discussed:
@@ -122,7 +126,7 @@ re-explore, just distill what was already discussed:
 - **Context** — Business reason, architectural constraints, or design decisions.
 
 Write these captured sections to `.flow-states/create-issue-<id>-capture.md`
-using the Write tool (generate the session ID first).
+using the Write tool.
 
 **Decompose the implementation.** Invoke `decompose:decompose` via the Skill
 tool with an implementation-focused prompt. The prompt must make clear that
@@ -154,11 +158,7 @@ structured parameters:
   - label: "Iterate", description: "Re-run decompose with your feedback"
   - label: "Cancel", description: "Stop without filing an issue"
 
-**If "Proceed to draft"** → generate a short session ID by running
-`${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool (this ID
-scopes all file paths for this session).
-
-Write `{"create_issue_step": 1}` to
+**If "Proceed to draft"** → write `{"create_issue_step": 1}` to
 `.flow-states/create-issue-<id>.json` using the Write tool.
 
 Invoke `flow:flow-create-issue --step 2 --id <id>` using the Skill tool
@@ -291,10 +291,14 @@ approach), re-run `decompose:decompose` with the updated understanding.
 If the feedback is editorial (wording, scope adjustments), revise the
 draft directly. After revision, ask again with the same AskUserQuestion.
 
-**If "Re-decompose"** → clean up the session state file first:
+**If "Re-decompose"** → clean up session files first:
 
 ```bash
 rm .flow-states/create-issue-<id>.json
+```
+
+```bash
+rm .flow-states/create-issue-<id>-capture.md
 ```
 
 Then invoke `flow:flow-create-issue` using the Skill tool as your final
