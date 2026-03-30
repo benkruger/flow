@@ -155,6 +155,10 @@ def test_no_validate_ci_bash_filename():
     assert "validate-ci-bash" not in hooks_content, (
         "validate-ci-bash must not appear in hooks.json — renamed to validate-pretool"
     )
+    test_files = [f.name for f in (REPO_ROOT / "tests").iterdir() if f.is_file()]
+    assert "test_validate_ci_bash.py" not in test_files, (
+        "test_validate_ci_bash.py must not exist in tests/ — renamed to test_validate_pretool.py"
+    )
 
 
 def test_hooks_json_read_glob_grep_consolidated():
