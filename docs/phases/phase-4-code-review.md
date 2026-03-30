@@ -7,15 +7,16 @@ nav_order: 5
 
 **Command:** `/flow-code-review`
 
-Six steps on the same diff — clarity with convention compliance,
-correctness with rule compliance, safety, context-isolated code review,
-pre-mortem incident analysis, and adversarial test generation. Combines
-inline review passes and three context-isolated agents into a single phase
-with six ordered steps, each with its own commit checkpoint.
+Four steps on the same diff — clarity with convention compliance,
+correctness with rule compliance, safety, and parallel agent reviews
+(context-isolated code review, pre-mortem incident analysis, adversarial
+test generation launched concurrently). Combines inline review passes and
+three context-isolated agents into a single phase with four ordered steps,
+each with its own commit checkpoint.
 
 ---
 
-## The Six Steps
+## The Four Steps
 
 ### Step 1 — Simplify (clarity + convention compliance)
 
@@ -47,41 +48,18 @@ exposure.
 Every finding is fixed, `bin/flow ci` is run, and changes are committed
 via `/flow-commit`.
 
-### Step 4 — Context-Isolated Review (cold reviewer)
+### Step 4 — Agent Reviews (parallel launch)
 
-Launches the `reviewer` custom agent — a context-isolated sub-agent that
-receives the branch diff, plan file, CLAUDE.md, and `.claude/rules/` but
-no conversation history or coding rationale. The agent reviews as a cold
-reviewer: "You are reviewing code you did not write."
+Launches three independent sub-agents in parallel — reviewer, pre-mortem,
+and adversarial — using multiple Agent tool calls in a single response.
+After all agents return, findings are triaged and fixed sequentially.
 
-The agent produces structured findings (severity, category, evidence,
-recommendation). The main session triages each finding as real or false
-positive. Real findings are fixed, `bin/flow ci` is run, and changes are
-committed via `/flow-commit`.
-
-### Step 5 — Pre-Mortem (incident analysis)
-
-Launches the `pre-mortem` custom agent — a context-isolated sub-agent that
-receives only the branch diff and codebase access, with no conversation
-history or coding rationale. The agent frames the review as an incident
-investigation: "This PR was merged and caused a production incident."
-
-The agent produces a structured incident report (root cause hypothesis,
-blast radius, what tests missed, severity, evidence). The main session
-triages each finding as real or false positive. Real findings are fixed,
-`bin/flow ci` is run, and changes are committed via `/flow-commit`.
-
-### Step 6 — Adversarial Testing (test generation)
-
-Launches the `adversarial` custom agent — a context-isolated sub-agent that
-writes tests designed to break the implementation. The agent receives the
-branch diff, a temp test file path, and CLAUDE.md for test conventions. It
-writes adversarial tests to a branch-scoped temp file, runs them via
-`bin/test`, and reports failures as findings.
-
-The agent has Write access (to create temp test files) but no Edit access
-(cannot modify existing files). A failing test is a proven coverage gap. Passing
-tests are discarded. The temp test file is deleted before the agent returns.
+The **reviewer** agent is context-rich: it receives the branch diff, plan
+file, CLAUDE.md, and `.claude/rules/` inline. The **pre-mortem** agent is
+context-sparse: it receives only the branch diff and investigates the
+codebase independently. The **adversarial** agent is also context-sparse:
+it receives the diff, a branch-scoped temp test file path, and the CLAUDE.md
+path for test conventions.
 
 The main session triages each finding as real or false positive. Real
 findings are fixed, `bin/flow ci` is run, and changes are committed via
@@ -100,10 +78,8 @@ boundary. The Resume Check section dispatches to the correct step on
 re-entry.
 
 Steps 1-3 perform inline review passes sequentially within the response
-turn. Step 4 launches the reviewer agent for context-isolated code review.
-Step 5 launches the pre-mortem agent for context-isolated incident
-analysis. Step 6 launches the adversarial agent for adversarial test
-generation.
+turn. Step 4 launches all three agents (reviewer, pre-mortem, adversarial)
+in parallel, then triages and fixes findings after all return.
 
 ---
 
