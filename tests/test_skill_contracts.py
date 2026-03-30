@@ -1774,6 +1774,16 @@ def test_learn_no_two_dot_diff():
     )
 
 
+def test_learn_no_doc_drift_filing():
+    """Tombstone: doc drift filing removed in PR #688. Must not return."""
+    content = _read_skill("flow-learn")
+    assert "Documentation Drift" not in content, (
+        "flow-learn must NOT reference 'Documentation Drift' — "
+        "drift filing was removed in PR #688; a separate /flow-doc-sync "
+        "skill replaces this capability"
+    )
+
+
 def test_reviewer_agent_no_two_dot_diff():
     """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
     content = (REPO_ROOT / "agents" / "reviewer.md").read_text()

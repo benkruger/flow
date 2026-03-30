@@ -523,28 +523,7 @@ After each successful issue, record it:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_title>" --url "<issue_url>" --phase "flow-learn"
 ```
 
-### Documentation drift issues
-
-For each item where documentation is out of sync with actual behavior
-(discovered during Step 2 synthesis), file an issue on the target project.
-
-The issue body should describe what is stale and what the current
-behavior actually is.
-
-Write the issue body to `.flow-issue-body` in the project root using the
-Write tool, then file:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Documentation Drift" --title "<issue_title>" --body-file .flow-issue-body
-```
-
-After each successful issue, record it:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Documentation Drift" --title "<issue_title>" --url "<issue_url>" --phase "flow-learn"
-```
-
-If there are no process gap or documentation drift items, skip this step.
+If there are no process gap items, skip this step.
 
 ---
 
@@ -595,7 +574,6 @@ Present the full report to the user:
   ------------
   [Rule] #44: Add rule — check eager-loaded associations
   [Flow] #42: Commit skill should warn when branch is behind
-  [Documentation Drift] #45: README still references old auth flow
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -610,7 +588,7 @@ next to each file to indicate whether Step 5 committed it. Show
 the Edit tool call during Step 3.
 
 In the "Issues filed" section, prefix each issue with its label in
-brackets (e.g. `[Rule]`, `[Flow]`, `[Documentation Drift]`).
+brackets (e.g. `[Rule]`, `[Flow]`).
 
 ---
 
@@ -723,7 +701,6 @@ No phase transition, no transition question.
 - CLAUDE.md and `.claude/rules/` files are written via `bin/flow write-rule` subprocess and committed via `/flow:flow-commit --auto` (Phase 5 and Maintainer) — never via Edit or Write tools on `.claude/` paths
 - All edits target the project repo — never user-level `~/.claude/` paths
 - Plugin process gaps are filed as GitHub issues on the plugin repo with label "Flow"
-- Documentation drift is filed as GitHub issues on the target project with label "Documentation Drift"
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories
