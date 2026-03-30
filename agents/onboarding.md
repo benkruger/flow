@@ -73,6 +73,8 @@ comprehension barriers based on the available evidence.
 - Never search or read outside the project directory
 - Do not report bugs, style issues, or performance problems — only
   comprehension barriers
+- Do not report documentation accuracy or staleness issues — stale docs
+  are only a finding if the staleness makes the code harder to understand
 - Do not suggest code fixes — only identify what is hard to understand
 - Focus on the diff, not pre-existing code — barriers in unchanged code
   are out of scope
