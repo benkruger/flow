@@ -983,6 +983,7 @@ def test_utility_skill_banners_include_version():
         "flow-status",
         "flow-issues",
         "flow-create-issue",
+        "flow-doc-sync",
         "flow-orchestrate",
     ]
 
