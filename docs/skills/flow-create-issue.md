@@ -11,48 +11,41 @@ parent: Skills
 **Usage:**
 
 ```text
-/flow:flow-create-issue <problem description>
+/flow:flow-create-issue
 /flow:flow-create-issue --step 2 --id <id>
 ```
 
-Explores a design question or decomposes a concrete problem via DAG analysis with deep codebase exploration, iterates with the user until the issue is fully detailed, then files it as a "decomposed" issue ready for autonomous execution via `/flow-start`.
+Captures a brainstormed solution from the current conversation and files it as a pre-planned GitHub issue with an Implementation Plan section. The Plan phase extracts this plan directly — no re-derivation needed. Requires prior brainstorming context (typically via `/decompose:decompose`).
 
 ---
 
-## Input Classification
+## Conversation Gate
 
-Before entering the filing pipeline, the skill classifies the user's input:
-
-- **Concrete problem** (bug reports, specific failures, action requests, `#N` issue references) — proceeds directly to the 2-step pipeline below
-- **Exploratory question** (design questions like "what could we do with X?", brainstorming, open-ended exploration) — enters Exploration Mode for an interactive design discussion grounded in the codebase
-- **Ambiguous** — asks the user which mode they prefer
-
-### Exploration Mode
-
-When the input is exploratory, the skill facilitates a design discussion instead of immediately decomposing. It explores the codebase for relevant context, presents findings and design options, and iterates interactively with the user. Exit paths are wrapped in a HARD-GATE — transitioning to the filing pipeline (single or multiple issues), ending the exploration, or canceling all require explicit user approval via AskUserQuestion. When a brainstorm produces multiple independent issues, the user can select "File multiple issues" to draft and file all of them in a single session without losing context.
+Before entering the pipeline, the skill verifies that brainstorming context exists in the conversation — a problem that was explored and a solution that was agreed upon. If no context is found, the skill rejects with guidance to run `/decompose:decompose` first.
 
 ---
 
 ## What It Does
 
-Once a concrete problem is identified (either directly or after exploration), Step 1 is enforced via self-invocation — the skill re-invokes itself with `--step 2 --id <id>` after the decompose gate, forcing the model to re-read the full skill instructions at the step boundary. The `<id>` is a short UUID generated in Step 1 that scopes all file paths to prevent concurrent session collisions. A Resume Check reads the step counter from `.flow-states/create-issue-<id>.json` to dispatch correctly on re-entry.
+Step 1 is enforced via self-invocation — the skill re-invokes itself with `--step 2 --id <id>` after the decompose gate, forcing the model to re-read the full skill instructions at the step boundary. The `<id>` is a short UUID generated in Step 1 that scopes all file paths to prevent concurrent session collisions. A Resume Check reads the step counter from `.flow-states/create-issue-<id>.json` to dispatch correctly on re-entry.
 
 | Step | Name | Gate |
 |------|------|------|
-| 1 | Decompose | AskUserQuestion: proceed, iterate, or cancel |
-| 2 | Draft + File | AskUserQuestion: file (3 options in FLOW repo, 4 otherwise), revise, or re-decompose |
+| 1 | Capture + Decompose Implementation | AskUserQuestion: proceed, iterate, or cancel |
+| 2 | Transform + Draft + File | AskUserQuestion: file (3 options in FLOW repo, 4 otherwise), revise, or re-decompose |
 
-1. **Step 1 — Decompose:** Invokes `decompose:decompose` for DAG-based problem breakdown with codebase exploration (Glob, Grep, Read). Presents the synthesis and asks the user to approve, iterate, or cancel. Generates a session ID and writes step counter to `.flow-states/create-issue-<id>.json`.
-2. **Step 2 — Draft + File:** Crafts a comprehensive issue with five sections (Problem, Acceptance Criteria, Files to Investigate, Out of Scope, Context). Presents the full draft inline and asks the user where to file. When the current repo is `benkruger/flow`, the skill detects this via `git remote get-url origin` and presents a simplified 3-option prompt (file issue, revise, re-decompose) — since both "Target project" and "FLOW plugin" would resolve to the same repo. In all other repos, the full 4-option prompt is shown (target project, FLOW plugin, revise, re-decompose). Files the issue via `bin/flow issue`, then cleans up the session-scoped state file. In multi-issue mode (triggered by "File multiple issues" from Exploration Mode), Step 2 drafts all issues as a numbered set, presents them for batch review via a single HARD-GATE, and files each in sequence using indexed body files.
+1. **Step 1 — Capture + Decompose Implementation:** Captures problem sections (Problem, Acceptance Criteria, Files to Investigate, Out of Scope, Context) from the conversation context. Then invokes `decompose:decompose` with an implementation-focused prompt — structuring the agreed solution into tasks with dependencies, not re-analyzing the problem. Presents the synthesis and asks the user to approve, iterate, or cancel.
+2. **Step 2 — Transform + Draft + File:** Transforms the decompose output into an Implementation Plan section (Context, Exploration, Risks, Approach, Dependency Graph, Tasks) matching the plan file format that `flow-plan` reads. Combines with the captured problem sections into a single issue body. Presents the full draft inline and asks the user where to file. When the current repo is `benkruger/flow`, the skill detects this via `git remote get-url origin` and presents a simplified 3-option prompt. Files the issue via `bin/flow issue` with the `decomposed` label.
 
 ---
 
 ## Issue Format
 
-The filed issue contains enough detail for `/flow-start` to execute fully autonomously:
+The filed issue contains enough detail for `/flow-start` to execute fully autonomously, including a pre-built plan that the Plan phase extracts directly:
 
 - **Problem** — grounded in codebase evidence, not theoretical
 - **Acceptance Criteria** — binary pass/fail checklist
+- **Implementation Plan** — Context, Exploration, Risks, Approach, Dependency Graph, Tasks (matching plan file format)
 - **Files to Investigate** — verified paths with relevance notes
 - **Out of Scope** — explicit boundaries to prevent scope creep
 - **Context** — business reason and architectural constraints
@@ -62,10 +55,9 @@ The filed issue contains enough detail for `/flow-start` to execute fully autono
 ## Gates
 
 - Step banners shown at entry to each step (`── Step N of 2: Name ──`)
-- HARD-GATE on Exploration Mode exit paths — prevents flow breakouts during design discussion; includes "File multiple issues" option for batch filing
+- Conversation Gate rejects cold-start invocations without brainstorming context
 - AskUserQuestion gates at Steps 1 and 2 — user controls the flow
 - All AskUserQuestion calls use structured parameters (question, header, options with label+description)
-- All file paths verified via codebase exploration
 - Issues labeled `decomposed` for tracking (or `Flow` when filed against the plugin repo)
-- Repo routing integrated into Step 2 HARD-GATE — when in the FLOW repo (`benkruger/flow`), repo selection is skipped and issues are filed with `decomposed` label; otherwise user chooses target project or FLOW plugin
+- Repo routing integrated into Step 2 HARD-GATE — when in the FLOW repo (`benkruger/flow`), repo selection is skipped; otherwise user chooses target project or FLOW plugin
 - Self-invocation from Step 1 to Step 2 enforces skill re-read at the step boundary
