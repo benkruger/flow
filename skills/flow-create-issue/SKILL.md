@@ -167,7 +167,13 @@ as your final action. Do not output anything else after this invocation.
 **If "Iterate"** → re-invoke `decompose:decompose` with the user's
 feedback, present the updated synthesis, and ask again.
 
-**If "Cancel"** → stop. Do not file an issue.
+**If "Cancel"** → clean up the capture file:
+
+```bash
+rm .flow-states/create-issue-<id>-capture.md
+```
+
+Stop. Do not file an issue.
 
 Do not proceed to Step 2 without explicit user approval.
 

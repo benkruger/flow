@@ -310,8 +310,18 @@ in the content.
   on the extracted plan content, then proceed to Step 4.
 
 **If not found** — the issue is an older-format decomposed issue without
-a plan. Continue with the standard exploration and plan-writing flow
-below.
+a plan. Use the issue body content from the DAG file as a head start
+for plan writing:
+- Acceptance criteria inform task definitions — each criterion maps to
+  one or more implementation tasks
+- Files-to-investigate inform exploration starting points — read those
+  files first
+- Out-of-scope boundaries constrain the plan — do not add tasks outside
+  the stated scope
+- The issue body has already been validated by the user — do not
+  re-evaluate the problem statement
+
+Continue with the standard exploration and plan-writing flow below.
 
 ### Script Behavior Verification
 
