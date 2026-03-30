@@ -410,15 +410,25 @@ def test_adversarial_agent_exists():
     )
 
 
+def test_cognitive_isolation_lists_all_context_rich_agents():
+    """Guard: cognitive-isolation.md must list all context-rich agents in the Two-Tier Context Model."""
+    rule_file = REPO_ROOT / ".claude" / "rules" / "cognitive-isolation.md"
+    content = rule_file.read_text()
+    for agent_name in ("reviewer", "learn-analyst"):
+        assert agent_name in content, (
+            f".claude/rules/cognitive-isolation.md must list '{agent_name}' in the Context-rich tier"
+        )
+
+
 def test_investigation_agents_no_inline_context():
     """Guard: pre-mortem and onboarding agents must NOT receive inline context.
 
     These agents intentionally receive only the diff and must investigate the
     codebase themselves. Pre-supplied context (plan, CLAUDE.md, rules) masks
     failure modes by priming the agent with the same assumptions the author had.
-    The reviewer agent receives inline context because it checks against known
-    standards — a fundamentally different task. See agents/pre-mortem.md Design
-    Note for the full rationale.
+    The reviewer and learn-analyst agents receive inline context because they
+    check against known standards — a fundamentally different task. See
+    agents/pre-mortem.md Design Note for the full rationale.
     """
     for agent_name in ("pre-mortem", "onboarding", "adversarial"):
         agent_file = REPO_ROOT / "agents" / f"{agent_name}.md"
@@ -428,6 +438,35 @@ def test_investigation_agents_no_inline_context():
         assert "provided inline" not in body.lower(), (
             f"agents/{agent_name}.md must NOT contain 'provided inline' — "
             f"this agent intentionally receives only the diff to force independent investigation"
+        )
+
+
+def test_reviewer_inline_context_format_convention():
+    """Code Review Step 4 and reviewer agent must agree on labeled section format.
+
+    The producer (SKILL.md Step 4) must specify the exact section labels to use
+    when passing inline context to the reviewer agent. The consumer (reviewer.md)
+    must document the matching expected sections. This prevents unpredictable
+    prompt assembly across sessions. See issue #651.
+    """
+    # Producer side: Step 4 must contain the section labels
+    skill_content = _read_skill("flow-code-review")
+    step4_start = skill_content.index("## Step 4")
+    step5_start = skill_content.index("## Step 5")
+    step4_text = skill_content[step4_start:step5_start]
+    for label in ("DIFF:", "PLAN:", "CLAUDE.MD:", "RULES:"):
+        assert label in step4_text, (
+            f"flow-code-review Step 4 must contain '{label}' section label — "
+            f"format convention required for consistent reviewer agent prompts"
+        )
+
+    # Consumer side: reviewer agent must document expected sections
+    reviewer_content = (REPO_ROOT / "agents" / "reviewer.md").read_text()
+    body = reviewer_content.split("---", 2)[2] if reviewer_content.startswith("---") else reviewer_content
+    for label in ("DIFF", "PLAN", "CLAUDE.MD", "RULES"):
+        assert label in body, (
+            f"agents/reviewer.md must document '{label}' as an expected section — "
+            f"consumer must match producer format convention"
         )
 
 

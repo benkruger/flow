@@ -49,8 +49,10 @@ exposure. If no findings, skips to the next step. Every finding is fixed,
 
 Launches the `reviewer` custom agent — a context-isolated sub-agent that
 receives the branch diff, plan file, CLAUDE.md, and `.claude/rules/` but
-no conversation history or coding rationale. The agent reviews as a cold
-reviewer: "You are reviewing code you did not write."
+no conversation history or coding rationale. Context is passed with labeled
+section headers (DIFF, PLAN, CLAUDE.MD, RULES) matching the convention used
+by the learn-analyst agent. The agent reviews as a cold reviewer: "You are
+reviewing code you did not write."
 
 The agent produces structured findings (severity, category, evidence,
 recommendation). The main session triages each finding as real or false
