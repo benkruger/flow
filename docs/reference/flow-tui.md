@@ -38,7 +38,7 @@ from `.flow-states/<branch>.log`.
 | Key | Action |
 |-----|--------|
 | Up/Down | Navigate flow list |
-| Enter | Open worktree in new Terminal tab |
+| Enter | Open worktree in terminal (activates existing iTerm2 tab or opens new tab) |
 | p | Open PR in browser |
 | l | Show log view |
 | a | Abort flow (with Y/N confirmation) |
