@@ -633,7 +633,7 @@ def test_phase_timeline_code_task_name_empty_string():
 
 
 def test_phase_timeline_code_review_step_zero():
-    """Code Review phase shows 'simplify - step 1 of 6' when code_review_step is 0."""
+    """Code Review phase shows 'simplifying - step 1 of 4' when code_review_step is 0."""
     state = make_state(
         current_phase="flow-code-review",
         phase_statuses={
@@ -645,11 +645,11 @@ def test_phase_timeline_code_review_step_zero():
     )
     timeline = tui_data.phase_timeline(state)
     review_entry = timeline[3]
-    assert review_entry["annotation"] == "simplifying - step 1 of 6"
+    assert review_entry["annotation"] == "simplifying - step 1 of 4"
 
 
 def test_phase_timeline_code_review_annotation():
-    """Code Review phase shows 'security - step 3 of 6' when code_review_step=2."""
+    """Code Review phase shows 'security review - step 3 of 4' when code_review_step=2."""
     state = make_state(
         current_phase="flow-code-review",
         phase_statuses={
@@ -662,28 +662,11 @@ def test_phase_timeline_code_review_annotation():
     state["code_review_step"] = 2
     timeline = tui_data.phase_timeline(state)
     review_entry = timeline[3]
-    assert review_entry["annotation"] == "security review - step 3 of 6"
+    assert review_entry["annotation"] == "security review - step 3 of 4"
 
 
 def test_phase_timeline_code_review_complete():
-    """Code Review phase has no annotation when code_review_step=6 (all done)."""
-    state = make_state(
-        current_phase="flow-code-review",
-        phase_statuses={
-            "flow-start": "complete",
-            "flow-plan": "complete",
-            "flow-code": "complete",
-            "flow-code-review": "in_progress",
-        },
-    )
-    state["code_review_step"] = 6
-    timeline = tui_data.phase_timeline(state)
-    review_entry = timeline[3]
-    assert review_entry["annotation"] == ""
-
-
-def test_phase_timeline_code_review_step_five():
-    """Code Review step 5 shows 'pre-mortem - step 5 of 6' (code_review_step=4)."""
+    """Code Review phase has no annotation when code_review_step=4 (all done)."""
     state = make_state(
         current_phase="flow-code-review",
         phase_statuses={
@@ -696,7 +679,24 @@ def test_phase_timeline_code_review_step_five():
     state["code_review_step"] = 4
     timeline = tui_data.phase_timeline(state)
     review_entry = timeline[3]
-    assert review_entry["annotation"] == "pre-mortem - step 5 of 6"
+    assert review_entry["annotation"] == ""
+
+
+def test_phase_timeline_code_review_step_four():
+    """Code Review step 4 shows 'agent reviews - step 4 of 4' (code_review_step=3)."""
+    state = make_state(
+        current_phase="flow-code-review",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "complete",
+            "flow-code-review": "in_progress",
+        },
+    )
+    state["code_review_step"] = 3
+    timeline = tui_data.phase_timeline(state)
+    review_entry = timeline[3]
+    assert review_entry["annotation"] == "agent reviews - step 4 of 4"
 
 
 # --- phase_timeline: step name fallback ---
