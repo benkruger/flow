@@ -168,7 +168,7 @@ Monitor every active flow from your terminal — no Claude session needed. `flow
 |-----|--------|
 | Up/Down | Navigate flow list |
 | Left/Right | Switch tab |
-| Enter | Open worktree in new Terminal tab |
+| Enter | Open worktree in terminal (activates existing iTerm2 tab or opens new tab) |
 | p | Open PR in browser |
 | i | Open issue in browser |
 | l | Show session log |
