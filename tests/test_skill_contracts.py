@@ -1820,6 +1820,15 @@ def test_onboarding_agent_no_two_dot_diff():
     )
 
 
+def test_onboarding_agent_filters_doc_accuracy():
+    """Onboarding agent must filter out doc accuracy issues (PR #688)."""
+    content = (REPO_ROOT / "agents" / "onboarding.md").read_text().lower()
+    has_filter = "not report documentation accuracy" in content
+    assert has_filter, (
+        "agents/onboarding.md must instruct the agent not to report documentation accuracy or staleness issues"
+    )
+
+
 def test_code_review_step_4_handles_no_findings():
     """Step 4 (Agent Reviews) must explicitly handle the no-findings path."""
     content = _read_skill("flow-code-review")
