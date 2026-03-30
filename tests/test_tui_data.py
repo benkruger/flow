@@ -322,14 +322,17 @@ def test_phase_timeline_all_pending():
 
 def test_phase_timeline_mixed():
     """Complete, in_progress, and pending all appear correctly."""
+    now = datetime(2026, 1, 1, 0, 2, 0, tzinfo=PACIFIC)
     state = make_state(
         current_phase="flow-code",
         phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
     state["phases"]["flow-start"]["cumulative_seconds"] = 120
     state["phases"]["flow-plan"]["cumulative_seconds"] = 480
+    state["phases"]["flow-code"]["session_started_at"] = "2026-01-01T00:00:00-08:00"
+    state["phases"]["flow-code"]["cumulative_seconds"] = 0
 
-    timeline = tui_data.phase_timeline(state)
+    timeline = tui_data.phase_timeline(state, now=now)
 
     assert timeline[0]["status"] == "complete"
     assert timeline[0]["time"] == "2m"
@@ -340,6 +343,7 @@ def test_phase_timeline_mixed():
 
     assert timeline[2]["status"] == "in_progress"
     assert timeline[2]["name"] == "Code"
+    assert timeline[2]["time"] == "2m"
 
     assert timeline[3]["status"] == "pending"
 
@@ -816,6 +820,54 @@ def test_phase_timeline_complete_step_one():
     timeline = tui_data.phase_timeline(state)
     complete_entry = timeline[5]
     assert complete_entry["annotation"] == "checking state - step 1 of 12"
+
+
+# --- phase_timeline: live elapsed for in-progress ---
+
+
+def test_phase_timeline_in_progress_live_time():
+    """In-progress phase shows live elapsed from session_started_at."""
+    now = datetime(2026, 1, 1, 0, 5, 0, tzinfo=PACIFIC)
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["phases"]["flow-code"]["session_started_at"] = "2026-01-01T00:00:00-08:00"
+    state["phases"]["flow-code"]["cumulative_seconds"] = 0
+
+    timeline = tui_data.phase_timeline(state, now=now)
+    code_entry = next(e for e in timeline if e["key"] == "flow-code")
+    assert code_entry["time"] == "5m"
+
+
+def test_phase_timeline_in_progress_cumulative_plus_live():
+    """In-progress phase adds cumulative_seconds to live elapsed."""
+    now = datetime(2026, 1, 1, 0, 3, 0, tzinfo=PACIFIC)
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["phases"]["flow-code"]["session_started_at"] = "2026-01-01T00:00:00-08:00"
+    state["phases"]["flow-code"]["cumulative_seconds"] = 120
+
+    timeline = tui_data.phase_timeline(state, now=now)
+    code_entry = next(e for e in timeline if e["key"] == "flow-code")
+    assert code_entry["time"] == "5m"
+
+
+def test_phase_timeline_in_progress_no_session_started():
+    """In-progress phase with no session_started_at shows cumulative only."""
+    now = datetime(2026, 1, 1, 0, 5, 0, tzinfo=PACIFIC)
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["phases"]["flow-code"]["session_started_at"] = None
+    state["phases"]["flow-code"]["cumulative_seconds"] = 60
+
+    timeline = tui_data.phase_timeline(state, now=now)
+    code_entry = next(e for e in timeline if e["key"] == "flow-code")
+    assert code_entry["time"] == "1m"
 
 
 # --- parse_log_entries ---

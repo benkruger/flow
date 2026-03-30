@@ -140,8 +140,10 @@ def _step_annotation(step, total=0, name=""):
     return f"{name} - {step_str}" if name else step_str
 
 
-def phase_timeline(state):
+def phase_timeline(state, now=None):
     """Build a list of phase display entries from a state dict."""
+    if now is None:
+        now = datetime.now(PACIFIC)
     phases = state.get("phases", {})
     start_step = state.get("start_step", 0)
     start_steps_total = state.get("start_steps_total", 0)
@@ -165,7 +167,15 @@ def phase_timeline(state):
         number = PHASE_NUMBER[key]
         name = PHASE_NAMES[key]
 
-        time_str = format_time(seconds) if status == "complete" else ""
+        if status == "complete":
+            time_str = format_time(seconds)
+        elif status == "in_progress":
+            session_started = phase.get("session_started_at")
+            if session_started:
+                seconds += elapsed_since(session_started, now)
+            time_str = format_time(seconds) if seconds > 0 else ""
+        else:
+            time_str = ""
 
         annotation = ""
         if key == "flow-start" and status == "in_progress":
