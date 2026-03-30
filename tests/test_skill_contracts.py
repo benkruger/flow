@@ -1698,7 +1698,7 @@ def test_code_review_steps_have_continuation_directives():
 
 
 def test_code_review_hard_rules_require_step_continuation():
-    """Hard Rules must require immediate continuation between all 6 steps."""
+    """Hard Rules must require immediate continuation between all 4 steps and reference all review lenses."""
     content = _read_skill("flow-code-review")
     hard_rules_match = re.search(r"## Hard Rules\n(.*)", content, re.DOTALL)
     assert hard_rules_match, "Could not find Hard Rules in flow-code-review/SKILL.md"

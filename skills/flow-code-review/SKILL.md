@@ -115,7 +115,7 @@ Read `code_review_step` from the state file (default `0` if absent).
 ## Framework Conventions
 
 Read the project's CLAUDE.md for framework-specific conventions. The
-six review steps perform inline review passes against the branch
+four review steps perform inline review passes against the branch
 diff. The CLAUDE.md conventions inform fix decisions.
 
 ---
@@ -619,12 +619,15 @@ Provide the full diff output in the prompt, along with:
 
 ### After all agents return
 
-After the adversarial agent returns, verify the temp test file was
-deleted. If it still exists, delete it:
+If the adversarial agent was launched (`bin/test` exists), verify the
+temp test file was deleted. If it still exists, delete it:
 
 ```bash
 rm tests/test_adversarial_<branch>.py
 ```
+
+Skip this cleanup when `bin/test` does not exist — no adversarial agent
+was launched and no temp file was created.
 
 ### Triage findings
 
