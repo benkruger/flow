@@ -5,6 +5,7 @@ Tests mock curses.stdscr to exercise all TuiApp methods without a terminal.
 
 import curses
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -654,6 +655,78 @@ def test_list_input_refresh_key():
         mock_refresh.assert_called_once()
 
 
+# --- _activate_iterm_tab ---
+
+
+def test_activate_iterm_tab_success(tmp_path):
+    """Returns True when osascript finds and activates a matching tab."""
+    worktree_dir = tmp_path / ".worktrees" / "test-feature"
+    worktree_dir.mkdir(parents=True)
+    state = make_state()
+    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+    result = subprocess.CompletedProcess(args=[], returncode=0, stdout="true\n", stderr="")
+    with patch("tui.subprocess.run", return_value=result) as mock_run:
+        assert app._activate_iterm_tab(str(worktree_dir)) is True
+        mock_run.assert_called_once()
+        args = mock_run.call_args[0][0]
+        assert args[0] == "osascript"
+
+
+def test_activate_iterm_tab_not_found(tmp_path):
+    """Returns False when osascript runs but finds no matching tab."""
+    worktree_dir = tmp_path / ".worktrees" / "test-feature"
+    worktree_dir.mkdir(parents=True)
+    state = make_state()
+    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+    result = subprocess.CompletedProcess(args=[], returncode=0, stdout="false\n", stderr="")
+    with patch("tui.subprocess.run", return_value=result):
+        assert app._activate_iterm_tab(str(worktree_dir)) is False
+
+
+def test_activate_iterm_tab_osascript_error(tmp_path):
+    """Returns False when osascript exits with non-zero status."""
+    worktree_dir = tmp_path / ".worktrees" / "test-feature"
+    worktree_dir.mkdir(parents=True)
+    state = make_state()
+    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+    result = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+    with patch("tui.subprocess.run", return_value=result):
+        assert app._activate_iterm_tab(str(worktree_dir)) is False
+
+
+def test_activate_iterm_tab_timeout(tmp_path):
+    """Returns False when osascript times out."""
+    worktree_dir = tmp_path / ".worktrees" / "test-feature"
+    worktree_dir.mkdir(parents=True)
+    state = make_state()
+    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+    with patch("tui.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="osascript", timeout=5)):
+        assert app._activate_iterm_tab(str(worktree_dir)) is False
+
+
+def test_activate_iterm_tab_oserror(tmp_path):
+    """Returns False when osascript binary not found."""
+    worktree_dir = tmp_path / ".worktrees" / "test-feature"
+    worktree_dir.mkdir(parents=True)
+    state = make_state()
+    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+    with patch("tui.subprocess.run", side_effect=OSError("osascript not found")):
+        assert app._activate_iterm_tab(str(worktree_dir)) is False
+
+
+def test_activate_iterm_tab_script_contains_path(tmp_path):
+    """The osascript command includes the worktree path."""
+    worktree_dir = tmp_path / ".worktrees" / "test-feature"
+    worktree_dir.mkdir(parents=True)
+    state = make_state()
+    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+    result = subprocess.CompletedProcess(args=[], returncode=0, stdout="true\n", stderr="")
+    with patch("tui.subprocess.run", return_value=result) as mock_run:
+        app._activate_iterm_tab(str(worktree_dir))
+        script_arg = mock_run.call_args[0][0][2]
+        assert str(worktree_dir) in script_arg
+
+
 # --- _open_worktree ---
 
 
@@ -673,14 +746,68 @@ def test_open_worktree(tmp_path, monkeypatch):
         assert args[2] == "Terminal"
 
 
-def test_open_worktree_iterm(tmp_path, monkeypatch):
-    """Opens worktree directory in iTerm when TERM_PROGRAM is iTerm.app."""
+def test_open_worktree_iterm_activates_existing_tab(tmp_path, monkeypatch):
+    """When iTerm detected and activation succeeds, Popen is NOT called."""
     monkeypatch.setenv("TERM_PROGRAM", "iTerm.app")
     worktree_dir = tmp_path / ".worktrees" / "test-feature"
     worktree_dir.mkdir(parents=True)
     state = make_state()
     app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
-    with patch("tui.subprocess.Popen") as mock_popen:
+    with (
+        patch.object(app, "_activate_iterm_tab", return_value=True) as mock_activate,
+        patch("tui.subprocess.Popen") as mock_popen,
+    ):
+        app._open_worktree()
+        mock_activate.assert_called_once_with(str(worktree_dir))
+        mock_popen.assert_not_called()
+
+
+def test_open_worktree_iterm_fallback(tmp_path, monkeypatch):
+    """When iTerm detected and activation fails, falls back to Popen."""
+    monkeypatch.setenv("TERM_PROGRAM", "iTerm.app")
+    worktree_dir = tmp_path / ".worktrees" / "test-feature"
+    worktree_dir.mkdir(parents=True)
+    state = make_state()
+    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+    with (
+        patch.object(app, "_activate_iterm_tab", return_value=False),
+        patch("tui.subprocess.Popen") as mock_popen,
+    ):
+        app._open_worktree()
+        mock_popen.assert_called_once()
+        args = mock_popen.call_args[0][0]
+        assert args[2] == "iTerm"
+
+
+def test_open_worktree_terminal_no_activation(tmp_path, monkeypatch):
+    """Terminal users never attempt iTerm tab activation."""
+    monkeypatch.delenv("TERM_PROGRAM", raising=False)
+    worktree_dir = tmp_path / ".worktrees" / "test-feature"
+    worktree_dir.mkdir(parents=True)
+    state = make_state()
+    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+    with (
+        patch.object(app, "_activate_iterm_tab") as mock_activate,
+        patch("tui.subprocess.Popen") as mock_popen,
+    ):
+        app._open_worktree()
+        mock_activate.assert_not_called()
+        mock_popen.assert_called_once()
+        args = mock_popen.call_args[0][0]
+        assert args[2] == "Terminal"
+
+
+def test_open_worktree_iterm(tmp_path, monkeypatch):
+    """Opens worktree directory in iTerm when TERM_PROGRAM is iTerm.app and no existing tab."""
+    monkeypatch.setenv("TERM_PROGRAM", "iTerm.app")
+    worktree_dir = tmp_path / ".worktrees" / "test-feature"
+    worktree_dir.mkdir(parents=True)
+    state = make_state()
+    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+    with (
+        patch.object(app, "_activate_iterm_tab", return_value=False),
+        patch("tui.subprocess.Popen") as mock_popen,
+    ):
         app._open_worktree()
         mock_popen.assert_called_once()
         args = mock_popen.call_args[0][0]
