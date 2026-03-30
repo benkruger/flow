@@ -1073,3 +1073,26 @@ def test_hook_allows_agent_without_background_when_flow_active(git_repo):
     )
     assert result.returncode == 0
     assert result.stderr.strip() == ""
+
+
+def test_hook_allows_agent_background_when_no_flow(tmp_path):
+    """Subprocess: Agent + no flow + run_in_background=true → exit 0."""
+    # No .claude/settings.json — no flow detection possible
+    code, stderr = _run_hook_agent_background(run_in_background=True, cwd=str(tmp_path))
+    assert code == 0
+    assert stderr == ""
+
+
+def test_hook_allows_agent_foreground_when_flow_active(git_repo):
+    """Subprocess: Agent + flow-active + run_in_background=false → exit 0."""
+    claude_dir = git_repo / ".claude"
+    claude_dir.mkdir()
+    settings = {"permissions": {"allow": ["Bash(git status)"]}}
+    (claude_dir / "settings.json").write_text(json.dumps(settings))
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "main.json").write_text("{}")
+
+    code, stderr = _run_hook_agent_background(run_in_background=False, cwd=str(git_repo))
+    assert code == 0
+    assert stderr == ""
