@@ -44,7 +44,6 @@ never user-level `~/.claude/` paths.
 **GitHub issues** — filed during Learn:
 
 - **Flow** issues — FLOW process gaps, filed on the plugin repo (`benkruger/flow`)
-- **Documentation Drift** issues — docs out of sync with actual behavior
 
 All filed issues are recorded in the state file via `bin/flow add-issue`
 and surfaced in the Complete phase.

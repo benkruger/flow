@@ -121,7 +121,7 @@ Six custom plugin sub-agents in `agents/*.md`, all specifying `model: sonnet`. A
 
 Auto-memory is shared across git worktrees of the same repository (since Claude Code 2.1.63).
 
-Learn is tri-modal (Phase 5, Maintainer, Standalone). Routes learnings to project CLAUDE.md and `.claude/rules/`. Also files GitHub issues for process gaps and documentation drift. All filed issues recorded via `bin/flow add-issue`.
+Learn is tri-modal (Phase 5, Maintainer, Standalone). Routes learnings to project CLAUDE.md and `.claude/rules/`. Also files GitHub issues for process gaps. All filed issues recorded via `bin/flow add-issue`.
 
 Commit is also tri-modal (FLOW, Maintainer, Standalone). All modes share the same diff/message/approval/push process.
 
