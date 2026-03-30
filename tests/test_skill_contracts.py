@@ -410,15 +410,25 @@ def test_adversarial_agent_exists():
     )
 
 
+def test_cognitive_isolation_lists_all_context_rich_agents():
+    """Guard: cognitive-isolation.md must list all context-rich agents in the Two-Tier Context Model."""
+    rule_file = REPO_ROOT / ".claude" / "rules" / "cognitive-isolation.md"
+    content = rule_file.read_text()
+    for agent_name in ("reviewer", "learn-analyst"):
+        assert agent_name in content, (
+            f".claude/rules/cognitive-isolation.md must list '{agent_name}' in the Context-rich tier"
+        )
+
+
 def test_investigation_agents_no_inline_context():
     """Guard: pre-mortem and onboarding agents must NOT receive inline context.
 
     These agents intentionally receive only the diff and must investigate the
     codebase themselves. Pre-supplied context (plan, CLAUDE.md, rules) masks
     failure modes by priming the agent with the same assumptions the author had.
-    The reviewer agent receives inline context because it checks against known
-    standards — a fundamentally different task. See agents/pre-mortem.md Design
-    Note for the full rationale.
+    The reviewer and learn-analyst agents receive inline context because they
+    check against known standards — a fundamentally different task. See
+    agents/pre-mortem.md Design Note for the full rationale.
     """
     for agent_name in ("pre-mortem", "onboarding", "adversarial"):
         agent_file = REPO_ROOT / "agents" / f"{agent_name}.md"
