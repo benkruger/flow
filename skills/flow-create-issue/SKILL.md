@@ -1,21 +1,23 @@
 ---
 name: flow-create-issue
-description: "Explore a design question or decompose a concrete problem via DAG analysis, iterate with the user, then file a work-ready issue."
+description: "Capture a brainstormed solution as a pre-planned issue with an Implementation Plan section for fast-tracking through the Plan phase."
 ---
 
 # Flow Create Issue
 
-Explore a design question or decompose a concrete problem into a fully detailed, work-ready GitHub issue. Classifies the user's input first: exploratory questions get an interactive design discussion grounded in the codebase, while concrete problems go straight to the `decompose:decompose` plugin for DAG-based analysis. Both paths iterate with the user until the issue is comprehensive enough for `/flow:flow-start` to execute fully autonomously.
+Capture a brainstormed solution from the current conversation and file it as a pre-planned GitHub issue. The issue includes an Implementation Plan section (Context, Exploration, Risks, Approach, Dependency Graph, Tasks) that the Plan phase extracts directly — no re-derivation needed.
+
+This skill requires prior brainstorming context in the conversation. The user must have already explored the problem (typically via `/decompose:decompose`) and iterated on a solution before invoking this skill.
 
 ## Usage
 
 ```text
-/flow:flow-create-issue <problem description>
+/flow:flow-create-issue
 /flow:flow-create-issue --step 2 --id <id>
 ```
 
-- `/flow:flow-create-issue <problem description>` — start from Step 1 (Decompose)
-- `/flow:flow-create-issue --step 2 --id <id>` — self-invocation: skip to Step 2 (Draft + File)
+- `/flow:flow-create-issue` — start from the Conversation Gate
+- `/flow:flow-create-issue --step 2 --id <id>` — self-invocation: skip to Step 2 (Transform + Draft + File)
 
 ## Concurrency
 
@@ -44,134 +46,108 @@ Resume Check, using the provided `<id>` for all file paths.
 
 - `--step 2 --id <id>` → Resume Check dispatches to Step 2
 
-If no `--step` flag was passed, proceed to Input Classification.
+If no `--step` flag was passed, proceed to the Conversation Gate.
 
 ## Resume Check
 
 Use the Read tool to read `.flow-states/create-issue-<id>.json`, where
 `<id>` is the session identifier from the `--id` flag. If no `--id` flag
-was passed (first run), there is no file to read — proceed to Input
-Classification.
+was passed (first run), there is no file to read — proceed to the
+Conversation Gate.
 
-- If the file does not exist, proceed to Input Classification (first run).
-- If `create_issue_step` is `1` — Step 1 is done. Skip to Step 2 (which re-reads the file to determine single vs. multi-issue mode).
-
----
-
-## Input Classification
-
-Before entering the 2-step pipeline, evaluate the user's input to determine
-whether it describes a concrete problem or an exploratory design question.
-
-**Concrete problem signals** — proceed to Step 1:
-
-- Bug or failure language: "fails", "broken", "error", "crashes", "wrong"
-- Specific symptoms: error messages, stack traces, reproduction steps
-- Issue references: `#N` patterns pointing to existing issues
-- Action verbs: "fix", "add", "implement", "update", "change"
-- A clear description of what is wrong and what should be different
-
-**Exploratory question signals** — proceed to Exploration Mode:
-
-- Question form: "what could we", "how might we", "what if", "should we"
-- Brainstorming language: "ideas for", "thoughts on", "explore", "investigate"
-- No specific failure or symptom described
-- Asks about possibilities or design options rather than problems
-
-**If ambiguous** — ask the user which mode they prefer using AskUserQuestion
-with structured parameters:
-
-- **question**: "This could be explored as a design question or decomposed as a concrete issue. Which would you prefer?"
-- **header**: "Input Mode"
-- **options**:
-  - label: "Design exploration", description: "Discuss the topic interactively before filing"
-  - label: "Decompose and file", description: "Enter the 2-step pipeline now"
-
-Route based on the user's choice.
+- If the file does not exist, proceed to the Conversation Gate (first run).
+- If `create_issue_step` is `1` — Step 1 is done. Skip to Step 2.
 
 ---
 
-## Exploration Mode
+## Conversation Gate
 
-This mode facilitates a design discussion grounded in the codebase. The goal
-is to help the user think through a problem space, not to file an issue
-immediately.
+Before entering the pipeline, verify that the current conversation contains
+brainstorming context — a problem that was explored, a solution that was
+discussed and agreed upon. This skill captures solutions, it does not
+discover them.
 
-1. Acknowledge that this is a design exploration, not an issue filing pipeline
-2. Explore the codebase relevant to the topic using Glob, Grep, and Read to
-   ground the discussion in what actually exists
-3. Present findings and design options to the user
-4. Discuss interactively — use AskUserQuestion to gather the user's
-   perspective, iterate on ideas, and refine the direction
+**Signals that context exists** — proceed to Step 1:
+
+- Prior `/decompose:decompose` output in the conversation
+- Extended back-and-forth about a problem and its solution
+- An agreed approach, design, or set of changes discussed
+- The user explicitly says "file it", "create an issue", or similar
+
+**Signals that context is missing** — reject:
+
+- The skill was invoked with a bare problem description and no prior discussion
+- No decompose output or design iteration is visible in the conversation
+- The conversation just started with this invocation
 
 <HARD-GATE>
 
-**Exit paths:**
+If no brainstorming context exists, output this guidance and stop:
+
+> "This skill captures a brainstormed solution as a pre-planned issue.
+> Start by running `/decompose:decompose` to research the problem,
+> iterate on a solution, then invoke `/flow:flow-create-issue` when
+> you have an agreed approach."
 
 Do not proceed to Step 1, propose direct edits, commit changes, or take
-any action outside this skill without explicit user approval via
-AskUserQuestion.
-
-When the discussion produces one or more concrete problems the user wants
-to file, ask using AskUserQuestion with structured parameters:
-
-- **question**: "Ready to file?"
-- **header**: "File Issue?"
-- **options**:
-  - label: "File an issue", description: "Proceed to the 2-step pipeline with the refined problem"
-  - label: "File multiple issues", description: "Draft and file all refined problems as independent issues"
-  - label: "Done exploring", description: "End without filing an issue"
-
-If "File an issue" — proceed to Step 1 below with the single refined
-problem statement.
-
-If "File multiple issues" — collect all refined problems identified during
-the exploration. For each problem, note a concise title and a summary
-paragraph describing the problem. Proceed to Step 1 with the full list.
-
-If "Done exploring" — stop without filing. No issue is required.
-
-When the user wants to cancel:
-
-- Stop without filing
+any action outside this skill without brainstorming context in the
+conversation.
 
 </HARD-GATE>
 
 ---
 
-## Step 1 — Decompose
+## Step 1 — Capture + Decompose Implementation
 
 Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
-  ── Step 1 of 2: Decompose ──
+  ── Step 1 of 2: Capture + Decompose Implementation ──
 ```
 ````
 
-Invoke the `decompose:decompose` plugin with the user's problem description
-via the Skill tool. If Step 1 received a list of problems (from "File
-multiple issues"), invoke decompose once with all problems described
-together — the DAG analysis should consider interactions between them.
+**Capture the problem sections** from the conversation context. Synthesize
+the discussion into these structured sections — do not re-analyze or
+re-explore, just distill what was already discussed:
 
-The decomposition **must** include deep codebase exploration. During DAG execution:
+- **Problem** — What is broken, missing, or inadequate. Include observable
+  behavior, evidence from the codebase (file paths, line numbers), and user
+  impact. Grounded in the exploration already done in the conversation.
+- **Acceptance Criteria** — Binary, testable conditions. Pass/fail with no
+  subjective judgment.
+- **Files to Investigate** — Real file paths verified during the conversation's
+  codebase exploration. Include a brief note on why each is relevant.
+- **Out of Scope** — Explicit boundaries to prevent scope creep.
+- **Context** — Business reason, architectural constraints, or design decisions.
 
-- Use **Glob** to find relevant files by pattern
-- Use **Grep** to search for related code, constants, error messages, and patterns
-- Use **Read** to understand current behavior, architecture, and constraints
-- Trace call chains and dependencies to identify all affected files
-- Verify that referenced files, functions, and patterns actually exist
+Write these captured sections to `.flow-states/create-issue-<id>-capture.md`
+using the Write tool (generate the session ID first).
 
-The decomposition is the foundation. Every claim in the final issue must be grounded in evidence from the codebase — not theoretical or assumed. If decompose produces findings that reference files or behavior, verify them.
+**Decompose the implementation.** Invoke `decompose:decompose` via the Skill
+tool with an implementation-focused prompt. The prompt must make clear that
+the problem and solution are already agreed — decompose should structure the
+implementation into tasks, not re-analyze the problem.
 
-Present the full DAG synthesis to the user.
+Example prompt structure:
+
+> "Given the following agreed solution, decompose the implementation into
+> ordered tasks with dependencies, approach, and file targets. The problem
+> is already understood — focus on structuring the work.
+>
+> [Summary of the agreed solution from the conversation]
+>
+> [Key files and patterns identified during brainstorming]"
+
+The decompose output will produce a structured DAG with nodes, dependencies,
+and a synthesis — this becomes the foundation for the Implementation Plan.
 
 <HARD-GATE>
 
-Ask the user to review the decomposition using AskUserQuestion with
+After decompose returns, ask the user to review using AskUserQuestion with
 structured parameters:
 
-- **question**: "Review the decomposition above. How would you like to proceed?"
+- **question**: "Review the implementation decomposition above. How would you like to proceed?"
 - **header**: "Decompose"
 - **options**:
   - label: "Proceed to draft", description: "Move to the draft and file step"
@@ -182,23 +158,11 @@ structured parameters:
 `${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool (this ID
 scopes all file paths for this session).
 
-If Step 1 received a list of problems (from "File multiple issues" in
-Exploration Mode), write the following to
-`.flow-states/create-issue-<id>.json` using the Write tool:
-
-```json
-{"create_issue_step": 1, "multi": true, "issues": [{"title": "...", "summary": "..."}]}
-```
-
-The `issues` array contains one object per problem with `title` (concise
-issue title) and `summary` (problem description paragraph).
-
-If Step 1 received a single problem, write `{"create_issue_step": 1}` to
+Write `{"create_issue_step": 1}` to
 `.flow-states/create-issue-<id>.json` using the Write tool.
 
-In both cases, invoke `flow:flow-create-issue --step 2 --id <id>` using
-the Skill tool as your final action. Do not output anything else after
-this invocation.
+Invoke `flow:flow-create-issue --step 2 --id <id>` using the Skill tool
+as your final action. Do not output anything else after this invocation.
 
 **If "Iterate"** → re-invoke `decompose:decompose` with the user's
 feedback, present the updated synthesis, and ask again.
@@ -211,53 +175,69 @@ Do not proceed to Step 2 without explicit user approval.
 
 ---
 
-## Step 2 — Draft + File
+## Step 2 — Transform + Draft + File
 
 Output in your response (not via Bash) inside a fenced code block:
 
 ````markdown
 ```text
-  ── Step 2 of 2: Draft + File ──
+  ── Step 2 of 2: Transform + Draft + File ──
 ```
 ````
 
-Use the Read tool to read `.flow-states/create-issue-<id>.json`. If
-`multi` is `true`, skip to the **Multi-Issue Path** section below.
-Otherwise, continue with the single-issue path.
+Use the Read tool to read `.flow-states/create-issue-<id>.json` to confirm
+this is a valid self-invocation.
 
-Take the decompose synthesis and craft a single GitHub issue. The issue must contain enough detail that a fresh Claude session running `/flow:flow-start work on issue #N` can execute it fully autonomously — no questions asked.
+### Transform Decompose Output into Implementation Plan
 
-### Required Sections
+Take the decompose synthesis from Step 1 and transform it into an
+Implementation Plan section that matches the plan file format used by
+`flow-plan`. The Implementation Plan must contain these subsections:
 
-**Problem** — What is broken, missing, or inadequate. Include observable behavior, evidence from the codebase (file paths, line numbers, code snippets), and user impact. This is not a guess — it is grounded in the codebase exploration from Step 1.
+- **Context** — What the user wants to build and why
+- **Exploration** — What exists in the codebase, affected files, patterns discovered
+- **Risks** — What could go wrong, edge cases, constraints
+- **Approach** — The chosen approach and rationale
+- **Dependency Graph** — Table of tasks with types and dependencies:
 
-**Acceptance Criteria** — A checklist of binary, testable conditions. Each criterion must be pass/fail with no subjective judgment. These become the definition of done for the autonomous session.
-
-Example:
-
-```text
-- [ ] `lib/session-start.sh` detects multiple active features and lists them
-- [ ] `bin/ci` passes with no new warnings
-- [ ] Test coverage for the new detection logic in `tests/test_session_start.py`
+```markdown
+| Task | Type | Depends On |
+|------|------|------------|
+| 1. Write tests | test | — |
+| 2. Implement feature | implement | 1 |
 ```
 
-**Files to Investigate** — Real file paths verified during codebase exploration. These are starting points for the Plan phase. Include a brief note on why each file is relevant.
+- **Tasks** — Ordered implementation tasks, each with:
+  - Description of what to build
+  - Files to create or modify
+  - TDD notes (what the test should verify)
 
-Example:
+Tasks must use `#### Task N:` heading format (these become `### Task N:`
+headings in the plan file after heading promotion by `flow-plan`).
 
-```text
-- `lib/session-start.sh` — contains the hook logic that needs modification
-- `tests/test_session_start.py` — existing tests to extend
-- `hooks/hooks.json` — hook registration that may need updating
-```
+### Combine into Issue Body
 
-**Out of Scope** — Explicit boundaries to prevent autonomous scope creep. Name specific things that should NOT be changed, even if they seem related. This is critical for autonomous execution — without it, Claude will "improve" adjacent code.
+Read the captured problem sections from
+`.flow-states/create-issue-<id>-capture.md` using the Read tool.
 
-**Context** — Business reason, architectural constraints, or design decisions that inform the implementation. Include anything a fresh session needs to understand *why* this work matters and *how* it fits into the broader system.
+Combine the captured sections with the Implementation Plan into a single
+issue body. The section order must be:
+
+**Problem** (from capture) → **Acceptance Criteria** (from capture) →
+**Implementation Plan** (from transform, containing Context, Exploration,
+Risks, Approach, Dependency Graph, Tasks subsections) →
+**Files to Investigate** (from capture) → **Out of Scope** (from capture) →
+**Context** (from capture — business reason).
+
+Each top-level section uses `##` headings. The Implementation Plan's
+subsections use `###` headings. Task entries within the Tasks subsection
+use `####` headings.
 
 ### Draft Presentation
 
-Present the full draft inline in the response — both title and body. Do not tell the user to look at a file. Render it as a formatted markdown block so the user can review every detail.
+Present the full draft inline in the response — both title and body. Do
+not tell the user to look at a file. Render it as a formatted markdown
+block so the user can review every detail.
 
 ### Repo Detection
 
@@ -354,10 +334,14 @@ Record the issue in the state file (no-op if no FLOW feature is active):
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
 ```
 
-Clean up the state file:
+Clean up session files:
 
 ```bash
 rm .flow-states/create-issue-<id>.json
+```
+
+```bash
+rm .flow-states/create-issue-<id>-capture.md
 ```
 
 Display the issue URL to the user, then output the COMPLETE banner:
@@ -370,135 +354,13 @@ Display the issue URL to the user, then output the COMPLETE banner:
 ```
 ````
 
----
-
-### Multi-Issue Path
-
-Draft all issues from the `issues` array in the session state file. For
-each issue, craft a title and full body using the Required Sections format
-(Problem, Acceptance Criteria, Files to Investigate, Out of Scope,
-Context). Use the decompose synthesis from Step 1 as the foundation.
-
-Present all drafts as a numbered set inline in the response — each issue
-clearly labeled with its number and title, followed by the full body.
-
-Use the repo detection result from earlier in Step 2 — no need to re-run
-`git remote get-url origin`.
-
-<HARD-GATE>
-
-**If the current repo is `benkruger/flow`**, ask the user to review all
-drafts using AskUserQuestion with structured parameters:
-
-- **question**: "Review the drafts above. Ready to file?"
-- **header**: "File Issues"
-- **options**:
-  - label: "File issues", description: "File all against the current project with decomposed label"
-  - label: "Revise drafts", description: "Edit the drafts based on your feedback"
-  - label: "Re-decompose", description: "Restart from scratch with a new decomposition"
-
-**If the current repo is NOT `benkruger/flow`**, ask the user to review
-all drafts and choose where to file using AskUserQuestion with structured
-parameters:
-
-- **question**: "Review the drafts above. Where should these issues be filed?"
-- **header**: "File Issues"
-- **options**:
-  - label: "Target project", description: "File all against the current project"
-  - label: "FLOW plugin", description: "File all against benkruger/flow"
-  - label: "Revise drafts", description: "Edit the drafts based on your feedback"
-  - label: "Re-decompose", description: "Restart from scratch with a new decomposition"
-
-Do not proceed to file any issue, propose direct edits, commit changes,
-or take any action outside this skill without explicit user approval via
-AskUserQuestion — even if the answer appears obvious from context.
-
-**If "File issues"** (FLOW repo) or **"Target project"** → file all
-issues using the target project path (see Multi-Issue Filing below).
-
-**If "FLOW plugin"** → file all issues using the FLOW plugin path (see
-Multi-Issue Filing below).
-
-**If "Revise drafts"** → revise based on feedback and re-present all
-drafts. The user may drop issues, add issues, or edit individual drafts.
-After revision, ask again with the same AskUserQuestion.
-
-**If "Re-decompose"** → clean up the session state file first:
-
-```bash
-rm .flow-states/create-issue-<id>.json
-```
-
-Then invoke `flow:flow-create-issue` using the Skill tool as your final
-action (no `--step` or `--id` flags — restart from scratch). Do not
-output anything else after this invocation.
-
-Iterate as many times as needed. No issues are filed until the user
-explicitly chooses a filing target.
-
-</HARD-GATE>
-
-### Multi-Issue Filing
-
-Write all body files first using parallel Write tool calls — one per
-issue, each to `.flow-issue-body-<id>-N` in the project root (e.g.,
-`.flow-issue-body-<id>-1` for the first issue, `.flow-issue-body-<id>-2`
-for the second).
-
-Then file all issues in parallel using multiple Bash calls in one
-response. Each `bin/flow issue` call is independent (different body
-file, different GitHub API call).
-
-**If target project**, file each issue:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id>-1 --label decomposed
-```
-
-**If FLOW plugin bug**, file each issue:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo benkruger/flow --title "<issue_title>" --body-file .flow-issue-body-<id>-1 --label "Flow"
-```
-
-After all issues are filed, record each one sequentially (no-op if no
-FLOW feature is active — the `add-issue` calls mutate a shared state
-file and must run one at a time). Use the same label as the filing call:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
-```
-
-Or for FLOW plugin issues:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
-```
-
-After recording all issues, clean up the session state file:
-
-```bash
-rm .flow-states/create-issue-<id>.json
-```
-
-Display all issue URLs to the user, then output the COMPLETE banner:
-
-````markdown
-```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v1.0.1 — flow:flow-create-issue — COMPLETE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-````
-
 ## Hard Rules
 
 - Never file an issue without explicit user approval — the Step 2 AskUserQuestion is the mandatory gate
-- Never skip codebase exploration — every file path and code reference must be verified
 - Never tell the user to "look at" a file — render all content inline
 - Never use Bash to print banners — output them as text in your response
 - The issue body must be self-contained — a fresh session with no memory of this conversation must be able to execute it
-- Never create dependency links between issues — use `flow-decompose-project` for dependent issue graphs. Independent issues from one exploration session are fine.
-- Always use the Write tool to create body files (`.flow-issue-body-<id>` or `.flow-issue-body-<id>-N`) — never pass body text as a CLI argument
+- Always use the Write tool to create body files (`.flow-issue-body-<id>`) — never pass body text as a CLI argument
 - Never delete the body file — the `bin/flow issue` script handles cleanup
 - Step 1 ends by invoking the skill itself as the final action — Step 2 is terminal
+- The Implementation Plan section must use heading levels that match the plan file format after promotion by `flow-plan` (### in the issue becomes ## in the plan file)
