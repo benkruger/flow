@@ -272,6 +272,33 @@ def test_flow_summary_plan_path_absent():
     assert summary["plan_path"] is None
 
 
+# --- flow_summary: phase_elapsed ---
+
+
+def test_flow_summary_phase_elapsed():
+    """phase_elapsed contains formatted time for in-progress phase."""
+    now = datetime(2026, 1, 1, 0, 5, 0, tzinfo=PACIFIC)
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["phases"]["flow-code"]["session_started_at"] = "2026-01-01T00:00:00-08:00"
+    state["phases"]["flow-code"]["cumulative_seconds"] = 0
+    summary = tui_data.flow_summary(state, now=now)
+    assert summary["phase_elapsed"] == "5m"
+
+
+def test_flow_summary_phase_elapsed_no_in_progress():
+    """phase_elapsed is empty when no phase is in_progress."""
+    now = datetime(2026, 1, 1, 1, 0, 0, tzinfo=PACIFIC)
+    state = make_state(
+        current_phase="flow-plan",
+        phase_statuses={"flow-start": "complete", "flow-plan": "pending"},
+    )
+    summary = tui_data.flow_summary(state, now=now)
+    assert summary["phase_elapsed"] == ""
+
+
 # --- flow_summary: annotation ---
 
 

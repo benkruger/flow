@@ -105,8 +105,11 @@ def flow_summary(state, now=None):
     files = state.get("files", {})
     plan_path = files.get("plan") or state.get("plan_file")
 
-    timeline = phase_timeline(state)
+    timeline = phase_timeline(state, now=now)
     annotation = next((e["annotation"] for e in timeline if e["key"] == current_phase), "")
+    phase_elapsed = next(
+        (e["time"] for e in timeline if e["key"] == current_phase and e["status"] == "in_progress"), ""
+    )
 
     return {
         "feature": derive_feature(branch),
@@ -126,6 +129,7 @@ def flow_summary(state, now=None):
         "issue_numbers": set(extract_issue_numbers(state.get("prompt", ""))),
         "plan_path": plan_path,
         "annotation": annotation,
+        "phase_elapsed": phase_elapsed,
         "timeline": timeline,
         "phases": state.get("phases", {}),
         "state": state,
