@@ -44,6 +44,13 @@ the problem with zero solutioning. Research, diagnosis,
 and design happen in the Plan phase after proper codebase
 exploration.
 
+**Exception: Decomposed issues.** Issues filed by
+`flow-create-issue` include an Implementation Plan section
+(Context, Exploration, Risks, Approach, Dependency Graph,
+Tasks). This is the only context where solution design
+belongs in an issue body — these issues are pre-planned
+for fast-tracking through the Plan phase.
+
 - **Write for a cold start.** A future session has no
   memory of this conversation. The issue is its only
   context for the problem.
@@ -88,6 +95,10 @@ to determine blocked status.
   issue cannot proceed until another issue is resolved
 
 ## Never Include
+
+These rules apply to standard issues. Decomposed issues filed
+by `flow-create-issue` are exempt — they include an Implementation
+Plan section by design.
 
 - Root cause analysis — a guess is not analysis
 - Proposed solutions or "open questions" about tradeoffs
