@@ -128,7 +128,7 @@ def test_hook_scripts_are_executable():
 
 
 def test_hooks_json_has_pretooluse_bash_validator():
-    """hooks.json must register validate-ci-bash.py as a global PreToolUse hook."""
+    """hooks.json must register validate-pretool.py as a global PreToolUse hook."""
     hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
     assert "PreToolUse" in hooks["hooks"], (
         "hooks.json missing PreToolUse key — the global Bash validator must be registered"
@@ -140,9 +140,39 @@ def test_hooks_json_has_pretooluse_bash_validator():
         "PreToolUse Bash validator must also match Agent tool (matcher should be 'Bash|Agent')"
     )
     commands = [h["command"] for h in bash_matchers[0]["hooks"]]
-    assert any("validate-ci-bash.py" in cmd for cmd in commands), (
-        "PreToolUse Bash hook must reference validate-ci-bash.py"
+    assert any("validate-pretool.py" in cmd for cmd in commands), (
+        "PreToolUse Bash hook must reference validate-pretool.py"
     )
+
+
+def test_no_validate_ci_bash_filename():
+    """Tombstone: renamed in PR #693. Must not return."""
+    lib_files = [f.name for f in LIB_DIR.iterdir() if f.is_file()]
+    assert "validate-ci-bash.py" not in lib_files, (
+        "validate-ci-bash.py must not exist in lib/ — renamed to validate-pretool.py"
+    )
+    hooks_content = (HOOKS_DIR / "hooks.json").read_text()
+    assert "validate-ci-bash" not in hooks_content, (
+        "validate-ci-bash must not appear in hooks.json — renamed to validate-pretool"
+    )
+    test_files = [f.name for f in (REPO_ROOT / "tests").iterdir() if f.is_file()]
+    assert "test_validate_ci_bash.py" not in test_files, (
+        "test_validate_ci_bash.py must not exist in tests/ — renamed to test_validate_pretool.py"
+    )
+
+
+def test_hooks_json_read_glob_grep_consolidated():
+    """Read, Glob, Grep must share a single matcher entry in hooks.json."""
+    hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
+    matchers = hooks["hooks"]["PreToolUse"]
+    read_matchers = [m for m in matchers if m["matcher"] == "Read"]
+    glob_matchers = [m for m in matchers if m["matcher"] == "Glob"]
+    grep_matchers = [m for m in matchers if m["matcher"] == "Grep"]
+    assert len(read_matchers) == 0, "Read should not have a separate matcher entry"
+    assert len(glob_matchers) == 0, "Glob should not have a separate matcher entry"
+    assert len(grep_matchers) == 0, "Grep should not have a separate matcher entry"
+    combined = [m for m in matchers if "Read" in m["matcher"] and "Glob" in m["matcher"] and "Grep" in m["matcher"]]
+    assert len(combined) == 1, f"Expected exactly 1 combined Read|Glob|Grep matcher, got {len(combined)}"
 
 
 def test_hooks_json_has_no_exit_plan_validator():

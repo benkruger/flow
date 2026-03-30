@@ -66,7 +66,7 @@ itself, causing it to be tracked in the commit.
 Never use `general-purpose` sub-agents in skills — they ignore
 tool restriction rules in their prompts. Use custom plugin
 sub-agents with the global `PreToolUse` hook for system-level
-enforcement. The hook (`lib/validate-ci-bash.py`) is registered
+enforcement. The hook (`lib/validate-pretool.py`) is registered
 in `hooks/hooks.json` and blocks compound commands and
 file-read commands with exit code 2, feeding helpful error
 messages back to the sub-agent so it adapts.

@@ -1,4 +1,4 @@
-"""Tests for lib/validate-ci-bash.py — PreToolUse hook validator."""
+"""Tests for lib/validate-pretool.py — PreToolUse hook validator."""
 
 import json
 import subprocess
@@ -10,12 +10,12 @@ from conftest import LIB_DIR
 sys.path.insert(0, str(LIB_DIR))
 from importlib.util import module_from_spec, spec_from_file_location
 
-SCRIPT = LIB_DIR / "validate-ci-bash.py"
+SCRIPT = LIB_DIR / "validate-pretool.py"
 
 
 def _load_module():
-    """Load validate-ci-bash as a module for in-process testing."""
-    spec = spec_from_file_location("validate_ci_bash", SCRIPT)
+    """Load validate-pretool as a module for in-process testing."""
+    spec = spec_from_file_location("validate_pretool", SCRIPT)
     mod = module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

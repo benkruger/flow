@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Global PreToolUse hook validator for all Bash commands.
+Global PreToolUse hook validator for Bash and Agent tool calls.
 
 Reads the Claude Code hook input JSON from stdin, checks the Bash
 command against blocked patterns, and exits with the appropriate code.

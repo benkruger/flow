@@ -117,7 +117,7 @@ Replace `PREV` with the previous phase number and `PREV_NAME` with its name:
 
 FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`)
 for CI failure diagnosis and fix in Start (Steps 3 and 5). The `PreToolUse`
-hook (`lib/validate-ci-bash.py`) is registered globally in `hooks/hooks.json`,
+hook (`lib/validate-pretool.py`) is registered globally in `hooks/hooks.json`,
 enforcing tool restrictions on all Bash calls — including those from
 built-in skills' sub-agents. The hook validates three layers: compound
 command blocking, file-read command blocking, and whitelist enforcement
