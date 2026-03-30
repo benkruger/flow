@@ -210,22 +210,21 @@ def main():
         # Can't parse input — allow through, let normal permissions handle it
         sys.exit(0)
 
-    command = hook_input.get("tool_input", {}).get("command", "")
-    if not command:
-        sys.exit(0)
-
     settings, project_root = _find_settings_and_root()
     branch = _detect_branch_from_cwd() if settings is not None else None
     flow_active = _is_flow_active(branch, project_root)
 
-    # Block run_in_background during active FLOW phases
+    # Block run_in_background during active FLOW phases (Bash and Agent tools)
     if flow_active and hook_input.get("tool_input", {}).get("run_in_background"):
         print(
-            "BLOCKED: run_in_background is not allowed during a FLOW phase. "
-            "Use parallel foreground Bash calls instead.",
+            "BLOCKED: run_in_background is not allowed during a FLOW phase. Use parallel foreground calls instead.",
             file=sys.stderr,
         )
         sys.exit(2)
+
+    command = hook_input.get("tool_input", {}).get("command", "")
+    if not command:
+        sys.exit(0)
 
     allowed, message = validate(command, settings=settings, flow_active=flow_active)
     if not allowed:

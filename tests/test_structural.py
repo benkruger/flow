@@ -134,8 +134,11 @@ def test_hooks_json_has_pretooluse_bash_validator():
         "hooks.json missing PreToolUse key — the global Bash validator must be registered"
     )
     matchers = hooks["hooks"]["PreToolUse"]
-    bash_matchers = [m for m in matchers if m["matcher"] == "Bash"]
-    assert len(bash_matchers) == 1, f"Expected exactly 1 Bash matcher in PreToolUse, got {len(bash_matchers)}"
+    bash_matchers = [m for m in matchers if "Bash" in m["matcher"]]
+    assert len(bash_matchers) == 1, f"Expected exactly 1 Bash-matching matcher in PreToolUse, got {len(bash_matchers)}"
+    assert "Agent" in bash_matchers[0]["matcher"], (
+        "PreToolUse Bash validator must also match Agent tool (matcher should be 'Bash|Agent')"
+    )
     commands = [h["command"] for h in bash_matchers[0]["hooks"]]
     assert any("validate-ci-bash.py" in cmd for cmd in commands), (
         "PreToolUse Bash hook must reference validate-ci-bash.py"
