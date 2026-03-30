@@ -185,6 +185,11 @@ Preamble summary lines (e.g. "Use `<worktree_path>` for destinations 2
 and 4") are easy to miss because they sit far from the destination table
 they reference. A grep for the old number catches these stale references.
 
+Also audit spelled-out step counts in prose sections (e.g. "six review
+steps" in a Framework Conventions paragraph). These do not follow the
+`Step N` pattern and are invisible to number-based grep. Search for the
+old count as a word ("six", "three", etc.) in addition to as a digit.
+
 Also audit skip/jump targets — instructions like "Skip directly to
 Step 8 (cleanup)" that reference steps by number. When inserting a new
 step, these targets must be reconsidered for intent, not just

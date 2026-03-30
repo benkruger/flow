@@ -29,7 +29,7 @@ In the target project:
 | 1 | Start | `/flow:flow-start` | Create worktree, PR, state file, configure workspace |
 | 2 | Plan | `/flow:flow-plan` | Invoke decompose plugin for DAG analysis, explore codebase, create implementation plan |
 | 3 | Code | `/flow:flow-code` | Execute plan tasks one at a time with TDD |
-| 4 | Code Review | `/flow:flow-code-review` | Six review steps: clarity with convention compliance, correctness with rule compliance, safety, context-isolated code review, pre-mortem incident analysis, and adversarial test generation |
+| 4 | Code Review | `/flow:flow-code-review` | Four review steps: clarity with convention compliance, correctness with rule compliance, safety, and parallel agent reviews (context-isolated code review, pre-mortem incident analysis, adversarial test generation launched concurrently) |
 | 5 | Learn | `/flow:flow-learn` | Review mistakes, capture learnings, route to permanent homes |
 | 6 | Complete | `/flow:flow-complete` | Merge PR, remove worktree, delete state file |
 

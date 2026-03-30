@@ -462,8 +462,13 @@ def test_reviewer_inline_context_format_convention():
     # Producer side: Step 4 must contain the section labels
     skill_content = _read_skill("flow-code-review")
     step4_start = skill_content.index("## Step 4")
-    step5_start = skill_content.index("## Step 5")
-    step4_text = skill_content[step4_start:step5_start]
+    # Step 4 ends at Back Navigation or Done (Steps 5-6 merged into Step 4 in PR #686)
+    step4_end = len(skill_content)
+    for boundary in ("## Back Navigation", "## Done"):
+        idx = skill_content.find(boundary, step4_start)
+        if idx != -1:
+            step4_end = min(step4_end, idx)
+    step4_text = skill_content[step4_start:step4_end]
     for label in ("DIFF:", "PLAN:", "CLAUDE.MD:", "RULES:"):
         assert label in step4_text, (
             f"flow-code-review Step 4 must contain '{label}' section label — "
@@ -1680,42 +1685,20 @@ def test_code_review_steps_have_continuation_directives():
         "flow-code-review Step 3 must contain 'continue to Step 4' directive"
     )
 
-    # Step 4 must continue to Step 5
+    # Step 4 must continue to Done
     step4_match = re.search(
-        r"## Step 4.*?\n(.*?)(?=\n## Step 5)",
+        r"## Step 4.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
         content,
         re.DOTALL,
     )
     assert step4_match, "Could not find Step 4 in flow-code-review/SKILL.md"
-    assert "continue to Step 5" in step4_match.group(1), (
-        "flow-code-review Step 4 must contain 'continue to Step 5' directive"
-    )
-
-    # Step 5 must continue to Step 6
-    step5_match = re.search(
-        r"## Step 5.*?\n(.*?)(?=\n## Step 6)",
-        content,
-        re.DOTALL,
-    )
-    assert step5_match, "Could not find Step 5 in flow-code-review/SKILL.md"
-    assert "continue to Step 6" in step5_match.group(1), (
-        "flow-code-review Step 5 must contain 'continue to Step 6' directive"
-    )
-
-    # Step 6 must continue to Done
-    step6_match = re.search(
-        r"## Step 6.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
-        content,
-        re.DOTALL,
-    )
-    assert step6_match, "Could not find Step 6 in flow-code-review/SKILL.md"
-    assert "continue to Done" in step6_match.group(1), (
-        "flow-code-review Step 6 must contain 'continue to Done' directive"
+    assert "continue to Done" in step4_match.group(1), (
+        "flow-code-review Step 4 must contain 'continue to Done' directive"
     )
 
 
 def test_code_review_hard_rules_require_step_continuation():
-    """Hard Rules must require immediate continuation between all 6 steps."""
+    """Hard Rules must require immediate continuation between all 4 steps and reference all review lenses."""
     content = _read_skill("flow-code-review")
     hard_rules_match = re.search(r"## Hard Rules\n(.*)", content, re.DOTALL)
     assert hard_rules_match, "Could not find Hard Rules in flow-code-review/SKILL.md"
@@ -1828,10 +1811,10 @@ def test_onboarding_agent_no_two_dot_diff():
 
 
 def test_code_review_step_4_handles_no_findings():
-    """Step 4 (Context-Isolated Review) must explicitly handle the no-findings path."""
+    """Step 4 (Agent Reviews) must explicitly handle the no-findings path."""
     content = _read_skill("flow-code-review")
     step4_match = re.search(
-        r"## Step 4.*?\n(.*?)(?=\n## Step 5)",
+        r"## Step 4.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
         content,
         re.DOTALL,
     )
@@ -1839,28 +1822,22 @@ def test_code_review_step_4_handles_no_findings():
     assert "no findings" in step4_match.group(1).lower(), "flow-code-review Step 4 must handle the no-findings path"
 
 
-def test_code_review_step_5_handles_no_findings():
-    """Step 5 (Pre-Mortem) must explicitly handle the no-findings path."""
+def test_code_review_no_step_5():
+    """Tombstone: Step 5 (Pre-Mortem) merged into Step 4 in PR #686. Must not return."""
     content = _read_skill("flow-code-review")
-    step5_match = re.search(
-        r"## Step 5.*?\n(.*?)(?=\n## Step 6)",
-        content,
-        re.DOTALL,
+    assert "## Step 5" not in content, (
+        "flow-code-review must NOT have a separate Step 5 — "
+        "pre-mortem was merged into Step 4 (parallel agent reviews) in PR #686"
     )
-    assert step5_match, "Could not find Step 5 in flow-code-review/SKILL.md"
-    assert "no findings" in step5_match.group(1).lower(), "flow-code-review Step 5 must handle the no-findings path"
 
 
-def test_code_review_step_6_handles_no_findings():
-    """Step 6 (Adversarial Testing) must explicitly handle the no-findings path."""
+def test_code_review_no_step_6():
+    """Tombstone: Step 6 (Adversarial Testing) merged into Step 4 in PR #686. Must not return."""
     content = _read_skill("flow-code-review")
-    step6_match = re.search(
-        r"## Step 6.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
-        content,
-        re.DOTALL,
+    assert "## Step 6" not in content, (
+        "flow-code-review must NOT have a separate Step 6 — "
+        "adversarial testing was merged into Step 4 (parallel agent reviews) in PR #686"
     )
-    assert step6_match, "Could not find Step 6 in flow-code-review/SKILL.md"
-    assert "no findings" in step6_match.group(1).lower(), "flow-code-review Step 6 must handle the no-findings path"
 
 
 def test_code_review_has_resume_check():
@@ -1875,8 +1852,8 @@ def test_code_review_has_resume_check():
 def _code_review_steps():
     """Yield (step_num, step_text) for each Code Review step section."""
     content = _read_skill("flow-code-review")
-    for step_num in range(1, 7):
-        if step_num < 6:
+    for step_num in range(1, 5):
+        if step_num < 4:
             next_header = f"## Step {step_num + 1}"
         else:
             next_header = "## Back Navigation|## Done"
@@ -1906,16 +1883,14 @@ def test_code_review_steps_self_invoke():
 
 
 def test_code_review_steps_await_background_agents():
-    """Steps 4-6 must reference agents (Steps 1-3 use inline review passes)."""
+    """Step 4 must reference all three agents (Steps 1-3 use inline review passes)."""
     for step_num, step_text in _code_review_steps():
         if step_num in (1, 2, 3):
             continue
         if step_num == 4:
-            assert "agent" in step_text.lower(), f"Step {step_num} must reference the reviewer agent"
-        elif step_num == 5:
-            assert "agent" in step_text.lower(), f"Step {step_num} must reference the pre-mortem agent"
-        elif step_num == 6:
-            assert "agent" in step_text.lower(), f"Step {step_num} must reference the adversarial agent"
+            assert "reviewer" in step_text.lower(), "Step 4 must reference the reviewer agent"
+            assert "pre-mortem" in step_text.lower(), "Step 4 must reference the pre-mortem agent"
+            assert "adversarial" in step_text.lower(), "Step 4 must reference the adversarial agent"
 
 
 def test_code_review_has_self_invocation_check():

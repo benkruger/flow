@@ -10,11 +10,12 @@ parent: Skills
 
 **Usage:** `/flow-code-review`, `/flow-code-review --auto`, or `/flow-code-review --manual`
 
-Six review steps — clarity with convention compliance, correctness with
-rule compliance, safety, context-isolated code review, pre-mortem
-incident analysis, and adversarial test generation. Combines inline
-review passes and three context-isolated agents into a single phase with
-six ordered steps, each with its own commit checkpoint.
+Four review steps — clarity with convention compliance, correctness with
+rule compliance, safety, and parallel agent reviews (context-isolated code
+review, pre-mortem incident analysis, adversarial test generation launched
+concurrently). Combines inline review passes and three context-isolated
+agents into a single phase with four ordered steps, each with its own
+commit checkpoint.
 
 ---
 
@@ -45,40 +46,18 @@ lenses: input validation, authentication and authorization, and data
 exposure. If no findings, skips to the next step. Every finding is fixed,
 `bin/flow ci` is run, and changes are committed via `/flow-commit`.
 
-### Step 4 — Context-Isolated Review (cold reviewer)
+### Step 4 — Agent Reviews (parallel launch)
 
-Launches the `reviewer` custom agent — a context-isolated sub-agent that
-receives the branch diff, plan file, CLAUDE.md, and `.claude/rules/` but
-no conversation history or coding rationale. Context is passed with labeled
-section headers (DIFF, PLAN, CLAUDE.MD, RULES) matching the convention used
-by the learn-analyst agent. The agent reviews as a cold reviewer: "You are
-reviewing code you did not write."
+Launches three independent sub-agents in parallel — reviewer, pre-mortem,
+and adversarial — using multiple Agent tool calls in a single response.
+After all agents return, findings are triaged and fixed sequentially.
 
-The agent produces structured findings (severity, category, evidence,
-recommendation). The main session triages each finding as real or false
-positive. Real findings are fixed, `bin/flow ci` is run, and changes are
-committed via `/flow-commit`.
-
-### Step 5 — Pre-Mortem (incident analysis)
-
-Launches the `pre-mortem` custom agent — a context-isolated sub-agent that
-receives only the branch diff and codebase access, with no conversation
-history or coding rationale. The agent frames the review as an incident
-investigation: "This PR was merged and caused a production incident."
-
-The agent produces a structured incident report (root cause hypothesis,
-blast radius, what tests missed, severity, evidence). The main session
-triages each finding as real or false positive. Real findings are fixed,
-`bin/flow ci` is run, and changes are committed via `/flow-commit`.
-
-### Step 6 — Adversarial Testing (test generation)
-
-Launches the `adversarial` custom agent — a context-isolated sub-agent that
-writes tests designed to break the implementation. The agent receives the
-branch diff, a temp test file path, and CLAUDE.md for test conventions. It
-writes adversarial tests to a branch-scoped temp file, runs them via
-`bin/test`, and reports failures as findings. The agent has Write but no
-Edit access. The temp test file is deleted before the agent returns.
+The **reviewer** agent is context-rich: it receives the branch diff, plan
+file, CLAUDE.md, and `.claude/rules/` inline. The **pre-mortem** agent is
+context-sparse: it receives only the branch diff and investigates the
+codebase independently. The **adversarial** agent is also context-sparse:
+it receives the diff, a branch-scoped temp test file path, and the CLAUDE.md
+path for test conventions.
 
 The main session triages each finding as real or false positive. Real
 findings are fixed, `bin/flow ci` is run, and changes are committed via
@@ -119,10 +98,8 @@ Announce banner and phase entry update, proceeding directly to the Resume
 Check which dispatches to the next step.
 
 Steps 1-3 perform inline review passes sequentially within the response
-turn. Step 4 launches the reviewer agent for context-isolated code review.
-Step 5 launches the pre-mortem agent for context-isolated incident
-analysis. Step 6 launches the adversarial agent for adversarial test
-generation.
+turn. Step 4 launches all three agents (reviewer, pre-mortem, adversarial)
+in parallel, then triages and fixes findings after all return.
 
 ---
 

@@ -52,9 +52,7 @@ STEP_NAMES = {
         1: "simplifying",
         2: "reviewing",
         3: "security review",
-        4: "isolated review",
-        5: "pre-mortem",
-        6: "adversarial tests",
+        4: "agent reviews",
     },
     "flow-learn": {
         1: "gathering sources",

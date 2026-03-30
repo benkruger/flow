@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — six review steps: clarity with convention compliance (inline review passes), correctness with rule compliance (inline review), safety (inline security review), context-isolated code review (custom agent), pre-mortem incident analysis (custom agent), and adversarial test generation (custom agent). Commits after each step."
+description: "Phase 4: Code Review — four review steps: clarity with convention compliance (inline review passes), correctness with rule compliance (inline review), safety (inline security review), and parallel agent reviews (context-isolated code review, pre-mortem incident analysis, adversarial test generation launched concurrently). Commits after each step."
 ---
 
 # FLOW Code Review — Phase 4: Code Review
@@ -110,14 +110,12 @@ Read `code_review_step` from the state file (default `0` if absent).
 - If `1` — Step 1 is done. Skip to Step 2.
 - If `2` — Steps 1-2 are done. Skip to Step 3.
 - If `3` — Steps 1-3 are done. Skip to Step 4.
-- If `4` — Steps 1-4 are done. Skip to Step 5.
-- If `5` — Steps 1-5 are done. Skip to Step 6.
-- If `6` — All steps are done. Skip to Done.
+- If `4` — All steps are done. Skip to Done.
 
 ## Framework Conventions
 
 Read the project's CLAUDE.md for framework-specific conventions. The
-six review steps perform inline review passes against the branch
+four review steps perform inline review passes against the branch
 diff. The CLAUDE.md conventions inform fix decisions.
 
 ---
@@ -528,9 +526,15 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 
 ---
 
-## Step 4 — Context-Isolated Review
+## Step 4 — Agent Reviews
 
-Get the full branch diff to provide to the reviewer agent:
+This step launches three independent sub-agents in parallel — reviewer,
+pre-mortem, and adversarial — then triages and fixes findings from all
+three after they return.
+
+### Gather context
+
+Get the full branch diff once for all agents:
 
 ```bash
 git diff origin/main...HEAD
@@ -540,11 +544,19 @@ Read `files.plan` from the state file to get the plan file path. Use the
 Read tool to read the plan file. Use the Read tool to read the project
 CLAUDE.md. Use the Glob tool to find all `.claude/rules/*.md` files,
 then use the Read tool to read each one. Collect all content — you will
-pass it inline to the agent.
+pass it inline to the reviewer agent.
 
-Launch the reviewer agent using the Agent tool. The agent receives the
-diff, the plan, CLAUDE.md, and `.claude/rules/` — no conversation history,
-no coding rationale. This isolation eliminates author-as-reviewer bias.
+Check if `bin/test` exists in the project root. Use the Glob tool to
+check for `bin/test` at the project root. Note the result — it
+determines whether the adversarial agent is launched.
+
+### Launch agents in parallel
+
+Launch all applicable agents in a single response using multiple Agent
+tool calls. All three agents are independent — they share no state and
+can run concurrently.
+
+**Reviewer agent** — context-rich (receives diff, plan, CLAUDE.md, rules):
 
 Use the Agent tool with:
 
@@ -571,100 +583,7 @@ Prefix the prompt with:
 > the project CLAUDE.md, and all project rules are provided inline below.
 > Review the diff for correctness, convention compliance, and coverage."
 
-Wait for the agent to return its structured review findings.
-
-### Triage findings
-
-For each finding in the agent's report, evaluate it as either **real**
-(a credible issue supported by evidence) or **false positive**
-(speculative, not supported by the code, or already covered by tests).
-
-Show each finding with your triage decision and rationale.
-
-If the agent reports no findings, skip the commit. Show the
-Context-Isolated Review summary with zero findings, then without pausing
-continue to Step 5.
-
-### Fix every real finding
-
-For each finding triaged as real, fix the issue in code, then run CI:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci
-```
-
-Set the continuation context and flag:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Continue fixing remaining reviewer findings."
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
-```
-
-If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise
-invoke `/flow:flow-commit`.
-
-Move to the next finding.
-
-<HARD-GATE>
-`bin/flow ci` must be green after every fix. Do not move to the next
-finding until the current fix passes `bin/flow ci` and is committed.
-
-</HARD-GATE>
-
-Repeat until all real findings are fixed.
-
-### Context-Isolated Review summary
-
-Show a summary of what was found and triaged inside a fenced code block:
-
-````markdown
-```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  FLOW — Code Review — Step 4: Context-Isolated Review — SUMMARY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Agent findings  : N
-  Real            : N
-  False positive  : N
-  Fixed           : N
-
-  Findings
-  --------
-  - [FIXED] <description of real finding>
-  - [FALSE POSITIVE] <description and why>
-
-  bin/flow ci      : ✓ green
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-````
-
-Record step completion:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=4
-```
-
-To continue to Step 5, invoke `flow:flow-code-review --continue-step` using
-the Skill tool as your final action. If commit=auto was resolved, pass
-`--auto` as well. Do not output anything else after this invocation.
-
----
-
-## Step 5 — Pre-Mortem
-
-Get the full branch diff to provide to the pre-mortem agent:
-
-```bash
-git diff origin/main...HEAD
-```
-
-Launch the pre-mortem agent using the Agent tool. The agent receives only
-the diff and codebase access — no conversation history, no coding rationale,
-no plan file. This isolation is the debiasing mechanism.
+**Pre-mortem agent** — context-sparse (receives only the diff):
 
 Use the Agent tool with:
 
@@ -676,102 +595,8 @@ Provide the full diff output in the prompt, prefixed with:
 > "This PR was merged and caused a production incident. The full diff
 > is below. Investigate the codebase and write the incident report."
 
-Wait for the agent to return its structured incident report.
-
-### Triage findings
-
-For each finding in the agent's report, evaluate it as either **real**
-(a credible failure mode supported by evidence) or **false positive**
-(speculative, not supported by the code, or already covered by tests).
-
-Show each finding with your triage decision and rationale.
-
-If the agent reports no findings, skip the commit. Show the Pre-Mortem
-summary with zero findings, then without pausing continue to Done.
-
-### Fix every real finding
-
-For each finding triaged as real, fix the issue in code, then run CI:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci
-```
-
-Set the continuation context and flag:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Continue fixing remaining pre-mortem findings."
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
-```
-
-If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise
-invoke `/flow:flow-commit`.
-
-Move to the next finding.
-
-<HARD-GATE>
-`bin/flow ci` must be green after every fix. Do not move to the next
-finding until the current fix passes `bin/flow ci` and is committed.
-
-</HARD-GATE>
-
-Repeat until all real findings are fixed.
-
-### Pre-Mortem summary
-
-Show a summary of what was found and triaged inside a fenced code block:
-
-````markdown
-```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  FLOW — Code Review — Step 5: Pre-Mortem — SUMMARY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Agent findings  : N
-  Real            : N
-  False positive  : N
-  Fixed           : N
-
-  Findings
-  --------
-  - [FIXED] <description of real finding>
-  - [FALSE POSITIVE] <description and why>
-
-  bin/flow ci      : ✓ green
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-````
-
-Record step completion:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=5
-```
-
-To continue to Step 6, invoke `flow:flow-code-review --continue-step` using
-the Skill tool as your final action. If commit=auto was resolved, pass
-`--auto` as well. Do not output anything else after this invocation.
-
----
-
-## Step 6 — Adversarial Testing
-
-Check if `bin/test` exists in the project root. Use the Glob tool to check
-for `bin/test` at the project root.
-
-If `bin/test` does not exist, skip this step entirely. Show the Adversarial
-Testing summary with a note that `bin/test` is not available, then record
-step completion and self-invoke to continue to Done.
-
-Get the full branch diff to provide to the adversarial agent:
-
-```bash
-git diff origin/main...HEAD
-```
+**Adversarial agent** — context-sparse (receives diff, temp file path,
+CLAUDE.md path, branch name). Only launch if `bin/test` exists:
 
 Determine the temp test file path using the branch name from the state file:
 
@@ -780,11 +605,6 @@ tests/test_adversarial_<branch>.py
 ```
 
 Replace `<branch>` with the actual branch name (hyphens are fine in filenames).
-
-Launch the adversarial agent using the Agent tool. The agent receives only
-the diff, the temp file path, the CLAUDE.md path, and codebase access — no
-conversation history, no coding rationale, no plan file. This isolation is
-the debiasing mechanism.
 
 Use the Agent tool with:
 
@@ -797,25 +617,31 @@ Provide the full diff output in the prompt, along with:
 - The path to the project CLAUDE.md
 - The branch name
 
-Wait for the agent to return its structured findings.
+### After all agents return
 
-After the agent returns, verify the temp test file was deleted. If it
-still exists, delete it:
+If the adversarial agent was launched (`bin/test` exists), verify the
+temp test file was deleted. If it still exists, delete it:
 
 ```bash
 rm tests/test_adversarial_<branch>.py
 ```
 
+Skip this cleanup when `bin/test` does not exist — no adversarial agent
+was launched and no temp file was created.
+
 ### Triage findings
 
-For each finding in the agent's report, evaluate it as either **real**
-(a failing test that proves a genuine coverage gap) or **false positive**
-(test is wrong, tests unrelated behavior, or gap is intentional).
+Triage findings from each agent in order: reviewer, pre-mortem,
+adversarial. For each finding, evaluate it as either **real** (a
+credible issue supported by evidence) or **false positive** (speculative,
+not supported by the code, or already covered by tests).
 
-Show each finding with your triage decision and rationale.
+Show each finding with its source agent, your triage decision, and
+rationale.
 
-If the agent reports no findings, skip the commit. Show the Adversarial
-Testing summary with zero findings, then without pausing continue to Done.
+If all agents report no findings, skip the commit. Show the Agent
+Reviews summary with zero findings, then without pausing continue
+to Done.
 
 ### Fix every real finding
 
@@ -828,7 +654,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 Set the continuation context and flag:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Continue fixing remaining adversarial findings."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Continue fixing remaining agent review findings."
 ```
 
 ```bash
@@ -848,16 +674,32 @@ finding until the current fix passes `bin/flow ci` and is committed.
 
 Repeat until all real findings are fixed.
 
-### Adversarial Testing summary
+### Agent Reviews summary
 
 Show a summary of what was found and triaged inside a fenced code block:
 
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  FLOW — Code Review — Step 6: Adversarial Testing — SUMMARY
+  FLOW — Code Review — Step 4: Agent Reviews — SUMMARY
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+  Context-Isolated Review
+  -----------------------
+  Agent findings  : N
+  Real            : N
+  False positive  : N
+  Fixed           : N
+
+  Pre-Mortem
+  ----------
+  Agent findings  : N
+  Real            : N
+  False positive  : N
+  Fixed           : N
+
+  Adversarial Testing
+  -------------------
   Agent findings  : N
   Real            : N
   False positive  : N
@@ -865,8 +707,12 @@ Show a summary of what was found and triaged inside a fenced code block:
 
   Findings
   --------
-  - [FIXED] <description of real finding>
-  - [FALSE POSITIVE] <description and why>
+  - [REVIEWER] [FIXED] <description of real finding>
+  - [REVIEWER] [FALSE POSITIVE] <description and why>
+  - [PRE-MORTEM] [FIXED] <description of real finding>
+  - [PRE-MORTEM] [FALSE POSITIVE] <description and why>
+  - [ADVERSARIAL] [FIXED] <description of real finding>
+  - [ADVERSARIAL] [FALSE POSITIVE] <description and why>
 
   bin/flow ci      : ✓ green
 
@@ -877,7 +723,7 @@ Show a summary of what was found and triaged inside a fenced code block:
 Record step completion:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=6
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=4
 ```
 
 To continue to Done, invoke `flow:flow-code-review --continue-step` using
@@ -987,7 +833,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 - Never transition to Learn unless `bin/flow ci` is green
 - Fix every finding from inline review passes, inline correctness review, and inline security review — do not leave findings unaddressed
 - Follow the project CLAUDE.md conventions when fixing
-- Each active step (Simplify, Review, Security, Context-Isolated Review, Pre-Mortem, and Adversarial Testing) gets its own commit when changes are made
+- Each active step (Simplify, Review, Security, and Agent Reviews combining Context-Isolated Review, Pre-Mortem, and Adversarial Testing) gets its own commit when changes are made
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories
