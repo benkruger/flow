@@ -40,3 +40,12 @@ performed the removal so the intent is traceable.
 `test_<scope>_no_<removed_thing>` — e.g.,
 `test_code_review_no_plugin_step`,
 `test_code_review_no_plugin_config_axis`.
+
+## Error Messages
+
+Tombstone assertion messages must describe the current state of the
+codebase, not planned future work. Never reference a replacement
+skill, feature, or mechanism that does not yet exist. If the
+capability was removed without replacement, say so. If a
+replacement is planned, reference the tracking issue number so the
+claim is verifiable.

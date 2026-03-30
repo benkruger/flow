@@ -148,6 +148,7 @@ Available at any point in the workflow:
 | `/flow-abort` | Abandon feature — close PR, delete remote branch, remove worktree, delete state |
 | `/flow-reset` | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files |
 | `/flow-config` | Display current configuration — version, framework, per-skill autonomy |
+| `/flow-doc-sync` | Full codebase documentation accuracy review — reports drift between code and docs |
 | `/flow-issues` | Fetch open issues, categorize, prioritize, and display a dashboard. Supports readiness filters |
 | `/flow-create-issue` | Explore a design question or decompose a concrete problem, iterate until work-ready, then file it |
 | `/flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue relationships, blocked-by dependencies, and milestones |

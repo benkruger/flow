@@ -202,17 +202,19 @@ class TuiApp:
             issue_nums = flow.get("issue_numbers", set())
             issue_info = " ".join(f"#{n}" for n in sorted(issue_nums)) if issue_nums else ""
             elapsed_display = "Blocked" if flow["blocked"] else flow["elapsed"]
-            col_data.append((phase_info, elapsed_display, issue_info, pr_info))
+            phase_elapsed_display = "" if flow["blocked"] else flow.get("phase_elapsed", "")
+            col_data.append((phase_info, elapsed_display, phase_elapsed_display, issue_info, pr_info))
 
         # Dynamic column widths based on actual content (floors prevent collapse)
         phase_width = max((len(d[0]) for d in col_data), default=14)
         phase_width = max(phase_width, 14)
-        issue_width = max((len(d[2]) for d in col_data), default=0)
-        pr_width = max((len(d[3]) for d in col_data), default=0)
+        issue_width = max((len(d[3]) for d in col_data), default=0)
+        pr_width = max((len(d[4]) for d in col_data), default=0)
 
         # Responsive feature column: floor of 26, scales with terminal width
-        # Overhead: 2 (col offset) + 2 (marker) + 3 (gap) + phase + 3 (gap) + 7 (elapsed) + 3 (gap) + 2 (right margin)
-        overhead = 2 + 2 + 3 + phase_width + 3 + 7 + 3 + 2
+        # Overhead: 2 (col offset) + 2 (marker) + 3 (gap) + phase + 3 (gap)
+        #   + 5 (phase elapsed) + 3 (gap) + 7 (elapsed) + 3 (gap) + 2 (right margin)
+        overhead = 2 + 2 + 3 + phase_width + 3 + 5 + 3 + 7 + 3 + 2
         if issue_width:
             overhead += issue_width + 3
         if pr_width:
@@ -231,14 +233,15 @@ class TuiApp:
             attr = curses.A_BOLD if i == self.selected else 0
             if flow["blocked"]:
                 attr = attr | self._color(COLOR_FAILED)
-            phase_info, elapsed_display, issue_info, pr_info = col_data[i]
+            phase_info, elapsed_display, phase_elapsed_display, issue_info, pr_info = col_data[i]
             feature_display = flow["feature"]
             if len(feature_display) > feature_width:
                 feature_display = feature_display[: feature_width - 3] + "..."
             feat = f"{feature_display:<{feature_width}s}"
             phase = f"{phase_info:<{phase_width}s}"
+            phase_el = f"{phase_elapsed_display:>5s}"
             elapsed = f"{elapsed_display:>7s}"
-            parts = [marker, feat, "   ", phase, "   ", elapsed]
+            parts = [marker, feat, "   ", phase, "   ", phase_el, "   ", elapsed]
             if issue_width:
                 parts.append("   ")
                 parts.append(f"{issue_info:<{issue_width}s}")
@@ -288,9 +291,9 @@ class TuiApp:
                 attr = self._color(COLOR_COMPLETE)
             elif entry["status"] == "in_progress":
                 marker = "[>]"
-                suffix = ""
-                if entry["annotation"]:
-                    suffix = f"  ({entry['annotation']})"
+                time_part = f"  {entry['time']}" if entry["time"] else ""
+                annotation_part = f"  ({entry['annotation']})" if entry["annotation"] else ""
+                suffix = time_part + annotation_part
                 if flow["blocked"]:
                     attr = self._color(COLOR_FAILED) | curses.A_BOLD
                 else:

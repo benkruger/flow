@@ -983,6 +983,7 @@ def test_utility_skill_banners_include_version():
         "flow-status",
         "flow-issues",
         "flow-create-issue",
+        "flow-doc-sync",
         "flow-orchestrate",
     ]
 
@@ -1774,6 +1775,16 @@ def test_learn_no_two_dot_diff():
     )
 
 
+def test_learn_no_doc_drift_filing():
+    """Tombstone: doc drift filing removed in PR #688. Must not return."""
+    content = _read_skill("flow-learn")
+    assert "Documentation Drift" not in content, (
+        "flow-learn must NOT reference 'Documentation Drift' — "
+        "drift filing was removed in PR #688; a separate /flow-doc-sync "
+        "skill replaces this capability"
+    )
+
+
 def test_reviewer_agent_no_two_dot_diff():
     """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
     content = (REPO_ROOT / "agents" / "reviewer.md").read_text()
@@ -1807,6 +1818,15 @@ def test_onboarding_agent_no_two_dot_diff():
     assert "origin/main..HEAD" not in content, (
         "agents/onboarding.md must NOT use two-dot diff (origin/main..HEAD) — "
         "replaced with three-dot (origin/main...HEAD) in PR #660"
+    )
+
+
+def test_onboarding_agent_filters_doc_accuracy():
+    """Onboarding agent must filter out doc accuracy issues (PR #688)."""
+    content = (REPO_ROOT / "agents" / "onboarding.md").read_text().lower()
+    has_filter = "not report documentation accuracy" in content
+    assert has_filter, (
+        "agents/onboarding.md must instruct the agent not to report documentation accuracy or staleness issues"
     )
 
 

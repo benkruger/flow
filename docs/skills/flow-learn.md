@@ -52,7 +52,6 @@ merging. Runs in all three modes.
 **GitHub issues** — filed during Learn:
 
 - **Flow** — FLOW process gaps, on the plugin repo (`benkruger/flow`)
-- **Documentation Drift** — docs out of sync with actual behavior, on the target project repo
 
 All filed issues are recorded in the state file via `bin/flow add-issue`.
 

@@ -355,7 +355,7 @@ def test_draw_list_view_with_issue_numbers():
     )
     state["prompt"] = "work on #83 and #89"
     flow = _flow_from_state(state)
-    stdscr = _make_stdscr(rows=40, cols=80)
+    stdscr = _make_stdscr(rows=40, cols=100)
     app = _make_app(stdscr, flows=[flow])
     app._draw_list_view()
     calls = [str(c) for c in stdscr.addstr.call_args_list]
@@ -367,13 +367,18 @@ def test_draw_list_view_with_issue_numbers():
 def test_draw_list_view_no_issue_numbers():
     """No issue text appears when prompt has no #N references."""
     import re
+    from datetime import datetime
 
+    from flow_utils import PACIFIC
+    from tui_data import flow_summary
+
+    now = datetime(2026, 1, 1, 0, 10, 0, tzinfo=PACIFIC)
     state = make_state(
         current_phase="flow-code",
         phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
     )
-    flow = _flow_from_state(state)
-    stdscr = _make_stdscr(rows=40, cols=80)
+    flow = flow_summary(state, now=now)
+    stdscr = _make_stdscr(rows=40, cols=100)
     app = _make_app(stdscr, flows=[flow])
     app._draw_list_view()
     calls = [str(c) for c in stdscr.addstr.call_args_list]
@@ -2617,3 +2622,101 @@ def test_draw_list_view_columns_aligned_across_flows():
 
     # All PR columns must start at the same position
     assert len(set(pr_positions)) == 1, f"PR columns misaligned: positions={pr_positions}"
+
+
+# --- List view phase elapsed ---
+
+
+def test_draw_list_view_shows_phase_elapsed():
+    """List view shows phase elapsed as a separate column before total elapsed."""
+    from datetime import datetime
+
+    from flow_utils import PACIFIC
+
+    # Start 30m ago, but only 3m in the current phase — values must differ
+    now = datetime(2026, 1, 1, 0, 30, 0, tzinfo=PACIFIC)
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["started_at"] = "2026-01-01T00:00:00-08:00"
+    state["phases"]["flow-code"]["session_started_at"] = "2026-01-01T00:27:00-08:00"
+    state["phases"]["flow-code"]["cumulative_seconds"] = 0
+    from tui_data import flow_summary
+
+    flow = flow_summary(state, now=now)
+    assert flow["phase_elapsed"] == "3m"
+    assert flow["elapsed"] == "30m"
+    stdscr = _make_stdscr(rows=40, cols=120)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+    list_row_calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == 4]
+    assert list_row_calls, "Expected addstr call at row 4"
+    row_text = list_row_calls[0][0][2]
+    # Row must contain BOTH "3m" (phase elapsed) and "30m" (total elapsed)
+    assert "3m" in row_text, f"Phase elapsed '3m' not found in: {row_text}"
+    assert "30m" in row_text, f"Total elapsed '30m' not found in: {row_text}"
+    # Phase elapsed must appear before total elapsed
+    idx_phase = row_text.index("3m")
+    idx_total = row_text.index("30m")
+    assert idx_phase < idx_total, f"Phase elapsed should appear before total: phase@{idx_phase} total@{idx_total}"
+
+
+def test_draw_list_view_blocked_hides_phase_elapsed():
+    """Blocked flow shows 'Blocked' and suppresses the phase elapsed column."""
+    from datetime import datetime
+
+    from flow_utils import PACIFIC
+
+    now = datetime(2026, 1, 1, 0, 10, 0, tzinfo=PACIFIC)
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["_blocked"] = "2026-01-01T10:00:00-08:00"
+    state["phases"]["flow-code"]["session_started_at"] = "2026-01-01T00:00:00-08:00"
+    state["phases"]["flow-code"]["cumulative_seconds"] = 300
+    from tui_data import flow_summary
+
+    flow = flow_summary(state, now=now)
+    # phase_elapsed is "15m" (300s + 600s live) — but blocked should suppress it
+    assert flow["phase_elapsed"] == "15m"
+    stdscr = _make_stdscr(rows=40, cols=120)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+    list_row_calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == 4]
+    assert list_row_calls, "Expected addstr call at row 4"
+    row_text = list_row_calls[0][0][2]
+    assert "Blocked" in row_text
+    # "15m" (phase elapsed) must NOT appear in the row when blocked
+    assert "15m" not in row_text, f"Phase elapsed '15m' should be suppressed when blocked: {row_text}"
+
+
+def test_draw_detail_panel_in_progress_shows_time():
+    """Detail panel [>] line includes formatted time before annotation."""
+    from datetime import datetime
+
+    from flow_utils import PACIFIC
+
+    now = datetime(2026, 1, 1, 0, 5, 0, tzinfo=PACIFIC)
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    state["code_task"] = 2
+    state["code_tasks_total"] = 5
+    state["phases"]["flow-code"]["session_started_at"] = "2026-01-01T00:00:00-08:00"
+    state["phases"]["flow-code"]["cumulative_seconds"] = 0
+    from tui_data import flow_summary
+
+    flow = flow_summary(state, now=now)
+    stdscr = _make_stdscr(rows=40, cols=80)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_detail_panel(10)
+    # Find the [>] line for the in-progress phase
+    in_progress_calls = [c for c in stdscr.addstr.call_args_list if "[>]" in str(c[0][2])]
+    assert len(in_progress_calls) >= 1
+    line_text = in_progress_calls[0][0][2]
+    # Should contain time ("5m") before the annotation
+    assert "5m" in line_text
+    assert "task 3 of 5" in line_text
