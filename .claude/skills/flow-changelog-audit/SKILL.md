@@ -57,7 +57,7 @@ note the matchers and which scripts handle them.
 **Hook scripts.** Read each script referenced in `hooks/hooks.json`:
 
 - `hooks/session-start.sh` — what Claude Code session events it handles
-- `lib/validate-ci-bash.py` — what PreToolUse capabilities it uses
+- `lib/validate-pretool.py` — what PreToolUse capabilities it uses
 - `lib/validate-worktree-paths.py` — what PreToolUse capabilities it uses
 - `lib/validate-ask-user.py` — what PreToolUse capabilities it uses (especially `updatedInput` and `permissionDecision`)
 - `lib/clear-blocked.py` — what PostToolUse capabilities it uses

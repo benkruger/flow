@@ -111,7 +111,7 @@ The "Flow In-Progress" label on issues is the cross-engineer WIP detection mecha
 
 ### Sub-Agents
 
-Six custom plugin sub-agents in `agents/*.md`, all specifying `model: sonnet`. Agent frontmatter must only use supported keys (`name`, `description`, `model`, `effort`, `maxTurns`, `tools`, `disallowedTools`, `skills`, `memory`, `background`, `isolation`) — `test_agent_frontmatter_only_supported_keys` enforces this. The global `PreToolUse` hook (`lib/validate-ci-bash.py`) enforces Bash and Agent tool restrictions across all agents. See `.claude/rules/cognitive-isolation.md` for the two-tier context model and debiasing rationale.
+Six custom plugin sub-agents in `agents/*.md`, all specifying `model: sonnet`. Agent frontmatter must only use supported keys (`name`, `description`, `model`, `effort`, `maxTurns`, `tools`, `disallowedTools`, `skills`, `memory`, `background`, `isolation`) — `test_agent_frontmatter_only_supported_keys` enforces this. The global `PreToolUse` hook (`lib/validate-pretool.py`) enforces Bash and Agent tool restrictions across all agents. See `.claude/rules/cognitive-isolation.md` for the two-tier context model and debiasing rationale.
 
 ### Orchestration
 
@@ -143,7 +143,7 @@ Claude never computes timestamps, time differences, or counter increments. All s
 
 ### Permission Invariant
 
-Every bash block in every skill must run without triggering a permission prompt. `test_permissions.py` enforces at test time (placeholder substitution, allow/deny matching); `validate-ci-bash.py` enforces at runtime via global PreToolUse hook (compound commands, redirection, file-read commands blocked; whitelist enforced when a flow is active). See `.claude/rules/permissions.md` for the pattern-adding protocol.
+Every bash block in every skill must run without triggering a permission prompt. `test_permissions.py` enforces at test time (placeholder substitution, allow/deny matching); `validate-pretool.py` enforces at runtime via global PreToolUse hook (compound commands, redirection, file-read commands blocked; whitelist enforced when a flow is active). See `.claude/rules/permissions.md` for the pattern-adding protocol.
 
 ## Test Architecture
 
@@ -171,7 +171,7 @@ Key test files: `test_structural.py` (config invariants, version consistency), `
 - **Prefer dedicated tools over Bash** — see `.claude/rules/worktree-commands.md`
 - **Issue filing** — see `.claude/rules/filing-issues.md`
 - **Repo-level targets only** — see `.claude/rules/repo-level-only.md`
-- **No `run_in_background` during FLOW phases** — enforced by `validate-ci-bash.py` hook on Bash and Agent tool calls
+- **No `run_in_background` during FLOW phases** — enforced by `validate-pretool.py` hook on Bash and Agent tool calls
 
 <!-- FLOW:BEGIN -->
 

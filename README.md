@@ -275,7 +275,7 @@ The learnings don't evaporate at session end. They compound.
 
 ### Bash Validation Hook
 
-A global `PreToolUse` hook (`validate-ci-bash.py`) fires on every Bash call in any FLOW-primed project. It enforces 6 validation layers in order:
+A global `PreToolUse` hook (`validate-pretool.py`) fires on every Bash call in any FLOW-primed project. It enforces 6 validation layers in order:
 
 1. **Compound commands** — blocks `&&`, `;`, `|` (use separate Bash calls)
 2. **Shell redirection** — blocks `>`, `>>`, `2>` (use Read/Write tools)
