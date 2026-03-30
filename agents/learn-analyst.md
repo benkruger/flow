@@ -33,6 +33,26 @@ Your prompt contains these labeled sections:
 Use Read, Glob, and Grep tools to investigate the surrounding codebase
 for additional context.
 
+## Design Note
+
+This agent receives inline context (diff, state file data, plan,
+CLAUDE.md rules) because its task is checking against known process
+standards — conventions, plan alignment, rule compliance, and process
+discipline. Having the standards at hand makes the analysis faster
+and more accurate, the same rationale as the reviewer agent (see
+`agents/reviewer.md` Design Note).
+
+The learn-analyst additionally receives state file data (visit counts,
+cumulative timings, session notes) that the reviewer does not. This
+data is only meaningful when compared against known process
+expectations — a high visit count signals friction only if you know
+the expected count is one.
+
+The pre-mortem and onboarding agents intentionally do NOT receive
+this context. They must investigate the codebase themselves to
+discover unknown risks and comprehension barriers. See the Design
+Note in `agents/pre-mortem.md` for the full debiasing rationale.
+
 ## Workflow
 
 **Read the rules.** Note every convention and constraint from the

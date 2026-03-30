@@ -369,6 +369,16 @@ def test_learn_analyst_agent_exists():
     )
 
 
+def test_learn_analyst_agent_has_design_note():
+    """agents/learn-analyst.md must have a Design Note explaining context-rich tier placement."""
+    agent_file = REPO_ROOT / "agents" / "learn-analyst.md"
+    content = agent_file.read_text()
+    assert "## Design Note" in content, (
+        "agents/learn-analyst.md must have a '## Design Note' section explaining "
+        "why it belongs in the context-rich tier of the Two-Tier Context Model"
+    )
+
+
 def test_learn_uses_onboarding_subagent():
     """Learn skill must reference the onboarding sub-agent."""
     content = _read_skill("flow-learn")
