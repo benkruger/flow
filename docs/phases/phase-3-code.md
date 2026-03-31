@@ -85,5 +85,5 @@ By the end of Phase 3:
 
 ## What Comes Next
 
-Phase 4: Code Review (`/flow-code-review`) — three lenses on the same diff:
-clarity, correctness, and safety.
+Phase 4: Code Review (`/flow-code-review`) — four steps: clarity with convention
+compliance, correctness with rule compliance, safety, and parallel agent reviews.

@@ -10,7 +10,7 @@ An opinionated 6-phase development plugin for [Claude Code](https://docs.anthrop
 
 ## Why FLOW
 
-Claude Code is powerful, but undisciplined by default. FLOW imposes structure. Not bureaucracy — discipline. DAG decomposition for planning, then TDD execution, then six-lens code review, then learnings that compound. Every feature, same order.
+Claude Code is powerful, but undisciplined by default. FLOW imposes structure. Not bureaucracy — discipline. DAG decomposition for planning, then TDD execution, then four-step code review, then learnings that compound. Every feature, same order.
 
 ---
 
