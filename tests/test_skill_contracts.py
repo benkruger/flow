@@ -2906,6 +2906,7 @@ def test_create_issue_skips_repo_selection_in_flow_repo():
 def test_create_issue_step1_has_prior_decompose_detection():
     """Step 1 must detect prior implementation-focused decompose output and skip redundant re-invocation."""
     steps = _create_issue_steps()
+    assert any(n == 1 for n, _ in steps), "Step 1 not found in flow-create-issue"
     for step_num, step_text in steps:
         if step_num == 1:
             assert "Prior Decompose Detection" in step_text, "Step 1 must have a 'Prior Decompose Detection' subsection"
