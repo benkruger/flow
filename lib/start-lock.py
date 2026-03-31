@@ -91,12 +91,21 @@ def acquire(feature):
 
     # Create our queue entry only if it doesn't exist yet.
     # Using exclusive create to preserve original mtime on retries.
+    # If an existing entry is stale (from a previous incomplete run),
+    # replace it so _list_queue cleanup doesn't delete our only entry.
     entry = queue_dir / feature
     try:
         with open(entry, "x"):
             pass
     except FileExistsError:
-        pass
+        try:
+            mtime = entry.stat().st_mtime
+            if (time.time() - mtime) > STALE_TIMEOUT_SECONDS:
+                entry.unlink(missing_ok=True)
+                with open(entry, "x"):
+                    pass
+        except OSError:
+            pass
 
     # List queue with stale cleanup
     entries, stale_removed = _list_queue(queue_dir, cleanup=True)

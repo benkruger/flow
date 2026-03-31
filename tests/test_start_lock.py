@@ -122,6 +122,49 @@ def test_acquire_idempotent_when_already_first(tmp_path):
     assert result["status"] == "acquired"
 
 
+def test_acquire_replaces_own_stale_entry(tmp_path):
+    """Acquire replaces its own stale entry instead of letting cleanup delete it."""
+    state_dir = tmp_path / ".flow-states"
+    queue_dir = state_dir / "start-queue"
+    queue_dir.mkdir(parents=True)
+    # Simulate a stale entry from a previous incomplete run
+    stale_self = queue_dir / "my-feature"
+    stale_self.write_text("")
+    os.utime(stale_self, (time.time() - 1860, time.time() - 1860))
+
+    with patch.object(_mod, "project_root", return_value=tmp_path):
+        result = _mod.acquire("my-feature")
+
+    assert result["status"] == "acquired"
+    # The entry must still exist (replaced with fresh mtime, not deleted)
+    assert (queue_dir / "my-feature").exists()
+
+
+def test_acquire_handles_stale_replacement_failure(tmp_path):
+    """Acquire handles OSError when trying to replace a stale self-entry."""
+    state_dir = tmp_path / ".flow-states"
+    queue_dir = state_dir / "start-queue"
+    queue_dir.mkdir(parents=True)
+    entry = queue_dir / "my-feature"
+    entry.write_text("")
+
+    real_stat = Path.stat
+
+    def fail_stat(self):
+        if self.name == "my-feature" and str(self.parent).endswith("start-queue"):
+            raise OSError("permission denied")
+        return real_stat(self)
+
+    with (
+        patch.object(_mod, "project_root", return_value=tmp_path),
+        patch.object(Path, "stat", fail_stat),
+    ):
+        result = _mod.acquire("my-feature")
+
+    # Should still work — the OSError is caught and the existing entry is kept
+    assert result["status"] == "acquired"
+
+
 def test_acquire_skips_non_file_entries(tmp_path):
     """Acquire ignores subdirectories in the queue."""
     state_dir = tmp_path / ".flow-states"
