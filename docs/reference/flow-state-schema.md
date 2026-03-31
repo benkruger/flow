@@ -326,4 +326,4 @@ The plan lives at `.flow-states/<branch>-plan.md` alongside other feature artifa
 
 Valid phase transitions are defined in `flow-phases.json` at the plugin root. Forward progression is always valid. Backward transitions are limited per phase.
 
-See [Phase Comparison Reference](phase-comparison.md) for the full transition map.
+Valid transitions are defined in `flow-phases.json`: Code can return to Plan; Code Review can return to Code or Plan.
