@@ -860,6 +860,31 @@ def test_is_flow_active_no_flow_states_dir(tmp_path):
     assert mod._is_flow_active("my-feature", tmp_path) is False
 
 
+# --- _resolve_main_root() tests ---
+
+
+def test_resolve_main_root_worktree(tmp_path):
+    """Returns the main repo root when project_root is inside a worktree."""
+    mod = _load_module()
+    worktree_root = tmp_path / "project" / ".worktrees" / "my-feature"
+    result = mod._resolve_main_root(worktree_root)
+    assert result == tmp_path / "project"
+
+
+def test_resolve_main_root_non_worktree(tmp_path):
+    """Returns project_root unchanged when not inside a worktree."""
+    mod = _load_module()
+    project_root = tmp_path / "project"
+    result = mod._resolve_main_root(project_root)
+    assert result == project_root
+
+
+def test_resolve_main_root_none():
+    """Returns None when project_root is None."""
+    mod = _load_module()
+    assert mod._resolve_main_root(None) is None
+
+
 # --- Flow detection subprocess integration tests ---
 
 

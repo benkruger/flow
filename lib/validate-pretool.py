@@ -101,6 +101,26 @@ def _is_flow_active(branch, project_root):
     return state_file.is_file()
 
 
+def _resolve_main_root(project_root):
+    """Resolve the main repo root when inside a worktree.
+
+    In a worktree at ``<project>/.worktrees/<branch>/``,
+    ``_find_settings_and_root()`` returns the worktree root because
+    ``.claude/settings.json`` is a tracked file present there. But
+    ``.flow-states/`` only exists at the main repo root.
+
+    Returns the path before ``.worktrees/`` when present, otherwise
+    returns ``project_root`` unchanged. Returns None for None input.
+    """
+    if project_root is None:
+        return None
+    root_str = str(project_root)
+    marker_pos = root_str.find(WORKTREE_MARKER)
+    if marker_pos != -1:
+        return Path(root_str[:marker_pos])
+    return project_root
+
+
 def _build_permission_regexes(settings, list_key):
     """Extract Bash(...) patterns from settings and compile to regexes.
 
@@ -212,7 +232,8 @@ def main():
 
     settings, project_root = _find_settings_and_root()
     branch = _detect_branch_from_cwd() if settings is not None else None
-    flow_active = _is_flow_active(branch, project_root)
+    main_root = _resolve_main_root(project_root)
+    flow_active = _is_flow_active(branch, main_root)
 
     # Block run_in_background during active FLOW phases (Bash and Agent tools)
     if flow_active and hook_input.get("tool_input", {}).get("run_in_background"):
