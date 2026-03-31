@@ -201,7 +201,7 @@ The next time you open a Claude Code session, the session-start hook delivers a 
 
 ### Sub-Agent Architecture
 
-Start uses a Sonnet sub-agent for CI failures. Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition. Code Review performs four inline review passes for clarity (code reuse, quality, efficiency, convention compliance), then performs inline correctness review for correctness (including rule compliance) and inline security review for safety, then the `reviewer` agent for context-isolated code review (read-only, receives diff + plan + CLAUDE.md + rules, no conversation history), and finally the `pre-mortem` agent for context-isolated incident analysis (read-only, reasons backward from failure). Code has no sub-agent.
+Start and Complete use a ci-fixer sub-agent for CI failures. Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition. Code Review performs inline review passes for clarity (code reuse, quality, efficiency, convention compliance), correctness (plan alignment, logic, test coverage, API contracts, rule compliance), and safety (input validation, auth, data exposure), then launches three context-isolated agents in parallel: `reviewer` (receives diff + plan + CLAUDE.md + rules), `pre-mortem` (receives only the diff, investigates independently), and `adversarial` (writes tests designed to break the implementation). Code has no sub-agent. Learn uses `learn-analyst` (cognitively isolated artifact analysis) and `onboarding` (newcomer comprehension barriers).
 
 ```text
 Main conversation          Sub-agent (custom plugin)
