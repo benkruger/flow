@@ -219,19 +219,20 @@ for path in files:
         with open(path) as f:
             state = json.load(f)
         reset_interrupted(path, state)
-        try:
-            tty_result = subprocess.run(
-                ["ps", "-o", "tty=", "-p", str(os.getppid())],
-                capture_output=True, text=True, timeout=5,
-            )
-            if tty_result.returncode == 0 and tty_result.stdout.strip():
-                tty_name = "/dev/" + tty_result.stdout.strip()
-                if state.get("session_tty") != tty_name:
-                    state["session_tty"] = tty_name
-                    with open(path, "w") as wf:
-                        json.dump(state, wf, indent=2)
-        except Exception:
-            pass
+        if _current and path.stem == _current:
+            try:
+                tty_result = subprocess.run(
+                    ["ps", "-o", "tty=", "-p", str(os.getppid())],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if tty_result.returncode == 0 and tty_result.stdout.strip():
+                    tty_name = "/dev/" + tty_result.stdout.strip()
+                    if state.get("session_tty") != tty_name:
+                        state["session_tty"] = tty_name
+                        with open(path, "w") as wf:
+                            json.dump(state, wf, indent=2)
+            except Exception:
+                pass
         failure = consume_last_failure(path, state)
         summary, cwd = consume_compact_data(path, state)
         if failure:
