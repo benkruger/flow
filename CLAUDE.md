@@ -172,6 +172,7 @@ Key test files: `test_structural.py` (config invariants, version consistency), `
 - **Issue filing** — see `.claude/rules/filing-issues.md`
 - **Repo-level targets only** — see `.claude/rules/repo-level-only.md`
 - **No `run_in_background` during FLOW phases** — enforced by `validate-pretool.py` hook on Bash and Agent tool calls
+- **User evidence is ground truth** — when a user provides screenshots, error output, or logs that contradict your code analysis, trust the evidence. Your code reading is a hypothesis; the user's evidence is an observation. Never explain away evidence to preserve your analysis.
 
 <!-- FLOW:BEGIN -->
 
