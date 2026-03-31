@@ -860,6 +860,31 @@ def test_is_flow_active_no_flow_states_dir(tmp_path):
     assert mod._is_flow_active("my-feature", tmp_path) is False
 
 
+# --- _resolve_main_root() tests ---
+
+
+def test_resolve_main_root_worktree(tmp_path):
+    """Returns the main repo root when project_root is inside a worktree."""
+    mod = _load_module()
+    worktree_root = tmp_path / "project" / ".worktrees" / "my-feature"
+    result = mod._resolve_main_root(worktree_root)
+    assert result == tmp_path / "project"
+
+
+def test_resolve_main_root_non_worktree(tmp_path):
+    """Returns project_root unchanged when not inside a worktree."""
+    mod = _load_module()
+    project_root = tmp_path / "project"
+    result = mod._resolve_main_root(project_root)
+    assert result == project_root
+
+
+def test_resolve_main_root_none():
+    """Returns None when project_root is None."""
+    mod = _load_module()
+    assert mod._resolve_main_root(None) is None
+
+
 # --- Flow detection subprocess integration tests ---
 
 
@@ -904,6 +929,10 @@ def test_hook_subprocess_worktree_flow_active_blocks(tmp_path):
     (state_dir / "my-feature.json").write_text("{}")
     worktree_dir = project / ".worktrees" / "my-feature"
     worktree_dir.mkdir(parents=True)
+    # Real worktrees have .claude/settings.json (tracked file checked out by git)
+    wt_claude_dir = worktree_dir / ".claude"
+    wt_claude_dir.mkdir()
+    (wt_claude_dir / "settings.json").write_text(json.dumps(settings))
 
     code, stderr = _run_hook("npm test", cwd=str(worktree_dir))
     assert code == 2
@@ -921,6 +950,10 @@ def test_hook_subprocess_worktree_no_flow_allows(tmp_path):
     # No .flow-states/ — flow not active
     worktree_dir = project / ".worktrees" / "my-feature"
     worktree_dir.mkdir(parents=True)
+    # Real worktrees have .claude/settings.json (tracked file checked out by git)
+    wt_claude_dir = worktree_dir / ".claude"
+    wt_claude_dir.mkdir()
+    (wt_claude_dir / "settings.json").write_text(json.dumps(settings))
 
     code, stderr = _run_hook("npm test", cwd=str(worktree_dir))
     assert code == 0
