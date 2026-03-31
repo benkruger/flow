@@ -70,3 +70,11 @@ code constructs CLI arguments dynamically (e.g. `--json` field
 lists), verify the field names are valid against the tool's actual
 interface, not just against what the mock returns. Passing tests
 with mocked subprocesses do not prove the command works.
+
+## JSON Null vs Absent Keys
+
+When parsing external API JSON (GitHub GraphQL, REST, Slack),
+`dict.get("key", {})` returns `None` — not `{}` — when the key
+exists with value `null`. Use `data.get("key") or {}` to handle
+both absent and null cases. This applies to every chained `.get()`
+call on external API responses where fields can be null.

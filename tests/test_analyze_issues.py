@@ -382,8 +382,9 @@ def test_main_calls_gh_when_no_file():
             with patch("builtins.print") as mock_print:
                 _mod.main()
 
-    mock_run.assert_called_once()
-    call_args = mock_run.call_args[0][0]
+    gh_calls = [c for c in mock_run.call_args_list if c[0][0][0] == "gh" and "issue" in c[0][0]]
+    assert len(gh_calls) >= 1
+    call_args = gh_calls[0][0][0]
     assert call_args[0] == "gh"
     assert "issue" in call_args
     printed = mock_print.call_args[0][0]
@@ -586,9 +587,167 @@ def test_main_gh_does_not_include_deps_summary_field():
             with patch("builtins.print"):
                 _mod.main()
 
-    gh_call = mock_run.call_args[0][0]
+    gh_calls = [c for c in mock_run.call_args_list if c[0][0][0] == "gh" and "issue" in c[0][0] and "--json" in c[0][0]]
+    assert len(gh_calls) >= 1
+    gh_call = gh_calls[0][0][0]
     json_fields = gh_call[gh_call.index("--json") + 1]
     assert "issue_dependencies_summary" not in json_fields
+
+
+# --- fetch_blocker_counts ---
+
+
+def _graphql_response(issue_counts):
+    """Build a mock GraphQL response for issueDependenciesSummary.
+
+    Args:
+        issue_counts: dict of {number: blocker_count}
+    """
+    data = {}
+    for number, count in issue_counts.items():
+        data[f"issue_{number}"] = {"issueDependenciesSummary": {"blockedBy": count}}
+    return json.dumps({"data": {"repository": data}})
+
+
+def test_fetch_blocker_counts_happy_path():
+    """Returns dict mapping issue numbers to blocker counts."""
+    response = _graphql_response({10: 2, 20: 0, 30: 1})
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout=response, stderr="")
+        result = _mod.fetch_blocker_counts("owner/repo", [10, 20, 30])
+
+    assert result == {10: 2, 20: 0, 30: 1}
+
+
+def test_fetch_blocker_counts_graphql_failure():
+    """Returns empty dict on GraphQL failure (graceful degradation)."""
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="auth error")
+        result = _mod.fetch_blocker_counts("owner/repo", [10])
+
+    assert result == {}
+
+
+def test_fetch_blocker_counts_timeout():
+    """Returns empty dict on timeout (graceful degradation)."""
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30)):
+        result = _mod.fetch_blocker_counts("owner/repo", [10])
+
+    assert result == {}
+
+
+def test_fetch_blocker_counts_empty_list():
+    """Returns empty dict when no issue numbers provided."""
+    result = _mod.fetch_blocker_counts("owner/repo", [])
+    assert result == {}
+
+
+def test_fetch_blocker_counts_query_contains_summary():
+    """GraphQL query uses issueDependenciesSummary field."""
+    response = _graphql_response({10: 0})
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout=response, stderr="")
+        _mod.fetch_blocker_counts("owner/repo", [10])
+
+    call_args = mock_run.call_args[0][0]
+    # Find the -f argument containing the query
+    query_args = [a for a in call_args if "issueDependenciesSummary" in str(a)]
+    assert len(query_args) > 0, "Query must reference issueDependenciesSummary"
+
+
+def test_fetch_blocker_counts_malformed_json():
+    """Returns empty dict on malformed JSON response."""
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="{corrupt", stderr="")
+        result = _mod.fetch_blocker_counts("owner/repo", [10])
+
+    assert result == {}
+
+
+def test_fetch_blocker_counts_null_repository():
+    """Handles null repository in GraphQL response without crashing."""
+    response = json.dumps({"data": {"repository": None}})
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout=response, stderr="")
+        result = _mod.fetch_blocker_counts("owner/repo", [10])
+
+    assert result == {10: 0}
+
+
+def test_fetch_blocker_counts_null_summary():
+    """Handles null issueDependenciesSummary without crashing."""
+    response = json.dumps({"data": {"repository": {"issue_10": {"issueDependenciesSummary": None}}}})
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout=response, stderr="")
+        result = _mod.fetch_blocker_counts("owner/repo", [10])
+
+    assert result == {10: 0}
+
+
+def test_fetch_blocker_counts_null_blocked_by():
+    """Handles null blockedBy value without crashing."""
+    response = json.dumps({"data": {"repository": {"issue_10": {"issueDependenciesSummary": {"blockedBy": None}}}}})
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout=response, stderr="")
+        result = _mod.fetch_blocker_counts("owner/repo", [10])
+
+    assert result == {10: 0}
+
+
+def test_fetch_blocker_counts_malformed_repo():
+    """Returns empty dict when repo string has no slash."""
+    result = _mod.fetch_blocker_counts("noslash", [10])
+    assert result == {}
+
+
+# --- analyze_issues with blocker counts ---
+
+
+def test_analyze_native_blocked_without_label():
+    """Issue with native blockers but no Blocked label is marked blocked."""
+    issues = [_make_issue(10, title="Has native blocker")]
+    blocker_counts = {10: 2}
+    result = _mod.analyze_issues(issues, blocker_counts=blocker_counts)
+    issue = result["issues"][0]
+    assert issue["blocked"] is True
+    assert issue["native_blocked"] is True
+
+
+def test_analyze_both_label_and_native_blocked():
+    """Issue with both label and native blockers is blocked."""
+    issues = [_make_issue(10, title="Double blocked", labels=["Blocked"])]
+    blocker_counts = {10: 1}
+    result = _mod.analyze_issues(issues, blocker_counts=blocker_counts)
+    issue = result["issues"][0]
+    assert issue["blocked"] is True
+    assert issue["native_blocked"] is True
+
+
+def test_analyze_label_only_still_works():
+    """Issue with Blocked label but no native blockers is still blocked."""
+    issues = [_make_issue(10, title="Label only", labels=["Blocked"])]
+    blocker_counts = {10: 0}
+    result = _mod.analyze_issues(issues, blocker_counts=blocker_counts)
+    issue = result["issues"][0]
+    assert issue["blocked"] is True
+    assert issue["native_blocked"] is False
+
+
+def test_analyze_no_blocker_counts_default():
+    """Without blocker_counts, blocked comes from label only (backward compat)."""
+    issues = [_make_issue(10, title="No counts")]
+    result = _mod.analyze_issues(issues)
+    issue = result["issues"][0]
+    assert issue["blocked"] is False
+    assert issue["native_blocked"] is False
+
+
+def test_analyze_native_blocked_field_present():
+    """Every analyzed issue has native_blocked field."""
+    issues = [_make_issue(1, title="Test")]
+    result = _mod.analyze_issues(issues)
+    issue = result["issues"][0]
+    assert "native_blocked" in issue
 
 
 # --- tombstone tests ---
