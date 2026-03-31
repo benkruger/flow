@@ -165,15 +165,11 @@ def test_acquire_handles_iterdir_failure(tmp_path):
     queue_dir = state_dir / "start-queue"
     queue_dir.mkdir(parents=True)
 
-    call_count = 0
     real_iterdir = Path.iterdir
 
     def failing_iterdir(self):
-        nonlocal call_count
         if self == queue_dir:
-            call_count += 1
-            if call_count > 0:
-                raise OSError("permission denied")
+            raise OSError("permission denied")
         return real_iterdir(self)
 
     with (

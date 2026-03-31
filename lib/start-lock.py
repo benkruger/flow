@@ -74,8 +74,9 @@ def _list_queue(queue_dir, cleanup=False):
             mtime = item.stat().st_mtime
         except OSError:
             continue
-        if cleanup and (time.time() - mtime) > STALE_TIMEOUT_SECONDS:
-            item.unlink(missing_ok=True)
+        if (time.time() - mtime) > STALE_TIMEOUT_SECONDS:
+            if cleanup:
+                item.unlink(missing_ok=True)
             stale_removed = True
             continue
         entries.append((mtime, item.name))
@@ -157,27 +158,11 @@ def release(feature):
 def check():
     """Check the current lock status without modifying."""
     queue_dir = _queue_path()
-
-    # Read-only check — filter stale but don't delete
-    entries = []
-    try:
-        for item in queue_dir.iterdir():
-            if not item.is_file():
-                continue
-            try:
-                mtime = item.stat().st_mtime
-            except OSError:
-                continue
-            if (time.time() - mtime) > STALE_TIMEOUT_SECONDS:
-                continue
-            entries.append((mtime, item.name))
-    except OSError:
-        pass
+    entries, _ = _list_queue(queue_dir, cleanup=False)
 
     if not entries:
         return {"status": "free", "lock_path": str(queue_dir)}
 
-    entries.sort()
     holder = entries[0][1]
     return {
         "status": "locked",
