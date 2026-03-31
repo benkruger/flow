@@ -428,7 +428,7 @@ TAB_COLORS = (
 )
 
 PINNED_COLORS = {
-    "benkruger/hh": (50, 120, 220),
+    "HipaaHealth/mono-repo": (50, 120, 220),
     "benkruger/salted-kitchen": (220, 130, 20),
     "benkruger/flow": (40, 180, 70),
 }

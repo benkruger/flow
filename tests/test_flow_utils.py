@@ -827,7 +827,7 @@ class TestFormatTabColor:
         assert format_tab_color() is None
 
     def test_pinned_repo_returns_pinned_color(self):
-        result = format_tab_color(repo="benkruger/hh")
+        result = format_tab_color(repo="HipaaHealth/mono-repo")
         assert result == (50, 120, 220)
 
     def test_pinned_repo_via_state(self):
