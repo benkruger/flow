@@ -32,7 +32,7 @@ These skills are available at any point in the workflow, regardless of phase.
 
 | Skill | Description |
 |-------|-------------|
-| [`/flow-prime`](flow-prime.md) | One-time setup — configure permissions and git excludes |
+| [`/flow-prime`](flow-prime.md) | One-time setup — configure and commit permissions, framework conventions, and git excludes |
 | [`/flow-commit`](flow-commit.md) | Review the full diff, approve or deny, then git add + commit + push |
 | [`/flow-status`](flow-status.md) | Show current phase, PR link, phase checklist, and what comes next |
 | [`/flow-continue`](flow-continue.md) | Resume current feature — re-asks last transition question or rebuilds from state |
