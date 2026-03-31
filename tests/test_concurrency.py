@@ -215,6 +215,42 @@ def test_start_lock_serialization(tmp_path):
         )
 
 
+def test_thundering_herd_zero_delay(tmp_path):
+    """5 workers start simultaneously (delay=0). All acquire, no overlaps."""
+    _init_git_repo(tmp_path)
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    results_dir = tmp_path / "results"
+    results_dir.mkdir()
+
+    workers = []
+    for i in range(5):
+        p = multiprocessing.Process(
+            target=_worker_start_lock,
+            args=(str(tmp_path), i, str(results_dir), LIB_DIR, 0),
+        )
+        workers.append(p)
+
+    for p in workers:
+        p.start()
+    for p in workers:
+        p.join(timeout=60)
+        assert p.exitcode == 0, f"Worker exited with code {p.exitcode}"
+
+    timings = []
+    for i in range(5):
+        data = json.loads((results_dir / f"worker-{i}.json").read_text())
+        assert data["status"] == "acquired", f"Worker {i} got status={data['status']}"
+        timings.append(data)
+
+    # Sort by acquired_at and verify non-overlapping intervals
+    timings.sort(key=lambda t: t["acquired_at"])
+    for i in range(1, len(timings)):
+        assert timings[i]["acquired_at"] >= timings[i - 1]["released_at"], (
+            f"Worker {timings[i]['worker_id']} overlaps with worker {timings[i - 1]['worker_id']}"
+        )
+
+
 def test_parallel_state_file_creation(tmp_path):
     """5 parallel workers create state files for different branches."""
     state_dir = tmp_path / ".flow-states"
