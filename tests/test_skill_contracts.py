@@ -2540,6 +2540,23 @@ def test_done_hardgates_read_continue_action():
         )
 
 
+def test_done_hardgates_no_reread_state_file():
+    """Tombstone: removed in PR #711. HARD-GATEs must not read continue mode from state file directly."""
+    phase_skills = _phase_skills()
+    for key in PHASE_ORDER[:-1]:  # Exclude flow-complete (terminal)
+        skill_name = phase_skills[key]
+        content = _read_skill(skill_name)
+
+        hard_gates = re.findall(r"<HARD-GATE>(.*?)</HARD-GATE>", content, re.DOTALL)
+        continue_gates = [gate for gate in hard_gates if "continue=manual" in gate and "continue=auto" in gate]
+
+        has_reread = any("Re-read" in gate for gate in continue_gates)
+        assert not has_reread, (
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) Done HARD-GATE must not contain 'Re-read' — "
+            f"continue mode is now read from phase-transition command output via continue_action"
+        )
+
+
 def test_done_hard_gates_auto_path_has_final_action_language():
     """Phases 1-5 Done HARD-GATEs auto path must have strengthened language."""
     phase_skills = _phase_skills()
