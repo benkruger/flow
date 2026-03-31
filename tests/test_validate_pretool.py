@@ -929,6 +929,10 @@ def test_hook_subprocess_worktree_flow_active_blocks(tmp_path):
     (state_dir / "my-feature.json").write_text("{}")
     worktree_dir = project / ".worktrees" / "my-feature"
     worktree_dir.mkdir(parents=True)
+    # Real worktrees have .claude/settings.json (tracked file checked out by git)
+    wt_claude_dir = worktree_dir / ".claude"
+    wt_claude_dir.mkdir()
+    (wt_claude_dir / "settings.json").write_text(json.dumps(settings))
 
     code, stderr = _run_hook("npm test", cwd=str(worktree_dir))
     assert code == 2
@@ -946,6 +950,10 @@ def test_hook_subprocess_worktree_no_flow_allows(tmp_path):
     # No .flow-states/ — flow not active
     worktree_dir = project / ".worktrees" / "my-feature"
     worktree_dir.mkdir(parents=True)
+    # Real worktrees have .claude/settings.json (tracked file checked out by git)
+    wt_claude_dir = worktree_dir / ".claude"
+    wt_claude_dir.mkdir()
+    (wt_claude_dir / "settings.json").write_text(json.dumps(settings))
 
     code, stderr = _run_hook("npm test", cwd=str(worktree_dir))
     assert code == 0
