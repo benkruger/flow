@@ -153,7 +153,6 @@ Available at any point in the workflow:
 | `/flow-create-issue` | Explore a design question or decompose a concrete problem, iterate until work-ready, then file it |
 | `/flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue relationships, blocked-by dependencies, and milestones |
 | `/flow-orchestrate` | Process decomposed issues overnight — batch orchestration via flow-start --auto |
-| `/flow-local-permission` | Promote permissions from settings.local.json into settings.json |
 
 ### Standalone Tools
 
