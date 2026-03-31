@@ -76,7 +76,7 @@ def _worker_start_lock(repo_path_str, worker_id, results_dir_str, lib_dir, delay
     acquired_at = time.monotonic()
     time.sleep(0.3)
     released_at = time.monotonic()
-    mod.release()
+    mod.release(f"feature-{worker_id}")
 
     Path(results_dir_str, f"worker-{worker_id}.json").write_text(
         json.dumps(

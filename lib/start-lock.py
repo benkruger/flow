@@ -1,14 +1,14 @@
-"""Serialize flow-start with file locking.
+"""Serialize flow-start with a queue directory.
 
 Prevents concurrent starts from fighting over main (CI fixes, dependency
-updates). Only one flow-start runs at a time. Second start waits or
-reports the lock.
+updates). Only one flow-start runs at a time. The oldest queue entry
+(by mtime, then feature name) holds the lock.
 
 Usage:
     bin/flow start-lock --acquire --feature <name>
     bin/flow start-lock --acquire --wait --feature <name>
     bin/flow start-lock --acquire --wait --timeout 90 --feature <name>
-    bin/flow start-lock --release
+    bin/flow start-lock --release --feature <name>
     bin/flow start-lock --check
 
 Output (JSON to stdout, all responses include "lock_path"):
@@ -24,157 +24,96 @@ Output (JSON to stdout, all responses include "lock_path"):
 
 import argparse
 import json
-import os
 import sys
-import tempfile
 import time
-from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import now, project_root
+from flow_utils import project_root
 
-LOCK_FILENAME = "start.lock"
+QUEUE_DIRNAME = "start-queue"
 STALE_TIMEOUT_SECONDS = 1800  # 30 minutes
 
-_CACHED_LOCK_PATH = None
+_CACHED_QUEUE_PATH = None
 
 
-def _lock_path():
-    """Return the path to the lock file. Cached after first resolution."""
-    global _CACHED_LOCK_PATH
-    if _CACHED_LOCK_PATH is not None:
-        return _CACHED_LOCK_PATH
+def _queue_path():
+    """Return the path to the queue directory. Cached after first resolution."""
+    global _CACHED_QUEUE_PATH
+    if _CACHED_QUEUE_PATH is not None:
+        return _CACHED_QUEUE_PATH
     root = project_root().resolve()
     state_dir = root / ".flow-states"
     state_dir.mkdir(parents=True, exist_ok=True)
-    _CACHED_LOCK_PATH = state_dir / LOCK_FILENAME
-    return _CACHED_LOCK_PATH
+    queue_dir = state_dir / QUEUE_DIRNAME
+    queue_dir.mkdir(exist_ok=True)
+    _CACHED_QUEUE_PATH = queue_dir
+    return _CACHED_QUEUE_PATH
 
 
-def _read_lock(lock_file):
-    """Read and parse lock file. Returns (data, file_existed).
+def _list_queue(queue_dir, cleanup=False):
+    """List queue entries sorted by (mtime, name).
 
-    data is None if missing, empty, or corrupted. file_existed is True
-    if the lock file was present on disk (even if corrupted).
+    If cleanup=True, remove stale entries (>30 min) before sorting.
+    Returns list of (mtime, name) tuples and whether any stale entries
+    were removed.
     """
-    if not lock_file.exists():
-        return None, False
+    stale_removed = False
+    entries = []
+
     try:
-        text = lock_file.read_text().strip()
-        if not text:
-            return None, True
-        data = json.loads(text)
-        if "pid" not in data or "feature" not in data or "acquired_at" not in data:
-            return None, True
-        return data, True
-    except (json.JSONDecodeError, OSError):
-        return None, True
+        items = list(queue_dir.iterdir())
+    except OSError:
+        return [], False
 
-
-def _is_timed_out(acquired_at):
-    """Check if the lock has exceeded the stale timeout."""
-    try:
-        lock_time = datetime.fromisoformat(acquired_at)
-        current_time = datetime.fromisoformat(now())
-        diff = (current_time - lock_time).total_seconds()
-        return diff > STALE_TIMEOUT_SECONDS
-    except (ValueError, TypeError):
-        return True  # Can't parse timestamp — treat as stale
-
-
-def _try_write_lock(lock_file, feature):
-    """Atomically create a new lock file.
-
-    Writes lock data to a temp file first, then hard-links it to the
-    lock path.  os.link() fails with FileExistsError if the target
-    already exists, so exactly one process wins.  The lock file is
-    never visible in an empty/partial state.
-    """
-    lock_data = {
-        "pid": os.getppid(),
-        "feature": feature,
-        "acquired_at": now(),
-    }
-    lock_dir = str(lock_file.parent)
-    fd, tmp_path = tempfile.mkstemp(dir=lock_dir, prefix=".start-lock-")
-    try:
-        os.write(fd, json.dumps(lock_data, indent=2).encode())
-        os.close(fd)
-        fd = -1
-        os.link(tmp_path, lock_file)
-    except (FileExistsError, OSError):
-        return None
-    finally:
-        if fd >= 0:
-            os.close(fd)
+    for item in items:
+        if not item.is_file():
+            continue
         try:
-            os.unlink(tmp_path)
+            mtime = item.stat().st_mtime
         except OSError:
-            pass
-    return lock_data
+            continue
+        if cleanup and (time.time() - mtime) > STALE_TIMEOUT_SECONDS:
+            item.unlink(missing_ok=True)
+            stale_removed = True
+            continue
+        entries.append((mtime, item.name))
 
-
-def _locked_by_winner(lock_file):
-    """Re-read after losing a race; return a locked result for whoever won."""
-    existing, _ = _read_lock(lock_file)
-    if existing is None:
-        return {
-            "status": "locked",
-            "feature": "unknown",
-            "pid": 0,
-            "acquired_at": "unknown",
-            "lock_path": str(lock_file),
-        }
-    return {
-        "status": "locked",
-        "feature": existing["feature"],
-        "pid": existing["pid"],
-        "acquired_at": existing["acquired_at"],
-        "lock_path": str(lock_file),
-    }
-
-
-def _break_and_acquire(lock_file, feature, stale_feature=None):
-    """Break a stale/corrupted lock and acquire a new one."""
-    lock_file.unlink(missing_ok=True)
-    lock_data = _try_write_lock(lock_file, feature)
-    if lock_data is None:
-        return _locked_by_winner(lock_file)
-    result = {"status": "acquired", "stale_broken": True, "lock_path": str(lock_file)}
-    if stale_feature is not None:
-        result["stale_feature"] = stale_feature
-    return result
+    entries.sort()
+    return entries, stale_removed
 
 
 def acquire(feature):
-    """Attempt to acquire the start lock."""
-    lock_file = _lock_path()
-    existing, file_existed = _read_lock(lock_file)
+    """Attempt to acquire the start lock via the queue."""
+    queue_dir = _queue_path()
 
-    if existing is None:
-        if file_existed:
-            return _break_and_acquire(lock_file, feature)
-        lock_data = _try_write_lock(lock_file, feature)
-        if lock_data is not None:
-            return {"status": "acquired", "lock_path": str(lock_file)}
-        return _locked_by_winner(lock_file)
+    # Create our queue entry (idempotent — overwrites if exists)
+    entry = queue_dir / feature
+    entry.touch(exist_ok=True)
 
-    pid = existing["pid"]
-    existing_feature = existing["feature"]
-    acquired_at = existing["acquired_at"]
+    # List queue with stale cleanup
+    entries, stale_removed = _list_queue(queue_dir, cleanup=True)
 
-    if _is_timed_out(acquired_at):
-        return _break_and_acquire(lock_file, feature, existing_feature)
+    if not entries:
+        # Should not happen — we just created our entry
+        return {"status": "acquired", "lock_path": str(queue_dir)}
 
-    return {
+    holder = entries[0][1]
+    if holder == feature:
+        result = {"status": "acquired", "lock_path": str(queue_dir)}
+        if stale_removed:
+            result["stale_broken"] = True
+        return result
+
+    result = {
         "status": "locked",
-        "feature": existing_feature,
-        "pid": pid,
-        "acquired_at": acquired_at,
-        "lock_path": str(lock_file),
+        "feature": holder,
+        "lock_path": str(queue_dir),
     }
+    if stale_removed:
+        result["stale_broken"] = True
+    return result
 
 
 def acquire_with_wait(feature, timeout=90, interval=10):
@@ -190,7 +129,6 @@ def acquire_with_wait(feature, timeout=90, interval=10):
             return {
                 "status": "timeout",
                 "feature": result["feature"],
-                "pid": result["pid"],
                 "waited_seconds": int(elapsed),
                 "lock_path": result["lock_path"],
             }
@@ -201,32 +139,45 @@ def acquire_with_wait(feature, timeout=90, interval=10):
             return result
 
 
-def release():
-    """Release the start lock."""
-    lock_file = _lock_path()
-    lock_file.unlink(missing_ok=True)
-    if lock_file.exists():
-        return {"status": "error", "message": "Lock file persists after unlink", "lock_path": str(lock_file)}
-    return {"status": "released", "lock_path": str(lock_file)}
+def release(feature):
+    """Release the start lock by removing our queue entry."""
+    queue_dir = _queue_path()
+    entry = queue_dir / feature
+    entry.unlink(missing_ok=True)
+    if entry.exists():
+        return {"status": "error", "message": "Queue entry persists after unlink", "lock_path": str(queue_dir)}
+    return {"status": "released", "lock_path": str(queue_dir)}
 
 
 def check():
     """Check the current lock status without modifying."""
-    lock_file = _lock_path()
-    existing, _ = _read_lock(lock_file)
+    queue_dir = _queue_path()
 
-    if existing is None:
-        return {"status": "free", "lock_path": str(lock_file)}
+    # Read-only check — filter stale but don't delete
+    entries = []
+    try:
+        for item in queue_dir.iterdir():
+            if not item.is_file():
+                continue
+            try:
+                mtime = item.stat().st_mtime
+            except OSError:
+                continue
+            if (time.time() - mtime) > STALE_TIMEOUT_SECONDS:
+                continue
+            entries.append((mtime, item.name))
+    except OSError:
+        pass
 
-    if _is_timed_out(existing["acquired_at"]):
-        return {"status": "free", "lock_path": str(lock_file)}
+    if not entries:
+        return {"status": "free", "lock_path": str(queue_dir)}
 
+    entries.sort()
+    holder = entries[0][1]
     return {
         "status": "locked",
-        "feature": existing["feature"],
-        "pid": existing["pid"],
-        "acquired_at": existing["acquired_at"],
-        "lock_path": str(lock_file),
+        "feature": holder,
+        "lock_path": str(queue_dir),
     }
 
 
@@ -235,7 +186,7 @@ def main():
     parser.add_argument("--acquire", action="store_true", help="Acquire the lock")
     parser.add_argument("--release", action="store_true", help="Release the lock")
     parser.add_argument("--check", action="store_true", help="Check lock status")
-    parser.add_argument("--feature", default=None, help="Feature name (required for --acquire)")
+    parser.add_argument("--feature", default=None, help="Feature name (required for --acquire and --release)")
     parser.add_argument("--wait", action="store_true", help="Wait for lock to be released")
     parser.add_argument("--timeout", type=int, default=90, help="Max seconds to wait (default 90)")
     args = parser.parse_args()
@@ -249,7 +200,10 @@ def main():
         else:
             result = acquire(args.feature)
     elif args.release:
-        result = release()
+        if not args.feature:
+            print(json.dumps({"status": "error", "message": "--feature required for --release"}))
+            sys.exit(1)
+        result = release(args.feature)
     elif args.check:
         result = check()
     else:
