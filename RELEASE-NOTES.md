@@ -1,5 +1,33 @@
 # Release Notes
 
+## v1.1.0 — Redesigned code review, doc sync, and autonomous phase progression
+
+### New features
+
+- **Context-isolated code review** — four independent sub-agents (reviewer, pre-mortem, adversarial tester, onboarding analyst) run in parallel, each isolated from conversation history to eliminate self-reporting bias. Inline correctness and security reviews run before the agents (#618, #600, #635, #616, #686, #582, #574).
+- **Doc sync skill** — `/flow-doc-sync` audits documentation against code behavior and reports drift (#691).
+- **Changelog audit skill** — `/flow-changelog-audit` monitors Claude Code releases for plugin-relevant changes (#578).
+- **Native blocked-by signal** — issues support GitHub's native blocked-by relationships. `/flow-issues` ranks by impact with blocked status (#697, #602, #614).
+- **Phase auto-advance** — phases auto-advance based on autonomy settings. Fully autonomous flows run Start through Complete without intervention (#711, #630, #565).
+
+### Improvements
+
+- **Start lock reliability** — thundering herd fix, stale detection, loop polling, and background execution fixes (#715, #528, #629, #617).
+- **Hook-based enforcement** — `.claude/` path protection, `run_in_background` blocking, and compound command blocking enforced by hooks rather than instructions (#664, #655, #679).
+- **Sub-agents pinned to Sonnet** — all review sub-agents use Sonnet model with tuned maxTurns for large diffs (#667, #660).
+- **TUI overhaul** — column headers, phase elapsed time, step/task names, responsive columns, blocked detection, cost/usage display (#701, #692, #631, #639, #605, #569, #703).
+- **Learn system** — session separation for review/learn, learn-analyst two-tier context model, routing decision procedure (#654, #671, #520).
+- **Removed external code-review plugin dependency** (#623).
+- **CLAUDE.md reduced 57%** — from 41KB to 18KB without content loss.
+
+### Fixes
+
+- Phase auto-advance failure fix (#711)
+- Doc sync drift fix (#720)
+- Start lock background fix (#617)
+- Issue filing and linking fixes (#506, #597, #612)
+- Permission prompt fixes across multiple phases (#505, #513, #529, #554)
+
 ## v1.0.1 — Fix plugin permission matching in target projects
 
 ### Fixes
