@@ -827,7 +827,7 @@ class TestFormatTabColor:
         assert format_tab_color() is None
 
     def test_pinned_repo_returns_pinned_color(self):
-        result = format_tab_color(repo="benkruger/hh")
+        result = format_tab_color(repo="HipaaHealth/mono-repo")
         assert result == (50, 120, 220)
 
     def test_pinned_repo_via_state(self):
@@ -847,6 +847,10 @@ class TestFormatTabColor:
             assert format_tab_color(repo=repo) == color
         colors = [format_tab_color(repo=r) for r in PINNED_COLORS]
         assert len(set(colors)) == len(PINNED_COLORS)
+
+    def test_no_benkruger_hh_key(self):
+        """Tombstone: removed in PR #705. Must not return."""
+        assert "benkruger/hh" not in PINNED_COLORS
 
 
 # --- write_tab_sequences tests ---
