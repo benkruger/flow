@@ -45,4 +45,3 @@ These skills are available at any point in the workflow, regardless of phase.
 | [`/flow-create-issue`](flow-create-issue.md) | Capture a brainstormed solution as a pre-planned issue with an Implementation Plan for fast-tracking through Plan |
 | [`/flow-decompose-project`](flow-decompose-project.md) | Decompose a large project into linked GitHub issues with sub-issue relationships, blocked-by dependencies, and milestones |
 | [`/flow-orchestrate`](flow-orchestrate.md) | Process decomposed issues sequentially overnight via flow-start --auto |
-| [`/flow-local-permission`](flow-local-permission.md) | Promote permissions from settings.local.json into settings.json |

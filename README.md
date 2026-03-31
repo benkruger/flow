@@ -10,7 +10,7 @@ An opinionated 6-phase development plugin for [Claude Code](https://docs.anthrop
 
 ## Why FLOW
 
-Claude Code is powerful, but undisciplined by default. FLOW imposes structure. Not bureaucracy — discipline. DAG decomposition for planning, then TDD execution, then six-lens code review, then learnings that compound. Every feature, same order.
+Claude Code is powerful, but undisciplined by default. FLOW imposes structure. Not bureaucracy — discipline. DAG decomposition for planning, then TDD execution, then four-step code review, then learnings that compound. Every feature, same order.
 
 ---
 
@@ -153,7 +153,6 @@ Available at any point in the workflow:
 | `/flow-create-issue` | Explore a design question or decompose a concrete problem, iterate until work-ready, then file it |
 | `/flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue relationships, blocked-by dependencies, and milestones |
 | `/flow-orchestrate` | Process decomposed issues overnight — batch orchestration via flow-start --auto |
-| `/flow-local-permission` | Promote permissions from settings.local.json into settings.json |
 
 ### Standalone Tools
 
@@ -202,10 +201,10 @@ The next time you open a Claude Code session, the session-start hook delivers a 
 
 ### Sub-Agent Architecture
 
-Start uses a Sonnet sub-agent for CI failures. Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition. Code Review performs four inline review passes for clarity (code reuse, quality, efficiency, convention compliance), then performs inline correctness review for correctness (including rule compliance) and inline security review for safety, then the `reviewer` agent for context-isolated code review (read-only, receives diff + plan + CLAUDE.md + rules, no conversation history), and finally the `pre-mortem` agent for context-isolated incident analysis (read-only, reasons backward from failure). Code has no sub-agent.
+Start and Complete use a ci-fixer sub-agent for CI failures. Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition. Code Review performs inline review passes for clarity (code reuse, quality, efficiency, convention compliance), correctness (plan alignment, logic, test coverage, API contracts, rule compliance), and safety (input validation, auth, data exposure), then launches three context-isolated agents in parallel: `reviewer` (receives diff + plan + CLAUDE.md + rules), `pre-mortem` (receives only the diff, investigates independently), and `adversarial` (writes tests designed to break the implementation). Code has no sub-agent. Learn uses `learn-analyst` (cognitively isolated artifact analysis) and `onboarding` (newcomer comprehension barriers).
 
 ```text
-Main conversation          Sub-agent (general-purpose)
+Main conversation          Sub-agent (custom plugin)
       |                          |
       |─── Task: analyze ───────>|
       |    (what to check)       |─── Read affected code

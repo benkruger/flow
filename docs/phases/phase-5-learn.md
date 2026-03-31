@@ -64,11 +64,11 @@ and surfaced in the Complete phase.
 
 Learn auto-detects its context and adjusts behavior:
 
-| Mode | Trigger | Sources | Commits | Settings audit | GitHub issues |
-|------|---------|---------|---------|----------------|---------------|
-| Phase 5 | State file with Code Review complete | 4 (CLAUDE.md, context, state/plan, onboarding agent) | `/flow-commit --auto` | No | Yes |
+| Mode | Trigger | Sources | Commits | Permission promotion | GitHub issues |
+|------|---------|---------|---------|----------------------|---------------|
+| Phase 5 | State file with Code Review complete | 4 (CLAUDE.md, learn-analyst agent, state/plan, onboarding agent) | `/flow-commit --auto` | Yes | Yes |
 | Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow-commit --auto` | Yes | No |
-| Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | No | No |
+| Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | Yes | No |
 
 All three modes route learnings to 2 repo-local destinations: Project
 CLAUDE.md and project rules. Both are committed to the repo. Stealth

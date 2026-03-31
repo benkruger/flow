@@ -553,7 +553,7 @@
       <div class="pipeline-step">
         <div class="step-num">4</div>
         <span class="step-label">Code Review</span>
-        <span class="step-detail">Four lenses &mdash; clarity, correctness, safety, and CLAUDE.md compliance</span>
+        <span class="step-detail">Four steps &mdash; clarity, correctness, safety, and parallel agent reviews (context-isolated code review, pre-mortem, adversarial testing)</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">5</div>
@@ -620,7 +620,7 @@
       </div>
       <div class="feature">
         <h4>Pre-merge freshness</h4>
-        <p>Complete fetches main and checks branch freshness before merging. Stale branches are rebased automatically.</p>
+        <p>Complete fetches main and merges it into the feature branch before squash-merging. Stale branches are updated automatically.</p>
       </div>
     </div>
   </section>
@@ -839,7 +839,6 @@ Duration: <span class="t-accent">6h 27m</span>
         <tr><td><code>/flow-create-issue</code></td><td>Explore a design question or decompose a concrete problem, iterate until work-ready, then file it</td></tr>
         <tr><td><code>/flow-decompose-project</code></td><td>Decompose a project into a linked GitHub issue graph &mdash; epic, milestones, sub-issues, blocked-by dependencies</td></tr>
         <tr><td><code>/flow-orchestrate</code></td><td>Batch orchestration &mdash; process decomposed issues overnight via flow-start --auto</td></tr>
-        <tr><td><code>/flow-local-permission</code></td><td>Promote permissions from settings.local.json into settings.json</td></tr>
       </tbody>
     </table>
 
