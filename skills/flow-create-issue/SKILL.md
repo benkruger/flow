@@ -13,10 +13,12 @@ This skill requires prior brainstorming context in the conversation. The user mu
 
 ```text
 /flow:flow-create-issue
+/flow:flow-create-issue --force-decompose
 /flow:flow-create-issue --step 2 --id <id>
 ```
 
 - `/flow:flow-create-issue` — start from the Conversation Gate
+- `/flow:flow-create-issue --force-decompose` — force a fresh decompose even when prior implementation-focused output exists in the conversation
 - `/flow:flow-create-issue --step 2 --id <id>` — self-invocation: skip to Step 2 (Transform + Draft + File)
 
 ## Concurrency
@@ -45,6 +47,7 @@ generated in Step 1. Skip the Announce banner and jump directly to the
 Resume Check, using the provided `<id>` for all file paths.
 
 - `--step 2 --id <id>` → Resume Check dispatches to Step 2
+- `--force-decompose` (no `--step`) → Conversation Gate, then Step 1 bypasses Prior Decompose Detection
 
 If no `--step` flag was passed, proceed to the Conversation Gate.
 
@@ -128,6 +131,28 @@ re-explore, just distill what was already discussed:
 Write these captured sections to `.flow-states/create-issue-<id>-capture.md`
 using the Write tool.
 
+### Prior Decompose Detection
+
+Check the conversation for prior `/decompose:decompose` output that is
+implementation-focused. Implementation-focused output contains all of:
+task nodes with file targets, implementation ordering (dependency graph
+or sequential tasks), and concrete code changes or insertion points.
+Problem-analysis output — containing only analysis, questions, or
+high-level framing without actionable task structure — does not qualify.
+
+**If the conversation contains implementation-focused decompose output
+AND `--force-decompose` was NOT passed:** the existing decompose
+synthesis is sufficient. Skip the decompose invocation below. Write
+`{"create_issue_step": 1}` to `.flow-states/create-issue-<id>.json`
+using the Write tool. Invoke `flow:flow-create-issue --step 2 --id <id>`
+using the Skill tool as your final action. Do not output anything else
+after this invocation.
+
+**If the conversation contains only problem-analysis decompose output
+(no tasks, no file targets), or no prior decompose output exists, or
+`--force-decompose` was passed:** continue with the decompose invocation
+below.
+
 **Decompose the implementation.** Invoke `decompose:decompose` via the Skill
 tool with an implementation-focused prompt. The prompt must make clear that
 the problem and solution are already agreed — decompose should structure the
@@ -196,7 +221,9 @@ this is a valid self-invocation.
 
 ### Transform Decompose Output into Implementation Plan
 
-Take the decompose synthesis from Step 1 and transform it into an
+Take the decompose synthesis from the conversation — either from a prior
+`/decompose:decompose` invocation (when Step 1 skipped decompose) or from
+Step 1's decompose invocation — and transform it into an
 Implementation Plan section that matches the plan file format used by
 `flow-plan`. The Implementation Plan must contain these subsections:
 
@@ -307,9 +334,10 @@ rm .flow-states/create-issue-<id>.json
 rm .flow-states/create-issue-<id>-capture.md
 ```
 
-Then invoke `flow:flow-create-issue` using the Skill tool as your final
-action (no `--step` or `--id` flags — restart from scratch). Do not
-output anything else after this invocation.
+Then invoke `flow:flow-create-issue --force-decompose` using the Skill
+tool as your final action (no `--step` or `--id` flags — restart from
+scratch with forced decompose to bypass Prior Decompose Detection). Do
+not output anything else after this invocation.
 
 Iterate as many times as needed. The issue is not filed until the user
 explicitly chooses a filing target.

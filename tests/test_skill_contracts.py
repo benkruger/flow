@@ -2899,6 +2899,34 @@ def test_create_issue_skips_repo_selection_in_flow_repo():
     assert "benkruger/flow" in step2_text, "Step 2 must reference 'benkruger/flow' for the FLOW-repo conditional"
 
 
+def test_create_issue_step1_has_prior_decompose_detection():
+    """Step 1 must detect prior implementation-focused decompose output and skip redundant re-invocation."""
+    steps = _create_issue_steps()
+    assert any(n == 1 for n, _ in steps), "Step 1 not found in flow-create-issue"
+    for step_num, step_text in steps:
+        if step_num == 1:
+            assert "Prior Decompose Detection" in step_text, "Step 1 must have a 'Prior Decompose Detection' subsection"
+
+
+def test_create_issue_usage_documents_force_decompose():
+    """Usage section must document --force-decompose flag."""
+    content = _read_skill("flow-create-issue")
+    usage_match = re.search(r"## Usage\n(.*?)(?=\n## )", content, re.DOTALL)
+    assert usage_match, "Could not find Usage section"
+    assert "--force-decompose" in usage_match.group(1), "Usage must document --force-decompose flag"
+
+
+def test_create_issue_step2_redecompose_uses_force_flag():
+    """Step 2 Re-decompose path must pass --force-decompose to prevent skip-loop."""
+    steps = _create_issue_steps()
+    for step_num, step_text in steps:
+        if step_num == 2:
+            assert "--force-decompose" in step_text, (
+                "Step 2 must include --force-decompose in the Re-decompose self-invocation "
+                "to prevent the skip logic from looping"
+            )
+
+
 def test_complete_no_force_ci():
     """Tombstone: --force removed from Complete Step 4 CI command in PR #637. Must not return."""
     content = _read_skill("flow-complete")

@@ -165,6 +165,14 @@ proceeding to the next step, proposing direct edits, committing changes,
 or taking any action outside the active skill flow. The enforcement
 language is what distinguishes a gate from a suggestion.
 
+## Safe Defaults for Subjective Classification
+
+When a skill asks the model to classify conversation content (e.g.,
+"is this output implementation-focused?"), include an explicit
+tiebreaker for ambiguous cases. The safe default is always the
+conservative action — the one that produces correct behavior even
+if the classification is wrong.
+
 ## Contract Test Atomicity in Plan Dependencies
 
 When a plan removes content that a contract test asserts exists, and a

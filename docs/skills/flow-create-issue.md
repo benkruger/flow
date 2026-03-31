@@ -12,6 +12,7 @@ parent: Skills
 
 ```text
 /flow:flow-create-issue
+/flow:flow-create-issue --force-decompose
 /flow:flow-create-issue --step 2 --id <id>
 ```
 
@@ -31,10 +32,10 @@ Step 1 is enforced via self-invocation — the skill re-invokes itself with `--s
 
 | Step | Name | Gate |
 |------|------|------|
-| 1 | Capture + Decompose Implementation | AskUserQuestion: proceed, iterate, or cancel |
+| 1 | Capture + Decompose Implementation | Prior Decompose Detection (skip to Step 2 if prior output exists, or invoke decompose then AskUserQuestion: proceed, iterate, or cancel) |
 | 2 | Transform + Draft + File | AskUserQuestion: file (3 options in FLOW repo, 4 otherwise), revise, or re-decompose |
 
-1. **Step 1 — Capture + Decompose Implementation:** Captures problem sections (Problem, Acceptance Criteria, Files to Investigate, Out of Scope, Context) from the conversation context. Then invokes `decompose:decompose` with an implementation-focused prompt — structuring the agreed solution into tasks with dependencies, not re-analyzing the problem. Presents the synthesis and asks the user to approve, iterate, or cancel.
+1. **Step 1 — Capture + Decompose Implementation:** Captures problem sections (Problem, Acceptance Criteria, Files to Investigate, Out of Scope, Context) from the conversation context. Then checks for prior implementation-focused decompose output — if found, skips the decompose invocation and proceeds directly to Step 2. Otherwise, invokes `decompose:decompose` with an implementation-focused prompt — structuring the agreed solution into tasks with dependencies, not re-analyzing the problem. Presents the synthesis and asks the user to approve, iterate, or cancel. Use `--force-decompose` to bypass the detection and force a fresh decompose.
 2. **Step 2 — Transform + Draft + File:** Transforms the decompose output into an Implementation Plan section (Context, Exploration, Risks, Approach, Dependency Graph, Tasks) matching the plan file format that `flow-plan` reads. Combines with the captured problem sections into a single issue body. Presents the full draft inline and asks the user where to file. When the current repo is `benkruger/flow`, the skill detects this via `git remote get-url origin` and presents a simplified 3-option prompt. Files the issue via `bin/flow issue` with the `decomposed` label.
 
 ---
