@@ -665,6 +665,19 @@ def test_complete_result_continue_action_ask_with_unexpected_type():
     assert "continue_target" not in result
 
 
+def test_complete_result_continue_action_ask_when_auto_but_no_command():
+    """phase_complete result is 'ask' when continue=auto but next_command is missing from phase_commands."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
+    state["skills"] = {"flow-start": {"continue": "auto"}}
+
+    # Pass a phase_commands dict that omits flow-plan
+    updated, result = _mod.phase_complete(state, "flow-start", phase_commands={"flow-start": "/flow:flow-start"})
+
+    assert result["continue_action"] == "ask"
+    assert "continue_target" not in result
+    assert "_auto_continue" not in updated
+
+
 def test_complete_future_session_started_clamps_to_zero():
     """If session_started_at is in the future, elapsed clamps to 0."""
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
