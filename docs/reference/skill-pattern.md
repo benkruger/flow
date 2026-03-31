@@ -115,8 +115,8 @@ Replace `PREV` with the previous phase number and `PREV_NAME` with its name:
 
 ## Sub-Agent Pattern
 
-FLOW uses one custom plugin sub-agent: `ci-fixer` (`agents/ci-fixer.md`)
-for CI failure diagnosis and fix in Start (Steps 3 and 5). The `PreToolUse`
+FLOW uses six custom plugin sub-agents in `agents/*.md`: ci-fixer, reviewer,
+pre-mortem, adversarial, learn-analyst, and onboarding. The `PreToolUse`
 hook (`lib/validate-pretool.py`) is registered globally in `hooks/hooks.json`,
 enforcing tool restrictions on all Bash calls — including those from
 built-in skills' sub-agents. The hook validates three layers: compound
@@ -125,11 +125,14 @@ against `.claude/settings.json` allow patterns. Commands not matching any
 `Bash(...)` pattern are blocked with exit 2. Agent frontmatter must only
 use supported keys — unsupported keys like `hooks` can cause loading failures.
 
-Plan uses Claude Code's native plan mode (`EnterPlanMode`/`ExitPlanMode`).
-Code Review performs inline review passes for clarity, then performs inline
-correctness review for correctness and inline security review for safety.
-Code and Learn have no sub-agents.
-Complete uses ci-fixer for CI failures.
+Start and Complete use ci-fixer for CI failure diagnosis and fix.
+Plan invokes the `decompose` plugin for DAG-based task decomposition.
+Code Review performs inline review passes for clarity, correctness, and
+safety, then launches reviewer, pre-mortem, and adversarial agents in
+parallel for context-isolated analysis.
+Code has no sub-agents.
+Learn uses learn-analyst (cognitively isolated artifact analysis) and
+onboarding (newcomer comprehension barriers).
 
 **Code phase rationale:** By the time Code starts, the plan file contains
 thorough exploration, a validated approach, identified risks, and ordered

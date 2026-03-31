@@ -205,7 +205,7 @@ The next time you open a Claude Code session, the session-start hook delivers a 
 Start uses a Sonnet sub-agent for CI failures. Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition. Code Review performs four inline review passes for clarity (code reuse, quality, efficiency, convention compliance), then performs inline correctness review for correctness (including rule compliance) and inline security review for safety, then the `reviewer` agent for context-isolated code review (read-only, receives diff + plan + CLAUDE.md + rules, no conversation history), and finally the `pre-mortem` agent for context-isolated incident analysis (read-only, reasons backward from failure). Code has no sub-agent.
 
 ```text
-Main conversation          Sub-agent (general-purpose)
+Main conversation          Sub-agent (custom plugin)
       |                          |
       |─── Task: analyze ───────>|
       |    (what to check)       |─── Read affected code
