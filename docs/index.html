@@ -622,6 +622,10 @@
         <h4>Pre-merge freshness</h4>
         <p>Complete fetches main and merges it into the feature branch before squash-merging. Stale branches are updated automatically.</p>
       </div>
+      <div class="feature">
+        <h4>Hook-based enforcement</h4>
+        <p>Critical constraints are enforced by hooks, not instructions. If Claude shouldn&rsquo;t do it, Claude can&rsquo;t do it &mdash; the action is blocked before it executes.</p>
+      </div>
     </div>
   </section>
 
@@ -837,6 +841,7 @@ Duration: <span class="t-accent">6h 27m</span>
         <tr><td><code>/flow-config</code></td><td>Display current configuration &mdash; version, framework, per-skill autonomy</td></tr>
         <tr><td><code>/flow-issues</code></td><td>Fetch open issues, categorize, prioritize, and display a dashboard. Supports readiness filters</td></tr>
         <tr><td><code>/flow-create-issue</code></td><td>Explore a design question or decompose a concrete problem, iterate until work-ready, then file it</td></tr>
+        <tr><td><code>/flow-doc-sync</code></td><td>Audit documentation against code behavior &mdash; reports drift between what docs say and what code does</td></tr>
         <tr><td><code>/flow-decompose-project</code></td><td>Decompose a project into a linked GitHub issue graph &mdash; epic, milestones, sub-issues, blocked-by dependencies</td></tr>
         <tr><td><code>/flow-orchestrate</code></td><td>Batch orchestration &mdash; process decomposed issues overnight via flow-start --auto</td></tr>
       </tbody>
@@ -856,28 +861,29 @@ Duration: <span class="t-accent">6h 27m</span>
         <span class="t-max"></span>
       </div>
       <div class="terminal-body">
-<span class="t-dim">────</span> <span class="t-bold">FLOW v0.39.0</span> <span class="t-dim">──────────────────────────────────────────────</span>
+<span class="t-dim">────</span> <span class="t-bold">FLOW v1.1.0</span> <span class="t-dim">──────────────────────────────────────────────</span>
 
   <span class="t-bold">Active Flows (2)</span>  <span class="t-dim">&#9474;</span>  <span class="t-dim">Orchestration</span>
-  <span class="t-dim">──────────────────────────────────────────────────────</span>
-  <span class="t-bold">&#9656; invoice-pdf-export          3: Code         12m      PR #42</span>
-    slack-thread-replies        2: Plan          5m      PR #41
-  <span class="t-dim">──────────────────────────────────────────────────────</span>
+  <span class="t-dim">  Feature                      Phase                    Total   PR</span>
+  <span class="t-dim">──────────────────────────────────────────────────────────────────────</span>
+  <span class="t-bold">&#9656; invoice-pdf-export          3: Code (task 2/5)   8m     12m   PR #42</span>
+    slack-thread-replies        2: Plan              5m      5m   PR #41
+  <span class="t-dim">──────────────────────────────────────────────────────────────────────</span>
 
   <span class="t-bold">invoice-pdf-export</span>
-  Branch: <span class="t-accent">flow/invoice-pdf-export</span>
+  Branch: <span class="t-accent">invoice-pdf-export</span>
   Worktree: <span class="t-accent">.worktrees/invoice-pdf-export</span>
 
   <span class="t-green">[x]</span> Start          &lt;1m
   <span class="t-green">[x]</span> Plan           3m
-  <span class="t-accent">[&gt;]</span> Code           <span class="t-dim">(task 2/5)</span>
+  <span class="t-accent">[&gt;]</span> Code           8m  <span class="t-dim">(task 2/5)</span>
   <span class="t-dim">[ ]</span> Code Review
   <span class="t-dim">[ ]</span> Learn
   <span class="t-dim">[ ]</span> Complete
 
-  Notes: 1  <span class="t-dim">&#9474;</span>  Issues: 2 filed
+  Notes: 1
 
-  <span class="t-footer">[&#8592;&#8594;] Tab  [&#8593;&#8595;] Navigate  [Enter] Worktree  [p] PR  [i] Issue  [l] Log  [a] Abort  [r] Refresh  [q] Quit</span></div>
+  <span class="t-footer">[&#8592;&#8594;] Tab  [&#8593;&#8595;] Navigate  [Enter] Worktree  [p] PR  [i] Issues  [I] Issue  [t] Tasks  [l] Log  [a] Abort  [r] Refresh  [q] Quit</span></div>
     </div>
 
     <div class="terminal">
@@ -887,13 +893,11 @@ Duration: <span class="t-accent">6h 27m</span>
         <span class="t-max"></span>
       </div>
       <div class="terminal-body">
-<span class="t-dim">────</span> <span class="t-bold">FLOW v0.39.0</span> <span class="t-dim">──────────────────────────────────────────────</span>
+<span class="t-dim">────</span> <span class="t-bold">FLOW v1.1.0</span> <span class="t-dim">──────────────────────────────────────────────</span>
 
   <span class="t-dim">Active Flows (2)</span>  <span class="t-dim">&#9474;</span>  <span class="t-bold">Orchestration (4/5)</span>
-  <span class="t-dim">──────────────────────────────────────────────────────</span>
 
   Elapsed: <span class="t-accent">6h 27m</span>
-  <span class="t-dim">──────────────────────────────────────────────────────</span>
   <span class="t-bold">&#9656; <span class="t-green">&#10003;</span> #42  Add PDF export                6h 12m   PR #58</span>
     <span class="t-green">&#10003;</span> #44  Refactor auth module          1h 45m   PR #60
     <span class="t-accent">&#10007;</span> #43  Fix login timeout             42m
@@ -934,7 +938,7 @@ Duration: <span class="t-accent">6h 27m</span>
       <tbody>
         <tr><td><code>&#8593;</code> <code>&#8595;</code></td><td>Navigate flow list</td></tr>
         <tr><td><code>&#8592;</code> <code>&#8594;</code></td><td>Switch tab</td></tr>
-        <tr><td><code>Enter</code></td><td>Open worktree in terminal (activates existing iTerm2 tab or opens new tab)</td></tr>
+        <tr><td><code>Enter</code></td><td>Open worktree in a new terminal tab</td></tr>
         <tr><td><code>p</code></td><td>Open PR in browser</td></tr>
         <tr><td><code>i</code></td><td>Open issue in browser</td></tr>
         <tr><td><code>l</code></td><td>Show session log</td></tr>
