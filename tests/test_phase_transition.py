@@ -611,6 +611,73 @@ def test_enter_no_error_when_auto_continue_absent():
     assert "_auto_continue" not in updated
 
 
+def test_complete_result_continue_action_invoke_when_auto():
+    """phase_complete result includes continue_action='invoke' when skills.<phase>.continue is 'auto'."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
+    state["skills"] = {"flow-start": {"continue": "auto"}}
+
+    updated, result = _mod.phase_complete(state, "flow-start")
+
+    assert result["continue_action"] == "invoke"
+    assert result["continue_target"] == "/flow:flow-plan"
+
+
+def test_complete_result_continue_action_ask_when_manual():
+    """phase_complete result includes continue_action='ask' when skills.<phase>.continue is 'manual'."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
+    state["skills"] = {"flow-start": {"continue": "manual"}}
+
+    updated, result = _mod.phase_complete(state, "flow-start")
+
+    assert result["continue_action"] == "ask"
+    assert "continue_target" not in result
+
+
+def test_complete_result_continue_action_ask_when_absent():
+    """phase_complete result includes continue_action='ask' when no skills key."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
+
+    updated, result = _mod.phase_complete(state, "flow-start")
+
+    assert result["continue_action"] == "ask"
+    assert "continue_target" not in result
+
+
+def test_complete_result_continue_action_invoke_with_flat_string():
+    """phase_complete result includes continue_action='invoke' with flat string skill config."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
+    state["skills"] = {"flow-start": "auto"}
+
+    updated, result = _mod.phase_complete(state, "flow-start")
+
+    assert result["continue_action"] == "invoke"
+    assert result["continue_target"] == "/flow:flow-plan"
+
+
+def test_complete_result_continue_action_ask_with_unexpected_type():
+    """phase_complete result includes continue_action='ask' when skill config is unexpected type."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
+    state["skills"] = {"flow-start": 42}
+
+    updated, result = _mod.phase_complete(state, "flow-start")
+
+    assert result["continue_action"] == "ask"
+    assert "continue_target" not in result
+
+
+def test_complete_result_continue_action_ask_when_auto_but_no_command():
+    """phase_complete result is 'ask' when continue=auto but next_command is missing from phase_commands."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
+    state["skills"] = {"flow-start": {"continue": "auto"}}
+
+    # Pass a phase_commands dict that omits flow-plan
+    updated, result = _mod.phase_complete(state, "flow-start", phase_commands={"flow-start": "/flow:flow-start"})
+
+    assert result["continue_action"] == "ask"
+    assert "continue_target" not in result
+    assert "_auto_continue" not in updated
+
+
 def test_complete_future_session_started_clamps_to_zero():
     """If session_started_at is in the future, elapsed clamps to 0."""
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})

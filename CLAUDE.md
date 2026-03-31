@@ -141,6 +141,10 @@ The version lives in 3 places (across 2 files), all must match: `.claude-plugin/
 
 Claude never computes timestamps, time differences, or counter increments. All standard state mutations go through `bin/flow` commands: `phase-transition` for entry/completion, `set-timestamp` for mid-phase fields. `code_task` can only be incremented by 1 per call — even when multiple tasks are committed atomically, increment the counter one step at a time before committing. The plan file lives at `.flow-states/<branch>-plan.md` and its path is stored in `state["files"]["plan"]`. The DAG file (from decompose plugin) lives at `.flow-states/<branch>-dag.md` and is stored in `state["files"]["dag"]`. Legacy state files may still use top-level `state["plan_file"]` and `state["dag_file"]` — consumers should check `files` first with fallback to the top-level keys.
 
+### Auto-Advance Architecture
+
+Phase auto-advance uses two layers. Layer 1: `phase-transition --action complete` returns `continue_action` (`"invoke"` or `"ask"`) and optionally `continue_target` (the next phase command) in its JSON output. Skill HARD-GATEs parse `continue_action` to decide whether to auto-invoke the next phase or prompt the user. Layer 2: `phase_complete()` writes `_auto_continue` to the state file when `continue_action` is `"invoke"`. The `validate-ask-user.py` PreToolUse hook reads `_auto_continue` and auto-answers any `AskUserQuestion` that fires — this is a safety net for cases where the model ignores the HARD-GATE and prompts anyway. `phase_enter()` clears `_auto_continue` when the next phase starts. The `continue_target` field is provided for diagnostic consumers; skills use hardcoded successor commands for reliability.
+
 ### Permission Invariant
 
 Every bash block in every skill must run without triggering a permission prompt. `test_permissions.py` enforces at test time (placeholder substitution, allow/deny matching); `validate-pretool.py` enforces at runtime via global PreToolUse hook (compound commands, redirection, file-read commands blocked; whitelist enforced when a flow is active). See `.claude/rules/permissions.md` for the pattern-adding protocol.

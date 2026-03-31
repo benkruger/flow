@@ -2518,8 +2518,8 @@ def test_plan_step3_extracts_implementation_plan_for_decomposed():
     )
 
 
-def test_done_hardgates_reread_state_file():
-    """Phases 1-5 Done HARD-GATEs must re-read continue mode from state file."""
+def test_done_hardgates_read_continue_action():
+    """Phases 1-5 Done HARD-GATEs must read continue_action from phase-transition output."""
     phase_skills = _phase_skills()
     for key in PHASE_ORDER[:-1]:  # Exclude flow-complete (terminal)
         skill_name = phase_skills[key]
@@ -2529,13 +2529,31 @@ def test_done_hardgates_reread_state_file():
 
         continue_gates = [gate for gate in hard_gates if "continue=manual" in gate and "continue=auto" in gate]
         assert continue_gates, (
-            f"Phase {PHASE_NUMBER[key]} ({skill_name}) has no continue-mode HARD-GATE (prerequisite for re-read check)"
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) has no continue-mode HARD-GATE "
+            f"(prerequisite for continue_action check)"
         )
 
-        has_reread = any("Re-read" in gate or "re-read" in gate for gate in continue_gates)
-        assert has_reread, (
+        has_continue_action = any("continue_action" in gate for gate in continue_gates)
+        assert has_continue_action, (
             f"Phase {PHASE_NUMBER[key]} ({skill_name}) Done HARD-GATE must "
-            f"re-read continue mode from state file (contain 'Re-read')"
+            f"read continue_action from phase-transition output (contain 'continue_action')"
+        )
+
+
+def test_done_hardgates_no_reread_state_file():
+    """Tombstone: removed in PR #711. HARD-GATEs must not read continue mode from state file directly."""
+    phase_skills = _phase_skills()
+    for key in PHASE_ORDER[:-1]:  # Exclude flow-complete (terminal)
+        skill_name = phase_skills[key]
+        content = _read_skill(skill_name)
+
+        hard_gates = re.findall(r"<HARD-GATE>(.*?)</HARD-GATE>", content, re.DOTALL)
+        continue_gates = [gate for gate in hard_gates if "continue=manual" in gate and "continue=auto" in gate]
+
+        has_reread = any("Re-read" in gate for gate in continue_gates)
+        assert not has_reread, (
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) Done HARD-GATE must not contain 'Re-read' — "
+            f"continue mode is now read from phase-transition command output via continue_action"
         )
 
 
