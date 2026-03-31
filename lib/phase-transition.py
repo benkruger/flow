@@ -10,7 +10,8 @@ Usage:
 Output (JSON to stdout):
   Enter:    {"status": "ok", "phase": "plan", "action": "enter", "visit_count": 1, "first_visit": true}
   Complete: {"status": "ok", "phase": "plan", "action": "complete",
-            "cumulative_seconds": 300, "formatted_time": "5m", "next_phase": "code"}
+            "cumulative_seconds": 300, "formatted_time": "5m", "next_phase": "code",
+            "continue_action": "invoke", "continue_target": "/flow:flow-code"}
   Error:    {"status": "error", "message": "..."}
 """
 
@@ -153,25 +154,32 @@ def phase_complete(state, phase, next_phase=None, phase_order=None, phase_comman
     else:
         continue_mode = None
 
-    if continue_mode == "auto":
-        commands = phase_commands or COMMANDS
-        next_command = commands.get(next_phase)
-        if next_command:
-            state["_auto_continue"] = next_command
+    commands = phase_commands or COMMANDS
+    next_command = commands.get(next_phase)
+
+    if continue_mode == "auto" and next_command:
+        state["_auto_continue"] = next_command
+        continue_action = "invoke"
     else:
         state.pop("_auto_continue", None)
+        continue_action = "ask"
 
     if phase == "flow-code":
         state["diff_stats"] = _capture_diff_stats()
 
-    return state, {
+    result = {
         "status": "ok",
         "phase": phase,
         "action": "complete",
         "cumulative_seconds": cumulative,
         "formatted_time": format_time(cumulative),
         "next_phase": next_phase,
+        "continue_action": continue_action,
     }
+    if continue_action == "invoke":
+        result["continue_target"] = next_command
+
+    return state, result
 
 
 _VALID_PHASES = PHASE_ORDER
