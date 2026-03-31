@@ -1575,6 +1575,18 @@ def test_prime_presets_cover_all_configurable_skills():
 # Expected order: phases in canonical order, then abort (utility) last
 EXPECTED_SKILL_ORDER = PHASE_ORDER + ["flow-abort"]
 
+# Display name → skill name mapping for flow-prime SKILL.md
+_PRIME_DISPLAY_NAME_MAP = {
+    "start": "flow-start",
+    "plan": "flow-plan",
+    "code": "flow-code",
+    "code-review": "flow-code-review",
+    "learning": "flow-learn",
+    "learn": "flow-learn",
+    "abort": "flow-abort",
+    "complete": "flow-complete",
+}
+
 
 def test_configurable_skills_match_phase_order():
     """CONFIGURABLE_SKILLS list must follow canonical phase order with abort last."""
@@ -1606,22 +1618,9 @@ def test_prime_customize_questions_match_phase_order():
     customize_text = customize_match.group(0)
     # Match "For **skill-name**" and "and **skill-name**" patterns
     skill_mentions = re.findall(r"(?:For|and) \*\*(\w[\w-]*)\*\*", customize_text)
-    # Remove "and" conjunctions (e.g. "complete and abort" → ["complete", "abort"])
-    # The pattern captures word before "**" so "complete" and "abort" are separate matches
-    # Map display names to skill names
-    name_map = {
-        "start": "flow-start",
-        "plan": "flow-plan",
-        "code": "flow-code",
-        "code-review": "flow-code-review",
-        "learning": "flow-learn",
-        "learn": "flow-learn",
-        "abort": "flow-abort",
-        "complete": "flow-complete",
-    }
     seen = []
     for name in skill_mentions:
-        mapped = name_map.get(name)
+        mapped = _PRIME_DISPLAY_NAME_MAP.get(name)
         if mapped and mapped not in seen:
             seen.append(mapped)
     assert seen == EXPECTED_SKILL_ORDER, (
@@ -1636,20 +1635,11 @@ def test_prime_done_table_matches_phase_order():
     table_match = re.search(r"\| Skill\s+\| Commit \| Continue \|.*?\n\|[-| ]+\|\n((?:\|.*\|\n)+)", content)
     assert table_match, "Could not find skills table in flow-prime Done section"
     rows = table_match.group(1).strip().split("\n")
-    name_map = {
-        "start": "flow-start",
-        "plan": "flow-plan",
-        "code": "flow-code",
-        "code-review": "flow-code-review",
-        "learning": "flow-learn",
-        "abort": "flow-abort",
-        "complete": "flow-complete",
-    }
     table_order = []
     for row in rows:
         cells = [c.strip() for c in row.split("|")]
         skill_name = cells[1]  # first column after leading |
-        mapped = name_map.get(skill_name)
+        mapped = _PRIME_DISPLAY_NAME_MAP.get(skill_name)
         if mapped:
             table_order.append(mapped)
     assert table_order == EXPECTED_SKILL_ORDER, (
