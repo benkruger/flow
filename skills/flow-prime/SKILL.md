@@ -77,7 +77,7 @@ FLOW has two independent axes for skills that support them:
 - **Commit** — how `/flow:flow-commit` is invoked during phase work (auto = skip diff approval, manual = require approval). Also controls per-task approval in Code.
 - **Continue** — whether to auto-advance to the next phase or prompt first.
 
-Phase skills that commit (code, code-review, learning) have both axes. Phase skills that don't commit (start) only have continue. Utility skills (abort, complete) have a single mode value. The `/flow:flow-commit` skill is not configurable — it defaults to auto and can be overridden with `--manual`.
+Phase skills that commit (code, code-review, learning) have both axes. Phase skills that don't commit (start) only have continue. Utility skills (complete, abort) have a single mode value. The `/flow:flow-commit` skill is not configurable — it defaults to auto and can be overridden with `--manual`.
 
 Ask the user how much autonomy FLOW should have using AskUserQuestion:
 
@@ -91,22 +91,46 @@ Ask the user how much autonomy FLOW should have using AskUserQuestion:
 **Fully autonomous** — all auto:
 
 ```json
-{"flow-start": {"continue": "auto"}, "flow-plan": {"continue": "auto", "dag": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}
+{"flow-start": {"continue": "auto"}, "flow-plan": {"continue": "auto", "dag": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-complete": "auto", "flow-abort": "auto"}
 ```
 
 **Fully manual** — all manual:
 
 ```json
-{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "manual", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "manual", "continue": "manual"}, "flow-learn": {"commit": "manual", "continue": "manual"}, "flow-abort": "manual", "flow-complete": "manual"}
+{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "manual", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "manual", "continue": "manual"}, "flow-learn": {"commit": "manual", "continue": "manual"}, "flow-complete": "manual", "flow-abort": "manual"}
 ```
 
 **Recommended** — safe defaults for all frameworks:
 
 ```json
-{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "auto", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-abort": "auto", "flow-complete": "auto"}
+{"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "auto", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-complete": "auto", "flow-abort": "auto"}
 ```
 
-**Customize** — ask per skill, in this order: start, plan, code, code-review, learn, abort, complete. For each skill, ask about only the applicable axes. List the recommended option first with "(Recommended)" in the label:
+**Customize** — ask per skill, in this order: start, plan, code, code-review, learn, complete, abort. For each skill, ask about only the applicable axes. List the recommended option first with "(Recommended)" in the label:
+
+For **start** (continue only), ask one AskUserQuestion:
+
+> "Continue mode for /flow:flow-start?"
+>
+> - **Manual (Recommended)** — "Prompt before advancing"
+> - **Auto** — "Auto-advance to next phase"
+
+For **plan** (continue and dag), ask two AskUserQuestions:
+
+First question:
+
+> "Continue mode for /flow:flow-plan? (controls phase advancement to Code)"
+>
+> - **Auto (Recommended)** — "Auto-advance to Code phase"
+> - **Manual** — "Prompt before advancing"
+
+Second question:
+
+> "DAG mode for /flow:flow-plan? (complexity-aware decomposition via decompose plugin)"
+>
+> - **Auto (Recommended)** — "Use DAG decomposition for complex features, skip for simple"
+> - **Always** — "Always use DAG decomposition"
+> - **Never** — "Skip DAG decomposition"
 
 For **code** (commit and continue), ask two AskUserQuestions:
 
@@ -156,31 +180,7 @@ Second question:
 > - **Auto (Recommended)** — "Auto-advance to next phase"
 > - **Manual** — "Prompt before advancing"
 
-For **start** (continue only), ask one AskUserQuestion:
-
-> "Continue mode for /flow:flow-start?"
->
-> - **Manual (Recommended)** — "Prompt before advancing"
-> - **Auto** — "Auto-advance to next phase"
-
-For **plan** (continue and dag), ask two AskUserQuestions:
-
-First question:
-
-> "Continue mode for /flow:flow-plan? (controls phase advancement to Code)"
->
-> - **Auto (Recommended)** — "Auto-advance to Code phase"
-> - **Manual** — "Prompt before advancing"
-
-Second question:
-
-> "DAG mode for /flow:flow-plan? (complexity-aware decomposition via decompose plugin)"
->
-> - **Auto (Recommended)** — "Use DAG decomposition for complex features, skip for simple"
-> - **Always** — "Always use DAG decomposition"
-> - **Never** — "Skip DAG decomposition"
-
-For **abort** and **complete** (single mode), ask one AskUserQuestion each:
+For **complete** and **abort** (single mode), ask one AskUserQuestion each:
 
 > "Mode for /flow:flow-<skill>?"
 >
@@ -388,8 +388,8 @@ Display the skills configuration as a pipe-delimited markdown table with exactly
 | code        | manual | manual   |
 | code-review | auto   | auto     |
 | learning    | auto   | auto     |
-| abort       | auto   | —        |
 | complete    | auto   | —        |
+| abort       | auto   | —        |
 ```
 
 Use the actual values from `skills_dict` (Step 2). The table above is just an example. Show `—` for axes that don't apply to a skill. The table must use pipe `|` delimiters — never render as a bullet list.
