@@ -1507,8 +1507,8 @@ CONFIGURABLE_SKILLS = [
     "flow-code",
     "flow-code-review",
     "flow-learn",
-    "flow-abort",
     "flow-complete",
+    "flow-abort",
 ]
 
 
@@ -1570,6 +1570,84 @@ def test_prime_presets_cover_all_configurable_skills():
         parsed = json.loads(json_blocks[i])
         for skill in CONFIGURABLE_SKILLS:
             assert skill in parsed, f"'{skill}' missing from {preset_name} preset in flow-prime SKILL.md"
+
+
+# Expected order: phases in canonical order, then abort (utility) last
+EXPECTED_SKILL_ORDER = PHASE_ORDER + ["flow-abort"]
+
+# Display name → skill name mapping for flow-prime SKILL.md
+_PRIME_DISPLAY_NAME_MAP = {
+    "start": "flow-start",
+    "plan": "flow-plan",
+    "code": "flow-code",
+    "code-review": "flow-code-review",
+    "learning": "flow-learn",
+    "learn": "flow-learn",
+    "abort": "flow-abort",
+    "complete": "flow-complete",
+}
+
+
+def test_configurable_skills_match_phase_order():
+    """CONFIGURABLE_SKILLS list must follow canonical phase order with abort last."""
+    assert CONFIGURABLE_SKILLS == EXPECTED_SKILL_ORDER, (
+        f"CONFIGURABLE_SKILLS order {CONFIGURABLE_SKILLS} does not match expected phase order {EXPECTED_SKILL_ORDER}"
+    )
+
+
+def test_prime_presets_keys_match_phase_order():
+    """Preset JSON keys must appear in canonical phase order with abort last."""
+    content = _read_skill("flow-prime")
+    json_blocks = re.findall(r"```json\n(\{.*?\})\n```", content, re.DOTALL)
+    assert len(json_blocks) >= 3
+    preset_names = ["fully autonomous", "fully manual", "recommended"]
+    for i, preset_name in enumerate(preset_names):
+        parsed = json.loads(json_blocks[i])
+        keys = list(parsed.keys())
+        assert keys == EXPECTED_SKILL_ORDER, (
+            f"{preset_name} preset key order {keys} does not match expected phase order {EXPECTED_SKILL_ORDER}"
+        )
+
+
+def test_prime_customize_questions_match_phase_order():
+    """Customize question blocks must appear in canonical phase order."""
+    content = _read_skill("flow-prime")
+    # Extract skill names from "For **<skill>**" patterns in the Customize section
+    customize_match = re.search(r"\*\*Customize\*\*.*?Store the result", content, re.DOTALL)
+    assert customize_match, "Could not find Customize section in flow-prime SKILL.md"
+    customize_text = customize_match.group(0)
+    # Match "For **skill-name**" and "and **skill-name**" patterns
+    skill_mentions = re.findall(r"(?:For|and) \*\*(\w[\w-]*)\*\*", customize_text)
+    seen = []
+    for name in skill_mentions:
+        mapped = _PRIME_DISPLAY_NAME_MAP.get(name)
+        if mapped and mapped not in seen:
+            seen.append(mapped)
+    assert len(seen) == len(EXPECTED_SKILL_ORDER), (
+        f"Customize section has {len(seen)} skills, expected {len(EXPECTED_SKILL_ORDER)}"
+    )
+    assert seen == EXPECTED_SKILL_ORDER, (
+        f"Customize question order {seen} does not match expected phase order {EXPECTED_SKILL_ORDER}"
+    )
+
+
+def test_prime_done_table_matches_phase_order():
+    """Done section skills table rows must follow canonical phase order."""
+    content = _read_skill("flow-prime")
+    # Find the table in the Done section — rows like "| start       | —      | manual   |"
+    table_match = re.search(r"\| Skill\s+\| Commit \| Continue \|.*?\n\|[-| ]+\|\n((?:\|.*\|\n)+)", content)
+    assert table_match, "Could not find skills table in flow-prime Done section"
+    rows = table_match.group(1).strip().split("\n")
+    table_order = []
+    for row in rows:
+        cells = [c.strip() for c in row.split("|")]
+        skill_name = cells[1]  # first column after leading |
+        mapped = _PRIME_DISPLAY_NAME_MAP.get(skill_name)
+        if mapped:
+            table_order.append(mapped)
+    assert table_order == EXPECTED_SKILL_ORDER, (
+        f"Done table order {table_order} does not match expected phase order {EXPECTED_SKILL_ORDER}"
+    )
 
 
 def test_quadruple_fenced_blocks_use_markdown_and_text():
@@ -2518,8 +2596,8 @@ def test_plan_step3_extracts_implementation_plan_for_decomposed():
     )
 
 
-def test_done_hardgates_reread_state_file():
-    """Phases 1-5 Done HARD-GATEs must re-read continue mode from state file."""
+def test_done_hardgates_read_continue_action():
+    """Phases 1-5 Done HARD-GATEs must read continue_action from phase-transition output."""
     phase_skills = _phase_skills()
     for key in PHASE_ORDER[:-1]:  # Exclude flow-complete (terminal)
         skill_name = phase_skills[key]
@@ -2529,13 +2607,31 @@ def test_done_hardgates_reread_state_file():
 
         continue_gates = [gate for gate in hard_gates if "continue=manual" in gate and "continue=auto" in gate]
         assert continue_gates, (
-            f"Phase {PHASE_NUMBER[key]} ({skill_name}) has no continue-mode HARD-GATE (prerequisite for re-read check)"
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) has no continue-mode HARD-GATE "
+            f"(prerequisite for continue_action check)"
         )
 
-        has_reread = any("Re-read" in gate or "re-read" in gate for gate in continue_gates)
-        assert has_reread, (
+        has_continue_action = any("continue_action" in gate for gate in continue_gates)
+        assert has_continue_action, (
             f"Phase {PHASE_NUMBER[key]} ({skill_name}) Done HARD-GATE must "
-            f"re-read continue mode from state file (contain 'Re-read')"
+            f"read continue_action from phase-transition output (contain 'continue_action')"
+        )
+
+
+def test_done_hardgates_no_reread_state_file():
+    """Tombstone: removed in PR #711. HARD-GATEs must not read continue mode from state file directly."""
+    phase_skills = _phase_skills()
+    for key in PHASE_ORDER[:-1]:  # Exclude flow-complete (terminal)
+        skill_name = phase_skills[key]
+        content = _read_skill(skill_name)
+
+        hard_gates = re.findall(r"<HARD-GATE>(.*?)</HARD-GATE>", content, re.DOTALL)
+        continue_gates = [gate for gate in hard_gates if "continue=manual" in gate and "continue=auto" in gate]
+
+        has_reread = any("Re-read" in gate for gate in continue_gates)
+        assert not has_reread, (
+            f"Phase {PHASE_NUMBER[key]} ({skill_name}) Done HARD-GATE must not contain 'Re-read' — "
+            f"continue mode is now read from phase-transition command output via continue_action"
         )
 
 
@@ -2942,4 +3038,33 @@ def test_decompose_project_no_depends_on_text():
     assert "Depends on:" not in content, (
         "flow-decompose-project must NOT instruct including 'Depends on:' text in issue bodies "
         "(removed in PR #697 — native blocked-by API links are the sole dependency mechanism)"
+    )
+
+
+def test_skills_no_repo_tracked_files_at_project_root():
+    """Skills must not direct Claude to check repo-tracked files at the project root.
+
+    In a linked worktree, 'project root' resolves to the main repo (on main),
+    not the worktree where the feature code lives. Repo-tracked executables
+    (bin/test, bin/ci) must be checked in the current working directory."""
+    repo_tracked_executables = ["bin/test", "bin/ci"]
+    violations = []
+    for skill_dir in sorted(SKILLS_DIR.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        skill_file = skill_dir / "SKILL.md"
+        if not skill_file.exists():
+            continue
+        content = skill_file.read_text()
+        paragraphs = content.split("\n\n")
+        for para in paragraphs:
+            para_lower = para.lower()
+            if "project root" not in para_lower:
+                continue
+            for exe in repo_tracked_executables:
+                if exe in para:
+                    violations.append(f"{skill_dir.name}: paragraph mentions both '{exe}' and 'project root'")
+    assert not violations, (
+        "Skills must not direct Claude to check repo-tracked files 'at the project root' — "
+        "use 'current working directory' or omit the path. Violations:\n" + "\n".join(violations)
     )

@@ -120,6 +120,14 @@ frequently contains command references, phase name prose, and
 convention entries that don't surface in automated grep-based scope
 analysis. Missed CLAUDE.md references cause user-visible doc drift.
 
+## Skill Ordering Audit
+
+When reordering skill listings (presets, questions, tables), audit
+every location where skill order is encoded — including programmatic
+dicts like `AUTO_SKILLS` in `flow_utils.py`, not just Markdown
+content in SKILL.md files. Python dict key order is preserved and
+written to state files and `.flow.json`, making it load-bearing.
+
 ## Cleanup Script Step Ordering
 
 When adding a new step to `lib/cleanup.py` that operates on files
@@ -297,3 +305,23 @@ cached plugin's ${CLAUDE_PLUGIN_ROOT}/bin/flow. These scripts resolve file
 paths relative to __file__, so the cached plugin writes to the cache
 directory. FLOW state commands (phase-transition, set-timestamp, log, ci) use
 project_root() and work from either path.
+
+## Worktree Path for Repo-Tracked Files
+
+When a skill instruction tells Claude to check for or read a
+repo-tracked file (`bin/test`, `bin/ci`, source files, `CLAUDE.md`,
+`.claude/rules/`), the instruction must say "current working
+directory" or omit the path — never "project root."
+
+In a linked worktree, `git worktree list --porcelain` returns the
+main repo as the first entry (the "project root"). Repo-tracked
+files live in the worktree, not the main repo. Directing Claude to
+"the project root" sends it to the wrong copy, and the
+`validate-worktree-paths.py` hook blocks the call.
+
+Project root is correct only for shared paths that live outside
+the worktree: `.flow-states/`, `.flow-issue-body`, and other
+branch-scoped artifacts in the main repo directory.
+
+CI enforces this via
+`test_skills_no_repo_tracked_files_at_project_root`.

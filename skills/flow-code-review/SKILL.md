@@ -546,9 +546,10 @@ CLAUDE.md. Use the Glob tool to find all `.claude/rules/*.md` files,
 then use the Read tool to read each one. Collect all content — you will
 pass it inline to the reviewer agent.
 
-Check if `bin/test` exists in the project root. Use the Glob tool to
-check for `bin/test` at the project root. Note the result — it
-determines whether the adversarial agent is launched.
+Check if `bin/test` exists in the current working directory. Use the
+Glob tool to check for `bin/test` (no path parameter — Glob defaults
+to the current working directory, which is the worktree). Note the
+result — it determines whether the adversarial agent is launched.
 
 ### Launch agents in parallel
 
@@ -786,14 +787,14 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-code-review --ts <t
 If `"status": "skipped"` or `"status": "error"`, continue without error.
 
 <HARD-GATE>
-STOP. Re-read `skills.flow-code-review.continue` from the state file at
-`<project_root>/.flow-states/<branch>.json` before advancing.
-The previous phase's continue mode does NOT carry over — each phase
-has its own mode.
+STOP. Parse `continue_action` from the `phase-transition --action complete`
+output above to determine how to advance.
 
 1. If `--auto` was passed to this skill invocation → continue=auto.
    If `--manual` was passed → continue=manual.
-   Otherwise, use the value from the state file. If absent → default to manual.
+   Otherwise, use `continue_action` from the phase-transition output.
+   If `continue_action` is `"invoke"` → continue=auto.
+   If `continue_action` is `"ask"` → continue=manual.
 2. If continue=auto → invoke `flow:flow-learn` directly using the Skill tool.
    Do NOT invoke `flow:flow-status`. Do NOT use AskUserQuestion.
    This is the FINAL action in this response — nothing else follows.
