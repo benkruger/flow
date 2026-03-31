@@ -39,7 +39,7 @@ The note is captured before Claude replies.
 
 ```json
 {
-  "phase": 5,
+  "phase": "flow-code",
   "phase_name": "Code",
   "timestamp": "2026-02-20T14:23:00Z",
   "type": "correction",

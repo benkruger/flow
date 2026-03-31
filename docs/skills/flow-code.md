@@ -74,7 +74,7 @@ The task continues after filing — flaky tests do not block progress.
 
 ## Mode
 
-Mode is configurable via `.flow.json` (default: manual). In auto mode, streamline is active from task 1 (skip per-task approval, still show diffs) and the phase transition advances to Simplify without asking.
+Mode is configurable via `.flow.json` (default: manual). In auto mode, streamline is active from task 1 (skip per-task approval, still show diffs) and the phase transition advances to Code Review without asking.
 
 ---
 
@@ -83,5 +83,5 @@ Mode is configurable via `.flow.json` (default: manual). In auto mode, streamlin
 - Test must fail before writing implementation
 - Diff is always shown for every task (in both modes)
 - `bin/flow ci` must be green before every commit
-- 100% coverage before transitioning to Simplify
+- 100% coverage before transitioning to Code Review
 - Never rebase
