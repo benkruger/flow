@@ -848,6 +848,10 @@ class TestFormatTabColor:
         colors = [format_tab_color(repo=r) for r in PINNED_COLORS]
         assert len(set(colors)) == len(PINNED_COLORS)
 
+    def test_no_benkruger_hh_key(self):
+        """Tombstone: removed in PR #705. Must not return."""
+        assert "benkruger/hh" not in PINNED_COLORS
+
 
 # --- write_tab_sequences tests ---
 
