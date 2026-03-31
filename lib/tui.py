@@ -221,6 +221,25 @@ class TuiApp:
             overhead += pr_width + (2 if not issue_width else 0)
         feature_width = max(26, max_x - overhead)
 
+        # Column header row — overwrites the separator drawn by _draw_header()
+        hdr_parts = [
+            "  ",
+            f"{'Feature':<{feature_width}s}",
+            "   ",
+            f"{'Phase':<{phase_width}s}",
+            "   ",
+            f"{'':>5s}",
+            "   ",
+            f"{'Total':>7s}",
+        ]
+        if issue_width:
+            hdr_parts.append("   ")
+            hdr_parts.append(f"{'Issue':<{issue_width}s}")
+        if pr_width:
+            hdr_parts.append("  ")
+            hdr_parts.append(f"{'PR':<{pr_width}s}")
+        self._safe_addstr(3, 2, "".join(hdr_parts), curses.A_DIM)
+
         for i in range(list_end):
             flow = visible_flows[i]
             row = 4 + i
