@@ -88,9 +88,14 @@ def acquire(feature):
     """Attempt to acquire the start lock via the queue."""
     queue_dir = _queue_path()
 
-    # Create our queue entry (idempotent — overwrites if exists)
+    # Create our queue entry only if it doesn't exist yet.
+    # Using exclusive create to preserve original mtime on retries.
     entry = queue_dir / feature
-    entry.touch(exist_ok=True)
+    try:
+        with open(entry, "x"):
+            pass
+    except FileExistsError:
+        pass
 
     # List queue with stale cleanup
     entries, stale_removed = _list_queue(queue_dir, cleanup=True)

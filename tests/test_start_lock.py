@@ -510,6 +510,16 @@ def test_check_handles_iterdir_failure(tmp_path):
     assert result["status"] == "free"
 
 
+# --- tombstone tests ---
+
+
+def test_no_start_lock_filename():
+    """Tombstone: start.lock replaced by start-queue/ in PR #715. Must not return."""
+    source = Path(__file__).resolve().parent.parent / "lib" / "start-lock.py"
+    content = source.read_text()
+    assert "start.lock" not in content, "start.lock was removed in PR #715 — use start-queue/ directory instead"
+
+
 # --- CLI integration ---
 
 
