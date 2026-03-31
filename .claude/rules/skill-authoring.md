@@ -120,6 +120,14 @@ frequently contains command references, phase name prose, and
 convention entries that don't surface in automated grep-based scope
 analysis. Missed CLAUDE.md references cause user-visible doc drift.
 
+## Skill Ordering Audit
+
+When reordering skill listings (presets, questions, tables), audit
+every location where skill order is encoded — including programmatic
+dicts like `AUTO_SKILLS` in `flow_utils.py`, not just Markdown
+content in SKILL.md files. Python dict key order is preserved and
+written to state files and `.flow.json`, making it load-bearing.
+
 ## Cleanup Script Step Ordering
 
 When adding a new step to `lib/cleanup.py` that operates on files
