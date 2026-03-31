@@ -9,6 +9,7 @@ Usage: imported by lib/tui.py
 import json
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -390,12 +391,10 @@ def load_account_metrics(repo_root):
     Returns dict with keys: cost_monthly (str), rl_5h (int|None),
     rl_7d (int|None), stale (bool).
     """
-    import time as _time
-
     repo_root = Path(repo_root)
 
     # --- Monthly cost from per-session cost files ---
-    year_month = _time.strftime("%Y-%m")
+    year_month = time.strftime("%Y-%m")
     cost_dir = repo_root / ".claude" / "cost" / year_month
     total_cost = 0.0
     if cost_dir.is_dir():
@@ -414,7 +413,7 @@ def load_account_metrics(repo_root):
 
     try:
         mtime = rl_path.stat().st_mtime
-        age = _time.time() - mtime
+        age = time.time() - mtime
         if age <= _STALE_THRESHOLD_SECONDS:
             data = json.loads(rl_path.read_text())
             rl_5h = int(data["five_hour_pct"])
