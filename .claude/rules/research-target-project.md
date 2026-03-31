@@ -28,6 +28,9 @@ prompt when the agent needs to discover files (e.g. CLAUDE.md).
   target project's test conventions
 - Launching sub-agents that search `~/.claude/` or `/tmp/`
   for project files like CLAUDE.md
+- Reading files from sibling repos on the filesystem (other
+  projects in `~/code/`) during investigation — stay within
+  the repo you are working in
 
 ## When Plugin Research Is Valid
 

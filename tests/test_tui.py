@@ -1887,6 +1887,100 @@ def test_header_branding_cyan_bold():
     assert branding_calls[0][0][3] == tui.COLOR_HEADER * 100 | curses.A_BOLD
 
 
+# --- _draw_header: account metrics ---
+
+
+def test_draw_header_metrics_right_aligned():
+    """Header shows cost and rate limits right-aligned on row 0."""
+    stdscr = _make_stdscr(rows=10, cols=100)
+    app = _make_app(stdscr)
+    app.metrics = {"cost_monthly": "12.50", "rl_5h": 45, "rl_7d": 32, "stale": False}
+    app._draw_header()
+    calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == 0]
+    texts = [str(c[0][2]) for c in calls]
+    combined = " ".join(texts)
+    assert "$12.50/mo" in combined
+    assert "5h:45%" in combined
+    assert "7d:32%" in combined
+
+
+def test_draw_header_metrics_yellow_threshold():
+    """Rate limits at 70-89% render with COLOR_ACTIVE (yellow)."""
+    stdscr = _make_stdscr(rows=10, cols=100)
+    app = _make_app(stdscr)
+    app.use_color = True
+    app.metrics = {"cost_monthly": "0.00", "rl_5h": 75, "rl_7d": 85, "stale": False}
+    with patch("tui.curses.color_pair", side_effect=lambda p: p * 100):
+        app._draw_header()
+    calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == 0]
+    yellow_calls = [c for c in calls if c[0][3] == tui.COLOR_ACTIVE * 100]
+    assert len(yellow_calls) >= 2, "Both rate limits at 70-89% should use yellow"
+
+
+def test_draw_header_metrics_red_threshold():
+    """Rate limits at >=90% render with COLOR_FAILED (red)."""
+    stdscr = _make_stdscr(rows=10, cols=100)
+    app = _make_app(stdscr)
+    app.use_color = True
+    app.metrics = {"cost_monthly": "0.00", "rl_5h": 92, "rl_7d": 95, "stale": False}
+    with patch("tui.curses.color_pair", side_effect=lambda p: p * 100):
+        app._draw_header()
+    calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == 0]
+    red_calls = [c for c in calls if c[0][3] == tui.COLOR_FAILED * 100]
+    assert len(red_calls) >= 2, "Both rate limits at >=90% should use red"
+
+
+def test_draw_header_metrics_stale():
+    """Stale metrics show 5h:-- 7d:-- dimmed."""
+    stdscr = _make_stdscr(rows=10, cols=100)
+    app = _make_app(stdscr)
+    app.metrics = {"cost_monthly": "5.00", "rl_5h": None, "rl_7d": None, "stale": True}
+    app._draw_header()
+    calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == 0]
+    texts = [str(c[0][2]) for c in calls]
+    combined = " ".join(texts)
+    assert "5h:--" in combined
+    assert "7d:--" in combined
+    dim_calls = [c for c in calls if c[0][3] == curses.A_DIM and ("5h:--" in str(c[0][2]) or "7d:--" in str(c[0][2]))]
+    assert len(dim_calls) >= 1
+
+
+def test_draw_header_no_metrics():
+    """Header renders without error when metrics is None."""
+    stdscr = _make_stdscr(rows=10, cols=80)
+    app = _make_app(stdscr)
+    app.metrics = None
+    app._draw_header()
+    calls = [str(c) for c in stdscr.addstr.call_args_list]
+    text = " ".join(calls)
+    assert "FLOW" in text
+
+
+def test_draw_header_metrics_narrow_terminal():
+    """Metrics are omitted on narrow terminals without crash."""
+    stdscr = _make_stdscr(rows=10, cols=30)
+    app = _make_app(stdscr)
+    app.metrics = {"cost_monthly": "10.00", "rl_5h": 50, "rl_7d": 60, "stale": False}
+    app._draw_header()
+    calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == 0]
+    texts = [str(c[0][2]) for c in calls]
+    combined = " ".join(texts)
+    # Metrics should not appear — terminal too narrow
+    assert "$10.00/mo" not in combined
+
+
+def test_draw_header_metrics_narrow_terminal_stale():
+    """Stale metrics are omitted on narrow terminals without crash."""
+    stdscr = _make_stdscr(rows=10, cols=30)
+    app = _make_app(stdscr)
+    app.metrics = {"cost_monthly": "5.00", "rl_5h": None, "rl_7d": None, "stale": True}
+    app._draw_header()
+    calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == 0]
+    texts = [str(c[0][2]) for c in calls]
+    combined = " ".join(texts)
+    assert "$5.00/mo" not in combined
+
+
 def test_draw_list_view_shows_tab_bar():
     """Tab bar text appears in the list view output."""
     state = make_state()

@@ -78,3 +78,9 @@ When parsing external API JSON (GitHub GraphQL, REST, Slack),
 exists with value `null`. Use `data.get("key") or {}` to handle
 both absent and null cases. This applies to every chained `.get()`
 call on external API responses where fields can be null.
+
+When converting JSON values with `int()`, `float()`, or `str()`,
+remember that `int(None)` raises `TypeError` — not `ValueError`.
+Always include `TypeError` in except clauses that parse JSON fields
+which could be `null`. This applies to any JSON file read from
+disk, not just API responses.

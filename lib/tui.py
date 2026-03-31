@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import detect_repo, project_root, read_version, write_tab_sequences
 from tui_data import (
+    load_account_metrics,
     load_all_flows,
     load_orchestration,
     orchestration_summary,
@@ -53,6 +54,7 @@ class TuiApp:
         self.orch_selected = 0
         self.issue_selected = 0
         self.use_color = False
+        self.metrics = None
 
     def refresh_data(self):
         """Re-read all state files and orchestration state."""
@@ -63,6 +65,7 @@ class TuiApp:
         self.orch_data = orchestration_summary(orch_state)
         if self.orch_data and self.orch_selected >= len(self.orch_data["items"]):
             self.orch_selected = max(0, len(self.orch_data["items"]) - 1)
+        self.metrics = load_account_metrics(self.root)
 
     def _init_colors(self):
         """Initialize color pairs if the terminal supports color."""
@@ -160,7 +163,7 @@ class TuiApp:
         self._safe_addstr(row, col, orch_label, orch_attr)
 
     def _draw_header(self):
-        """Draw the shared version header, repo name, tab bar, and separator."""
+        """Draw the shared version header, repo name, account metrics, tab bar, and separator."""
         _, max_x = self.stdscr.getmaxyx()
         border = "\u2500" * max_x
         self._safe_addstr(0, 0, border, curses.A_DIM)
@@ -169,8 +172,45 @@ class TuiApp:
         if self.repo_name:
             repo_col = 2 + len(version_text) + 1
             self._safe_addstr(0, repo_col, self.repo_name.upper(), self._color(COLOR_ACTIVE) | curses.A_BOLD)
+        self._draw_header_metrics(max_x)
         self._draw_tab_bar(2)
         self._safe_addstr(3, 2, "\u2500" * (max_x - 4), curses.A_DIM)
+
+    def _draw_header_metrics(self, max_x):
+        """Render account metrics right-aligned on header row 0."""
+        if not self.metrics:
+            return
+        m = self.metrics
+        cost_text = f"${m['cost_monthly']}/mo"
+        if m["stale"]:
+            rl_text = "5h:--  7d:--"
+            # cost + spaces + stale rl text + right margin
+            total_width = len(cost_text) + 2 + len(rl_text) + 2
+            if total_width > max_x - 30:
+                return
+            col = max_x - total_width
+            self._safe_addstr(0, col, cost_text, curses.A_DIM)
+            self._safe_addstr(0, col + len(cost_text) + 2, rl_text, curses.A_DIM)
+        else:
+            rl_5h_text = f"5h:{m['rl_5h']}%"
+            rl_7d_text = f"7d:{m['rl_7d']}%"
+            total_width = len(cost_text) + 2 + len(rl_5h_text) + 2 + len(rl_7d_text) + 2
+            if total_width > max_x - 30:
+                return
+            col = max_x - total_width
+            self._safe_addstr(0, col, cost_text, curses.A_DIM)
+            col += len(cost_text) + 2
+            self._safe_addstr(0, col, rl_5h_text, self._rl_color(m["rl_5h"]))
+            col += len(rl_5h_text) + 2
+            self._safe_addstr(0, col, rl_7d_text, self._rl_color(m["rl_7d"]))
+
+    def _rl_color(self, pct):
+        """Return color attribute for a rate limit percentage."""
+        if pct >= 90:
+            return self._color(COLOR_FAILED)
+        if pct >= 70:
+            return self._color(COLOR_ACTIVE)
+        return 0
 
     def _draw_list_view(self):
         """Draw the flow list and detail panel."""

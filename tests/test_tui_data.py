@@ -1,7 +1,10 @@
 """Tests for lib/tui_data.py — pure data layer for the interactive TUI."""
 
 import json
+import os
+import time
 from datetime import datetime
+from pathlib import Path
 
 import tui_data
 from conftest import make_orchestrate_state, make_state, write_state
@@ -1257,3 +1260,137 @@ def test_queue_item_display_icons():
     assert summary["items"][1]["icon"] == "\u2717"
     assert summary["items"][2]["icon"] == "\u25b6"
     assert summary["items"][3]["icon"] == "\u00b7"
+
+
+# --- load_account_metrics ---
+
+
+def _make_cost_dir(repo_root, year_month, sessions):
+    """Create cost files for testing. sessions is a dict of {session_id: cost_value}."""
+    cost_dir = repo_root / ".claude" / "cost" / year_month
+    cost_dir.mkdir(parents=True, exist_ok=True)
+    for session_id, value in sessions.items():
+        (cost_dir / session_id).write_text(str(value))
+    return cost_dir
+
+
+def _make_rate_limits(home_dir, five_hour_pct, seven_day_pct):
+    """Create a rate-limits.json file in the fake home directory."""
+    claude_dir = home_dir / ".claude"
+    claude_dir.mkdir(parents=True, exist_ok=True)
+    rl_path = claude_dir / "rate-limits.json"
+    rl_path.write_text(json.dumps({"five_hour_pct": five_hour_pct, "seven_day_pct": seven_day_pct}))
+    return rl_path
+
+
+def test_load_account_metrics_happy_path(tmp_path, monkeypatch):
+    """Returns cost, rate limits, and stale=False when all data is fresh."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    year_month = time.strftime("%Y-%m")
+    _make_cost_dir(repo_root, year_month, {"session-a": "1.50", "session-b": "2.75"})
+
+    home_dir = tmp_path / "home"
+    _make_rate_limits(home_dir, 45, 32)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home_dir))
+
+    result = tui_data.load_account_metrics(repo_root)
+    assert result["cost_monthly"] == "4.25"
+    assert result["rl_5h"] == 45
+    assert result["rl_7d"] == 32
+    assert result["stale"] is False
+
+
+def test_load_account_metrics_no_cost_directory(tmp_path, monkeypatch):
+    """Returns '0.00' cost when no cost directory exists."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    home_dir = tmp_path / "home"
+    _make_rate_limits(home_dir, 10, 20)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home_dir))
+
+    result = tui_data.load_account_metrics(repo_root)
+    assert result["cost_monthly"] == "0.00"
+
+
+def test_load_account_metrics_no_rate_limits_file(tmp_path, monkeypatch):
+    """Returns stale=True and None rates when rate-limits.json is missing."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    home_dir = tmp_path / "home"
+    home_dir.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home_dir))
+
+    result = tui_data.load_account_metrics(repo_root)
+    assert result["stale"] is True
+    assert result["rl_5h"] is None
+    assert result["rl_7d"] is None
+
+
+def test_load_account_metrics_stale_rate_limits(tmp_path, monkeypatch):
+    """Returns stale=True when rate-limits.json mtime is >10 min old."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    home_dir = tmp_path / "home"
+    rl_path = _make_rate_limits(home_dir, 55, 40)
+    # Set mtime to 15 minutes ago
+    old_time = time.time() - 900
+    os.utime(rl_path, (old_time, old_time))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home_dir))
+
+    result = tui_data.load_account_metrics(repo_root)
+    assert result["stale"] is True
+    assert result["rl_5h"] is None
+    assert result["rl_7d"] is None
+
+
+def test_load_account_metrics_malformed_cost_file(tmp_path, monkeypatch):
+    """Malformed cost files are skipped without error."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    year_month = time.strftime("%Y-%m")
+    _make_cost_dir(repo_root, year_month, {"good-session": "3.00", "bad-session": "not-a-number"})
+
+    home_dir = tmp_path / "home"
+    _make_rate_limits(home_dir, 10, 20)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home_dir))
+
+    result = tui_data.load_account_metrics(repo_root)
+    assert result["cost_monthly"] == "3.00"
+
+
+def test_load_account_metrics_malformed_rate_limits(tmp_path, monkeypatch):
+    """Malformed rate-limits.json is treated as missing."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    home_dir = tmp_path / "home"
+    claude_dir = home_dir / ".claude"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / "rate-limits.json").write_text("{invalid json")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home_dir))
+
+    result = tui_data.load_account_metrics(repo_root)
+    assert result["stale"] is True
+    assert result["rl_5h"] is None
+    assert result["rl_7d"] is None
+
+
+def test_load_account_metrics_null_rate_limit_values(tmp_path, monkeypatch):
+    """JSON null values for rate limit fields are treated as missing."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    home_dir = tmp_path / "home"
+    claude_dir = home_dir / ".claude"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / "rate-limits.json").write_text('{"five_hour_pct": null, "seven_day_pct": null}')
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home_dir))
+
+    result = tui_data.load_account_metrics(repo_root)
+    assert result["stale"] is True
+    assert result["rl_5h"] is None
+    assert result["rl_7d"] is None
