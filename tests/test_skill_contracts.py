@@ -2011,25 +2011,21 @@ def test_prime_commit_step_enforces_flow_commit_exclusively():
             )
 
 
-def test_prime_step_6_has_commit_or_exclude_gate():
-    """flow-prime Step 6 must have a HARD-GATE asking commit vs git-exclude."""
+def test_prime_step_6_no_git_exclude_option():
+    """Tombstone: removed in PR #696. Must not return."""
+    content = _read_skill("flow-prime")
+    assert "Git-exclude" not in content, (
+        "Git-exclude option was removed from flow-prime — prime now commits unconditionally"
+    )
+
+
+def test_prime_step_6_commits_generated_files():
+    """flow-prime Step 6 must unconditionally commit via /flow:flow-commit."""
     content = _read_skill("flow-prime")
     step_match = re.search(r"### Step 6.*?\n(.*?)(?=\n### Done)", content, re.DOTALL)
     assert step_match, "Could not find Step 6 in flow-prime/SKILL.md"
     step_text = step_match.group(1)
-
-    assert "<HARD-GATE>" in step_text, "flow-prime Step 6 must have a <HARD-GATE> for commit/exclude decision"
-    assert "Commit and push" in step_text, "flow-prime Step 6 HARD-GATE must offer 'Commit and push' option"
-    assert "Git-exclude" in step_text, "flow-prime Step 6 HARD-GATE must offer 'Git-exclude' option"
-
-    # Done section must have conditional reporting for both paths
-    done_match = re.search(r"(### Done.*?)(?=\n### |\Z)", content, re.DOTALL)
-    assert done_match, "Could not find Done section in flow-prime/SKILL.md"
-    done_text = done_match.group(1)
-    assert "committed" in done_text.lower(), "flow-prime Done section must mention committed path"
-    assert "excluded" in done_text.lower() or "local-only" in done_text.lower(), (
-        "flow-prime Done section must mention excluded/local-only path"
-    )
+    assert "flow-commit" in step_text, "flow-prime Step 6 must invoke /flow:flow-commit"
 
 
 def test_prime_has_commit_format_prompt():
@@ -2937,4 +2933,13 @@ def test_complete_no_force_ci():
     assert "ci --force" not in content, (
         "flow-complete must NOT use --force in bin/flow ci commands "
         "(removed in PR #637 — sentinel is now simulate-branch-aware)"
+    )
+
+
+def test_decompose_project_no_depends_on_text():
+    """Tombstone: 'Depends on' text removed in PR #697. Must not return."""
+    content = _read_skill("flow-decompose-project")
+    assert "Depends on:" not in content, (
+        "flow-decompose-project must NOT instruct including 'Depends on:' text in issue bodies "
+        "(removed in PR #697 — native blocked-by API links are the sole dependency mechanism)"
     )

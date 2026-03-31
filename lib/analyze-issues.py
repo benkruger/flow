@@ -23,6 +23,78 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from flow_utils import detect_repo
+
+
+def fetch_blocker_counts(repo, issue_numbers):
+    """Fetch native blocked-by counts for issues via GitHub GraphQL API.
+
+    Uses issueDependenciesSummary.blockedBy which returns the count of
+    open blockers for each issue. Makes a single batched query using
+    aliases to minimize API calls.
+
+    Args:
+        repo: "owner/repo" string.
+        issue_numbers: List of issue numbers to query.
+
+    Returns:
+        Dict mapping issue number to blocker count. Empty dict on any
+        failure (graceful degradation to label-only detection).
+    """
+    if not issue_numbers:
+        return {}
+
+    if "/" not in repo:
+        return {}
+
+    owner, name = repo.split("/", 1)
+
+    # Build aliased query fragments for each issue
+    fragments = []
+    for number in issue_numbers:
+        fragments.append(f"issue_{number}: issue(number: {number}) {{ issueDependenciesSummary {{ blockedBy }} }}")
+    body = " ".join(fragments)
+    query = f"query($owner: String!, $repo: String!) {{ repository(owner: $owner, name: $repo) {{ {body} }} }}"
+
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "api",
+                "graphql",
+                "-f",
+                f"query={query}",
+                "-f",
+                f"owner={owner}",
+                "-f",
+                f"repo={name}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return {}
+
+    if result.returncode != 0:
+        return {}
+
+    try:
+        data = json.loads(result.stdout)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+    repo_data = data.get("data") or {}
+    repo_data = repo_data.get("repository") or {}
+    counts = {}
+    for number in issue_numbers:
+        issue_data = repo_data.get(f"issue_{number}") or {}
+        summary = issue_data.get("issueDependenciesSummary") or {}
+        counts[number] = summary.get("blockedBy") or 0
+
+    return counts
+
+
 # File path patterns: known directory prefixes or paths with file extensions
 _DIR_PREFIXES = (
     "lib/",
@@ -149,11 +221,21 @@ def filter_issues(issues, filter_name):
     return [i for i in issues if _FILTERS[filter_name](i)]
 
 
-def analyze_issues(issues):
+def analyze_issues(issues, blocker_counts=None):
     """Analyze a list of issues from gh issue list JSON.
+
+    Args:
+        issues: List of issue dicts from gh issue list JSON.
+        blocker_counts: Optional dict mapping issue number to native
+            blocker count from GraphQL. When provided, an issue is
+            blocked if it has the Blocked label OR native blocker
+            count > 0.
 
     Returns structured result with in_progress and available issues.
     """
+    if blocker_counts is None:
+        blocker_counts = {}
+
     if not issues:
         return {"status": "ok", "total": 0, "in_progress": [], "issues": []}
 
@@ -185,6 +267,8 @@ def analyze_issues(issues):
         stale_info = check_stale(file_paths, age_days)
         category = categorize(label_names, issue["title"], body)
 
+        native_blocked = blocker_counts.get(number, 0) > 0
+
         available.append(
             {
                 "number": number,
@@ -194,7 +278,8 @@ def analyze_issues(issues):
                 "category": category,
                 "age_days": age_days,
                 "decomposed": label_flags["decomposed"],
-                "blocked": label_flags["blocked"],
+                "blocked": label_flags["blocked"] or native_blocked,
+                "native_blocked": native_blocked,
                 "stale": stale_info["stale"],
                 "stale_missing": stale_info["stale_missing"],
                 "file_paths": file_paths,
@@ -222,14 +307,14 @@ def main():
         action="store_const",
         const="ready",
         dest="filter",
-        help="Show only issues without Blocked label",
+        help="Show only issues that are not blocked",
     )
     filter_group.add_argument(
         "--blocked",
         action="store_const",
         const="blocked",
         dest="filter",
-        help="Show only issues with Blocked label",
+        help="Show only issues that are blocked",
     )
     filter_group.add_argument(
         "--decomposed",
@@ -313,7 +398,14 @@ def main():
         )
         sys.exit(1)
 
-    output = analyze_issues(issues)
+    # Fetch native blocker counts via GraphQL (best-effort)
+    blocker_counts = {}
+    repo = detect_repo()
+    if repo:
+        all_numbers = [i["number"] for i in issues]
+        blocker_counts = fetch_blocker_counts(repo, all_numbers)
+
+    output = analyze_issues(issues, blocker_counts=blocker_counts)
     if args.filter:
         output["issues"] = filter_issues(output["issues"], args.filter)
         output["total"] = len(output["in_progress"]) + len(output["issues"])
