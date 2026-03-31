@@ -50,7 +50,7 @@ Each child issue contains:
 - **Files to Investigate** — verified paths
 - **Out of Scope** — explicit boundaries
 - **Context** — business reason and constraints
-- **Depends on: #N** — text-based dependency references (belt and suspenders with API links)
+- **Dependencies** — tracked via native GitHub blocked-by API relationships (created in Step 5)
 
 ---
 
@@ -62,7 +62,7 @@ The skill creates three types of GitHub relationships:
 - **Blocked-by** — dependency relationships between child issues per the DAG
 - **Milestone** — all issues assigned to a milestone with the user-specified due date
 
-All relationship creation is best-effort. Text-based "Depends on: #N" references in issue bodies provide a fallback if API linking fails.
+All relationship creation is best-effort. Native blocked-by relationships are the sole dependency mechanism — `analyze-issues` queries them via GraphQL to detect blocked issues.
 
 ---
 
