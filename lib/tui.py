@@ -613,58 +613,111 @@ class TuiApp:
     def _activate_iterm_tab(self, worktree_path):
         """Try to activate an existing iTerm2 tab whose CWD matches worktree_path.
 
-        Uses AppleScript to iterate all iTerm2 windows/tabs and check each
-        session's path variable (set by shell integration). Returns True if
-        a matching tab was found and activated, False otherwise.
+        Uses a three-phase approach:
+        1. AppleScript collects tty/window-index/tab-index for every session
+        2. For each tty, query OS-level CWD via ps + lsof
+        3. On match, a second AppleScript activates the correct tab
+
+        This works regardless of shell integration — tty and lsof are
+        kernel-level and always available.
         """
-        script = (
+        # Phase A: collect tty-to-tab mapping
+        collect_script = (
             'tell application "iTerm2"\n'
-            "    repeat with w in windows\n"
-            "        repeat with t in tabs of w\n"
-            "            set s to current session of t\n"
-            "            try\n"
-            f'                if (variable named "path" of s) = "{worktree_path}" then\n'
-            "                    select w\n"
-            "                    select t\n"
-            '                    return "true"\n'
-            "                end if\n"
-            "            end try\n"
+            '    set results to ""\n'
+            "    repeat with w from 1 to count of windows\n"
+            "        repeat with t from 1 to count of tabs of (item w of windows)\n"
+            "            set s to current session of (item t of tabs of (item w of windows))\n"
+            '            set results to results & (tty of s) & "|" & w & "|" & t & linefeed\n'
             "        end repeat\n"
             "    end repeat\n"
-            "end tell\n"
-            'return "false"'
+            "    return results\n"
+            "end tell"
         )
         try:
             result = subprocess.run(
-                ["osascript", "-e", script],
+                ["osascript", "-e", collect_script],
                 capture_output=True,
                 text=True,
                 timeout=5,
             )
-            return result.returncode == 0 and result.stdout.strip().lower() == "true"
+            if result.returncode != 0:
+                return False
         except (subprocess.TimeoutExpired, OSError):
             return False
 
-    def _open_worktree(self):
-        """Open the selected flow's worktree in a terminal tab.
+        lines = [line.strip() for line in result.stdout.strip().split("\n") if line.strip()]
+        if not lines:
+            return False
 
-        For iTerm2, first tries to activate an existing tab whose CWD
-        matches the worktree path. Falls back to opening a new tab.
-        """
+        target = os.path.realpath(worktree_path)
+
+        # Phase B: match CWD via ps + lsof
+        for line in lines:
+            parts = line.split("|")
+            if len(parts) != 3:
+                continue
+            tty_path, win_idx, tab_idx = parts
+            # Strip /dev/ prefix for ps -t
+            tty_name = tty_path.replace("/dev/", "")
+
+            try:
+                ps_result = subprocess.run(
+                    ["ps", "-o", "pid=", "-t", tty_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                pids = [p.strip() for p in ps_result.stdout.strip().split("\n") if p.strip()]
+            except (subprocess.TimeoutExpired, OSError):
+                continue
+
+            for pid in pids:
+                try:
+                    lsof_result = subprocess.run(
+                        ["lsof", "-a", "-d", "cwd", "-Fn", "-p", pid],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if lsof_result.returncode != 0:
+                        continue
+                except (subprocess.TimeoutExpired, OSError):
+                    continue
+
+                for lsof_line in lsof_result.stdout.split("\n"):
+                    if lsof_line.startswith("n"):
+                        cwd = os.path.realpath(lsof_line[1:])
+                        if cwd == target:
+                            # Phase C: activate matched tab
+                            activate_script = (
+                                'tell application "iTerm2"\n'
+                                f"    set w to item {win_idx} of windows\n"
+                                f"    set t to item {tab_idx} of tabs of w\n"
+                                "    select w\n"
+                                "    select t\n"
+                                "end tell"
+                            )
+                            try:
+                                subprocess.run(
+                                    ["osascript", "-e", activate_script],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=5,
+                                )
+                            except (subprocess.TimeoutExpired, OSError):
+                                pass
+                            return True
+        return False
+
+    def _open_worktree(self):
+        """Switch to the iTerm2 tab running in the selected flow's worktree."""
         if not self.flows:
             return
         flow = self.flows[self.selected]
         worktree_path = self.root / flow["worktree"]
         if worktree_path.is_dir():
-            term = os.environ.get("TERM_PROGRAM", "")
-            if term == "iTerm.app" and self._activate_iterm_tab(str(worktree_path)):
-                return
-            app = "iTerm" if term == "iTerm.app" else "Terminal"
-            subprocess.Popen(
-                ["open", "-a", app, str(worktree_path)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            self._activate_iterm_tab(str(worktree_path))
 
     def _open_pr(self):
         """Open the selected flow's PR in a browser."""
