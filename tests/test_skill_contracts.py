@@ -2910,3 +2910,12 @@ def test_complete_no_force_ci():
         "flow-complete must NOT use --force in bin/flow ci commands "
         "(removed in PR #637 — sentinel is now simulate-branch-aware)"
     )
+
+
+def test_decompose_project_no_depends_on_text():
+    """Tombstone: 'Depends on' text removed in PR #697. Must not return."""
+    content = _read_skill("flow-decompose-project")
+    assert "Depends on:" not in content, (
+        "flow-decompose-project must NOT instruct including 'Depends on:' text in issue bodies "
+        "(removed in PR #697 — native blocked-by API links are the sole dependency mechanism)"
+    )

@@ -44,6 +44,9 @@ def fetch_blocker_counts(repo, issue_numbers):
     if not issue_numbers:
         return {}
 
+    if "/" not in repo:
+        return {}
+
     owner, name = repo.split("/", 1)
 
     # Build aliased query fragments for each issue
@@ -81,12 +84,13 @@ def fetch_blocker_counts(repo, issue_numbers):
     except (json.JSONDecodeError, TypeError):
         return {}
 
-    repo_data = data.get("data", {}).get("repository", {})
+    repo_data = data.get("data") or {}
+    repo_data = repo_data.get("repository") or {}
     counts = {}
     for number in issue_numbers:
-        issue_data = repo_data.get(f"issue_{number}", {})
-        summary = issue_data.get("issueDependenciesSummary", {})
-        counts[number] = summary.get("blockedBy", 0)
+        issue_data = repo_data.get(f"issue_{number}") or {}
+        summary = issue_data.get("issueDependenciesSummary") or {}
+        counts[number] = summary.get("blockedBy") or 0
 
     return counts
 
@@ -303,14 +307,14 @@ def main():
         action="store_const",
         const="ready",
         dest="filter",
-        help="Show only issues without Blocked label",
+        help="Show only issues that are not blocked",
     )
     filter_group.add_argument(
         "--blocked",
         action="store_const",
         const="blocked",
         dest="filter",
-        help="Show only issues with Blocked label",
+        help="Show only issues that are blocked",
     )
     filter_group.add_argument(
         "--decomposed",

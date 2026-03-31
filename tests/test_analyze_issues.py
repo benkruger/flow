@@ -664,6 +664,42 @@ def test_fetch_blocker_counts_malformed_json():
     assert result == {}
 
 
+def test_fetch_blocker_counts_null_repository():
+    """Handles null repository in GraphQL response without crashing."""
+    response = json.dumps({"data": {"repository": None}})
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout=response, stderr="")
+        result = _mod.fetch_blocker_counts("owner/repo", [10])
+
+    assert result == {10: 0}
+
+
+def test_fetch_blocker_counts_null_summary():
+    """Handles null issueDependenciesSummary without crashing."""
+    response = json.dumps({"data": {"repository": {"issue_10": {"issueDependenciesSummary": None}}}})
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout=response, stderr="")
+        result = _mod.fetch_blocker_counts("owner/repo", [10])
+
+    assert result == {10: 0}
+
+
+def test_fetch_blocker_counts_null_blocked_by():
+    """Handles null blockedBy value without crashing."""
+    response = json.dumps({"data": {"repository": {"issue_10": {"issueDependenciesSummary": {"blockedBy": None}}}}})
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout=response, stderr="")
+        result = _mod.fetch_blocker_counts("owner/repo", [10])
+
+    assert result == {10: 0}
+
+
+def test_fetch_blocker_counts_malformed_repo():
+    """Returns empty dict when repo string has no slash."""
+    result = _mod.fetch_blocker_counts("noslash", [10])
+    assert result == {}
+
+
 # --- analyze_issues with blocker counts ---
 
 
