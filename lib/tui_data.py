@@ -379,3 +379,53 @@ def orchestration_summary(state, now=None):
         "is_running": completed_at is None,
         "items": items,
     }
+
+
+_STALE_THRESHOLD_SECONDS = 600  # 10 minutes
+
+
+def load_account_metrics(repo_root):
+    """Load account metrics (monthly cost, rate limits) for TUI header display.
+
+    Returns dict with keys: cost_monthly (str), rl_5h (int|None),
+    rl_7d (int|None), stale (bool).
+    """
+    import time as _time
+
+    repo_root = Path(repo_root)
+
+    # --- Monthly cost from per-session cost files ---
+    year_month = _time.strftime("%Y-%m")
+    cost_dir = repo_root / ".claude" / "cost" / year_month
+    total_cost = 0.0
+    if cost_dir.is_dir():
+        for cost_file in cost_dir.iterdir():
+            try:
+                total_cost += float(cost_file.read_text().strip())
+            except (ValueError, OSError):
+                continue
+    cost_monthly = f"{total_cost:.2f}"
+
+    # --- Rate limits from ~/.claude/rate-limits.json ---
+    rl_path = Path.home() / ".claude" / "rate-limits.json"
+    rl_5h = None
+    rl_7d = None
+    stale = True
+
+    try:
+        mtime = rl_path.stat().st_mtime
+        age = _time.time() - mtime
+        if age <= _STALE_THRESHOLD_SECONDS:
+            data = json.loads(rl_path.read_text())
+            rl_5h = int(data["five_hour_pct"])
+            rl_7d = int(data["seven_day_pct"])
+            stale = False
+    except (OSError, json.JSONDecodeError, KeyError, ValueError):
+        pass
+
+    return {
+        "cost_monthly": cost_monthly,
+        "rl_5h": rl_5h,
+        "rl_7d": rl_7d,
+        "stale": stale,
+    }
