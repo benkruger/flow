@@ -657,9 +657,11 @@ class TuiApp:
             parts = line.split("|")
             if len(parts) != 3:
                 continue
-            tty_path, win_idx, tab_idx = parts
+            tty_path, win_idx, tab_idx = [p.strip() for p in parts]
             # Strip /dev/ prefix for ps -t
             tty_name = tty_path.replace("/dev/", "")
+            if not tty_name:
+                continue
 
             try:
                 ps_result = subprocess.run(
@@ -686,7 +688,7 @@ class TuiApp:
                     continue
 
                 for lsof_line in lsof_result.stdout.split("\n"):
-                    if lsof_line.startswith("n"):
+                    if lsof_line.startswith("n") and len(lsof_line) > 1:
                         cwd = os.path.realpath(lsof_line[1:])
                         if cwd == target:
                             # Phase C: activate matched tab

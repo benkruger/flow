@@ -895,6 +895,64 @@ def test_activate_iterm_tab_activation_timeout(tmp_path):
         assert app._activate_iterm_tab(str(worktree_dir)) is True
 
 
+def test_activate_iterm_tab_empty_lsof_n_line(tmp_path):
+    """Skips bare 'n' lsof lines to avoid false-positive CWD match on empty path."""
+    worktree_dir = tmp_path / ".worktrees" / "test-feature"
+    worktree_dir.mkdir(parents=True)
+    state = make_state()
+    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+
+    tty_output = "/dev/ttys001|1|1\n"
+    lsof_with_bare_n = subprocess.CompletedProcess(args=[], returncode=0, stdout="p123\nfcwd\nn\n", stderr="")
+    calls = [
+        _osascript_result(tty_output),
+        _ps_result([1234]),
+        lsof_with_bare_n,
+    ]
+    with patch("tui.subprocess.run", side_effect=calls):
+        assert app._activate_iterm_tab(str(worktree_dir)) is False
+
+
+def test_activate_iterm_tab_empty_tty_name(tmp_path):
+    """Skips session when tty path strips to empty string."""
+    worktree_dir = tmp_path / ".worktrees" / "test-feature"
+    worktree_dir.mkdir(parents=True)
+    state = make_state()
+    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+
+    # /dev/ strips to empty, second tty matches
+    tty_output = "/dev/|1|1\n/dev/ttys002|1|2\n"
+    calls = [
+        _osascript_result(tty_output),
+        _ps_result([5678]),
+        _lsof_result(str(worktree_dir)),
+        _osascript_result("true"),
+    ]
+    with patch("tui.subprocess.run", side_effect=calls):
+        assert app._activate_iterm_tab(str(worktree_dir)) is True
+
+
+def test_activate_iterm_tab_whitespace_indices(tmp_path):
+    """Strips whitespace from window/tab indices before AppleScript interpolation."""
+    worktree_dir = tmp_path / ".worktrees" / "test-feature"
+    worktree_dir.mkdir(parents=True)
+    state = make_state()
+    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+
+    tty_output = "/dev/ttys001| 2 | 3 \n"
+    calls = [
+        _osascript_result(tty_output),
+        _ps_result([5678]),
+        _lsof_result(str(worktree_dir)),
+        _osascript_result("true"),
+    ]
+    with patch("tui.subprocess.run", side_effect=calls) as mock_run:
+        assert app._activate_iterm_tab(str(worktree_dir)) is True
+        activate_script = mock_run.call_args_list[3][0][0][2]
+        assert "item 2 of windows" in activate_script
+        assert "item 3 of tabs" in activate_script
+
+
 # --- _open_worktree ---
 
 
@@ -934,8 +992,8 @@ def test_open_worktree_no_terminal_fallback():
     import inspect
 
     source = inspect.getsource(tui.TuiApp._open_worktree)
-    assert "open" not in source or "open -a" not in source
-    assert "Terminal" not in source
+    assert "Popen" not in source, "subprocess.Popen fallback removed in PR #713"
+    assert "Terminal" not in source, "Terminal.app codepath removed in PR #713"
 
 
 # --- _open_pr ---
