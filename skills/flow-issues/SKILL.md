@@ -25,10 +25,10 @@ close issues.
 Optional flags filter the issue list by readiness. Flags are mutually
 exclusive — pass at most one.
 
-- `--ready` — issues without the "Blocked" label (can start immediately)
-- `--blocked` — issues with the "Blocked" label (waiting on other work)
+- `--ready` — issues that are not blocked (can start immediately)
+- `--blocked` — issues that are blocked (waiting on other work)
 - `--decomposed` — issues with the "Decomposed" label (work-ready with prior analysis)
-- `--quick-start` — decomposed issues without the "Blocked" label (best candidates for autonomous execution)
+- `--quick-start` — decomposed issues that are not blocked (best candidates for autonomous execution)
 
 No flag returns all issues (current default behavior).
 
@@ -165,7 +165,7 @@ is the `stale_missing` count.
 
 The `Rationale` column explains why this issue is at this position:
 
-- If blocked: "has Blocked label"
+- If blocked: "blocked" or a brief reason if known
 - If decomposed: "decomposed — ready for autonomous execution"
 - Otherwise: brief reason based on your impact assessment
 

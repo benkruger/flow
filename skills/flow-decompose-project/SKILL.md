@@ -143,8 +143,7 @@ For each child issue, draft:
 
 - **Title** — concise, actionable
 - **Body** — Problem, Acceptance Criteria, Files to Investigate, Out of
-  Scope, Context sections. Include "Depends on: #N" text for dependencies
-  (numbers will be filled after creation).
+  Scope, Context sections.
 - **Labels** — `decomposed` plus the auto-derived phase label
 - **Dependencies** — which other child issues this depends on (by title,
   resolved to numbers in Step 4)
@@ -249,9 +248,6 @@ Output in your response (not via Bash) inside a fenced code block:
 Use the Read tool to read the session state and approved issue list.
 
 Create each child issue in topological order (leaves first). For each:
-
-Resolve "Depends on" text references — replace title references with
-actual `#N` numbers from previously created issues.
 
 Write the issue body to `.flow-states/decompose-project-<id>-issue-body`
 using the Write tool, then create the issue:

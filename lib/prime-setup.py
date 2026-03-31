@@ -103,7 +103,7 @@ EXCLUDE_ENTRIES = [
     ".flow-states/",
     ".worktrees/",
     ".flow.json",
-    "bin/dependencies",
+    ".claude/cost/",
     ".claude/scheduled_tasks.lock",
 ]
 
