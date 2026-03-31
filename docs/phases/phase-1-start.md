@@ -19,7 +19,7 @@ Steps 1–9 serialize all main-branch work behind a lock. Only one flow-start ru
 
 ### 1. Acquire start lock
 
-Acquires a lock (`lib/start-lock.py`) using a non-blocking `--acquire` call. If the lock is already held, invokes `/loop 15s /flow:flow-start` to poll every 15 seconds until the lock is released. Since nothing has executed yet, re-running the entire skill is safe.
+Acquires a queue-based lock (`lib/start-lock.py`) using a non-blocking `--acquire` call. Each flow creates an entry in `.flow-states/start-queue/` and the oldest entry (by mtime, then feature name) holds the lock. If the lock is already held, invokes `/loop 15s /flow:flow-start` to poll every 15 seconds until the holder releases. Since nothing has executed yet, re-running the entire skill is safe.
 
 ### 2. Pre-flight checks
 
@@ -51,7 +51,7 @@ If there are any uncommitted changes (dependency updates + CI fixes), commits th
 
 ### 9. Release start lock
 
-Releases the lock so other concurrent starts can proceed.
+Releases the lock by removing this flow's entry from the queue so the next waiting flow can proceed.
 
 This ensures every worktree starts from a clean, current main.
 

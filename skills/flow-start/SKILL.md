@@ -286,7 +286,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_ti
 Report to the user that CI is consistently failing on pristine main.
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
 ```
 
 ### Step 7 — Update dependencies
@@ -387,7 +387,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=10
 ```
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
 ```
 
 <HARD-GATE>
