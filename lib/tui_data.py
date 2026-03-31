@@ -419,7 +419,7 @@ def load_account_metrics(repo_root):
             rl_5h = int(data["five_hour_pct"])
             rl_7d = int(data["seven_day_pct"])
             stale = False
-    except (OSError, json.JSONDecodeError, KeyError, ValueError):
+    except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):
         pass
 
     return {

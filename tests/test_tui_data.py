@@ -1377,3 +1377,20 @@ def test_load_account_metrics_malformed_rate_limits(tmp_path, monkeypatch):
     assert result["stale"] is True
     assert result["rl_5h"] is None
     assert result["rl_7d"] is None
+
+
+def test_load_account_metrics_null_rate_limit_values(tmp_path, monkeypatch):
+    """JSON null values for rate limit fields are treated as missing."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    home_dir = tmp_path / "home"
+    claude_dir = home_dir / ".claude"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / "rate-limits.json").write_text('{"five_hour_pct": null, "seven_day_pct": null}')
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home_dir))
+
+    result = tui_data.load_account_metrics(repo_root)
+    assert result["stale"] is True
+    assert result["rl_5h"] is None
+    assert result["rl_7d"] is None
