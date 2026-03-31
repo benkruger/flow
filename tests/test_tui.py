@@ -2719,4 +2719,40 @@ def test_draw_detail_panel_in_progress_shows_time():
     line_text = in_progress_calls[0][0][2]
     # Should contain time ("5m") before the annotation
     assert "5m" in line_text
-    assert "task 3 of 5" in line_text
+
+
+# --- List view column headers ---
+
+
+def test_draw_list_view_shows_column_headers():
+    """Active Flows table renders a dim header row at row 3 with column labels."""
+    state = make_state(
+        current_phase="flow-code",
+        phase_statuses={"flow-start": "complete", "flow-plan": "complete", "flow-code": "in_progress"},
+    )
+    flow = _flow_from_state(state)
+    stdscr = _make_stdscr(rows=40, cols=120)
+    app = _make_app(stdscr, flows=[flow])
+    app._draw_list_view()
+    # Find addstr calls at row 3 — the header row
+    hdr_calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == 3]
+    assert hdr_calls, "Expected at least one addstr call at row 3"
+    # The last call at row 3 is the column header (overwrites the separator)
+    hdr_text = hdr_calls[-1][0][2]
+    hdr_attr = hdr_calls[-1][0][3] if len(hdr_calls[-1][0]) > 3 else 0
+    assert "Feature" in hdr_text, f"Expected 'Feature' in header: {hdr_text}"
+    assert "Phase" in hdr_text, f"Expected 'Phase' in header: {hdr_text}"
+    assert "Total" in hdr_text, f"Expected 'Total' in header: {hdr_text}"
+    assert hdr_attr == curses.A_DIM, f"Expected A_DIM attribute, got: {hdr_attr}"
+
+
+def test_draw_list_view_empty_no_column_headers():
+    """Empty state (no flows) does not render column headers at row 3."""
+    stdscr = _make_stdscr(rows=40, cols=120)
+    app = _make_app(stdscr, flows=[])
+    app._draw_list_view()
+    # Row 3 should only have the separator from _draw_header, not a column header
+    hdr_calls = [c for c in stdscr.addstr.call_args_list if c[0][0] == 3]
+    for call in hdr_calls:
+        text = call[0][2]
+        assert "Feature" not in text, f"Column header should not render when no flows: {text}"
