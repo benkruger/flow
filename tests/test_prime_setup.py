@@ -322,11 +322,23 @@ def test_git_exclude_not_updated_when_already_present(git_repo):
     info_dir = git_repo / ".git" / "info"
     info_dir.mkdir(parents=True, exist_ok=True)
     (info_dir / "exclude").write_text(
-        ".flow-states/\n.worktrees/\n.flow.json\nbin/dependencies\n.claude/scheduled_tasks.lock\n"
+        ".flow-states/\n.worktrees/\n.flow.json\n.claude/cost/\n.claude/scheduled_tasks.lock\n"
     )
 
     updated = _mod.update_git_exclude(git_repo)
     assert updated is False
+
+
+def test_exclude_entries_no_bin_dependencies():
+    """Tombstone: removed in PR #696. Must not return."""
+    assert "bin/dependencies" not in _mod.EXCLUDE_ENTRIES, (
+        "bin/dependencies was removed from EXCLUDE_ENTRIES — it is committed project config"
+    )
+
+
+def test_exclude_entries_has_claude_cost():
+    """.claude/cost/ must be git-excluded (local cost tracking)."""
+    assert ".claude/cost/" in _mod.EXCLUDE_ENTRIES
 
 
 # --- In-process tests ---
