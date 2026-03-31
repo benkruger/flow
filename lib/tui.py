@@ -7,7 +7,6 @@ Usage: flow tui
 """
 
 import curses
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -610,116 +609,49 @@ class TuiApp:
             stderr=subprocess.DEVNULL,
         )
 
-    def _activate_iterm_tab(self, worktree_path):
-        """Try to activate an existing iTerm2 tab whose CWD matches worktree_path.
+    def _activate_iterm_tab(self, session_tty):
+        """Activate the iTerm2 tab whose session tty matches session_tty.
 
-        Uses a three-phase approach:
-        1. AppleScript collects tty/window-index/tab-index for every session
-        2. For each tty, query OS-level CWD via ps + lsof
-        3. On match, a second AppleScript activates the correct tab
-
-        This works regardless of shell integration — tty and lsof are
-        kernel-level and always available.
+        Takes a tty device path (e.g. /dev/ttys007) stored in the state file
+        at session start. A single AppleScript iterates all windows/tabs,
+        matches tty of session against the stored value, and selects it.
         """
-        # Phase A: collect tty-to-tab mapping
-        collect_script = (
+        script = (
             'tell application "iTerm2"\n'
-            '    set results to ""\n'
             "    repeat with w from 1 to count of windows\n"
             "        repeat with t from 1 to count of tabs of (item w of windows)\n"
             "            set s to current session of (item t of tabs of (item w of windows))\n"
-            '            set results to results & (tty of s) & "|" & w & "|" & t & linefeed\n'
+            f'            if tty of s is "{session_tty}" then\n'
+            "                select (item w of windows)\n"
+            "                select (item t of tabs of (item w of windows))\n"
+            '                return "activated"\n'
+            "            end if\n"
             "        end repeat\n"
             "    end repeat\n"
-            "    return results\n"
+            '    return "not found"\n'
             "end tell"
         )
         try:
             result = subprocess.run(
-                ["osascript", "-e", collect_script],
+                ["osascript", "-e", script],
                 capture_output=True,
                 text=True,
                 timeout=5,
             )
             if result.returncode != 0:
                 return False
+            return result.stdout.strip() == "activated"
         except (subprocess.TimeoutExpired, OSError):
             return False
-
-        lines = [line.strip() for line in result.stdout.strip().split("\n") if line.strip()]
-        if not lines:
-            return False
-
-        target = os.path.realpath(worktree_path)
-
-        # Phase B: match CWD via ps + lsof
-        for line in lines:
-            parts = line.split("|")
-            if len(parts) != 3:
-                continue
-            tty_path, win_idx, tab_idx = [p.strip() for p in parts]
-            # Strip /dev/ prefix for ps -t
-            tty_name = tty_path.replace("/dev/", "")
-            if not tty_name:
-                continue
-
-            try:
-                ps_result = subprocess.run(
-                    ["ps", "-o", "pid=", "-t", tty_name],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                pids = [p.strip() for p in ps_result.stdout.strip().split("\n") if p.strip()]
-            except (subprocess.TimeoutExpired, OSError):
-                continue
-
-            for pid in pids:
-                try:
-                    lsof_result = subprocess.run(
-                        ["lsof", "-a", "-d", "cwd", "-Fn", "-p", pid],
-                        capture_output=True,
-                        text=True,
-                        timeout=5,
-                    )
-                    if lsof_result.returncode != 0:
-                        continue
-                except (subprocess.TimeoutExpired, OSError):
-                    continue
-
-                for lsof_line in lsof_result.stdout.split("\n"):
-                    if lsof_line.startswith("n") and len(lsof_line) > 1:
-                        cwd = os.path.realpath(lsof_line[1:])
-                        if cwd == target:
-                            # Phase C: activate matched tab
-                            activate_script = (
-                                'tell application "iTerm2"\n'
-                                f"    set w to item {win_idx} of windows\n"
-                                f"    set t to item {tab_idx} of tabs of w\n"
-                                "    select w\n"
-                                "    select t\n"
-                                "end tell"
-                            )
-                            try:
-                                subprocess.run(
-                                    ["osascript", "-e", activate_script],
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=5,
-                                )
-                            except (subprocess.TimeoutExpired, OSError):
-                                pass
-                            return True
-        return False
 
     def _open_worktree(self):
         """Switch to the iTerm2 tab running in the selected flow's worktree."""
         if not self.flows:
             return
         flow = self.flows[self.selected]
-        worktree_path = self.root / flow["worktree"]
-        if worktree_path.is_dir():
-            self._activate_iterm_tab(str(worktree_path))
+        session_tty = flow["state"].get("session_tty")
+        if session_tty:
+            self._activate_iterm_tab(session_tty)
 
     def _open_pr(self):
         """Open the selected flow's PR in a browser."""

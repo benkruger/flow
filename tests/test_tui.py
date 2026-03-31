@@ -663,153 +663,53 @@ def test_list_input_refresh_key():
 # --- _activate_iterm_tab ---
 
 
-def _osascript_result(stdout="", returncode=0):
-    """Build a CompletedProcess for osascript calls."""
-    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr="")
-
-
-def _ps_result(pids):
-    """Build a CompletedProcess for ps calls returning PID list."""
-    stdout = "\n".join(str(p) for p in pids) + "\n" if pids else ""
-    return subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout, stderr="")
-
-
-def _lsof_result(cwd, returncode=0):
-    """Build a CompletedProcess for lsof calls returning CWD."""
-    stdout = f"p123\nfcwd\nn{cwd}\n" if returncode == 0 else ""
-    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr="")
-
-
-def test_activate_iterm_tab_tty_cwd_match(tmp_path):
-    """Returns True when tty-based CWD lookup finds a matching tab."""
-    worktree_dir = tmp_path / ".worktrees" / "test-feature"
-    worktree_dir.mkdir(parents=True)
+def test_activate_iterm_tab_match():
+    """Returns True when osascript finds and activates matching tty tab."""
     state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
-
-    tty_output = "/dev/ttys001|1|1\n"
-    calls = [
-        _osascript_result(tty_output),  # collect ttys
-        _ps_result([1234]),  # ps for ttys001
-        _lsof_result(str(worktree_dir)),  # lsof for pid 1234
-        _osascript_result("true"),  # activate tab
-    ]
-    with patch("tui.subprocess.run", side_effect=calls):
-        assert app._activate_iterm_tab(str(worktree_dir)) is True
+    app = _make_app(flows=[_flow_from_state(state)])
+    result = subprocess.CompletedProcess(args=[], returncode=0, stdout="activated\n", stderr="")
+    with patch("tui.subprocess.run", return_value=result):
+        assert app._activate_iterm_tab("/dev/ttys007") is True
 
 
-def test_activate_iterm_tab_no_match(tmp_path):
-    """Returns False when no tty's CWD matches the worktree path."""
-    worktree_dir = tmp_path / ".worktrees" / "test-feature"
-    worktree_dir.mkdir(parents=True)
+def test_activate_iterm_tab_no_match():
+    """Returns False when osascript finds no matching tty tab."""
     state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
-
-    tty_output = "/dev/ttys001|1|1\n"
-    calls = [
-        _osascript_result(tty_output),  # collect ttys
-        _ps_result([1234]),  # ps for ttys001
-        _lsof_result("/some/other/path"),  # lsof — no match
-    ]
-    with patch("tui.subprocess.run", side_effect=calls):
-        assert app._activate_iterm_tab(str(worktree_dir)) is False
+    app = _make_app(flows=[_flow_from_state(state)])
+    result = subprocess.CompletedProcess(args=[], returncode=0, stdout="not found\n", stderr="")
+    with patch("tui.subprocess.run", return_value=result):
+        assert app._activate_iterm_tab("/dev/ttys007") is False
 
 
-def test_activate_iterm_tab_lsof_permission_error(tmp_path):
-    """Returns True when first PID fails lsof but second matches."""
-    worktree_dir = tmp_path / ".worktrees" / "test-feature"
-    worktree_dir.mkdir(parents=True)
+def test_activate_iterm_tab_script_contains_tty():
+    """The osascript command includes the tty string for matching."""
     state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
-
-    tty_output = "/dev/ttys001|1|1\n"
-    calls = [
-        _osascript_result(tty_output),  # collect ttys
-        _ps_result([1111, 2222]),  # ps returns two PIDs
-        _lsof_result("", returncode=1),  # lsof fails for pid 1111
-        _lsof_result(str(worktree_dir)),  # lsof succeeds for pid 2222
-        _osascript_result("true"),  # activate tab
-    ]
-    with patch("tui.subprocess.run", side_effect=calls):
-        assert app._activate_iterm_tab(str(worktree_dir)) is True
+    app = _make_app(flows=[_flow_from_state(state)])
+    result = subprocess.CompletedProcess(args=[], returncode=0, stdout="activated\n", stderr="")
+    with patch("tui.subprocess.run", return_value=result) as mock_run:
+        app._activate_iterm_tab("/dev/ttys042")
+        script = mock_run.call_args[0][0][2]
+        assert "/dev/ttys042" in script
 
 
-def test_activate_iterm_tab_osascript_timeout(tmp_path):
-    """Returns False when initial osascript (tty collection) times out."""
-    worktree_dir = tmp_path / ".worktrees" / "test-feature"
-    worktree_dir.mkdir(parents=True)
+def test_activate_iterm_tab_osascript_timeout():
+    """Returns False when osascript times out."""
     state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+    app = _make_app(flows=[_flow_from_state(state)])
     with patch("tui.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="osascript", timeout=5)):
-        assert app._activate_iterm_tab(str(worktree_dir)) is False
+        assert app._activate_iterm_tab("/dev/ttys007") is False
 
 
-def test_activate_iterm_tab_osascript_error(tmp_path):
-    """Returns False when initial osascript exits with non-zero status."""
-    worktree_dir = tmp_path / ".worktrees" / "test-feature"
-    worktree_dir.mkdir(parents=True)
+def test_activate_iterm_tab_osascript_error():
+    """Returns False when osascript exits with non-zero status."""
     state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+    app = _make_app(flows=[_flow_from_state(state)])
     result = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
     with patch("tui.subprocess.run", return_value=result):
-        assert app._activate_iterm_tab(str(worktree_dir)) is False
+        assert app._activate_iterm_tab("/dev/ttys007") is False
 
 
-def test_activate_iterm_tab_no_sessions(tmp_path):
-    """Returns False when osascript returns empty (no iTerm2 sessions)."""
-    worktree_dir = tmp_path / ".worktrees" / "test-feature"
-    worktree_dir.mkdir(parents=True)
-    state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
-    with patch("tui.subprocess.run", return_value=_osascript_result("")):
-        assert app._activate_iterm_tab(str(worktree_dir)) is False
-
-
-def test_activate_iterm_tab_activates_correct_tab(tmp_path):
-    """The activation AppleScript targets the correct window and tab indices."""
-    worktree_dir = tmp_path / ".worktrees" / "test-feature"
-    worktree_dir.mkdir(parents=True)
-    state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
-
-    tty_output = "/dev/ttys001|2|3\n"
-    calls = [
-        _osascript_result(tty_output),  # collect ttys
-        _ps_result([5678]),  # ps for ttys001
-        _lsof_result(str(worktree_dir)),  # lsof matches
-        _osascript_result("true"),  # activate tab
-    ]
-    with patch("tui.subprocess.run", side_effect=calls) as mock_run:
-        app._activate_iterm_tab(str(worktree_dir))
-        # The 4th call is the activation AppleScript
-        activate_script = mock_run.call_args_list[3][0][0][2]
-        assert "item 2 of windows" in activate_script
-        assert "item 3 of tabs" in activate_script
-
-
-def test_activate_iterm_tab_symlink_resolution(tmp_path):
-    """Matches when worktree path is a symlink and CWD is the resolved path."""
-    real_dir = tmp_path / "real-worktree"
-    real_dir.mkdir()
-    symlink_dir = tmp_path / ".worktrees" / "test-feature"
-    symlink_dir.parent.mkdir(parents=True)
-    symlink_dir.symlink_to(real_dir)
-    state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
-
-    tty_output = "/dev/ttys001|1|1\n"
-    calls = [
-        _osascript_result(tty_output),
-        _ps_result([9999]),
-        _lsof_result(str(real_dir)),  # lsof returns resolved path
-        _osascript_result("true"),
-    ]
-    with patch("tui.subprocess.run", side_effect=calls):
-        # Pass the symlink path — should still match via realpath
-        assert app._activate_iterm_tab(str(symlink_dir)) is True
-
-
-# --- _activate_iterm_tab tombstone ---
+# --- _activate_iterm_tab tombstones ---
 
 
 def test_activate_iterm_tab_no_shell_integration():
@@ -820,157 +720,31 @@ def test_activate_iterm_tab_no_shell_integration():
     assert 'variable named "path"' not in source
 
 
-def test_activate_iterm_tab_malformed_line(tmp_path):
-    """Skips lines that don't have exactly 3 pipe-separated fields."""
-    worktree_dir = tmp_path / ".worktrees" / "test-feature"
-    worktree_dir.mkdir(parents=True)
-    state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+def test_activate_iterm_tab_no_lsof():
+    """Tombstone: lsof CWD matching removed in PR #719. Must not return."""
+    import inspect
 
-    # First line is malformed (only 2 fields), second matches
-    tty_output = "/dev/ttys001|1\n/dev/ttys002|1|1\n"
-    calls = [
-        _osascript_result(tty_output),
-        _ps_result([1234]),
-        _lsof_result(str(worktree_dir)),
-        _osascript_result("true"),
-    ]
-    with patch("tui.subprocess.run", side_effect=calls):
-        assert app._activate_iterm_tab(str(worktree_dir)) is True
-
-
-def test_activate_iterm_tab_ps_timeout(tmp_path):
-    """Skips tty when ps times out and continues to next."""
-    worktree_dir = tmp_path / ".worktrees" / "test-feature"
-    worktree_dir.mkdir(parents=True)
-    state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
-
-    tty_output = "/dev/ttys001|1|1\n/dev/ttys002|1|2\n"
-    calls = [
-        _osascript_result(tty_output),
-        subprocess.TimeoutExpired(cmd="ps", timeout=5),  # ps fails for ttys001
-        _ps_result([5678]),  # ps works for ttys002
-        _lsof_result(str(worktree_dir)),
-        _osascript_result("true"),
-    ]
-    with patch("tui.subprocess.run", side_effect=calls):
-        assert app._activate_iterm_tab(str(worktree_dir)) is True
-
-
-def test_activate_iterm_tab_lsof_timeout(tmp_path):
-    """Skips PID when lsof times out and continues to next."""
-    worktree_dir = tmp_path / ".worktrees" / "test-feature"
-    worktree_dir.mkdir(parents=True)
-    state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
-
-    tty_output = "/dev/ttys001|1|1\n"
-    calls = [
-        _osascript_result(tty_output),
-        _ps_result([1111, 2222]),
-        subprocess.TimeoutExpired(cmd="lsof", timeout=5),  # lsof fails for pid 1111
-        _lsof_result(str(worktree_dir)),  # lsof succeeds for pid 2222
-        _osascript_result("true"),
-    ]
-    with patch("tui.subprocess.run", side_effect=calls):
-        assert app._activate_iterm_tab(str(worktree_dir)) is True
-
-
-def test_activate_iterm_tab_activation_timeout(tmp_path):
-    """Returns True even when activation osascript times out (best-effort)."""
-    worktree_dir = tmp_path / ".worktrees" / "test-feature"
-    worktree_dir.mkdir(parents=True)
-    state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
-
-    tty_output = "/dev/ttys001|1|1\n"
-    calls = [
-        _osascript_result(tty_output),
-        _ps_result([1234]),
-        _lsof_result(str(worktree_dir)),
-        subprocess.TimeoutExpired(cmd="osascript", timeout=5),  # activation fails
-    ]
-    with patch("tui.subprocess.run", side_effect=calls):
-        assert app._activate_iterm_tab(str(worktree_dir)) is True
-
-
-def test_activate_iterm_tab_empty_lsof_n_line(tmp_path):
-    """Skips bare 'n' lsof lines to avoid false-positive CWD match on empty path."""
-    worktree_dir = tmp_path / ".worktrees" / "test-feature"
-    worktree_dir.mkdir(parents=True)
-    state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
-
-    tty_output = "/dev/ttys001|1|1\n"
-    lsof_with_bare_n = subprocess.CompletedProcess(args=[], returncode=0, stdout="p123\nfcwd\nn\n", stderr="")
-    calls = [
-        _osascript_result(tty_output),
-        _ps_result([1234]),
-        lsof_with_bare_n,
-    ]
-    with patch("tui.subprocess.run", side_effect=calls):
-        assert app._activate_iterm_tab(str(worktree_dir)) is False
-
-
-def test_activate_iterm_tab_empty_tty_name(tmp_path):
-    """Skips session when tty path strips to empty string."""
-    worktree_dir = tmp_path / ".worktrees" / "test-feature"
-    worktree_dir.mkdir(parents=True)
-    state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
-
-    # /dev/ strips to empty, second tty matches
-    tty_output = "/dev/|1|1\n/dev/ttys002|1|2\n"
-    calls = [
-        _osascript_result(tty_output),
-        _ps_result([5678]),
-        _lsof_result(str(worktree_dir)),
-        _osascript_result("true"),
-    ]
-    with patch("tui.subprocess.run", side_effect=calls):
-        assert app._activate_iterm_tab(str(worktree_dir)) is True
-
-
-def test_activate_iterm_tab_whitespace_indices(tmp_path):
-    """Strips whitespace from window/tab indices before AppleScript interpolation."""
-    worktree_dir = tmp_path / ".worktrees" / "test-feature"
-    worktree_dir.mkdir(parents=True)
-    state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
-
-    tty_output = "/dev/ttys001| 2 | 3 \n"
-    calls = [
-        _osascript_result(tty_output),
-        _ps_result([5678]),
-        _lsof_result(str(worktree_dir)),
-        _osascript_result("true"),
-    ]
-    with patch("tui.subprocess.run", side_effect=calls) as mock_run:
-        assert app._activate_iterm_tab(str(worktree_dir)) is True
-        activate_script = mock_run.call_args_list[3][0][0][2]
-        assert "item 2 of windows" in activate_script
-        assert "item 3 of tabs" in activate_script
+    source = inspect.getsource(tui.TuiApp._activate_iterm_tab)
+    assert "lsof" not in source
 
 
 # --- _open_worktree ---
 
 
-def test_open_worktree_calls_activate(tmp_path):
-    """Enter key delegates to _activate_iterm_tab with worktree path."""
-    worktree_dir = tmp_path / ".worktrees" / "test-feature"
-    worktree_dir.mkdir(parents=True)
+def test_open_worktree_passes_tty():
+    """Enter key reads session_tty from state and passes to _activate_iterm_tab."""
     state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+    state["session_tty"] = "/dev/ttys007"
+    app = _make_app(flows=[_flow_from_state(state)])
     with patch.object(app, "_activate_iterm_tab", return_value=True) as mock_activate:
         app._open_worktree()
-        mock_activate.assert_called_once_with(str(worktree_dir))
+        mock_activate.assert_called_once_with("/dev/ttys007")
 
 
-def test_open_worktree_no_dir(tmp_path):
-    """Does nothing when worktree directory doesn't exist."""
+def test_open_worktree_no_tty():
+    """Does nothing when session_tty is not set in state."""
     state = make_state()
-    app = _make_app(root=tmp_path, flows=[_flow_from_state(state)])
+    app = _make_app(flows=[_flow_from_state(state)])
     with patch.object(app, "_activate_iterm_tab") as mock_activate:
         app._open_worktree()
         mock_activate.assert_not_called()
