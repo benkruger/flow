@@ -3039,3 +3039,32 @@ def test_decompose_project_no_depends_on_text():
         "flow-decompose-project must NOT instruct including 'Depends on:' text in issue bodies "
         "(removed in PR #697 — native blocked-by API links are the sole dependency mechanism)"
     )
+
+
+def test_skills_no_repo_tracked_files_at_project_root():
+    """Skills must not direct Claude to check repo-tracked files at the project root.
+
+    In a linked worktree, 'project root' resolves to the main repo (on main),
+    not the worktree where the feature code lives. Repo-tracked executables
+    (bin/test, bin/ci) must be checked in the current working directory."""
+    repo_tracked_executables = ["bin/test", "bin/ci"]
+    violations = []
+    for skill_dir in sorted(SKILLS_DIR.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        skill_file = skill_dir / "SKILL.md"
+        if not skill_file.exists():
+            continue
+        content = skill_file.read_text()
+        paragraphs = content.split("\n\n")
+        for para in paragraphs:
+            para_lower = para.lower()
+            if "project root" not in para_lower:
+                continue
+            for exe in repo_tracked_executables:
+                if exe in para:
+                    violations.append(f"{skill_dir.name}: paragraph mentions both '{exe}' and 'project root'")
+    assert not violations, (
+        "Skills must not direct Claude to check repo-tracked files 'at the project root' — "
+        "use 'current working directory' or omit the path. Violations:\n" + "\n".join(violations)
+    )
