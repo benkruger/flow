@@ -46,8 +46,8 @@ AUTO_SKILLS = {
     "flow-code": {"commit": "auto", "continue": "auto"},
     "flow-code-review": {"commit": "auto", "continue": "auto"},
     "flow-learn": {"commit": "auto", "continue": "auto"},
-    "flow-abort": "auto",
     "flow-complete": "auto",
+    "flow-abort": "auto",
 }
 
 

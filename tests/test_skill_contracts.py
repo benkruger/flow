@@ -1623,6 +1623,9 @@ def test_prime_customize_questions_match_phase_order():
         mapped = _PRIME_DISPLAY_NAME_MAP.get(name)
         if mapped and mapped not in seen:
             seen.append(mapped)
+    assert len(seen) == len(EXPECTED_SKILL_ORDER), (
+        f"Customize section has {len(seen)} skills, expected {len(EXPECTED_SKILL_ORDER)}"
+    )
     assert seen == EXPECTED_SKILL_ORDER, (
         f"Customize question order {seen} does not match expected phase order {EXPECTED_SKILL_ORDER}"
     )
