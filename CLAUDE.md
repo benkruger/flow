@@ -8,14 +8,14 @@ This repo is the plugin source code. When installed in a target project, skills 
 
 Four core tenets guide every design decision:
 
-1. **Unobtrusive** — zero repo footprint, zero dependencies. During prime, users choose whether to commit `CLAUDE.md` and `.claude/settings.json` or git-exclude them. `.flow.json` is always git-excluded. Everything else lives in `.git/` or is gitignored.
+1. **Unobtrusive** — zero dependencies. Prime commits `.claude/settings.json` and `CLAUDE.md` as project config. `.flow.json` is always git-excluded. Everything else lives in `.git/` or is gitignored.
 2. **As autonomous or manual as you want** — configurable autonomy via `.flow.json` skills settings.
 3. **Safe for local env** — no containers needed, no permission prompts ever. Native tools only, no external dependencies.
 4. **N×N×N concurrent** — N engineers running N flows on N boxes at the same time is the primary use case, not an edge case. Every feature, fix, and design decision must work when multiple flows are active simultaneously — on the same machine (multiple worktrees) and across machines (shared GitHub state). Local state (`.flow-states/`, worktrees) is per-machine. Shared state (PRs, issues, labels) is coordinated through GitHub. Nothing assumes a single active flow.
 
 In the target project:
 
-- Commit-or-exclude choice for `CLAUDE.md` and `.claude/settings.json` is made at prime time. `.flow.json` is always git-excluded
+- `.claude/settings.json` and `CLAUDE.md` are committed during prime. `.flow.json` is always git-excluded
 - `.flow-states/` is gitignored and deleted at Complete
 - After Complete, the only permanent artifacts are the merged PR and any CLAUDE.md learnings
 - Skills are pure Markdown instructions, not executable code

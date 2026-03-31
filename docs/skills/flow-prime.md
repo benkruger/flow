@@ -24,12 +24,12 @@ One-time project setup. Configures workspace permissions in `.claude/settings.js
 4. Runs a single setup script that handles all configuration in one call:
    - Reads or creates `.claude/settings.json` and merges FLOW allow/deny permissions (universal + framework-specific + derived)
    - Writes `.flow.json` with version, framework, config hash, commit format, and skills configuration
-   - Adds `.flow-states/`, `.worktrees/`, `.flow.json`, `bin/dependencies`, and `.claude/scheduled_tasks.lock` to `.git/info/exclude`
+   - Adds `.flow-states/`, `.worktrees/`, `.flow.json`, `.claude/cost/`, and `.claude/scheduled_tasks.lock` to `.git/info/exclude`
    - Installs a pre-commit hook that blocks direct `git commit` during active FLOW features and requires `/flow:flow-commit`
    - Primes the project CLAUDE.md with framework conventions from `frameworks/<name>/priming.md`
    - Creates `bin/dependencies` from the framework template
 5. Installs the `decompose` plugin from the `matt-k-wong/mkw-DAG-architect` marketplace
-6. Asks whether to commit generated files (`CLAUDE.md`, `.claude/settings.json`) or git-exclude them (keep local-only)
+6. Commits generated files (`CLAUDE.md`, `.claude/settings.json`, `bin/dependencies`) to version control
 
 ---
 
