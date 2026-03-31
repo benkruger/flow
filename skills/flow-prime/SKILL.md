@@ -223,7 +223,7 @@ The script handles everything in a single call:
 - Merging FLOW permissions (additive only — preserves existing entries)
 - Setting `defaultMode` to `acceptEdits` (overrides existing values — FLOW requires this for state file writes without prompts)
 - Writing `.flow.json` with version marker, framework, config hash, skills config, and commit format
-- Adding `.flow-states/`, `.worktrees/`, `.flow.json`, `bin/dependencies`, and `.claude/scheduled_tasks.lock` to `.git/info/exclude`
+- Adding `.flow-states/`, `.worktrees/`, `.flow.json`, `.claude/cost/`, and `.claude/scheduled_tasks.lock` to `.git/info/exclude`
 - Installing a pre-commit hook at `.git/hooks/pre-commit` that blocks direct `git commit` during active FLOW features and requires commits to go through `/flow:flow-commit`
 - Installing a global `flow` launcher at `~/.local/bin/flow` that delegates to the plugin cache, and warning if `~/.local/bin` is not in PATH
 - Priming the project CLAUDE.md with framework conventions (if CLAUDE.md exists)
