@@ -165,6 +165,14 @@ proceeding to the next step, proposing direct edits, committing changes,
 or taking any action outside the active skill flow. The enforcement
 language is what distinguishes a gate from a suggestion.
 
+## Safe Defaults for Subjective Classification
+
+When a skill asks the model to classify conversation content (e.g.,
+"is this output implementation-focused?"), include an explicit
+tiebreaker for ambiguous cases. The safe default is always the
+conservative action — the one that produces correct behavior even
+if the classification is wrong.
+
 ## Contract Test Atomicity in Plan Dependencies
 
 When a plan removes content that a contract test asserts exists, and a
@@ -202,6 +210,14 @@ attention. "Steps 2–11" does not become "Steps 2–12" just because every
 reference was mechanically incremented — the total step count is
 unchanged if a step moved from one position to another. After all edits,
 verify the range endpoint by counting `### Step N` headings in the file.
+
+## Value Replacements in Prose
+
+When replacing a value in code (e.g. swapping one entry in a list for
+another), grep the entire SKILL.md for the old value — not just the
+lines the plan identifies. Prose descriptions of what the code does
+(e.g. Step 4 describing what a setup script writes) echo the code's
+values and are easy to miss when the plan only lists code locations.
 
 ## Verify Script Behavior Claims in Issues
 
