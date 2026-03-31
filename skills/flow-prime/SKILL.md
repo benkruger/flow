@@ -1,6 +1,6 @@
 ---
 name: flow-prime
-description: "One-time project setup — configure workspace permissions, git excludes, and version marker. Run once after installing or upgrading FLOW. Usage: /flow:flow-prime"
+description: "One-time project setup — configure and commit workspace permissions, framework conventions, and version marker. Run once after installing or upgrading FLOW. Usage: /flow:flow-prime"
 ---
 
 # FLOW Prime — One-Time Project Setup
@@ -349,27 +349,11 @@ claude plugin install decompose@decompose-marketplace
 
 If all plugins are already present, skip silently.
 
-### Step 6 — Commit or git-exclude
+### Step 6 — Commit generated files
 
 Check if the working tree has changes by running `git status`. If the output contains "working tree clean", skip to Done.
 
-Otherwise, the user decides whether to commit the generated files into the repo or keep them local-only.
-
-<HARD-GATE>
-Do NOT commit, exclude, or take any action without an explicit choice from the user. Use AskUserQuestion:
-
-> "FLOW generated `CLAUDE.md` and `.claude/settings.json`. How should these be handled?"
->
-> - **Commit and push** — "Track in version control (shared with team)"
-> - **Git-exclude (keep local-only)** — "Add to .git/info/exclude (local to this clone)"
-
-Do NOT proceed until the user responds.
-
-**If "Commit and push":** invoke `/flow:flow-commit`.
-
-**If "Git-exclude (keep local-only)":** use the Read tool to read `.git/info/exclude`. Check whether `CLAUDE.md` and `.claude/` are already present. For each entry that is missing, use the Edit tool to append it. Do NOT invoke `/flow:flow-commit`.
-
-</HARD-GATE>
+Otherwise, invoke `/flow:flow-commit` to commit and push the generated files (`CLAUDE.md`, `.claude/settings.json`, `bin/dependencies`).
 
 ### Done — Complete
 
@@ -388,12 +372,11 @@ Report:
 - Framework: `<framework>`
 - Settings written to `.claude/settings.json`
 - Version marker written to `.flow.json` (git-excluded)
-- Git excludes configured for `.flow-states/`, `.worktrees/`, `.flow.json`, `bin/dependencies`, and `.claude/scheduled_tasks.lock`
+- Git excludes configured for `.flow-states/`, `.worktrees/`, `.flow.json`, `.claude/cost/`, and `.claude/scheduled_tasks.lock`
 - Pre-commit hook installed — blocks direct `git commit`, requires `/flow:flow-commit`
 - Global launcher installed at `~/.local/bin/flow` — run `flow tui` from any primed project
 - Slack notifications: configured via plugin userConfig (token in system keychain)
-- If the user chose "Commit and push": Changes committed and pushed
-- If the user chose "Git-exclude": Generated files git-excluded (local-only) — `CLAUDE.md` and `.claude/` kept local to this clone
+- Generated files committed and pushed
 
 Display the skills configuration as a pipe-delimited markdown table with exactly this format (not a bullet list):
 
