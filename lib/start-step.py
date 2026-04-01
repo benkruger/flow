@@ -30,7 +30,11 @@ def update_step(state_path, step):
     """Update start_step in the state file. Returns True if updated."""
     if not state_path.exists():
         return False
-    mutate_state(state_path, lambda state: state.__setitem__("start_step", step))
+
+    def _update(state):
+        state["start_step"] = step
+
+    mutate_state(state_path, _update)
     return True
 
 
