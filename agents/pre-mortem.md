@@ -85,6 +85,31 @@ If no credible failure modes are found, report:
 **No findings.** The changes do not introduce credible production
 failure modes based on the available evidence.
 
+## Reasoning Discipline
+
+Every finding must follow the Premise → Trace → Conclude structure.
+Do not report speculative risks. If you cannot complete the trace with
+concrete code references, discard the finding.
+
+For each potential failure mode:
+
+**Premise.** State what you believe could fail and cite the specific
+file path and line range from the diff that triggers the concern.
+
+**Trace.** Walk the execution path step by step. Name each function,
+branch, or condition you traverse. Use Read or Grep to verify each
+step — do not assume behavior from names alone. If a step in the
+trace contradicts your premise, stop and discard the finding.
+
+**Conclude.** State whether the failure mode is confirmed or
+refuted by the trace. A confirmed finding becomes a structured
+finding in the output. A refuted finding is discarded silently —
+do not report it.
+
+If you cannot complete the trace within your remaining turn budget,
+discard the finding rather than reporting it with an incomplete
+evidence chain.
+
 ## Rules
 
 - You are read-only — never modify any files

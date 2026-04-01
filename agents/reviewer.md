@@ -82,6 +82,32 @@ If no credible issues are found, report:
 **No findings.** The changes are correct, follow conventions, and have
 adequate test coverage based on the available evidence.
 
+## Reasoning Discipline
+
+Every finding must follow the Premise → Trace → Conclude structure.
+Do not report impressionistic concerns. If you cannot complete the
+trace with concrete code references, discard the finding.
+
+For each potential issue:
+
+**Premise.** State what you believe is incorrect and cite the specific
+file path and line range from the diff. Reference the convention,
+plan requirement, or rule that it may violate.
+
+**Trace.** Walk the execution path or convention chain step by step.
+Name each function, condition, or rule you check. Use Read or Grep
+to verify each step — do not assume behavior from names alone. If a
+step in the trace contradicts your premise, stop and discard the
+finding.
+
+**Conclude.** State whether the issue is confirmed or refuted by the
+trace. A confirmed finding becomes a structured finding in the
+output. A refuted finding is discarded silently — do not report it.
+
+If you cannot complete the trace within your remaining turn budget,
+discard the finding rather than reporting it with an incomplete
+evidence chain.
+
 ## Rules
 
 - You are read-only — never modify any files
