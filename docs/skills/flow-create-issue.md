@@ -12,11 +12,13 @@ parent: Skills
 
 ```text
 /flow:flow-create-issue
+/flow:flow-create-issue --auto
+/flow:flow-create-issue --auto --force-decompose
 /flow:flow-create-issue --force-decompose
 /flow:flow-create-issue --step 2 --id <id>
 ```
 
-Captures a brainstormed solution from the current conversation and files it as a pre-planned GitHub issue with an Implementation Plan section. The Plan phase extracts this plan directly — no re-derivation needed. Requires prior brainstorming context (typically via `/decompose:decompose`).
+Captures a brainstormed solution from the current conversation and files it as a pre-planned GitHub issue with an Implementation Plan section. The Plan phase extracts this plan directly — no re-derivation needed. Requires prior brainstorming context (typically via `/decompose:decompose`). Use `--auto` for autonomous execution — all interactive gates are bypassed with sensible defaults (skip conversation check, auto-proceed after decompose, auto-file to target project).
 
 ---
 
@@ -56,9 +58,9 @@ The filed issue contains enough detail for `/flow-start` to execute fully autono
 ## Gates
 
 - Step banners shown at entry to each step (`── Step N of 2: Name ──`)
-- Conversation Gate rejects cold-start invocations without brainstorming context
-- AskUserQuestion gates at Steps 1 and 2 — user controls the flow
+- Conversation Gate rejects cold-start invocations without brainstorming context (skipped in `--auto` mode)
+- AskUserQuestion gates at Steps 1 and 2 — user controls the flow (bypassed in `--auto` mode with sensible defaults)
 - All AskUserQuestion calls use structured parameters (question, header, options with label+description)
 - Issues labeled `decomposed` for tracking (or `Flow` when filed against the plugin repo)
-- Repo routing integrated into Step 2 HARD-GATE — when in the FLOW repo (`benkruger/flow`), repo selection is skipped; otherwise user chooses target project or FLOW plugin
-- Self-invocation from Step 1 to Step 2 enforces skill re-read at the step boundary
+- Repo routing integrated into Step 2 HARD-GATE — when in the FLOW repo (`benkruger/flow`), repo selection is skipped; otherwise user chooses target project or FLOW plugin. In `--auto` mode, always files to the target/current project
+- Self-invocation from Step 1 to Step 2 enforces skill re-read at the step boundary (forwards `--auto` flag)
