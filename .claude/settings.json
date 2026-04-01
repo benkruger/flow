@@ -10,6 +10,7 @@
       "Bash(gh issue *)",
       "Bash(gh repo clone *)",
       "Bash(gh label *)",
+      "Bash(gh -C *)",
       "Bash(*bin/*)",
       "Bash(claude plugin marketplace add *)",
       "Bash(claude plugin marketplace update *)",
@@ -19,6 +20,7 @@
       "Bash(rm .flow-*)",
       "Bash(rm -rf *.qa-repos*)",
       "Bash(rm .claude/settings.local.json)",
+      "Bash(rm tests/test_adversarial_*)",
       "Bash(chmod +x *)",
       "Bash(cd *)",
       "Bash(pwd)",
@@ -35,11 +37,9 @@
       "Read(//tmp/*.diff)",
       "Read(//tmp/*.patch)",
       "Read(//tmp/*.md)",
+      "Read(~/.claude/projects/**/tool-results/*)",
       "Skill(decompose:decompose)",
-      "Agent(flow:ci-fixer)",
-      "Bash(gh -C *)",
-      "Bash(rm tests/test_adversarial_*)",
-      "Read(~/.claude/projects/**/tool-results/*)"
+      "Agent(flow:ci-fixer)"
     ],
     "additionalDirectories": [
       "/Users/ben/code/initech"
