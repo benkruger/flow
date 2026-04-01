@@ -36,7 +36,10 @@
       "Read(//tmp/*.patch)",
       "Read(//tmp/*.md)",
       "Skill(decompose:decompose)",
-      "Agent(flow:ci-fixer)"
+      "Agent(flow:ci-fixer)",
+      "Bash(gh -C *)",
+      "Bash(rm tests/test_adversarial_*)",
+      "Read(~/.claude/projects/**/tool-results/*)"
     ],
     "additionalDirectories": [
       "/Users/ben/code/initech"

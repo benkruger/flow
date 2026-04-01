@@ -200,18 +200,15 @@ Key test files: `test_structural.py` (config invariants, version consistency), `
 
 ## CI Failure Fix Order
 
-1. Ruff violations — run `ruff check lib/ tests/` and fix each violation
-2. Ruff format — run `ruff format lib/ tests/` to auto-fix formatting
-3. Lint violations — read the pymarkdown output carefully, fix the markdown
-4. Test failures — understand the root cause, fix the code not the test
-5. Coverage gaps — write the missing test
+1. Lint violations — read the lint output carefully, fix the code
+2. Test failures — understand the root cause, fix the code not the test
+3. Coverage gaps — write the missing test
 
 ## Hard Rules
 
 - Always read module imports before modifying any module.
 - Always check `conftest.py` for existing fixtures before creating new ones.
 - Never add lint exclusions — fix the code, not the linter configuration.
-- Never add `# noqa` comments — fix the code instead. Justified E402 exceptions are handled centrally in `ruff.toml` per-file-ignores.
 
 ## Dependency Management
 
