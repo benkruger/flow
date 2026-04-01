@@ -15,7 +15,6 @@ Output (JSON to stdout):
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
     AUTO_SKILLS,
+    branch_name,
     build_initial_phases,
     derive_feature,
     detect_repo,
@@ -35,20 +35,6 @@ from flow_utils import (
     read_prompt_file,
 )
 from log import append_log
-
-
-def _branch_name(feature_words):
-    """Convert feature words to a hyphenated branch name, max 32 chars."""
-    sanitized = re.sub(r"[^a-zA-Z0-9\s-]", "", feature_words)
-    name = "-".join(sanitized.lower().split())
-    if len(name) <= 32:
-        return name
-    # Truncate at last hyphen that fits within 32 chars
-    truncated = name[:33]
-    last_hyphen = truncated.rfind("-")
-    if last_hyphen > 0:
-        return truncated[:last_hyphen]
-    return name[:32]
 
 
 def _fetch_issue_title(issue_number):
@@ -280,7 +266,7 @@ def main():
         if title:
             naming_words = title
 
-    branch = _branch_name(naming_words)
+    branch = branch_name(naming_words)
     feature_title = derive_feature(naming_words)
     project_root = Path.cwd()
 
