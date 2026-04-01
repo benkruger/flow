@@ -310,8 +310,7 @@ repository, so skip the repo selection and present a simplified prompt.
 <HARD-GATE>
 
 **If `--auto` was passed**, skip the review prompt entirely. File the
-issue to the target project path if the current repo is NOT
-`benkruger/flow`, or to the current project if it is `benkruger/flow`.
+issue to the current project (target project path).
 Proceed directly to the Filing section below.
 
 **If `--auto` was NOT passed**, present the review prompt:
@@ -424,7 +423,7 @@ Display the issue URL to the user, then output the COMPLETE banner:
 
 ## Hard Rules
 
-- Never file an issue without explicit user approval — the Step 2 AskUserQuestion is the mandatory gate
+- Never file an issue without explicit user approval in interactive mode — the Step 2 AskUserQuestion is the mandatory gate unless `--auto` was passed
 - Never tell the user to "look at" a file — render all content inline
 - Never use Bash to print banners — output them as text in your response
 - The issue body must be self-contained — a fresh session with no memory of this conversation must be able to execute it
