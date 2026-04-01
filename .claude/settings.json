@@ -26,6 +26,7 @@
       "Bash(diff *)",
       "Bash(.venv/bin/pip install *)",
       "Bash(curl *)",
+      "Bash(open:*)",
       "Read(~/Desktop/*.png)",
       "Read(~/Desktop/*.jpg)",
       "Read(~/Desktop/*.jpeg)",
@@ -36,6 +37,9 @@
       "Read(//tmp/*.md)",
       "Skill(decompose:decompose)",
       "Agent(flow:ci-fixer)"
+    ],
+    "additionalDirectories": [
+      "/Users/ben/code/initech"
     ],
     "deny": [
       "Bash(git rebase *)",
