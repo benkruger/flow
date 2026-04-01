@@ -17,7 +17,6 @@ Output (JSON to stdout):
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 from datetime import datetime
@@ -102,19 +101,6 @@ def phase_enter(state, phase, reason=None):
 
     # Clear auto-continue flag from the previous phase
     state.pop("_auto_continue", None)
-
-    # Update session_tty so the TUI can switch to this terminal tab
-    try:
-        tty_result = subprocess.run(
-            ["ps", "-o", "tty=", "-p", str(os.getppid())],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if tty_result.returncode == 0 and tty_result.stdout.strip():
-            state["session_tty"] = "/dev/" + tty_result.stdout.strip()
-    except Exception:
-        pass
 
     first_visit = phase_data["visit_count"] == 1
 
