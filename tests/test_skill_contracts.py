@@ -2105,8 +2105,8 @@ def test_flow_start_no_gh_issue_view_instruction():
 def test_flow_start_documents_automatic_issue_branch_naming():
     """flow-start must document that start-setup handles issue-aware branch naming."""
     content = _read_skill("flow-start")
-    assert "start-setup" in content.lower() or "automatically" in content.lower(), (
-        "flow-start/SKILL.md must document that issue-aware branch naming is automatic"
+    assert "start-setup" in content.lower(), (
+        "flow-start/SKILL.md must document that start-setup handles issue-aware branch naming"
     )
 
 
