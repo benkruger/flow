@@ -49,10 +49,8 @@ def main():
         print(json.dumps({"status": "error", "message": f"bin/dependencies timed out after {timeout}s"}))
         sys.exit(1)
 
-    result = proc
-
-    if result.returncode != 0:
-        print(json.dumps({"status": "error", "message": f"bin/dependencies failed with exit code {result.returncode}"}))
+    if proc.returncode != 0:
+        print(json.dumps({"status": "error", "message": f"bin/dependencies failed with exit code {proc.returncode}"}))
         sys.exit(1)
 
     status = subprocess.run(
