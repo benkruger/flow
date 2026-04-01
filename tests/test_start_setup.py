@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from conftest import LIB_DIR, PHASE_ORDER
+from flow_utils import branch_name
 
 SCRIPT = str(LIB_DIR / "start-setup.py")
 
@@ -159,12 +160,12 @@ def _default_run(_git_repo_with_remote_template, tmp_path_factory):
 
 def test_branch_name_from_feature():
     """Feature words joined with hyphens, lowercased."""
-    assert _mod._branch_name("Invoice Pdf Export") == "invoice-pdf-export"
+    assert branch_name("Invoice Pdf Export") == "invoice-pdf-export"
 
 
 def test_branch_name_truncated_at_32_chars():
     """Branch names exceeding 32 chars are truncated at last whole word."""
-    result = _mod._branch_name("this is a very long feature name that exceeds limit")
+    result = branch_name("this is a very long feature name that exceeds limit")
     assert len(result) <= 32
     assert not result.endswith("-")
     assert result == "this-is-a-very-long-feature-name"
@@ -172,12 +173,12 @@ def test_branch_name_truncated_at_32_chars():
 
 def test_branch_name_exactly_32_chars():
     """Branch name exactly 32 chars is not truncated."""
-    assert _mod._branch_name("abcdefgh abcdefgh abcdefgh abcde") == "abcdefgh-abcdefgh-abcdefgh-abcde"
+    assert branch_name("abcdefgh abcdefgh abcdefgh abcde") == "abcdefgh-abcdefgh-abcdefgh-abcde"
 
 
 def test_branch_name_single_long_word():
     """Single word >32 chars with no hyphens truncates at 32."""
-    result = _mod._branch_name("a" * 40)
+    result = branch_name("a" * 40)
     assert len(result) == 32
     assert result == "a" * 32
 
@@ -743,17 +744,17 @@ def test_detect_tty_returns_none_on_exception():
 
 def test_branch_name_strips_hash():
     """Hash symbols are stripped from branch names."""
-    assert _mod._branch_name("fix #83 and #89") == "fix-83-and-89"
+    assert branch_name("fix #83 and #89") == "fix-83-and-89"
 
 
 def test_branch_name_strips_at_sign():
     """At signs are stripped from branch names."""
-    assert _mod._branch_name("notify @user on save") == "notify-user-on-save"
+    assert branch_name("notify @user on save") == "notify-user-on-save"
 
 
 def test_branch_name_strips_mixed_special_chars():
     """Multiple special characters stripped, words still joined."""
-    assert _mod._branch_name("fix #83 @user $100") == "fix-83-user-100"
+    assert branch_name("fix #83 @user $100") == "fix-83-user-100"
 
 
 # --- Prompt preservation via --prompt flag ---
