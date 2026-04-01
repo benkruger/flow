@@ -26,6 +26,9 @@ from tui_data import (
 # Auto-refresh interval in milliseconds
 REFRESH_MS = 2000
 
+# Enter key codes — terminals may send any of these depending on configuration
+ENTER_KEYS = (ord("\n"), ord("\r"), curses.KEY_ENTER)
+
 # Color pair IDs for curses.init_pair / curses.color_pair
 COLOR_COMPLETE = 1
 COLOR_ACTIVE = 2
@@ -538,7 +541,7 @@ class TuiApp:
             self.selected = max(0, self.selected - 1)
         elif key == curses.KEY_DOWN:
             self.selected = min(len(self.flows) - 1, self.selected + 1)
-        elif key == ord("\n"):
+        elif key in ENTER_KEYS:
             self._open_worktree()
         elif key == ord("p"):
             self._open_pr()
@@ -568,7 +571,7 @@ class TuiApp:
             self.issue_selected = max(0, self.issue_selected - 1)
         elif key == curses.KEY_DOWN:
             self.issue_selected = min(len(issues) - 1, self.issue_selected + 1)
-        elif key == ord("\n"):
+        elif key in ENTER_KEYS:
             issue = issues[self.issue_selected]
             url = issue.get("url")
             if url:

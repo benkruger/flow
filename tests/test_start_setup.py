@@ -646,6 +646,53 @@ def test_state_file_has_repo(_default_run):
     assert state["repo"] is None or isinstance(state["repo"], str)
 
 
+def test_state_file_has_session_tty(_default_run):
+    """State file has session_tty field — populated at creation for TUI tab switching."""
+    data, state, log, repo = _default_run
+    assert "session_tty" in state
+    # Should be a string (tty path) or None if detection failed
+    assert state["session_tty"] is None or isinstance(state["session_tty"], str)
+
+
+# --- _detect_tty (in-process) ---
+
+
+def test_detect_tty_returns_dev_path():
+    """_detect_tty returns a /dev/ path when ps succeeds."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            _mod.subprocess,
+            "run",
+            lambda *a, **kw: type("R", (), {"returncode": 0, "stdout": "ttys007\n"})(),
+        )
+        result = _mod._detect_tty()
+    assert result == "/dev/ttys007"
+
+
+def test_detect_tty_returns_none_on_failure():
+    """_detect_tty returns None when ps fails."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            _mod.subprocess,
+            "run",
+            lambda *a, **kw: type("R", (), {"returncode": 1, "stdout": ""})(),
+        )
+        result = _mod._detect_tty()
+    assert result is None
+
+
+def test_detect_tty_returns_none_on_exception():
+    """_detect_tty returns None when subprocess raises."""
+
+    def _raise(*a, **kw):
+        raise OSError("no ps")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_mod.subprocess, "run", _raise)
+        result = _mod._detect_tty()
+    assert result is None
+
+
 # --- Branch name sanitization (in-process) ---
 
 
