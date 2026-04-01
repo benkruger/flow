@@ -23,18 +23,12 @@ Examples:
 | `fix login timeout when session expires after 30 minutes` | `fix-login-timeout` |
 | `there is a bug where flow-start treats arguments as conversation` | `flow-start-arg-handling` |
 
-**Issue-aware branch naming:** If the prompt contains `#N` issue references
-(e.g., `work on issue #309`, `fix #42`), extract the first issue number
-and fetch the issue title:
-
-```bash
-gh issue view <issue_number> --json title --jq .title
-```
-
-Derive the branch name from the **issue title** instead of the prompt words.
-Apply the same 2-5 word concise derivation rules to the title. If the fetch
-fails (issue does not exist, network error), fall back to deriving from the
-prompt words as usual.
+**Issue-aware branch naming:** When the prompt contains `#N` issue
+references (e.g., `work on issue #309`, `fix #42`), `start-setup`
+automatically fetches the first issue's title and derives the branch
+name and PR title from it. If the fetch fails, it falls back to the
+prompt words. No model action is needed — the script handles this
+internally.
 
 | Prompt | Issue title | Derived branch name |
 |--------|-------------|-------------------|

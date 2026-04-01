@@ -111,7 +111,11 @@ def _run_no_gh(cwd, feature_name, framework="rails", prompt=None, prompt_file=No
     stub_dir = cwd / ".stub-bin"
     stub_dir.mkdir(exist_ok=True)
     gh_stub = stub_dir / "gh"
-    gh_stub.write_text('#!/bin/bash\necho "https://github.com/test/repo/pull/42"\n')
+    gh_stub.write_text(
+        "#!/bin/bash\n"
+        'if [[ "$1" == "issue" && "$2" == "view" ]]; then exit 1; fi\n'
+        'echo "https://github.com/test/repo/pull/42"\n'
+    )
     gh_stub.chmod(0o755)
     env["PATH"] = f"{stub_dir}:{env['PATH']}"
     cmd = [sys.executable, SCRIPT, feature_name]
@@ -505,7 +509,11 @@ def test_state_file_includes_skills_from_flow_json(git_repo_with_remote):
     stub_dir = git_repo_with_remote / ".stub-bin"
     stub_dir.mkdir(exist_ok=True)
     gh_stub = stub_dir / "gh"
-    gh_stub.write_text('#!/bin/bash\necho "https://github.com/test/repo/pull/42"\n')
+    gh_stub.write_text(
+        "#!/bin/bash\n"
+        'if [[ "$1" == "issue" && "$2" == "view" ]]; then exit 1; fi\n'
+        'echo "https://github.com/test/repo/pull/42"\n'
+    )
     gh_stub.chmod(0o755)
     env["PATH"] = f"{stub_dir}:{env['PATH']}"
 
@@ -550,7 +558,11 @@ def test_auto_flag_overrides_skills_to_fully_autonomous(git_repo_with_remote):
     stub_dir = git_repo_with_remote / ".stub-bin"
     stub_dir.mkdir(exist_ok=True)
     gh_stub = stub_dir / "gh"
-    gh_stub.write_text('#!/bin/bash\necho "https://github.com/test/repo/pull/42"\n')
+    gh_stub.write_text(
+        "#!/bin/bash\n"
+        'if [[ "$1" == "issue" && "$2" == "view" ]]; then exit 1; fi\n'
+        'echo "https://github.com/test/repo/pull/42"\n'
+    )
     gh_stub.chmod(0o755)
     env["PATH"] = f"{stub_dir}:{env['PATH']}"
 
@@ -954,6 +966,171 @@ def test_backfill_skips_frozen_phases(git_repo_with_remote):
     result = _run_no_gh(git_repo_with_remote, "frozen skip test", skip_pull=True)
     assert result.returncode == 0, result.stderr
     assert frozen_path.stat().st_mtime == original_mtime
+
+
+# --- _fetch_issue_title (in-process) ---
+
+
+def test_fetch_issue_title_success():
+    """Successful gh issue view returns the title string."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            _mod.subprocess,
+            "run",
+            lambda *a, **kw: type("R", (), {"returncode": 0, "stdout": "Add dark mode toggle\n"})(),
+        )
+        result = _mod._fetch_issue_title(42)
+    assert result == "Add dark mode toggle"
+
+
+def test_fetch_issue_title_failure_returns_none():
+    """Non-zero exit from gh issue view returns None."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            _mod.subprocess,
+            "run",
+            lambda *a, **kw: type("R", (), {"returncode": 1, "stdout": ""})(),
+        )
+        result = _mod._fetch_issue_title(999)
+    assert result is None
+
+
+def test_fetch_issue_title_timeout_returns_none():
+    """TimeoutExpired from gh issue view returns None."""
+
+    def _raise(*a, **kw):
+        raise subprocess.TimeoutExpired("gh", 10)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_mod.subprocess, "run", _raise)
+        result = _mod._fetch_issue_title(42)
+    assert result is None
+
+
+def test_fetch_issue_title_exception_returns_none():
+    """Generic exception from subprocess (e.g. OSError) returns None."""
+
+    def _raise(*a, **kw):
+        raise OSError("no gh")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_mod.subprocess, "run", _raise)
+        result = _mod._fetch_issue_title(42)
+    assert result is None
+
+
+def test_fetch_issue_title_strips_whitespace():
+    """Trailing whitespace/newlines are stripped from the title."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            _mod.subprocess,
+            "run",
+            lambda *a, **kw: type("R", (), {"returncode": 0, "stdout": "  Fix login bug  \n"})(),
+        )
+        result = _mod._fetch_issue_title(10)
+    assert result == "Fix login bug"
+
+
+# --- Issue-aware branch/title derivation (in-process via subprocess run) ---
+
+
+def test_issue_title_used_for_branch_when_prompt_has_issue_ref(git_repo_with_remote):
+    """When prompt contains #N and fetch succeeds, branch derives from issue title."""
+    _write_flow_json(git_repo_with_remote, _current_plugin_version())
+
+    env = os.environ.copy()
+    stub_dir = git_repo_with_remote / ".stub-bin"
+    stub_dir.mkdir(exist_ok=True)
+    gh_stub = stub_dir / "gh"
+    # Smart stub: responds to 'issue view' with title, 'pr create' with URL
+    gh_stub.write_text(
+        "#!/bin/bash\n"
+        'if [[ "$1" == "issue" && "$2" == "view" ]]; then\n'
+        '  echo "Organize settings allow list"\n'
+        "else\n"
+        '  echo "https://github.com/test/repo/pull/42"\n'
+        "fi\n"
+    )
+    gh_stub.chmod(0o755)
+    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+
+    prompt_path = git_repo_with_remote / ".flow-start-prompt"
+    prompt_path.write_text("work on issue #309")
+    cmd = [sys.executable, SCRIPT, "work-on-issue", "--prompt-file", str(prompt_path), "--skip-pull"]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(git_repo_with_remote), env=env)
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["branch"] == "organize-settings-allow-list"
+    assert data["feature"] == "Organize Settings Allow List"
+
+
+def test_fallback_to_feature_words_when_fetch_fails(git_repo_with_remote):
+    """When gh issue view fails, branch derives from feature words."""
+    _write_flow_json(git_repo_with_remote, _current_plugin_version())
+
+    env = os.environ.copy()
+    stub_dir = git_repo_with_remote / ".stub-bin"
+    stub_dir.mkdir(exist_ok=True)
+    gh_stub = stub_dir / "gh"
+    # gh stub: issue view fails, pr create succeeds
+    gh_stub.write_text(
+        "#!/bin/bash\n"
+        'if [[ "$1" == "issue" && "$2" == "view" ]]; then\n'
+        "  exit 1\n"
+        "else\n"
+        '  echo "https://github.com/test/repo/pull/42"\n'
+        "fi\n"
+    )
+    gh_stub.chmod(0o755)
+    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+
+    prompt_path = git_repo_with_remote / ".flow-start-prompt"
+    prompt_path.write_text("fix issue #999")
+    cmd = [sys.executable, SCRIPT, "fix-issue-ref", "--prompt-file", str(prompt_path), "--skip-pull"]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(git_repo_with_remote), env=env)
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["branch"] == "fix-issue-ref"
+    assert data["feature"] == "Fix Issue Ref"
+
+
+def test_multi_issue_uses_first_issue(git_repo_with_remote):
+    """When prompt has multiple #N, only the first issue is fetched."""
+    _write_flow_json(git_repo_with_remote, _current_plugin_version())
+
+    env = os.environ.copy()
+    stub_dir = git_repo_with_remote / ".stub-bin"
+    stub_dir.mkdir(exist_ok=True)
+    gh_stub = stub_dir / "gh"
+    # gh stub: returns different titles based on issue number
+    gh_stub.write_text(
+        "#!/bin/bash\n"
+        'if [[ "$1" == "issue" && "$2" == "view" ]]; then\n'
+        '  echo "First Issue Title"\n'
+        "else\n"
+        '  echo "https://github.com/test/repo/pull/42"\n'
+        "fi\n"
+    )
+    gh_stub.chmod(0o755)
+    env["PATH"] = f"{stub_dir}:{env['PATH']}"
+
+    prompt_path = git_repo_with_remote / ".flow-start-prompt"
+    prompt_path.write_text("fix #42 and #43")
+    cmd = [sys.executable, SCRIPT, "fix-multi", "--prompt-file", str(prompt_path), "--skip-pull"]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(git_repo_with_remote), env=env)
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["branch"] == "first-issue-title"
+    assert data["feature"] == "First Issue Title"
+
+
+def test_no_issue_ref_skips_fetch(git_repo_with_remote):
+    """When prompt has no #N, branch derives from feature words as before."""
+    result = _run_no_gh(git_repo_with_remote, "plain feature", prompt="plain feature", skip_pull=True)
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["branch"] == "plain-feature"
+    assert data["feature"] == "Plain Feature"
 
 
 # --- Tombstone: deduplication PR #740 ---

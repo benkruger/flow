@@ -2093,12 +2093,20 @@ def test_start_derives_branch_name_from_prompt():
     )
 
 
-def test_flow_start_issue_aware_branch_naming():
-    """flow-start must fetch issue titles for branch naming when prompt has #N refs."""
+def test_flow_start_no_gh_issue_view_instruction():
+    """Tombstone: removed in PR #741. start-setup.py handles issue fetching internally."""
     content = _read_skill("flow-start")
-    assert "gh issue view" in content, "flow-start/SKILL.md must reference gh issue view for issue-aware branch naming"
-    assert "fall back" in content.lower() and "prompt words" in content.lower(), (
-        "flow-start/SKILL.md must instruct fallback to prompt words when issue fetch fails"
+    assert "gh issue view" not in content, (
+        "flow-start/SKILL.md must not instruct gh issue view"
+        " — start-setup.py handles issue-aware branch naming internally"
+    )
+
+
+def test_flow_start_documents_automatic_issue_branch_naming():
+    """flow-start must document that start-setup handles issue-aware branch naming."""
+    content = _read_skill("flow-start")
+    assert "start-setup" in content.lower(), (
+        "flow-start/SKILL.md must document that start-setup handles issue-aware branch naming"
     )
 
 
