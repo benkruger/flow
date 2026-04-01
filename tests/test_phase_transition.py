@@ -611,6 +611,34 @@ def test_enter_no_error_when_auto_continue_absent():
     assert "_auto_continue" not in updated
 
 
+def test_enter_sets_session_tty(monkeypatch):
+    """phase_enter writes session_tty from the parent process tty."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
+
+    monkeypatch.setattr(
+        _mod.subprocess,
+        "run",
+        lambda *a, **kw: type("R", (), {"returncode": 0, "stdout": "ttys042\n"})(),
+    )
+    updated, _ = _mod.phase_enter(state, "flow-plan")
+
+    assert updated["session_tty"] == "/dev/ttys042"
+
+
+def test_enter_session_tty_survives_ps_failure(monkeypatch):
+    """phase_enter does not crash when tty detection fails."""
+    state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "complete"})
+
+    def _raise(*a, **kw):
+        raise OSError("no ps")
+
+    monkeypatch.setattr(_mod.subprocess, "run", _raise)
+    updated, result = _mod.phase_enter(state, "flow-plan")
+
+    assert result["status"] == "ok"
+    assert "session_tty" not in updated
+
+
 def test_complete_result_continue_action_invoke_when_auto():
     """phase_complete result includes continue_action='invoke' when skills.<phase>.continue is 'auto'."""
     state = make_state(current_phase="flow-start", phase_statuses={"flow-start": "in_progress"})
