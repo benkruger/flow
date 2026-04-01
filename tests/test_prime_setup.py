@@ -87,7 +87,7 @@ def _load_framework_permissions(framework):
     return json.loads(permissions_path.read_text())["allow"]
 
 
-@pytest.mark.parametrize("framework", ["rails", "python", "ios", "go"])
+@pytest.mark.parametrize("framework", ["rails", "python", "ios", "go", "rust"])
 def test_settings_has_all_allow_entries(tmp_path, framework):
     _mod.merge_settings(tmp_path, framework)
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
