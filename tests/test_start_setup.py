@@ -657,8 +657,53 @@ def test_state_file_has_session_tty(_default_run):
 # --- _detect_tty (in-process) ---
 
 
-def test_detect_tty_returns_dev_path():
-    """_detect_tty returns a /dev/ path when ps succeeds."""
+def test_detect_tty_walks_tree_to_find_real_tty():
+    """_detect_tty walks up the process tree past ?? entries."""
+    responses = [
+        type("R", (), {"returncode": 0, "stdout": "?? 100\n"})(),
+        type("R", (), {"returncode": 0, "stdout": "?? 50\n"})(),
+        type("R", (), {"returncode": 0, "stdout": "ttys007 1\n"})(),
+    ]
+    call_count = [0]
+
+    def _mock_run(*a, **kw):
+        r = responses[call_count[0]]
+        call_count[0] += 1
+        return r
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_mod.subprocess, "run", _mock_run)
+        result = _mod._detect_tty()
+    assert result == "/dev/ttys007"
+    assert call_count[0] == 3
+
+
+def test_detect_tty_first_ancestor_has_tty():
+    """_detect_tty returns immediately when current process has a tty."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            _mod.subprocess,
+            "run",
+            lambda *a, **kw: type("R", (), {"returncode": 0, "stdout": "ttys042 1\n"})(),
+        )
+        result = _mod._detect_tty()
+    assert result == "/dev/ttys042"
+
+
+def test_detect_tty_returns_none_when_all_ancestors_have_no_tty():
+    """_detect_tty returns None when entire tree has ??."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            _mod.subprocess,
+            "run",
+            lambda *a, **kw: type("R", (), {"returncode": 0, "stdout": "?? 1\n"})(),
+        )
+        result = _mod._detect_tty()
+    assert result is None
+
+
+def test_detect_tty_returns_none_on_malformed_output():
+    """_detect_tty returns None when ps output has fewer than 2 fields."""
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
             _mod.subprocess,
@@ -666,10 +711,10 @@ def test_detect_tty_returns_dev_path():
             lambda *a, **kw: type("R", (), {"returncode": 0, "stdout": "ttys007\n"})(),
         )
         result = _mod._detect_tty()
-    assert result == "/dev/ttys007"
+    assert result is None
 
 
-def test_detect_tty_returns_none_on_failure():
+def test_detect_tty_returns_none_on_ps_failure():
     """_detect_tty returns None when ps fails."""
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(

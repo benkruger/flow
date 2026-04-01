@@ -221,16 +221,28 @@ for path in files:
         reset_interrupted(path, state)
         if _current and path.stem == _current:
             try:
-                tty_result = subprocess.run(
-                    ["ps", "-o", "tty=", "-p", str(os.getppid())],
-                    capture_output=True, text=True, timeout=5,
-                )
-                if tty_result.returncode == 0 and tty_result.stdout.strip():
-                    tty_name = "/dev/" + tty_result.stdout.strip()
-                    if state.get("session_tty") != tty_name:
-                        state["session_tty"] = tty_name
-                        with open(path, "w") as wf:
-                            json.dump(state, wf, indent=2)
+                _pid = os.getpid()
+                _tty_name = None
+                for _ in range(20):
+                    _tr = subprocess.run(
+                        ["ps", "-o", "tty=,ppid=", "-p", str(_pid)],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    if _tr.returncode != 0:
+                        break
+                    _parts = _tr.stdout.strip().split()
+                    if len(_parts) < 2:
+                        break
+                    if _parts[0] not in ("??", "?"):
+                        _tty_name = "/dev/" + _parts[0]
+                        break
+                    _pid = int(_parts[1])
+                    if _pid <= 1:
+                        break
+                if _tty_name and state.get("session_tty") != _tty_name:
+                    state["session_tty"] = _tty_name
+                    with open(path, "w") as wf:
+                        json.dump(state, wf, indent=2)
             except Exception:
                 pass
         failure = consume_last_failure(path, state)
