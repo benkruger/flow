@@ -295,23 +295,16 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=7
 ```
 
-Use the Read tool to check if `bin/dependencies` exists at `<project_root>/bin/dependencies`.
-
-If it does not exist, skip to Step 10 (release lock).
-
-If it exists, run it:
-
 ```bash
-bin/dependencies
+${CLAUDE_PLUGIN_ROOT}/bin/flow update-deps
 ```
 
-Then check if anything changed:
+Parse the JSON output:
 
-```bash
-git status
-```
-
-If `git status` shows no changes, skip to Step 10 (release lock).
+- If `status` is `"skipped"` → skip to Step 10 (release lock).
+- If `status` is `"ok"` and `changes` is `false` → skip to Step 10 (release lock).
+- If `status` is `"ok"` and `changes` is `true` → continue to Step 8.
+- If `status` is `"error"` → release the lock and stop. Report the error to the user.
 
 ### Step 8 — CI post-deps gate
 
