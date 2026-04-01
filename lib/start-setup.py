@@ -27,6 +27,7 @@ from flow_utils import (
     build_initial_phases,
     derive_feature,
     detect_repo,
+    extract_issue_numbers,
     freeze_phases,
     mutate_state,
     now,
@@ -48,6 +49,24 @@ def _branch_name(feature_words):
     if last_hyphen > 0:
         return truncated[:last_hyphen]
     return name[:32]
+
+
+def _fetch_issue_title(issue_number):
+    """Fetch issue title from GitHub. Returns title string or None on failure."""
+    try:
+        result = subprocess.run(
+            ["gh", "issue", "view", str(issue_number), "--json", "title", "--jq", ".title"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        pass
+    except Exception:
+        pass
+    return None
 
 
 def _run_cmd(args, cwd, step_name, timeout=None):
@@ -253,8 +272,16 @@ def main():
         raw_prompt = args.prompt
     else:
         raw_prompt = feature_words
-    branch = _branch_name(feature_words)
-    feature_title = derive_feature(feature_words)
+    # Issue-aware branch naming: if prompt contains #N, fetch first issue's title
+    naming_words = feature_words
+    issue_numbers = extract_issue_numbers(raw_prompt)
+    if issue_numbers:
+        title = _fetch_issue_title(issue_numbers[0])
+        if title:
+            naming_words = title
+
+    branch = _branch_name(naming_words)
+    feature_title = derive_feature(naming_words)
     project_root = Path.cwd()
 
     try:
