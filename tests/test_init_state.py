@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from conftest import LIB_DIR, PHASE_ORDER, make_flow_json
+from flow_utils import branch_name
 
 SCRIPT = str(LIB_DIR / "init-state.py")
 
@@ -344,7 +345,7 @@ def test_branch_name_truncated_at_32(target_project):
 
 def test_branch_name_single_long_word():
     """Single word >32 chars with no hyphens truncates at 32 (in-process)."""
-    result = _mod._branch_name("a" * 40)
+    result = branch_name("a" * 40)
     assert len(result) == 32
     assert result == "a" * 32
 
@@ -404,3 +405,18 @@ def test_start_step_fields_absent_when_flags_omitted(target_project):
     state = json.loads(state_path.read_text())
     assert "start_step" not in state
     assert "start_steps_total" not in state
+
+
+# --- Tombstone: deduplication PR #740 ---
+
+
+def test_init_state_no_local_branch_name():
+    """Tombstone: removed in PR #740. Must not return."""
+    source = (LIB_DIR / "init-state.py").read_text()
+    assert "def _branch_name" not in source, "init-state.py must import branch_name from flow_utils, not define locally"
+
+
+def test_init_state_no_local_freeze_phases():
+    """Tombstone: removed in PR #740. Must not return."""
+    source = (LIB_DIR / "init-state.py").read_text()
+    assert "def freeze_phases" not in source, "init-state.py must import freeze_phases from flow_utils"
