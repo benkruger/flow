@@ -30,7 +30,9 @@ from flow_utils import (
 from log import append_log
 
 
-def create_state(project_root, branch, framework="rails", skills=None, prompt=""):
+def create_state(
+    project_root, branch, framework="rails", skills=None, prompt="", start_step=None, start_steps_total=None
+):
     """Create the initial state file with null PR fields."""
     current_time = now()
     phases = build_initial_phases(current_time)
@@ -59,6 +61,10 @@ def create_state(project_root, branch, framework="rails", skills=None, prompt=""
     }
     if skills is not None:
         state["skills"] = skills
+    if start_step is not None:
+        state["start_step"] = start_step
+    if start_steps_total is not None:
+        state["start_steps_total"] = start_steps_total
 
     state_dir = project_root / ".flow-states"
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -74,6 +80,8 @@ def main():
         "--prompt-file", default=None, help="Path to file containing start prompt (file is deleted after reading)"
     )
     parser.add_argument("--auto", action="store_true", help="Override all skills to fully autonomous preset")
+    parser.add_argument("--start-step", type=int, default=None, help="Initial start_step value for TUI progress")
+    parser.add_argument("--start-steps-total", type=int, default=None, help="Total start steps for TUI progress")
     args = parser.parse_args()
 
     if not args.feature_name:
@@ -129,7 +137,15 @@ def main():
         raw_prompt = feature_words
 
     # Create state file and frozen phases
-    create_state(project_root, branch, framework=framework, skills=skills, prompt=raw_prompt)
+    create_state(
+        project_root,
+        branch,
+        framework=framework,
+        skills=skills,
+        prompt=raw_prompt,
+        start_step=args.start_step,
+        start_steps_total=args.start_steps_total,
+    )
     append_log(branch, f"[Phase 1] create .flow-states/{branch}.json (exit 0)")
 
     freeze_phases(project_root, branch)
