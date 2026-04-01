@@ -1246,6 +1246,12 @@ def test_flow_qa_asks_for_framework():
     assert "AskUserQuestion" in content, "flow-qa/SKILL.md must use AskUserQuestion when no framework is given"
 
 
+def test_flow_qa_no_create_issue_step():
+    """Tombstone: removed in PR #729. Must not return."""
+    content = (REPO_ROOT / ".claude" / "skills" / "flow-qa" / "SKILL.md").read_text()
+    assert "flow-create-issue" not in content, "flow-qa create-issue step was removed in PR #729"
+
+
 def test_commit_mode_resolution():
     """Commit SKILL.md must default to auto and have Mode Resolution."""
     content = (SKILLS_DIR / "flow-commit" / "SKILL.md").read_text()

@@ -17,31 +17,8 @@ _mod = importlib.import_module("qa-verify")
 # --- mock helper ---
 
 
-def _gh_side_effect(pr_result=None, issue_result=None):
-    """Build a side_effect for subprocess.run that routes by command args.
-
-    pr_result: CompletedProcess for gh pr list (--state merged)
-    issue_result: CompletedProcess for gh issue list (--label decomposed)
-    """
-
-    def _route(cmd, **kwargs):
-        args = cmd if isinstance(cmd, list) else [cmd]
-        if "--state" in args and "merged" in args:
-            return pr_result
-        if "--label" in args and "decomposed" in args:
-            return issue_result
-        # Fallback: return pr_result for unrecognized calls
-        return pr_result
-
-    return _route
-
-
 def _ok_pr():
     return subprocess.CompletedProcess(args=[], returncode=0, stdout=json.dumps([{"number": 1}]), stderr="")
-
-
-def _ok_issue():
-    return subprocess.CompletedProcess(args=[], returncode=0, stdout=json.dumps([{"number": 10}]), stderr="")
 
 
 def _empty_list():
@@ -57,7 +34,7 @@ def _error_result():
 
 def test_verify_all_pass(tmp_path):
     """Verify passes when cleanup is complete and PR is merged."""
-    with patch("subprocess.run", side_effect=_gh_side_effect(_ok_pr(), _ok_issue())):
+    with patch("subprocess.run", return_value=_ok_pr()):
         result = _mod.verify("python", "owner/repo", str(tmp_path))
 
     assert result["status"] == "ok"
@@ -76,7 +53,7 @@ def test_verify_leftover_state_file(tmp_path):
         )
     )
 
-    with patch("subprocess.run", side_effect=_gh_side_effect(_ok_pr(), _ok_issue())):
+    with patch("subprocess.run", return_value=_ok_pr()):
         result = _mod.verify("python", "owner/repo", str(tmp_path))
 
     state_check = [c for c in result["checks"] if "state" in c["name"].lower()]
@@ -89,7 +66,7 @@ def test_verify_leftover_worktree(tmp_path):
     wt_dir = tmp_path / ".worktrees" / "some-feature"
     wt_dir.mkdir(parents=True)
 
-    with patch("subprocess.run", side_effect=_gh_side_effect(_ok_pr(), _ok_issue())):
+    with patch("subprocess.run", return_value=_ok_pr()):
         result = _mod.verify("python", "owner/repo", str(tmp_path))
 
     wt_check = [c for c in result["checks"] if "worktree" in c["name"].lower()]
@@ -99,7 +76,7 @@ def test_verify_leftover_worktree(tmp_path):
 
 def test_verify_no_merged_pr(tmp_path):
     """Verify fails when no PR has been merged."""
-    with patch("subprocess.run", side_effect=_gh_side_effect(_empty_list(), _ok_issue())):
+    with patch("subprocess.run", return_value=_empty_list()):
         result = _mod.verify("python", "owner/repo", str(tmp_path))
 
     pr_check = [c for c in result["checks"] if "PR" in c["name"]]
@@ -109,7 +86,7 @@ def test_verify_no_merged_pr(tmp_path):
 
 def test_verify_pr_fetch_failure(tmp_path):
     """Verify reports PR fetch failure."""
-    with patch("subprocess.run", side_effect=_gh_side_effect(_error_result(), _ok_issue())):
+    with patch("subprocess.run", return_value=_error_result()):
         result = _mod.verify("python", "owner/repo", str(tmp_path))
 
     pr_check = [c for c in result["checks"] if "PR" in c["name"]]
@@ -119,7 +96,7 @@ def test_verify_pr_fetch_failure(tmp_path):
 
 def test_verify_no_flow_states_dir(tmp_path):
     """Verify passes cleanup check when .flow-states/ doesn't exist."""
-    with patch("subprocess.run", side_effect=_gh_side_effect(_ok_pr(), _ok_issue())):
+    with patch("subprocess.run", return_value=_ok_pr()):
         result = _mod.verify("python", "owner/repo", str(tmp_path))
 
     state_check = [c for c in result["checks"] if "state" in c["name"].lower()]
@@ -133,7 +110,7 @@ def test_verify_excludes_orchestrate_files(tmp_path):
     state_dir.mkdir()
     (state_dir / "orchestrate-queue.json").write_text("{}")
 
-    with patch("subprocess.run", side_effect=_gh_side_effect(_ok_pr(), _ok_issue())):
+    with patch("subprocess.run", return_value=_ok_pr()):
         result = _mod.verify("python", "owner/repo", str(tmp_path))
 
     state_check = [c for c in result["checks"] if "state" in c["name"].lower()]
@@ -146,61 +123,32 @@ def test_verify_excludes_phases_files(tmp_path):
     state_dir.mkdir()
     (state_dir / "feature-phases.json").write_text("{}")
 
-    with patch("subprocess.run", side_effect=_gh_side_effect(_ok_pr(), _ok_issue())):
+    with patch("subprocess.run", return_value=_ok_pr()):
         result = _mod.verify("python", "owner/repo", str(tmp_path))
 
     state_check = [c for c in result["checks"] if "state" in c["name"].lower()]
     assert state_check[0]["passed"]
 
 
-# --- decomposed issue checks ---
+# --- tombstone tests ---
 
 
-def test_verify_decomposed_issue_exists(tmp_path):
-    """Verify passes when a decomposed issue exists in the repo."""
-    with patch("subprocess.run", side_effect=_gh_side_effect(_ok_pr(), _ok_issue())):
+def test_qa_verify_no_decomposed_issue_check(tmp_path):
+    """Tombstone: removed in PR #729. Must not return."""
+    with patch("subprocess.run", return_value=_ok_pr()):
         result = _mod.verify("python", "owner/repo", str(tmp_path))
 
-    issue_check = [c for c in result["checks"] if "decomposed" in c["name"].lower()]
-    assert len(issue_check) == 1
-    assert issue_check[0]["passed"]
+    check_names = [c["name"] for c in result["checks"]]
+    assert "Decomposed issue created" not in check_names
 
 
-def test_verify_no_decomposed_issue(tmp_path):
-    """Verify fails when no decomposed issue exists."""
-    with patch("subprocess.run", side_effect=_gh_side_effect(_ok_pr(), _empty_list())):
+def test_qa_verify_no_body_files_check(tmp_path):
+    """Tombstone: removed in PR #729. Must not return."""
+    with patch("subprocess.run", return_value=_ok_pr()):
         result = _mod.verify("python", "owner/repo", str(tmp_path))
 
-    issue_check = [c for c in result["checks"] if "decomposed" in c["name"].lower()]
-    assert len(issue_check) == 1
-    assert not issue_check[0]["passed"]
-
-
-def test_verify_decomposed_issue_fetch_failure(tmp_path):
-    """Verify fails when decomposed issue fetch returns error."""
-    with patch("subprocess.run", side_effect=_gh_side_effect(_ok_pr(), _error_result())):
-        result = _mod.verify("python", "owner/repo", str(tmp_path))
-
-    issue_check = [c for c in result["checks"] if "decomposed" in c["name"].lower()]
-    assert len(issue_check) == 1
-    assert not issue_check[0]["passed"]
-    assert "could not fetch" in issue_check[0]["detail"].lower()
-
-
-# --- body file cleanup checks ---
-
-
-def test_verify_leftover_body_files(tmp_path):
-    """Verify fails when .flow-issue-body-* files remain."""
-    (tmp_path / ".flow-issue-body-abc123").write_text("issue body")
-
-    with patch("subprocess.run", side_effect=_gh_side_effect(_ok_pr(), _ok_issue())):
-        result = _mod.verify("python", "owner/repo", str(tmp_path))
-
-    body_check = [c for c in result["checks"] if "body file" in c["name"].lower()]
-    assert len(body_check) == 1
-    assert not body_check[0]["passed"]
-    assert "1" in body_check[0]["detail"]
+    check_names = [c["name"] for c in result["checks"]]
+    assert "No leftover body files" not in check_names
 
 
 # --- CLI ---

@@ -86,47 +86,6 @@ def verify(framework, repo, project_root):
             }
         )
 
-    # At least one issue with the "decomposed" label should exist
-    result = subprocess.run(
-        ["gh", "issue", "list", "--repo", repo, "--label", "decomposed", "--state", "all", "--json", "number"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0:
-        issue_list = json.loads(result.stdout)
-        has_decomposed = len(issue_list) >= 1
-        if has_decomposed:
-            detail = f"{len(issue_list)} decomposed issue(s) found"
-        else:
-            detail = "No decomposed issues found"
-        checks.append(
-            {
-                "name": "Decomposed issue created",
-                "passed": has_decomposed,
-                "detail": detail,
-            }
-        )
-    else:
-        checks.append(
-            {
-                "name": "Decomposed issue created",
-                "passed": False,
-                "detail": "Could not fetch decomposed issues",
-            }
-        )
-
-    # No leftover .flow-issue-body-* files in project root
-    body_files = list(Path(project_root).glob(".flow-issue-body-*"))
-    checks.append(
-        {
-            "name": "No leftover body files",
-            "passed": len(body_files) == 0,
-            "detail": "No leftover body files"
-            if len(body_files) == 0
-            else f"Found {len(body_files)} leftover body file(s)",
-        }
-    )
-
     return {"status": "ok", "checks": checks}
 
 
