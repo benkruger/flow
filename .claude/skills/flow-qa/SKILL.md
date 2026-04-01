@@ -125,61 +125,7 @@ bin/flow qa-verify --framework <framework> --repo <owner/repo> --project-root .q
 
 Parse the JSON output. Report each check's pass/fail status.
 
-### Step 7 — Exercise flow-create-issue
-
-Test the issue creation pipeline against the already-primed QA repo.
-After the lifecycle completes, the repo is back on `main` with a merged
-PR and no active flow — the right state for `flow-create-issue`.
-
-Write a QA continuation breadcrumb so the session can recover if
-interrupted. Use the Write tool to write `.flow-states/qa-create-issue-pending.json` with:
-
-```json
-{"_continue_context": "flow-create-issue QA complete. Return to FLOW repo at <absolute-path-to-flow-repo>, delete .flow-states/qa-create-issue-pending.json via the Write tool (overwrite with empty), then run qa-verify and report results for <framework> against <owner/repo>."}
-```
-
-Change directory to the QA repo:
-
-```bash
-cd .qa-repos/<framework>
-```
-
-Invoke the create-issue skill with a framework-specific prompt using
-the Skill tool:
-
-- python: `/flow:flow-create-issue Add a modulo operation to Calculator in src/calculator.py`
-- rails: `/flow:flow-create-issue Add a power method to Calculator in lib/calculator.rb`
-- ios: `/flow:flow-create-issue Add a modulo operation to Calculator in FlowQA/Calculator.swift`
-- go: `/flow:flow-create-issue Add a modulo operation to Calculator in calculator.go`
-
-The skill has 3 HARD-GATEs (decompose review, draft review, repo
-routing) — the QA operator manually approves each one. When asked
-where to file, choose **Target project** (the QA repo).
-
-After `flow-create-issue` completes, return to the FLOW repo:
-
-```bash
-cd <absolute-path-to-flow-repo>
-```
-
-Delete the QA breadcrumb file by overwriting it with the Write tool
-(write `{}` to `.flow-states/qa-create-issue-pending.json`), then delete it:
-
-```bash
-rm .flow-states/qa-create-issue-pending.json
-```
-
-Run verification again to check the create-issue artifacts:
-
-```bash
-bin/flow qa-verify --framework <framework> --repo <owner/repo> --project-root .qa-repos/<framework>
-```
-
-Parse the JSON output. The new checks ("Decomposed issue created" and
-"No leftover body files") must pass. Report each check's pass/fail
-status.
-
-### Step 8 — Report
+### Step 7 — Report
 
 If all checks passed, print:
 
