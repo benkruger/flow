@@ -97,31 +97,16 @@ def _run_with_retry(bin_ci, cwd, sentinel, max_attempts, simulate_branch=None):
         )
 
         if result.returncode == 0:
-            if attempt == 1:
-                # Passed first try — write sentinel
-                snapshot = _tree_snapshot(cwd, simulate_branch=simulate_branch)
-                if sentinel:
-                    sentinel.parent.mkdir(parents=True, exist_ok=True)
-                    sentinel.write_text(snapshot)
-                print(json.dumps({"status": "ok", "attempts": 1}))
-                sys.exit(0)
-            else:
-                # Flaky — passed on retry
-                snapshot = _tree_snapshot(cwd, simulate_branch=simulate_branch)
-                if sentinel:
-                    sentinel.parent.mkdir(parents=True, exist_ok=True)
-                    sentinel.write_text(snapshot)
-                print(
-                    json.dumps(
-                        {
-                            "status": "ok",
-                            "attempts": attempt,
-                            "flaky": True,
-                            "first_failure_output": first_failure_output,
-                        }
-                    )
-                )
-                sys.exit(0)
+            snapshot = _tree_snapshot(cwd, simulate_branch=simulate_branch)
+            if sentinel:
+                sentinel.parent.mkdir(parents=True, exist_ok=True)
+                sentinel.write_text(snapshot)
+            out = {"status": "ok", "attempts": attempt}
+            if attempt > 1:
+                out["flaky"] = True
+                out["first_failure_output"] = first_failure_output
+            print(json.dumps(out))
+            sys.exit(0)
         else:
             if first_failure_output is None:
                 first_failure_output = (result.stdout + result.stderr).strip()
