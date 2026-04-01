@@ -13,58 +13,27 @@ Output (JSON to stdout):
 
 import argparse
 import json
-import re
-import shutil
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import AUTO_SKILLS, PHASE_NAMES, PHASE_ORDER, now, read_flow_json, read_prompt_file
+from flow_utils import (
+    AUTO_SKILLS,
+    branch_name,
+    build_initial_phases,
+    freeze_phases,
+    now,
+    read_flow_json,
+    read_prompt_file,
+)
 from log import append_log
-
-PLUGIN_ROOT = Path(__file__).resolve().parent.parent
-
-
-def _branch_name(feature_words):
-    """Convert feature words to a hyphenated branch name, max 32 chars."""
-    sanitized = re.sub(r"[^a-zA-Z0-9\s-]", "", feature_words)
-    name = "-".join(sanitized.lower().split())
-    if len(name) <= 32:
-        return name
-    truncated = name[:33]
-    last_hyphen = truncated.rfind("-")
-    if last_hyphen > 0:
-        return truncated[:last_hyphen]
-    return name[:32]
 
 
 def create_state(project_root, branch, framework="rails", skills=None, prompt=""):
     """Create the initial state file with null PR fields."""
     current_time = now()
-    phases = {}
-    first_phase = PHASE_ORDER[0]
-    for key in PHASE_ORDER:
-        if key == first_phase:
-            phases[key] = {
-                "name": PHASE_NAMES[key],
-                "status": "in_progress",
-                "started_at": current_time,
-                "completed_at": None,
-                "session_started_at": current_time,
-                "cumulative_seconds": 0,
-                "visit_count": 1,
-            }
-        else:
-            phases[key] = {
-                "name": PHASE_NAMES[key],
-                "status": "pending",
-                "started_at": None,
-                "completed_at": None,
-                "session_started_at": None,
-                "cumulative_seconds": 0,
-                "visit_count": 0,
-            }
+    phases = build_initial_phases(current_time)
 
     state = {
         "schema_version": 1,
@@ -98,15 +67,6 @@ def create_state(project_root, branch, framework="rails", skills=None, prompt=""
     return state
 
 
-def freeze_phases(project_root, branch):
-    """Copy flow-phases.json to .flow-states/<branch>-phases.json."""
-    source = PLUGIN_ROOT / "flow-phases.json"
-    dest_dir = project_root / ".flow-states"
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / f"{branch}-phases.json"
-    shutil.copy2(source, dest)
-
-
 def main():
     parser = argparse.ArgumentParser(description="FLOW init-state — early state file creation")
     parser.add_argument("feature_name", nargs="?", help="Feature name words")
@@ -129,7 +89,7 @@ def main():
         sys.exit(1)
 
     feature_words = args.feature_name
-    branch = _branch_name(feature_words)
+    branch = branch_name(feature_words)
     project_root = Path.cwd()
 
     # Read .flow.json for framework and skills
