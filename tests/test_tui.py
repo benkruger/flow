@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 import tui
 from conftest import make_state, write_state
 
@@ -1060,12 +1061,13 @@ def test_run_loop_draws_log_view():
 # --- enter key ---
 
 
-def test_enter_key_opens_worktree():
-    """Enter key calls _open_worktree."""
+@pytest.mark.parametrize("key", [ord("\n"), ord("\r"), curses.KEY_ENTER])
+def test_enter_key_opens_worktree(key):
+    """Enter key (all variants) calls _open_worktree."""
     state = make_state()
     app = _make_app(flows=[_flow_from_state(state)])
     with patch.object(app, "_open_worktree") as mock_open:
-        app._handle_list_input(ord("\n"))
+        app._handle_list_input(key)
         mock_open.assert_called_once()
 
 
@@ -1626,14 +1628,15 @@ def test_issues_view_navigate_bounds():
     assert app.issue_selected == 1
 
 
-def test_issues_view_enter_opens_url():
-    """ENTER opens selected issue URL via subprocess."""
+@pytest.mark.parametrize("key", [ord("\n"), ord("\r"), curses.KEY_ENTER])
+def test_issues_view_enter_opens_url(key):
+    """ENTER (all variants) opens selected issue URL via subprocess."""
     flow = _make_issues_flow()
     app = _make_app(flows=[flow])
     app.view = "issues"
     app.issue_selected = 0
     with patch("tui.subprocess.Popen") as mock_popen:
-        app._handle_issues_input(ord("\n"))
+        app._handle_issues_input(key)
         mock_popen.assert_called_once()
         args = mock_popen.call_args[0][0]
         assert args[0] == "open"

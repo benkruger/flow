@@ -107,6 +107,17 @@ def test_happy_path_python_framework(tmp_path):
     assert data["framework"] == "python"
 
 
+def test_happy_path_go_framework(tmp_path):
+    """prime-check.py returns go framework correctly."""
+    version = _current_plugin_version()
+    (tmp_path / ".flow.json").write_text(json.dumps({"flow_version": version, "framework": "go"}))
+    result = _run(tmp_path)
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+    assert data["framework"] == "go"
+
+
 # --- Auto-upgrade on version mismatch with matching config_hash ---
 
 

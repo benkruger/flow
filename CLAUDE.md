@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-FLOW is a Claude Code plugin (`flow:` namespace) that enforces an opinionated 6-phase development lifecycle: Start, Plan, Code, Code Review, Learn, Complete. Each phase is a skill that Claude reads and follows. Phase gates prevent skipping ahead — you must complete each phase before entering the next. Supports Rails, Python, and iOS.
+FLOW is a Claude Code plugin (`flow:` namespace) that enforces an opinionated 6-phase development lifecycle: Start, Plan, Code, Code Review, Learn, Complete. Each phase is a skill that Claude reads and follows. Phase gates prevent skipping ahead — you must complete each phase before entering the next. Supports Rails, Python, iOS, and Go.
 
 This repo is the plugin source code. When installed in a target project, skills and hooks run in the target project's working directory, not here. State files, worktrees, and logs all live in the target project. If you are developing FLOW itself, you are modifying the plugin — not using it.
 
@@ -75,7 +75,7 @@ CI will fail if these are missing:
 - `lib/flow_utils.py` — shared utilities (timestamps, branch detection, state mutation, repo detection)
 - `lib/*.py` — utility scripts invoked by `bin/flow` subcommands (read individual files for details)
 - `bin/flow` — dispatcher script routing subcommands to `lib/*.py`
-- `qa/templates/<framework>/` — per-framework QA repo templates (rails, python, ios)
+- `qa/templates/<framework>/` — per-framework QA repo templates (rails, python, ios, go)
 - `.claude-plugin/marketplace.json` — marketplace registry (version must match plugin.json)
 
 ## Development Environment

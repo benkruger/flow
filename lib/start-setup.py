@@ -14,6 +14,7 @@ Output (JSON to stdout):
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -138,6 +139,22 @@ def _extract_pr_number(pr_url):
     return 0
 
 
+def _detect_tty():
+    """Detect the tty of the parent process (the Claude session terminal)."""
+    try:
+        result = subprocess.run(
+            ["ps", "-o", "tty=", "-p", str(os.getppid())],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return "/dev/" + result.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+
 def _create_state_file(
     project_root, branch, feature_title, pr_url, pr_number, framework="rails", skills=None, prompt="", repo=None
 ):
@@ -160,6 +177,7 @@ def _create_state_file(
             "log": f".flow-states/{branch}.log",
             "state": f".flow-states/{branch}.json",
         },
+        "session_tty": _detect_tty(),
         "session_id": None,
         "transcript_path": None,
         "notes": [],
