@@ -28,11 +28,15 @@ def main():
     cwd = Path.cwd()
     deps = cwd / "bin" / "dependencies"
 
-    if not deps.exists():
+    if not deps.is_file():
         print(json.dumps({"status": "skipped", "reason": "bin/dependencies not found"}))
         sys.exit(0)
 
-    timeout = int(os.environ.get("FLOW_UPDATE_DEPS_TIMEOUT", "300"))
+    try:
+        timeout = int(os.environ.get("FLOW_UPDATE_DEPS_TIMEOUT", "300"))
+    except ValueError:
+        print(json.dumps({"status": "error", "message": "FLOW_UPDATE_DEPS_TIMEOUT is not a valid integer"}))
+        sys.exit(1)
 
     try:
         proc = subprocess.Popen(
@@ -48,6 +52,9 @@ def main():
         proc.wait()
         print(json.dumps({"status": "error", "message": f"bin/dependencies timed out after {timeout}s"}))
         sys.exit(1)
+    except OSError as e:
+        print(json.dumps({"status": "error", "message": f"bin/dependencies could not be executed: {e}"}))
+        sys.exit(1)
 
     if proc.returncode != 0:
         print(json.dumps({"status": "error", "message": f"bin/dependencies failed with exit code {proc.returncode}"}))
@@ -59,6 +66,10 @@ def main():
         capture_output=True,
         text=True,
     )
+
+    if status.returncode != 0:
+        print(json.dumps({"status": "error", "message": "git status failed"}))
+        sys.exit(1)
 
     changes = bool(status.stdout.strip())
     print(json.dumps({"status": "ok", "changes": changes}))
