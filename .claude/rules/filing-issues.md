@@ -8,6 +8,19 @@ if we" — they want a discussion, not a workflow. Do not invoke
 skill. Discuss the idea interactively. Only invoke filing skills
 when the user explicitly says "file an issue" or "create an issue."
 
+## After Decompose Output
+
+When filing issues that originated from a `/decompose:decompose`
+analysis in the current conversation, always use
+`/flow:flow-create-issue` — never bare `bin/flow issue`. The
+decompose output IS the pre-planning. Filing without it discards
+the exploration, risks, approach, and task breakdown that the
+decompose produced.
+
+The signal: if the conversation contains a DAG synthesis with
+codebase exploration, file references, and an approach — the
+issues are pre-planned by definition.
+
 ## The Pattern
 
 1. Write the issue body to `.flow-issue-body` in the project
