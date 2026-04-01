@@ -91,6 +91,19 @@ def build_initial_phases(current_time):
     return phases
 
 
+def branch_name(feature_words):
+    """Convert feature words to a hyphenated branch name, max 32 chars."""
+    sanitized = re.sub(r"[^a-zA-Z0-9\s-]", "", feature_words)
+    name = "-".join(sanitized.lower().split())
+    if len(name) <= 32:
+        return name
+    truncated = name[:33]
+    last_hyphen = truncated.rfind("-")
+    if last_hyphen > 0:
+        return truncated[:last_hyphen]
+    return name[:32]
+
+
 def load_phase_config(path):
     """Load phase config from a JSON file, returning (order, names, numbers, commands).
 
