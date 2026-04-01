@@ -173,6 +173,14 @@ proceeding to the next step, proposing direct edits, committing changes,
 or taking any action outside the active skill flow. The enforcement
 language is what distinguishes a gate from a suggestion.
 
+## Hard Rules Consistency
+
+When adding a flag that bypasses a HARD-GATE (e.g. `--auto`), audit
+the skill's Hard Rules section for absolute prohibitions that the
+bypass contradicts. A Hard Rule saying "Never do X" while a HARD-GATE
+says "If --auto, do X" creates conflicting instructions. Update the
+Hard Rule with a carve-out for the new flag.
+
 ## Safe Defaults for Subjective Classification
 
 When a skill asks the model to classify conversation content (e.g.,

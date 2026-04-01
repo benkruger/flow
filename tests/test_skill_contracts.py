@@ -2916,6 +2916,15 @@ def test_create_issue_usage_documents_step_flag():
     assert "--step 4" not in usage_text, "Usage must not document --step 4 (skill has 2 steps)"
 
 
+def test_create_issue_usage_documents_auto_flag():
+    """flow-create-issue Usage must document --auto flag for autonomous execution."""
+    content = _read_skill("flow-create-issue")
+    usage_match = re.search(r"## Usage\n(.*?)(?=\n## )", content, re.DOTALL)
+    assert usage_match, "Could not find Usage section"
+    usage_text = usage_match.group(1)
+    assert "--auto" in usage_text, "Usage must document --auto flag"
+
+
 def test_create_issue_steps_have_banners():
     """Each flow-create-issue step must have a step banner."""
     steps = _create_issue_steps()

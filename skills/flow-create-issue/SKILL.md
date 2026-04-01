@@ -13,11 +13,15 @@ This skill requires prior brainstorming context in the conversation. The user mu
 
 ```text
 /flow:flow-create-issue
+/flow:flow-create-issue --auto
+/flow:flow-create-issue --auto --force-decompose
 /flow:flow-create-issue --force-decompose
 /flow:flow-create-issue --step 2 --id <id>
 ```
 
 - `/flow:flow-create-issue` — start from the Conversation Gate
+- `/flow:flow-create-issue --auto` — autonomous mode: bypass all interactive gates with sensible defaults
+- `/flow:flow-create-issue --auto --force-decompose` — autonomous mode with forced fresh decompose
 - `/flow:flow-create-issue --force-decompose` — force a fresh decompose even when prior implementation-focused output exists in the conversation
 - `/flow:flow-create-issue --step 2 --id <id>` — self-invocation: skip to Step 2 (Transform + Draft + File)
 
@@ -47,7 +51,13 @@ generated in Step 1. Skip the Announce banner and jump directly to the
 Resume Check, using the provided `<id>` for all file paths.
 
 - `--step 2 --id <id>` → Resume Check dispatches to Step 2
+- `--step 2 --id <id> --auto` → Resume Check dispatches to Step 2 in autonomous mode
 - `--force-decompose` (no `--step`) → Conversation Gate, then Step 1 bypasses Prior Decompose Detection
+- `--auto` → autonomous mode: all interactive gates use sensible defaults (see each gate for specifics)
+
+The `--auto` flag must be forwarded through self-invocation. When Step 1
+self-invokes with `--step 2 --id <id>`, append `--auto` if it was passed
+to the original invocation.
 
 If no `--step` flag was passed, proceed to the Conversation Gate.
 
@@ -64,6 +74,10 @@ Conversation Gate.
 ---
 
 ## Conversation Gate
+
+If `--auto` was passed, skip the Conversation Gate entirely and proceed
+to Step 1. In autonomous mode, the caller is responsible for ensuring
+context exists in the conversation.
 
 Before entering the pipeline, verify that the current conversation contains
 brainstorming context — a problem that was explored, a solution that was
@@ -84,6 +98,8 @@ discover them.
 - The conversation just started with this invocation
 
 <HARD-GATE>
+
+If `--auto` was passed, this gate does not apply — proceed to Step 1.
 
 If no brainstorming context exists, output this guidance and stop:
 
@@ -145,8 +161,9 @@ AND `--force-decompose` was NOT passed:** the existing decompose
 synthesis is sufficient. Skip the decompose invocation below. Write
 `{"create_issue_step": 1}` to `.flow-states/create-issue-<id>.json`
 using the Write tool. Invoke `flow:flow-create-issue --step 2 --id <id>`
-using the Skill tool as your final action. Do not output anything else
-after this invocation.
+using the Skill tool as your final action — append `--auto` if it was
+passed to the original invocation. Do not output anything else after
+this invocation.
 
 **If the conversation contains only problem-analysis decompose output
 (no tasks, no file targets), or no prior decompose output exists, or
@@ -173,8 +190,14 @@ and a synthesis — this becomes the foundation for the Implementation Plan.
 
 <HARD-GATE>
 
-After decompose returns, ask the user to review using AskUserQuestion with
-structured parameters:
+**If `--auto` was passed**, skip the review prompt. Write
+`{"create_issue_step": 1}` to `.flow-states/create-issue-<id>.json`
+using the Write tool. Invoke
+`flow:flow-create-issue --step 2 --id <id> --auto` using the Skill tool
+as your final action. Do not output anything else after this invocation.
+
+**If `--auto` was NOT passed**, ask the user to review using
+AskUserQuestion with structured parameters:
 
 - **question**: "Review the implementation decomposition above. How would you like to proceed?"
 - **header**: "Decompose"
@@ -286,6 +309,12 @@ repository, so skip the repo selection and present a simplified prompt.
 
 <HARD-GATE>
 
+**If `--auto` was passed**, skip the review prompt entirely. File the
+issue to the current project (target project path).
+Proceed directly to the Filing section below.
+
+**If `--auto` was NOT passed**, present the review prompt:
+
 **If the current repo is `benkruger/flow`**, ask the user to review the
 draft using AskUserQuestion with structured parameters:
 
@@ -394,7 +423,7 @@ Display the issue URL to the user, then output the COMPLETE banner:
 
 ## Hard Rules
 
-- Never file an issue without explicit user approval — the Step 2 AskUserQuestion is the mandatory gate
+- Never file an issue without explicit user approval in interactive mode — the Step 2 AskUserQuestion is the mandatory gate unless `--auto` was passed
 - Never tell the user to "look at" a file — render all content inline
 - Never use Bash to print banners — output them as text in your response
 - The issue body must be self-contained — a fresh session with no memory of this conversation must be able to execute it
