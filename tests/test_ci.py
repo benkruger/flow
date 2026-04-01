@@ -475,14 +475,17 @@ def failing_ci_project(ci_project):
     return ci_project
 
 
-def test_retry_pass_first_attempt(ci_project):
-    """--retry 3 with a passing CI returns attempts=1, no flaky flag."""
-    result = _run(ci_project, args=["--retry", "3"])
+def test_retry_pass_first_attempt(ci_project_excluded):
+    """--retry 3 with a passing CI returns attempts=1, no flaky flag, writes sentinel."""
+    branch = _branch_name(ci_project_excluded)
+    result = _run(ci_project_excluded, args=["--retry", "3"])
     assert result.returncode == 0
     output = _parse(result)
     assert output["status"] == "ok"
     assert output["attempts"] == 1
     assert "flaky" not in output
+    sentinel = ci_project_excluded / ".flow-states" / f"{branch}-ci-passed"
+    assert sentinel.exists()
 
 
 def test_retry_flaky(flaky_ci_project):
