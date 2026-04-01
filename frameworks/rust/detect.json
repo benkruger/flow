@@ -1,0 +1,5 @@
+{
+  "name": "rust",
+  "display_name": "Rust",
+  "detect_globs": ["Cargo.toml"]
+}

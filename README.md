@@ -1,6 +1,6 @@
 # FLOW — Software Development Lifecycle for Claude Code
 
-An opinionated 6-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces plan-first, TDD discipline on every feature. Supports Rails, Python, iOS, and Go.
+An opinionated 6-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces plan-first, TDD discipline on every feature. Supports Rails, Python, iOS, Go, and Rust.
 
 **Every feature. Same 6 phases. Same order. No shortcuts.**
 

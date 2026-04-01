@@ -448,7 +448,7 @@ def main():
             json.dumps(
                 {
                     "status": "error",
-                    "message": "Usage: python3 prime-setup.py <project_root> --framework rails|python|ios|go",
+                    "message": "Usage: python3 prime-setup.py <project_root> --framework rails|python|ios|go|rust",
                 }
             )
         )
