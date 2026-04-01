@@ -1,10 +1,12 @@
 """Run the target project's bin/ci with dirty-check optimization.
 
 Usage:
-  bin/flow ci [--force] [--simulate-branch <name>]
+  bin/flow ci [--force] [--retry N] [--simulate-branch <name>]
 
 By default, skips if nothing changed since the last passing run.
 With --force, always runs bin/ci regardless of sentinel state.
+With --retry N, runs up to N times with force semantics. Classifies
+failures as flaky (passes on retry) or consistent (all attempts fail).
 With --simulate-branch, sets FLOW_SIMULATE_BRANCH in the child
 environment so current_branch() returns the simulated name during
 test execution. The simulated branch name is incorporated into the
@@ -12,9 +14,12 @@ sentinel snapshot hash so runs with different --simulate-branch
 values produce distinct sentinels.
 
 Output (JSON to stdout):
-  Success:  {"status": "ok", "skipped": false}
-  Skipped:  {"status": "ok", "skipped": true, "reason": "..."}
-  Error:    {"status": "error", "message": "..."}
+  Success:       {"status": "ok", "skipped": false}
+  Skipped:       {"status": "ok", "skipped": true, "reason": "..."}
+  Error:         {"status": "error", "message": "..."}
+  Retry pass:    {"status": "ok", "attempts": 1}
+  Retry flaky:   {"status": "ok", "attempts": 2, "flaky": true, "first_failure_output": "..."}
+  Retry fail:    {"status": "error", "attempts": 3, "consistent": true, "output": "..."}
 """
 
 import hashlib
@@ -79,6 +84,64 @@ def _tree_snapshot(root, simulate_branch=None):
     return hashlib.sha256(combined.encode()).hexdigest()
 
 
+def _run_with_retry(bin_ci, cwd, sentinel, max_attempts, simulate_branch=None):
+    """Run bin/ci up to max_attempts times, classifying as flaky or consistent."""
+    first_failure_output = None
+
+    for attempt in range(1, max_attempts + 1):
+        result = subprocess.run(
+            [str(bin_ci)],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode == 0:
+            if attempt == 1:
+                # Passed first try — write sentinel
+                snapshot = _tree_snapshot(cwd, simulate_branch=simulate_branch)
+                if sentinel:
+                    sentinel.parent.mkdir(parents=True, exist_ok=True)
+                    sentinel.write_text(snapshot)
+                print(json.dumps({"status": "ok", "attempts": 1}))
+                sys.exit(0)
+            else:
+                # Flaky — passed on retry
+                snapshot = _tree_snapshot(cwd, simulate_branch=simulate_branch)
+                if sentinel:
+                    sentinel.parent.mkdir(parents=True, exist_ok=True)
+                    sentinel.write_text(snapshot)
+                print(
+                    json.dumps(
+                        {
+                            "status": "ok",
+                            "attempts": attempt,
+                            "flaky": True,
+                            "first_failure_output": first_failure_output,
+                        }
+                    )
+                )
+                sys.exit(0)
+        else:
+            if first_failure_output is None:
+                first_failure_output = (result.stdout + result.stderr).strip()
+            if sentinel and sentinel.exists():
+                sentinel.unlink()
+
+    # All attempts failed — consistent failure
+    print(
+        json.dumps(
+            {
+                "status": "error",
+                "attempts": max_attempts,
+                "consistent": True,
+                "output": first_failure_output or "",
+            }
+        )
+    )
+    sys.exit(1)
+
+
 def main():
     if os.environ.get("FLOW_CI_RUNNING"):
         print(json.dumps({"status": "ok", "skipped": True, "reason": "recursion guard"}))
@@ -103,6 +166,14 @@ def main():
             branch_override = args[idx + 1]
             args = args[:idx] + args[idx + 2 :]
 
+    # Extract --retry N from args
+    retry = 0
+    if "--retry" in args:
+        idx = args.index("--retry")
+        if idx + 1 < len(args):
+            retry = int(args[idx + 1])
+            args = args[:idx] + args[idx + 2 :]
+
     # Extract --simulate-branch from args (set in child env AND sentinel hash)
     simulate_branch = None
     if "--simulate-branch" in args:
@@ -118,17 +189,21 @@ def main():
         print(json.dumps({"status": "error", "message": "bin/ci not found"}))
         sys.exit(1)
 
+    # Set simulate-branch env var AFTER branch resolution (sentinel uses
+    # the real branch) and BEFORE subprocess.run (child inherits it).
+    if simulate_branch:
+        os.environ["FLOW_SIMULATE_BRANCH"] = simulate_branch
+
+    # Retry mode: run up to N times with force semantics
+    if retry > 0:
+        _run_with_retry(bin_ci, cwd, sentinel, retry, simulate_branch)
+
     snapshot = _tree_snapshot(cwd, simulate_branch=simulate_branch)
 
     if not force and sentinel and sentinel.exists():
         if sentinel.read_text() == snapshot:
             print(json.dumps({"status": "ok", "skipped": True, "reason": "no changes since last CI pass"}))
             sys.exit(0)
-
-    # Set simulate-branch env var AFTER branch resolution (sentinel uses
-    # the real branch) and BEFORE subprocess.run (child inherits it).
-    if simulate_branch:
-        os.environ["FLOW_SIMULATE_BRANCH"] = simulate_branch
 
     result = subprocess.run(
         [str(bin_ci)],
