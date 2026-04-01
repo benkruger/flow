@@ -2102,6 +2102,15 @@ def test_flow_start_issue_aware_branch_naming():
     )
 
 
+def test_start_no_manual_step_counter():
+    """Tombstone: removed in PR #737. Must not return."""
+    content = _read_skill("flow-start")
+    assert "set-timestamp --set start_step=" not in content, (
+        "flow-start SKILL.md must not contain manual set-timestamp --set start_step= calls — "
+        "step tracking is handled by start-step subcommand and init-state flags"
+    )
+
+
 def test_prime_commit_step_enforces_flow_commit_exclusively():
     """flow-prime commit step must use /flow:flow-commit and not raw git commands."""
     content = _read_skill("flow-prime")
