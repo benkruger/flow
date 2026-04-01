@@ -93,6 +93,27 @@ If all tests pass across all rounds, report:
 **No findings.** All adversarial tests passed — the implementation
 handles the tested edge cases correctly.
 
+## Reasoning Discipline
+
+Before writing each adversarial test, formally trace the edge case
+through the code to confirm it is a real gap — not an imagined one.
+
+For each candidate edge case:
+
+**Premise.** State which code path you believe is untested and cite
+the specific file path and line range from the diff or existing code.
+Name the input condition or state that would trigger the edge case.
+
+**Trace.** Walk the execution path with that input. Name each
+function, branch, or guard you traverse. Use Read or Grep to verify
+each step — do not assume behavior from names alone. If the path is
+already guarded or tested, discard the candidate.
+
+**Conclude.** State whether the gap is confirmed — the path is
+reachable with the stated input and no existing test covers it.
+Only write a test for confirmed gaps. Discard speculative edge
+cases that the trace refutes.
+
 ## Rules
 
 - Only use the Write tool to write to `<temp_test_file>` — no other path

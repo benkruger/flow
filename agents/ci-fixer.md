@@ -32,6 +32,29 @@ exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 2. Test failures — understand the root cause, fix the code not the test
 3. Coverage gaps — write the missing test
 
+## Reasoning Discipline (Deep Diagnosis)
+
+Use this discipline when a first-pass fix has failed and you are
+retrying. On first attempt, diagnose and fix directly — speed matters.
+On retry (attempt 2+), switch to structured reasoning to avoid
+repeating the same incorrect diagnosis.
+
+For each suspected root cause on retry:
+
+**Premise.** State what you believe is causing the failure and cite
+the specific file path and line range. Reference the failing test
+name and assertion.
+
+**Trace.** Trace backward from the failing assertion through the call
+chain. Name each function, branch, or data transformation you
+traverse. Use Read or Grep to verify each step — do not assume
+behavior from names alone. If a step in the trace contradicts your
+premise, stop and form a new premise.
+
+**Conclude.** State whether the root cause is confirmed or refuted by
+the trace. A confirmed cause gets a targeted fix. A refuted cause is
+discarded — form a new premise and trace again.
+
 ## Rules
 
 - Use Read, Glob, and Grep tools for all file reading and searching

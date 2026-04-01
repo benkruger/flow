@@ -420,6 +420,31 @@ def test_adversarial_agent_exists():
     )
 
 
+def test_agents_have_reasoning_discipline():
+    """Code-semantic agents must have a Reasoning Discipline section with Premise/Trace/Conclude."""
+    agents = ["pre-mortem", "reviewer", "ci-fixer", "adversarial"]
+    for agent_name in agents:
+        agent_file = REPO_ROOT / "agents" / f"{agent_name}.md"
+        content = agent_file.read_text()
+        assert "## Reasoning Discipline" in content, (
+            f"agents/{agent_name}.md must have a '## Reasoning Discipline' section"
+        )
+        for keyword in ("Premise", "Trace", "Conclude"):
+            assert keyword in content, f"agents/{agent_name}.md Reasoning Discipline section must reference '{keyword}'"
+
+
+def test_semi_formal_reasoning_rule_exists():
+    """Rule file for semi-formal reasoning criteria must exist with required sections."""
+    rule_file = REPO_ROOT / ".claude" / "rules" / "semi-formal-reasoning.md"
+    assert rule_file.exists(), ".claude/rules/semi-formal-reasoning.md must exist"
+    content = rule_file.read_text()
+    assert "# Semi-Formal Reasoning" in content, (
+        ".claude/rules/semi-formal-reasoning.md must have the top-level heading"
+    )
+    for section in ("When to Include", "When Not to Include"):
+        assert section in content, f".claude/rules/semi-formal-reasoning.md must have a '{section}' section"
+
+
 def test_cognitive_isolation_lists_all_context_rich_agents():
     """Guard: cognitive-isolation.md must list all context-rich agents in the Two-Tier Context Model."""
     rule_file = REPO_ROOT / ".claude" / "rules" / "cognitive-isolation.md"
