@@ -954,3 +954,12 @@ def test_backfill_skips_frozen_phases(git_repo_with_remote):
     result = _run_no_gh(git_repo_with_remote, "frozen skip test", skip_pull=True)
     assert result.returncode == 0, result.stderr
     assert frozen_path.stat().st_mtime == original_mtime
+
+
+# --- Tombstone: deduplication PR #740 ---
+
+
+def test_start_setup_no_local_branch_name():
+    """Tombstone: removed in PR #740. Must not return."""
+    source = (LIB_DIR / "start-setup.py").read_text()
+    assert "def _branch_name" not in source, "start-setup.py must import branch_name from flow_utils"

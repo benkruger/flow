@@ -376,3 +376,18 @@ def test_auto_skills_imported_not_defined():
         stripped = line.lstrip()
         if stripped.startswith("AUTO_SKILLS") and "=" in stripped and "import" not in stripped:
             pytest.fail("init-state.py defines AUTO_SKILLS locally; it should import from flow_utils")
+
+
+# --- Tombstone: deduplication PR #740 ---
+
+
+def test_init_state_no_local_branch_name():
+    """Tombstone: removed in PR #740. Must not return."""
+    source = (LIB_DIR / "init-state.py").read_text()
+    assert "def _branch_name" not in source, "init-state.py must import branch_name from flow_utils, not define locally"
+
+
+def test_init_state_no_local_freeze_phases():
+    """Tombstone: removed in PR #740. Must not return."""
+    source = (LIB_DIR / "init-state.py").read_text()
+    assert "def freeze_phases" not in source, "init-state.py must import freeze_phases from flow_utils"
