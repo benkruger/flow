@@ -12,7 +12,7 @@ in the FLOW source repo against dedicated QA repos cloned to `.qa-repos/`.
 
 ```text
 /flow-qa
-/flow-qa <python|rails|ios|all>
+/flow-qa <python|rails|ios|go|all>
 ```
 
 - `/flow-qa` — asks which framework to test (recommends `all`)
@@ -20,7 +20,7 @@ in the FLOW source repo against dedicated QA repos cloned to `.qa-repos/`.
 - `/flow-qa all` — runs against all supported frameworks sequentially
 
 If no argument is given, use AskUserQuestion with these options
-(in this order): **all**, **python**, **rails**, **ios**.
+(in this order): **all**, **python**, **rails**, **ios**, **go**.
 
 ## QA Repos
 
@@ -29,8 +29,9 @@ If no argument is given, use AskUserQuestion with these options
 | python | `benkruger/flow-qa-python` | `.qa-repos/python` |
 | rails | `benkruger/flow-qa-rails` | `.qa-repos/rails` |
 | ios | `benkruger/flow-qa-ios` | `.qa-repos/ios` |
+| go | `benkruger/flow-qa-go` | `.qa-repos/go` |
 
-All three frameworks are supported: `python`, `rails`, and `ios`.
+All four frameworks are supported: `python`, `rails`, `ios`, and `go`.
 
 ## Steps
 
@@ -149,6 +150,7 @@ the Skill tool:
 - python: `/flow:flow-create-issue Add a modulo operation to Calculator in src/calculator.py`
 - rails: `/flow:flow-create-issue Add a power method to Calculator in lib/calculator.rb`
 - ios: `/flow:flow-create-issue Add a modulo operation to Calculator in FlowQA/Calculator.swift`
+- go: `/flow:flow-create-issue Add a modulo operation to Calculator in calculator.go`
 
 The skill has 3 HARD-GATEs (decompose review, draft review, repo
 routing) — the QA operator manually approves each one. When asked

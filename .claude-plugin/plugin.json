@@ -8,5 +8,5 @@
   "homepage": "https://benkruger.github.io/flow",
   "repository": "https://github.com/benkruger/flow",
   "license": "MIT",
-  "keywords": ["rails", "python", "tdd", "workflow", "sdlc"]
+  "keywords": ["rails", "python", "go", "tdd", "workflow", "sdlc"]
 }
