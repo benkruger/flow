@@ -1,6 +1,6 @@
 # FLOW — Software Development Lifecycle for Claude Code
 
-An opinionated 6-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces plan-first, TDD discipline on every feature. Supports Rails, Python, and iOS.
+An opinionated 6-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces plan-first, TDD discipline on every feature. Supports Rails, Python, iOS, and Go.
 
 **Every feature. Same 6 phases. Same order. No shortcuts.**
 
@@ -349,7 +349,7 @@ Every plugin change can be tested end-to-end before releasing. `/flow-qa` clones
 /flow-qa all          # test all frameworks sequentially
 ```
 
-Each framework has a dedicated QA repo (`benkruger/flow-qa-python`, `flow-qa-rails`, `flow-qa-ios`) with a minimal Calculator class, tests, `bin/ci`, and seed issues. The QA skill clones fresh, primes with `--plugin-root $PWD` to test the local source, runs a flow against a seed issue, and then verifies: worktree removed, state file deleted, PR merged, no stale artifacts.
+Each framework has a dedicated QA repo (`benkruger/flow-qa-python`, `flow-qa-rails`, `flow-qa-ios`, `flow-qa-go`) with a minimal Calculator class, tests, `bin/ci`, and seed issues. The QA skill clones fresh, primes with `--plugin-root $PWD` to test the local source, runs a flow against a seed issue, and then verifies: worktree removed, state file deleted, PR merged, no stale artifacts.
 
 Supporting scripts: `bin/flow scaffold-qa` (create QA repos from templates), `bin/flow qa-reset` (reset repos to seed state), `bin/flow qa-verify` (verify post-Complete assertions).
 

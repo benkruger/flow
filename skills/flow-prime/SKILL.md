@@ -229,7 +229,7 @@ The script handles everything in a single call:
 - Priming the project CLAUDE.md with framework conventions (if CLAUDE.md exists)
 - Creating `bin/dependencies` from the framework template (skips if already exists)
 
-Output JSON: `{"status": "ok", "settings_merged": true, "exclude_updated": true, "version_marker": true, "hook_installed": true, "launcher_installed": true, "framework": "rails|python|ios", "prime_project": "ok|error", "dependencies": "ok|skipped"}`
+Output JSON: `{"status": "ok", "settings_merged": true, "exclude_updated": true, "version_marker": true, "hook_installed": true, "launcher_installed": true, "framework": "rails|python|ios|go", "prime_project": "ok|error", "dependencies": "ok|skipped"}`
 
 If the script returns an error, show the message and stop.
 
@@ -294,6 +294,11 @@ All permissions (universal + all framework sets) for reference:
       "Bash(open *)",
       "Bash(xcrun *)",
       "Bash(xcodebuild *)",
+      "Bash(go test *)",
+      "Bash(go build *)",
+      "Bash(go vet *)",
+      "Bash(go mod *)",
+      "Bash(go fmt *)",
       "Bash(gh pr checks *)",
       "Bash(gh pr merge *)",
       "Bash(claude plugin list)",
