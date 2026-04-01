@@ -113,8 +113,8 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `session_id` | string / null | Claude Code session UUID — set by Stop hook from hook stdin |
 | `transcript_path` | string / null | Absolute path to session transcript .jsonl — set by Stop hook from hook stdin |
 | `skills` | object / absent | Per-skill autonomy settings copied from `.flow.json` by `/flow-start` — see [Skills Object](#skills-object) |
-| `start_step` | integer | Current Start phase step (0-11). Set via `set-timestamp` at each step boundary. Used by the TUI to show "step 3 of 11" in the Start phase annotation. Absent when Start is not in progress |
-| `start_steps_total` | integer | Total number of Start phase steps (hardcoded 11). Set via `set-timestamp` after `init-state` in Step 2. Used by the TUI for "step N of M" display |
+| `start_step` | integer | Current Start phase step (0-11). Set by `init-state --start-step` at creation, then updated by `start-step` subcommand at each step boundary. Used by the TUI to show "step 3 of 11" in the Start phase annotation. Absent when Start is not in progress |
+| `start_steps_total` | integer | Total number of Start phase steps (hardcoded 11). Set by `init-state --start-steps-total` at creation. Used by the TUI for "step N of M" display |
 | `plan_step` | integer | Current Plan phase step (0-4). Set via `set-timestamp` at each step boundary. Used by the TUI to show "step 2 of 4" in the Plan phase annotation. Absent when Plan is not in progress |
 | `plan_steps_total` | integer | Total number of Plan phase steps (hardcoded 4). Set via `set-timestamp` after phase entry. Used by the TUI for "step N of M" display |
 | `code_review_step` | integer | Last completed Code Review step (0-6). Set to 0 on phase entry, incremented after each step. Used by the TUI to show "simplifying - step 1 of 6" and for resume after context compaction |

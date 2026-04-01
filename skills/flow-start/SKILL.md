@@ -186,38 +186,24 @@ file so the `prompt` field contains the original text with `#N` references
 (needed by Step 4 for labeling).
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt
+${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --start-step 3 --start-steps-total 11
 ```
 
 If `--auto` was passed to this skill invocation, also pass `--auto`:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --auto
+${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --auto --start-step 3 --start-steps-total 11
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
 
-Set the step tracking fields for TUI progress display:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_steps_total=11
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=3
-```
-
 ### Step 4 — Label referenced issues
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=4
-```
 
 If the start prompt contains `#N` issue references, add the "Flow In-Progress"
 label so other engineers can see these issues are being worked on:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --add
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 4 --branch <feature-name> -- label-issues --state-file <project_root>/.flow-states/<branch>.json --add
 ```
 
 Best-effort — if labeling fails, log the result and continue. Do not block
@@ -225,8 +211,10 @@ the Start phase for a label failure.
 
 ### Step 5 — Pull latest main
 
+Run both in parallel (one response, two Bash calls):
+
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=5
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 5 --branch <feature-name>
 ```
 
 ```bash
@@ -235,15 +223,11 @@ git pull origin main
 
 ### Step 6 — CI baseline gate
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=6
-```
-
 Main is pristine — nothing merges without clean CI. Any failure here is
 a flaky test, not a real breakage.
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 6 --branch <feature-name> -- ci --branch main
 ```
 
 If CI passes, continue to Step 7.
@@ -286,7 +270,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
 ### Step 7 — Update dependencies
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=7
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 7 --branch <feature-name>
 ```
 
 Use the Read tool to check if `bin/dependencies` exists at `<project_root>/bin/dependencies`.
@@ -309,15 +293,11 @@ If `git status` shows no changes, skip to Step 10 (release lock).
 
 ### Step 8 — CI post-deps gate
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=8
-```
-
 If dependencies changed anything, run CI again to catch dep-induced breakage
 (rubocop violations, breaking changes, etc.):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 8 --branch <feature-name> -- ci --branch main
 ```
 
 If CI passes, continue to Step 9.
@@ -368,7 +348,7 @@ Wait for the sub-agent to return.
 ### Step 9 — Commit to main
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=9
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 9 --branch <feature-name>
 ```
 
 If there are any uncommitted changes (dependency updates + CI fixes),
@@ -377,11 +357,7 @@ commit them to main via `/flow:flow-commit --auto`.
 ### Step 10 — Release start lock
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=10
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 10 --branch <feature-name> -- start-lock --release --feature <feature-name>
 ```
 
 <HARD-GATE>
@@ -391,21 +367,17 @@ Uncommitted fixes on main will not appear in the worktree.
 
 ### Step 11 — Set up workspace
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=11
-```
-
 Write the user's original start prompt (verbatim, including `#N` issue references
 and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
 Write tool. Then run the setup script. If `--auto` was passed to this skill
 invocation, also pass `--auto` to the start-setup command:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 11 --branch <feature-name> -- start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull
 ```
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull --auto
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 11 --branch <feature-name> -- start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull --auto
 ```
 
 Use the first form when no mode flag was passed or `--manual` was passed.
