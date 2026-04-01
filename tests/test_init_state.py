@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from conftest import LIB_DIR, PHASE_ORDER, make_flow_json
+from flow_utils import branch_name
 
 SCRIPT = str(LIB_DIR / "init-state.py")
 
@@ -340,7 +341,7 @@ def test_branch_name_truncated_at_32(target_project):
 
 def test_branch_name_single_long_word():
     """Single word >32 chars with no hyphens truncates at 32 (in-process)."""
-    result = _mod._branch_name("a" * 40)
+    result = branch_name("a" * 40)
     assert len(result) == 32
     assert result == "a" * 32
 
