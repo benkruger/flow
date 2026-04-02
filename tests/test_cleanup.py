@@ -621,12 +621,11 @@ def test_cleanup_tmp_rmtree_failure(git_repo, monkeypatch):
 # --- --pull flag tests ---
 
 
-def test_pull_flag_runs_git_pull(git_repo):
-    """--pull flag causes git pull origin main after worktree removal."""
+def test_no_pull_flag_no_git_pull_step(git_repo):
+    """Without --pull flag, no git_pull step appears in output."""
     wt_rel = _setup_feature(git_repo)
     result = _run(git_repo, "test-feature", wt_rel)
     data = json.loads(result.stdout)
-    # Without --pull, no git_pull step
     assert "git_pull" not in data["steps"]
 
 

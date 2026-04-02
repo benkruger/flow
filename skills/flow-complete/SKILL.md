@@ -100,6 +100,7 @@ Read `complete_step` from the state file (default `0` if absent).
 - If `complete_step` is `2`: skip to Step 2 (Run local CI gate).
 - If `complete_step` is `3`: skip to Step 3 (Check GitHub CI status).
 - If `complete_step` is `4`: skip to Step 4 (Confirm with user).
+- If `complete_step` is `5`: skip to Step 5 (Merge PR).
 - If `complete_step` is `0` or absent: proceed normally to Step 1.
 
 ---
