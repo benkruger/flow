@@ -43,12 +43,13 @@ a testable alternative.
 
 Claude Code has built-in protections that cannot be overridden by
 settings.json entries. `.claude/` paths are protected regardless
-of `defaultMode` or allow-list patterns. When a permission prompt
+of `defaultMode` or allow-list patterns. The `validate-claude-paths.py`
+PreToolUse hook enforces this for `.claude/rules/`, `.claude/skills/`,
+and `CLAUDE.md` during active FLOW phases — blocking Edit/Write and
+redirecting to `bin/flow write-rule`. When a permission prompt
 persists despite allow-list entries, the cause is a platform
-constraint — not a missing permission. Look for existing bypasses
-(like `write-rule.py` for `.claude/` writes) before proposing
-new solutions. Never propose adding permissions for paths that
-are platform-protected.
+constraint — not a missing permission. Never propose adding
+permissions for paths that are platform-protected.
 
 ## Commit Skill Internals
 
