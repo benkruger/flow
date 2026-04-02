@@ -13,58 +13,29 @@ Output (JSON to stdout):
 
 import argparse
 import json
-import re
-import shutil
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from flow_utils import AUTO_SKILLS, PHASE_NAMES, PHASE_ORDER, now, read_flow_json, read_prompt_file
+from flow_utils import (
+    AUTO_SKILLS,
+    branch_name,
+    build_initial_phases,
+    freeze_phases,
+    now,
+    read_flow_json,
+    read_prompt_file,
+)
 from log import append_log
 
-PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 
-
-def _branch_name(feature_words):
-    """Convert feature words to a hyphenated branch name, max 32 chars."""
-    sanitized = re.sub(r"[^a-zA-Z0-9\s-]", "", feature_words)
-    name = "-".join(sanitized.lower().split())
-    if len(name) <= 32:
-        return name
-    truncated = name[:33]
-    last_hyphen = truncated.rfind("-")
-    if last_hyphen > 0:
-        return truncated[:last_hyphen]
-    return name[:32]
-
-
-def create_state(project_root, branch, framework="rails", skills=None, prompt=""):
+def create_state(
+    project_root, branch, framework="rails", skills=None, prompt="", start_step=None, start_steps_total=None
+):
     """Create the initial state file with null PR fields."""
     current_time = now()
-    phases = {}
-    first_phase = PHASE_ORDER[0]
-    for key in PHASE_ORDER:
-        if key == first_phase:
-            phases[key] = {
-                "name": PHASE_NAMES[key],
-                "status": "in_progress",
-                "started_at": current_time,
-                "completed_at": None,
-                "session_started_at": current_time,
-                "cumulative_seconds": 0,
-                "visit_count": 1,
-            }
-        else:
-            phases[key] = {
-                "name": PHASE_NAMES[key],
-                "status": "pending",
-                "started_at": None,
-                "completed_at": None,
-                "session_started_at": None,
-                "cumulative_seconds": 0,
-                "visit_count": 0,
-            }
+    phases = build_initial_phases(current_time)
 
     state = {
         "schema_version": 1,
@@ -90,21 +61,16 @@ def create_state(project_root, branch, framework="rails", skills=None, prompt=""
     }
     if skills is not None:
         state["skills"] = skills
+    if start_step is not None:
+        state["start_step"] = start_step
+    if start_steps_total is not None:
+        state["start_steps_total"] = start_steps_total
 
     state_dir = project_root / ".flow-states"
     state_dir.mkdir(parents=True, exist_ok=True)
     state_path = state_dir / f"{branch}.json"
     state_path.write_text(json.dumps(state, indent=2))
     return state
-
-
-def freeze_phases(project_root, branch):
-    """Copy flow-phases.json to .flow-states/<branch>-phases.json."""
-    source = PLUGIN_ROOT / "flow-phases.json"
-    dest_dir = project_root / ".flow-states"
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / f"{branch}-phases.json"
-    shutil.copy2(source, dest)
 
 
 def main():
@@ -114,6 +80,8 @@ def main():
         "--prompt-file", default=None, help="Path to file containing start prompt (file is deleted after reading)"
     )
     parser.add_argument("--auto", action="store_true", help="Override all skills to fully autonomous preset")
+    parser.add_argument("--start-step", type=int, default=None, help="Initial start_step value for TUI progress")
+    parser.add_argument("--start-steps-total", type=int, default=None, help="Total start steps for TUI progress")
     args = parser.parse_args()
 
     if not args.feature_name:
@@ -129,7 +97,7 @@ def main():
         sys.exit(1)
 
     feature_words = args.feature_name
-    branch = _branch_name(feature_words)
+    branch = branch_name(feature_words)
     project_root = Path.cwd()
 
     # Read .flow.json for framework and skills
@@ -169,7 +137,15 @@ def main():
         raw_prompt = feature_words
 
     # Create state file and frozen phases
-    create_state(project_root, branch, framework=framework, skills=skills, prompt=raw_prompt)
+    create_state(
+        project_root,
+        branch,
+        framework=framework,
+        skills=skills,
+        prompt=raw_prompt,
+        start_step=args.start_step,
+        start_steps_total=args.start_steps_total,
+    )
     append_log(branch, f"[Phase 1] create .flow-states/{branch}.json (exit 0)")
 
     freeze_phases(project_root, branch)

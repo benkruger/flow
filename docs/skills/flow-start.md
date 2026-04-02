@@ -46,7 +46,7 @@ Claude derives a concise branch name (2-5 words) from the prompt:
 
 The derived name is hyphenated and used for the branch, worktree (`.worktrees/<name>`), and PR title (title-cased). Branch names are capped at 32 characters, truncated at word boundaries.
 
-When the prompt contains `#N` issue references (e.g., `work on issue #309`), Claude fetches the issue title and derives the branch name from it instead of the prompt words. This produces descriptive names like `organize-settings-allow-list` rather than generic names like `work-on-issue-309`. If the issue fetch fails, it falls back to deriving from the prompt words.
+When the prompt contains `#N` issue references (e.g., `work on issue #309`), `start-setup` automatically fetches the first issue's title and derives the branch name and PR title from it. This produces descriptive names like `organize-settings-allow-list` rather than generic names like `work-on-issue-309`. If the issue fetch fails, it falls back to deriving from the prompt words.
 
 ---
 

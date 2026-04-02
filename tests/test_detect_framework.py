@@ -86,6 +86,23 @@ def test_detects_go_display_name(project):
     assert go[0]["display_name"] == "Go"
 
 
+def test_detects_rust_when_cargo_toml_exists(project):
+    project.mkdir()
+    (project / "Cargo.toml").write_text('[package]\nname = "myapp"\nversion = "0.1.0"\nedition = "2021"\n')
+    result = _mod.detect(str(project), str(FRAMEWORKS_DIR))
+    names = [f["name"] for f in result]
+    assert "rust" in names
+
+
+def test_detects_rust_display_name(project):
+    project.mkdir()
+    (project / "Cargo.toml").write_text('[package]\nname = "myapp"\nversion = "0.1.0"\nedition = "2021"\n')
+    result = _mod.detect(str(project), str(FRAMEWORKS_DIR))
+    rust = [f for f in result if f["name"] == "rust"]
+    assert len(rust) == 1
+    assert rust[0]["display_name"] == "Rust"
+
+
 def test_detects_nothing_when_no_marker_files(project):
     project.mkdir()
     result = _mod.detect(str(project), str(FRAMEWORKS_DIR))
@@ -108,6 +125,7 @@ def test_lists_available_frameworks(project):
     assert "python" in names
     assert "ios" in names
     assert "go" in names
+    assert "rust" in names
 
 
 def test_frameworks_dir_returns_valid_path():
@@ -131,6 +149,7 @@ def test_available_frameworks_with_default_dir():
     assert "python" in names
     assert "ios" in names
     assert "go" in names
+    assert "rust" in names
 
 
 def test_main_detects_framework(tmp_path, capsys, monkeypatch):

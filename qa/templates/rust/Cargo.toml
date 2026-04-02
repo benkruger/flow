@@ -1,0 +1,4 @@
+[package]
+name = "flow-qa-rust"
+version = "0.1.0"
+edition = "2021"

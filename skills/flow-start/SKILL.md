@@ -23,18 +23,12 @@ Examples:
 | `fix login timeout when session expires after 30 minutes` | `fix-login-timeout` |
 | `there is a bug where flow-start treats arguments as conversation` | `flow-start-arg-handling` |
 
-**Issue-aware branch naming:** If the prompt contains `#N` issue references
-(e.g., `work on issue #309`, `fix #42`), extract the first issue number
-and fetch the issue title:
-
-```bash
-gh issue view <issue_number> --json title --jq .title
-```
-
-Derive the branch name from the **issue title** instead of the prompt words.
-Apply the same 2-5 word concise derivation rules to the title. If the fetch
-fails (issue does not exist, network error), fall back to deriving from the
-prompt words as usual.
+**Issue-aware branch naming:** When the prompt contains `#N` issue
+references (e.g., `work on issue #309`, `fix #42`), `start-setup`
+automatically fetches the first issue's title and derives the branch
+name and PR title from it. If the fetch fails, it falls back to the
+prompt words. No model action is needed — the script handles this
+internally.
 
 | Prompt | Issue title | Derived branch name |
 |--------|-------------|-------------------|
@@ -192,38 +186,24 @@ file so the `prompt` field contains the original text with `#N` references
 (needed by Step 4 for labeling).
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt
+${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --start-step 3 --start-steps-total 11
 ```
 
 If `--auto` was passed to this skill invocation, also pass `--auto`:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --auto
+${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --auto --start-step 3 --start-steps-total 11
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
 
-Set the step tracking fields for TUI progress display:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_steps_total=11
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=3
-```
-
 ### Step 4 — Label referenced issues
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=4
-```
 
 If the start prompt contains `#N` issue references, add the "Flow In-Progress"
 label so other engineers can see these issues are being worked on:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --add
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 4 --branch <feature-name> -- label-issues --state-file <project_root>/.flow-states/<branch>.json --add
 ```
 
 Best-effort — if labeling fails, log the result and continue. Do not block
@@ -231,8 +211,10 @@ the Start phase for a label failure.
 
 ### Step 5 — Pull latest main
 
+Run both in parallel (one response, two Bash calls):
+
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=5
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 5 --branch <feature-name>
 ```
 
 ```bash
@@ -241,33 +223,25 @@ git pull origin main
 
 ### Step 6 — CI baseline gate
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=6
-```
-
 Main is pristine — nothing merges without clean CI. Any failure here is
 a flaky test, not a real breakage.
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 6 --branch <feature-name> -- ci --retry 3 --branch main
 ```
 
-If CI passes, continue to Step 7.
+Parse the JSON output:
 
-If CI fails, re-run up to 2 more times (3 total). Do not make any code
-changes between attempts — just re-run:
+**If `status` is `"ok"` and `flaky` is absent** — CI passed cleanly.
+Continue to Step 7.
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
-```
+**If `status` is `"ok"` and `flaky` is `true`** — a test failed then
+passed on retry. File a "Flaky Test" issue with reproduction data from
+the `first_failure_output` field, then continue to Step 7.
 
-**If any subsequent attempt passes without code changes**, the failure
-was flaky. File a "Flaky Test" issue with reproduction data, then
-continue to Step 7.
-
-The issue body must include: the test name, the failure message, how many
-attempts it took to pass, and the context "CI baseline on pristine main
-during flow-start".
+The issue body must include: the failure output from `first_failure_output`,
+how many attempts it took to pass (from the `attempts` field), and the
+context "CI baseline on pristine main during flow-start".
 
 Write the issue body to `.flow-issue-body` in the project root using the
 Write tool, then file:
@@ -282,8 +256,9 @@ After filing, record it:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_title>" --url "<issue_url>" --phase "flow-start"
 ```
 
-**If all 3 attempts fail consistently**, release the lock and stop.
-Report to the user that CI is consistently failing on pristine main.
+**If `status` is `"error"` and `consistent` is `true`** — all 3
+attempts failed. Release the lock and stop. Report to the user that
+CI is consistently failing on pristine main.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
@@ -292,7 +267,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
 ### Step 7 — Update dependencies
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=7
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 7 --branch <feature-name>
 ```
 
 ```bash
@@ -308,33 +283,25 @@ Parse the JSON output:
 
 ### Step 8 — CI post-deps gate
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=8
-```
-
 If dependencies changed anything, run CI again to catch dep-induced breakage
 (rubocop violations, breaking changes, etc.):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 8 --branch <feature-name> -- ci --retry 3 --branch main
 ```
 
-If CI passes, continue to Step 9.
+Parse the JSON output:
 
-If CI fails, re-run up to 2 more times (3 total). Do not make any code
-changes between attempts — just re-run:
+**If `status` is `"ok"` and `flaky` is absent** — CI passed cleanly.
+Continue to Step 9.
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci --branch main
-```
+**If `status` is `"ok"` and `flaky` is `true`** — a test failed then
+passed on retry. File a "Flaky Test" issue with reproduction data from
+the `first_failure_output` field, then continue to Step 9.
 
-**If any subsequent attempt passes without code changes**, the failure
-was flaky. File a "Flaky Test" issue with reproduction data, then
-continue to Step 9.
-
-The issue body must include: the test name, the failure message, how many
-attempts it took to pass, and the context "CI post-deps gate during
-flow-start after dependency update".
+The issue body must include: the failure output from `first_failure_output`,
+how many attempts it took to pass (from the `attempts` field), and the
+context "CI post-deps gate during flow-start after dependency update".
 
 Write the issue body to `.flow-issue-body` in the project root using the
 Write tool, then file:
@@ -349,15 +316,16 @@ After filing, record it:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_title>" --url "<issue_url>" --phase "flow-start"
 ```
 
-**If all 3 attempts fail consistently**, this is real dep-induced
-breakage. Launch the `ci-fixer` sub-agent to diagnose and fix. Use the
-Agent tool:
+**If `status` is `"error"` and `consistent` is `true`** — all 3
+attempts failed consistently. This is real dep-induced breakage.
+Launch the `ci-fixer` sub-agent to diagnose and fix. Use the Agent
+tool:
 
 - `subagent_type`: `"flow:ci-fixer"`
 - `description`: `"Fix bin/flow ci failures after dependency update"`
 
-Provide the full `bin/flow ci` output in the prompt so the sub-agent
-knows what failed.
+Provide the CI output from the `output` field in the prompt so the
+sub-agent knows what failed.
 
 Wait for the sub-agent to return.
 
@@ -367,7 +335,7 @@ Wait for the sub-agent to return.
 ### Step 9 — Commit to main
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=9
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 9 --branch <feature-name>
 ```
 
 If there are any uncommitted changes (dependency updates + CI fixes),
@@ -376,11 +344,7 @@ commit them to main via `/flow:flow-commit --auto`.
 ### Step 10 — Release start lock
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=10
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 10 --branch <feature-name> -- start-lock --release --feature <feature-name>
 ```
 
 <HARD-GATE>
@@ -390,21 +354,17 @@ Uncommitted fixes on main will not appear in the worktree.
 
 ### Step 11 — Set up workspace
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set start_step=11
-```
-
 Write the user's original start prompt (verbatim, including `#N` issue references
 and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
 Write tool. Then run the setup script. If `--auto` was passed to this skill
 invocation, also pass `--auto` to the start-setup command:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 11 --branch <feature-name> -- start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull
 ```
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull --auto
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 11 --branch <feature-name> -- start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull --auto
 ```
 
 Use the first form when no mode flag was passed or `--manual` was passed.
