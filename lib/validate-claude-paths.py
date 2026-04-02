@@ -10,6 +10,7 @@ Exit 2 — block (path is protected and FLOW phase is active)
 
 Protected paths:
 - .claude/rules/ (and subdirectories)
+- .claude/skills/ (and subdirectories)
 - CLAUDE.md (at any level)
 
 Not protected:
@@ -73,7 +74,8 @@ def _is_flow_active(branch, project_root):
 def _is_protected_path(file_path):
     """Check if a file path targets a protected .claude/ location.
 
-    Protected: .claude/rules/ (any depth), CLAUDE.md (any level).
+    Protected: .claude/rules/ (any depth), .claude/skills/ (any depth),
+    CLAUDE.md (any level).
     Not protected: .claude/settings.json, .claude/settings.local.json.
     """
     if not file_path:
@@ -81,9 +83,9 @@ def _is_protected_path(file_path):
 
     parts = Path(file_path).parts
 
-    # Check for .claude/rules/ at any depth
+    # Check for .claude/rules/ or .claude/skills/ at any depth
     for i, part in enumerate(parts):
-        if part == ".claude" and i + 1 < len(parts) and parts[i + 1] == "rules":
+        if part == ".claude" and i + 1 < len(parts) and parts[i + 1] in ("rules", "skills"):
             return True
 
     # Check for CLAUDE.md at any level

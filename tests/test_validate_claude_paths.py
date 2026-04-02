@@ -117,6 +117,35 @@ def test_blocks_worktree_claude_md():
     assert "BLOCKED" in message
 
 
+def test_blocks_claude_skills_when_flow_active():
+    mod = _load_module()
+    allowed, message = mod.validate("/project/.claude/skills/foo/SKILL.md", flow_active=True)
+    assert allowed is False
+    assert "BLOCKED" in message
+    assert "write-rule" in message
+
+
+def test_blocks_nested_claude_skills():
+    mod = _load_module()
+    allowed, message = mod.validate("/project/.claude/skills/subdir/deep/SKILL.md", flow_active=True)
+    assert allowed is False
+    assert "BLOCKED" in message
+
+
+def test_blocks_worktree_claude_skills():
+    mod = _load_module()
+    allowed, message = mod.validate("/project/.worktrees/feat/.claude/skills/foo/SKILL.md", flow_active=True)
+    assert allowed is False
+    assert "BLOCKED" in message
+
+
+def test_allows_claude_skills_when_no_flow():
+    mod = _load_module()
+    allowed, message = mod.validate("/project/.claude/skills/foo/SKILL.md", flow_active=False)
+    assert allowed is True
+    assert message == ""
+
+
 def test_allows_claude_settings_local():
     """settings.local.json is managed by promote-permissions, not write-rule."""
     mod = _load_module()
@@ -148,6 +177,11 @@ def test_is_protected_path_claude_rules():
 def test_is_protected_path_claude_md():
     mod = _load_module()
     assert mod._is_protected_path("/project/CLAUDE.md") is True
+
+
+def test_is_protected_path_claude_skills():
+    mod = _load_module()
+    assert mod._is_protected_path("/project/.claude/skills/foo/SKILL.md") is True
 
 
 def test_is_protected_path_settings():
@@ -266,8 +300,26 @@ def test_hook_allows_claude_rules_no_active_flow(tmp_path):
     assert stderr == ""
 
 
+def test_hook_blocks_claude_skills_with_active_flow(tmp_path):
+    """When state file exists, hook blocks .claude/skills/ edits."""
+    flow_states = tmp_path / ".flow-states"
+    flow_states.mkdir()
+    (flow_states / "my-feature.json").write_text("{}")
+
+    worktree = tmp_path / ".worktrees" / "my-feature"
+    worktree.mkdir(parents=True)
+
+    code, stderr = _run_hook(
+        {"file_path": f"{worktree}/.claude/skills/foo/SKILL.md"},
+        cwd=str(worktree),
+    )
+    assert code == 2
+    assert "BLOCKED" in stderr
+    assert "write-rule" in stderr
+
+
 def test_hook_allows_settings_json_with_active_flow(tmp_path):
-    """settings.json is not blocked — only rules/ and CLAUDE.md."""
+    """settings.json is not blocked — only rules/, skills/, and CLAUDE.md."""
     flow_states = tmp_path / ".flow-states"
     flow_states.mkdir()
     (flow_states / "my-feature.json").write_text("{}")
