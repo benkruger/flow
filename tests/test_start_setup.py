@@ -1160,3 +1160,25 @@ def test_duplicate_issue_guard_integration(git_repo_with_remote):
     assert data["status"] == "error"
     assert data["step"] == "duplicate_issue"
     assert "existing-flow" in data["message"]
+
+
+def test_check_duplicate_issue_self_branch_unsanitized(tmp_path):
+    """Guard skips self-branch even when self_branch has spaces/caps (sanitized comparison)."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    # State file named with sanitized form (as init-state would create)
+    state = {"prompt": "work on issue #123", "branch": "my-feature", "current_phase": "flow-start", "pr_url": ""}
+    (state_dir / "my-feature.json").write_text(json.dumps(state))
+    # Pass unsanitized name — branch_name("My Feature") == "my-feature"
+    result = _mod._check_duplicate_issue(tmp_path, [123], branch_name("My Feature"))
+    assert result is None
+
+
+def test_check_duplicate_issue_null_prompt(tmp_path):
+    """Guard handles state files where prompt is null (JSON null → None)."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "null-prompt.json").write_text(json.dumps({"prompt": None, "branch": "null-prompt"}))
+    # Should not raise TypeError — null prompt treated as empty
+    result = _mod._check_duplicate_issue(tmp_path, [123], "other-branch")
+    assert result is None

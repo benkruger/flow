@@ -76,7 +76,7 @@ def _check_duplicate_issue(project_root, issue_numbers, self_branch):
             state = json.loads(path.read_text())
         except (json.JSONDecodeError, ValueError):
             continue
-        prompt = state.get("prompt", "")
+        prompt = state.get("prompt") or ""
         existing_issues = set(extract_issue_numbers(prompt))
         if existing_issues & target_issues:
             return {
@@ -271,7 +271,7 @@ def main():
 
     # Duplicate issue guard: check before any side effects
     if issue_numbers:
-        dup = _check_duplicate_issue(project_root, issue_numbers, args.feature_name)
+        dup = _check_duplicate_issue(project_root, issue_numbers, branch_name(args.feature_name))
         if dup:
             print(
                 json.dumps(
