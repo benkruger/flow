@@ -43,12 +43,13 @@ a testable alternative.
 
 Claude Code has built-in protections that cannot be overridden by
 settings.json entries. `.claude/` paths are protected regardless
-of `defaultMode` or allow-list patterns. When a permission prompt
+of `defaultMode` or allow-list patterns. The `validate-claude-paths.py`
+PreToolUse hook enforces this for `.claude/rules/`, `.claude/skills/`,
+and `CLAUDE.md` during active FLOW phases — blocking Edit/Write and
+redirecting to `bin/flow write-rule`. When a permission prompt
 persists despite allow-list entries, the cause is a platform
-constraint — not a missing permission. Look for existing bypasses
-(like `write-rule.py` for `.claude/` writes) before proposing
-new solutions. Never propose adding permissions for paths that
-are platform-protected.
+constraint — not a missing permission. Never propose adding
+permissions for paths that are platform-protected.
 
 ## Commit Skill Internals
 
@@ -333,3 +334,14 @@ branch-scoped artifacts in the main repo directory.
 
 CI enforces this via
 `test_skills_no_repo_tracked_files_at_project_root`.
+
+## Last-Line JSON Parsing for Child-Inheriting Scripts
+
+When a lib script runs a child process without capturing its stdout
+(e.g. `subprocess.Popen` without `stdout=PIPE`), the child's output
+goes to the same stdout as the script's JSON. SKILL.md instructions
+that parse this script's output must say "parse the last line" — not
+"parse the JSON output." The `ci.py` test helper established this
+convention: `_parse` reads `result.stdout.strip().splitlines()[-1]`.
+New lib scripts that inherit child stdout must follow the same pattern
+in their test helpers.
