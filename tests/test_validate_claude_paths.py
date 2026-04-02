@@ -300,6 +300,16 @@ def test_hook_allows_claude_rules_no_active_flow(tmp_path):
     assert stderr == ""
 
 
+def test_hook_allows_claude_skills_no_active_flow(tmp_path):
+    """When no state file exists, hook allows .claude/skills/ edits."""
+    code, stderr = _run_hook(
+        {"file_path": f"{tmp_path}/.claude/skills/foo/SKILL.md"},
+        cwd=str(tmp_path),
+    )
+    assert code == 0
+    assert stderr == ""
+
+
 def test_hook_blocks_claude_skills_with_active_flow(tmp_path):
     """When state file exists, hook blocks .claude/skills/ edits."""
     flow_states = tmp_path / ".flow-states"

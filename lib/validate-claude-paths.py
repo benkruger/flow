@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-PreToolUse hook that blocks Edit/Write on .claude/rules/ and CLAUDE.md
-during active FLOW phases, redirecting to bin/flow write-rule.
+PreToolUse hook that blocks Edit/Write on .claude/rules/, .claude/skills/,
+and CLAUDE.md during active FLOW phases, redirecting to bin/flow write-rule.
 
 Fires on Edit and Write tool calls.
 
