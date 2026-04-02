@@ -3,6 +3,10 @@ name = "flow-rs"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "flow_rs"
+path = "src/lib.rs"
+
 [[bin]]
 name = "flow-rs"
 path = "src/main.rs"
