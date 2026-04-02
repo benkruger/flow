@@ -333,3 +333,14 @@ branch-scoped artifacts in the main repo directory.
 
 CI enforces this via
 `test_skills_no_repo_tracked_files_at_project_root`.
+
+## Last-Line JSON Parsing for Child-Inheriting Scripts
+
+When a lib script runs a child process without capturing its stdout
+(e.g. `subprocess.Popen` without `stdout=PIPE`), the child's output
+goes to the same stdout as the script's JSON. SKILL.md instructions
+that parse this script's output must say "parse the last line" — not
+"parse the JSON output." The `ci.py` test helper established this
+convention: `_parse` reads `result.stdout.strip().splitlines()[-1]`.
+New lib scripts that inherit child stdout must follow the same pattern
+in their test helpers.
