@@ -4,8 +4,14 @@ Usage:
   bin/flow write-rule --path <target> --content-file <temp>
 
 Reads content from a temp file, creates parent directories if needed,
-writes to the target path, and deletes the temp file. Used by the Learn
-phase to bypass Claude Code's .claude/ permission prompts.
+writes to the target path, and deletes the temp file. Bypasses Claude
+Code's built-in .claude/ path protections, which block Edit/Write tools
+regardless of settings.json allow-list entries.
+
+Consumers:
+  - Learn phase: writes CLAUDE.md and .claude/rules/ files
+  - validate-claude-paths.py hook: redirects blocked Edit/Write calls here
+  - Any skill or hook that needs to write to .claude/ paths during a flow
 
 Output (JSON to stdout):
   Success: {"status": "ok", "path": "<target_path>"}

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-PreToolUse hook that blocks Edit/Write on .claude/rules/ and CLAUDE.md
-during active FLOW phases, redirecting to bin/flow write-rule.
+PreToolUse hook that blocks Edit/Write on .claude/rules/, .claude/skills/,
+and CLAUDE.md during active FLOW phases, redirecting to bin/flow write-rule.
 
 Fires on Edit and Write tool calls.
 
@@ -10,6 +10,7 @@ Exit 2 — block (path is protected and FLOW phase is active)
 
 Protected paths:
 - .claude/rules/ (and subdirectories)
+- .claude/skills/ (and subdirectories)
 - CLAUDE.md (at any level)
 
 Not protected:
@@ -66,6 +67,8 @@ def _is_flow_active(branch, project_root):
     """Check if a FLOW feature is active for the given branch."""
     if not branch or project_root is None:
         return False
+    if "/" in branch or "\\" in branch:
+        return False
     state_file = project_root / ".flow-states" / f"{branch}.json"
     return state_file.is_file()
 
@@ -73,7 +76,8 @@ def _is_flow_active(branch, project_root):
 def _is_protected_path(file_path):
     """Check if a file path targets a protected .claude/ location.
 
-    Protected: .claude/rules/ (any depth), CLAUDE.md (any level).
+    Protected: .claude/rules/ (any depth), .claude/skills/ (any depth),
+    CLAUDE.md (any level).
     Not protected: .claude/settings.json, .claude/settings.local.json.
     """
     if not file_path:
@@ -81,9 +85,9 @@ def _is_protected_path(file_path):
 
     parts = Path(file_path).parts
 
-    # Check for .claude/rules/ at any depth
+    # Check for .claude/rules/ or .claude/skills/ at any depth
     for i, part in enumerate(parts):
-        if part == ".claude" and i + 1 < len(parts) and parts[i + 1] == "rules":
+        if part == ".claude" and i + 1 < len(parts) and parts[i + 1] in ("rules", "skills"):
             return True
 
     # Check for CLAUDE.md at any level
