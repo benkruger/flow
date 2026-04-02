@@ -84,3 +84,13 @@ remember that `int(None)` raises `TypeError` — not `ValueError`.
 Always include `TypeError` in except clauses that parse JSON fields
 which could be `null`. This applies to any JSON file read from
 disk, not just API responses.
+
+## Pre-Normalized Test Values
+
+When a function compares a parameter against a transformed value
+(e.g. `path.stem`, `branch_name()` output, lowercased strings),
+tests that pass already-normalized values as both the parameter and
+the fixture data cannot detect transformation mismatches at the call
+site. Include at least one test with realistic unsanitized input
+(spaces, capitals, special characters) to verify the caller applies
+the same normalization the comparison expects.
