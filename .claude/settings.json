@@ -27,6 +27,7 @@
       "Bash(make *)",
       "Bash(diff *)",
       "Bash(.venv/bin/pip install *)",
+      "Bash(cargo *)",
       "Bash(curl *)",
       "Bash(open:*)",
       "Read(~/Desktop/*.png)",
