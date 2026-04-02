@@ -1169,3 +1169,84 @@ def test_timeout_constants():
     """LOCAL_TIMEOUT and NETWORK_TIMEOUT have correct values."""
     assert _mod.LOCAL_TIMEOUT == 30
     assert _mod.NETWORK_TIMEOUT == 60
+
+
+def test_detect_tty_walks_tree_to_find_real_tty():
+    """detect_tty walks up the process tree past ?? entries."""
+    responses = [
+        type("R", (), {"returncode": 0, "stdout": "?? 100\n"})(),
+        type("R", (), {"returncode": 0, "stdout": "?? 50\n"})(),
+        type("R", (), {"returncode": 0, "stdout": "ttys007 1\n"})(),
+    ]
+    call_count = [0]
+
+    def _mock_run(*a, **kw):
+        r = responses[call_count[0]]
+        call_count[0] += 1
+        return r
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_mod.subprocess, "run", _mock_run)
+        result = _mod.detect_tty()
+    assert result == "/dev/ttys007"
+    assert call_count[0] == 3
+
+
+def test_detect_tty_first_ancestor_has_tty():
+    """detect_tty returns immediately when current process has a tty."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            _mod.subprocess,
+            "run",
+            lambda *a, **kw: type("R", (), {"returncode": 0, "stdout": "ttys042 1\n"})(),
+        )
+        result = _mod.detect_tty()
+    assert result == "/dev/ttys042"
+
+
+def test_detect_tty_returns_none_when_all_ancestors_have_no_tty():
+    """detect_tty returns None when entire tree has ??."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            _mod.subprocess,
+            "run",
+            lambda *a, **kw: type("R", (), {"returncode": 0, "stdout": "?? 1\n"})(),
+        )
+        result = _mod.detect_tty()
+    assert result is None
+
+
+def test_detect_tty_returns_none_on_malformed_output():
+    """detect_tty returns None when ps output has fewer than 2 fields."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            _mod.subprocess,
+            "run",
+            lambda *a, **kw: type("R", (), {"returncode": 0, "stdout": "ttys007\n"})(),
+        )
+        result = _mod.detect_tty()
+    assert result is None
+
+
+def test_detect_tty_returns_none_on_ps_failure():
+    """detect_tty returns None when ps fails."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            _mod.subprocess,
+            "run",
+            lambda *a, **kw: type("R", (), {"returncode": 1, "stdout": ""})(),
+        )
+        result = _mod.detect_tty()
+    assert result is None
+
+
+def test_detect_tty_returns_none_on_exception():
+    """detect_tty returns None when subprocess raises."""
+
+    def _raise(*a, **kw):
+        raise OSError("no ps")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_mod.subprocess, "run", _raise)
+        result = _mod.detect_tty()
+    assert result is None

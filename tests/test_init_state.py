@@ -139,6 +139,7 @@ def test_state_file_has_required_top_level_fields(target_project):
     assert state["current_phase"] == "flow-start"
     assert state["notes"] == []
     assert state["phase_transitions"] == []
+    assert state["session_tty"] is None or isinstance(state["session_tty"], str)
     assert state["session_id"] is None
     assert state["transcript_path"] is None
 
