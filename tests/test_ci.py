@@ -438,3 +438,115 @@ def test_simulate_branch_does_not_skip_after_plain_run(ci_project_excluded):
     assert second.returncode == 0
     output = _parse(second)
     assert output["skipped"] is False
+
+
+# --- Retry logic tests ---
+
+
+@pytest.fixture
+def flaky_ci_project(ci_project):
+    """A ci_project where bin/ci fails on first attempt, passes on second."""
+    script = (
+        "#!/usr/bin/env bash\n"
+        'COUNTER_FILE="$(pwd)/.ci-attempt-counter"\n'
+        'if [ -f "$COUNTER_FILE" ]; then\n'
+        '  COUNT=$(($(cat "$COUNTER_FILE") + 1))\n'
+        "else\n"
+        "  COUNT=1\n"
+        "fi\n"
+        'echo "$COUNT" > "$COUNTER_FILE"\n'
+        'if [ "$COUNT" -lt 2 ]; then\n'
+        '  echo "FAIL: flaky test on attempt $COUNT" >&2\n'
+        "  exit 1\n"
+        "fi\n"
+        'echo "PASS: attempt $COUNT"\n'
+        "exit 0\n"
+    )
+    (ci_project / "bin" / "ci").write_text(script)
+    return ci_project
+
+
+@pytest.fixture
+def failing_ci_project(ci_project):
+    """A ci_project where bin/ci always fails with output."""
+    (ci_project / "bin" / "ci").write_text(
+        "#!/usr/bin/env bash\necho 'CI FAILED: assertion error in test_foo' >&2\nexit 1\n"
+    )
+    return ci_project
+
+
+def test_retry_pass_first_attempt(ci_project_excluded):
+    """--retry 3 with a passing CI returns attempts=1, no flaky flag, writes sentinel."""
+    branch = _branch_name(ci_project_excluded)
+    result = _run(ci_project_excluded, args=["--retry", "3"])
+    assert result.returncode == 0
+    output = _parse(result)
+    assert output["status"] == "ok"
+    assert output["attempts"] == 1
+    assert "flaky" not in output
+    sentinel = ci_project_excluded / ".flow-states" / f"{branch}-ci-passed"
+    assert sentinel.exists()
+
+
+def test_retry_flaky(flaky_ci_project):
+    """--retry 3 with flaky CI returns flaky=true and first_failure_output."""
+    result = _run(flaky_ci_project, args=["--retry", "3"])
+    assert result.returncode == 0
+    output = _parse(result)
+    assert output["status"] == "ok"
+    assert output["attempts"] == 2
+    assert output["flaky"] is True
+    assert "first_failure_output" in output
+    assert len(output["first_failure_output"]) > 0
+
+
+def test_retry_consistent_failure(failing_ci_project):
+    """--retry 3 with consistent failures returns consistent=true."""
+    result = _run(failing_ci_project, args=["--retry", "3"])
+    assert result.returncode == 1
+    output = _parse(result)
+    assert output["status"] == "error"
+    assert output["attempts"] == 3
+    assert output["consistent"] is True
+    assert "output" in output
+    assert len(output["output"]) > 0
+
+
+def test_retry_with_branch_flag(ci_project):
+    """--retry works alongside --branch."""
+    result = _run(ci_project, args=["--retry", "2", "--branch", "main"])
+    assert result.returncode == 0
+    output = _parse(result)
+    assert output["status"] == "ok"
+    assert output["attempts"] == 1
+
+
+def test_retry_failure_removes_sentinel(ci_project_excluded):
+    """--retry removes sentinel when CI fails consistently."""
+    branch = _branch_name(ci_project_excluded)
+    # Create a sentinel from a passing run
+    first = _run(ci_project_excluded)
+    assert first.returncode == 0
+    sentinel = ci_project_excluded / ".flow-states" / f"{branch}-ci-passed"
+    assert sentinel.exists()
+    # Now make CI fail
+    (ci_project_excluded / "bin" / "ci").write_text("#!/usr/bin/env bash\necho 'FAIL' >&2\nexit 1\n")
+    result = _run(ci_project_excluded, args=["--retry", "2"])
+    assert result.returncode == 1
+    output = _parse(result)
+    assert output["consistent"] is True
+    assert not sentinel.exists()
+
+
+def test_retry_ignores_sentinel(ci_project_excluded):
+    """--retry bypasses the dirty-check sentinel (force semantics)."""
+    # Run once to create sentinel
+    first = _run(ci_project_excluded)
+    assert first.returncode == 0
+    assert _parse(first)["skipped"] is False
+    # With --retry, must NOT skip even though sentinel matches
+    second = _run(ci_project_excluded, args=["--retry", "3"])
+    assert second.returncode == 0
+    output = _parse(second)
+    assert output["attempts"] == 1
+    assert "skipped" not in output or output.get("skipped") is not True
