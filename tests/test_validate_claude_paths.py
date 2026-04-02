@@ -196,6 +196,7 @@ def test_detect_branch_from_worktree(monkeypatch, tmp_path):
     mod = _load_module()
     worktree = tmp_path / "project" / ".worktrees" / "my-feat"
     worktree.mkdir(parents=True)
+    (worktree / ".git").write_text("gitdir: /fake/.git/worktrees/my-feat\n")
     monkeypatch.chdir(worktree)
     assert mod._detect_branch_from_cwd() == "my-feat"
 
@@ -214,6 +215,28 @@ def test_detect_branch_git_failure(monkeypatch, tmp_path):
     mod = _load_module()
     monkeypatch.chdir(tmp_path)  # not a git repo
     assert mod._detect_branch_from_cwd() is None
+
+
+def test_detect_branch_from_worktree_slash(monkeypatch, tmp_path):
+    """Extracts full branch name when it contains slashes."""
+    mod = _load_module()
+    worktree = tmp_path / "project" / ".worktrees" / "feat" / "my-feature"
+    worktree.mkdir(parents=True)
+    (worktree / ".git").write_text("gitdir: /fake/.git/worktrees/feat-my-feature\n")
+    monkeypatch.chdir(worktree)
+    assert mod._detect_branch_from_cwd() == "feat/my-feature"
+
+
+def test_detect_branch_from_worktree_slash_subdir(monkeypatch, tmp_path):
+    """Extracts full branch name from a subdirectory within a slash-branch worktree."""
+    mod = _load_module()
+    worktree = tmp_path / "project" / ".worktrees" / "feat" / "my-feature"
+    worktree.mkdir(parents=True)
+    (worktree / ".git").write_text("gitdir: /fake/.git/worktrees/feat-my-feature\n")
+    subdir = worktree / "src" / "lib"
+    subdir.mkdir(parents=True)
+    monkeypatch.chdir(subdir)
+    assert mod._detect_branch_from_cwd() == "feat/my-feature"
 
 
 # --- Subprocess (full hook) tests ---
@@ -263,6 +286,7 @@ def test_hook_blocks_claude_rules_with_active_flow(tmp_path):
 
     worktree = tmp_path / ".worktrees" / "my-feature"
     worktree.mkdir(parents=True)
+    (worktree / ".git").write_text("gitdir: /fake/.git/worktrees/my-feature\n")
 
     code, stderr = _run_hook(
         {"file_path": f"{worktree}/.claude/rules/foo.md"},
@@ -281,6 +305,7 @@ def test_hook_blocks_claude_md_with_active_flow(tmp_path):
 
     worktree = tmp_path / ".worktrees" / "my-feature"
     worktree.mkdir(parents=True)
+    (worktree / ".git").write_text("gitdir: /fake/.git/worktrees/my-feature\n")
 
     code, stderr = _run_hook(
         {"file_path": f"{worktree}/CLAUDE.md"},
@@ -318,6 +343,7 @@ def test_hook_blocks_claude_skills_with_active_flow(tmp_path):
 
     worktree = tmp_path / ".worktrees" / "my-feature"
     worktree.mkdir(parents=True)
+    (worktree / ".git").write_text("gitdir: /fake/.git/worktrees/my-feature\n")
 
     code, stderr = _run_hook(
         {"file_path": f"{worktree}/.claude/skills/foo/SKILL.md"},
@@ -336,9 +362,31 @@ def test_hook_allows_settings_json_with_active_flow(tmp_path):
 
     worktree = tmp_path / ".worktrees" / "my-feature"
     worktree.mkdir(parents=True)
+    (worktree / ".git").write_text("gitdir: /fake/.git/worktrees/my-feature\n")
 
     code, stderr = _run_hook(
         {"file_path": f"{worktree}/.claude/settings.json"},
         cwd=str(worktree),
     )
     assert code == 0
+
+
+def test_hook_blocks_claude_rules_with_slash_branch(tmp_path):
+    """When branch contains slashes, hook still detects active flow and blocks."""
+    flow_states = tmp_path / ".flow-states"
+    flow_states.mkdir()
+    # State file uses the full slash-containing branch name
+    feat_dir = flow_states / "feat"
+    feat_dir.mkdir()
+    (feat_dir / "my-feature.json").write_text("{}")
+
+    worktree = tmp_path / ".worktrees" / "feat" / "my-feature"
+    worktree.mkdir(parents=True)
+    (worktree / ".git").write_text("gitdir: /fake/.git/worktrees/feat-my-feature\n")
+
+    code, stderr = _run_hook(
+        {"file_path": f"{worktree}/.claude/rules/foo.md"},
+        cwd=str(worktree),
+    )
+    assert code == 2
+    assert "BLOCKED" in stderr

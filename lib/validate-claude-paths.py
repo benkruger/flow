@@ -29,16 +29,26 @@ WORKTREE_MARKER = ".worktrees/"
 def _detect_branch_from_cwd():
     """Detect the current branch name from the working directory.
 
-    In a worktree (.worktrees/<branch>/), extracts the branch from
-    the path with no subprocess cost. Otherwise falls back to
-    ``git branch --show-current`` (one subprocess).
+    In a worktree (.worktrees/<branch>/), walks up from CWD to find
+    the worktree root (directory containing a ``.git`` file), then
+    extracts the branch name as the relative path from ``.worktrees/``
+    to that root. This handles slash-containing branch names like
+    ``feat/my-feature``.
+
+    Falls back to ``git branch --show-current`` (one subprocess) when
+    not in a worktree or when no ``.git`` file is found.
     """
-    cwd = str(Path.cwd())
-    marker_pos = cwd.find(WORKTREE_MARKER)
+    cwd = Path.cwd()
+    cwd_str = str(cwd)
+    marker_pos = cwd_str.find(WORKTREE_MARKER)
     if marker_pos != -1:
-        after_marker = cwd[marker_pos + len(WORKTREE_MARKER) :]
-        branch = after_marker.split("/")[0]
-        return branch if branch else None
+        worktrees_dir = Path(cwd_str[: marker_pos + len(WORKTREE_MARKER)].rstrip("/"))
+        current = cwd
+        while current != worktrees_dir and current != worktrees_dir.parent:
+            if (current / ".git").is_file():
+                branch = str(current.relative_to(worktrees_dir))
+                return branch if branch != "." else None
+            current = current.parent
     try:
         result = subprocess.run(
             ["git", "branch", "--show-current"],
