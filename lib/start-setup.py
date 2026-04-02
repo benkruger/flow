@@ -55,6 +55,38 @@ def _fetch_issue_title(issue_number):
     return None
 
 
+def _check_duplicate_issue(project_root, issue_numbers, self_branch):
+    """Check if an existing flow already targets the same issue numbers.
+
+    Returns dict with branch/phase/pr_url on match, None otherwise.
+    Skips -phases.json files and the self_branch state file.
+    """
+    if not issue_numbers:
+        return None
+    state_dir = project_root / ".flow-states"
+    if not state_dir.is_dir():
+        return None
+    target_issues = set(issue_numbers)
+    for path in sorted(state_dir.glob("*.json")):
+        if path.name.endswith("-phases.json"):
+            continue
+        if path.stem == self_branch:
+            continue
+        try:
+            state = json.loads(path.read_text())
+        except (json.JSONDecodeError, ValueError):
+            continue
+        prompt = state.get("prompt", "")
+        existing_issues = set(extract_issue_numbers(prompt))
+        if existing_issues & target_issues:
+            return {
+                "branch": state.get("branch", path.stem),
+                "phase": state.get("current_phase", "unknown"),
+                "pr_url": state.get("pr_url", ""),
+            }
+    return None
+
+
 def _run_cmd(args, cwd, step_name, timeout=None):
     """Run a shell command, returning (stdout, stderr). Raises on failure."""
     try:
@@ -236,6 +268,25 @@ def main():
     branch = branch_name(naming_words)
     feature_title = derive_feature(naming_words)
     project_root = Path.cwd()
+
+    # Duplicate issue guard: check before any side effects
+    if issue_numbers:
+        dup = _check_duplicate_issue(project_root, issue_numbers, args.feature_name)
+        if dup:
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "step": "duplicate_issue",
+                        "message": (
+                            f"Issue already has an active flow on branch '{dup['branch']}'"
+                            f" (phase: {dup['phase']}, PR: {dup['pr_url']})."
+                            " Resume the existing flow instead."
+                        ),
+                    }
+                )
+            )
+            sys.exit(1)
 
     try:
         # Read framework from .flow.json (version gate already passed)
