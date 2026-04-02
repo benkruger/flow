@@ -1,3 +1,6 @@
+# Rust build artifacts
+target/
+
 # Python / test artifacts
 __pycache__/
 tests/test_adversarial_*.py

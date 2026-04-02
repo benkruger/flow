@@ -1069,7 +1069,17 @@ SETTINGS_ALLOW_CATEGORIES = [
     ("cleanup", ["Bash(rm "]),
     (
         "build",
-        ["Bash(cd ", "Bash(pwd)", "Bash(chmod ", "Bash(make ", "Bash(diff ", "Bash(.venv/", "Bash(curl ", "Bash(open:"],
+        [
+            "Bash(cargo ",
+            "Bash(cd ",
+            "Bash(pwd)",
+            "Bash(chmod ",
+            "Bash(make ",
+            "Bash(diff ",
+            "Bash(.venv/",
+            "Bash(curl ",
+            "Bash(open:",
+        ],
     ),
     ("read", ["Read("]),
     ("skills", ["Skill("]),
