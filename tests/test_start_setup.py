@@ -1048,3 +1048,137 @@ def test_start_setup_no_local_branch_name():
     """Tombstone: removed in PR #740. Must not return."""
     source = (LIB_DIR / "start-setup.py").read_text()
     assert "def _branch_name" not in source, "start-setup.py must import branch_name from flow_utils"
+
+
+# --- Duplicate issue guard (in-process) ---
+
+
+def test_check_duplicate_issue_detects_overlap(tmp_path):
+    """Guard detects existing flow with same issue number."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "existing-branch.json").write_text(
+        json.dumps(
+            {
+                "prompt": "work on issue #123",
+                "branch": "existing-branch",
+                "current_phase": "flow-code",
+                "pr_url": "https://github.com/test/repo/pull/99",
+            }
+        )
+    )
+    result = _mod._check_duplicate_issue(tmp_path, [123], "new-branch")
+    assert result is not None
+    assert result["branch"] == "existing-branch"
+    assert result["phase"] == "flow-code"
+    assert result["pr_url"] == "https://github.com/test/repo/pull/99"
+
+
+def test_check_duplicate_issue_no_false_positive(tmp_path):
+    """Guard returns None when no issue overlap."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    state = {"prompt": "work on issue #123", "branch": "existing-branch", "current_phase": "flow-code", "pr_url": ""}
+    (state_dir / "existing-branch.json").write_text(json.dumps(state))
+    result = _mod._check_duplicate_issue(tmp_path, [456], "new-branch")
+    assert result is None
+
+
+def test_check_duplicate_issue_multi_issue_overlap(tmp_path):
+    """Guard detects overlap when one of multiple issue numbers matches."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    state = {"prompt": "work on issue #456", "branch": "existing-branch", "current_phase": "flow-plan", "pr_url": ""}
+    (state_dir / "existing-branch.json").write_text(json.dumps(state))
+    result = _mod._check_duplicate_issue(tmp_path, [123, 456], "new-branch")
+    assert result is not None
+    assert result["branch"] == "existing-branch"
+
+
+def test_check_duplicate_issue_skips_self_branch(tmp_path):
+    """Guard skips the current flow's own state file."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "my-branch.json").write_text(
+        json.dumps({"prompt": "work on issue #123", "branch": "my-branch", "current_phase": "flow-start", "pr_url": ""})
+    )
+    result = _mod._check_duplicate_issue(tmp_path, [123], "my-branch")
+    assert result is None
+
+
+def test_check_duplicate_issue_empty_list_returns_none(tmp_path):
+    """Guard returns None immediately when issue_numbers is empty."""
+    result = _mod._check_duplicate_issue(tmp_path, [], "any-branch")
+    assert result is None
+
+
+def test_check_duplicate_issue_skips_phases_json(tmp_path):
+    """Guard skips -phases.json files."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    state = {"prompt": "work on issue #123", "branch": "some-branch", "current_phase": "flow-code", "pr_url": ""}
+    (state_dir / "some-branch-phases.json").write_text(json.dumps(state))
+    result = _mod._check_duplicate_issue(tmp_path, [123], "other-branch")
+    assert result is None
+
+
+def test_check_duplicate_issue_skips_malformed_json(tmp_path):
+    """Guard skips state files with invalid JSON."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "bad-json.json").write_text("not valid json {{{")
+    result = _mod._check_duplicate_issue(tmp_path, [123], "other-branch")
+    assert result is None
+
+
+def test_duplicate_issue_guard_integration(git_repo_with_remote):
+    """start-setup exits with error when duplicate issue detected."""
+    # Create existing state file referencing issue #999
+    state_dir = git_repo_with_remote / ".flow-states"
+    state_dir.mkdir(exist_ok=True)
+    (state_dir / "existing-flow.json").write_text(
+        json.dumps(
+            {
+                "prompt": "work on issue #999",
+                "branch": "existing-flow",
+                "current_phase": "flow-code",
+                "pr_url": "https://github.com/test/repo/pull/50",
+            }
+        )
+    )
+    # Run start-setup with a prompt referencing the same issue
+    prompt_path = git_repo_with_remote / ".flow-start-prompt"
+    prompt_path.write_text("work on issue #999")
+    result = _run_no_gh(
+        git_repo_with_remote,
+        "new-attempt",
+        prompt_file=str(prompt_path),
+        skip_pull=True,
+    )
+    assert result.returncode == 1
+    data = json.loads(result.stdout)
+    assert data["status"] == "error"
+    assert data["step"] == "duplicate_issue"
+    assert "existing-flow" in data["message"]
+
+
+def test_check_duplicate_issue_self_branch_unsanitized(tmp_path):
+    """Guard skips self-branch even when self_branch has spaces/caps (sanitized comparison)."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    # State file named with sanitized form (as init-state would create)
+    state = {"prompt": "work on issue #123", "branch": "my-feature", "current_phase": "flow-start", "pr_url": ""}
+    (state_dir / "my-feature.json").write_text(json.dumps(state))
+    # Pass unsanitized name — branch_name("My Feature") == "my-feature"
+    result = _mod._check_duplicate_issue(tmp_path, [123], branch_name("My Feature"))
+    assert result is None
+
+
+def test_check_duplicate_issue_null_prompt(tmp_path):
+    """Guard handles state files where prompt is null (JSON null → None)."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    (state_dir / "null-prompt.json").write_text(json.dumps({"prompt": None, "branch": "null-prompt"}))
+    # Should not raise TypeError — null prompt treated as empty
+    result = _mod._check_duplicate_issue(tmp_path, [123], "other-branch")
+    assert result is None
