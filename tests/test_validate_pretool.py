@@ -860,6 +860,25 @@ def test_is_flow_active_no_flow_states_dir(tmp_path):
     assert mod._is_flow_active("my-feature", tmp_path) is False
 
 
+def test_is_flow_active_rejects_slash_in_branch(tmp_path):
+    """Path traversal: ../evil resolves to evil.json at project root."""
+    mod = _load_module()
+    flow_states = tmp_path / ".flow-states"
+    flow_states.mkdir()
+    # Create evil.json at project root — traversal target
+    (tmp_path / "evil.json").write_text("{}")
+    # Without sanitization, ../evil.json resolves to tmp_path/evil.json
+    assert mod._is_flow_active("../evil", tmp_path) is False
+
+
+def test_is_flow_active_rejects_backslash_in_branch(tmp_path):
+    """Path traversal: backslash in branch name is rejected."""
+    mod = _load_module()
+    flow_states = tmp_path / ".flow-states"
+    flow_states.mkdir()
+    assert mod._is_flow_active("..\\evil", tmp_path) is False
+
+
 # --- _resolve_main_root() tests ---
 
 

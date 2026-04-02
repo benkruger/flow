@@ -67,6 +67,8 @@ def _is_flow_active(branch, project_root):
     """Check if a FLOW feature is active for the given branch."""
     if not branch or project_root is None:
         return False
+    if "/" in branch or "\\" in branch:
+        return False
     state_file = project_root / ".flow-states" / f"{branch}.json"
     return state_file.is_file()
 
