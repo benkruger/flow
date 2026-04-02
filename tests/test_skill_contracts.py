@@ -611,28 +611,36 @@ def test_phase_skills_have_update_state_section():
 
 def test_phase_skills_use_phase_transition_for_entry():
     """Phases 2-6 must use bin/flow phase-transition for state entry.
-    Phase 1 uses start-setup.py which creates the state file directly."""
+    Phase 1 uses start-setup.py which creates the state file directly.
+    Phase 6 uses complete-preflight.py which calls phase-transition internally."""
     phase_skills = _phase_skills()
+    # flow-complete delegates phase-transition to complete-preflight.py
+    skip_entry = {"flow-complete"}
     for key in PHASE_ORDER[1:]:
         skill_name = phase_skills[key]
         content = _read_skill(skill_name)
         assert "phase-transition" in content, (
             f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing 'phase-transition' command for entry"
         )
-        assert "--action enter" in content, (
-            f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing '--action enter' for phase entry"
-        )
+        if key not in skip_entry:
+            assert "--action enter" in content, (
+                f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing '--action enter' for phase entry"
+            )
 
 
 def test_phase_skills_use_phase_transition_for_completion():
-    """Phases 1-6 must use bin/flow phase-transition for state completion."""
+    """Phases 1-6 must use bin/flow phase-transition for state completion.
+    Phase 6 delegates phase-transition complete to complete-post-merge.py."""
     phase_skills = _phase_skills()
+    # flow-complete delegates phase-transition complete to complete-post-merge.py
+    skip_complete = {"flow-complete"}
     for key in PHASE_ORDER:
         skill_name = phase_skills[key]
         content = _read_skill(skill_name)
-        assert "--action complete" in content, (
-            f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing '--action complete' for phase completion"
-        )
+        if key not in skip_complete:
+            assert "--action complete" in content, (
+                f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing '--action complete' for phase completion"
+            )
 
 
 def test_phase_skills_no_inline_time_computation():
@@ -2379,8 +2387,8 @@ def test_complete_done_banner_includes_session_summary():
     )
 
 
-def test_complete_step7_archives_all_pr_sections():
-    """Complete Step 7 must reference all required PR body section headings."""
+def test_complete_post_merge_references_pr_sections():
+    """Complete Step 6 must reference all required PR body section headings."""
     content = _read_skill("flow-complete")
     required_headings = [
         "Phase Timings",
@@ -2390,24 +2398,25 @@ def test_complete_step7_archives_all_pr_sections():
     ]
     for heading in required_headings:
         assert heading in content, (
-            f"flow-complete/SKILL.md must reference '{heading}' section heading in Step 7 archive"
+            f"flow-complete/SKILL.md must reference '{heading}' section heading in post-merge step"
         )
 
 
-def test_complete_merged_path_includes_archive():
-    """Complete Step 2 MERGED path must route through Step 7 (archive)."""
+def test_complete_merged_path_includes_post_merge():
+    """Complete Step 1 MERGED path must route through Step 6 (post-merge) before cleanup."""
     content = _read_skill("flow-complete")
+    assert "Step 6" in content, "flow-complete/SKILL.md must reference Step 6"
     assert "Step 7" in content, "flow-complete/SKILL.md must reference Step 7"
-    # The MERGED path instruction must mention Step 7
-    # to ensure archive runs before cleanup
+    # The MERGED path instruction must mention Step 6
+    # to ensure post-merge runs before cleanup
     merged_idx = content.find("MERGED")
     assert merged_idx != -1, "flow-complete/SKILL.md must contain MERGED path handling"
-    # Use the next status check as boundary instead of a magic number
-    open_idx = content.find("**If `OPEN`**", merged_idx)
-    assert open_idx > merged_idx, "flow-complete/SKILL.md must have OPEN path after MERGED path"
-    merged_section = content[merged_idx:open_idx]
-    assert "Step 7" in merged_section, (
-        "flow-complete/SKILL.md MERGED path must route through Step 7 (archive artifacts) before proceeding to cleanup"
+    # Find the boundary after the MERGED handling
+    next_status = content.find('"merge": "clean"', merged_idx)
+    assert next_status > merged_idx, "flow-complete/SKILL.md must have clean/merged path after MERGED path"
+    merged_section = content[merged_idx:next_status]
+    assert "Step 6" in merged_section, (
+        "flow-complete/SKILL.md MERGED path must route through Step 6 (post-merge) before proceeding to cleanup"
     )
 
 
@@ -2423,27 +2432,19 @@ def test_complete_has_self_invocation_check():
     assert "--continue-step" in si_match.group(1), "Self-Invocation Check must reference --continue-step flag"
 
 
-def test_complete_done_uses_format_complete_summary():
-    """Complete Done section must call format-complete-summary script."""
+def test_complete_uses_format_complete_summary():
+    """Complete must reference format-complete-summary for summary generation."""
     content = _read_skill("flow-complete")
-    in_done = False
-    found_script_call = False
-    for line in content.splitlines():
-        if "Done" in line and "Print banner" in line:
-            in_done = True
-        if in_done and "format-complete-summary" in line:
-            found_script_call = True
-            break
-    assert found_script_call, (
-        "flow-complete/SKILL.md Done section must call format-complete-summary to generate the summary banner"
+    assert "format-complete-summary" in content, (
+        "flow-complete/SKILL.md must reference format-complete-summary for summary generation"
     )
 
 
 def test_complete_has_resume_check():
     """Complete must have a Resume Check section that reads complete_step."""
     content = _read_skill("flow-complete")
-    resume_match = re.search(r"## Resume Check\n(.*?)(?=\n## Steps)", content, re.DOTALL)
-    assert resume_match, "flow-complete must have a Resume Check section before Steps"
+    resume_match = re.search(r"## Resume Check\n(.*?)(?=\n## )", content, re.DOTALL)
+    assert resume_match, "flow-complete must have a Resume Check section"
     resume_text = resume_match.group(1)
     assert "complete_step" in resume_text, "Resume Check must reference complete_step field"
 
@@ -2462,7 +2463,7 @@ def test_complete_sets_continue_pending_before_commit():
         start = pos + 1
     assert len(flag_positions) >= 5, (
         "Complete must set _continue_pending=commit at least five times "
-        f"(Steps 3, 4, 5, 6, and 8), found {len(flag_positions)}"
+        f"(Steps 1, 2, 3, 4, and 5), found {len(flag_positions)}"
     )
     # Each flag must precede a /flow:flow-commit
     for i, flag_pos in enumerate(flag_positions):
@@ -2473,54 +2474,60 @@ def test_complete_sets_continue_pending_before_commit():
 
 
 def test_complete_commit_points_self_invoke():
-    """Complete Steps 3, 4, 5, and 6 must self-invoke via --continue-step."""
+    """Complete Steps 1, 2, 3, 4, and 5 must self-invoke via --continue-step."""
     content = _read_skill("flow-complete")
-    # Step 3 section (merge conflicts)
+    # Step 1 section (preflight — conflict resolution)
+    step1_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 2)", content, re.DOTALL)
+    assert step1_match, "Could not find Step 1 section"
+    assert "flow:flow-complete --continue-step" in step1_match.group(1), (
+        "Step 1 must self-invoke via 'flow:flow-complete --continue-step'"
+    )
+    # Step 2 section (local CI gate)
+    step2_match = re.search(r"### Step 2.*?\n(.*?)(?=\n### Step 3)", content, re.DOTALL)
+    assert step2_match, "Could not find Step 2 section"
+    assert "flow:flow-complete --continue-step" in step2_match.group(1), (
+        "Step 2 must self-invoke via 'flow:flow-complete --continue-step'"
+    )
+    # Step 3 section (GitHub CI status)
     step3_match = re.search(r"### Step 3.*?\n(.*?)(?=\n### Step 4)", content, re.DOTALL)
     assert step3_match, "Could not find Step 3 section"
     assert "flow:flow-complete --continue-step" in step3_match.group(1), (
         "Step 3 must self-invoke via 'flow:flow-complete --continue-step'"
     )
-    # Step 4 section (local CI gate)
+    # Step 4 section (confirm with user / feedback loop)
     step4_match = re.search(r"### Step 4.*?\n(.*?)(?=\n### Step 5)", content, re.DOTALL)
     assert step4_match, "Could not find Step 4 section"
     assert "flow:flow-complete --continue-step" in step4_match.group(1), (
         "Step 4 must self-invoke via 'flow:flow-complete --continue-step'"
     )
-    # Step 5 section (GitHub CI status)
+    # Step 5 section (merge)
     step5_match = re.search(r"### Step 5.*?\n(.*?)(?=\n### Step 6)", content, re.DOTALL)
     assert step5_match, "Could not find Step 5 section"
     assert "flow:flow-complete --continue-step" in step5_match.group(1), (
         "Step 5 must self-invoke via 'flow:flow-complete --continue-step'"
     )
-    # Step 6 section (confirm with user / feedback loop)
-    step6_match = re.search(r"### Step 6.*?\n(.*?)(?=\n### Step 7)", content, re.DOTALL)
-    assert step6_match, "Could not find Step 6 section"
-    assert "flow:flow-complete --continue-step" in step6_match.group(1), (
-        "Step 6 must self-invoke via 'flow:flow-complete --continue-step'"
-    )
-    # Step 8 section (freshness check + merge)
-    step8_match = re.search(r"### Step 8.*?\n(.*?)(?=\n### Step 9)", content, re.DOTALL)
-    assert step8_match, "Could not find Step 8 section"
-    assert "flow:flow-complete --continue-step" in step8_match.group(1), (
-        "Step 8 must self-invoke via 'flow:flow-complete --continue-step'"
-    )
 
 
-def test_complete_commit_points_record_step():
-    """Every Complete step must record complete_step via set-timestamp for TUI display."""
+def test_complete_no_twelve_steps():
+    """Tombstone: 12-step structure consolidated to 7 steps in PR #751. Must not return."""
     content = _read_skill("flow-complete")
-    for step_val in range(1, 13):
-        assert f"complete_step={step_val}" in content, (
-            f"flow-complete/SKILL.md must contain 'complete_step={step_val}' for TUI step {step_val} display"
+    assert "complete_steps_total=12" not in content, (
+        "flow-complete/SKILL.md must not reference 12-step total — "
+        "consolidated to 7 steps with Python scripts in PR #751"
+    )
+    # Steps 8-12 should not exist in the new structure
+    for step_n in range(8, 13):
+        assert f"### Step {step_n}" not in content, (
+            f"flow-complete/SKILL.md must not contain Step {step_n} — consolidated to 7 steps in PR #751"
         )
 
 
-def test_complete_skill_sets_steps_total():
-    """Complete Update State must set complete_steps_total=12 for TUI progress display."""
+def test_complete_no_steps_total_in_skill():
+    """Tombstone: complete_steps_total moved to complete-preflight.py in PR #751. Must not return."""
     content = _read_skill("flow-complete")
-    assert "complete_steps_total=12" in content, (
-        "flow-complete/SKILL.md must contain 'complete_steps_total=12' in the Update State section"
+    assert "complete_steps_total=" not in content, (
+        "flow-complete/SKILL.md must not contain complete_steps_total= — "
+        "the preflight script sets this via mutate_state"
     )
 
 
@@ -2529,7 +2536,7 @@ def test_continue_context_includes_mode_flag():
     skills_with_min = {
         "flow-code": 2,
         "flow-code-review": 4,
-        "flow-complete": 8,
+        "flow-complete": 9,
         "flow-learn": 2,
     }
     for skill_name, min_step_contexts in skills_with_min.items():
