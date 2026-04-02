@@ -371,11 +371,10 @@ def test_hook_allows_settings_json_with_active_flow(tmp_path):
     assert code == 0
 
 
-def test_hook_blocks_claude_rules_with_slash_branch(tmp_path):
-    """When branch contains slashes, hook still detects active flow and blocks."""
+def test_hook_allows_slash_branch_because_is_flow_active_rejects_slashes(tmp_path):
+    """Slash branches are detected correctly but _is_flow_active rejects them (path traversal protection)."""
     flow_states = tmp_path / ".flow-states"
     flow_states.mkdir()
-    # State file uses the full slash-containing branch name
     feat_dir = flow_states / "feat"
     feat_dir.mkdir()
     (feat_dir / "my-feature.json").write_text("{}")
@@ -388,5 +387,27 @@ def test_hook_blocks_claude_rules_with_slash_branch(tmp_path):
         {"file_path": f"{worktree}/.claude/rules/foo.md"},
         cwd=str(worktree),
     )
-    assert code == 2
-    assert "BLOCKED" in stderr
+    # _is_flow_active rejects slashes in branch names, so flow appears inactive
+    assert code == 0
+
+
+# --- _is_flow_active() path traversal tests ---
+
+
+def test_is_flow_active_rejects_slash_in_branch(tmp_path):
+    """Path traversal: ../evil resolves to evil.json at project root."""
+    mod = _load_module()
+    flow_states = tmp_path / ".flow-states"
+    flow_states.mkdir()
+    # Create evil.json at project root — traversal target
+    (tmp_path / "evil.json").write_text("{}")
+    # Without sanitization, ../evil.json resolves to tmp_path/evil.json
+    assert mod._is_flow_active("../evil", tmp_path) is False
+
+
+def test_is_flow_active_rejects_backslash_in_branch(tmp_path):
+    """Path traversal: backslash in branch name is rejected."""
+    mod = _load_module()
+    flow_states = tmp_path / ".flow-states"
+    flow_states.mkdir()
+    assert mod._is_flow_active("..\\evil", tmp_path) is False

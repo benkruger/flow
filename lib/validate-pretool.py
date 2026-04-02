@@ -103,9 +103,12 @@ def _is_flow_active(branch, project_root):
 
     Returns True when ``.flow-states/<branch>.json`` exists at the
     project root. Returns False for None branch, None root, or
-    missing state file.
+    missing state file. Rejects branch names containing path
+    separators to prevent traversal outside ``.flow-states/``.
     """
     if not branch or project_root is None:
+        return False
+    if "/" in branch or "\\" in branch:
         return False
     state_file = project_root / ".flow-states" / f"{branch}.json"
     return state_file.is_file()
