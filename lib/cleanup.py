@@ -37,7 +37,7 @@ def _run_cmd(args, cwd):
         return False, str(e)
 
 
-def cleanup(project_root, branch, worktree, pr_number=None):
+def cleanup(project_root, branch, worktree, pr_number=None, pull=False):
     """Perform cleanup steps. Returns a dict of step results."""
     root = Path(project_root)
     steps = {}
@@ -188,6 +188,14 @@ def cleanup(project_root, branch, worktree, pr_number=None):
     else:
         steps["issues_file"] = "skipped"
 
+    # Pull latest main (after worktree removal — ordering matters)
+    if pull:
+        ok, output = _run_cmd(
+            ["git", "pull", "origin", "main"],
+            root,
+        )
+        steps["git_pull"] = "pulled" if ok else f"failed: {output}"
+
     return steps
 
 
@@ -197,6 +205,7 @@ def main():
     parser.add_argument("--branch", required=True, help="Branch name")
     parser.add_argument("--worktree", required=True, help="Worktree path (relative)")
     parser.add_argument("--pr", type=int, default=None, help="PR number to close")
+    parser.add_argument("--pull", action="store_true", help="Run git pull origin main after cleanup")
     args = parser.parse_args()
 
     root = Path(args.project_root)
@@ -211,7 +220,7 @@ def main():
         )
         sys.exit(1)
 
-    steps = cleanup(root, args.branch, args.worktree, args.pr)
+    steps = cleanup(root, args.branch, args.worktree, args.pr, pull=args.pull)
     print(json.dumps({"status": "ok", "steps": steps}))
 
 

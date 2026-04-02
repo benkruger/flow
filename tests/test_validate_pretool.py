@@ -762,6 +762,7 @@ def test_detect_branch_from_cwd_worktree(tmp_path):
     mod = _load_module()
     worktree_dir = tmp_path / "project" / ".worktrees" / "my-feature"
     worktree_dir.mkdir(parents=True)
+    (worktree_dir / ".git").write_text("gitdir: /fake/.git/worktrees/my-feature\n")
 
     import os
 
@@ -777,7 +778,10 @@ def test_detect_branch_from_cwd_worktree(tmp_path):
 def test_detect_branch_from_cwd_worktree_subdir(tmp_path):
     """Extracts branch from .worktrees/<branch>/subdir/ path."""
     mod = _load_module()
-    subdir = tmp_path / "project" / ".worktrees" / "fix-login" / "src" / "lib"
+    worktree_root = tmp_path / "project" / ".worktrees" / "fix-login"
+    worktree_root.mkdir(parents=True)
+    (worktree_root / ".git").write_text("gitdir: /fake/.git/worktrees/fix-login\n")
+    subdir = worktree_root / "src" / "lib"
     subdir.mkdir(parents=True)
 
     import os
@@ -820,6 +824,44 @@ def test_detect_branch_from_cwd_git_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(mod.subprocess, "run", fail)
     result = mod._detect_branch_from_cwd()
     assert result is None
+
+
+def test_detect_branch_from_cwd_worktree_slash(tmp_path):
+    """Extracts full branch name when it contains slashes."""
+    mod = _load_module()
+    worktree_dir = tmp_path / "project" / ".worktrees" / "feat" / "my-feature"
+    worktree_dir.mkdir(parents=True)
+    (worktree_dir / ".git").write_text("gitdir: /fake/.git/worktrees/feat-my-feature\n")
+
+    import os
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(worktree_dir)
+        result = mod._detect_branch_from_cwd()
+        assert result == "feat/my-feature"
+    finally:
+        os.chdir(old_cwd)
+
+
+def test_detect_branch_from_cwd_worktree_slash_subdir(tmp_path):
+    """Extracts full branch name from a subdirectory within a slash-branch worktree."""
+    mod = _load_module()
+    worktree_root = tmp_path / "project" / ".worktrees" / "feat" / "my-feature"
+    worktree_root.mkdir(parents=True)
+    (worktree_root / ".git").write_text("gitdir: /fake/.git/worktrees/feat-my-feature\n")
+    subdir = worktree_root / "src" / "lib"
+    subdir.mkdir(parents=True)
+
+    import os
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(subdir)
+        result = mod._detect_branch_from_cwd()
+        assert result == "feat/my-feature"
+    finally:
+        os.chdir(old_cwd)
 
 
 # --- _is_flow_active() tests ---
@@ -948,6 +990,7 @@ def test_hook_subprocess_worktree_flow_active_blocks(tmp_path):
     (state_dir / "my-feature.json").write_text("{}")
     worktree_dir = project / ".worktrees" / "my-feature"
     worktree_dir.mkdir(parents=True)
+    (worktree_dir / ".git").write_text("gitdir: /fake/.git/worktrees/my-feature\n")
     # Real worktrees have .claude/settings.json (tracked file checked out by git)
     wt_claude_dir = worktree_dir / ".claude"
     wt_claude_dir.mkdir()
@@ -956,6 +999,33 @@ def test_hook_subprocess_worktree_flow_active_blocks(tmp_path):
     code, stderr = _run_hook("npm test", cwd=str(worktree_dir))
     assert code == 2
     assert "not in allow list" in stderr
+
+
+def test_hook_subprocess_worktree_slash_allows_because_is_flow_active_rejects_slashes(tmp_path):
+    """Subprocess: slash-branch worktree → _is_flow_active rejects slashes, so whitelist not enforced."""
+    project = tmp_path / "project"
+    project.mkdir()
+    claude_dir = project / ".claude"
+    claude_dir.mkdir()
+    settings = {"permissions": {"allow": ["Bash(git status)"]}}
+    (claude_dir / "settings.json").write_text(json.dumps(settings))
+    state_dir = project / ".flow-states"
+    state_dir.mkdir()
+    feat_dir = state_dir / "feat"
+    feat_dir.mkdir()
+    (feat_dir / "my-feature.json").write_text("{}")
+    worktree_dir = project / ".worktrees" / "feat" / "my-feature"
+    worktree_dir.mkdir(parents=True)
+    (worktree_dir / ".git").write_text("gitdir: /fake/.git/worktrees/feat-my-feature\n")
+    wt_claude_dir = worktree_dir / ".claude"
+    wt_claude_dir.mkdir()
+    (wt_claude_dir / "settings.json").write_text(json.dumps(settings))
+
+    # _is_flow_active rejects slashes in branch names (path traversal protection),
+    # so flow appears inactive and whitelist is not enforced
+    code, stderr = _run_hook("npm test", cwd=str(worktree_dir))
+    assert code == 0
+    assert stderr == ""
 
 
 def test_hook_subprocess_worktree_no_flow_allows(tmp_path):
