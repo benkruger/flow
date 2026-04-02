@@ -616,3 +616,43 @@ def test_cleanup_tmp_rmtree_failure(git_repo, monkeypatch):
     monkeypatch.setattr(shutil, "rmtree", _fail_rmtree)
     steps = _mod.cleanup(git_repo, "test-feature", wt_rel)
     assert steps["worktree_tmp"].startswith("failed:")
+
+
+# --- --pull flag tests ---
+
+
+def test_pull_flag_runs_git_pull(git_repo):
+    """--pull flag causes git pull origin main after worktree removal."""
+    wt_rel = _setup_feature(git_repo)
+    result = _run(git_repo, "test-feature", wt_rel)
+    data = json.loads(result.stdout)
+    # Without --pull, no git_pull step
+    assert "git_pull" not in data["steps"]
+
+
+def test_pull_flag_present_runs_pull(git_repo):
+    """--pull flag present adds git_pull to steps dict."""
+    wt_rel = _setup_feature(git_repo)
+    args = [sys.executable, SCRIPT, str(git_repo), "--branch", "test-feature", "--worktree", wt_rel, "--pull"]
+    result = subprocess.run(args, capture_output=True, text=True)
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert "git_pull" in data["steps"]
+    # No remote configured, so pull will fail — but it should be reported
+    assert data["steps"]["git_pull"].startswith("failed:")
+
+
+def test_pull_flag_in_process(git_repo):
+    """In-process cleanup with pull=True adds git_pull step."""
+    wt_rel = _setup_feature(git_repo)
+    steps = _mod.cleanup(git_repo, "test-feature", wt_rel, pull=True)
+    assert "git_pull" in steps
+    # No remote, so pull fails gracefully
+    assert steps["git_pull"].startswith("failed:")
+
+
+def test_pull_false_no_git_pull_step(git_repo):
+    """In-process cleanup with pull=False has no git_pull step."""
+    wt_rel = _setup_feature(git_repo)
+    steps = _mod.cleanup(git_repo, "test-feature", wt_rel, pull=False)
+    assert "git_pull" not in steps
