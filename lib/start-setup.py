@@ -14,8 +14,6 @@ Output (JSON to stdout):
 
 import argparse
 import json
-import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -24,9 +22,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import (
     AUTO_SKILLS,
+    branch_name,
     build_initial_phases,
     derive_feature,
     detect_repo,
+    detect_tty,
+    extract_issue_numbers,
     freeze_phases,
     mutate_state,
     now,
@@ -36,18 +37,22 @@ from flow_utils import (
 from log import append_log
 
 
-def _branch_name(feature_words):
-    """Convert feature words to a hyphenated branch name, max 32 chars."""
-    sanitized = re.sub(r"[^a-zA-Z0-9\s-]", "", feature_words)
-    name = "-".join(sanitized.lower().split())
-    if len(name) <= 32:
-        return name
-    # Truncate at last hyphen that fits within 32 chars
-    truncated = name[:33]
-    last_hyphen = truncated.rfind("-")
-    if last_hyphen > 0:
-        return truncated[:last_hyphen]
-    return name[:32]
+def _fetch_issue_title(issue_number):
+    """Fetch issue title from GitHub. Returns title string or None on failure."""
+    try:
+        result = subprocess.run(
+            ["gh", "issue", "view", str(issue_number), "--json", "title", "--jq", ".title"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        pass
+    except Exception:
+        pass
+    return None
 
 
 def _run_cmd(args, cwd, step_name, timeout=None):
@@ -139,39 +144,6 @@ def _extract_pr_number(pr_url):
     return 0
 
 
-def _detect_tty():
-    """Walk up the process tree to find the terminal tty.
-
-    When invoked via Claude Code → bash → bin/flow → python, the immediate
-    parent has no controlling terminal (tty shows '??'). Walking up the
-    process tree finds the first ancestor with a real tty — the terminal
-    tab where the Claude session is running.
-    """
-    pid = os.getpid()
-    try:
-        for _ in range(20):
-            result = subprocess.run(
-                ["ps", "-o", "tty=,ppid=", "-p", str(pid)],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode != 0:
-                break
-            parts = result.stdout.strip().split()
-            if len(parts) < 2:
-                break
-            tty, ppid = parts[0], parts[1]
-            if tty not in ("??", "?"):
-                return "/dev/" + tty
-            pid = int(ppid)
-            if pid <= 1:
-                break
-    except Exception:
-        pass
-    return None
-
-
 def _create_state_file(
     project_root, branch, feature_title, pr_url, pr_number, framework="rails", skills=None, prompt="", repo=None
 ):
@@ -194,7 +166,7 @@ def _create_state_file(
             "log": f".flow-states/{branch}.log",
             "state": f".flow-states/{branch}.json",
         },
-        "session_tty": _detect_tty(),
+        "session_tty": detect_tty(),
         "session_id": None,
         "transcript_path": None,
         "notes": [],
@@ -253,8 +225,16 @@ def main():
         raw_prompt = args.prompt
     else:
         raw_prompt = feature_words
-    branch = _branch_name(feature_words)
-    feature_title = derive_feature(feature_words)
+    # Issue-aware branch naming: if prompt contains #N, fetch first issue's title
+    naming_words = feature_words
+    issue_numbers = extract_issue_numbers(raw_prompt)
+    if issue_numbers:
+        title = _fetch_issue_title(issue_numbers[0])
+        if title:
+            naming_words = title
+
+    branch = branch_name(naming_words)
+    feature_title = derive_feature(naming_words)
     project_root = Path.cwd()
 
     try:

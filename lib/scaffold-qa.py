@@ -140,7 +140,7 @@ def scaffold(framework, repo, templates_dir=None, clone_dir=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Create a QA repo")
-    parser.add_argument("--framework", required=True, help="Framework name (rails, python, ios, go)")
+    parser.add_argument("--framework", required=True, help="Framework name (rails, python, ios, go, rust)")
     parser.add_argument("--repo", required=True, help="GitHub repo (owner/name)")
     args = parser.parse_args()
 

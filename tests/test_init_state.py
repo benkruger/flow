@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from conftest import LIB_DIR, PHASE_ORDER, make_flow_json
+from flow_utils import branch_name
 
 SCRIPT = str(LIB_DIR / "init-state.py")
 
@@ -23,13 +24,17 @@ def _current_plugin_version():
     return json.loads(plugin_path.read_text())["version"]
 
 
-def _run(cwd, feature_name, prompt_file=None, auto=False):
+def _run(cwd, feature_name, prompt_file=None, auto=False, start_step=None, start_steps_total=None):
     """Run init-state.py with a feature name inside the given directory."""
     cmd = [sys.executable, SCRIPT, feature_name]
     if prompt_file is not None:
         cmd.extend(["--prompt-file", prompt_file])
     if auto:
         cmd.append("--auto")
+    if start_step is not None:
+        cmd.extend(["--start-step", str(start_step)])
+    if start_steps_total is not None:
+        cmd.extend(["--start-steps-total", str(start_steps_total)])
     result = subprocess.run(
         cmd,
         capture_output=True,
@@ -134,6 +139,7 @@ def test_state_file_has_required_top_level_fields(target_project):
     assert state["current_phase"] == "flow-start"
     assert state["notes"] == []
     assert state["phase_transitions"] == []
+    assert state["session_tty"] is None or isinstance(state["session_tty"], str)
     assert state["session_id"] is None
     assert state["transcript_path"] is None
 
@@ -340,7 +346,7 @@ def test_branch_name_truncated_at_32(target_project):
 
 def test_branch_name_single_long_word():
     """Single word >32 chars with no hyphens truncates at 32 (in-process)."""
-    result = _mod._branch_name("a" * 40)
+    result = branch_name("a" * 40)
     assert len(result) == 32
     assert result == "a" * 32
 
@@ -375,3 +381,43 @@ def test_auto_skills_imported_not_defined():
         stripped = line.lstrip()
         if stripped.startswith("AUTO_SKILLS") and "=" in stripped and "import" not in stripped:
             pytest.fail("init-state.py defines AUTO_SKILLS locally; it should import from flow_utils")
+
+
+# --- Start step tracking fields ---
+
+
+def test_start_step_fields_set_when_flags_passed(target_project):
+    """--start-step and --start-steps-total include fields in state file."""
+    make_flow_json(target_project, version=_current_plugin_version())
+    result = _run(target_project, "step tracking test", start_step=3, start_steps_total=11)
+    assert result.returncode == 0, result.stderr
+    state_path = target_project / ".flow-states" / "step-tracking-test.json"
+    state = json.loads(state_path.read_text())
+    assert state["start_step"] == 3
+    assert state["start_steps_total"] == 11
+
+
+def test_start_step_fields_absent_when_flags_omitted(target_project):
+    """State file has no start_step or start_steps_total when flags not passed."""
+    make_flow_json(target_project, version=_current_plugin_version())
+    result = _run(target_project, "no step fields")
+    assert result.returncode == 0, result.stderr
+    state_path = target_project / ".flow-states" / "no-step-fields.json"
+    state = json.loads(state_path.read_text())
+    assert "start_step" not in state
+    assert "start_steps_total" not in state
+
+
+# --- Tombstone: deduplication PR #740 ---
+
+
+def test_init_state_no_local_branch_name():
+    """Tombstone: removed in PR #740. Must not return."""
+    source = (LIB_DIR / "init-state.py").read_text()
+    assert "def _branch_name" not in source, "init-state.py must import branch_name from flow_utils, not define locally"
+
+
+def test_init_state_no_local_freeze_phases():
+    """Tombstone: removed in PR #740. Must not return."""
+    source = (LIB_DIR / "init-state.py").read_text()
+    assert "def freeze_phases" not in source, "init-state.py must import freeze_phases from flow_utils"

@@ -91,6 +91,19 @@ def build_initial_phases(current_time):
     return phases
 
 
+def branch_name(feature_words):
+    """Convert feature words to a hyphenated branch name, max 32 chars."""
+    sanitized = re.sub(r"[^a-zA-Z0-9\s-]", "", feature_words)
+    name = "-".join(sanitized.lower().split())
+    if len(name) <= 32:
+        return name
+    truncated = name[:33]
+    last_hyphen = truncated.rfind("-")
+    if last_hyphen > 0:
+        return truncated[:last_hyphen]
+    return name[:32]
+
+
 def load_phase_config(path):
     """Load phase config from a JSON file, returning (order, names, numbers, commands).
 
@@ -369,6 +382,39 @@ def detect_repo(cwd=None):
         return None
     except Exception:
         return None
+
+
+def detect_tty():
+    """Walk up the process tree to find the terminal tty.
+
+    When invoked via Claude Code -> bash -> bin/flow -> python, the immediate
+    parent has no controlling terminal (tty shows '??'). Walking up the
+    process tree finds the first ancestor with a real tty -- the terminal
+    tab where the Claude session is running.
+    """
+    pid = os.getpid()
+    try:
+        for _ in range(20):
+            result = subprocess.run(
+                ["ps", "-o", "tty=,ppid=", "-p", str(pid)],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                break
+            parts = result.stdout.strip().split()
+            if len(parts) < 2:
+                break
+            tty, ppid = parts[0], parts[1]
+            if tty not in ("??", "?"):
+                return "/dev/" + tty
+            pid = int(ppid)
+            if pid <= 1:
+                break
+    except Exception:
+        pass
+    return None
 
 
 def permission_to_regex(perm):
