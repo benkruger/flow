@@ -407,6 +407,23 @@ def test_all_agents_specify_model_sonnet():
         )
 
 
+def test_no_python_append_note():
+    """Tombstone: ported to Rust in PR #804. Must not return."""
+    assert not (LIB_DIR / "append-note.py").exists(), "append-note.py was ported to Rust and must not be re-added"
+
+
+def test_no_python_add_issue():
+    """Tombstone: ported to Rust in PR #804. Must not return."""
+    assert not (LIB_DIR / "add-issue.py").exists(), "add-issue.py was ported to Rust and must not be re-added"
+
+
+def test_no_python_add_notification():
+    """Tombstone: ported to Rust in PR #804. Must not return."""
+    assert not (LIB_DIR / "add-notification.py").exists(), (
+        "add-notification.py was ported to Rust and must not be re-added"
+    )
+
+
 def test_no_python_generate_id():
     """Tombstone: ported to Rust in PR #802. Must not return."""
     assert not (LIB_DIR / "generate-id.py").exists(), (

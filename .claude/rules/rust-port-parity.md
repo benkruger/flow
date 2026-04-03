@@ -18,6 +18,23 @@ When using `serde_json::Value` for dynamic JSON manipulation
 `serde_json::Map` uses `BTreeMap` which alphabetically sorts
 keys on every round-trip — silently reordering state files.
 
+## String Slicing
+
+Python `len()` counts code points, `s[:N]` slices by code point.
+Rust `str::len()` counts bytes, `&s[..N]` slices by byte — panics
+if the boundary falls inside a multi-byte UTF-8 character. Use
+`s.chars().count()` for length and `s.chars().take(N).collect()`
+for truncation when porting Python string slicing.
+
+## Default Value Handling
+
+Python `dict.get(key, default)` returns a default when the key is
+absent. Rust `serde_json::Value::get(key)` returns `Option<&Value>`
+with no default parameter. When porting a Python function that uses
+`dict.get()` with a default, apply the same default in Rust via
+`.unwrap_or()` or `.unwrap_or_else()`. Omitting the default changes
+error behavior — the Python code succeeds while the Rust code fails.
+
 ## Python Bridge Pattern
 
 When a ported script still has Python callers that import its

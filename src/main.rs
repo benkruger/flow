@@ -1,6 +1,9 @@
 use clap::{Parser, Subcommand};
 use std::process;
 
+use flow_rs::add_issue;
+use flow_rs::add_notification;
+use flow_rs::append_note;
 use flow_rs::commands;
 
 #[derive(Parser)]
@@ -12,6 +15,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Append a note to FLOW state
+    AppendNote(append_note::Args),
+    /// Record a filed issue in FLOW state
+    AddIssue(add_issue::Args),
+    /// Record a Slack notification in FLOW state
+    AddNotification(add_notification::Args),
+
     /// Set timestamp and value fields in the FLOW state file.
     #[command(name = "set-timestamp")]
     SetTimestamp {
@@ -42,9 +52,6 @@ enum Commands {
     /// Generate an 8-character hex session ID
     #[command(name = "generate-id")]
     GenerateId,
-
-    // The external subcommand catch-all routes unrecognized
-    // commands to exit 127, signaling bin/flow to try Python.
     #[command(external_subcommand)]
     #[allow(dead_code)]
     External(Vec<String>),
@@ -58,6 +65,9 @@ fn main() {
             eprintln!("flow-rs: no command specified. Use --help for usage.");
             process::exit(1);
         }
+        Some(Commands::AppendNote(args)) => append_note::run(args),
+        Some(Commands::AddIssue(args)) => add_issue::run(args),
+        Some(Commands::AddNotification(args)) => add_notification::run(args),
         Some(Commands::SetTimestamp { set_args, branch }) => {
             commands::set_timestamp::run(set_args, branch);
         }

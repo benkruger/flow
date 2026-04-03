@@ -1,3 +1,6 @@
+pub mod add_issue;
+pub mod add_notification;
+pub mod append_note;
 pub mod commands;
 pub mod error;
 pub mod git;
