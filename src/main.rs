@@ -7,11 +7,14 @@ use flow_rs::add_notification;
 use flow_rs::append_note;
 use flow_rs::check_phase::check_phase;
 use flow_rs::commands;
+use flow_rs::format_status;
 use flow_rs::git::{project_root, resolve_branch};
 use flow_rs::lock::mutate_state;
 use flow_rs::output::json_error;
-use flow_rs::phase_config::{load_phase_config, PHASE_ORDER};
+use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
 use flow_rs::phase_transition::{phase_complete, phase_enter};
+use flow_rs::start_setup;
+use flow_rs::utils::read_version;
 
 #[derive(Parser)]
 #[command(name = "flow-rs", version, about = "FLOW CLI (Rust)")]
@@ -80,6 +83,25 @@ enum Commands {
     #[command(name = "clear-blocked")]
     ClearBlocked,
 
+    /// Create the initial FLOW state file with null PR fields.
+    #[command(name = "init-state")]
+    InitState {
+        /// Feature name words
+        feature_name: String,
+        /// Path to file containing start prompt (file is deleted after reading)
+        #[arg(long = "prompt-file")]
+        prompt_file: Option<String>,
+        /// Override all skills to fully autonomous preset
+        #[arg(long)]
+        auto: bool,
+        /// Initial start_step value for TUI progress
+        #[arg(long = "start-step")]
+        start_step: Option<i64>,
+        /// Total start steps for TUI progress
+        #[arg(long = "start-steps-total")]
+        start_steps_total: Option<i64>,
+    },
+
     /// Append a timestamped log entry to .flow-states/<branch>.log
     Log {
         /// Branch name (determines log file name)
@@ -131,6 +153,18 @@ enum Commands {
         subcommand: Vec<String>,
     },
 
+    /// FLOW Start phase setup (worktree, PR, state file)
+    #[command(name = "start-setup")]
+    StartSetup(start_setup::Args),
+
+    /// Format the FLOW status panel for display.
+    #[command(name = "format-status")]
+    FormatStatus {
+        /// Override branch for state file lookup
+        #[arg(long)]
+        branch: Option<String>,
+    },
+
     #[command(external_subcommand)]
     #[allow(dead_code)]
     External(Vec<String>),
@@ -174,6 +208,28 @@ fn main() {
         Some(Commands::ClearBlocked) => {
             commands::clear_blocked::run();
         }
+        Some(Commands::InitState {
+            feature_name,
+            prompt_file,
+            auto,
+            start_step,
+            start_steps_total,
+        }) => {
+            if feature_name.is_empty() {
+                json_error(
+                    "Feature name required. Usage: bin/flow init-state \"<feature name>\"",
+                    &[("step", json!("args"))],
+                );
+                process::exit(1);
+            }
+            commands::init_state::run(
+                &feature_name,
+                prompt_file.as_deref(),
+                auto,
+                start_step,
+                start_steps_total,
+            );
+        }
         Some(Commands::Log { branch, message }) => {
             commands::log::run(&branch, &message);
         }
@@ -203,6 +259,12 @@ fn main() {
                 subcommand
             };
             commands::start_step::run(step, &branch, subcommand);
+        }
+        Some(Commands::StartSetup(args)) => {
+            start_setup::run(args);
+        }
+        Some(Commands::FormatStatus { branch }) => {
+            run_format_status(branch.as_deref());
         }
         Some(Commands::External(_)) => {
             process::exit(127);
@@ -409,5 +471,81 @@ fn run_phase_transition(
             json_error(&format!("State mutation failed: {}", e), &[]);
             process::exit(1);
         }
+    }
+}
+
+fn run_format_status(branch_override: Option<&str>) {
+    let root = project_root();
+    let (branch, candidates) = resolve_branch(branch_override, &root);
+
+    if branch.is_none() && !candidates.is_empty() {
+        // Ambiguous — show all candidates via find_state_files
+        let results = find_state_files(&root, "");
+        if results.is_empty() {
+            process::exit(1);
+        }
+        let version = read_version();
+        let dev_mode = detect_dev_mode(&root);
+        let panel = format_status::format_multi_panel(&results, &version, dev_mode);
+        println!("{}", panel);
+        process::exit(0);
+    }
+
+    let branch = match branch {
+        Some(b) => b,
+        None => {
+            eprintln!("Could not determine current branch");
+            process::exit(2);
+        }
+    };
+
+    let results = find_state_files(&root, &branch);
+    if results.is_empty() {
+        process::exit(1);
+    }
+
+    let version = read_version();
+    let dev_mode = detect_dev_mode(&root);
+
+    if results.len() > 1 {
+        let panel = format_status::format_multi_panel(&results, &version, dev_mode);
+        println!("{}", panel);
+        process::exit(0);
+    }
+
+    let (_state_path, state, matched_branch) = &results[0];
+
+    // Load frozen phase config if available
+    let frozen_path = root
+        .join(".flow-states")
+        .join(format!("{}-phases.json", matched_branch));
+    let phase_config = if frozen_path.exists() {
+        load_phase_config(&frozen_path).ok()
+    } else {
+        None
+    };
+
+    let panel = format_status::format_panel(
+        state,
+        &version,
+        None,
+        dev_mode,
+        phase_config.as_ref(),
+    );
+    println!("{}", panel);
+}
+
+/// Detect dev mode from .flow.json (presence of plugin_root_backup key).
+fn detect_dev_mode(root: &std::path::Path) -> bool {
+    let flow_json_path = root.join(".flow.json");
+    if !flow_json_path.exists() {
+        return false;
+    }
+    match std::fs::read_to_string(&flow_json_path) {
+        Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
+            Ok(data) => data.get("plugin_root_backup").is_some(),
+            Err(_) => false,
+        },
+        Err(_) => false,
     }
 }

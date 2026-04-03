@@ -46,6 +46,17 @@ with no fallback. Locate `bin/flow` by traversing up from
 `current_exe()` (3 levels: binary → release → target → root)
 then into `bin/flow`.
 
+## Subprocess Timeout Parity
+
+When Python uses `subprocess.run(timeout=N)`, the Rust port must
+preserve the same timeout. Omitting a timeout changes failure
+behavior — the Python call raises `TimeoutExpired` after N seconds,
+but the Rust call blocks indefinitely. Use `run_cmd` with
+`Some(Duration::from_secs(N))` or implement a polling-based timeout
+via `try_wait()`. Audit every `subprocess.run` call with a `timeout`
+parameter during the port — missing timeouts are silent regressions
+that only manifest under network failures or API outages.
+
 ## Python Bridge Pattern
 
 When a ported script still has Python callers that import its
