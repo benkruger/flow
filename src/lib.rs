@@ -4,6 +4,7 @@ pub mod append_note;
 pub mod check_phase;
 pub mod commands;
 pub mod error;
+pub mod format_status;
 pub mod phase_transition;
 pub mod git;
 pub mod github;
