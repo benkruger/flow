@@ -73,7 +73,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/lib/clear-blocked.py"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/flow clear-blocked"
           }
         ]
       }
@@ -84,7 +84,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/lib/set-blocked.py"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/flow set-blocked"
           }
         ]
       }
