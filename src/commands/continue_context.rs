@@ -6,7 +6,7 @@ use crate::format_status;
 use crate::git::{project_root, resolve_branch};
 use crate::output::json_error;
 use crate::phase_config::{self, find_state_files, load_phase_config};
-use crate::utils::{derive_worktree, read_version};
+use crate::utils::{detect_dev_mode, derive_worktree, read_version};
 
 /// Build continue-context JSON for /flow:flow-continue Path B.
 ///
@@ -134,21 +134,6 @@ fn build_context_with_branch(root: &Path, branch: &str) -> (Value, i32) {
         }),
         0,
     )
-}
-
-/// Detect dev mode from .flow.json (presence of plugin_root_backup key).
-fn detect_dev_mode(root: &Path) -> bool {
-    let flow_json_path = root.join(".flow.json");
-    if !flow_json_path.exists() {
-        return false;
-    }
-    match std::fs::read_to_string(&flow_json_path) {
-        Ok(content) => match serde_json::from_str::<Value>(&content) {
-            Ok(data) => data.get("plugin_root_backup").is_some(),
-            Err(_) => false,
-        },
-        Err(_) => false,
-    }
 }
 
 #[cfg(test)]
