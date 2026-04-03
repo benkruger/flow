@@ -260,6 +260,8 @@ def find_state_files(root, branch):
     for path in sorted(state_dir.glob("*.json")):
         if path.name.endswith("-phases.json"):
             continue
+        if path.name == "orchestrate.json":
+            continue
         try:
             state = json.loads(path.read_text())
             results.append((path, state, path.stem))
