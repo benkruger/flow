@@ -544,3 +544,31 @@ fn rust_output_matches_python_no_skills() {
     normalize_state(&mut rs_state);
     assert_eq!(py_state, rs_state, "Normalized no-skills state mismatch");
 }
+
+// --- Tombstone tests ---
+
+#[test]
+fn tombstone_no_python_init_state() {
+    // Tombstone: removed in PR #807. Must not return.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir)
+        .join("lib")
+        .join("init-state.py");
+    assert!(
+        !path.exists(),
+        "lib/init-state.py was ported to Rust and must not be re-added"
+    );
+}
+
+#[test]
+fn tombstone_no_python_test_init_state() {
+    // Tombstone: removed in PR #807. Must not return.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir)
+        .join("tests")
+        .join("test_init_state.py");
+    assert!(
+        !path.exists(),
+        "tests/test_init_state.py was ported to Rust and must not be re-added"
+    );
+}
