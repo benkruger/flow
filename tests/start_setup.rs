@@ -577,3 +577,25 @@ fn git_pull_failure_returns_error() {
     assert_eq!(data["status"], "error");
     assert_eq!(data["step"], "git_pull");
 }
+
+// --- Tombstone tests: Python files removed in PR #810 ---
+
+#[test]
+fn tombstone_python_start_setup_deleted() {
+    // Tombstone: removed in PR #810. Must not return.
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    assert!(
+        !manifest_dir.join("lib/start-setup.py").exists(),
+        "lib/start-setup.py was ported to Rust (src/start_setup.rs) and must not be re-added"
+    );
+}
+
+#[test]
+fn tombstone_python_test_start_setup_deleted() {
+    // Tombstone: removed in PR #810. Must not return.
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    assert!(
+        !manifest_dir.join("tests/test_start_setup.py").exists(),
+        "tests/test_start_setup.py was ported to Rust (tests/start_setup.rs) and must not be re-added"
+    );
+}
