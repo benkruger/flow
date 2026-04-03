@@ -149,17 +149,17 @@ pub fn branch_name(feature_words: &str) -> String {
         .collect::<Vec<_>>()
         .join("-");
 
-    if name.len() <= 32 {
+    if name.chars().count() <= 32 {
         return name;
     }
 
-    let truncated = &name[..33];
+    let truncated: String = name.chars().take(33).collect();
     if let Some(pos) = truncated.rfind('-') {
         if pos > 0 {
             return truncated[..pos].to_string();
         }
     }
-    name[..32].to_string()
+    name.chars().take(32).collect()
 }
 
 /// Derive the human-readable feature name from a branch name.
