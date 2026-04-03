@@ -24,7 +24,6 @@ pub fn append_log(root: &Path, branch: &str, message: &str) -> Result<(), std::i
         .open(&log_path)?;
 
     file.lock_exclusive()?;
-    // Write via a BufWriter-like approach on the locked file
     let mut writer = std::io::BufWriter::new(&file);
     writeln!(writer, "{} {}", timestamp, message)?;
 
