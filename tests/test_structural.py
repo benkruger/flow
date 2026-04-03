@@ -437,3 +437,42 @@ def test_checksum_version_invariant():
 
     claude_md = (REPO_ROOT / "CLAUDE.md").read_text()
     assert "Checksum → Version Invariant" in claude_md, "CLAUDE.md must document the checksum → version invariant"
+
+
+# --- Tombstone tests: Python scripts ported to Rust (PR #803) ---
+
+
+def test_no_python_set_timestamp():
+    """Tombstone: ported to Rust in PR #803. Must not return."""
+    assert not (LIB_DIR / "set-timestamp.py").exists(), "set-timestamp.py ported to Rust (flow-rs set-timestamp)"
+
+
+def test_no_python_set_blocked():
+    """Tombstone: ported to Rust in PR #803. Must not return."""
+    assert not (LIB_DIR / "set-blocked.py").exists(), "set-blocked.py was ported to Rust — use flow-rs set-blocked"
+
+
+def test_no_python_clear_blocked():
+    """Tombstone: ported to Rust in PR #803. Must not return."""
+    assert not (LIB_DIR / "clear-blocked.py").exists(), "clear-blocked.py ported to Rust (flow-rs clear-blocked)"
+
+
+def test_no_python_test_set_timestamp():
+    """Tombstone: ported to Rust in PR #803. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_set_timestamp.py").exists(), (
+        "test_set_timestamp.py was ported to Rust — tests are in tests/set_timestamp.rs"
+    )
+
+
+def test_no_python_test_set_blocked():
+    """Tombstone: ported to Rust in PR #803. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_set_blocked.py").exists(), (
+        "test_set_blocked.py was ported to Rust — tests are in tests/set_blocked.rs"
+    )
+
+
+def test_no_python_test_clear_blocked():
+    """Tombstone: ported to Rust in PR #803. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_clear_blocked.py").exists(), (
+        "test_clear_blocked.py was ported to Rust — tests are in tests/clear_blocked.rs"
+    )

@@ -156,7 +156,7 @@ def check_continue(hook_input=None, root=None, branch=_UNSET):
 def clear_blocked(root=None, branch=_UNSET):
     """Clear _blocked flag from the active state file.
 
-    Defense-in-depth counterpart to clear-blocked.py (PostToolUse hook).
+    Defense-in-depth counterpart to clear-blocked (PostToolUse hook, Rust).
     The PostToolUse hook clears _blocked on the normal path (user responds).
     This Stop hook clears it as a safety net for crashed sessions or
     session endings where PostToolUse did not fire.
