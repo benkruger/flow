@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from conftest import LIB_DIR, PHASE_ORDER
+from conftest import LIB_DIR, PHASE_ORDER, REPO_ROOT
 from flow_utils import branch_name
 
 SCRIPT = str(LIB_DIR / "start-setup.py")
@@ -805,13 +805,13 @@ def test_skip_pull_still_creates_worktree_and_state(git_repo_with_remote):
 # --- Backfill mode (pre-existing state file from init-state) ---
 
 
-INIT_SCRIPT = str(LIB_DIR / "init-state.py")
+BIN_FLOW = str(REPO_ROOT / "bin" / "flow")
 
 
 def _pre_seed_state(cwd, feature_name, framework="rails", auto=False):
-    """Run init-state.py to create a pre-existing state file."""
+    """Run bin/flow init-state to create a pre-existing state file."""
     _write_flow_json(cwd, _current_plugin_version(), framework)
-    cmd = [sys.executable, INIT_SCRIPT, feature_name]
+    cmd = [BIN_FLOW, "init-state", feature_name]
     if auto:
         cmd.append("--auto")
     result = subprocess.run(

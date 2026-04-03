@@ -82,6 +82,25 @@ enum Commands {
     #[command(name = "clear-blocked")]
     ClearBlocked,
 
+    /// Create the initial FLOW state file with null PR fields.
+    #[command(name = "init-state")]
+    InitState {
+        /// Feature name words
+        feature_name: String,
+        /// Path to file containing start prompt (file is deleted after reading)
+        #[arg(long = "prompt-file")]
+        prompt_file: Option<String>,
+        /// Override all skills to fully autonomous preset
+        #[arg(long)]
+        auto: bool,
+        /// Initial start_step value for TUI progress
+        #[arg(long = "start-step")]
+        start_step: Option<i64>,
+        /// Total start steps for TUI progress
+        #[arg(long = "start-steps-total")]
+        start_steps_total: Option<i64>,
+    },
+
     /// Append a timestamped log entry to .flow-states/<branch>.log
     Log {
         /// Branch name (determines log file name)
@@ -142,6 +161,28 @@ fn main() {
         }
         Some(Commands::ClearBlocked) => {
             commands::clear_blocked::run();
+        }
+        Some(Commands::InitState {
+            feature_name,
+            prompt_file,
+            auto,
+            start_step,
+            start_steps_total,
+        }) => {
+            if feature_name.is_empty() {
+                json_error(
+                    "Feature name required. Usage: bin/flow init-state \"<feature name>\"",
+                    &[("step", json!("args"))],
+                );
+                process::exit(1);
+            }
+            commands::init_state::run(
+                &feature_name,
+                prompt_file.as_deref(),
+                auto,
+                start_step,
+                start_steps_total,
+            );
         }
         Some(Commands::Log { branch, message }) => {
             commands::log::run(&branch, &message);
