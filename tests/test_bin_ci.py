@@ -87,6 +87,36 @@ def test_runs_ruff_check_and_format(ci_project):
     assert "RUFF_MARKER: -m ruff format --check lib/ tests/" in result.stdout
 
 
+def test_runs_cargo_test_when_cargo_toml_exists(ci_project, tmp_path):
+    """bin/ci runs cargo test when Cargo.toml exists in the project root."""
+    (ci_project / "tests" / "test_pass.py").write_text("def test_ok():\n    assert True\n")
+    (ci_project / "Cargo.toml").write_text('[package]\nname = "test"\nversion = "0.1.0"\n')
+
+    mock_bin = tmp_path / "mock_bin"
+    mock_bin.mkdir()
+    cargo = mock_bin / "cargo"
+    cargo.write_text('#!/usr/bin/env bash\necho "CARGO_TEST_MARKER: $*"\nexit 0\n')
+    cargo.chmod(0o755)
+
+    result = _run(ci_project, extra_env={"PATH": f"{mock_bin}:{os.environ['PATH']}"})
+    assert "CARGO_TEST_MARKER: test" in result.stdout
+
+
+def test_skips_cargo_when_no_cargo_toml(ci_project, tmp_path):
+    """bin/ci does not run cargo when no Cargo.toml exists."""
+    (ci_project / "tests" / "test_pass.py").write_text("def test_ok():\n    assert True\n")
+
+    mock_bin = tmp_path / "mock_bin"
+    mock_bin.mkdir()
+    cargo = mock_bin / "cargo"
+    cargo.write_text('#!/usr/bin/env bash\necho "CARGO_SHOULD_NOT_RUN"\nexit 1\n')
+    cargo.chmod(0o755)
+
+    result = _run(ci_project, extra_env={"PATH": f"{mock_bin}:{os.environ['PATH']}"})
+    assert result.returncode == 0
+    assert "CARGO_SHOULD_NOT_RUN" not in result.stdout
+
+
 def test_falls_back_to_system_python_when_no_venv(ci_project):
     (ci_project / "tests" / "test_pass.py").write_text("def test_ok():\n    assert True\n")
     shutil.rmtree(ci_project / ".venv")

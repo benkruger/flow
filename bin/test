@@ -3,6 +3,12 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# Rust-only test mode
+if [ "${1:-}" = "--rust" ]; then
+  shift
+  exec cargo test "$@"
+fi
+
 if [ -x "$REPO_ROOT/.venv/bin/python3" ]; then
   PYTHON="$REPO_ROOT/.venv/bin/python3"
 else

@@ -59,6 +59,33 @@ def test_passes_arguments_through(test_project):
     assert "test_also" in result.stdout
 
 
+def test_rust_flag_runs_cargo_test(test_project, tmp_path):
+    """bin/test --rust runs cargo test instead of pytest."""
+    mock_bin = tmp_path / "mock_bin"
+    mock_bin.mkdir()
+    cargo = mock_bin / "cargo"
+    cargo.write_text('#!/usr/bin/env bash\necho "CARGO_RUST_MARKER: $*"\nexit 0\n')
+    cargo.chmod(0o755)
+
+    result = _run(test_project, "--rust", extra_env={"PATH": f"{mock_bin}:{os.environ['PATH']}"})
+    assert result.returncode == 0
+    assert "CARGO_RUST_MARKER: test" in result.stdout
+
+
+def test_rust_flag_passes_extra_args(test_project, tmp_path):
+    """bin/test --rust passes remaining args to cargo test."""
+    mock_bin = tmp_path / "mock_bin"
+    mock_bin.mkdir()
+    cargo = mock_bin / "cargo"
+    cargo.write_text('#!/usr/bin/env bash\necho "CARGO_ARGS: $*"\nexit 0\n')
+    cargo.chmod(0o755)
+
+    env = {"PATH": f"{mock_bin}:{os.environ['PATH']}"}
+    result = _run(test_project, "--rust", "my_test_name", "--", "--nocapture", extra_env=env)
+    assert result.returncode == 0
+    assert "CARGO_ARGS: test my_test_name -- --nocapture" in result.stdout
+
+
 def test_passes_no_cov_flag(test_project):
     """bin/test must always pass --no-cov so coverage is skipped."""
     (test_project / "tests" / "test_pass.py").write_text("def test_ok(): assert True\n")
