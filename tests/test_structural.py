@@ -476,3 +476,14 @@ def test_no_python_test_clear_blocked():
     assert not (REPO_ROOT / "tests" / "test_clear_blocked.py").exists(), (
         "test_clear_blocked.py was ported to Rust — tests are in tests/clear_blocked.rs"
     )
+
+
+def test_no_python_hook_refs_in_hooks_json():
+    """Tombstone: hooks routed through bin/flow in PR #803. Must not return."""
+    hooks_content = (HOOKS_DIR / "hooks.json").read_text()
+    assert "set-blocked.py" not in hooks_content, (
+        "hooks.json must not reference set-blocked.py — use bin/flow set-blocked"
+    )
+    assert "clear-blocked.py" not in hooks_content, (
+        "hooks.json must not reference clear-blocked.py — use bin/flow clear-blocked"
+    )
