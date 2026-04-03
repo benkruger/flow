@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use indexmap::IndexMap;
 use serde_json::Value;
 
 use crate::state::{Phase, PhaseState, PhaseStatus, SkillConfig};
@@ -9,9 +9,9 @@ use crate::state::{Phase, PhaseState, PhaseStatus, SkillConfig};
 #[derive(Debug, Clone)]
 pub struct PhaseConfig {
     pub order: Vec<String>,
-    pub names: HashMap<String, String>,
-    pub numbers: HashMap<String, usize>,
-    pub commands: HashMap<String, String>,
+    pub names: IndexMap<String, String>,
+    pub numbers: IndexMap<String, usize>,
+    pub commands: IndexMap<String, String>,
 }
 
 /// Phase order constant derived from flow-phases.json.
@@ -25,8 +25,8 @@ pub const PHASE_ORDER: &[&str] = &[
 ];
 
 /// Build the PHASE_NAMES map.
-pub fn phase_names() -> HashMap<String, String> {
-    let mut m = HashMap::new();
+pub fn phase_names() -> IndexMap<String, String> {
+    let mut m = IndexMap::new();
     m.insert("flow-start".into(), "Start".into());
     m.insert("flow-plan".into(), "Plan".into());
     m.insert("flow-code".into(), "Code".into());
@@ -37,8 +37,8 @@ pub fn phase_names() -> HashMap<String, String> {
 }
 
 /// Build the COMMANDS map.
-pub fn commands() -> HashMap<String, String> {
-    let mut m = HashMap::new();
+pub fn commands() -> IndexMap<String, String> {
+    let mut m = IndexMap::new();
     m.insert("flow-start".into(), "/flow:flow-start".into());
     m.insert("flow-plan".into(), "/flow:flow-plan".into());
     m.insert("flow-code".into(), "/flow:flow-code".into());
@@ -49,7 +49,7 @@ pub fn commands() -> HashMap<String, String> {
 }
 
 /// Build the PHASE_NUMBER map (1-indexed).
-pub fn phase_numbers() -> HashMap<String, usize> {
+pub fn phase_numbers() -> IndexMap<String, usize> {
     PHASE_ORDER
         .iter()
         .enumerate()
@@ -58,28 +58,28 @@ pub fn phase_numbers() -> HashMap<String, usize> {
 }
 
 /// Build the AUTO_SKILLS default configuration.
-pub fn auto_skills() -> HashMap<String, SkillConfig> {
-    let mut m = HashMap::new();
-    let mut start = HashMap::new();
+pub fn auto_skills() -> IndexMap<String, SkillConfig> {
+    let mut m = IndexMap::new();
+    let mut start = IndexMap::new();
     start.insert("continue".into(), "auto".into());
     m.insert("flow-start".into(), SkillConfig::Detailed(start));
 
-    let mut plan = HashMap::new();
+    let mut plan = IndexMap::new();
     plan.insert("continue".into(), "auto".into());
     plan.insert("dag".into(), "auto".into());
     m.insert("flow-plan".into(), SkillConfig::Detailed(plan));
 
-    let mut code = HashMap::new();
+    let mut code = IndexMap::new();
     code.insert("commit".into(), "auto".into());
     code.insert("continue".into(), "auto".into());
     m.insert("flow-code".into(), SkillConfig::Detailed(code));
 
-    let mut review = HashMap::new();
+    let mut review = IndexMap::new();
     review.insert("commit".into(), "auto".into());
     review.insert("continue".into(), "auto".into());
     m.insert("flow-code-review".into(), SkillConfig::Detailed(review));
 
-    let mut learn = HashMap::new();
+    let mut learn = IndexMap::new();
     learn.insert("commit".into(), "auto".into());
     learn.insert("continue".into(), "auto".into());
     m.insert("flow-learn".into(), SkillConfig::Detailed(learn));
@@ -108,9 +108,9 @@ pub fn load_phase_config(path: &Path) -> Result<PhaseConfig, String> {
 
     let phases = data.get("phases").and_then(|v| v.as_object()).ok_or("Missing 'phases' object")?;
 
-    let mut names = HashMap::new();
-    let mut cmds = HashMap::new();
-    let mut numbers = HashMap::new();
+    let mut names = IndexMap::new();
+    let mut cmds = IndexMap::new();
+    let mut numbers = IndexMap::new();
 
     for (i, key) in order.iter().enumerate() {
         if let Some(phase) = phases.get(key).and_then(|v| v.as_object()) {
@@ -146,8 +146,8 @@ pub fn freeze_phases(phases_json_path: &Path, project_root: &Path, branch: &str)
 /// The first phase in PHASE_ORDER is set to in_progress with timestamps
 /// and visit_count=1. All other phases are set to pending with null
 /// timestamps and visit_count=0.
-pub fn build_initial_phases(current_time: &str) -> HashMap<Phase, PhaseState> {
-    let mut phases = HashMap::new();
+pub fn build_initial_phases(current_time: &str) -> IndexMap<Phase, PhaseState> {
+    let mut phases = IndexMap::new();
     let phase_variants = [
         Phase::FlowStart,
         Phase::FlowPlan,
@@ -397,6 +397,41 @@ mod tests {
     fn build_initial_phases_has_six_entries() {
         let phases = build_initial_phases("2026-01-01T00:00:00-08:00");
         assert_eq!(phases.len(), 6);
+    }
+
+    #[test]
+    fn build_initial_phases_preserves_insertion_order() {
+        let phases = build_initial_phases("2026-01-01T00:00:00-08:00");
+        let keys: Vec<&Phase> = phases.keys().collect();
+        assert_eq!(
+            keys,
+            vec![
+                &Phase::FlowStart,
+                &Phase::FlowPlan,
+                &Phase::FlowCode,
+                &Phase::FlowCodeReview,
+                &Phase::FlowLearn,
+                &Phase::FlowComplete,
+            ]
+        );
+    }
+
+    #[test]
+    fn auto_skills_preserves_insertion_order() {
+        let skills = auto_skills();
+        let keys: Vec<&String> = skills.keys().collect();
+        assert_eq!(
+            keys,
+            vec![
+                "flow-start",
+                "flow-plan",
+                "flow-code",
+                "flow-code-review",
+                "flow-learn",
+                "flow-complete",
+                "flow-abort",
+            ]
+        );
     }
 
     // --- find_state_files ---

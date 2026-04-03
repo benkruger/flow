@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 /// The six FLOW phases, serialized as hyphenated keys (e.g. "flow-start").
@@ -112,7 +111,7 @@ pub struct FailureInfo {
 #[serde(untagged)]
 pub enum SkillConfig {
     Simple(String),
-    Detailed(HashMap<String, String>),
+    Detailed(IndexMap<String, String>),
 }
 
 /// A Slack notification sent during the feature.
@@ -151,7 +150,7 @@ pub struct FlowState {
     pub notes: Vec<Note>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
-    pub phases: HashMap<Phase, PhaseState>,
+    pub phases: IndexMap<Phase, PhaseState>,
     #[serde(default)]
     pub phase_transitions: Vec<PhaseTransition>,
 
@@ -163,7 +162,7 @@ pub struct FlowState {
 
     // Per-skill autonomy settings
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub skills: Option<HashMap<String, SkillConfig>>,
+    pub skills: Option<IndexMap<String, SkillConfig>>,
 
     // Issues filed during the feature
     #[serde(default)]
@@ -308,8 +307,8 @@ mod tests {
     }
 
     #[test]
-    fn phase_as_hashmap_key() {
-        let mut map = HashMap::new();
+    fn phase_as_indexmap_key() {
+        let mut map = IndexMap::new();
         map.insert(Phase::FlowStart, "start");
         map.insert(Phase::FlowCode, "code");
         assert_eq!(map.get(&Phase::FlowStart), Some(&"start"));
