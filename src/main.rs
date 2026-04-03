@@ -50,6 +50,26 @@ enum Commands {
         reason: Option<String>,
     },
 
+    /// Set timestamp and value fields in the FLOW state file.
+    #[command(name = "set-timestamp")]
+    SetTimestamp {
+        /// path=value pairs (use NOW for current timestamp)
+        #[arg(long = "set", required = true)]
+        set_args: Vec<String>,
+
+        /// Override branch for state file lookup
+        #[arg(long)]
+        branch: Option<String>,
+    },
+
+    /// Set _blocked flag in the state file (PermissionRequest hook).
+    #[command(name = "set-blocked")]
+    SetBlocked,
+
+    /// Clear _blocked flag from the state file (PostToolUse hook).
+    #[command(name = "clear-blocked")]
+    ClearBlocked,
+
     /// Append a timestamped log entry to .flow-states/<branch>.log
     Log {
         /// Branch name (determines log file name)
@@ -60,6 +80,9 @@ enum Commands {
     /// Generate an 8-character hex session ID
     #[command(name = "generate-id")]
     GenerateId,
+
+    // The external subcommand catch-all routes unrecognized
+    // commands to exit 127, signaling bin/flow to try Python.
     #[command(external_subcommand)]
     #[allow(dead_code)]
     External(Vec<String>),
@@ -90,6 +113,15 @@ fn main() {
                 branch.as_deref(),
                 reason.as_deref(),
             );
+        }
+        Some(Commands::SetTimestamp { set_args, branch }) => {
+            commands::set_timestamp::run(set_args, branch);
+        }
+        Some(Commands::SetBlocked) => {
+            commands::set_blocked::run();
+        }
+        Some(Commands::ClearBlocked) => {
+            commands::clear_blocked::run();
         }
         Some(Commands::Log { branch, message }) => {
             commands::log::run(&branch, &message);
