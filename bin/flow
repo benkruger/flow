@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# FLOW dispatcher — routes subcommands to lib/*.py scripts.
+# FLOW dispatcher — routes subcommands to Rust (if available) or lib/*.py.
 #
 # Usage: bin/flow <subcommand> [args...]
 # Example: bin/flow start-setup "Invoice Pdf Export"
+#
+# Hybrid dispatch: tries the Rust binary first. If it exits 127
+# (unknown subcommand), falls back to Python. Any other exit code
+# from Rust is passed through directly.
 
 set -euo pipefail
 
-LIB_DIR="$(cd "$(dirname "$0")/../lib" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LIB_DIR="$SCRIPT_DIR/../lib"
 
 if [ $# -eq 0 ]; then
   echo '{"status":"error","message":"Usage: bin/flow <subcommand> [args...]"}'
@@ -16,6 +21,26 @@ fi
 subcmd="$1"
 shift
 
+# Try Rust binary first (hybrid dispatcher)
+RUST_BIN=""
+if [ -x "$SCRIPT_DIR/../target/release/flow-rs" ]; then
+  RUST_BIN="$SCRIPT_DIR/../target/release/flow-rs"
+elif [ -x "$SCRIPT_DIR/../target/debug/flow-rs" ]; then
+  RUST_BIN="$SCRIPT_DIR/../target/debug/flow-rs"
+fi
+
+if [ -n "$RUST_BIN" ]; then
+  set +e
+  "$RUST_BIN" "$subcmd" "$@"
+  rc=$?
+  set -e
+  if [ $rc -ne 127 ]; then
+    exit $rc
+  fi
+  # Exit 127 = unknown subcommand, fall through to Python
+fi
+
+# Python fallback
 script="$LIB_DIR/$subcmd.py"
 
 if [ ! -f "$script" ]; then

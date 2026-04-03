@@ -74,7 +74,7 @@ CI will fail if these are missing:
 - `agents/*.md` — six custom plugin sub-agents: ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, onboarding
 - `lib/flow_utils.py` — shared utilities (timestamps, branch detection, state mutation, repo detection)
 - `lib/*.py` — utility scripts invoked by `bin/flow` subcommands (read individual files for details)
-- `bin/flow` — dispatcher script routing subcommands to `lib/*.py`
+- `bin/flow` — hybrid dispatcher: tries Rust binary first (`target/release/flow-rs` or `target/debug/flow-rs`), falls back to `lib/*.py` on exit 127
 - `qa/templates/<framework>/` — per-framework QA repo templates (rails, python, ios, go, rust)
 - `.claude-plugin/marketplace.json` — marketplace registry (version must match plugin.json)
 

@@ -14,3 +14,8 @@ fi
 "$PYTHON" -m ruff check lib/ tests/
 "$PYTHON" -m ruff format --check lib/ tests/
 "$PYTHON" -m pytest tests/
+
+# Run Rust tests if Cargo.toml exists (hybrid phase)
+if [ -f "$REPO_ROOT/Cargo.toml" ]; then
+  cargo test
+fi
