@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 
+import pytest
 from conftest import BIN_DIR, LIB_DIR, REPO_ROOT
 
 SCRIPT = str(BIN_DIR / "flow")
@@ -63,6 +64,101 @@ def test_exit_code_passes_through(tmp_path):
     # check-phase with --required plan and no state file exits non-zero
     result = _run("check-phase", "--required", "flow-plan", cwd=str(tmp_path))
     assert result.returncode != 0
+
+
+# --- Hybrid dispatcher tests ---
+
+
+@pytest.fixture
+def hybrid_project(tmp_path):
+    """Create a self-contained project for hybrid dispatcher tests.
+
+    Copies the real bin/flow script and creates a minimal lib/ with a
+    test command. Tests can optionally add target/debug/flow-rs as a
+    mock Rust binary.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "flow").write_text((BIN_DIR / "flow").read_text())
+    (bin_dir / "flow").chmod(0o755)
+
+    lib_dir = tmp_path / "lib"
+    lib_dir.mkdir()
+    (lib_dir / "test-cmd.py").write_text('print("python-handled")\n')
+
+    return tmp_path
+
+
+def _run_hybrid(project_dir, *args):
+    """Run the hybrid dispatcher in the given project."""
+    return subprocess.run(
+        ["bash", str(project_dir / "bin" / "flow"), *args],
+        capture_output=True,
+        text=True,
+        cwd=str(project_dir),
+    )
+
+
+def test_hybrid_falls_back_when_rust_exits_127(hybrid_project):
+    """When Rust binary exists but exits 127, dispatcher falls back to Python."""
+    target_dir = hybrid_project / "target" / "debug"
+    target_dir.mkdir(parents=True)
+    mock_bin = target_dir / "flow-rs"
+    mock_bin.write_text("#!/usr/bin/env bash\nexit 127\n")
+    mock_bin.chmod(0o755)
+
+    result = _run_hybrid(hybrid_project, "test-cmd")
+    assert result.returncode == 0
+    assert "python-handled" in result.stdout
+
+
+def test_hybrid_passes_through_rust_exit_code(hybrid_project):
+    """When Rust binary handles the command (exit != 127), use its result."""
+    target_dir = hybrid_project / "target" / "debug"
+    target_dir.mkdir(parents=True)
+    mock_bin = target_dir / "flow-rs"
+    mock_bin.write_text('#!/usr/bin/env bash\necho "rust-handled"\nexit 0\n')
+    mock_bin.chmod(0o755)
+
+    result = _run_hybrid(hybrid_project, "test-cmd")
+    assert result.returncode == 0
+    assert "rust-handled" in result.stdout
+    assert "python-handled" not in result.stdout
+
+
+def test_hybrid_passes_through_nonzero_rust_exit(hybrid_project):
+    """Non-127 non-zero Rust exit code passes through without Python fallback."""
+    target_dir = hybrid_project / "target" / "debug"
+    target_dir.mkdir(parents=True)
+    mock_bin = target_dir / "flow-rs"
+    mock_bin.write_text('#!/usr/bin/env bash\necho "rust-error"\nexit 42\n')
+    mock_bin.chmod(0o755)
+
+    result = _run_hybrid(hybrid_project, "test-cmd")
+    assert result.returncode == 42
+    assert "rust-error" in result.stdout
+    assert "python-handled" not in result.stdout
+
+
+def test_dispatcher_works_without_rust_binary(hybrid_project):
+    """When no Rust binary exists, commands route to Python (existing behavior)."""
+    result = _run_hybrid(hybrid_project, "test-cmd")
+    assert result.returncode == 0
+    assert "python-handled" in result.stdout
+
+
+def test_hybrid_prefers_release_over_debug(hybrid_project):
+    """When both release and debug binaries exist, release is preferred."""
+    for variant in ("debug", "release"):
+        target_dir = hybrid_project / "target" / variant
+        target_dir.mkdir(parents=True)
+        mock_bin = target_dir / "flow-rs"
+        mock_bin.write_text(f'#!/usr/bin/env bash\necho "{variant}-handled"\nexit 0\n')
+        mock_bin.chmod(0o755)
+
+    result = _run_hybrid(hybrid_project, "test-cmd")
+    assert result.returncode == 0
+    assert "release-handled" in result.stdout
 
 
 def test_every_lib_script_is_reachable():
