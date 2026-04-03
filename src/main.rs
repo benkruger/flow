@@ -168,13 +168,12 @@ fn run_phase_transition(
     branch_override: Option<&str>,
     reason: Option<&str>,
 ) {
-    let valid_phases: Vec<&str> = PHASE_ORDER.to_vec();
-    if !valid_phases.contains(&phase) {
+    if !PHASE_ORDER.contains(&phase) {
         json_error(
             &format!(
                 "Invalid phase: {}. Must be one of: {}",
                 phase,
-                valid_phases.join(", ")
+                PHASE_ORDER.join(", ")
             ),
             &[],
         );
