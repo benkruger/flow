@@ -26,6 +26,18 @@ if the boundary falls inside a multi-byte UTF-8 character. Use
 `s.chars().count()` for length and `s.chars().take(N).collect()`
 for truncation when porting Python string slicing.
 
+When fixing byte-offset slicing in a function, audit every slice
+and index operation in the function — not just the ones named in
+the issue or plan. Intermediate slices like `s[..pos]` where `pos`
+comes from `find` or `rfind` are safe only when the string is
+guaranteed ASCII. Document the invariant with an inline comment
+when leaving a byte-index slice in place.
+
+When writing Rust tests for char-count-bounded functions, assert
+`result.chars().count() <= N` — not `result.len() <= N`. The
+distinction documents the invariant the code enforces, even when
+both are equivalent for ASCII output.
+
 ## Default Value Handling
 
 Python `dict.get(key, default)` returns a default when the key is
