@@ -376,15 +376,26 @@ fn issue_title_used_for_branch_naming() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), "rails", None);
-    let stub_dir = create_gh_stub(
-        &repo,
-        "#!/bin/bash\n\
-         if [[ \"$1\" == \"issue\" && \"$2\" == \"view\" ]]; then\n\
-           echo \"Organize settings allow list\"\n\
-         else\n\
-           echo \"https://github.com/test/repo/pull/42\"\n\
-         fi\n",
-    );
+    let stub_dir = create_default_gh_stub(&repo);
+
+    // Pre-seed state file (simulating init_state with issue-title naming)
+    let state_dir = repo.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join("organize-settings-allow-list.json"),
+        json!({
+            "schema_version": 1,
+            "branch": "organize-settings-allow-list",
+            "repo": null,
+            "pr_number": null,
+            "pr_url": null,
+            "prompt": "work on issue #309",
+            "current_phase": "flow-start",
+            "phases": {},
+        })
+        .to_string(),
+    )
+    .unwrap();
 
     let prompt_path = repo.join(".flow-start-prompt");
     fs::write(&prompt_path, "work on issue #309").unwrap();
@@ -401,6 +412,7 @@ fn issue_title_used_for_branch_naming() {
     );
     assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
     let data = parse_output(&output);
+    // start_setup reads the canonical branch from the state file, not feature_name
     assert_eq!(data["branch"], "organize-settings-allow-list");
     assert_eq!(data["feature"], "Organize Settings Allow List");
 }
@@ -427,48 +439,6 @@ fn frozen_phases_file_created() {
     let frozen_data: Value =
         serde_json::from_str(&fs::read_to_string(&frozen).unwrap()).unwrap();
     assert_eq!(frozen_data, source);
-}
-
-#[test]
-fn duplicate_issue_guard_integration() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "rails", None);
-    let stub_dir = create_default_gh_stub(&repo);
-
-    // Create existing state file referencing issue #999
-    let state_dir = repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(
-        state_dir.join("existing-flow.json"),
-        json!({
-            "prompt": "work on issue #999",
-            "branch": "existing-flow",
-            "current_phase": "flow-code",
-            "pr_url": "https://github.com/test/repo/pull/50",
-        })
-        .to_string(),
-    )
-    .unwrap();
-
-    let prompt_path = repo.join(".flow-start-prompt");
-    fs::write(&prompt_path, "work on issue #999").unwrap();
-
-    let output = run_start_setup(
-        &repo,
-        "new-attempt",
-        &[
-            "--skip-pull",
-            "--prompt-file",
-            &prompt_path.to_string_lossy(),
-        ],
-        &stub_dir,
-    );
-    assert_ne!(output.status.code(), Some(0));
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "error");
-    assert_eq!(data["step"], "duplicate_issue");
-    assert!(data["message"].as_str().unwrap().contains("existing-flow"));
 }
 
 // --- Backfill mode tests ---

@@ -16,7 +16,8 @@ use crate::github::detect_repo;
 use crate::lock::mutate_state;
 use crate::phase_config::{auto_skills, build_initial_phases, freeze_phases, read_flow_json};
 use crate::state::SkillConfig;
-use crate::utils::{branch_name, check_duplicate_issue, derive_feature, detect_tty, extract_issue_numbers, fetch_issue_title, now, read_prompt_file};
+use crate::phase_config::find_state_files;
+use crate::utils::{branch_name, derive_feature, detect_tty, now, read_prompt_file};
 
 #[derive(Parser, Debug)]
 #[command(name = "start-setup", about = "FLOW Start phase setup")]
@@ -342,39 +343,39 @@ pub fn run(args: Args) {
         feature_name.clone()
     };
 
-    // Issue-aware branch naming
-    let issue_numbers = extract_issue_numbers(&raw_prompt);
-    let naming_words = if !issue_numbers.is_empty() {
-        match fetch_issue_title(issue_numbers[0]) {
-            Some(title) => title,
-            None => feature_name.clone(),
-        }
-    } else {
-        feature_name.clone()
-    };
-
-    let branch = branch_name(&naming_words);
-    let feature_title = derive_feature(&branch);
     let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
-    // Duplicate issue guard
-    if !issue_numbers.is_empty() {
-        let self_branch_name = branch_name(&feature_name);
-        if let Some(dup) = check_duplicate_issue(&project_root, &issue_numbers, &self_branch_name) {
-            println!(
-                "{}",
-                json!({
-                    "status": "error",
-                    "step": "duplicate_issue",
-                    "message": format!(
-                        "Issue already has an active flow on branch '{}' (phase: {}, PR: {}). Resume the existing flow instead.",
-                        dup.branch, dup.phase, dup.pr_url
-                    ),
+    // Read canonical branch from existing state file (created by init_state in Step 3).
+    // Try exact match first, then scan for prompt match.
+    let fallback_branch = branch_name(&feature_name);
+    let branch = {
+        let state_files = find_state_files(&project_root, &fallback_branch);
+        if !state_files.is_empty() {
+            state_files[0]
+                .1
+                .get("branch")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&fallback_branch)
+                .to_string()
+        } else {
+            // Scan all state files for one whose prompt matches
+            let all_files = find_state_files(&project_root, "");
+            all_files
+                .iter()
+                .find(|(_, state, _)| {
+                    state.get("prompt").and_then(|v| v.as_str()) == Some(&raw_prompt)
                 })
-            );
-            std::process::exit(1);
+                .map(|(_, state, _)| {
+                    state
+                        .get("branch")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&fallback_branch)
+                        .to_string()
+                })
+                .unwrap_or_else(|| fallback_branch.clone())
         }
-    }
+    };
+    let feature_title = derive_feature(&branch);
 
     // Read framework from .flow.json
     let init_data = match read_flow_json(Some(&project_root)) {
