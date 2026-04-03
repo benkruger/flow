@@ -183,14 +183,14 @@ fn prompt_from_prompt_file() {
     let prompt_path = dir.path().join(".flow-states");
     fs::create_dir_all(&prompt_path).unwrap();
     let prompt_file = prompt_path.join("test-prompt-file");
-    fs::write(&prompt_file, "fix issue #42 with special chars: && | ;").unwrap();
+    fs::write(&prompt_file, "fix login timeout with special chars: && | ;").unwrap();
     let output = run_init_state(
         dir.path(),
         &["prompt file test", "--prompt-file", prompt_file.to_str().unwrap()],
     );
     assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
     let state = read_state_file(dir.path(), "prompt-file-test");
-    assert_eq!(state["prompt"], "fix issue #42 with special chars: && | ;");
+    assert_eq!(state["prompt"], "fix login timeout with special chars: && | ;");
     assert!(!prompt_file.exists(), "Prompt file should be deleted after read");
 }
 
