@@ -14,7 +14,7 @@ use flow_rs::output::json_error;
 use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
 use flow_rs::phase_transition::{phase_complete, phase_enter};
 use flow_rs::start_setup;
-use flow_rs::utils::read_version;
+use flow_rs::utils::{detect_dev_mode, read_version};
 
 #[derive(Parser)]
 #[command(name = "flow-rs", version, about = "FLOW CLI (Rust)")]
@@ -112,6 +112,47 @@ enum Commands {
     /// Generate an 8-character hex session ID
     #[command(name = "generate-id")]
     GenerateId,
+
+    /// Serialize flow-start with a queue directory.
+    #[command(name = "start-lock")]
+    StartLock {
+        /// Acquire the lock
+        #[arg(long)]
+        acquire: bool,
+        /// Release the lock
+        #[arg(long)]
+        release: bool,
+        /// Check lock status
+        #[arg(long)]
+        check: bool,
+        /// Feature name (required for --acquire and --release)
+        #[arg(long)]
+        feature: Option<String>,
+        /// Wait for lock to be released
+        #[arg(long)]
+        wait: bool,
+        /// Max seconds to wait (default 90)
+        #[arg(long, default_value = "90")]
+        timeout: u64,
+        /// Seconds between retry attempts (default 10)
+        #[arg(long, default_value = "10")]
+        interval: u64,
+    },
+
+    /// Update Start phase step counter, optionally wrapping a subcommand.
+    #[command(name = "start-step")]
+    StartStep {
+        /// Step number to set
+        #[arg(long)]
+        step: i64,
+        /// Branch name for state file lookup
+        #[arg(long)]
+        branch: String,
+        /// Subcommand to exec after updating step (everything after --)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        subcommand: Vec<String>,
+    },
+
     /// FLOW Start phase setup (worktree, PR, state file)
     #[command(name = "start-setup")]
     StartSetup(start_setup::Args),
@@ -123,6 +164,15 @@ enum Commands {
         #[arg(long)]
         branch: Option<String>,
     },
+
+    /// Build continue-context JSON for session resumption.
+    #[command(name = "continue-context")]
+    ContinueContext {
+        /// Override branch for state file lookup
+        #[arg(long)]
+        branch: Option<String>,
+    },
+
     #[command(external_subcommand)]
     #[allow(dead_code)]
     External(Vec<String>),
@@ -194,11 +244,38 @@ fn main() {
         Some(Commands::GenerateId) => {
             commands::generate_id::run();
         }
+        Some(Commands::StartLock {
+            acquire,
+            release,
+            check,
+            feature,
+            wait,
+            timeout,
+            interval,
+        }) => {
+            commands::start_lock::run(acquire, release, check, feature, wait, timeout, interval);
+        }
+        Some(Commands::StartStep {
+            step,
+            branch,
+            subcommand,
+        }) => {
+            // Strip leading "--" if present (clap trailing_var_arg includes it)
+            let subcommand: Vec<String> = if subcommand.first().map(|s| s.as_str()) == Some("--") {
+                subcommand.into_iter().skip(1).collect()
+            } else {
+                subcommand
+            };
+            commands::start_step::run(step, &branch, subcommand);
+        }
         Some(Commands::StartSetup(args)) => {
             start_setup::run(args);
         }
         Some(Commands::FormatStatus { branch }) => {
             run_format_status(branch.as_deref());
+        }
+        Some(Commands::ContinueContext { branch }) => {
+            commands::continue_context::run(branch.as_deref());
         }
         Some(Commands::External(_)) => {
             process::exit(127);
@@ -469,17 +546,3 @@ fn run_format_status(branch_override: Option<&str>) {
     println!("{}", panel);
 }
 
-/// Detect dev mode from .flow.json (presence of plugin_root_backup key).
-fn detect_dev_mode(root: &std::path::Path) -> bool {
-    let flow_json_path = root.join(".flow.json");
-    if !flow_json_path.exists() {
-        return false;
-    }
-    match std::fs::read_to_string(&flow_json_path) {
-        Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
-            Ok(data) => data.get("plugin_root_backup").is_some(),
-            Err(_) => false,
-        },
-        Err(_) => false,
-    }
-}

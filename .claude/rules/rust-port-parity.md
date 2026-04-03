@@ -47,6 +47,17 @@ with no default parameter. When porting a Python function that uses
 `.unwrap_or()` or `.unwrap_or_else()`. Omitting the default changes
 error behavior — the Python code succeeds while the Rust code fails.
 
+## Exec Target Parity
+
+When Python uses `os.execvp` to call `bin/flow` (the hybrid
+dispatcher), the Rust port must also exec into `bin/flow` — not
+`flow-rs` (the raw binary). The dispatcher provides Python
+fallback for subcommands not yet ported to Rust. Exec'ing
+`flow-rs` directly causes exit 127 for unported subcommands
+with no fallback. Locate `bin/flow` by traversing up from
+`current_exe()` (3 levels: binary → release → target → root)
+then into `bin/flow`.
+
 ## Subprocess Timeout Parity
 
 When Python uses `subprocess.run(timeout=N)`, the Rust port must
