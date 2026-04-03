@@ -99,6 +99,7 @@ def test_runs_cargo_test_when_cargo_toml_exists(ci_project, tmp_path):
     cargo.chmod(0o755)
 
     result = _run(ci_project, extra_env={"PATH": f"{mock_bin}:{os.environ['PATH']}"})
+    assert result.returncode == 0
     assert "CARGO_TEST_MARKER: test" in result.stdout
 
 
