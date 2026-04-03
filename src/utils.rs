@@ -149,17 +149,17 @@ pub fn branch_name(feature_words: &str) -> String {
         .collect::<Vec<_>>()
         .join("-");
 
-    if name.len() <= 32 {
+    if name.chars().count() <= 32 {
         return name;
     }
 
-    let truncated = &name[..33];
+    let truncated: String = name.chars().take(33).collect();
     if let Some(pos) = truncated.rfind('-') {
         if pos > 0 {
             return truncated[..pos].to_string();
         }
     }
-    name[..32].to_string()
+    name.chars().take(32).collect()
 }
 
 /// Derive the human-readable feature name from a branch name.
@@ -529,6 +529,17 @@ mod tests {
     #[test]
     fn branch_name_strips_non_alphanumeric() {
         assert_eq!(branch_name("hello @world #123"), "hello-world-123");
+    }
+
+    #[test]
+    fn branch_name_multibyte_no_panic() {
+        // Multi-byte chars are stripped by the regex, so the result is ASCII.
+        // This test verifies no panic from byte-offset slicing on multi-byte input.
+        let input = "fix 日本語 login timeout when session expires after thirty minutes";
+        let result = branch_name(input);
+        assert!(result.len() <= 32, "Got: {} ({})", result, result.len());
+        assert!(result.is_ascii());
+        assert!(!result.ends_with('-'));
     }
 
     // --- derive_feature() ---
