@@ -13,6 +13,7 @@ use flow_rs::lock::mutate_state;
 use flow_rs::output::json_error;
 use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
 use flow_rs::phase_transition::{phase_complete, phase_enter};
+use flow_rs::start_setup;
 use flow_rs::utils::read_version;
 
 #[derive(Parser)]
@@ -111,6 +112,9 @@ enum Commands {
     /// Generate an 8-character hex session ID
     #[command(name = "generate-id")]
     GenerateId,
+    /// FLOW Start phase setup (worktree, PR, state file)
+    #[command(name = "start-setup")]
+    StartSetup(start_setup::Args),
 
     /// Format the FLOW status panel for display.
     #[command(name = "format-status")]
@@ -189,6 +193,9 @@ fn main() {
         }
         Some(Commands::GenerateId) => {
             commands::generate_id::run();
+        }
+        Some(Commands::StartSetup(args)) => {
+            start_setup::run(args);
         }
         Some(Commands::FormatStatus { branch }) => {
             run_format_status(branch.as_deref());

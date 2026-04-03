@@ -11,5 +11,6 @@ pub mod github;
 pub mod lock;
 pub mod output;
 pub mod phase_config;
+pub mod start_setup;
 pub mod state;
 pub mod utils;
