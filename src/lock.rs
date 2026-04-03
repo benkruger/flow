@@ -172,6 +172,38 @@ mod tests {
     }
 
     #[test]
+    fn mutate_state_preserves_key_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        // Keys in non-alphabetical order
+        fs::write(
+            &path,
+            r#"{"zebra": 1, "apple": 2, "mango": 3}"#,
+        )
+        .unwrap();
+
+        mutate_state(&path, |state| {
+            state["mango"] = json!(99);
+        })
+        .unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        // Key order must match original: zebra, apple, mango
+        let keys: Vec<&str> = content
+            .lines()
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                if trimmed.starts_with('"') {
+                    Some(trimmed.split('"').nth(1).unwrap())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(keys, vec!["zebra", "apple", "mango"]);
+    }
+
+    #[test]
     fn mutate_state_transform_receives_current_state() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
