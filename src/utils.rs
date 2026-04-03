@@ -378,6 +378,21 @@ fn read_flow_json_tab_color(root: Option<&Path>) -> Option<(u8, u8, u8)> {
     }
 }
 
+/// Detect dev mode from .flow.json (presence of plugin_root_backup key).
+pub fn detect_dev_mode(root: &Path) -> bool {
+    let flow_json_path = root.join(".flow.json");
+    if !flow_json_path.exists() {
+        return false;
+    }
+    match std::fs::read_to_string(&flow_json_path) {
+        Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
+            Ok(data) => data.get("plugin_root_backup").is_some(),
+            Err(_) => false,
+        },
+        Err(_) => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
