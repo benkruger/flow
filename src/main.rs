@@ -119,6 +119,14 @@ enum Commands {
         #[arg(long)]
         branch: Option<String>,
     },
+
+    /// Build continue-context JSON for session resumption.
+    #[command(name = "continue-context")]
+    ContinueContext {
+        /// Override branch for state file lookup
+        #[arg(long)]
+        branch: Option<String>,
+    },
     #[command(external_subcommand)]
     #[allow(dead_code)]
     External(Vec<String>),
@@ -192,6 +200,9 @@ fn main() {
         }
         Some(Commands::FormatStatus { branch }) => {
             run_format_status(branch.as_deref());
+        }
+        Some(Commands::ContinueContext { branch }) => {
+            commands::continue_context::run(branch.as_deref());
         }
         Some(Commands::External(_)) => {
             process::exit(127);
