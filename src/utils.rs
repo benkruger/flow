@@ -7,6 +7,45 @@ use chrono_tz::America::Los_Angeles;
 use regex::Regex;
 use sha2::{Digest, Sha256};
 
+// --- Version reading ---
+
+/// Read plugin version from a specific plugin.json path.
+///
+/// Returns "?" on any error (missing file, bad JSON, no version key).
+pub fn read_version_from(path: &Path) -> String {
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return "?".to_string(),
+    };
+    let data: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return "?".to_string(),
+    };
+    match data.get("version").and_then(|v| v.as_str()) {
+        Some(v) => v.to_string(),
+        None => "?".to_string(),
+    }
+}
+
+/// Read plugin version from plugin.json next to the Rust binary.
+///
+/// Navigates up from the binary location (target/{release|debug}/flow-rs)
+/// to find .claude-plugin/plugin.json.
+pub fn read_version() -> String {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => return "?".to_string(),
+    };
+    // Binary is at <plugin_root>/target/{release|debug}/flow-rs
+    // Go up 3 levels: flow-rs -> {release|debug} -> target -> plugin_root
+    let plugin_root = match exe.parent().and_then(|p| p.parent()).and_then(|p| p.parent()) {
+        Some(r) => r,
+        None => return "?".to_string(),
+    };
+    let plugin_json = plugin_root.join(".claude-plugin").join("plugin.json");
+    read_version_from(&plugin_json)
+}
+
 // --- Tab color constants ---
 
 /// Terminal tab colors (firebrick, teal, indigo, dark goldenrod, dark green,
@@ -689,5 +728,38 @@ mod tests {
     #[test]
     fn pinned_color_unknown_repo() {
         assert_eq!(pinned_color("unknown/repo"), None);
+    }
+
+    // --- read_version_from() ---
+
+    #[test]
+    fn read_version_from_valid_plugin_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plugin.json");
+        fs::write(&path, r#"{"version": "1.2.3"}"#).unwrap();
+        assert_eq!(read_version_from(&path), "1.2.3");
+    }
+
+    #[test]
+    fn read_version_from_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent.json");
+        assert_eq!(read_version_from(&path), "?");
+    }
+
+    #[test]
+    fn read_version_from_malformed_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plugin.json");
+        fs::write(&path, "{bad json").unwrap();
+        assert_eq!(read_version_from(&path), "?");
+    }
+
+    #[test]
+    fn read_version_from_no_version_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plugin.json");
+        fs::write(&path, r#"{"name": "flow"}"#).unwrap();
+        assert_eq!(read_version_from(&path), "?");
     }
 }
