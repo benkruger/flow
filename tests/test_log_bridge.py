@@ -20,10 +20,10 @@ def test_cli_missing_args(monkeypatch):
     assert exc_info.value.code == 1
 
 
-def test_cli_delegates_to_append_log(monkeypatch):
-    """main() delegates to append_log with correct args."""
+def test_cli_delegates_to_direct_append(monkeypatch):
+    """main() delegates to _direct_append (not append_log) to avoid recursion."""
     monkeypatch.setattr("sys.argv", ["log", "test-branch", "test message"])
-    with patch.object(_mod, "append_log") as mock:
+    with patch.object(_mod, "_direct_append") as mock:
         _mod.main()
     mock.assert_called_once_with("test-branch", "test message")
 
@@ -36,3 +36,15 @@ def test_append_log_calls_subprocess(monkeypatch):
     args = mock_run.call_args[0][0]
     assert args[0].endswith("bin/flow")
     assert args[1:] == ["log", "my-branch", "hello"]
+
+
+def test_direct_append_writes_log_file(git_repo, monkeypatch):
+    """_direct_append writes timestamped line to .flow-states/<branch>.log."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir()
+    monkeypatch.chdir(git_repo)
+    _mod._direct_append("test-branch", "[Phase 1] test message")
+    log_file = state_dir / "test-branch.log"
+    assert log_file.exists()
+    content = log_file.read_text()
+    assert "[Phase 1] test message" in content
