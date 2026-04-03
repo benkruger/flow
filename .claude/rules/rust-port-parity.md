@@ -12,6 +12,12 @@ that serializes the output and compares key order against the
 Python equivalent. Key-order divergence is a correctness bug,
 not tech debt — downstream consumers depend on identical output.
 
+When using `serde_json::Value` for dynamic JSON manipulation
+(e.g. `mutate_state` with untyped closures), enable the
+`preserve_order` feature in `Cargo.toml`. Without it,
+`serde_json::Map` uses `BTreeMap` which alphabetically sorts
+keys on every round-trip — silently reordering state files.
+
 ## String Slicing
 
 Python `len()` counts code points, `s[:N]` slices by code point.
@@ -28,3 +34,13 @@ with no default parameter. When porting a Python function that uses
 `dict.get()` with a default, apply the same default in Rust via
 `.unwrap_or()` or `.unwrap_or_else()`. Omitting the default changes
 error behavior — the Python code succeeds while the Rust code fails.
+
+## Python Bridge Pattern
+
+When a ported script still has Python callers that import its
+functions, the bridge module needs two functions: a subprocess
+delegate (`append_log`) for callers in other lib scripts, and
+a direct Python fallback (`_direct_append`) for `main()`. The
+fallback prevents infinite recursion when `bin/flow` dispatches
+to the Python script and the Rust binary is absent. Document
+which function is for which context with inline comments.
