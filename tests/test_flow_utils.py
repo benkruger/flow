@@ -269,6 +269,19 @@ def test_find_state_files_skips_frozen_phases_files(tmp_path):
     assert results[0][2] == "feature-x"
 
 
+def test_find_state_files_skips_orchestrate(tmp_path):
+    """Fallback scan should not include orchestrate.json (machine-level singleton)."""
+    state_dir = tmp_path / ".flow-states"
+    state_dir.mkdir()
+    state = make_state(current_phase="flow-plan")
+    (state_dir / "feature-x.json").write_text(json.dumps(state))
+    (state_dir / "orchestrate.json").write_text(json.dumps({"status": "in_progress"}))
+
+    results = _mod.find_state_files(tmp_path, "main")
+    assert len(results) == 1
+    assert results[0][2] == "feature-x"
+
+
 def test_find_state_files_exact_match_priority(tmp_path):
     """Exact match takes priority — other files are not returned."""
     state_dir = tmp_path / ".flow-states"

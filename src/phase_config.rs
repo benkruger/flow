@@ -230,6 +230,9 @@ pub fn find_state_files(root: &Path, branch: &str) -> Vec<(PathBuf, Value, Strin
             if name_str.ends_with("-phases.json") {
                 continue;
             }
+            if name_str == "orchestrate.json" {
+                continue;
+            }
             if let Ok(content) = std::fs::read_to_string(entry.path()) {
                 if let Ok(state) = serde_json::from_str::<Value>(&content) {
                     let stem = name_str.trim_end_matches(".json").to_string();
@@ -488,6 +491,27 @@ mod tests {
         fs::write(
             state_dir.join("feature-x-phases.json"),
             r#"{"order": []}"#,
+        )
+        .unwrap();
+
+        let results = find_state_files(dir.path(), "main");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].2, "feature-x");
+    }
+
+    #[test]
+    fn find_state_files_skips_orchestrate() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir(&state_dir).unwrap();
+        fs::write(
+            state_dir.join("feature-x.json"),
+            r#"{"branch": "feature-x"}"#,
+        )
+        .unwrap();
+        fs::write(
+            state_dir.join("orchestrate.json"),
+            r#"{"status": "in_progress"}"#,
         )
         .unwrap();
 
