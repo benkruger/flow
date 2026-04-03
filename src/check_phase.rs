@@ -32,7 +32,12 @@ pub fn check_phase(
         .position(|p| p == phase)
         .ok_or_else(|| format!("Invalid phase: {}. Must be one of: {}", phase, order.join(", ")))?;
 
-    let prev = &order[phase_idx.wrapping_sub(1)];
+    // First phase has no prerequisites
+    if phase_idx == 0 {
+        return Ok((true, String::new()));
+    }
+
+    let prev = &order[phase_idx - 1];
     let phases = state.get("phases").and_then(|v| v.as_object());
 
     let prev_data = phases.and_then(|p| p.get(prev.as_str()));
