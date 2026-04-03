@@ -1,11 +1,15 @@
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::time::Duration;
 
 use chrono::{DateTime, FixedOffset, Utc};
 use chrono_tz::America::Los_Angeles;
 use regex::Regex;
+use serde_json::Value;
 use sha2::{Digest, Sha256};
+
+use crate::start_setup::run_cmd;
 
 // --- Version reading ---
 
@@ -205,6 +209,117 @@ pub fn extract_issue_numbers(prompt: &str) -> Vec<i64> {
         }
     }
     result
+}
+
+/// Info about a duplicate flow targeting the same issue.
+#[derive(Debug)]
+pub struct DuplicateInfo {
+    pub branch: String,
+    pub phase: String,
+    pub pr_url: String,
+}
+
+/// Fetch issue title from GitHub. Returns title string or None on failure.
+/// Uses a 10-second timeout matching the Python implementation.
+pub fn fetch_issue_title(issue_number: i64) -> Option<String> {
+    let dir = std::env::current_dir().ok()?;
+    let (stdout, _) = run_cmd(
+        &[
+            "gh",
+            "issue",
+            "view",
+            &issue_number.to_string(),
+            "--json",
+            "title",
+            "--jq",
+            ".title",
+        ],
+        &dir,
+        "fetch_issue_title",
+        Some(Duration::from_secs(10)),
+    )
+    .ok()?;
+
+    let title = stdout.trim().to_string();
+    if title.is_empty() {
+        None
+    } else {
+        Some(title)
+    }
+}
+
+/// Check if an existing flow already targets the same issue numbers.
+pub fn check_duplicate_issue(
+    project_root: &Path,
+    issue_numbers: &[i64],
+    self_branch: &str,
+) -> Option<DuplicateInfo> {
+    if issue_numbers.is_empty() {
+        return None;
+    }
+    let state_dir = project_root.join(".flow-states");
+    if !state_dir.is_dir() {
+        return None;
+    }
+    let target_issues: std::collections::HashSet<i64> = issue_numbers.iter().copied().collect();
+
+    let mut entries: Vec<_> = std::fs::read_dir(&state_dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+
+    for entry in entries {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if !name_str.ends_with(".json") {
+            continue;
+        }
+        if name_str.ends_with("-phases.json") {
+            continue;
+        }
+        let stem = name_str.trim_end_matches(".json");
+        if stem == self_branch {
+            continue;
+        }
+
+        let content = match std::fs::read_to_string(entry.path()) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let state: Value = match serde_json::from_str(&content) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let prompt = state
+            .get("prompt")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let existing_issues: std::collections::HashSet<i64> =
+            extract_issue_numbers(prompt).into_iter().collect();
+
+        if !existing_issues.is_disjoint(&target_issues) {
+            return Some(DuplicateInfo {
+                branch: state
+                    .get("branch")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(stem)
+                    .to_string(),
+                phase: state
+                    .get("current_phase")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                pr_url: state
+                    .get("pr_url")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            });
+        }
+    }
+    None
 }
 
 /// Extract '#N' from a GitHub issue URL, falling back to the full URL.
@@ -754,6 +869,143 @@ mod tests {
     #[test]
     fn pinned_color_unknown_repo() {
         assert_eq!(pinned_color("unknown/repo"), None);
+    }
+
+    // --- check_duplicate_issue() ---
+
+    #[test]
+    fn check_duplicate_empty_list() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(check_duplicate_issue(dir.path(), &[] as &[i64], "any").is_none());
+    }
+
+    #[test]
+    fn check_duplicate_no_state_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(check_duplicate_issue(dir.path(), &[123], "any").is_none());
+    }
+
+    #[test]
+    fn check_duplicate_detects_overlap() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(
+            state_dir.join("existing-branch.json"),
+            serde_json::json!({
+                "prompt": "work on issue #123",
+                "branch": "existing-branch",
+                "current_phase": "flow-code",
+                "pr_url": "https://github.com/test/repo/pull/99",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let result = check_duplicate_issue(dir.path(), &[123], "new-branch");
+        assert!(result.is_some());
+        let dup = result.unwrap();
+        assert_eq!(dup.branch, "existing-branch");
+        assert_eq!(dup.phase, "flow-code");
+        assert_eq!(dup.pr_url, "https://github.com/test/repo/pull/99");
+    }
+
+    #[test]
+    fn check_duplicate_no_false_positive() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(
+            state_dir.join("existing-branch.json"),
+            serde_json::json!({
+                "prompt": "work on issue #123",
+                "branch": "existing-branch",
+                "current_phase": "flow-code",
+                "pr_url": "",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert!(check_duplicate_issue(dir.path(), &[456], "new-branch").is_none());
+    }
+
+    #[test]
+    fn check_duplicate_multi_issue_overlap() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(
+            state_dir.join("existing-branch.json"),
+            serde_json::json!({
+                "prompt": "work on issue #456",
+                "branch": "existing-branch",
+                "current_phase": "flow-plan",
+                "pr_url": "",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let result = check_duplicate_issue(dir.path(), &[123, 456], "new-branch");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn check_duplicate_skips_self_branch() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(
+            state_dir.join("my-branch.json"),
+            serde_json::json!({
+                "prompt": "work on issue #123",
+                "branch": "my-branch",
+                "current_phase": "flow-start",
+                "pr_url": "",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert!(check_duplicate_issue(dir.path(), &[123], "my-branch").is_none());
+    }
+
+    #[test]
+    fn check_duplicate_skips_phases_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(
+            state_dir.join("some-branch-phases.json"),
+            serde_json::json!({
+                "prompt": "work on issue #123",
+                "branch": "some-branch",
+                "current_phase": "flow-code",
+                "pr_url": "",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert!(check_duplicate_issue(dir.path(), &[123], "other-branch").is_none());
+    }
+
+    #[test]
+    fn check_duplicate_skips_malformed_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(state_dir.join("bad-json.json"), "not valid json {{{").unwrap();
+        assert!(check_duplicate_issue(dir.path(), &[123], "other-branch").is_none());
+    }
+
+    #[test]
+    fn check_duplicate_null_prompt() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(
+            state_dir.join("null-prompt.json"),
+            serde_json::json!({"prompt": null, "branch": "null-prompt"}).to_string(),
+        )
+        .unwrap();
+        assert!(check_duplicate_issue(dir.path(), &[123], "other-branch").is_none());
     }
 
     // --- read_version_from() ---
