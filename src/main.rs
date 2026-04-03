@@ -32,6 +32,17 @@ enum Commands {
     #[command(name = "clear-blocked")]
     ClearBlocked,
 
+    /// Append a timestamped log entry to .flow-states/<branch>.log
+    Log {
+        /// Branch name (determines log file name)
+        branch: String,
+        /// Message to append
+        message: String,
+    },
+    /// Generate an 8-character hex session ID
+    #[command(name = "generate-id")]
+    GenerateId,
+
     // The external subcommand catch-all routes unrecognized
     // commands to exit 127, signaling bin/flow to try Python.
     #[command(external_subcommand)]
@@ -55,6 +66,12 @@ fn main() {
         }
         Some(Commands::ClearBlocked) => {
             commands::clear_blocked::run();
+        }
+        Some(Commands::Log { branch, message }) => {
+            commands::log::run(&branch, &message);
+        }
+        Some(Commands::GenerateId) => {
+            commands::generate_id::run();
         }
         Some(Commands::External(_)) => {
             // Unknown subcommand — exit 127 for hybrid dispatcher fallback

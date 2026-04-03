@@ -407,6 +407,25 @@ def test_all_agents_specify_model_sonnet():
         )
 
 
+def test_no_python_generate_id():
+    """Tombstone: ported to Rust in PR #802. Must not return."""
+    assert not (LIB_DIR / "generate-id.py").exists(), (
+        "lib/generate-id.py must not exist — ported to Rust src/commands/generate_id.rs"
+    )
+
+
+def test_no_python_test_generate_id():
+    """Tombstone: ported to Rust in PR #802. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_generate_id.py").exists(), (
+        "tests/test_generate_id.py must not exist — tests ported to Rust"
+    )
+
+
+def test_no_python_test_log():
+    """Tombstone: ported to Rust in PR #802. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_log.py").exists(), "tests/test_log.py must not exist — tests ported to Rust"
+
+
 def test_checksum_version_invariant():
     """Validate checksum functions exist and the upgrade mechanism is documented.
 

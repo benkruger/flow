@@ -17,3 +17,13 @@ When using `serde_json::Value` for dynamic JSON manipulation
 `preserve_order` feature in `Cargo.toml`. Without it,
 `serde_json::Map` uses `BTreeMap` which alphabetically sorts
 keys on every round-trip — silently reordering state files.
+
+## Python Bridge Pattern
+
+When a ported script still has Python callers that import its
+functions, the bridge module needs two functions: a subprocess
+delegate (`append_log`) for callers in other lib scripts, and
+a direct Python fallback (`_direct_append`) for `main()`. The
+fallback prevents infinite recursion when `bin/flow` dispatches
+to the Python script and the Rust binary is absent. Document
+which function is for which context with inline comments.
