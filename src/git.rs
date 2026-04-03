@@ -130,6 +130,12 @@ pub fn resolve_branch(
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::Mutex;
+
+    // Serialize tests that mutate FLOW_SIMULATE_BRANCH to prevent races.
+    // Rust tests run in parallel — without this lock, one test's set_var
+    // can race with another test's remove_var on the same env var.
+    static SIMULATE_BRANCH_LOCK: Mutex<()> = Mutex::new(());
 
     // --- project_root() ---
 
@@ -144,7 +150,7 @@ mod tests {
 
     #[test]
     fn current_branch_simulate_env_var() {
-        // Temporarily set the env var
+        let _guard = SIMULATE_BRANCH_LOCK.lock().unwrap();
         env::set_var("FLOW_SIMULATE_BRANCH", "main");
         let result = current_branch();
         env::remove_var("FLOW_SIMULATE_BRANCH");
@@ -153,6 +159,7 @@ mod tests {
 
     #[test]
     fn current_branch_simulate_empty_falls_through() {
+        let _guard = SIMULATE_BRANCH_LOCK.lock().unwrap();
         env::set_var("FLOW_SIMULATE_BRANCH", "");
         let result = current_branch();
         env::remove_var("FLOW_SIMULATE_BRANCH");
