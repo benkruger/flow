@@ -101,6 +101,7 @@ fn run(
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(&args)
         .current_dir(dir)
+        .env_remove("FLOW_SIMULATE_BRANCH")
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);

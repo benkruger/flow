@@ -92,6 +92,7 @@ fn phase_1_always_exits_0() {
     setup_git_repo(dir.path(), "test-feature");
 
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .env_remove("FLOW_SIMULATE_BRANCH")
         .args(["check-phase", "--required", "flow-start"])
         .current_dir(dir.path())
         .output()
@@ -105,6 +106,7 @@ fn no_state_file_exits_1() {
     setup_git_repo(dir.path(), "test-feature");
 
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .env_remove("FLOW_SIMULATE_BRANCH")
         .args(["check-phase", "--required", "flow-plan"])
         .current_dir(dir.path())
         .output()
@@ -123,6 +125,7 @@ fn previous_phase_pending_blocks() {
     setup_state(dir.path(), "test-feature", &state);
 
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .env_remove("FLOW_SIMULATE_BRANCH")
         .args(["check-phase", "--required", "flow-plan"])
         .current_dir(dir.path())
         .output()
@@ -142,6 +145,7 @@ fn previous_phase_complete_allows() {
     setup_state(dir.path(), "test-feature", &state);
 
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .env_remove("FLOW_SIMULATE_BRANCH")
         .args(["check-phase", "--required", "flow-plan"])
         .current_dir(dir.path())
         .output()
@@ -158,6 +162,7 @@ fn branch_flag_uses_specified_state_file() {
     setup_state(dir.path(), "other-feature", &state);
 
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .env_remove("FLOW_SIMULATE_BRANCH")
         .args([
             "check-phase",
             "--required",
@@ -182,6 +187,7 @@ fn multiple_state_files_returns_ambiguity() {
     }
 
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .env_remove("FLOW_SIMULATE_BRANCH")
         .args(["check-phase", "--required", "flow-plan"])
         .current_dir(dir.path())
         .output()
@@ -211,6 +217,7 @@ fn frozen_phases_file_is_loaded() {
     fs::copy(source, dest).unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .env_remove("FLOW_SIMULATE_BRANCH")
         .args(["check-phase", "--required", "flow-plan"])
         .current_dir(dir.path())
         .output()
