@@ -1,5 +1,13 @@
 use clap::{Parser, Subcommand};
+use serde_json::json;
 use std::process;
+
+use flow_rs::check_phase::check_phase;
+use flow_rs::git::{project_root, resolve_branch};
+use flow_rs::lock::mutate_state;
+use flow_rs::output::json_error;
+use flow_rs::phase_config::{load_phase_config, PHASE_ORDER};
+use flow_rs::phase_transition::{phase_complete, phase_enter};
 
 #[derive(Parser)]
 #[command(name = "flow-rs", version, about = "FLOW CLI (Rust)")]
@@ -10,9 +18,37 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    // Ported commands will be added here as enum variants.
-    // The external subcommand catch-all routes unrecognized
-    // commands to exit 127, signaling bin/flow to try Python.
+    /// Verify prerequisite phase is complete before entry.
+    #[command(name = "check-phase")]
+    CheckPhase {
+        /// Phase name being entered
+        #[arg(long)]
+        required: String,
+        /// Override branch for state file lookup
+        #[arg(long)]
+        branch: Option<String>,
+    },
+
+    /// Phase entry and completion state transitions.
+    #[command(name = "phase-transition")]
+    PhaseTransition {
+        /// Phase name (e.g. flow-start, flow-plan, flow-code)
+        #[arg(long)]
+        phase: String,
+        /// Action: enter or complete
+        #[arg(long)]
+        action: String,
+        /// Override next phase name (default: next in order)
+        #[arg(long, name = "next-phase")]
+        next_phase: Option<String>,
+        /// Override branch for state file lookup
+        #[arg(long)]
+        branch: Option<String>,
+        /// Optional reason for backward transitions
+        #[arg(long)]
+        reason: Option<String>,
+    },
+
     #[command(external_subcommand)]
     #[allow(dead_code)]
     External(Vec<String>),
@@ -26,9 +62,229 @@ fn main() {
             eprintln!("flow-rs: no command specified. Use --help for usage.");
             process::exit(1);
         }
+        Some(Commands::CheckPhase { required, branch }) => {
+            run_check_phase(&required, branch.as_deref());
+        }
+        Some(Commands::PhaseTransition {
+            phase,
+            action,
+            next_phase,
+            branch,
+            reason,
+        }) => {
+            run_phase_transition(
+                &phase,
+                &action,
+                next_phase.as_deref(),
+                branch.as_deref(),
+                reason.as_deref(),
+            );
+        }
         Some(Commands::External(_)) => {
-            // Unknown subcommand — exit 127 for hybrid dispatcher fallback
             process::exit(127);
+        }
+    }
+}
+
+fn run_check_phase(phase: &str, branch_override: Option<&str>) {
+    // First phase has no prerequisites
+    if phase == PHASE_ORDER[0] {
+        process::exit(0);
+    }
+
+    let root = project_root();
+    let (branch, candidates) = resolve_branch(branch_override, &root);
+
+    if branch.is_none() && !candidates.is_empty() {
+        println!("BLOCKED: Multiple active features. Pass --branch.");
+        for c in &candidates {
+            println!("  - {}", c);
+        }
+        process::exit(1);
+    }
+
+    let branch = match branch {
+        Some(b) => b,
+        None => {
+            println!("BLOCKED: Could not determine current git branch.");
+            process::exit(1);
+        }
+    };
+
+    let state_file = root.join(".flow-states").join(format!("{}.json", branch));
+    if !state_file.exists() {
+        println!(
+            "BLOCKED: No FLOW feature in progress on branch \"{}\".",
+            branch
+        );
+        println!("Run /flow:flow-start to begin a new feature.");
+        process::exit(1);
+    }
+
+    let content = match std::fs::read_to_string(&state_file) {
+        Ok(c) => c,
+        Err(e) => {
+            println!("BLOCKED: Could not read state file: {}", e);
+            process::exit(1);
+        }
+    };
+
+    let state: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            println!("BLOCKED: Could not read state file: {}", e);
+            process::exit(1);
+        }
+    };
+
+    // Load frozen phase config if available
+    let frozen_path = root
+        .join(".flow-states")
+        .join(format!("{}-phases.json", branch));
+    let frozen_config = if frozen_path.exists() {
+        load_phase_config(&frozen_path).ok()
+    } else {
+        None
+    };
+
+    match check_phase(&state, phase, frozen_config.as_ref()) {
+        Ok((allowed, output)) => {
+            if !output.is_empty() {
+                println!("{}", output);
+            }
+            process::exit(if allowed { 0 } else { 1 });
+        }
+        Err(msg) => {
+            let _ = json_error(&msg, &[]);
+            process::exit(1);
+        }
+    }
+}
+
+fn run_phase_transition(
+    phase: &str,
+    action: &str,
+    next_phase: Option<&str>,
+    branch_override: Option<&str>,
+    reason: Option<&str>,
+) {
+    let valid_phases: Vec<&str> = PHASE_ORDER.to_vec();
+    if !valid_phases.contains(&phase) {
+        json_error(
+            &format!(
+                "Invalid phase: {}. Must be one of: {}",
+                phase,
+                valid_phases.join(", ")
+            ),
+            &[],
+        );
+        process::exit(1);
+    }
+
+    if action != "enter" && action != "complete" {
+        json_error(
+            &format!("Invalid action: {}. Must be 'enter' or 'complete'", action),
+            &[],
+        );
+        process::exit(1);
+    }
+
+    let root = project_root();
+    let (branch, candidates) = resolve_branch(branch_override, &root);
+
+    if branch.is_none() {
+        if !candidates.is_empty() {
+            println!(
+                "{}",
+                serde_json::to_string(&json!({
+                    "status": "error",
+                    "message": "Multiple active features. Pass --branch.",
+                    "candidates": candidates,
+                }))
+                .unwrap()
+            );
+        } else {
+            json_error("Could not determine current branch", &[]);
+        }
+        process::exit(1);
+    }
+
+    let branch = branch.unwrap();
+    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+
+    if !state_path.exists() {
+        json_error(
+            &format!("No state file found: {}", state_path.display()),
+            &[],
+        );
+        process::exit(1);
+    }
+
+    // Read state to validate phase key exists
+    let content = match std::fs::read_to_string(&state_path) {
+        Ok(c) => c,
+        Err(e) => {
+            json_error(&format!("Could not read state file: {}", e), &[]);
+            process::exit(1);
+        }
+    };
+
+    let state: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            json_error(&format!("Could not read state file: {}", e), &[]);
+            process::exit(1);
+        }
+    };
+
+    // Validate phase key exists in state
+    if state.get("phases").is_none() || state["phases"].get(phase).is_none() {
+        json_error(
+            &format!("Phase {} not found in state file", phase),
+            &[],
+        );
+        process::exit(1);
+    }
+
+    // Load frozen phase config if available
+    let frozen_path = root
+        .join(".flow-states")
+        .join(format!("{}-phases.json", branch));
+    let frozen_config = if frozen_path.exists() {
+        load_phase_config(&frozen_path).ok()
+    } else {
+        None
+    };
+
+    let frozen_order: Option<Vec<String>> = frozen_config.as_ref().map(|c| c.order.clone());
+    let frozen_commands = frozen_config.as_ref().map(|c| c.commands.clone());
+
+    // Use mutate_state for atomic read-lock-transform-write
+    let result_holder = std::cell::RefCell::new(serde_json::Value::Null);
+
+    let mutate_result = mutate_state(&state_path, |state| {
+        let result = if action == "enter" {
+            phase_enter(state, phase, reason)
+        } else {
+            phase_complete(
+                state,
+                phase,
+                next_phase,
+                frozen_order.as_deref(),
+                frozen_commands.as_ref(),
+            )
+        };
+        *result_holder.borrow_mut() = result;
+    });
+
+    match mutate_result {
+        Ok(_) => {
+            let result = result_holder.into_inner();
+            println!("{}", serde_json::to_string(&result).unwrap());
+        }
+        Err(e) => {
+            json_error(&format!("State mutation failed: {}", e), &[]);
+            process::exit(1);
         }
     }
 }

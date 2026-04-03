@@ -1,4 +1,6 @@
+pub mod check_phase;
 pub mod error;
+pub mod phase_transition;
 pub mod git;
 pub mod github;
 pub mod lock;
