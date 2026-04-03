@@ -11,3 +11,13 @@ When a plan adopts a map type for a Rust port, include a task
 that serializes the output and compares key order against the
 Python equivalent. Key-order divergence is a correctness bug,
 not tech debt — downstream consumers depend on identical output.
+
+## Python Bridge Pattern
+
+When a ported script still has Python callers that import its
+functions, the bridge module needs two functions: a subprocess
+delegate (`append_log`) for callers in other lib scripts, and
+a direct Python fallback (`_direct_append`) for `main()`. The
+fallback prevents infinite recursion when `bin/flow` dispatches
+to the Python script and the Rust binary is absent. Document
+which function is for which context with inline comments.

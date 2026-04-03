@@ -3,6 +3,7 @@ use serde_json::json;
 use std::process;
 
 use flow_rs::check_phase::check_phase;
+use flow_rs::commands;
 use flow_rs::git::{project_root, resolve_branch};
 use flow_rs::lock::mutate_state;
 use flow_rs::output::json_error;
@@ -49,6 +50,16 @@ enum Commands {
         reason: Option<String>,
     },
 
+    /// Append a timestamped log entry to .flow-states/<branch>.log
+    Log {
+        /// Branch name (determines log file name)
+        branch: String,
+        /// Message to append
+        message: String,
+    },
+    /// Generate an 8-character hex session ID
+    #[command(name = "generate-id")]
+    GenerateId,
     #[command(external_subcommand)]
     #[allow(dead_code)]
     External(Vec<String>),
@@ -79,6 +90,12 @@ fn main() {
                 branch.as_deref(),
                 reason.as_deref(),
             );
+        }
+        Some(Commands::Log { branch, message }) => {
+            commands::log::run(&branch, &message);
+        }
+        Some(Commands::GenerateId) => {
+            commands::generate_id::run();
         }
         Some(Commands::External(_)) => {
             process::exit(127);
