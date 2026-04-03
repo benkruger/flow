@@ -100,8 +100,9 @@ pub fn run(args: Args) {
 }
 
 fn truncate_preview(message: &str) -> String {
-    if message.len() > MAX_PREVIEW_LENGTH {
-        format!("{}...", &message[..MAX_PREVIEW_LENGTH])
+    if message.chars().count() > MAX_PREVIEW_LENGTH {
+        let truncated: String = message.chars().take(MAX_PREVIEW_LENGTH).collect();
+        format!("{}...", truncated)
     } else {
         message.to_string()
     }
