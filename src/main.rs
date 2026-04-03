@@ -12,6 +12,7 @@ use flow_rs::lock::mutate_state;
 use flow_rs::output::json_error;
 use flow_rs::phase_config::{load_phase_config, PHASE_ORDER};
 use flow_rs::phase_transition::{phase_complete, phase_enter};
+use flow_rs::start_setup;
 
 #[derive(Parser)]
 #[command(name = "flow-rs", version, about = "FLOW CLI (Rust)")]
@@ -90,6 +91,9 @@ enum Commands {
     /// Generate an 8-character hex session ID
     #[command(name = "generate-id")]
     GenerateId,
+    /// FLOW Start phase setup (worktree, PR, state file)
+    #[command(name = "start-setup")]
+    StartSetup(start_setup::Args),
     #[command(external_subcommand)]
     #[allow(dead_code)]
     External(Vec<String>),
@@ -138,6 +142,9 @@ fn main() {
         }
         Some(Commands::GenerateId) => {
             commands::generate_id::run();
+        }
+        Some(Commands::StartSetup(args)) => {
+            start_setup::run(args);
         }
         Some(Commands::External(_)) => {
             process::exit(127);
