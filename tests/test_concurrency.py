@@ -60,29 +60,31 @@ def _worker_log_append(repo_path_str, worker_id, lib_dir):
 def _worker_start_lock(repo_path_str, worker_id, results_dir_str, lib_dir, delay):
     """Acquire lock, hold briefly, release. Record timing to file."""
     time.sleep(delay)
-    sys.path.insert(0, lib_dir)
-    os.chdir(repo_path_str)
-    import importlib.util
+    bin_flow = os.path.join(os.path.dirname(lib_dir), "bin", "flow")
+    feature = f"feature-{worker_id}"
 
-    spec = importlib.util.spec_from_file_location("start_lock", os.path.join(lib_dir, "start-lock.py"))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-
-    result = mod.acquire_with_wait(
-        f"feature-{worker_id}",
-        timeout=30,
-        interval=0.1,
+    result = subprocess.run(
+        [bin_flow, "start-lock", "--acquire", "--wait", "--timeout", "30", "--interval", "1", "--feature", feature],
+        capture_output=True,
+        text=True,
+        cwd=repo_path_str,
     )
+    data = json.loads(result.stdout)
     acquired_at = time.monotonic()
     time.sleep(0.3)
     released_at = time.monotonic()
-    mod.release(f"feature-{worker_id}")
+    subprocess.run(
+        [bin_flow, "start-lock", "--release", "--feature", feature],
+        capture_output=True,
+        text=True,
+        cwd=repo_path_str,
+    )
 
     Path(results_dir_str, f"worker-{worker_id}.json").write_text(
         json.dumps(
             {
                 "worker_id": worker_id,
-                "status": result["status"],
+                "status": data["status"],
                 "acquired_at": acquired_at,
                 "released_at": released_at,
             }

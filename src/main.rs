@@ -90,6 +90,47 @@ enum Commands {
     /// Generate an 8-character hex session ID
     #[command(name = "generate-id")]
     GenerateId,
+
+    /// Serialize flow-start with a queue directory.
+    #[command(name = "start-lock")]
+    StartLock {
+        /// Acquire the lock
+        #[arg(long)]
+        acquire: bool,
+        /// Release the lock
+        #[arg(long)]
+        release: bool,
+        /// Check lock status
+        #[arg(long)]
+        check: bool,
+        /// Feature name (required for --acquire and --release)
+        #[arg(long)]
+        feature: Option<String>,
+        /// Wait for lock to be released
+        #[arg(long)]
+        wait: bool,
+        /// Max seconds to wait (default 90)
+        #[arg(long, default_value = "90")]
+        timeout: u64,
+        /// Seconds between retry attempts (default 10)
+        #[arg(long, default_value = "10")]
+        interval: u64,
+    },
+
+    /// Update Start phase step counter, optionally wrapping a subcommand.
+    #[command(name = "start-step")]
+    StartStep {
+        /// Step number to set
+        #[arg(long)]
+        step: i64,
+        /// Branch name for state file lookup
+        #[arg(long)]
+        branch: String,
+        /// Subcommand to exec after updating step (everything after --)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        subcommand: Vec<String>,
+    },
+
     #[command(external_subcommand)]
     #[allow(dead_code)]
     External(Vec<String>),
@@ -138,6 +179,30 @@ fn main() {
         }
         Some(Commands::GenerateId) => {
             commands::generate_id::run();
+        }
+        Some(Commands::StartLock {
+            acquire,
+            release,
+            check,
+            feature,
+            wait,
+            timeout,
+            interval,
+        }) => {
+            commands::start_lock::run(acquire, release, check, feature, wait, timeout, interval);
+        }
+        Some(Commands::StartStep {
+            step,
+            branch,
+            subcommand,
+        }) => {
+            // Strip leading "--" if present (clap trailing_var_arg includes it)
+            let subcommand: Vec<String> = if subcommand.first().map(|s| s.as_str()) == Some("--") {
+                subcommand.into_iter().skip(1).collect()
+            } else {
+                subcommand
+            };
+            commands::start_step::run(step, &branch, subcommand);
         }
         Some(Commands::External(_)) => {
             process::exit(127);
