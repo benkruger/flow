@@ -178,7 +178,6 @@ def test_no_python_start_lock():
 
 def test_no_start_lock_filename():
     """Tombstone: start.lock replaced by start-queue/ in PR #715. Must not return."""
-    source = pathlib.Path(__file__).resolve().parent.parent / "lib" / "start-lock.py"
-    if source.exists():
-        content = source.read_text()
-        assert "start.lock" not in content, "start.lock was removed in PR #715 — use start-queue/ directory instead"
+    source = pathlib.Path(__file__).resolve().parent.parent / "src" / "commands" / "start_lock.rs"
+    content = source.read_text()
+    assert "start.lock" not in content, "start.lock was removed in PR #715 — use start-queue/ directory instead"

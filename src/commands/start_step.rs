@@ -35,11 +35,14 @@ pub fn run(step: i64, branch: &str, subcommand: Vec<String>) {
     let updated = update_step(&state_path, step);
 
     if !subcommand.is_empty() {
-        // Wrapping mode: exec into bin/flow with the subcommand
+        // Wrapping mode: exec into bin/flow (the hybrid dispatcher) so
+        // Python-only subcommands like `ci` still work via fallback.
+        // The binary is at target/{debug,release}/flow-rs — go up 3
+        // levels to reach the plugin/repo root, then into bin/flow.
         let flow_bin = std::env::current_exe()
             .ok()
-            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-            .map(|d| d.join("flow-rs"))
+            .and_then(|p| p.parent()?.parent()?.parent().map(|d| d.to_path_buf()))
+            .map(|d| d.join("bin").join("flow"))
             .unwrap_or_else(|| {
                 // Fallback: find bin/flow relative to project root
                 root.join("bin").join("flow")
