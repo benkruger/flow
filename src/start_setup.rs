@@ -147,9 +147,12 @@ pub fn extract_pr_number(pr_url: &str) -> u32 {
 }
 
 /// Fetch issue title from GitHub. Returns title string or None on failure.
+/// Uses a 10-second timeout matching the Python implementation.
 pub fn fetch_issue_title(issue_number: i64) -> Option<String> {
-    let output = Command::new("gh")
-        .args([
+    let dir = std::env::current_dir().ok()?;
+    let (stdout, _) = run_cmd(
+        &[
+            "gh",
             "issue",
             "view",
             &issue_number.to_string(),
@@ -157,23 +160,18 @@ pub fn fetch_issue_title(issue_number: i64) -> Option<String> {
             "title",
             "--jq",
             ".title",
-        ])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .ok()?
-        .wait_with_output()
-        .ok()?;
+        ],
+        &dir,
+        "fetch_issue_title",
+        Some(Duration::from_secs(10)),
+    )
+    .ok()?;
 
-    if output.status.success() {
-        let title = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if title.is_empty() {
-            None
-        } else {
-            Some(title)
-        }
-    } else {
+    let title = stdout.trim().to_string();
+    if title.is_empty() {
         None
+    } else {
+        Some(title)
     }
 }
 
