@@ -145,24 +145,16 @@ def _clean_template_json(block):
 
 
 def test_initial_state_template_has_all_6_phases():
-    """start-setup.py state template must have all 6 phases."""
-    import importlib.util
+    """build_initial_phases state template must have all 6 phases.
 
-    spec = importlib.util.spec_from_file_location("start_setup", LIB_DIR / "start-setup.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    Previously tested via start-setup.py._create_state_file. Since PR #810
+    ported start-setup to Rust, this tests flow_utils.build_initial_phases
+    directly — the same function both Python and Rust implementations use.
+    """
+    from flow_utils import build_initial_phases, now
 
-    # Call _create_state_file's phase construction logic via a temp dir
-    import tempfile
+    phases = build_initial_phases(now())
 
-    with tempfile.TemporaryDirectory() as tmp:
-        from pathlib import Path
-
-        root = Path(tmp)
-        mod._create_state_file(root, "test", "Test", "http://x/pull/1", 1)
-        state = json.loads((root / ".flow-states" / "test.json").read_text())
-
-    phases = state["phases"]
     assert len(phases) == 6, f"Expected 6 phases, got {len(phases)}"
 
     required_fields = [
@@ -183,26 +175,21 @@ def test_initial_state_template_has_all_6_phases():
 
 
 def test_phase_names_in_state_match_flow_phases():
-    """Phase names in start-setup.py state must match flow-phases.json."""
-    import importlib.util
-    import tempfile
-    from pathlib import Path
+    """Phase names in build_initial_phases must match flow-phases.json.
+
+    Previously tested via start-setup.py._create_state_file. Since PR #810
+    ported start-setup to Rust, this tests flow_utils.build_initial_phases
+    directly.
+    """
+    from flow_utils import build_initial_phases, now
 
     data = _load_phases()
-
-    spec = importlib.util.spec_from_file_location("start_setup", LIB_DIR / "start-setup.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        mod._create_state_file(root, "test", "Test", "http://x/pull/1", 1)
-        state = json.loads((root / ".flow-states" / "test.json").read_text())
+    phases = build_initial_phases(now())
 
     for key, phase in data["phases"].items():
-        assert state["phases"][key]["name"] == phase["name"], (
-            f"Phase {PHASE_NUMBER[key]} ({key}): start-setup.py has "
-            f"'{state['phases'][key]['name']}' but flow-phases.json "
+        assert phases[key]["name"] == phase["name"], (
+            f"Phase {PHASE_NUMBER[key]} ({key}): build_initial_phases has "
+            f"'{phases[key]['name']}' but flow-phases.json "
             f"has '{phase['name']}'"
         )
 
