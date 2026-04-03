@@ -407,6 +407,35 @@ def test_all_agents_specify_model_sonnet():
         )
 
 
+# --- Tombstone: Python phase lifecycle files ported to Rust in PR #805 ---
+
+
+def test_no_python_check_phase():
+    """Tombstone: ported to Rust in PR #805. Must not return."""
+    assert not (LIB_DIR / "check-phase.py").exists(), "check-phase.py was ported to Rust — use flow-rs check-phase"
+
+
+def test_no_python_phase_transition():
+    """Tombstone: ported to Rust in PR #805. Must not return."""
+    assert not (LIB_DIR / "phase-transition.py").exists(), (
+        "phase-transition.py was ported to Rust — use flow-rs phase-transition"
+    )
+
+
+def test_no_python_test_check_phase():
+    """Tombstone: ported to Rust in PR #805. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_check_phase.py").exists(), (
+        "test_check_phase.py was ported to Rust — tests are in tests/check_phase.rs"
+    )
+
+
+def test_no_python_test_phase_transition():
+    """Tombstone: ported to Rust in PR #805. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_phase_transition.py").exists(), (
+        "test_phase_transition.py was ported to Rust — tests are in tests/phase_transition.rs"
+    )
+
+
 def test_no_python_append_note():
     """Tombstone: ported to Rust in PR #804. Must not return."""
     assert not (LIB_DIR / "append-note.py").exists(), "append-note.py was ported to Rust and must not be re-added"

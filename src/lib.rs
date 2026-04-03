@@ -1,8 +1,10 @@
 pub mod add_issue;
 pub mod add_notification;
 pub mod append_note;
+pub mod check_phase;
 pub mod commands;
 pub mod error;
+pub mod phase_transition;
 pub mod git;
 pub mod github;
 pub mod lock;
