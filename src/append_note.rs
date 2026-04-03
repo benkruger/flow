@@ -91,10 +91,13 @@ pub fn run(args: Args) {
 fn read_current_phase(state_path: &Path) -> Option<String> {
     let content = std::fs::read_to_string(state_path).ok()?;
     let state: Value = serde_json::from_str(&content).ok()?;
-    state
-        .get("current_phase")
-        .and_then(|v| v.as_str())
-        .map(String::from)
+    Some(
+        state
+            .get("current_phase")
+            .and_then(|v| v.as_str())
+            .unwrap_or("flow-start")
+            .to_string(),
+    )
 }
 
 #[cfg(test)]
@@ -240,6 +243,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("nonexistent.json");
         assert_eq!(read_current_phase(&path), None);
+    }
+
+    #[test]
+    fn read_current_phase_missing_key_defaults_to_flow_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, r#"{"branch": "test"}"#).unwrap();
+        assert_eq!(
+            read_current_phase(&path),
+            Some("flow-start".to_string())
+        );
     }
 
     #[test]
