@@ -180,7 +180,7 @@ pub fn format_panel(
         let cmd = commands
             .get(current)
             .map(|s| s.as_str())
-            .unwrap_or("");
+            .unwrap_or(&default_cmd);
         lines.push(format!("  Next: {}", cmd));
     }
     lines.push(String::new());
@@ -313,7 +313,10 @@ pub fn format_multi_panel(
             .get(phase_key)
             .map(|s| s.as_str())
             .unwrap_or(phase_key);
-        let phase_num = numbers.get(phase_key).copied().unwrap_or(0);
+        let phase_num: String = numbers
+            .get(phase_key)
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "?".to_string());
         let phase_status = state
             .get("phases")
             .and_then(|p| p.get(phase_key))
