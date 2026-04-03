@@ -1,30 +1,26 @@
-"""Append a log entry to .flow-states/<branch>.log.
+"""Bridge: delegates to Rust via bin/flow log.
 
 Usage: bin/flow log <branch> "<message>"
 
-Appends a timestamped line to the log file. Creates the directory if needed.
-No output on success, exit 1 on missing arguments.
+This module is a thin bridge that preserves the Python import interface
+for init-state.py and start-setup.py. The actual implementation lives
+in the Rust binary (src/commands/log.rs).
+
+bin/flow is resolved relative to this file's location (the FLOW plugin
+repo), not via project_root(). Target projects do not have bin/flow.
 """
 
-import fcntl
+import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from flow_utils import now, project_root
+_PLUGIN_ROOT = Path(__file__).resolve().parent.parent
+_BIN_FLOW = str(_PLUGIN_ROOT / "bin" / "flow")
 
 
 def append_log(branch, message):
-    """Append a timestamped message to the branch log file."""
-    root = project_root()
-    log_dir = root / ".flow-states"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / f"{branch}.log"
-    timestamp = now()
-    with open(log_path, "a") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        f.write(f"{timestamp} {message}\n")
+    """Append a timestamped message to the branch log file via Rust."""
+    subprocess.run([_BIN_FLOW, "log", branch, message], check=False)
 
 
 def main():
