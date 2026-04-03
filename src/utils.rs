@@ -516,6 +516,17 @@ mod tests {
         assert_eq!(branch_name("hello @world #123"), "hello-world-123");
     }
 
+    #[test]
+    fn branch_name_multibyte_no_panic() {
+        // Multi-byte chars are stripped by the regex, so the result is ASCII.
+        // This test verifies no panic from byte-offset slicing on multi-byte input.
+        let input = "fix 日本語 login timeout when session expires after thirty minutes";
+        let result = branch_name(input);
+        assert!(result.len() <= 32, "Got: {} ({})", result, result.len());
+        assert!(result.is_ascii());
+        assert!(!result.ends_with('-'));
+    }
+
     // --- derive_feature() ---
 
     #[test]
