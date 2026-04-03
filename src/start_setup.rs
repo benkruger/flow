@@ -467,10 +467,7 @@ pub fn run(args: Args) {
 
     let branch = branch_name(&naming_words);
     let feature_title = derive_feature(&branch);
-    let project_root = PathBuf::from(
-        std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from(".")),
-    );
+    let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
     // Duplicate issue guard
     if !issue_numbers.is_empty() {
@@ -531,7 +528,7 @@ pub fn run(args: Args) {
                     "message": e.message,
                 })
             );
-            std::process::exit(0);
+            return;
         }
         let _ = append_log(&project_root, &branch, "[Phase 1] git pull origin main (exit 0)");
     }
