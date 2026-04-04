@@ -407,6 +407,30 @@ def test_adversarial_agent_exists():
     )
 
 
+def test_learn_agents_have_sufficient_max_turns():
+    """Learn phase agents must have maxTurns >= 25 to match their Code Review peers.
+
+    learn-analyst is the peer of reviewer (both context-rich, read-only).
+    onboarding is the peer of pre-mortem (both context-sparse, read-only).
+    Both Code Review peers have maxTurns: 25.
+    """
+    import yaml
+
+    for agent_name in ("learn-analyst", "onboarding"):
+        agent_file = REPO_ROOT / "agents" / f"{agent_name}.md"
+        content = agent_file.read_text()
+        parts = content.split("---", 2)
+        assert len(parts) >= 3, f"{agent_name}.md missing YAML frontmatter delimiters"
+        frontmatter = yaml.safe_load(parts[1])
+        assert isinstance(frontmatter, dict), f"{agent_name}.md frontmatter is not a dict"
+        max_turns = frontmatter.get("maxTurns", 0)
+        assert max_turns >= 25, (
+            f"agents/{agent_name}.md has maxTurns={max_turns}, expected >= 25 — "
+            f"Learn agents need sufficient turn budget to complete structured analysis "
+            f"without truncation (issue #841)"
+        )
+
+
 def test_agents_have_reasoning_discipline():
     """Code-semantic agents must have a Reasoning Discipline section with Premise/Trace/Conclude."""
     agents = ["pre-mortem", "reviewer", "ci-fixer", "adversarial"]
@@ -955,6 +979,25 @@ def test_learn_step3_requires_output_for_mistakes():
     assert "failed to prevent" in step3_lower, (
         "flow-learn/SKILL.md Step 3 must state that a rule which failed to prevent a mistake is not sufficient coverage"
     )
+
+
+def test_learn_detects_truncated_agent_output():
+    """Learn SKILL.md must check agent output for expected structure after return.
+
+    Both learn-analyst and onboarding agents can exhaust their maxTurns budget
+    and return without structured findings. The skill must detect this and flag
+    it rather than synthesizing from incomplete data (issue #841)."""
+    content = _read_skill("flow-learn")
+    content_lower = content.lower()
+
+    assert "truncat" in content_lower, (
+        "flow-learn/SKILL.md must contain truncation detection instructions — "
+        "agents can exhaust maxTurns without producing structured output"
+    )
+    # Must check both agents — verify learn-analyst appears near truncation text
+    parts = content_lower.split("truncat")
+    nearby = parts[0][-500:] + parts[-1][:500]
+    assert "learn-analyst" in nearby, "flow-learn/SKILL.md truncation detection must cover the learn-analyst agent"
 
 
 def test_anti_patterns_has_inline_output_rule():
