@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
 use serde_json::{json, Value};
@@ -348,6 +349,90 @@ fn state_file_has_required_top_level_fields() {
     assert!(state["session_tty"].is_null() || state["session_tty"].is_string());
     assert!(state["session_id"].is_null());
     assert!(state["transcript_path"].is_null());
+}
+
+// --- Issue-title naming and duplicate detection (PR #823) ---
+
+#[test]
+fn fetch_issue_title_failure_returns_error() {
+    // When prompt contains #N and gh is not available, init_state should
+    // return a hard error instead of silently falling back to feature_name.
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+
+    let prompt_path = dir.path().join(".flow-states");
+    fs::create_dir_all(&prompt_path).unwrap();
+    let prompt_file = prompt_path.join("test-prompt");
+    fs::write(&prompt_file, "work on issue #999").unwrap();
+
+    // Run with empty PATH so gh cannot be found
+    let output = flow_rs()
+        .arg("init-state")
+        .args(["fetch failure test", "--prompt-file", prompt_file.to_str().unwrap()])
+        .current_dir(dir.path())
+        .env("PATH", "")
+        .output()
+        .unwrap();
+
+    assert_ne!(output.status.code(), Some(0), "Should fail when fetch_issue_title cannot reach GitHub");
+    let data = parse_stdout(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "fetch_issue_title");
+
+    // No state file should be created
+    let state_path = dir.path().join(".flow-states").join("fetch-failure-test.json");
+    assert!(!state_path.exists(), "State file should not be created when fetch fails");
+}
+
+#[test]
+fn duplicate_issue_detected_before_state_creation() {
+    // When an existing state file references the same issue, init_state should
+    // exit with duplicate_issue error before creating a new state file.
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+
+    // Pre-create an existing state file referencing issue #777
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join("existing-flow.json"),
+        serde_json::json!({
+            "prompt": "work on issue #777",
+            "branch": "existing-flow",
+            "current_phase": "flow-code",
+            "pr_url": "https://github.com/test/repo/pull/50",
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    // Run init_state with a prompt that also references #777
+    // Need a gh stub that returns a title so fetch_issue_title succeeds
+    let stub_dir = dir.path().join("stubs");
+    fs::create_dir_all(&stub_dir).unwrap();
+    let stub_path = stub_dir.join("gh");
+    fs::write(&stub_path, "#!/bin/bash\necho \"Some Issue Title\"\n").unwrap();
+    let mut perms = fs::metadata(&stub_path).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&stub_path, perms).unwrap();
+
+    let prompt_file = state_dir.join("dup-test-prompt");
+    fs::write(&prompt_file, "work on issue #777").unwrap();
+
+    let output = flow_rs()
+        .arg("init-state")
+        .args(["dup test", "--prompt-file", prompt_file.to_str().unwrap()])
+        .current_dir(dir.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
+        .output()
+        .unwrap();
+
+    assert_ne!(output.status.code(), Some(0), "Should fail on duplicate issue");
+    let data = parse_stdout(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "duplicate_issue");
+    let msg = data["message"].as_str().unwrap();
+    assert!(msg.contains("existing-flow"), "Error should reference the existing branch");
 }
 
 // --- Tombstone tests ---

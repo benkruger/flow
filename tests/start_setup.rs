@@ -548,6 +548,30 @@ fn git_pull_failure_returns_error() {
     assert_eq!(data["step"], "git_pull");
 }
 
+// --- Tombstone tests: naming logic moved to init_state in PR #823 ---
+
+#[test]
+fn tombstone_no_fetch_issue_title_in_start_setup() {
+    // Tombstone: removed in PR #823. Must not return.
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let content = fs::read_to_string(manifest_dir.join("src/start_setup.rs")).unwrap();
+    assert!(
+        !content.contains("fetch_issue_title("),
+        "fetch_issue_title was moved to init_state.rs — start_setup must not call it directly"
+    );
+}
+
+#[test]
+fn tombstone_no_check_duplicate_issue_in_start_setup() {
+    // Tombstone: removed in PR #823. Must not return.
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let content = fs::read_to_string(manifest_dir.join("src/start_setup.rs")).unwrap();
+    assert!(
+        !content.contains("check_duplicate_issue("),
+        "check_duplicate_issue was moved to init_state.rs — start_setup must not call it directly"
+    );
+}
+
 // --- Tombstone tests: Python files removed in PR #810 ---
 
 #[test]
