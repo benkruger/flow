@@ -40,6 +40,10 @@ pub struct Args {
     /// Override all skills to fully autonomous preset
     #[arg(long)]
     pub auto: bool,
+
+    /// Canonical branch name (from init-state). Skips state file lookup.
+    #[arg(long)]
+    pub branch: Option<String>,
 }
 
 /// Error during setup with step identification.
@@ -345,10 +349,12 @@ pub fn run(args: Args) {
 
     let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
-    // Read canonical branch from existing state file (created by init_state in Step 3).
-    // Try exact match first, then scan for prompt match.
-    let fallback_branch = branch_name(&feature_name);
-    let branch = {
+    // Use canonical branch from --branch flag (passed by SKILL.md from init-state output).
+    // Fallback: derive from feature name and scan state files (legacy path).
+    let branch = if let Some(ref b) = args.branch {
+        b.clone()
+    } else {
+        let fallback_branch = branch_name(&feature_name);
         let state_files = find_state_files(&project_root, &fallback_branch);
         if !state_files.is_empty() {
             state_files[0]
@@ -358,7 +364,6 @@ pub fn run(args: Args) {
                 .unwrap_or(&fallback_branch)
                 .to_string()
         } else {
-            // Scan all state files for one whose prompt matches
             let all_files = find_state_files(&project_root, "");
             all_files
                 .iter()

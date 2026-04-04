@@ -399,19 +399,19 @@ Write tool. Then run the setup script. If `--auto` was passed to this skill
 invocation, also pass `--auto` to the start-setup command:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 11 --branch <branch> -- start-setup "<feature-name>" --prompt-file .flow-states/<branch>-start-prompt --skip-pull
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 11 --branch <branch> -- start-setup "<feature-name>" --branch <branch> --prompt-file .flow-states/<branch>-start-prompt --skip-pull
 ```
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 11 --branch <branch> -- start-setup "<feature-name>" --prompt-file .flow-states/<branch>-start-prompt --skip-pull --auto
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 11 --branch <branch> -- start-setup "<feature-name>" --branch <branch> --prompt-file .flow-states/<branch>-start-prompt --skip-pull --auto
 ```
 
 Use the first form when no mode flag was passed or `--manual` was passed.
 Use the second form when `--auto` was passed.
 
 The script reads the prompt file and deletes it automatically after reading.
-The script reads the canonical branch from the existing state file (created by
-init-state in Step 3) instead of recomputing it from the feature name.
+The `--branch` flag passes the canonical branch from init-state (Step 3)
+directly, so start-setup does not need to scan for the state file.
 
 The script performs these operations in a single process:
 
