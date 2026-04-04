@@ -1133,3 +1133,19 @@ def test_cli_dependencies_skipped_when_exists(git_repo, monkeypatch, capsys):
     data = json.loads(stdout)
     assert data["dependencies"] == "skipped"
     assert (bin_dir / "dependencies").read_text() == "#!/bin/bash\ncustom\n"
+
+
+def test_cli_dependencies_subprocess_failure_graceful(git_repo, monkeypatch, capsys):
+    """When the create-dependencies subprocess fails, main() still succeeds with error status."""
+    original_run = subprocess.run
+
+    def _failing_run(cmd, **kwargs):
+        if isinstance(cmd, list) and "create-dependencies" in cmd:
+            raise subprocess.TimeoutExpired(cmd="bin/flow", timeout=30)
+        return original_run(cmd, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", _failing_run)
+    exit_code, stdout = _run_main(monkeypatch, capsys, git_repo, framework="rails")
+    assert exit_code == 0
+    data = json.loads(stdout)
+    assert data["dependencies"] == "error"

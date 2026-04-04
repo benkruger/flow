@@ -50,6 +50,37 @@ pub fn read_version() -> String {
     read_version_from(&plugin_json)
 }
 
+// --- Plugin root ---
+
+/// Find the plugin root directory (where flow-phases.json lives).
+///
+/// Checks CLAUDE_PLUGIN_ROOT env var first, then walks up from the
+/// current executable's location.
+pub fn plugin_root() -> Option<std::path::PathBuf> {
+    if let Ok(root) = std::env::var("CLAUDE_PLUGIN_ROOT") {
+        let path = std::path::PathBuf::from(&root);
+        if path.join("flow-phases.json").exists() {
+            return Some(path);
+        }
+    }
+    let exe = std::env::current_exe().ok()?;
+    let mut dir = exe.parent()?;
+    for _ in 0..5 {
+        if dir.join("flow-phases.json").exists() {
+            return Some(dir.to_path_buf());
+        }
+        dir = dir.parent()?;
+    }
+    None
+}
+
+/// Return the frameworks directory inside the plugin root.
+///
+/// Returns `<plugin_root>/frameworks` or None if plugin root cannot be found.
+pub fn frameworks_dir() -> Option<std::path::PathBuf> {
+    plugin_root().map(|r| r.join("frameworks"))
+}
+
 // --- Tab color constants ---
 
 /// Terminal tab colors (firebrick, teal, indigo, dark goldenrod, dark green,

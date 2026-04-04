@@ -12,17 +12,26 @@ use flow_rs::check_phase::check_phase;
 use flow_rs::close_issue;
 use flow_rs::close_issues;
 use flow_rs::commands;
+use flow_rs::create_dependencies;
+use flow_rs::create_milestone;
+use flow_rs::create_sub_issue;
+use flow_rs::finalize_commit;
 use flow_rs::format_issues_summary;
 use flow_rs::format_status;
 use flow_rs::label_issues;
+use flow_rs::notify_slack;
+use flow_rs::render_pr_body;
+use flow_rs::update_pr_body;
 use flow_rs::git::{project_root, resolve_branch};
 use flow_rs::issue;
+use flow_rs::link_blocked_by;
 use flow_rs::lock::mutate_state;
 use flow_rs::output::json_error;
 use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
 use flow_rs::phase_transition::{phase_complete, phase_enter};
 use flow_rs::start_setup;
 use flow_rs::utils::{detect_dev_mode, read_version};
+use flow_rs::write_rule;
 
 #[derive(Parser)]
 #[command(name = "flow-rs", version, about = "FLOW CLI (Rust)")]
@@ -86,6 +95,19 @@ enum Commands {
     /// Close issues referenced in the FLOW start prompt.
     #[command(name = "close-issues")]
     CloseIssues(close_issues::Args),
+
+    /// Create a GitHub sub-issue relationship.
+    #[command(name = "create-sub-issue")]
+    CreateSubIssue(create_sub_issue::Args),
+    /// Create a GitHub blocked-by dependency.
+    #[command(name = "link-blocked-by")]
+    LinkBlockedBy(link_blocked_by::Args),
+    /// Create a GitHub milestone.
+    #[command(name = "create-milestone")]
+    CreateMilestone(create_milestone::Args),
+    /// Copy framework dependency template to bin/dependencies.
+    #[command(name = "create-dependencies")]
+    CreateDependencies(create_dependencies::Args),
 
     /// Auto-close parent issue and milestone when all children are done.
     #[command(name = "auto-close-parent")]
@@ -206,6 +228,24 @@ enum Commands {
     /// Format issues summary for Complete phase
     FormatIssuesSummary(format_issues_summary::Args),
 
+    /// Finalize a commit: commit from message file, cleanup, pull, push.
+    #[command(name = "finalize-commit")]
+    FinalizeCommit(finalize_commit::Args),
+    /// Post a message to Slack via webhook.
+    #[command(name = "notify-slack")]
+    NotifySlack(notify_slack::Args),
+    /// Write content to a target file path.
+    #[command(name = "write-rule")]
+    WriteRule(write_rule::Args),
+
+    /// Render complete PR body from state
+    #[command(name = "render-pr-body")]
+    RenderPrBody(render_pr_body::Args),
+
+    /// Update PR body with artifacts
+    #[command(name = "update-pr-body")]
+    UpdatePrBody(update_pr_body::Args),
+
     #[command(external_subcommand)]
     #[allow(dead_code)]
     External(Vec<String>),
@@ -245,6 +285,10 @@ fn main() {
         Some(Commands::Issue(args)) => issue::run(args),
         Some(Commands::CloseIssue(args)) => close_issue::run(args),
         Some(Commands::CloseIssues(args)) => close_issues::run(args),
+        Some(Commands::CreateSubIssue(args)) => create_sub_issue::run(args),
+        Some(Commands::LinkBlockedBy(args)) => link_blocked_by::run(args),
+        Some(Commands::CreateMilestone(args)) => create_milestone::run(args),
+        Some(Commands::CreateDependencies(args)) => create_dependencies::run(args),
         Some(Commands::AutoCloseParent(args)) => auto_close_parent::run(args),
         Some(Commands::SetTimestamp { set_args, branch }) => {
             commands::set_timestamp::run(set_args, branch);
@@ -321,6 +365,21 @@ fn main() {
         }
         Some(Commands::FormatIssuesSummary(args)) => {
             format_issues_summary::run(args);
+        }
+        Some(Commands::FinalizeCommit(args)) => {
+            finalize_commit::run(args);
+        }
+        Some(Commands::NotifySlack(args)) => {
+            notify_slack::run(args);
+        }
+        Some(Commands::WriteRule(args)) => {
+            write_rule::run(args);
+        }
+        Some(Commands::RenderPrBody(args)) => {
+            render_pr_body::run(args);
+        }
+        Some(Commands::UpdatePrBody(args)) => {
+            update_pr_body::run(args);
         }
         Some(Commands::External(_)) => {
             process::exit(127);

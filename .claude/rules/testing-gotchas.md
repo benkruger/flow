@@ -33,6 +33,19 @@ operation could follow a reference back to the real resource and
 mutate it, the fixture is unsafe. Replace indirect references with
 self-contained fakes that cannot escape the temp directory.
 
+## Rust Parallel Test Env Var Races
+
+Rust's test runner executes tests in parallel by default. Never use
+`unsafe { std::env::set_var() }` or `std::env::remove_var()` inside
+Rust tests — concurrent tests that read the same env var will race
+and produce intermittent failures. A test that passes in isolation
+(`cargo test single_test_name`) but fails in the full suite is the
+symptom. The fix is to extract a pure function that accepts the
+values as parameters (e.g. `build_config(token: &str, channel: &str)`)
+and test that function directly. The env-var-reading wrapper
+(`read_config() -> build_config(env::var(TOKEN), env::var(CHANNEL))`)
+is kept for production but not exercised by unit tests.
+
 ## Coverage Changes After Main Merge
 
 When CI coverage reports unexpected statement counts (e.g. a file
