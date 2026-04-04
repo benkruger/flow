@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -637,3 +638,48 @@ def test_what_section_multiple_closing_keywords(tmp_path):
     assert "fix #1 and #2." in body
     assert "Closes #1" in body
     assert "Closes #2" in body
+
+
+# --- _format_timings_via_subprocess edge cases ---
+
+
+def test_timings_subprocess_empty_stdout(tmp_path, monkeypatch):
+    """Returns empty string when subprocess produces no stdout."""
+    mock_result = MagicMock()
+    mock_result.stdout = ""
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *a, **kw: mock_result,
+    )
+
+    result = _mod._format_timings_via_subprocess({"branch": "test"}, tmp_path)
+    assert result == ""
+
+
+def test_timings_subprocess_error_status(tmp_path, monkeypatch):
+    """Returns empty string when subprocess returns error status."""
+    mock_result = MagicMock()
+    mock_result.stdout = json.dumps({"status": "error", "message": "bad"})
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *a, **kw: mock_result,
+    )
+
+    result = _mod._format_timings_via_subprocess({"branch": "test"}, tmp_path)
+    assert result == ""
+
+
+def test_timings_subprocess_timeout(tmp_path, monkeypatch):
+    """Returns empty string on subprocess timeout."""
+
+    def raise_timeout(*a, **kw):
+        raise subprocess.TimeoutExpired(cmd="test", timeout=30)
+
+    monkeypatch.setattr(subprocess, "run", raise_timeout)
+
+    result = _mod._format_timings_via_subprocess({"branch": "test"}, tmp_path)
+    assert result == ""

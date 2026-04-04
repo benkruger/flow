@@ -15,12 +15,15 @@ Output (JSON to stdout):
 import argparse
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from flow_utils import current_branch, extract_issue_numbers, project_root
+
+BIN_FLOW = str(Path(__file__).resolve().parent.parent / "bin" / "flow")
 
 
 def _load_sibling(name, filename):
@@ -32,7 +35,6 @@ def _load_sibling(name, filename):
     return mod
 
 
-_timings_mod = _load_sibling("format_pr_timings", "format-pr-timings.py")
 _issues_mod = _load_sibling("format_issues_summary", "format-issues-summary.py")
 _upb_mod = _load_sibling("update_pr_body", "update-pr-body.py")
 
@@ -99,6 +101,44 @@ def _format_issues_table(state):
     return None
 
 
+def _format_timings_via_subprocess(state, project_dir):
+    """Call bin/flow format-pr-timings via subprocess and return the table string."""
+    branch = state.get("branch", "unknown")
+    state_tmp = Path(project_dir) / ".flow-states" / f"{branch}-timings-input.json"
+    output_tmp = Path(project_dir) / ".flow-states" / f"{branch}-timings-output.md"
+
+    try:
+        state_tmp.parent.mkdir(parents=True, exist_ok=True)
+        state_tmp.write_text(json.dumps(state))
+
+        cmd = [
+            BIN_FLOW,
+            "format-pr-timings",
+            "--state-file",
+            str(state_tmp),
+            "--output",
+            str(output_tmp),
+            "--started-only",
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+        # Parse the last line (child process output may precede the JSON)
+        stdout = result.stdout.strip()
+        if not stdout:
+            return ""
+        data = json.loads(stdout.splitlines()[-1])
+        if data.get("status") == "ok":
+            return data.get("table", "")
+        return ""
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+        return ""
+    finally:
+        if state_tmp.exists():
+            state_tmp.unlink()
+        if output_tmp.exists():
+            output_tmp.unlink()
+
+
 def render_body(state, project_dir):
     """Render the complete PR body from state and artifact files.
 
@@ -149,8 +189,8 @@ def render_body(state, project_dir):
         sections.append(_build_details("DAG Analysis", "Decompose plugin output", content, "text"))
         section_names.append("DAG Analysis")
 
-    # 5. Phase Timings (always, started phases only)
-    timings_table = _timings_mod.format_timings_table(state, started_only=True)
+    # 5. Phase Timings (always, started phases only) — via Rust CLI
+    timings_table = _format_timings_via_subprocess(state, project_dir)
     sections.append(_build_plain_section("Phase Timings", timings_table))
     section_names.append("Phase Timings")
 
