@@ -15,9 +15,11 @@ use flow_rs::commands;
 use flow_rs::create_dependencies;
 use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
+use flow_rs::finalize_commit;
 use flow_rs::format_issues_summary;
 use flow_rs::format_status;
 use flow_rs::label_issues;
+use flow_rs::notify_slack;
 use flow_rs::render_pr_body;
 use flow_rs::update_pr_body;
 use flow_rs::git::{project_root, resolve_branch};
@@ -29,6 +31,7 @@ use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
 use flow_rs::phase_transition::{phase_complete, phase_enter};
 use flow_rs::start_setup;
 use flow_rs::utils::{detect_dev_mode, read_version};
+use flow_rs::write_rule;
 
 #[derive(Parser)]
 #[command(name = "flow-rs", version, about = "FLOW CLI (Rust)")]
@@ -225,6 +228,16 @@ enum Commands {
     /// Format issues summary for Complete phase
     FormatIssuesSummary(format_issues_summary::Args),
 
+    /// Finalize a commit: commit from message file, cleanup, pull, push.
+    #[command(name = "finalize-commit")]
+    FinalizeCommit(finalize_commit::Args),
+    /// Post a message to Slack via webhook.
+    #[command(name = "notify-slack")]
+    NotifySlack(notify_slack::Args),
+    /// Write content to a target file path.
+    #[command(name = "write-rule")]
+    WriteRule(write_rule::Args),
+
     /// Render complete PR body from state
     #[command(name = "render-pr-body")]
     RenderPrBody(render_pr_body::Args),
@@ -352,6 +365,15 @@ fn main() {
         }
         Some(Commands::FormatIssuesSummary(args)) => {
             format_issues_summary::run(args);
+        }
+        Some(Commands::FinalizeCommit(args)) => {
+            finalize_commit::run(args);
+        }
+        Some(Commands::NotifySlack(args)) => {
+            notify_slack::run(args);
+        }
+        Some(Commands::WriteRule(args)) => {
+            write_rule::run(args);
         }
         Some(Commands::RenderPrBody(args)) => {
             render_pr_body::run(args);
