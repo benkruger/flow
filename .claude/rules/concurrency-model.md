@@ -25,6 +25,14 @@ Ask: "What happens when two flows hit this at the same time?"
   operation on main (pull, commit, push) must be serialized
   via the start lock or avoided entirely.
 
+## Never Edit Source on Main
+
+Never edit source files directly on main. Every change — including
+critical bug fixes that block the current workflow — must go through
+the FLOW lifecycle on a branch. If a bug blocks flow-start with
+issue references, start the flow without issue references to get on
+a branch first, then fix the bug there.
+
 ## Common Mistakes
 
 - Assuming only one `.flow-states/*.json` file exists

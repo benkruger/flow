@@ -29,6 +29,28 @@ elif [ -x "$SCRIPT_DIR/../target/debug/flow-rs" ]; then
   RUST_BIN="$SCRIPT_DIR/../target/debug/flow-rs"
 fi
 
+# Auto-rebuild stale Rust binary
+REPO_ROOT="$SCRIPT_DIR/.."
+if [ -f "$REPO_ROOT/Cargo.toml" ] && [ -d "$REPO_ROOT/src" ]; then
+  needs_build=false
+  if [ -z "$RUST_BIN" ]; then
+    needs_build=true
+  elif find "$REPO_ROOT/src" "$REPO_ROOT/Cargo.toml" -newer "$RUST_BIN" -print -quit 2>/dev/null | grep -q .; then
+    needs_build=true
+  fi
+  if [ "$needs_build" = true ]; then
+    if cargo build --manifest-path "$REPO_ROOT/Cargo.toml" 2>/dev/null; then
+      # Re-resolve after successful build
+      RUST_BIN=""
+      if [ -x "$REPO_ROOT/target/release/flow-rs" ]; then
+        RUST_BIN="$REPO_ROOT/target/release/flow-rs"
+      elif [ -x "$REPO_ROOT/target/debug/flow-rs" ]; then
+        RUST_BIN="$REPO_ROOT/target/debug/flow-rs"
+      fi
+    fi
+  fi
+fi
+
 if [ -n "$RUST_BIN" ]; then
   set +e
   "$RUST_BIN" "$subcmd" "$@"
