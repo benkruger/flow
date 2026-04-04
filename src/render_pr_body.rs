@@ -4,11 +4,11 @@ use clap::Parser;
 use serde_json::json;
 
 use crate::format_issues_summary::format_issues_summary;
+use crate::format_pr_timings::format_timings_table;
 use crate::git::{current_branch, project_root};
 use crate::output::{json_error, json_ok};
-use crate::phase_config::{phase_names, PHASE_ORDER};
 use crate::update_pr_body::{build_details_block, build_plain_section, gh_set_body};
-use crate::utils::{extract_issue_numbers, format_time};
+use crate::utils::extract_issue_numbers;
 
 /// Resolve a file path, handling both absolute and relative paths.
 ///
@@ -25,48 +25,6 @@ fn resolve_path(path_str: Option<&str>, project_dir: &Path) -> Option<PathBuf> {
     } else {
         Some(project_dir.join(p))
     }
-}
-
-/// Build a markdown timings table from state dict.
-///
-/// If started_only is true, only phases with started_at or cumulative_seconds > 0 are shown.
-pub fn format_timings_table(state: &serde_json::Value, started_only: bool) -> String {
-    let phases = state.get("phases").and_then(|v| v.as_object());
-    let names = phase_names();
-
-    let mut lines = vec![
-        "| Phase | Duration |".to_string(),
-        "|-------|----------|".to_string(),
-    ];
-
-    let mut total_seconds: i64 = 0;
-
-    for &key in PHASE_ORDER {
-        let phase = phases.and_then(|p| p.get(key));
-        let started = phase
-            .and_then(|p| p.get("started_at"))
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty());
-        let seconds = phase
-            .and_then(|p| p.get("cumulative_seconds"))
-            .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
-            .unwrap_or(0);
-
-        if started_only && started.is_none() && seconds == 0 {
-            continue;
-        }
-
-        let name = names.get(key).map(|s| s.as_str()).unwrap_or(key);
-        total_seconds += seconds;
-        lines.push(format!("| {} | {} |", name, format_time(seconds)));
-    }
-
-    lines.push(format!(
-        "| **Total** | **{}** |",
-        format_time(total_seconds)
-    ));
-
-    lines.join("\n")
 }
 
 /// Build the ## Artifacts section from state fields.
@@ -331,6 +289,7 @@ pub fn run(args: Args) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::phase_config::PHASE_ORDER;
     use serde_json::json;
 
     /// Build a minimal test state.

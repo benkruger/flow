@@ -16,7 +16,9 @@ use flow_rs::create_dependencies;
 use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
 use flow_rs::finalize_commit;
+use flow_rs::format_complete_summary;
 use flow_rs::format_issues_summary;
+use flow_rs::format_pr_timings;
 use flow_rs::format_status;
 use flow_rs::label_issues;
 use flow_rs::notify_slack;
@@ -227,6 +229,12 @@ enum Commands {
     LabelIssues(label_issues::Args),
     /// Format issues summary for Complete phase
     FormatIssuesSummary(format_issues_summary::Args),
+    /// Format the Complete phase Done banner
+    #[command(name = "format-complete-summary")]
+    FormatCompleteSummary(format_complete_summary::Args),
+    /// Format phase timings as a markdown table for PR body
+    #[command(name = "format-pr-timings")]
+    FormatPrTimings(format_pr_timings::Args),
 
     /// Finalize a commit: commit from message file, cleanup, pull, push.
     #[command(name = "finalize-commit")]
@@ -365,6 +373,12 @@ fn main() {
         }
         Some(Commands::FormatIssuesSummary(args)) => {
             format_issues_summary::run(args);
+        }
+        Some(Commands::FormatCompleteSummary(args)) => {
+            format_complete_summary::run(args);
+        }
+        Some(Commands::FormatPrTimings(args)) => {
+            format_pr_timings::run(args);
         }
         Some(Commands::FinalizeCommit(args)) => {
             finalize_commit::run(args);
