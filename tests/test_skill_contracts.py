@@ -2076,6 +2076,15 @@ def test_code_review_has_self_invocation_check():
     assert "--continue-step" in si_match.group(1), "Self-Invocation Check must reference --continue-step flag"
 
 
+def test_code_review_has_bash_bintest_check():
+    """Code Review Step 4 must check bin/test existence via bash block, not prose."""
+    content = _read_skill("flow-code-review")
+    assert "```bash\ntest -f bin/test\n```" in content, (
+        "flow-code-review must contain 'test -f bin/test' inside a fenced bash block "
+        "(prose Glob checks are intermittently skipped by the model)"
+    )
+
+
 def test_start_step_2_acquires_lock():
     """Locked section (Steps 1–10) must acquire start lock before CI work."""
     content = _read_skill("flow-start")
