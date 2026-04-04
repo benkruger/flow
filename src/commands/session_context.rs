@@ -1,10 +1,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use chrono::DateTime;
+use chrono::Utc;
+use chrono_tz::America::Los_Angeles;
 use serde_json::{json, Value};
 
 use crate::git::{current_branch, project_root};
-use crate::utils::derive_feature;
+use crate::lock::mutate_state;
+use crate::utils::{derive_feature, detect_tty, now};
 
 /// Detect orchestrate.json state. Returns context block string.
 /// Handles completed (morning report + cleanup), all-processed (empty), and in-progress (resume).
@@ -103,6 +107,189 @@ fn detect_orchestrate(state_dir: &Path) -> String {
          </flow-orchestrate-context>\n",
         current_issue, completed_count, total
     )
+}
+
+/// Reset interrupted session timing. Accumulates elapsed seconds, clears _blocked.
+/// Operates on a mutable Value reference (for use inside mutate_state closure).
+fn reset_interrupted(state: &mut Value) {
+    let mut _changed = false;
+
+    // Clear _blocked
+    if state.get("_blocked").is_some() {
+        state.as_object_mut().unwrap().remove("_blocked");
+        _changed = true;
+    }
+
+    let cp = state
+        .get("current_phase")
+        .and_then(|v| v.as_str())
+        .unwrap_or("flow-start")
+        .to_string();
+
+    let session_started = state
+        .get("phases")
+        .and_then(|p| p.get(&cp))
+        .and_then(|p| p.get("session_started_at"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    if let Some(started_str) = session_started {
+        // Parse the timestamp and compute elapsed
+        match DateTime::parse_from_rfc3339(&started_str)
+            .or_else(|_| DateTime::parse_from_str(&started_str, "%Y-%m-%dT%H:%M:%S%:z"))
+        {
+            Ok(started_dt) => {
+                let now_dt = Utc::now().with_timezone(&Los_Angeles);
+                let elapsed = (now_dt - started_dt.with_timezone(&Los_Angeles))
+                    .num_seconds()
+                    .max(0);
+                let existing = state
+                    .get("phases")
+                    .and_then(|p| p.get(&cp))
+                    .and_then(|p| p.get("cumulative_seconds"))
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0); // null → 0
+                state["phases"][&cp]["cumulative_seconds"] = json!(existing + elapsed);
+                state["phases"][&cp]["session_started_at"] = json!(now());
+            }
+            Err(_) => {
+                state["phases"][&cp]["session_started_at"] = Value::Null;
+            }
+        }
+    }
+}
+
+/// Extract and clear _last_failure from state. Returns the failure value if present.
+fn consume_last_failure(state: &mut Value) -> Option<Value> {
+    state
+        .as_object_mut()
+        .and_then(|obj| obj.remove("_last_failure"))
+        .filter(|v| !v.is_null())
+}
+
+/// Extract and clear compact_summary and compact_cwd from state.
+fn consume_compact_data(state: &mut Value) -> (Option<String>, Option<String>) {
+    let summary = state
+        .as_object_mut()
+        .and_then(|obj| obj.remove("compact_summary"))
+        .and_then(|v| v.as_str().map(|s| s.to_string()));
+    let cwd = state
+        .as_object_mut()
+        .and_then(|obj| obj.remove("compact_cwd"))
+        .and_then(|v| v.as_str().map(|s| s.to_string()));
+    (summary, cwd)
+}
+
+/// Update session_tty for the matching branch state file.
+fn update_tty(state: &mut Value) {
+    if let Some(tty) = detect_tty() {
+        let current = state
+            .get("session_tty")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if current != tty {
+            state["session_tty"] = json!(tty);
+        }
+    }
+}
+
+/// Build failure context block from StopFailure data.
+fn build_failure_block(failure: &Option<Value>) -> String {
+    let failure = match failure {
+        Some(f) => f,
+        None => return String::new(),
+    };
+    let f_type = failure
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let f_ts = failure
+        .get("timestamp")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let f_msg = failure
+        .get("message")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if f_msg.is_empty() {
+        format!("Previous session ended due to {} at {}\n\n", f_type, f_ts)
+    } else {
+        format!(
+            "Previous session ended due to {} at {}: {}\n\n",
+            f_type, f_ts, f_msg
+        )
+    }
+}
+
+/// Build compact context block from PostCompact data.
+fn build_compact_block(summary: &Option<String>, cwd: &Option<String>, worktree: &str) -> String {
+    let mut block = String::new();
+    if let Some(s) = summary {
+        block.push_str(&format!(
+            "<compact-summary>\n\
+             The conversation was just compacted. \
+             Here is what was happening before compaction:\n\
+             {}\n\
+             </compact-summary>\n\n",
+            s
+        ));
+    }
+    if let Some(c) = cwd {
+        if c != worktree {
+            block.push_str(&format!(
+                "WARNING: CWD at compaction was {} but the active \
+                 worktree is {}. Run /flow:flow-continue to \
+                 re-enter the worktree.\n\n",
+                c, worktree
+            ));
+        }
+    }
+    block
+}
+
+/// Transient data consumed from a state file during processing.
+struct ConsumedData {
+    failure: Option<Value>,
+    compact_summary: Option<String>,
+    compact_cwd: Option<String>,
+}
+
+/// Process a single state file: reset timing, update TTY, consume transient data.
+/// All mutations happen in a single atomic mutate_state call.
+/// Returns the mutated state and consumed transient data.
+fn process_state_file(
+    path: &Path,
+    is_matching_branch: bool,
+) -> Option<(Value, ConsumedData)> {
+    use std::cell::RefCell;
+
+    let consumed = RefCell::new(ConsumedData {
+        failure: None,
+        compact_summary: None,
+        compact_cwd: None,
+    });
+
+    let result = mutate_state(path, |state| {
+        // 1. Reset interrupted timing
+        reset_interrupted(state);
+
+        // 2. TTY detection only for matching branch
+        if is_matching_branch {
+            update_tty(state);
+        }
+
+        // 3. Consume transient fields (removed from state, captured for context)
+        let mut c = consumed.borrow_mut();
+        c.failure = consume_last_failure(state);
+        let (summary, cwd) = consume_compact_data(state);
+        c.compact_summary = summary;
+        c.compact_cwd = cwd;
+    });
+
+    match result {
+        Ok(state) => Some((state, consumed.into_inner())),
+        Err(_) => None,
+    }
 }
 
 /// Scan .flow-states/ for JSON state files, excluding *-phases.json and orchestrate.json.
@@ -286,9 +473,14 @@ const NOTE_INSTRUCTION: &str = concat!(
     "immediately before replying to capture the correction.\n",
 );
 
-fn build_single_feature_context(state: &Value, dev_preamble: &str) -> String {
+fn build_single_feature_context(
+    state: &Value,
+    consumed: &ConsumedData,
+    dev_preamble: &str,
+) -> String {
     let feature = feature_name(state);
     let phase = phase_name(state);
+    let wt = worktree_path(state);
 
     let resume_instruction = if is_plan_approved(state) {
         concat!(
@@ -311,11 +503,17 @@ fn build_single_feature_context(state: &Value, dev_preamble: &str) -> String {
         .to_string()
     };
 
+    let failure_block = build_failure_block(&consumed.failure);
+    let compact_block =
+        build_compact_block(&consumed.compact_summary, &consumed.compact_cwd, &wt);
+
     format!(
         "<flow-session-context>\n\
          {dev_preamble}\
          FLOW feature in progress: \"{feature}\" — {phase}\n\
          \n\
+         {failure_block}\
+         {compact_block}\
          {resume_instruction}\
          \n\
          {guardrail}\
@@ -325,13 +523,19 @@ fn build_single_feature_context(state: &Value, dev_preamble: &str) -> String {
         dev_preamble = dev_preamble,
         feature = feature,
         phase = phase,
+        failure_block = failure_block,
+        compact_block = compact_block,
         resume_instruction = resume_instruction,
         guardrail = IMPLEMENTATION_GUARDRAIL,
         note = NOTE_INSTRUCTION,
     )
 }
 
-fn build_multi_feature_context(states: &[&Value], dev_preamble: &str) -> String {
+fn build_multi_feature_context(
+    states: &[&Value],
+    consumed_list: &[&ConsumedData],
+    dev_preamble: &str,
+) -> String {
     let mut features = Vec::new();
     for s in states {
         let f = feature_name(s);
@@ -366,12 +570,31 @@ fn build_multi_feature_context(states: &[&Value], dev_preamble: &str) -> String 
             .to_string()
     };
 
+    // Per-feature failure and compact blocks
+    let mut failure_blocks = String::new();
+    let mut compact_blocks = String::new();
+    for (i, s) in states.iter().enumerate() {
+        if let Some(c) = consumed_list.get(i) {
+            let f_block = build_failure_block(&c.failure);
+            if !f_block.is_empty() {
+                failure_blocks.push_str(&format!("[{}] {}", feature_name(s), f_block));
+            }
+            let wt = worktree_path(s);
+            let c_block = build_compact_block(&c.compact_summary, &c.compact_cwd, &wt);
+            if !c_block.is_empty() {
+                compact_blocks.push_str(&format!("[{}] {}", feature_name(s), c_block));
+            }
+        }
+    }
+
     format!(
         "<flow-session-context>\n\
          {dev_preamble}\
          Multiple FLOW features are in progress:\n\
          {feature_list}\n\
          \n\
+         {failure_blocks}\
+         {compact_blocks}\
          {resume_instruction}\
          \n\
          {guardrail}\
@@ -380,6 +603,8 @@ fn build_multi_feature_context(states: &[&Value], dev_preamble: &str) -> String 
          </flow-session-context>",
         dev_preamble = dev_preamble,
         feature_list = feature_list,
+        failure_blocks = failure_blocks,
+        compact_blocks = compact_blocks,
         resume_instruction = resume_instruction,
         guardrail = IMPLEMENTATION_GUARDRAIL,
         note = NOTE_INSTRUCTION,
@@ -408,18 +633,30 @@ pub fn run() {
     // Orchestrate detection (before feature state processing)
     let orchestrate_block = detect_orchestrate(&state_dir);
 
+    // Scan for state file paths (lightweight — just reads and parses JSON)
     let all_states = scan_state_files(&state_dir);
 
-    // Exclude orchestrate.json already done in scan_state_files.
     // Branch isolation
     let branch = current_branch();
-    let states = filter_by_branch(all_states.clone(), branch.as_deref());
+    let filtered = filter_by_branch(all_states.clone(), branch.as_deref());
+    let file_list = if filtered.is_empty() { all_states } else { filtered };
 
-    // If filter returned empty (branch has no state file), keep all
-    let states = if states.is_empty() { all_states } else { states };
-
-    if states.is_empty() && orchestrate_block.is_empty() {
+    if file_list.is_empty() && orchestrate_block.is_empty() {
         return; // No state files and no orchestrate → exit silently
+    }
+
+    // Process each state file: reset timing, update TTY, consume transients
+    let mut processed: Vec<(Value, ConsumedData)> = Vec::new();
+    for (path, _) in &file_list {
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let is_matching = branch.as_deref().map_or(false, |b| b == stem);
+        if let Some(result) = process_state_file(path, is_matching) {
+            processed.push(result);
+        }
+    }
+
+    if processed.is_empty() && orchestrate_block.is_empty() {
+        return;
     }
 
     // Dev mode detection
@@ -431,23 +668,22 @@ pub fn run() {
         String::new()
     };
 
-    let state_refs: Vec<&Value> = states.iter().map(|(_, s)| s).collect();
+    // Build feature context
+    let state_refs: Vec<&Value> = processed.iter().map(|(s, _)| s).collect();
+    let consumed_refs: Vec<&ConsumedData> = processed.iter().map(|(_, c)| c).collect();
 
-    // Build feature context (if any states exist)
     let feature_context = if state_refs.is_empty() {
         String::new()
     } else if state_refs.len() == 1 {
-        build_single_feature_context(state_refs[0], &dev_preamble)
+        build_single_feature_context(state_refs[0], &consumed_refs[0], &dev_preamble)
     } else {
-        build_multi_feature_context(&state_refs, &dev_preamble)
+        build_multi_feature_context(&state_refs, &consumed_refs, &dev_preamble)
     };
 
     // Combine orchestrate and feature context (matching Python logic)
     let context = if !orchestrate_block.is_empty() && feature_context.is_empty() {
-        // Only orchestrate context, no feature states
         orchestrate_block
     } else if !orchestrate_block.is_empty() {
-        // Both orchestrate and feature context
         format!("{}\n{}", orchestrate_block, feature_context)
     } else {
         feature_context

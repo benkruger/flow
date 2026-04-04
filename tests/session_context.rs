@@ -603,3 +603,294 @@ fn no_orchestrate_file_existing_behavior() {
     assert!(ctx.contains("Normal Feature"), "Should show feature");
     assert!(!ctx.to_lowercase().contains("orchestrat"), "Should NOT mention orchestration");
 }
+
+// --- Timing reset and transient data ---
+
+#[test]
+fn single_feature_resets_session_started_at() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-plan", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("in_progress");
+    state["phases"]["flow-plan"]["session_started_at"] = json!("2026-01-15T10:00:00+00:00");
+    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(0);
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    run_session_context(dir.path());
+
+    let updated: Value = serde_json::from_str(
+        &fs::read_to_string(state_dir.join("my-feature.json")).unwrap(),
+    )
+    .unwrap();
+    let restarted = updated["phases"]["flow-plan"]["session_started_at"]
+        .as_str()
+        .expect("session_started_at should be reset to now(), not null");
+    assert_ne!(
+        restarted, "2026-01-15T10:00:00+00:00",
+        "session_started_at should be updated"
+    );
+    assert!(
+        updated["phases"]["flow-plan"]["cumulative_seconds"]
+            .as_i64()
+            .unwrap()
+            > 0,
+        "cumulative_seconds should increase"
+    );
+}
+
+#[test]
+fn reset_interrupted_preserves_existing_cumulative_seconds() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-plan", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("in_progress");
+    state["phases"]["flow-plan"]["session_started_at"] = json!("2026-01-15T10:00:00+00:00");
+    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(600);
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    run_session_context(dir.path());
+
+    let updated: Value = serde_json::from_str(
+        &fs::read_to_string(state_dir.join("my-feature.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        updated["phases"]["flow-plan"]["cumulative_seconds"]
+            .as_i64()
+            .unwrap()
+            > 600,
+        "Should accumulate on top of existing 600"
+    );
+}
+
+#[test]
+fn reset_interrupted_null_session_started_at_no_change() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-plan", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("in_progress");
+    state["phases"]["flow-plan"]["session_started_at"] = Value::Null;
+    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(300);
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    run_session_context(dir.path());
+
+    let updated: Value = serde_json::from_str(
+        &fs::read_to_string(state_dir.join("my-feature.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        updated["phases"]["flow-plan"]["cumulative_seconds"]
+            .as_i64()
+            .unwrap(),
+        300,
+        "Null session_started_at should not change cumulative_seconds"
+    );
+}
+
+#[test]
+fn reset_interrupted_null_cumulative_seconds() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-plan", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("in_progress");
+    state["phases"]["flow-plan"]["session_started_at"] = json!("2026-01-15T10:00:00+00:00");
+    state["phases"]["flow-plan"]["cumulative_seconds"] = Value::Null;
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    run_session_context(dir.path());
+
+    let updated: Value = serde_json::from_str(
+        &fs::read_to_string(state_dir.join("my-feature.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        !updated["phases"]["flow-plan"]["cumulative_seconds"].is_null(),
+        "cumulative_seconds should not stay null"
+    );
+    assert!(
+        updated["phases"]["flow-plan"]["cumulative_seconds"]
+            .as_i64()
+            .unwrap()
+            > 0,
+        "Should accumulate from 0 (null treated as 0)"
+    );
+}
+
+#[test]
+fn reset_interrupted_clears_blocked() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-plan", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("in_progress");
+    state["phases"]["flow-plan"]["session_started_at"] = Value::Null;
+    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(300);
+    state["_blocked"] = json!("2026-01-15T10:00:00-08:00");
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    run_session_context(dir.path());
+
+    let updated: Value = serde_json::from_str(
+        &fs::read_to_string(state_dir.join("my-feature.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(updated.get("_blocked").is_none(), "_blocked should be cleared");
+    assert_eq!(
+        updated["phases"]["flow-plan"]["cumulative_seconds"]
+            .as_i64()
+            .unwrap(),
+        300,
+    );
+}
+
+#[test]
+fn last_failure_injected_into_context() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("in_progress");
+    state["_last_failure"] = json!({
+        "type": "rate_limit",
+        "message": "429 Too Many Requests",
+        "timestamp": "2026-03-28T14:23:00-07:00"
+    });
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("rate_limit"), "Should mention failure type");
+    assert!(ctx.contains("2026-03-28T14:23:00-07:00"), "Should mention timestamp");
+}
+
+#[test]
+fn last_failure_cleared_from_state_after_injection() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("in_progress");
+    state["_last_failure"] = json!({
+        "type": "auth_failure",
+        "message": "Invalid API key",
+        "timestamp": "2026-03-28T14:23:00-07:00"
+    });
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    run_session_context(dir.path());
+
+    let updated: Value = serde_json::from_str(
+        &fs::read_to_string(state_dir.join("my-feature.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(updated.get("_last_failure").is_none(), "_last_failure should be cleared");
+}
+
+#[test]
+fn compact_summary_injected_into_context() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("in_progress");
+    state["compact_summary"] = json!("User was writing tests for webhook handler.");
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("compact-summary"), "Should contain compact-summary tag");
+    assert!(
+        ctx.contains("User was writing tests for webhook handler."),
+        "Should contain the summary text"
+    );
+}
+
+#[test]
+fn compact_summary_cleared_from_state_after_injection() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("in_progress");
+    state["compact_summary"] = json!("Summary to consume.");
+    state["compact_cwd"] = json!("/some/path");
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    run_session_context(dir.path());
+
+    let updated: Value = serde_json::from_str(
+        &fs::read_to_string(state_dir.join("my-feature.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(updated.get("compact_summary").is_none(), "compact_summary should be cleared");
+    assert!(updated.get("compact_cwd").is_none(), "compact_cwd should be cleared");
+}
+
+#[test]
+fn compact_cwd_mismatch_shows_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("in_progress");
+    state["compact_cwd"] = json!("/wrong/directory");
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("/wrong/directory"), "Should mention wrong CWD");
+    assert!(ctx.contains(".worktrees/my-feature"), "Should mention worktree");
+}
