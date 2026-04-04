@@ -4,6 +4,7 @@ pub mod append_note;
 pub mod auto_close_parent;
 pub mod check_phase;
 pub mod close_issue;
+pub mod create_dependencies;
 pub mod create_milestone;
 pub mod create_sub_issue;
 pub mod close_issues;
