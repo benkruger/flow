@@ -5,6 +5,7 @@ use std::process;
 use flow_rs::add_issue;
 use flow_rs::add_notification;
 use flow_rs::append_note;
+use flow_rs::auto_close_parent;
 use flow_rs::check_phase::check_phase;
 use flow_rs::commands;
 use flow_rs::format_status;
@@ -62,6 +63,10 @@ enum Commands {
     AddIssue(add_issue::Args),
     /// Record a Slack notification in FLOW state
     AddNotification(add_notification::Args),
+
+    /// Auto-close parent issue and milestone when all children are done.
+    #[command(name = "auto-close-parent")]
+    AutoCloseParent(auto_close_parent::Args),
 
     /// Set timestamp and value fields in the FLOW state file.
     #[command(name = "set-timestamp")]
@@ -207,6 +212,7 @@ fn main() {
         Some(Commands::AppendNote(args)) => append_note::run(args),
         Some(Commands::AddIssue(args)) => add_issue::run(args),
         Some(Commands::AddNotification(args)) => add_notification::run(args),
+        Some(Commands::AutoCloseParent(args)) => auto_close_parent::run(args),
         Some(Commands::SetTimestamp { set_args, branch }) => {
             commands::set_timestamp::run(set_args, branch);
         }
