@@ -4,6 +4,7 @@ use std::process;
 
 use flow_rs::add_issue;
 use flow_rs::add_notification;
+use flow_rs::analyze_issues;
 use flow_rs::append_note;
 use flow_rs::check_phase::check_phase;
 use flow_rs::commands;
@@ -55,6 +56,10 @@ enum Commands {
         #[arg(long)]
         reason: Option<String>,
     },
+
+    /// Analyze open GitHub issues for the flow-issues skill.
+    #[command(name = "analyze-issues")]
+    AnalyzeIssues(analyze_issues::Args),
 
     /// Append a note to FLOW state
     AppendNote(append_note::Args),
@@ -204,6 +209,7 @@ fn main() {
                 reason.as_deref(),
             );
         }
+        Some(Commands::AnalyzeIssues(args)) => analyze_issues::run(args),
         Some(Commands::AppendNote(args)) => append_note::run(args),
         Some(Commands::AddIssue(args)) => add_issue::run(args),
         Some(Commands::AddNotification(args)) => add_notification::run(args),

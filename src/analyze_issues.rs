@@ -381,6 +381,175 @@ pub fn filter_issues(issues: &[Value], filter_name: &str) -> Result<Vec<Value>, 
     Ok(issues.iter().filter(|i| predicate(i)).cloned().collect())
 }
 
+/// CLI arguments for the analyze-issues subcommand.
+#[derive(clap::Args)]
+pub struct Args {
+    /// Path to pre-fetched gh issue list JSON file (for testing)
+    #[arg(long = "issues-json")]
+    pub issues_json: Option<String>,
+
+    /// Show only issues that are not blocked
+    #[arg(long, group = "filter_group")]
+    pub ready: bool,
+
+    /// Show only issues that are blocked
+    #[arg(long, group = "filter_group")]
+    pub blocked: bool,
+
+    /// Show only decomposed issues
+    #[arg(long, group = "filter_group")]
+    pub decomposed: bool,
+
+    /// Show only decomposed issues without Blocked label
+    #[arg(long = "quick-start", group = "filter_group")]
+    pub quick_start: bool,
+}
+
+/// Run the analyze-issues CLI.
+pub fn run(args: Args) {
+    let issues_json = if let Some(path) = &args.issues_json {
+        match std::fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(e) => {
+                crate::output::json_error(
+                    &format!("Could not read issues file: {}", e),
+                    &[],
+                );
+                std::process::exit(1);
+            }
+        }
+    } else {
+        // Call gh issue list
+        let mut child = match std::process::Command::new("gh")
+            .args([
+                "issue",
+                "list",
+                "--state",
+                "open",
+                "--json",
+                "number,title,labels,createdAt,body,url",
+                "--limit",
+                "100",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                crate::output::json_error(
+                    &format!("gh issue list failed: {}", e),
+                    &[],
+                );
+                std::process::exit(1);
+            }
+        };
+
+        // 30s timeout
+        let timeout = std::time::Duration::from_secs(30);
+        let start = std::time::Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) => {
+                    if start.elapsed() >= timeout {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        crate::output::json_error("gh issue list timed out", &[]);
+                        std::process::exit(1);
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Err(e) => {
+                    crate::output::json_error(
+                        &format!("gh issue list failed: {}", e),
+                        &[],
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        let output = match child.wait_with_output() {
+            Ok(o) => o,
+            Err(e) => {
+                crate::output::json_error(
+                    &format!("gh issue list failed: {}", e),
+                    &[],
+                );
+                std::process::exit(1);
+            }
+        };
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            crate::output::json_error(
+                &format!("gh issue list failed: {}", stderr.trim()),
+                &[],
+            );
+            std::process::exit(1);
+        }
+
+        String::from_utf8_lossy(&output.stdout).to_string()
+    };
+
+    let issues: Vec<Value> = match serde_json::from_str(&issues_json) {
+        Ok(v) => v,
+        Err(e) => {
+            crate::output::json_error(&format!("Invalid JSON: {}", e), &[]);
+            std::process::exit(1);
+        }
+    };
+
+    // Fetch native blocker counts via GraphQL (best-effort)
+    let blocker_counts = match crate::github::detect_repo(None) {
+        Some(repo) => {
+            let all_numbers: Vec<i64> = issues
+                .iter()
+                .filter_map(|i| i["number"].as_i64())
+                .collect();
+            fetch_blocker_counts(&repo, &all_numbers)
+        }
+        None => HashMap::new(),
+    };
+
+    let mut output = analyze_issues(&issues, &blocker_counts);
+
+    // Apply filter if requested
+    let filter_name = if args.ready {
+        Some("ready")
+    } else if args.blocked {
+        Some("blocked")
+    } else if args.decomposed {
+        Some("decomposed")
+    } else if args.quick_start {
+        Some("quick-start")
+    } else {
+        None
+    };
+
+    if let Some(name) = filter_name {
+        if let Some(issues_arr) = output["issues"].as_array() {
+            match filter_issues(issues_arr, name) {
+                Ok(filtered) => {
+                    let in_progress_count = output["in_progress"]
+                        .as_array()
+                        .map(|a| a.len())
+                        .unwrap_or(0);
+                    output["issues"] = Value::Array(filtered.clone());
+                    output["total"] = serde_json::json!(in_progress_count + filtered.len());
+                }
+                Err(e) => {
+                    crate::output::json_error(&e, &[]);
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
+    println!("{}", serde_json::to_string_pretty(&output).unwrap());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -854,5 +1023,84 @@ mod tests {
     fn filter_unknown_raises() {
         let result = filter_issues(&[], "invalid");
         assert!(result.is_err());
+    }
+
+    // --- CLI (run via Args) ---
+
+    /// Helper: write issues JSON to a temp file and run analyze via Args.
+    /// Returns (exit_code, stdout). Uses a subprocess to capture exit behavior.
+    fn run_with_file(issues_json: &str, extra_args: &[&str]) -> (i32, String) {
+        let dir = tempfile::tempdir().unwrap();
+        let json_file = dir.path().join("issues.json");
+        std::fs::write(&json_file, issues_json).unwrap();
+
+        let bin = std::env::current_exe().unwrap();
+        // Find the flow-rs binary in the same target directory
+        let target_dir = bin.parent().unwrap().parent().unwrap();
+        let flow_rs = target_dir.join("flow-rs");
+
+        let mut cmd_args = vec![
+            "analyze-issues".to_string(),
+            "--issues-json".to_string(),
+            json_file.to_str().unwrap().to_string(),
+        ];
+        for arg in extra_args {
+            cmd_args.push(arg.to_string());
+        }
+
+        let output = std::process::Command::new(&flow_rs)
+            .args(&cmd_args)
+            .output()
+            .expect("Failed to run flow-rs");
+
+        let code = output.status.code().unwrap_or(-1);
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        (code, stdout)
+    }
+
+    #[test]
+    fn cli_with_issues_json_file() {
+        let issues = serde_json::to_string(&vec![make_issue(1, "Test issue", "Check lib/foo.py", &[], &now_iso())]).unwrap();
+        let (code, stdout) = run_with_file(&issues, &[]);
+        assert_eq!(code, 0, "stdout: {}", stdout);
+        let output: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(output["status"], "ok");
+        assert_eq!(output["total"], 1);
+    }
+
+    #[test]
+    fn cli_empty_json_file() {
+        let (code, stdout) = run_with_file("[]", &[]);
+        assert_eq!(code, 0, "stdout: {}", stdout);
+        let output: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(output["total"], 0);
+    }
+
+    #[test]
+    fn cli_malformed_json() {
+        let (code, stdout) = run_with_file("{corrupt", &[]);
+        assert_eq!(code, 1);
+        let output: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(output["status"], "error");
+    }
+
+    #[test]
+    fn cli_ready_flag() {
+        let issues = serde_json::to_string(&vec![
+            make_issue(1, "Ready", "", &[], &now_iso()),
+            make_issue(2, "Blocked", "", &["Blocked"], &now_iso()),
+        ])
+        .unwrap();
+        let (code, stdout) = run_with_file(&issues, &["--ready"]);
+        assert_eq!(code, 0, "stdout: {}", stdout);
+        let output: Value = serde_json::from_str(&stdout).unwrap();
+        let numbers: Vec<i64> = output["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["number"].as_i64().unwrap())
+            .collect();
+        assert!(numbers.contains(&1));
+        assert!(!numbers.contains(&2));
     }
 }
