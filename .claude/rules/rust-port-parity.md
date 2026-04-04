@@ -97,3 +97,67 @@ a direct Python fallback (`_direct_append`) for `main()`. The
 fallback prevents infinite recursion when `bin/flow` dispatches
 to the Python script and the Rust binary is absent. Document
 which function is for which context with inline comments.
+
+## Branch-Resolution Function Parity
+
+Python `flow_utils.resolve_branch()` scans `.flow-states/` for a
+unique state file when the current git HEAD does not match any
+branch-named state file. Python `flow_utils.current_branch()`
+returns only the exact git HEAD. When porting a hook or script
+from Python, check which function the Python original called
+and use the matching Rust equivalent — `git::resolve_branch()`
+or `git::current_branch()`. Mismatching silently loses state
+updates in worktree configurations where the shell's git HEAD
+differs from the active flow's branch.
+
+Audit every Python `resolve_branch()` call during a port. Hooks
+that fire from any shell (Stop, StopFailure, PostCompact) almost
+always need `resolve_branch()` because the user's shell cwd may
+not match the active flow branch.
+
+## State Mutation Object Guard
+
+`serde_json::Value::IndexMut` for string keys panics on arrays,
+bools, numbers, and strings — only objects and null values
+(which auto-convert to empty objects) accept `state["key"] = v`.
+Every `mutate_state` closure that assigns to string keys must
+guard its mutations with `if !(state.is_object() || state.is_null())
+{ return; }` to fail-open on corrupt or unexpected state files.
+Without the guard, a state file that was manually edited to an
+array, foreign-edited, or partially written during a crash causes
+the hook to panic with exit 101 — breaking the fail-open contract
+that hooks must never disturb the user's session.
+
+## Empty-String vs Missing-Key Falsy Equivalence
+
+Python's truthy check `if x:` treats both missing keys (via
+`dict.get()` returning `None`) and empty strings (`""`) as falsy.
+Rust's `Option<String>` treats `Some("".to_string())` as a valid
+value distinct from `None`. When porting Python's `if x and y:`
+or `if x:` patterns that gate on string values, filter empty
+strings explicitly in Rust: `.and_then(|v| v.as_str())
+.filter(|s| !s.is_empty())`. Missing this filter silently changes
+semantics — a flow that blocked under Python now allows stop,
+or vice versa.
+
+## Counter Field Type Tolerance
+
+State files can outlive the code that writes them. A counter
+field like `compact_count` might have been written by an older
+Python version as an integer, a newer version as a float (after
+integer arithmetic), or a corrupted edit as a string. Rust ports
+must accept all three numeric representations when reading
+counters to avoid silently resetting to 1:
+
+```rust
+state.get("compact_count")
+    .and_then(|v| {
+        v.as_i64()
+            .or_else(|| v.as_f64().map(|f| f as i64))
+            .or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
+    })
+    .unwrap_or(0)
+```
+
+Use `as_i64()` alone only for fields where you control both the
+writer and reader in the same codebase generation.
