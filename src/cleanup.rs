@@ -781,4 +781,32 @@ mod tests {
         assert!(!ok);
         assert!(!output.is_empty());
     }
+
+    // --- Tombstone tests ---
+
+    #[test]
+    fn tombstone_no_python_cleanup() {
+        // Tombstone: removed in PR #839. Must not return.
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let path = std::path::PathBuf::from(manifest_dir)
+            .join("lib")
+            .join("cleanup.py");
+        assert!(
+            !path.exists(),
+            "lib/cleanup.py was ported to Rust and must not be re-added"
+        );
+    }
+
+    #[test]
+    fn tombstone_no_python_test_cleanup() {
+        // Tombstone: removed in PR #839. Must not return.
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let path = std::path::PathBuf::from(manifest_dir)
+            .join("tests")
+            .join("test_cleanup.py");
+        assert!(
+            !path.exists(),
+            "tests/test_cleanup.py was ported to Rust and must not be re-added"
+        );
+    }
 }
