@@ -3,6 +3,7 @@ pub mod continue_context;
 pub mod generate_id;
 pub mod init_state;
 pub mod log;
+pub mod session_context;
 pub mod set_blocked;
 pub mod set_timestamp;
 pub mod start_lock;

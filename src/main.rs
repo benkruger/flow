@@ -16,9 +16,15 @@ use flow_rs::create_dependencies;
 use flow_rs::hooks;
 use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
+use flow_rs::finalize_commit;
+use flow_rs::format_complete_summary;
 use flow_rs::format_issues_summary;
+use flow_rs::format_pr_timings;
 use flow_rs::format_status;
 use flow_rs::label_issues;
+use flow_rs::notify_slack;
+use flow_rs::render_pr_body;
+use flow_rs::update_pr_body;
 use flow_rs::git::{project_root, resolve_branch};
 use flow_rs::issue;
 use flow_rs::link_blocked_by;
@@ -28,6 +34,7 @@ use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
 use flow_rs::phase_transition::{phase_complete, phase_enter};
 use flow_rs::start_setup;
 use flow_rs::utils::{detect_dev_mode, read_version};
+use flow_rs::write_rule;
 
 #[derive(Parser)]
 #[command(name = "flow-rs", version, about = "FLOW CLI (Rust)")]
@@ -219,10 +226,38 @@ enum Commands {
         branch: Option<String>,
     },
 
+    /// Build SessionStart hook context from state files.
+    #[command(name = "session-context")]
+    SessionContext,
+
     /// Add or remove Flow In-Progress label on issues
     LabelIssues(label_issues::Args),
     /// Format issues summary for Complete phase
     FormatIssuesSummary(format_issues_summary::Args),
+    /// Format the Complete phase Done banner
+    #[command(name = "format-complete-summary")]
+    FormatCompleteSummary(format_complete_summary::Args),
+    /// Format phase timings as a markdown table for PR body
+    #[command(name = "format-pr-timings")]
+    FormatPrTimings(format_pr_timings::Args),
+
+    /// Finalize a commit: commit from message file, cleanup, pull, push.
+    #[command(name = "finalize-commit")]
+    FinalizeCommit(finalize_commit::Args),
+    /// Post a message to Slack via webhook.
+    #[command(name = "notify-slack")]
+    NotifySlack(notify_slack::Args),
+    /// Write content to a target file path.
+    #[command(name = "write-rule")]
+    WriteRule(write_rule::Args),
+
+    /// Render complete PR body from state
+    #[command(name = "render-pr-body")]
+    RenderPrBody(render_pr_body::Args),
+
+    /// Update PR body with artifacts
+    #[command(name = "update-pr-body")]
+    UpdatePrBody(update_pr_body::Args),
 
     /// Run a Claude Code hook handler.
     Hook {
@@ -357,11 +392,35 @@ fn main() {
         Some(Commands::ContinueContext { branch }) => {
             commands::continue_context::run(branch.as_deref());
         }
+        Some(Commands::SessionContext) => {
+            commands::session_context::run();
+        }
         Some(Commands::LabelIssues(args)) => {
             label_issues::run(args);
         }
         Some(Commands::FormatIssuesSummary(args)) => {
             format_issues_summary::run(args);
+        }
+        Some(Commands::FormatCompleteSummary(args)) => {
+            format_complete_summary::run(args);
+        }
+        Some(Commands::FormatPrTimings(args)) => {
+            format_pr_timings::run(args);
+        }
+        Some(Commands::FinalizeCommit(args)) => {
+            finalize_commit::run(args);
+        }
+        Some(Commands::NotifySlack(args)) => {
+            notify_slack::run(args);
+        }
+        Some(Commands::WriteRule(args)) => {
+            write_rule::run(args);
+        }
+        Some(Commands::RenderPrBody(args)) => {
+            render_pr_body::run(args);
+        }
+        Some(Commands::UpdatePrBody(args)) => {
+            update_pr_body::run(args);
         }
         Some(Commands::Hook { hook }) => match hook {
             HookCommands::StopContinue => hooks::stop_continue::run(),

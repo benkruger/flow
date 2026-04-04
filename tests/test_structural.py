@@ -161,6 +161,25 @@ def test_no_validate_ci_bash_filename():
     )
 
 
+def test_session_start_no_embedded_python():
+    """Tombstone: session-start.sh embedded Python heredoc ported to Rust in PR #853. Must not return.
+
+    The session-start hook previously embedded ~430 lines of Python in a bash
+    heredoc. That logic now lives in `bin/flow session-context` (Rust). The
+    bash shim must keep only the fast-exit guards and a single exec delegation.
+    """
+    content = (HOOKS_DIR / "session-start.sh").read_text()
+    assert "python3 -" not in content, (
+        "session-start.sh must not embed Python — ported to `bin/flow session-context` in PR #853"
+    )
+    assert "<< 'PYTHON'" not in content, (
+        "session-start.sh must not contain the Python heredoc marker — ported to Rust in PR #853"
+    )
+    assert "session-context" in content, (
+        "session-start.sh must delegate to `bin/flow session-context` (Rust subcommand)"
+    )
+
+
 def test_hooks_json_read_glob_grep_consolidated():
     """Read, Glob, Grep must share a single matcher entry in hooks.json."""
     hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
@@ -627,4 +646,66 @@ def test_no_python_test_auto_close_parent():
     """Tombstone: ported to Rust in PR #832. Must not return."""
     assert not (REPO_ROOT / "tests" / "test_auto_close_parent.py").exists(), (
         "test_auto_close_parent.py was ported to Rust — tests are in src/auto_close_parent.rs"
+    )
+
+
+# --- Tombstone: Python PR body scripts ported to Rust (PR #850) ---
+
+
+def test_no_python_render_pr_body():
+    """Tombstone: ported to Rust in PR #850. Must not return."""
+    assert not (LIB_DIR / "render-pr-body.py").exists(), (
+        "render-pr-body.py was ported to Rust — use flow-rs render-pr-body"
+    )
+
+
+def test_no_python_update_pr_body():
+    """Tombstone: ported to Rust in PR #850. Must not return."""
+    assert not (LIB_DIR / "update-pr-body.py").exists(), (
+        "update-pr-body.py was ported to Rust — use flow-rs update-pr-body"
+    )
+
+
+def test_no_python_format_pr_timings():
+    """Tombstone: ported to Rust in PR #850 and PR #851. Must not return."""
+    assert not (LIB_DIR / "format-pr-timings.py").exists(), (
+        "format-pr-timings.py was ported to Rust — use flow-rs format-pr-timings"
+    )
+
+
+def test_no_python_test_render_pr_body():
+    """Tombstone: ported to Rust in PR #850. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_render_pr_body.py").exists(), (
+        "test_render_pr_body.py was ported to Rust — tests are in src/render_pr_body.rs"
+    )
+
+
+def test_no_python_test_update_pr_body():
+    """Tombstone: ported to Rust in PR #850. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_update_pr_body.py").exists(), (
+        "test_update_pr_body.py was ported to Rust — tests are in src/update_pr_body.rs"
+    )
+
+
+def test_no_python_test_format_pr_timings():
+    """Tombstone: ported to Rust in PR #850 and PR #851. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_format_pr_timings.py").exists(), (
+        "test_format_pr_timings.py was ported to Rust — tests are in src/format_pr_timings.rs"
+    )
+
+
+# --- Tombstone: Python display formatters ported to Rust (PR #851) ---
+
+
+def test_no_python_format_complete_summary():
+    """Tombstone: ported to Rust in PR #851. Must not return."""
+    assert not (LIB_DIR / "format-complete-summary.py").exists(), (
+        "format-complete-summary.py was ported to Rust — use flow-rs format-complete-summary"
+    )
+
+
+def test_no_python_test_format_complete_summary():
+    """Tombstone: ported to Rust in PR #851. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_format_complete_summary.py").exists(), (
+        "test_format_complete_summary.py was ported to Rust — tests are in src/format_complete_summary.rs"
     )
