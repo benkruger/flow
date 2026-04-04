@@ -552,3 +552,17 @@ def test_no_python_hook_refs_in_hooks_json():
     assert "clear-blocked.py" not in hooks_content, (
         "hooks.json must not reference clear-blocked.py — use bin/flow clear-blocked"
     )
+
+
+def test_no_python_analyze_issues():
+    """Tombstone: ported to Rust in PR #834. Must not return."""
+    assert not (LIB_DIR / "analyze-issues.py").exists(), (
+        "analyze-issues.py was ported to Rust — use flow-rs analyze-issues"
+    )
+
+
+def test_no_python_test_analyze_issues():
+    """Tombstone: ported to Rust in PR #834. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_analyze_issues.py").exists(), (
+        "test_analyze_issues.py was ported to Rust — tests are in src/analyze_issues.rs"
+    )
