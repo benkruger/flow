@@ -830,7 +830,7 @@ mod tests {
 
     #[test]
     fn build_blocker_query_no_issue_dependencies_summary() {
-        /// Tombstone: replaced with blockedBy connection in PR #849. Must not return.
+        // Tombstone: replaced with blockedBy connection in PR #849. Must not return.
         let query = build_blocker_query(&[1]);
         assert!(
             !query.contains("issueDependenciesSummary"),
