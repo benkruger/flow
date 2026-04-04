@@ -546,10 +546,15 @@ CLAUDE.md. Use the Glob tool to find all `.claude/rules/*.md` files,
 then use the Read tool to read each one. Collect all content — you will
 pass it inline to the reviewer agent.
 
-Check if `bin/test` exists in the current working directory. Use the
-Glob tool to check for `bin/test` (no path parameter — Glob defaults
-to the current working directory, which is the worktree). Note the
-result — it determines whether the adversarial agent is launched.
+### Check for test runner
+
+```bash
+test -f bin/test
+```
+
+If the command succeeds (exit 0), `bin/test` exists — the adversarial
+agent should be launched. If it fails (exit non-zero), skip the
+adversarial agent.
 
 ### Launch agents in parallel
 
