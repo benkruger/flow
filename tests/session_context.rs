@@ -133,9 +133,15 @@ fn write_state(state_dir: &std::path::Path, name: &str, state: &Value) {
 }
 
 fn run_session_context(dir: &std::path::Path) -> std::process::Output {
+    // Clear FLOW_SIMULATE_BRANCH so the child resolves branch via the
+    // fixture's real git HEAD. When `bin/flow ci --simulate-branch main`
+    // sets this env var globally for the CI run, children inherit it
+    // and would see "main" instead of the test's own `switch_branch`
+    // target — breaking branch-isolation tests at the merge gate.
     flow_rs()
         .arg("session-context")
         .current_dir(dir)
+        .env_remove("FLOW_SIMULATE_BRANCH")
         .output()
         .unwrap()
 }

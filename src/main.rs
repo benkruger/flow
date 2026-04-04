@@ -13,6 +13,7 @@ use flow_rs::close_issue;
 use flow_rs::close_issues;
 use flow_rs::commands;
 use flow_rs::create_dependencies;
+use flow_rs::hooks;
 use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
 use flow_rs::finalize_commit;
@@ -258,9 +259,28 @@ enum Commands {
     #[command(name = "update-pr-body")]
     UpdatePrBody(update_pr_body::Args),
 
+    /// Run a Claude Code hook handler.
+    Hook {
+        #[command(subcommand)]
+        hook: HookCommands,
+    },
+
     #[command(external_subcommand)]
     #[allow(dead_code)]
     External(Vec<String>),
+}
+
+#[derive(Subcommand)]
+enum HookCommands {
+    /// Stop hook: continuation gating, blocked-flag management, tab color.
+    #[command(name = "stop-continue")]
+    StopContinue,
+    /// StopFailure hook: capture API error context into state file.
+    #[command(name = "stop-failure")]
+    StopFailure,
+    /// PostCompact hook: capture compaction summary into state file.
+    #[command(name = "post-compact")]
+    PostCompact,
 }
 
 fn main() {
@@ -402,6 +422,11 @@ fn main() {
         Some(Commands::UpdatePrBody(args)) => {
             update_pr_body::run(args);
         }
+        Some(Commands::Hook { hook }) => match hook {
+            HookCommands::StopContinue => hooks::stop_continue::run(),
+            HookCommands::StopFailure => hooks::stop_failure::run(),
+            HookCommands::PostCompact => hooks::post_compact::run(),
+        },
         Some(Commands::External(_)) => {
             process::exit(127);
         }
