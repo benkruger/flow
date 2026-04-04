@@ -8,6 +8,7 @@ pub mod cleanup;
 pub mod close_issue;
 pub mod close_issues;
 pub mod commands;
+pub mod hooks;
 pub mod create_dependencies;
 pub mod create_milestone;
 pub mod create_sub_issue;
