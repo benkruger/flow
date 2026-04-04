@@ -763,6 +763,37 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_step_key_order_with_pull() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path());
+        let wt_rel = setup_feature(dir.path(), "test-feature");
+
+        let steps = cleanup(dir.path(), "test-feature", &wt_rel, None, true);
+        let keys: Vec<&String> = steps.keys().collect();
+
+        assert_eq!(
+            keys,
+            vec![
+                "pr_close",
+                "worktree_tmp",
+                "worktree",
+                "remote_branch",
+                "local_branch",
+                "state_file",
+                "plan_file",
+                "dag_file",
+                "log_file",
+                "frozen_phases",
+                "ci_sentinel",
+                "timings_file",
+                "closed_issues_file",
+                "issues_file",
+                "git_pull",
+            ]
+        );
+    }
+
     // --- CLI: invalid project root ---
 
     #[test]
