@@ -40,9 +40,11 @@ def test_cli_with_repo_and_number_runs(target_project):
     but we verify the CLI accepts the arguments and returns structured JSON.
     """
     result = _run(target_project, "--number", "117", "--repo", "benkruger/flow")
-    # gh will fail (no auth), but the output should be structured JSON
-    if result.returncode != 0:
-        output = json.loads(result.stdout)
+    # gh will fail (no auth in test env), so verify structured error JSON
+    output = json.loads(result.stdout)
+    if result.returncode == 0:
+        assert output["status"] == "ok"
+    else:
         assert output["status"] == "error"
 
 
@@ -62,7 +64,7 @@ def test_cli_auto_detects_repo(target_project):
 
 
 def test_close_issue_py_removed():
-    """Tombstone: lib/close-issue.py removed in Rust port. Must not return."""
+    """Tombstone: lib/close-issue.py ported to Rust in PR #831. Must not return."""
     from conftest import LIB_DIR
 
     assert not (LIB_DIR / "close-issue.py").exists(), "lib/close-issue.py was ported to Rust and should not exist"

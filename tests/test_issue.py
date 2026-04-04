@@ -164,17 +164,17 @@ class TestBridgeModule:
         assert callable(issue_mod.fetch_database_id)
 
     def test_no_create_issue(self):
-        """Tombstone: create_issue removed in Rust port. Must not return."""
+        """Tombstone: create_issue ported to Rust in PR #831. Must not return."""
         assert not hasattr(issue_mod, "create_issue")
 
     def test_no_read_body_file(self):
-        """Tombstone: read_body_file removed in Rust port. Must not return."""
+        """Tombstone: read_body_file ported to Rust in PR #831. Must not return."""
         assert not hasattr(issue_mod, "read_body_file")
 
     def test_no_main(self):
-        """Tombstone: main() removed in Rust port. Must not return."""
+        """Tombstone: main() ported to Rust in PR #831. Must not return."""
         assert not hasattr(issue_mod, "main")
 
     def test_no_parse_issue_number(self):
-        """Tombstone: parse_issue_number removed in Rust port. Must not return."""
+        """Tombstone: parse_issue_number ported to Rust in PR #831. Must not return."""
         assert not hasattr(issue_mod, "parse_issue_number")

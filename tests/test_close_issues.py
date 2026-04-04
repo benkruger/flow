@@ -113,7 +113,7 @@ def test_cli_with_issues_attempts_close(target_project):
 
 
 def test_close_issues_py_removed():
-    """Tombstone: lib/close-issues.py removed in Rust port. Must not return."""
+    """Tombstone: lib/close-issues.py ported to Rust in PR #831. Must not return."""
     from conftest import LIB_DIR
 
     assert not (LIB_DIR / "close-issues.py").exists(), "lib/close-issues.py was ported to Rust and should not exist"
