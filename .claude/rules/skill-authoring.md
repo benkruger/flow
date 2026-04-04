@@ -63,6 +63,15 @@ Never run `git add -A` in commit Step 4. Files are already
 staged from Step 1. Running it again stages `.flow-commit-msg`
 itself, causing it to be tracked in the commit.
 
+Parent phases that invoke `/flow:flow-commit` must never write
+`.flow-commit-msg` themselves. The commit skill owns the file:
+it writes the message in Round 5 Step 1 and finalize-commit
+deletes it after the commit. When a parent phase writes the file
+before invoking the commit skill, Round 3's `git add -A` stages
+it, forcing a manual `git restore --staged .flow-commit-msg`
+after every commit to keep it out of the tracked tree. Let the
+commit skill own the message file end to end.
+
 ## Sub-Agent Safety
 
 Never use `general-purpose` sub-agents in skills — they ignore
