@@ -828,6 +828,16 @@ mod tests {
         assert!(query.contains("$repo: String!"));
     }
 
+    #[test]
+    fn build_blocker_query_no_issue_dependencies_summary() {
+        /// Tombstone: replaced with blockedBy connection in PR #849. Must not return.
+        let query = build_blocker_query(&[1]);
+        assert!(
+            !query.contains("issueDependenciesSummary"),
+            "issueDependenciesSummary was replaced with blockedBy connection"
+        );
+    }
+
     // --- parse_blocker_response ---
 
     /// Build a GraphQL response with blockedBy nodes for testing.
@@ -999,6 +1009,9 @@ mod tests {
         let issue_2 = arr.iter().find(|i| i["number"] == 2).unwrap();
         assert!(!issue_1["blocked"].as_bool().unwrap());
         assert!(issue_2["blocked"].as_bool().unwrap());
+        // Label-only blocked: native_blocked is false, blocked_by is empty
+        assert!(!issue_2["native_blocked"].as_bool().unwrap());
+        assert!(issue_2["blocked_by"].as_array().unwrap().is_empty());
     }
 
     #[test]
