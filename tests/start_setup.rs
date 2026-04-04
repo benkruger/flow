@@ -548,6 +548,151 @@ fn git_pull_failure_returns_error() {
     assert_eq!(data["step"], "git_pull");
 }
 
+// --- Branch resolution tests ---
+
+#[test]
+fn branch_flag_short_circuits_state_file_lookup() {
+    // When --branch is passed, start-setup should use it directly
+    // without needing the feature name to match any state file.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), "rails", None);
+    let stub_dir = create_default_gh_stub(&repo);
+
+    // Pre-seed a state file whose name differs from the feature name
+    let state_dir = repo.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join("my-custom-branch.json"),
+        json!({
+            "schema_version": 1,
+            "branch": "my-custom-branch",
+            "repo": null,
+            "pr_number": null,
+            "pr_url": null,
+            "prompt": "some prompt",
+            "current_phase": "flow-start",
+            "phases": {},
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let output = run_start_setup(
+        &repo,
+        "unrelated-feature-name",
+        &["--skip-pull", "--branch", "my-custom-branch"],
+        &stub_dir,
+    );
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let data = parse_output(&output);
+    assert_eq!(data["branch"], "my-custom-branch");
+    assert_eq!(data["feature"], "My Custom Branch");
+}
+
+#[test]
+fn branch_flag_with_issue_derived_name() {
+    // Simulates the real SKILL.md Step 11 flow: init-state derived
+    // "organize-settings-allow-list" from issue title, but feature name
+    // passed to start-setup is "work-on-issue-309".
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), "rails", None);
+    let stub_dir = create_default_gh_stub(&repo);
+
+    let state_dir = repo.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join("organize-settings-allow-list.json"),
+        json!({
+            "schema_version": 1,
+            "branch": "organize-settings-allow-list",
+            "repo": null,
+            "pr_number": null,
+            "pr_url": null,
+            "prompt": "work on issue #309",
+            "current_phase": "flow-start",
+            "phases": {},
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let output = run_start_setup(
+        &repo,
+        "work-on-issue-309",
+        &["--skip-pull", "--branch", "organize-settings-allow-list"],
+        &stub_dir,
+    );
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let data = parse_output(&output);
+    assert_eq!(data["branch"], "organize-settings-allow-list");
+    assert_eq!(data["feature"], "Organize Settings Allow List");
+}
+
+#[test]
+fn multiple_state_files_without_branch_flag_picks_wrong_one() {
+    // Documents the bug from issue #828: when the feature name doesn't
+    // match any state file exactly, find_state_files returns ALL files
+    // sorted alphabetically and state_files[0] picks the wrong one.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), "rails", None);
+    let stub_dir = create_default_gh_stub(&repo);
+
+    let state_dir = repo.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+
+    // State file for another flow — sorts first alphabetically
+    fs::write(
+        state_dir.join("alpha-flow.json"),
+        json!({
+            "schema_version": 1,
+            "branch": "alpha-flow",
+            "repo": null,
+            "pr_number": null,
+            "pr_url": null,
+            "prompt": "some other feature",
+            "current_phase": "flow-start",
+            "phases": {},
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    // State file for this flow — correct one, sorts second
+    fs::write(
+        state_dir.join("port-issue-close.json"),
+        json!({
+            "schema_version": 1,
+            "branch": "port-issue-close",
+            "repo": null,
+            "pr_number": null,
+            "pr_url": null,
+            "prompt": "work on issue #772",
+            "current_phase": "flow-start",
+            "phases": {},
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    // Feature name doesn't match either state file exactly
+    let output = run_start_setup(
+        &repo,
+        "work-on-issue-772",
+        &["--skip-pull"],
+        &stub_dir,
+    );
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let data = parse_output(&output);
+    // Bug: picks alpha-flow (first alphabetically) instead of port-issue-close
+    assert_eq!(
+        data["branch"], "alpha-flow",
+        "Without --branch, start-setup picks the first state file alphabetically (bug #828)"
+    );
+}
+
 // --- Tombstone tests: naming logic moved to init_state in PR #823 ---
 
 #[test]
