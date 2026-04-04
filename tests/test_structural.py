@@ -314,7 +314,7 @@ def test_plugin_json_has_no_config_hash():
 
 
 def test_hooks_json_has_post_compact_hook():
-    """hooks.json must register post-compact.py as a PostCompact hook."""
+    """hooks.json must register the post-compact hook via bin/flow hook post-compact."""
     hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
     assert "PostCompact" in hooks["hooks"], (
         "hooks.json missing PostCompact key — the compaction data capture hook must be registered"
@@ -322,21 +322,23 @@ def test_hooks_json_has_post_compact_hook():
     matchers = hooks["hooks"]["PostCompact"]
     assert len(matchers) >= 1, "PostCompact hook must have at least one entry"
     commands = [h["command"] for entry in matchers for h in entry["hooks"]]
-    assert any("post-compact.py" in cmd for cmd in commands), "PostCompact hook must reference post-compact.py"
+    assert any("hook post-compact" in cmd for cmd in commands), (
+        "PostCompact hook must reference bin/flow hook post-compact"
+    )
 
 
 def test_hooks_json_has_stop_continue_hook():
-    """hooks.json must register stop-continue.py as a Stop hook."""
+    """hooks.json must register the stop-continue hook via bin/flow hook stop-continue."""
     hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
     assert "Stop" in hooks["hooks"], "hooks.json missing Stop key — the continuation hook must be registered"
     matchers = hooks["hooks"]["Stop"]
     assert len(matchers) >= 1, "Stop hook must have at least one entry"
     commands = [h["command"] for entry in matchers for h in entry["hooks"]]
-    assert any("stop-continue.py" in cmd for cmd in commands), "Stop hook must reference stop-continue.py"
+    assert any("hook stop-continue" in cmd for cmd in commands), "Stop hook must reference bin/flow hook stop-continue"
 
 
 def test_hooks_json_has_stop_failure_hook():
-    """hooks.json must register stop-failure.py as a StopFailure hook."""
+    """hooks.json must register the stop-failure hook via bin/flow hook stop-failure."""
     hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
     assert "StopFailure" in hooks["hooks"], (
         "hooks.json missing StopFailure key — the API error capture hook must be registered"
@@ -344,7 +346,37 @@ def test_hooks_json_has_stop_failure_hook():
     matchers = hooks["hooks"]["StopFailure"]
     assert len(matchers) >= 1, "StopFailure hook must have at least one entry"
     commands = [h["command"] for entry in matchers for h in entry["hooks"]]
-    assert any("stop-failure.py" in cmd for cmd in commands), "StopFailure hook must reference stop-failure.py"
+    assert any("hook stop-failure" in cmd for cmd in commands), (
+        "StopFailure hook must reference bin/flow hook stop-failure"
+    )
+
+
+def test_hooks_python_files_removed():
+    """Tombstone: removed in PR #857. Python hook scripts must not return."""
+    lib_dir = REPO_ROOT / "lib"
+    assert not (lib_dir / "stop-continue.py").exists(), (
+        "lib/stop-continue.py was ported to Rust (src/hooks/stop_continue.rs) and must not return"
+    )
+    assert not (lib_dir / "stop-failure.py").exists(), (
+        "lib/stop-failure.py was ported to Rust (src/hooks/stop_failure.rs) and must not return"
+    )
+    assert not (lib_dir / "post-compact.py").exists(), (
+        "lib/post-compact.py was ported to Rust (src/hooks/post_compact.rs) and must not return"
+    )
+
+
+def test_hooks_json_no_python_script_references():
+    """Tombstone: removed in PR #857. hooks.json must not reference Python hook scripts."""
+    hooks_content = (HOOKS_DIR / "hooks.json").read_text()
+    assert "stop-continue.py" not in hooks_content, (
+        "hooks.json must not reference stop-continue.py — ported to Rust in PR #857"
+    )
+    assert "stop-failure.py" not in hooks_content, (
+        "hooks.json must not reference stop-failure.py — ported to Rust in PR #857"
+    )
+    assert "post-compact.py" not in hooks_content, (
+        "hooks.json must not reference post-compact.py — ported to Rust in PR #857"
+    )
 
 
 AGENTS_DIR = REPO_ROOT / "agents"
