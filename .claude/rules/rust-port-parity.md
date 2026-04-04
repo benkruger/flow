@@ -47,6 +47,16 @@ with no default parameter. When porting a Python function that uses
 `.unwrap_or()` or `.unwrap_or_else()`. Omitting the default changes
 error behavior — the Python code succeeds while the Rust code fails.
 
+## CLI Argument Group Parity
+
+Python `argparse.add_mutually_exclusive_group(required=True)` rejects
+invocations that omit all group members. Clap's `group = "action"` on
+individual args creates a mutually exclusive group but does not make it
+required — both booleans default to false and the command silently
+proceeds. Use a struct-level `ArgGroup` with `.required(true)` to match
+the Python behavior. Audit every `add_mutually_exclusive_group` call in
+the Python source for `required=True` during the port.
+
 ## Exec Target Parity
 
 When Python uses `os.execvp` to call `bin/flow` (the hybrid
@@ -63,11 +73,20 @@ then into `bin/flow`.
 When Python uses `subprocess.run(timeout=N)`, the Rust port must
 preserve the same timeout. Omitting a timeout changes failure
 behavior — the Python call raises `TimeoutExpired` after N seconds,
-but the Rust call blocks indefinitely. Use `run_cmd` with
-`Some(Duration::from_secs(N))` or implement a polling-based timeout
-via `try_wait()`. Audit every `subprocess.run` call with a `timeout`
-parameter during the port — missing timeouts are silent regressions
-that only manifest under network failures or API outages.
+but the Rust call blocks indefinitely.
+
+Never use `try_wait()` polling followed by `wait_with_output()`.
+The `try_wait()` call reaps the child process on success, and
+`wait_with_output()` internally calls `wait()` again — which
+fails with ECHILD on an already-reaped process, silently
+discarding all stdout data. Additionally, if stdout is piped
+but never drained, the child process blocks when the pipe buffer
+fills (typically 64KB), causing `try_wait()` to never return and
+the timeout to fire on every invocation with large output.
+
+The correct pattern: take `child.stdout` before the poll loop,
+drain it in a spawned thread, poll `try_wait()` for exit status,
+then join the reader thread to get the buffered output.
 
 ## Python Bridge Pattern
 
