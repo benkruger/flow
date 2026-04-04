@@ -136,6 +136,7 @@ fn run_session_context(dir: &std::path::Path) -> std::process::Output {
     flow_rs()
         .arg("session-context")
         .current_dir(dir)
+        .env_remove("FLOW_SIMULATE_BRANCH")
         .output()
         .unwrap()
 }
