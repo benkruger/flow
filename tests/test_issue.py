@@ -1,95 +1,17 @@
-"""Tests for lib/issue.py — bridge module retaining fetch_database_id.
+"""Tests for bin/flow issue CLI (Rust implementation).
 
-The main issue creation logic has been ported to Rust (src/issue.rs).
-This test file covers:
-- fetch_database_id (Python bridge function, still in lib/issue.py)
-- bin/flow issue CLI (Rust implementation, tested via subprocess)
+The Python bridge module (lib/issue.py) was deleted in PR #838 after
+create-sub-issue and link-blocked-by were ported to Rust. The Rust
+implementation lives in src/issue.rs with unit tests. This file covers
+the CLI interface via subprocess.
 """
 
-import importlib.util
 import json
 import subprocess
-from unittest.mock import patch
 
 from conftest import BIN_DIR, LIB_DIR
 
-spec = importlib.util.spec_from_file_location("issue", LIB_DIR / "issue.py")
-issue_mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(issue_mod)
-
 BIN_FLOW = str(BIN_DIR / "flow")
-
-
-# --- fetch_database_id (Python bridge) ---
-
-
-class TestFetchDatabaseId:
-    """Tests for fetch_database_id — REST API database ID lookup."""
-
-    def test_happy_path_returns_integer_id(self):
-        fake_result = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout="123456789\n",
-            stderr="",
-        )
-        with patch.object(issue_mod.subprocess, "run", return_value=fake_result) as mock_run:
-            db_id, error = issue_mod.fetch_database_id("owner/repo", 42)
-
-        assert db_id == 123456789
-        assert error is None
-        mock_run.assert_called_once_with(
-            ["gh", "api", "repos/owner/repo/issues/42", "--jq", ".id"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-
-    def test_gh_api_failure_returns_error(self):
-        fake_result = subprocess.CompletedProcess(
-            args=[],
-            returncode=1,
-            stdout="",
-            stderr="Not Found",
-        )
-        with patch.object(issue_mod.subprocess, "run", return_value=fake_result):
-            db_id, error = issue_mod.fetch_database_id("owner/repo", 999)
-
-        assert db_id is None
-        assert "Not Found" in error
-
-    def test_timeout_returns_error(self):
-        with patch.object(issue_mod.subprocess, "run", side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30)):
-            db_id, error = issue_mod.fetch_database_id("owner/repo", 42)
-
-        assert db_id is None
-        assert "timed out" in error.lower()
-
-    def test_invalid_output_returns_error(self):
-        fake_result = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout="not_a_number\n",
-            stderr="",
-        )
-        with patch.object(issue_mod.subprocess, "run", return_value=fake_result):
-            db_id, error = issue_mod.fetch_database_id("owner/repo", 42)
-
-        assert db_id is None
-        assert "Invalid" in error
-
-    def test_empty_output_returns_error(self):
-        fake_result = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout="\n",
-            stderr="",
-        )
-        with patch.object(issue_mod.subprocess, "run", return_value=fake_result):
-            db_id, error = issue_mod.fetch_database_id("owner/repo", 42)
-
-        assert db_id is None
-        assert error is not None
 
 
 # --- bin/flow issue CLI (Rust) ---
@@ -152,29 +74,28 @@ class TestIssueCli:
         assert result.returncode != 0
 
 
-# --- Bridge module structure ---
+# --- Tombstone tests ---
 
 
-class TestBridgeModule:
-    """Tests for the bridge module structure after Rust port."""
+class TestTombstones:
+    """Tombstone tests for Python files removed in PR #838."""
 
-    def test_exports_fetch_database_id(self):
-        """Bridge module exports fetch_database_id."""
-        assert hasattr(issue_mod, "fetch_database_id")
-        assert callable(issue_mod.fetch_database_id)
+    def test_no_python_issue_bridge(self):
+        """Tombstone: lib/issue.py bridge removed in PR #838. Must not return."""
+        assert not (LIB_DIR / "issue.py").exists(), "lib/issue.py was removed in PR #838"
 
-    def test_no_create_issue(self):
-        """Tombstone: create_issue ported to Rust in PR #831. Must not return."""
-        assert not hasattr(issue_mod, "create_issue")
+    def test_no_python_create_sub_issue(self):
+        """Tombstone: lib/create-sub-issue.py removed in PR #838. Must not return."""
+        assert not (LIB_DIR / "create-sub-issue.py").exists(), "lib/create-sub-issue.py was removed in PR #838"
 
-    def test_no_read_body_file(self):
-        """Tombstone: read_body_file ported to Rust in PR #831. Must not return."""
-        assert not hasattr(issue_mod, "read_body_file")
+    def test_no_python_link_blocked_by(self):
+        """Tombstone: lib/link-blocked-by.py removed in PR #838. Must not return."""
+        assert not (LIB_DIR / "link-blocked-by.py").exists(), "lib/link-blocked-by.py was removed in PR #838"
 
-    def test_no_main(self):
-        """Tombstone: main() ported to Rust in PR #831. Must not return."""
-        assert not hasattr(issue_mod, "main")
+    def test_no_python_create_milestone(self):
+        """Tombstone: lib/create-milestone.py removed in PR #838. Must not return."""
+        assert not (LIB_DIR / "create-milestone.py").exists(), "lib/create-milestone.py was removed in PR #838"
 
-    def test_no_parse_issue_number(self):
-        """Tombstone: parse_issue_number ported to Rust in PR #831. Must not return."""
-        assert not hasattr(issue_mod, "parse_issue_number")
+    def test_no_python_create_dependencies(self):
+        """Tombstone: lib/create-dependencies.py removed in PR #838. Must not return."""
+        assert not (LIB_DIR / "create-dependencies.py").exists(), "lib/create-dependencies.py was removed in PR #838"

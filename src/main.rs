@@ -7,10 +7,14 @@ use flow_rs::add_notification;
 use flow_rs::analyze_issues;
 use flow_rs::append_note;
 use flow_rs::auto_close_parent;
+use flow_rs::cleanup;
 use flow_rs::check_phase::check_phase;
 use flow_rs::close_issue;
 use flow_rs::close_issues;
 use flow_rs::commands;
+use flow_rs::create_dependencies;
+use flow_rs::create_milestone;
+use flow_rs::create_sub_issue;
 use flow_rs::format_issues_summary;
 use flow_rs::format_status;
 use flow_rs::label_issues;
@@ -18,6 +22,7 @@ use flow_rs::render_pr_body;
 use flow_rs::update_pr_body;
 use flow_rs::git::{project_root, resolve_branch};
 use flow_rs::issue;
+use flow_rs::link_blocked_by;
 use flow_rs::lock::mutate_state;
 use flow_rs::output::json_error;
 use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
@@ -76,6 +81,9 @@ enum Commands {
     /// Record a Slack notification in FLOW state
     AddNotification(add_notification::Args),
 
+    /// FLOW cleanup orchestrator (worktree, branches, state files).
+    Cleanup(cleanup::Args),
+
     /// Create a GitHub issue via gh CLI with body-file.
     Issue(issue::Args),
     /// Close a single GitHub issue via gh CLI.
@@ -84,6 +92,19 @@ enum Commands {
     /// Close issues referenced in the FLOW start prompt.
     #[command(name = "close-issues")]
     CloseIssues(close_issues::Args),
+
+    /// Create a GitHub sub-issue relationship.
+    #[command(name = "create-sub-issue")]
+    CreateSubIssue(create_sub_issue::Args),
+    /// Create a GitHub blocked-by dependency.
+    #[command(name = "link-blocked-by")]
+    LinkBlockedBy(link_blocked_by::Args),
+    /// Create a GitHub milestone.
+    #[command(name = "create-milestone")]
+    CreateMilestone(create_milestone::Args),
+    /// Copy framework dependency template to bin/dependencies.
+    #[command(name = "create-dependencies")]
+    CreateDependencies(create_dependencies::Args),
 
     /// Auto-close parent issue and milestone when all children are done.
     #[command(name = "auto-close-parent")]
@@ -245,11 +266,16 @@ fn main() {
         }
         Some(Commands::AnalyzeIssues(args)) => analyze_issues::run(args),
         Some(Commands::AppendNote(args)) => append_note::run(args),
+        Some(Commands::Cleanup(args)) => cleanup::run(args),
         Some(Commands::AddIssue(args)) => add_issue::run(args),
         Some(Commands::AddNotification(args)) => add_notification::run(args),
         Some(Commands::Issue(args)) => issue::run(args),
         Some(Commands::CloseIssue(args)) => close_issue::run(args),
         Some(Commands::CloseIssues(args)) => close_issues::run(args),
+        Some(Commands::CreateSubIssue(args)) => create_sub_issue::run(args),
+        Some(Commands::LinkBlockedBy(args)) => link_blocked_by::run(args),
+        Some(Commands::CreateMilestone(args)) => create_milestone::run(args),
+        Some(Commands::CreateDependencies(args)) => create_dependencies::run(args),
         Some(Commands::AutoCloseParent(args)) => auto_close_parent::run(args),
         Some(Commands::SetTimestamp { set_args, branch }) => {
             commands::set_timestamp::run(set_args, branch);
