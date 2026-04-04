@@ -1104,4 +1104,21 @@ mod tests {
         assert!(numbers.contains(&1));
         assert!(!numbers.contains(&2));
     }
+
+    #[test]
+    fn cli_missing_file() {
+        let bin = std::env::current_exe().unwrap();
+        let target_dir = bin.parent().unwrap().parent().unwrap();
+        let flow_rs = target_dir.join("flow-rs");
+
+        let output = std::process::Command::new(&flow_rs)
+            .args(["analyze-issues", "--issues-json", "/nonexistent/file.json"])
+            .output()
+            .expect("Failed to run flow-rs");
+
+        assert_eq!(output.status.code().unwrap_or(-1), 1);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let parsed: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(parsed["status"], "error");
+    }
 }
