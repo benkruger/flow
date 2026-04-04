@@ -94,3 +94,15 @@ the fixture data cannot detect transformation mismatches at the call
 site. Include at least one test with realistic unsanitized input
 (spaces, capitals, special characters) to verify the caller applies
 the same normalization the comparison expects.
+
+## Subprocess-Repopulated Directories
+
+When testing a subprocess that cleans files in a directory, and that
+same subprocess later runs code which repopulates the directory
+(e.g. `bin/ci` cleans `tests/__pycache__/` then runs pytest which
+recreates it during collection), assert on specific target files
+rather than directory existence. Asserting `not dir.exists()` will
+fail because the subprocess recreated the directory after the
+cleanup step; asserting `not stale_file.exists()` correctly verifies
+the cleanup happened because the recreated directory contains only
+fresh files.

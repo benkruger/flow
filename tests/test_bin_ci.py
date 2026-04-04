@@ -169,3 +169,38 @@ def test_pycache_cleanup_preserves_venv(ci_project):
     result = _run(ci_project)
     assert result.returncode == 0
     assert venv_marker.exists(), ".venv __pycache__ must be preserved"
+
+
+def test_pycache_cleanup_preserves_venv_from_subdirectory(ci_project):
+    """bin/ci preserves .venv/__pycache__ even when invoked from a subdirectory.
+
+    The find command must use $REPO_ROOT (absolute) rather than '.' (CWD-
+    relative), otherwise running bin/ci from a subdirectory would cause
+    the prune to miss the project-root .venv and rm its __pycache__.
+    """
+    venv_pycache = ci_project / ".venv" / "lib" / "python3" / "__pycache__"
+    venv_pycache.mkdir(parents=True)
+    venv_marker = venv_pycache / "venv_pkg.cpython-314.pyc"
+    venv_marker.write_bytes(b"\x00")
+
+    (ci_project / "tests" / "test_pass.py").write_text("def test_ok():\n    assert True\n")
+
+    # Invoke bin/ci with cwd set to the lib subdirectory — relative '.' in
+    # the find command would resolve to ci_project/lib, not ci_project.
+    env = {k: v for k, v in os.environ.items() if k != "COVERAGE_PROCESS_START"}
+    result = subprocess.run(
+        ["bash", str(ci_project / "bin" / "ci")],
+        capture_output=True,
+        text=True,
+        cwd=str(ci_project / "lib"),
+        env=env,
+    )
+    # bin/ci may fail for other reasons from a subdirectory (pymarkdown/ruff
+    # use relative paths too). The assertion here is specifically that the
+    # .venv __pycache__ survives whatever bin/ci does — the find must never
+    # delete it regardless of CWD.
+    assert venv_marker.exists(), (
+        ".venv __pycache__ was deleted when bin/ci ran from a subdirectory. "
+        "find must use absolute $REPO_ROOT for both the search root and "
+        f"the prune path. bin/ci stderr: {result.stderr}"
+    )
