@@ -536,8 +536,9 @@ pub fn run(args: Args) {
                         .as_array()
                         .map(|a| a.len())
                         .unwrap_or(0);
-                    output["issues"] = Value::Array(filtered.clone());
-                    output["total"] = serde_json::json!(in_progress_count + filtered.len());
+                    let count = in_progress_count + filtered.len();
+                    output["issues"] = Value::Array(filtered);
+                    output["total"] = serde_json::json!(count);
                 }
                 Err(e) => {
                     crate::output::json_error(&e, &[]);
