@@ -187,7 +187,7 @@ def cargo_project(hybrid_project):
     mock_cargo = mock_bin_dir / "cargo"
     mock_cargo.write_text(
         "#!/usr/bin/env bash\n"
-        'MANIFEST_DIR="$(dirname "$4")"\n'
+        'MANIFEST_DIR="$(dirname "$3")"\n'
         'mkdir -p "$MANIFEST_DIR/target/debug"\n'
         "cat > \"$MANIFEST_DIR/target/debug/flow-rs\" << 'SCRIPT'\n"
         "#!/usr/bin/env bash\n"
