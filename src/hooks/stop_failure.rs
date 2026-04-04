@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
-use crate::git::{current_branch, project_root};
+use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
 use crate::utils::now;
 
@@ -30,6 +30,12 @@ pub fn capture_failure_data(hook_input: &Value, state_path: &Path) {
     let timestamp = now();
 
     let _ = mutate_state(state_path, |state| {
+        // Guard: state must be an object (or Null, which auto-converts)
+        // for string-key mutations. Arrays/bools/numbers/strings would
+        // panic on `state["_last_failure"] = v`. Fail-open.
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
         state["_last_failure"] = json!({
             "type": error_type,
             "message": error_message,
@@ -39,6 +45,12 @@ pub fn capture_failure_data(hook_input: &Value, state_path: &Path) {
 }
 
 /// Run the stop-failure hook (entry point).
+///
+/// Uses `resolve_branch` (not `current_branch`) so the hook finds the
+/// active flow's state file even when Claude Code runs from a shell
+/// whose git HEAD points to a different branch than the active flow —
+/// the common worktree case where the shell sits on main while a flow
+/// runs in a feature worktree. Matches the original Python behavior.
 pub fn run() {
     let mut stdin_buf = String::new();
     let _ = std::io::stdin().read_to_string(&mut stdin_buf);
@@ -48,12 +60,13 @@ pub fn run() {
         Err(_) => return,
     };
 
-    let branch = match current_branch() {
+    let root = project_root();
+    let (branch, _candidates) = resolve_branch(None, &root);
+    let branch = match branch {
         Some(b) => b,
         None => return,
     };
 
-    let root = project_root();
     let state_path = root.join(".flow-states").join(format!("{}.json", branch));
 
     if !state_path.exists() {
@@ -184,5 +197,22 @@ mod tests {
         let input = json!({"error_type": "rate_limit", "error_message": "429"});
         // Should not panic
         capture_failure_data(&input, &path);
+    }
+
+    #[test]
+    fn test_array_state_file_does_not_crash() {
+        // An array-shaped state file must not panic. The
+        // `is_object() || is_null()` guard catches it before the
+        // mutation attempt that would otherwise panic in serde_json's
+        // IndexMut on `value["_last_failure"] = v`.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, r#"["not", "an", "object"]"#).unwrap();
+
+        let input = json!({"error_type": "rate_limit", "error_message": "429"});
+        capture_failure_data(&input, &path);
+
+        let after: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(after.is_array());
     }
 }

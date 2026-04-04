@@ -42,7 +42,30 @@ fn log_diag(root: Option<&Path>, branch: Option<&str>, message: &str) {
     }
 }
 
+/// Derive `(root, branch)` from a state file path of the form
+/// `<root>/.flow-states/<branch>.json`, so diagnostic logging can
+/// locate `<root>/.flow-states/<branch>.log` without callers having
+/// to pass both pieces separately.
+///
+/// Returns `(None, None)` when the path shape does not match
+/// (e.g., test fixtures that place the state file outside a
+/// `.flow-states/` directory). Callers should pass the resulting
+/// options to `log_diag` directly — when either is None, the file
+/// write is skipped and only stderr is used.
+fn derive_root_branch(state_path: &Path) -> (Option<&Path>, Option<&str>) {
+    let branch = state_path.file_stem().and_then(|s| s.to_str());
+    let root = state_path
+        .parent()
+        .and_then(|p| if p.file_name().and_then(|n| n.to_str()) == Some(".flow-states") { p.parent() } else { None });
+    (root, branch)
+}
+
 /// Update `session_id` and `transcript_path` in the active state file.
+///
+/// Fail-open with diagnostic: on any `mutate_state` error (corrupt
+/// JSON, locked file, I/O failure) the error is logged via
+/// `log_diag` to stderr and the branch log for post-mortem
+/// visibility, matching the Python `capture_session_id` contract.
 pub fn capture_session_id(hook_input: &Value, state_path: &Path) {
     let session_id = match hook_input.get("session_id").and_then(|v| v.as_str()) {
         Some(s) if !s.is_empty() => s.to_string(),
@@ -58,7 +81,12 @@ pub fn capture_session_id(hook_input: &Value, state_path: &Path) {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let _ = mutate_state(state_path, |state| {
+    if let Err(e) = mutate_state(state_path, |state| {
+        // Guard: state must be an object (or Null, which auto-converts)
+        // for string-key mutations. Fail-open on other shapes.
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
         if state.get("session_id").and_then(|v| v.as_str()) == Some(session_id.as_str()) {
             return;
         }
@@ -66,7 +94,10 @@ pub fn capture_session_id(hook_input: &Value, state_path: &Path) {
         if let Some(tp) = &transcript_path {
             state["transcript_path"] = Value::String(tp.clone());
         }
-    });
+    }) {
+        let (root, branch) = derive_root_branch(state_path);
+        log_diag(root, branch, &format!("capture_session_id error: {}", e));
+    }
 }
 
 /// Check if `_continue_pending` flag is set in the active state file.
@@ -86,9 +117,15 @@ pub fn check_continue(hook_input: &Value, state_path: &Path) -> ContinueResult {
         };
     }
 
+    // Filter out empty session_id strings from the hook input: the
+    // Python original used `hook_input.get("session_id")` which is
+    // falsy on both missing keys AND empty strings, so the downstream
+    // `if state_sid and hook_sid` check skipped the mismatch logic in
+    // both cases. Preserve that backward-compat behavior.
     let hook_sid = hook_input
         .get("session_id")
         .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
     // Use RefCell-like pattern with local mutable state
@@ -98,6 +135,11 @@ pub fn check_continue(hook_input: &Value, state_path: &Path) -> ContinueResult {
     let mut decision: Option<String> = None;
 
     let _ = mutate_state(state_path, |state| {
+        // Guard: state must be an object (or Null, which auto-converts)
+        // for string-key mutations to succeed without panicking.
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
         let pending = state
             .get("_continue_pending")
             .and_then(|v| v.as_str())
@@ -110,6 +152,7 @@ pub fn check_continue(hook_input: &Value, state_path: &Path) -> ContinueResult {
         let state_sid = state
             .get("session_id")
             .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
 
         if let (Some(ssid), Some(hsid)) = (state_sid.as_ref(), hook_sid.as_ref()) {
@@ -139,7 +182,8 @@ pub fn check_continue(hook_input: &Value, state_path: &Path) -> ContinueResult {
     });
 
     if let Some(msg) = decision {
-        log_diag(None, None, &msg);
+        let (root, branch) = derive_root_branch(state_path);
+        log_diag(root, branch, &msg);
     }
 
     ContinueResult {
@@ -632,5 +676,194 @@ mod tests {
         let out = format_block_output("", None);
         assert_eq!(out["decision"], "block");
         assert!(out["reason"].as_str().unwrap().contains("child skill ''"));
+    }
+
+    // --- derive_root_branch ---
+
+    #[test]
+    fn test_derive_root_branch_canonical_layout() {
+        // Given state at <root>/.flow-states/<branch>.json, the
+        // helper recovers both root and branch so diagnostic logs
+        // land at <root>/.flow-states/<branch>.log.
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("my-feature.json");
+        fs::write(&state_path, r#"{}"#).unwrap();
+
+        let (root, branch) = derive_root_branch(&state_path);
+        assert_eq!(root, Some(dir.path()));
+        assert_eq!(branch, Some("my-feature"));
+    }
+
+    #[test]
+    fn test_derive_root_branch_returns_none_when_not_in_flow_states() {
+        // When the state file is not inside a `.flow-states/`
+        // directory (common in unit-test fixtures that use a flat
+        // tempdir), the helper returns None for root so log_diag
+        // skips the file write instead of polluting a parent dir.
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join("state.json");
+        fs::write(&state_path, r#"{}"#).unwrap();
+
+        let (root, _) = derive_root_branch(&state_path);
+        assert_eq!(root, None);
+    }
+
+    // --- check_continue log file writes ---
+    // Closes the coverage gap flagged by the reviewer agent: the
+    // `check_continue` log_diag calls were previously passing
+    // (None, None) and silently dropping the log file write. These
+    // tests use the canonical `.flow-states/<branch>.json` layout
+    // so `derive_root_branch` can recover the log path.
+
+    #[test]
+    fn test_check_continue_block_writes_log_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("test-branch.json");
+        let initial = json!({
+            "_continue_pending": "commit",
+            "_continue_context": "Next step"
+        });
+        fs::write(&state_path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_continue(&json!({}), &state_path);
+        assert!(result.should_block);
+
+        let log_path = state_dir.join("test-branch.log");
+        assert!(log_path.exists(), "log file must be written after blocking decision");
+        let log_content = fs::read_to_string(&log_path).unwrap();
+        assert!(log_content.contains("[stop-continue]"));
+        assert!(log_content.contains("blocking: pending=commit"));
+    }
+
+    #[test]
+    fn test_check_continue_session_mismatch_writes_log_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("test-branch.json");
+        let initial = json!({
+            "_continue_pending": "commit",
+            "_continue_context": "stale",
+            "session_id": "old-session"
+        });
+        fs::write(&state_path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_continue(&json!({"session_id": "new-session"}), &state_path);
+        assert!(!result.should_block);
+
+        let log_path = state_dir.join("test-branch.log");
+        assert!(log_path.exists());
+        let log_content = fs::read_to_string(&log_path).unwrap();
+        assert!(log_content.contains("session mismatch"));
+        assert!(log_content.contains("cleared pending=commit"));
+    }
+
+    #[test]
+    fn test_check_continue_no_pending_does_not_write_log_file() {
+        // When there is no decision to make (pending empty), no log
+        // entry should be written — only decisions are logged.
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("test-branch.json");
+        fs::write(&state_path, r#"{"branch": "test"}"#).unwrap();
+
+        check_continue(&json!({}), &state_path);
+
+        let log_path = state_dir.join("test-branch.log");
+        assert!(!log_path.exists(), "no log entry expected when no decision is made");
+    }
+
+    // --- capture_session_id error logging ---
+    // Closes the coverage gap flagged by the reviewer agent: the
+    // Python `capture_session_id` logged on mutate_state errors but
+    // the Rust port was silently dropping them.
+
+    #[test]
+    fn test_capture_session_id_corrupt_state_logs_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("test-branch.json");
+        // Corrupt JSON triggers mutate_state's Json error path.
+        fs::write(&state_path, "{bad json").unwrap();
+
+        capture_session_id(&json!({"session_id": "abc123"}), &state_path);
+
+        // Log file should exist with the error diagnostic.
+        let log_path = state_dir.join("test-branch.log");
+        assert!(log_path.exists(), "corrupt-state errors must be logged");
+        let log_content = fs::read_to_string(&log_path).unwrap();
+        assert!(log_content.contains("capture_session_id error"));
+    }
+
+    // --- Adversarial findings: array state and empty hook session_id ---
+
+    #[test]
+    fn test_check_continue_array_state_file_does_not_crash() {
+        // An array-shaped state file must not panic when the Stop
+        // hook fires. The `is_object() || is_null()` guard in the
+        // transform closure catches it before any `state["key"] = v`
+        // would panic in serde_json's IndexMut.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, r#"["not", "an", "object"]"#).unwrap();
+
+        let result = check_continue(&json!({}), &path);
+        assert!(!result.should_block);
+    }
+
+    #[test]
+    fn test_capture_session_id_array_state_file_does_not_crash() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, r#"["not", "an", "object"]"#).unwrap();
+
+        capture_session_id(&json!({"session_id": "abc"}), &path);
+
+        let after: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(after.is_array());
+    }
+
+    #[test]
+    fn test_check_continue_empty_hook_session_id_still_blocks() {
+        // When the hook sends session_id="", it must be treated as
+        // "no session_id" (Python's falsy semantics), not as a
+        // session mismatch. A valid _continue_pending flag should
+        // still fire.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({
+            "session_id": "existing-session",
+            "_continue_pending": "flow-commit",
+            "_continue_context": "Next: run tests"
+        });
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_continue(&json!({"session_id": ""}), &path);
+        assert!(result.should_block, "empty hook session_id must not trigger session mismatch");
+        assert_eq!(result.skill.unwrap(), "flow-commit");
+        assert_eq!(result.context.unwrap(), "Next: run tests");
+    }
+
+    #[test]
+    fn test_check_continue_empty_state_session_id_still_blocks() {
+        // Symmetric: state session_id="" should also be treated as
+        // absent, not as a different session from the hook's sid.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({
+            "session_id": "",
+            "_continue_pending": "flow-commit",
+            "_continue_context": "ctx"
+        });
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_continue(&json!({"session_id": "abc"}), &path);
+        assert!(result.should_block);
     }
 }

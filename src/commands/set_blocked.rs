@@ -13,6 +13,12 @@ pub fn set_blocked(state_path: &Path) {
         return;
     }
     let _ = mutate_state(state_path, |state| {
+        // Guard: state must be an object (or Null, which auto-converts)
+        // for string-key mutations. Arrays and primitives would panic.
+        // Fail-open on any non-writable shape.
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
         state["_blocked"] = Value::String(now());
     });
 }

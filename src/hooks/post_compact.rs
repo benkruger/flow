@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::git::{current_branch, project_root};
+use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
 
 /// Capture compaction data into the state file.
@@ -17,6 +17,14 @@ pub fn capture_compact_data(hook_input: &Value, state_path: &Path) {
     }
 
     let _ = mutate_state(state_path, |state| {
+        // Guard: state must be an object (or Null, which serde_json's
+        // IndexMut auto-converts to an empty object) for string-key
+        // mutations to succeed. Arrays, bools, numbers, and top-level
+        // strings would panic on `state["key"] = v`. Fail-open on
+        // any non-writable shape.
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
         if let Some(summary) = hook_input.get("compact_summary").and_then(|v| v.as_str()) {
             if !summary.is_empty() {
                 state["compact_summary"] = Value::String(summary.to_string());
@@ -25,15 +33,29 @@ pub fn capture_compact_data(hook_input: &Value, state_path: &Path) {
         if let Some(cwd) = hook_input.get("cwd").and_then(|v| v.as_str()) {
             state["compact_cwd"] = Value::String(cwd.to_string());
         }
+        // Accept compact_count written by any prior version: integers,
+        // floats (3.0 from older Python writes), or strings ("3" from
+        // corrupted/foreign edits). All resolve to the same canonical
+        // i64 increment instead of silently resetting to 1.
         let count = state
             .get("compact_count")
-            .and_then(|v| v.as_i64())
+            .and_then(|v| {
+                v.as_i64()
+                    .or_else(|| v.as_f64().map(|f| f as i64))
+                    .or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
+            })
             .unwrap_or(0);
         state["compact_count"] = Value::Number((count + 1).into());
     });
 }
 
 /// Run the post-compact hook (entry point).
+///
+/// Uses `resolve_branch` (not `current_branch`) so the hook finds the
+/// active flow's state file even when Claude Code runs from a shell
+/// whose git HEAD points to a different branch than the active flow —
+/// the common worktree case where the shell sits on main while a flow
+/// runs in a feature worktree. Matches the original Python behavior.
 pub fn run() {
     let mut stdin_buf = String::new();
     let _ = std::io::stdin().read_to_string(&mut stdin_buf);
@@ -43,12 +65,13 @@ pub fn run() {
         Err(_) => return,
     };
 
-    let branch = match current_branch() {
+    let root = project_root();
+    let (branch, _candidates) = resolve_branch(None, &root);
+    let branch = match branch {
         Some(b) => b,
         None => return,
     };
 
-    let root = project_root();
     let state_path = root.join(".flow-states").join(format!("{}.json", branch));
 
     if !state_path.exists() {
@@ -195,5 +218,71 @@ mod tests {
         let input = json!({"compact_summary": "Summary."});
         // Should not panic
         capture_compact_data(&input, &path);
+    }
+
+    // --- Adversarial findings: state file shape and compact_count type ---
+
+    #[test]
+    fn test_array_state_file_does_not_crash() {
+        // An array-shaped state file (corrupted or foreign edit) must
+        // not panic. serde_json's IndexMut panics on `value["key"] = v`
+        // when value is an Array — the `is_object() || is_null()` guard
+        // catches it before the mutation.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, r#"["not", "an", "object"]"#).unwrap();
+
+        let input = json!({"compact_summary": "Testing array state."});
+        capture_compact_data(&input, &path);
+
+        // State file unchanged — no mutation happened.
+        let after: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(after.is_array());
+    }
+
+    #[test]
+    fn test_compact_count_string_value_increments() {
+        // Older Python writes or foreign edits may have compact_count
+        // as a string "3". Accept it and increment to 4 instead of
+        // silently resetting to 1.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({"compact_count": "3"});
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        capture_compact_data(&json!({"compact_summary": "Test"}), &path);
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(state["compact_count"], 4);
+    }
+
+    #[test]
+    fn test_compact_count_float_value_increments() {
+        // Floats like 3.0 must increment to 4, not reset to 1.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({"compact_count": 3.0});
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        capture_compact_data(&json!({"compact_summary": "Test"}), &path);
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(state["compact_count"], 4);
+    }
+
+    #[test]
+    fn test_compact_count_unparseable_string_defaults_to_one() {
+        // A string that cannot be parsed as an integer falls through
+        // to the default 0, producing a fresh count of 1. This is
+        // still better than panicking.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({"compact_count": "not-a-number"});
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        capture_compact_data(&json!({"compact_summary": "Test"}), &path);
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(state["compact_count"], 1);
     }
 }
