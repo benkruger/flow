@@ -24,11 +24,11 @@ Examples:
 | `there is a bug where flow-start treats arguments as conversation` | `flow-start-arg-handling` |
 
 **Issue-aware branch naming:** When the prompt contains `#N` issue
-references (e.g., `work on issue #309`, `fix #42`), `start-setup`
-automatically fetches the first issue's title and derives the branch
-name and PR title from it. If the fetch fails, it falls back to the
-prompt words. No model action is needed — the script handles this
-internally.
+references (e.g., `work on issue #309`, `fix #42`), `init-state`
+(Step 3) fetches the first issue's title and derives the branch name
+from it. If the fetch fails, init-state returns a hard error — there
+is no silent fallback to the prompt words. Capture the `branch` field
+from init-state's JSON output and use it for all subsequent steps.
 
 | Prompt | Issue title | Derived branch name |
 |--------|-------------|-------------------|
@@ -196,6 +196,15 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-s
 ```
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
+If `"step"` is `"fetch_issue_title"`, the issue title could not be fetched —
+report the error to the user and stop. If `"step"` is `"duplicate_issue"`,
+another flow already targets the same issue — report the error and stop.
+
+On success, capture the `branch` field from the JSON output. This is the
+**canonical branch name** — it may differ from `<feature-name>` when the
+prompt contains issue references (e.g., `<feature-name>` is
+`work-on-issue-309` but `branch` is `organize-settings-allow-list`).
+Use this canonical branch for all `--branch` flags in Steps 4–10.
 
 ### Step 4 — Label referenced issues
 
@@ -203,7 +212,7 @@ If the start prompt contains `#N` issue references, add the "Flow In-Progress"
 label so other engineers can see these issues are being worked on:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 4 --branch <feature-name> -- label-issues --state-file <project_root>/.flow-states/<branch>.json --add
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 4 --branch <branch> -- label-issues --state-file <project_root>/.flow-states/<branch>.json --add
 ```
 
 Best-effort — if labeling fails, log the result and continue. Do not block
@@ -214,7 +223,7 @@ the Start phase for a label failure.
 Run both in parallel (one response, two Bash calls):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 5 --branch <feature-name>
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 5 --branch <branch>
 ```
 
 ```bash
@@ -227,7 +236,7 @@ Main is pristine — nothing merges without clean CI. Any failure here is
 a flaky test, not a real breakage.
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 6 --branch <feature-name> -- ci --retry 3 --branch main
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 6 --branch <branch> -- ci --retry 3 --branch main
 ```
 
 Parse the JSON output:
@@ -267,7 +276,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
 ### Step 7 — Update dependencies
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 7 --branch <feature-name>
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 7 --branch <branch>
 ```
 
 ```bash
@@ -287,7 +296,7 @@ If dependencies changed anything, run CI again to catch dep-induced breakage
 (rubocop violations, breaking changes, etc.):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 8 --branch <feature-name> -- ci --retry 3 --branch main
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 8 --branch <branch> -- ci --retry 3 --branch main
 ```
 
 Parse the JSON output:
@@ -335,7 +344,7 @@ Wait for the sub-agent to return.
 ### Step 9 — Commit to main
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 9 --branch <feature-name>
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 9 --branch <branch>
 ```
 
 If there are any uncommitted changes (dependency updates + CI fixes),
@@ -344,7 +353,7 @@ commit them to main via `/flow:flow-commit --auto`.
 ### Step 10 — Release start lock
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 10 --branch <feature-name> -- start-lock --release --feature <feature-name>
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 10 --branch <branch> -- start-lock --release --feature <feature-name>
 ```
 
 <HARD-GATE>
@@ -355,22 +364,24 @@ Uncommitted fixes on main will not appear in the worktree.
 ### Step 11 — Set up workspace
 
 Write the user's original start prompt (verbatim, including `#N` issue references
-and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
+and any special characters) to `.flow-states/<branch>-start-prompt` using the
 Write tool. Then run the setup script. If `--auto` was passed to this skill
 invocation, also pass `--auto` to the start-setup command:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 11 --branch <feature-name> -- start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 11 --branch <branch> -- start-setup "<feature-name>" --prompt-file .flow-states/<branch>-start-prompt --skip-pull
 ```
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 11 --branch <feature-name> -- start-setup "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --skip-pull --auto
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 11 --branch <branch> -- start-setup "<feature-name>" --prompt-file .flow-states/<branch>-start-prompt --skip-pull --auto
 ```
 
 Use the first form when no mode flag was passed or `--manual` was passed.
 Use the second form when `--auto` was passed.
 
 The script reads the prompt file and deletes it automatically after reading.
+The script reads the canonical branch from the existing state file (created by
+init-state in Step 3) instead of recomputing it from the feature name.
 
 The script performs these operations in a single process:
 
