@@ -11,29 +11,7 @@ use crate::phase_config::{
     auto_skills, build_initial_phases, freeze_phases, read_flow_json,
 };
 use crate::state::{Framework, SkillConfig};
-use crate::utils::{branch_name, check_duplicate_issue, detect_tty, extract_issue_numbers, fetch_issue_title, now, read_prompt_file};
-
-/// Find the plugin root directory (where flow-phases.json lives).
-///
-/// Checks CLAUDE_PLUGIN_ROOT env var first, then walks up from the
-/// current executable's location.
-fn plugin_root() -> Option<std::path::PathBuf> {
-    if let Ok(root) = std::env::var("CLAUDE_PLUGIN_ROOT") {
-        let path = std::path::PathBuf::from(&root);
-        if path.join("flow-phases.json").exists() {
-            return Some(path);
-        }
-    }
-    let exe = std::env::current_exe().ok()?;
-    let mut dir = exe.parent()?;
-    for _ in 0..5 {
-        if dir.join("flow-phases.json").exists() {
-            return Some(dir.to_path_buf());
-        }
-        dir = dir.parent()?;
-    }
-    None
-}
+use crate::utils::{branch_name, check_duplicate_issue, detect_tty, extract_issue_numbers, fetch_issue_title, now, plugin_root, read_prompt_file};
 
 /// Create the initial FLOW state file with null PR fields.
 ///

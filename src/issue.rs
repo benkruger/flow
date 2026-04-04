@@ -211,7 +211,7 @@ fn build_issue_result(repo: &str, url: String) -> IssueResult {
 
 /// Run a gh CLI command, returning stdout on success.
 /// Returns Err with the error message on failure or timeout.
-fn run_gh_cmd(args: &[&str], timeout: Option<Duration>) -> Result<String, String> {
+pub fn run_gh_cmd(args: &[&str], timeout: Option<Duration>) -> Result<String, String> {
     let mut child = Command::new(args[0])
         .args(&args[1..])
         .stdout(std::process::Stdio::piped())
@@ -262,7 +262,7 @@ fn run_gh_cmd(args: &[&str], timeout: Option<Duration>) -> Result<String, String
     }
 }
 
-fn extract_error(stderr: &str, stdout: &str) -> String {
+pub fn extract_error(stderr: &str, stdout: &str) -> String {
     if !stderr.is_empty() {
         stderr.to_string()
     } else if !stdout.is_empty() {
