@@ -7,8 +7,9 @@ use chrono_tz::America::Los_Angeles;
 use serde_json::{json, Value};
 
 use crate::git::{current_branch, project_root};
+use crate::github::detect_repo;
 use crate::lock::mutate_state;
-use crate::utils::{derive_feature, detect_tty, now};
+use crate::utils::{derive_feature, detect_tty, now, write_tab_sequences};
 
 /// Detect orchestrate.json state. Returns context block string.
 /// Handles completed (morning report + cleanup), all-processed (empty), and in-progress (resume).
@@ -628,6 +629,11 @@ fn emit_output(context: &str) {
     println!("{}", serde_json::to_string(&output).unwrap());
 }
 
+/// Write tab colors best-effort — errors are silently ignored.
+fn write_tab_colors(repo: Option<&str>, root: &Path) {
+    let _ = write_tab_sequences(repo, Some(root));
+}
+
 pub fn run() {
     let root = project_root();
     let state_dir = root.join(".flow-states");
@@ -648,7 +654,10 @@ pub fn run() {
     let file_list = if filtered.is_empty() { all_states } else { filtered };
 
     if file_list.is_empty() && orchestrate_block.is_empty() {
-        return; // No state files and no orchestrate → exit silently
+        // Early exit — write tab colors from detected repo before returning
+        let detected = detect_repo(Some(&root));
+        write_tab_colors(detected.as_deref(), &root);
+        return;
     }
 
     // Process each state file: reset timing, update TTY, consume transients
@@ -662,7 +671,23 @@ pub fn run() {
     }
 
     if processed.is_empty() && orchestrate_block.is_empty() {
+        // All states failed to parse — fall back to detect_repo
+        let detected = detect_repo(Some(&root));
+        write_tab_colors(detected.as_deref(), &root);
         return;
+    }
+
+    // Write tab colors: use first state's repo when states exist, else detect_repo
+    let first_repo = processed
+        .first()
+        .and_then(|(s, _)| s.get("repo"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    if first_repo.is_some() {
+        write_tab_colors(first_repo.as_deref(), &root);
+    } else {
+        let detected = detect_repo(Some(&root));
+        write_tab_colors(detected.as_deref(), &root);
     }
 
     // Dev mode detection

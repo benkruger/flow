@@ -1266,3 +1266,28 @@ fn no_dev_mode_preamble_without_plugin_root_backup() {
     let ctx = output["additional_context"].as_str().unwrap();
     assert!(!ctx.contains("[DEV MODE]"), "Should NOT include dev mode preamble");
 }
+
+#[test]
+fn tab_color_sequences_not_in_stdout() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "color-test"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("in_progress");
+    write_state(&state_dir, "color-test", &state);
+
+    switch_branch(dir.path(), "color-test");
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+
+    // iTerm2 color escape sequences must not appear in stdout (they go to /dev/tty)
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        !stdout.contains("\x1b]6;1;bg;"),
+        "Color escape sequences must not be in stdout"
+    );
+}
