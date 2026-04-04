@@ -1,4 +1,5 @@
 pub mod add_issue;
+pub mod analyze_issues;
 pub mod add_notification;
 pub mod append_note;
 pub mod auto_close_parent;
@@ -8,7 +9,9 @@ pub mod close_issue;
 pub mod close_issues;
 pub mod commands;
 pub mod error;
+pub mod format_issues_summary;
 pub mod format_status;
+pub mod label_issues;
 pub mod phase_transition;
 pub mod git;
 pub mod github;

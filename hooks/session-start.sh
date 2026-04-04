@@ -150,11 +150,11 @@ def reset_interrupted(path, state):
             started_dt = datetime.fromisoformat(session_started)
             now_dt = datetime.now(ZoneInfo("America/Los_Angeles"))
             elapsed = max(0, int((now_dt - started_dt).total_seconds()))
-            existing = phase.get("cumulative_seconds", 0)
+            existing = phase.get("cumulative_seconds") or 0
             state["phases"][cp]["cumulative_seconds"] = existing + elapsed
+            state["phases"][cp]["session_started_at"] = now_dt.isoformat(timespec="seconds")
         except Exception:
-            pass
-        state["phases"][cp]["session_started_at"] = None
+            state["phases"][cp]["session_started_at"] = None
         changed = True
     if changed:
         with open(path, "w") as f:

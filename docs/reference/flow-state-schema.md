@@ -151,7 +151,7 @@ Each phase entry has identical fields regardless of status.
 | `status` | string | `pending`, `in_progress`, or `complete` |
 | `started_at` | ISO 8601 / null | First time this phase was entered — **never overwritten** |
 | `completed_at` | ISO 8601 / null | Most recent time this phase was exited — updated on every completion |
-| `session_started_at` | ISO 8601 / null | Timestamp when current session entered this phase — reset if session interrupted |
+| `session_started_at` | ISO 8601 / null | Timestamp when current session entered this phase — reset to `now()` on resume, cleared to `null` on clean exit |
 | `cumulative_seconds` | integer | Total seconds spent in this phase across all visits — additive |
 | `visit_count` | integer | Number of times this phase has been entered |
 
@@ -162,7 +162,7 @@ Each phase entry has identical fields regardless of status.
 - `started_at` is set on first entry and **never changed again**
 - `completed_at` is set on every exit — reflects the most recent completion
 - `session_started_at` is set on entry and cleared to `null` on exit
-- On session resume, if `session_started_at` is not null, it is reset to null — the interrupted visit's time is not counted
+- On session resume, if `session_started_at` is not null, elapsed time is accumulated into `cumulative_seconds` and `session_started_at` is reset to `now()` to continue timing
 - `cumulative_seconds` increments by `(exit_time - session_started_at)` on each clean exit
 
 ---
