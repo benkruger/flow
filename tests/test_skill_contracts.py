@@ -994,10 +994,11 @@ def test_learn_detects_truncated_agent_output():
         "flow-learn/SKILL.md must contain truncation detection instructions — "
         "agents can exhaust maxTurns without producing structured output"
     )
-    # Must check both agents — verify learn-analyst appears near truncation text
-    parts = content_lower.split("truncat")
-    nearby = parts[0][-500:] + parts[-1][:500]
-    assert "learn-analyst" in nearby, "flow-learn/SKILL.md truncation detection must cover the learn-analyst agent"
+    # Must check both agents have truncation detection
+    for agent in ("learn-analyst", "onboarding"):
+        assert f"**truncation check.** examine the {agent}" in content_lower, (
+            f"flow-learn/SKILL.md must have a truncation check for the {agent} agent"
+        )
 
 
 def test_anti_patterns_has_inline_output_rule():
