@@ -218,6 +218,27 @@ pub fn set_tab_color(root: &Path, branch: &str, state_path: &Path) {
     }
 }
 
+/// Format the Stop-hook block output JSON.
+///
+/// Returns `{"decision": "block", "reason": "..."}` where `reason`
+/// embeds the skill name and, when context is non-empty, the
+/// parent phase's next-step instructions. Matches the Python
+/// `stop-continue.py` main() output exactly so Claude Code's
+/// stop-hook protocol stays backward compatible.
+pub fn format_block_output(skill: &str, context: Option<&str>) -> Value {
+    let reason = match context {
+        Some(ctx) if !ctx.is_empty() => format!(
+            "Continue parent phase — child skill '{}' has returned.\n\nNext steps:\n{}",
+            skill, ctx
+        ),
+        _ => format!(
+            "Continue parent phase — child skill '{}' has returned. Resume the parent skill instructions.",
+            skill
+        ),
+    };
+    json!({"decision": "block", "reason": reason})
+}
+
 /// Run the stop-continue hook (entry point).
 pub fn run() {
     let mut stdin_buf = String::new();
@@ -260,17 +281,7 @@ pub fn run() {
 
     if result.should_block {
         let skill_name = result.skill.as_deref().unwrap_or("");
-        let reason = match result.context {
-            Some(ctx) => format!(
-                "Continue parent phase — child skill '{}' has returned.\n\nNext steps:\n{}",
-                skill_name, ctx
-            ),
-            None => format!(
-                "Continue parent phase — child skill '{}' has returned. Resume the parent skill instructions.",
-                skill_name
-            ),
-        };
-        let output = json!({"decision": "block", "reason": reason});
+        let output = format_block_output(skill_name, result.context.as_deref());
         println!("{}", serde_json::to_string(&output).unwrap());
     }
 }
@@ -578,5 +589,48 @@ mod tests {
 
         // Should not panic — falls through to detect_repo fallback
         set_tab_color(dir.path(), "test", &state_path);
+    }
+
+    // --- format_block_output ---
+
+    #[test]
+    fn test_format_block_output_with_context() {
+        let out = format_block_output("commit", Some("Do the thing next"));
+        assert_eq!(out["decision"], "block");
+        let reason = out["reason"].as_str().unwrap();
+        assert_eq!(
+            reason,
+            "Continue parent phase — child skill 'commit' has returned.\n\nNext steps:\nDo the thing next"
+        );
+    }
+
+    #[test]
+    fn test_format_block_output_without_context() {
+        let out = format_block_output("commit", None);
+        assert_eq!(out["decision"], "block");
+        let reason = out["reason"].as_str().unwrap();
+        assert_eq!(
+            reason,
+            "Continue parent phase — child skill 'commit' has returned. Resume the parent skill instructions."
+        );
+    }
+
+    #[test]
+    fn test_format_block_output_empty_context_treated_as_none() {
+        let out = format_block_output("commit", Some(""));
+        let reason = out["reason"].as_str().unwrap();
+        // Empty string should trigger the "Resume the parent skill" variant,
+        // not the "Next steps" variant with a blank body.
+        assert!(reason.ends_with("Resume the parent skill instructions."));
+        assert!(!reason.contains("Next steps:"));
+    }
+
+    #[test]
+    fn test_format_block_output_empty_skill_name() {
+        // Defensive: an empty skill name still produces a well-formed
+        // reason string rather than panicking or producing invalid JSON.
+        let out = format_block_output("", None);
+        assert_eq!(out["decision"], "block");
+        assert!(out["reason"].as_str().unwrap().contains("child skill ''"));
     }
 }
