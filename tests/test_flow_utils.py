@@ -756,39 +756,15 @@ def test_build_initial_phases_required_fields():
             assert field in phases[key], f"Phase {key} missing field {field}"
 
 
-# --- branch_name ---
+# --- tombstone: branch_name removed ---
 
 
-def test_branch_name_basic():
-    """Feature words joined with hyphens, lowercased."""
-    assert _mod.branch_name("Invoice Pdf Export") == "invoice-pdf-export"
-
-
-def test_branch_name_truncated_at_32():
-    """Branch names exceeding 32 chars truncated at last whole word."""
-    result = _mod.branch_name("this is a very long feature name that exceeds limit")
-    assert len(result) <= 32
-    assert not result.endswith("-")
-    assert result == "this-is-a-very-long-feature-name"
-
-
-def test_branch_name_exactly_32():
-    """Branch name exactly 32 chars is not truncated."""
-    assert _mod.branch_name("abcdefgh abcdefgh abcdefgh abcde") == "abcdefgh-abcdefgh-abcdefgh-abcde"
-
-
-def test_branch_name_single_long_word():
-    """Single word >32 chars with no hyphens truncates at 32."""
-    result = _mod.branch_name("a" * 40)
-    assert len(result) == 32
-    assert result == "a" * 32
-
-
-def test_branch_name_strips_special_chars():
-    """Special characters (#, @, $) are stripped."""
-    assert _mod.branch_name("fix #83 and #89") == "fix-83-and-89"
-    assert _mod.branch_name("notify @user on save") == "notify-user-on-save"
-    assert _mod.branch_name("fix #83 @user $100") == "fix-83-user-100"
+def test_no_branch_name():
+    """Tombstone: removed in PR #823. Must not return."""
+    source = (LIB_DIR / "flow_utils.py").read_text()
+    assert "def branch_name(" not in source, (
+        "branch_name was ported to Rust (src/utils.rs) and must not be re-added to Python"
+    )
 
 
 # --- tombstone: format_tab_title removed ---

@@ -11,7 +11,7 @@ use crate::phase_config::{
     auto_skills, build_initial_phases, freeze_phases, read_flow_json,
 };
 use crate::state::{Framework, SkillConfig};
-use crate::utils::{branch_name, detect_tty, now, read_prompt_file};
+use crate::utils::{branch_name, check_duplicate_issue, detect_tty, extract_issue_numbers, fetch_issue_title, now, read_prompt_file};
 
 /// Find the plugin root directory (where flow-phases.json lives).
 ///
@@ -122,7 +122,6 @@ pub fn run(
     start_step: Option<i64>,
     start_steps_total: Option<i64>,
 ) {
-    let branch = branch_name(feature_name);
     let root = project_root();
 
     let flow_json = match read_flow_json(Some(&root)) {
@@ -148,6 +147,7 @@ pub fn run(
             .and_then(|v| serde_json::from_value::<IndexMap<String, SkillConfig>>(v.clone()).ok())
     };
 
+    // Read prompt first — needed for issue number extraction
     let prompt = if let Some(pf) = prompt_file {
         match read_prompt_file(std::path::Path::new(pf)) {
             Ok(content) => content,
@@ -162,6 +162,37 @@ pub fn run(
     } else {
         feature_name.to_string()
     };
+
+    // Issue-aware branch naming: fetch title if prompt references issues
+    let issue_numbers = extract_issue_numbers(&prompt);
+    let branch = if !issue_numbers.is_empty() {
+        match fetch_issue_title(issue_numbers[0]) {
+            Some(title) => branch_name(&title),
+            None => {
+                json_error(
+                    &format!("Could not fetch title for issue #{}", issue_numbers[0]),
+                    &[("step", json!("fetch_issue_title"))],
+                );
+                std::process::exit(1);
+            }
+        }
+    } else {
+        branch_name(feature_name)
+    };
+
+    // Duplicate issue guard: check before creating state file
+    if !issue_numbers.is_empty() {
+        if let Some(dup) = check_duplicate_issue(&root, &issue_numbers, &branch) {
+            json_error(
+                &format!(
+                    "Issue already has an active flow on branch '{}' (phase: {}, PR: {}). Resume the existing flow instead.",
+                    dup.branch, dup.phase, dup.pr_url
+                ),
+                &[("step", json!("duplicate_issue"))],
+            );
+            std::process::exit(1);
+        }
+    }
 
     if let Err(e) = create_state(
         &root,
