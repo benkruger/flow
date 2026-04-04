@@ -24,7 +24,7 @@ requires explicit confirmation.
 2. Inventories all FLOW artifacts across five categories:
    worktrees, state files, local branches, remote branches, and open PRs
 3. Displays the inventory and asks for confirmation
-4. Destroys all artifacts (best-effort — continues on individual failures)
+4. Destroys all artifacts, including start lock queue entries (best-effort — continues on individual failures)
 5. Reports results and verifies cleanup
 
 ---
