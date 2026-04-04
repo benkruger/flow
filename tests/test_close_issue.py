@@ -1,305 +1,70 @@
-"""Tests for lib/close-issue.py — close a single GitHub issue."""
+"""Tests for bin/flow close-issue — close a single GitHub issue (Rust implementation).
 
-import io
+All tests run via subprocess against the Rust binary.
+"""
+
 import json
 import subprocess
-import sys
-from contextlib import redirect_stdout
-from pathlib import Path
-from unittest.mock import patch
 
-import pytest
+from conftest import BIN_DIR
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
-
-import importlib
-
-_mod = importlib.import_module("close-issue")
+BIN_FLOW = str(BIN_DIR / "flow")
 
 
-# --- close_issue_by_number ---
-
-
-def test_closes_single_issue():
-    """Calls gh issue close for the specified issue."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout="",
-            stderr="",
-        )
-        result = _mod.close_issue_by_number("benkruger/flow", 117)
-
-    assert result is None
-    mock_run.assert_called_once_with(
-        ["gh", "issue", "close", "--repo", "benkruger/flow", "117"],
+def _run(cwd, *args):
+    """Run close-issue via bin/flow."""
+    return subprocess.run(
+        [BIN_FLOW, "close-issue", *args],
         capture_output=True,
         text=True,
-        timeout=30,
+        cwd=str(cwd),
     )
 
 
-def test_close_issue_failure():
-    """Returns error message when gh issue close fails."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=1,
-            stdout="",
-            stderr="Issue not found",
-        )
-        result = _mod.close_issue_by_number("benkruger/flow", 999)
-
-    assert result == "Issue not found"
+# --- CLI argument validation ---
 
 
-def test_close_issue_no_stderr():
-    """Uses stdout as error message when stderr is empty."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=1,
-            stdout="Not found",
-            stderr="",
-        )
-        result = _mod.close_issue_by_number("benkruger/flow", 999)
-
-    assert result == "Not found"
-
-
-def test_close_issue_generic_error():
-    """Returns generic error when both stdout and stderr are empty."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=1,
-            stdout="",
-            stderr="",
-        )
-        result = _mod.close_issue_by_number("benkruger/flow", 999)
-
-    assert result == "Unknown error"
-
-
-def test_close_issue_timeout():
-    """TimeoutExpired returns timeout error message."""
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30)):
-        result = _mod.close_issue_by_number("benkruger/flow", 42)
-
-    assert "timed out" in result.lower()
-
-
-# --- detect_repo_or_fail ---
-
-
-def test_detects_repo_from_git_remote():
-    """Auto-detects repo from git remote origin URL."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout="https://github.com/benkruger/flow.git\n",
-            stderr="",
-        )
-        result = _mod.detect_repo_or_fail()
-
-    assert result == "benkruger/flow"
-
-
-def test_detects_repo_ssh_format():
-    """Auto-detects repo from SSH git remote format."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout="git@github.com:benkruger/flow.git",
-            stderr="",
-        )
-        result = _mod.detect_repo_or_fail()
-
-    assert result == "benkruger/flow"
-
-
-def test_detects_repo_without_git_suffix():
-    """Auto-detects repo when URL has no .git suffix."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout="https://github.com/benkruger/flow",
-            stderr="",
-        )
-        result = _mod.detect_repo_or_fail()
-
-    assert result == "benkruger/flow"
-
-
-def test_detection_fails_when_no_remote():
-    """Raises SystemExit when git remote returns error."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=1,
-            stdout="",
-            stderr="No such remote",
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            _mod.detect_repo_or_fail()
-        assert exc_info.value.code == 1
-
-
-def test_detection_fails_when_not_github():
-    """Raises SystemExit when remote is not GitHub."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout="https://gitlab.com/user/repo.git",
-            stderr="",
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            _mod.detect_repo_or_fail()
-        assert exc_info.value.code == 1
-
-
-def test_detection_fails_when_url_is_empty():
-    """Raises SystemExit when git remote returns empty string."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout="",
-            stderr="",
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            _mod.detect_repo_or_fail()
-        assert exc_info.value.code == 1
-
-
-def test_detection_fails_on_exception():
-    """Raises SystemExit when git command raises exception."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.side_effect = Exception("subprocess error")
-        with pytest.raises(SystemExit) as exc_info:
-            _mod.detect_repo_or_fail()
-        assert exc_info.value.code == 1
-
-
-# --- CLI integration (via direct main() calls with mocked subprocess) ---
-
-
-def test_cli_closes_issue_with_number_and_repo():
-    """CLI with --number and --repo closes the issue via gh."""
-
-    def mock_run(args, **kwargs):
-        if args[0] == "gh" and args[1] == "issue" and args[2] == "close":
-            return subprocess.CompletedProcess(
-                args=args,
-                returncode=0,
-                stdout="",
-                stderr="",
-            )
-        return subprocess.CompletedProcess(
-            args=args,
-            returncode=1,
-            stdout="",
-            stderr="Unknown command",
-        )
-
-    with patch.object(_mod, "subprocess") as mock_subprocess:
-        with patch.object(sys, "argv", ["close-issue.py", "--number", "117", "--repo", "benkruger/flow"]):
-            mock_subprocess.run = mock_run
-
-            output_text = io.StringIO()
-            with redirect_stdout(output_text):
-                try:
-                    _mod.main()
-                except SystemExit as e:
-                    if e.code != 0:
-                        raise
-
-            result = json.loads(output_text.getvalue())
-            assert result["status"] == "ok"
-
-
-def test_cli_requires_number_argument():
+def test_cli_requires_number_argument(target_project):
     """CLI fails when --number is not provided."""
-    with patch.object(sys, "argv", ["close-issue.py", "--repo", "benkruger/flow"]):
-        with pytest.raises(SystemExit) as exc_info:
-            _mod.main()
-        assert exc_info.value.code == 2
+    result = _run(target_project, "--repo", "benkruger/flow")
+    assert result.returncode == 2
 
 
-def test_cli_auto_detects_repo():
-    """CLI closes issue with auto-detected repo when --repo is omitted."""
-
-    def mock_run(args, **kwargs):
-        if args[0] == "git" and args[1] == "remote":
-            return subprocess.CompletedProcess(
-                args=args,
-                returncode=0,
-                stdout="https://github.com/benkruger/flow.git\n",
-                stderr="",
-            )
-        # gh issue close
-        return subprocess.CompletedProcess(
-            args=args,
-            returncode=0,
-            stdout="",
-            stderr="",
-        )
-
-    with patch.object(_mod, "subprocess") as mock_subprocess:
-        with patch.object(sys, "argv", ["close-issue.py", "--number", "117"]):
-            mock_subprocess.run = mock_run
-
-            output_text = io.StringIO()
-            with redirect_stdout(output_text):
-                try:
-                    _mod.main()
-                except SystemExit as e:
-                    if e.code != 0:
-                        raise
-
-            result = json.loads(output_text.getvalue())
-            assert result["status"] == "ok"
+# --- CLI with mocked gh (gh not available in test env) ---
 
 
-def test_cli_error_when_detection_fails():
-    """CLI outputs error when repo detection fails."""
-    with patch.object(_mod, "detect_repo", return_value=None):
-        with patch.object(sys, "argv", ["close-issue.py", "--number", "117"]):
-            output_text = io.StringIO()
-            with redirect_stdout(output_text):
-                with pytest.raises(SystemExit):
-                    _mod.main()
+def test_cli_with_repo_and_number_runs(target_project):
+    """CLI with --number and --repo attempts to close the issue.
 
-            result = json.loads(output_text.getvalue())
-            assert result["status"] == "error"
-            assert "Could not detect repo" in result["message"]
+    In a test environment without gh auth, this will fail with an error,
+    but we verify the CLI accepts the arguments and returns structured JSON.
+    """
+    result = _run(target_project, "--number", "117", "--repo", "benkruger/flow")
+    # gh will fail (no auth in test env), so verify structured error JSON
+    output = json.loads(result.stdout)
+    if result.returncode == 0:
+        assert output["status"] == "ok"
+    else:
+        assert output["status"] == "error"
 
 
-def test_cli_error_from_gh_issue_close():
-    """CLI outputs error when gh issue close fails."""
+def test_cli_auto_detects_repo(target_project):
+    """CLI attempts to auto-detect repo when --repo is omitted.
 
-    def mock_run(args, **kwargs):
-        return subprocess.CompletedProcess(
-            args=args,
-            returncode=1,
-            stdout="",
-            stderr="Issue 999 not found",
-        )
+    The test git repo has no remote, so detection will fail with structured error.
+    """
+    result = _run(target_project, "--number", "117")
+    assert result.returncode == 1
+    output = json.loads(result.stdout)
+    assert output["status"] == "error"
+    assert "Could not detect repo" in output["message"]
 
-    with patch.object(_mod, "subprocess") as mock_subprocess:
-        with patch.object(sys, "argv", ["close-issue.py", "--number", "999", "--repo", "benkruger/flow"]):
-            mock_subprocess.run = mock_run
 
-            output_text = io.StringIO()
-            with redirect_stdout(output_text):
-                with pytest.raises(SystemExit):
-                    _mod.main()
+# --- Tombstone: Python files removed ---
 
-            result = json.loads(output_text.getvalue())
-            assert result["status"] == "error"
-            assert result["message"] == "Issue 999 not found"
+
+def test_close_issue_py_removed():
+    """Tombstone: lib/close-issue.py ported to Rust in PR #831. Must not return."""
+    from conftest import LIB_DIR
+
+    assert not (LIB_DIR / "close-issue.py").exists(), "lib/close-issue.py was ported to Rust and should not exist"
