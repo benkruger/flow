@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import time
 
 import pytest
 from conftest import BIN_DIR, LIB_DIR, REPO_ROOT
@@ -89,13 +90,17 @@ def hybrid_project(tmp_path):
     return tmp_path
 
 
-def _run_hybrid(project_dir, *args):
+def _run_hybrid(project_dir, *args, extra_env=None):
     """Run the hybrid dispatcher in the given project."""
+    env = None
+    if extra_env:
+        env = {**os.environ, **extra_env}
     return subprocess.run(
         ["bash", str(project_dir / "bin" / "flow"), *args],
         capture_output=True,
         text=True,
         cwd=str(project_dir),
+        env=env,
     )
 
 
@@ -159,6 +164,120 @@ def test_hybrid_prefers_release_over_debug(hybrid_project):
     result = _run_hybrid(hybrid_project, "test-cmd")
     assert result.returncode == 0
     assert "release-handled" in result.stdout
+
+
+# --- Auto-rebuild tests ---
+
+
+@pytest.fixture
+def cargo_project(hybrid_project):
+    """Extend hybrid_project with Cargo.toml, src/, and a mock cargo on PATH.
+
+    The mock cargo creates target/debug/flow-rs with a script that prints
+    'rebuilt-handled' and exits 0. Tests can override the mock cargo by
+    writing a different script to the mock_bin_dir before calling _run_hybrid.
+    """
+    (hybrid_project / "Cargo.toml").write_text('[package]\nname = "flow-rs"\n')
+    src_dir = hybrid_project / "src"
+    src_dir.mkdir()
+    (src_dir / "main.rs").write_text("fn main() {}\n")
+
+    mock_bin_dir = hybrid_project / "mock_bin"
+    mock_bin_dir.mkdir()
+    mock_cargo = mock_bin_dir / "cargo"
+    mock_cargo.write_text(
+        "#!/usr/bin/env bash\n"
+        'MANIFEST_DIR="$(dirname "$3")"\n'
+        'mkdir -p "$MANIFEST_DIR/target/debug"\n'
+        "cat > \"$MANIFEST_DIR/target/debug/flow-rs\" << 'SCRIPT'\n"
+        "#!/usr/bin/env bash\n"
+        'echo "rebuilt-handled"\n'
+        "exit 0\n"
+        "SCRIPT\n"
+        'chmod +x "$MANIFEST_DIR/target/debug/flow-rs"\n'
+    )
+    mock_cargo.chmod(0o755)
+
+    return hybrid_project, str(mock_bin_dir)
+
+
+def test_auto_rebuild_stale_binary(cargo_project):
+    """When src/ is newer than the binary, auto-rebuild triggers."""
+    project, mock_bin_dir = cargo_project
+
+    # Create a stale binary
+    target_dir = project / "target" / "debug"
+    target_dir.mkdir(parents=True)
+    mock_bin = target_dir / "flow-rs"
+    mock_bin.write_text('#!/usr/bin/env bash\necho "stale-handled"\nexit 0\n')
+    mock_bin.chmod(0o755)
+
+    # Make src/main.rs newer than the binary
+    time.sleep(0.05)
+    (project / "src" / "main.rs").write_text("fn main() { /* updated */ }\n")
+
+    result = _run_hybrid(project, "test-cmd", extra_env={"PATH": f"{mock_bin_dir}:{os.environ['PATH']}"})
+    assert result.returncode == 0
+    assert "rebuilt-handled" in result.stdout
+
+
+def test_auto_rebuild_skips_fresh_binary(cargo_project):
+    """When binary is newer than src/, no rebuild occurs."""
+    project, mock_bin_dir = cargo_project
+
+    # Create src/main.rs first (already exists from fixture)
+    time.sleep(0.05)
+
+    # Create binary AFTER src files — it's fresh
+    target_dir = project / "target" / "debug"
+    target_dir.mkdir(parents=True)
+    mock_bin = target_dir / "flow-rs"
+    mock_bin.write_text('#!/usr/bin/env bash\necho "fresh-handled"\nexit 0\n')
+    mock_bin.chmod(0o755)
+
+    # Mock cargo writes a sentinel so we can detect if it was called
+    mock_cargo = project / "mock_bin" / "cargo"
+    sentinel = project / "cargo_was_called"
+    mock_cargo.write_text(f'#!/usr/bin/env bash\ntouch "{sentinel}"\n')
+    mock_cargo.chmod(0o755)
+
+    result = _run_hybrid(project, "test-cmd", extra_env={"PATH": f"{mock_bin_dir}:{os.environ['PATH']}"})
+    assert result.returncode == 0
+    assert "fresh-handled" in result.stdout
+    assert not sentinel.exists(), "cargo should not have been called for a fresh binary"
+
+
+def test_auto_rebuild_first_build(cargo_project):
+    """When Cargo.toml + src/ exist but no binary, auto-rebuild triggers."""
+    project, mock_bin_dir = cargo_project
+
+    # No target/ directory at all — first build scenario
+    result = _run_hybrid(project, "test-cmd", extra_env={"PATH": f"{mock_bin_dir}:{os.environ['PATH']}"})
+    assert result.returncode == 0
+    assert "rebuilt-handled" in result.stdout
+
+
+def test_auto_rebuild_failure_falls_back_to_python(cargo_project):
+    """When cargo build fails, script falls back to Python (no crash under set -euo pipefail)."""
+    project, mock_bin_dir = cargo_project
+
+    # Mock cargo that fails
+    mock_cargo = project / "mock_bin" / "cargo"
+    mock_cargo.write_text("#!/usr/bin/env bash\nexit 1\n")
+    mock_cargo.chmod(0o755)
+
+    # No existing binary — build fails, should fall back to Python
+    result = _run_hybrid(project, "test-cmd", extra_env={"PATH": f"{mock_bin_dir}:{os.environ['PATH']}"})
+    assert result.returncode == 0
+    assert "python-handled" in result.stdout
+
+
+def test_auto_rebuild_skips_without_cargo_toml(hybrid_project):
+    """When no Cargo.toml exists, auto-rebuild block is skipped entirely."""
+    # hybrid_project has no Cargo.toml — should use Python directly
+    result = _run_hybrid(hybrid_project, "test-cmd")
+    assert result.returncode == 0
+    assert "python-handled" in result.stdout
 
 
 def test_every_lib_script_is_reachable():
