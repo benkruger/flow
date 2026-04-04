@@ -9,6 +9,7 @@ use flow_rs::auto_close_parent;
 use flow_rs::check_phase::check_phase;
 use flow_rs::close_issue;
 use flow_rs::close_issues;
+use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
 use flow_rs::link_blocked_by;
 use flow_rs::commands;
@@ -84,6 +85,9 @@ enum Commands {
     /// Create a GitHub blocked-by dependency.
     #[command(name = "link-blocked-by")]
     LinkBlockedBy(link_blocked_by::Args),
+    /// Create a GitHub milestone.
+    #[command(name = "create-milestone")]
+    CreateMilestone(create_milestone::Args),
 
     /// Auto-close parent issue and milestone when all children are done.
     #[command(name = "auto-close-parent")]
@@ -238,6 +242,7 @@ fn main() {
         Some(Commands::CloseIssues(args)) => close_issues::run(args),
         Some(Commands::CreateSubIssue(args)) => create_sub_issue::run(args),
         Some(Commands::LinkBlockedBy(args)) => link_blocked_by::run(args),
+        Some(Commands::CreateMilestone(args)) => create_milestone::run(args),
         Some(Commands::AutoCloseParent(args)) => auto_close_parent::run(args),
         Some(Commands::SetTimestamp { set_args, branch }) => {
             commands::set_timestamp::run(set_args, branch);
