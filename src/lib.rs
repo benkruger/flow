@@ -13,6 +13,7 @@ pub mod phase_transition;
 pub mod git;
 pub mod github;
 pub mod issue;
+pub mod link_blocked_by;
 pub mod lock;
 pub mod output;
 pub mod phase_config;
