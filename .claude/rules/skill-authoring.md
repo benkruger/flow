@@ -43,13 +43,14 @@ a testable alternative.
 
 Claude Code has built-in protections that cannot be overridden by
 settings.json entries. `.claude/` paths are protected regardless
-of `defaultMode` or allow-list patterns. The `validate-claude-paths.py`
-PreToolUse hook enforces this for `.claude/rules/`, `.claude/skills/`,
-and `CLAUDE.md` during active FLOW phases — blocking Edit/Write and
-redirecting to `bin/flow write-rule`. When a permission prompt
-persists despite allow-list entries, the cause is a platform
-constraint — not a missing permission. Never propose adding
-permissions for paths that are platform-protected.
+of `defaultMode` or allow-list patterns. The `validate-claude-paths`
+PreToolUse hook (`bin/flow hook validate-claude-paths`) enforces this
+for `.claude/rules/`, `.claude/skills/`, and `CLAUDE.md` during active
+FLOW phases — blocking Edit/Write and redirecting to
+`bin/flow write-rule`. When a permission prompt persists despite
+allow-list entries, the cause is a platform constraint — not a missing
+permission. Never propose adding permissions for paths that are
+platform-protected.
 
 ## Commit Skill Internals
 
@@ -67,8 +68,8 @@ itself, causing it to be tracked in the commit.
 Never use `general-purpose` sub-agents in skills — they ignore
 tool restriction rules in their prompts. Use custom plugin
 sub-agents with the global `PreToolUse` hook for system-level
-enforcement. The hook (`lib/validate-pretool.py`) is registered
-in `hooks/hooks.json` and blocks compound commands and
+enforcement. The hook (`bin/flow hook validate-pretool`) is
+registered in `hooks/hooks.json` and blocks compound commands and
 file-read commands with exit code 2, feeding helpful error
 messages back to the sub-agent so it adapts.
 
@@ -326,7 +327,7 @@ In a linked worktree, `git worktree list --porcelain` returns the
 main repo as the first entry (the "project root"). Repo-tracked
 files live in the worktree, not the main repo. Directing Claude to
 "the project root" sends it to the wrong copy, and the
-`validate-worktree-paths.py` hook blocks the call.
+`validate-worktree-paths` hook blocks the call.
 
 Project root is correct only for shared paths that live outside
 the worktree: `.flow-states/`, `.flow-issue-body`, and other

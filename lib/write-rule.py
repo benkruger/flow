@@ -10,7 +10,7 @@ regardless of settings.json allow-list entries.
 
 Consumers:
   - Learn phase: writes CLAUDE.md and .claude/rules/ files
-  - validate-claude-paths.py hook: redirects blocked Edit/Write calls here
+  - validate-claude-paths hook: redirects blocked Edit/Write calls here
   - Any skill or hook that needs to write to .claude/ paths during a flow
 
 Output (JSON to stdout):

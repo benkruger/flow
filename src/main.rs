@@ -17,6 +17,7 @@ use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
 use flow_rs::format_issues_summary;
 use flow_rs::format_status;
+use flow_rs::hooks;
 use flow_rs::label_issues;
 use flow_rs::git::{project_root, resolve_branch};
 use flow_rs::issue;
@@ -223,9 +224,31 @@ enum Commands {
     /// Format issues summary for Complete phase
     FormatIssuesSummary(format_issues_summary::Args),
 
+    /// PreToolUse hook validators (read stdin JSON, exit 0/2).
+    Hook {
+        #[command(subcommand)]
+        validator: HookCommand,
+    },
+
     #[command(external_subcommand)]
     #[allow(dead_code)]
     External(Vec<String>),
+}
+
+#[derive(Subcommand)]
+enum HookCommand {
+    /// Validate Bash/Agent command input against blocklist and allowlist.
+    #[command(name = "validate-pretool")]
+    ValidatePretool,
+    /// Block Edit/Write on .claude/rules, .claude/skills, CLAUDE.md during FLOW phases.
+    #[command(name = "validate-claude-paths")]
+    ValidateClaudePaths,
+    /// Block file tool calls targeting the main repo from inside a worktree.
+    #[command(name = "validate-worktree-paths")]
+    ValidateWorktreePaths,
+    /// Enforce auto-continue for AskUserQuestion prompts.
+    #[command(name = "validate-ask-user")]
+    ValidateAskUser,
 }
 
 fn main() {
@@ -343,6 +366,12 @@ fn main() {
         Some(Commands::FormatIssuesSummary(args)) => {
             format_issues_summary::run(args);
         }
+        Some(Commands::Hook { validator }) => match validator {
+            HookCommand::ValidatePretool => hooks::validate_pretool::run(),
+            HookCommand::ValidateClaudePaths => hooks::validate_claude_paths::run(),
+            HookCommand::ValidateWorktreePaths => hooks::validate_worktree_paths::run(),
+            HookCommand::ValidateAskUser => hooks::validate_ask_user::run(),
+        },
         Some(Commands::External(_)) => {
             process::exit(127);
         }

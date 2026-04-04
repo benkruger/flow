@@ -111,7 +111,7 @@ The "Flow In-Progress" label on issues is the cross-engineer WIP detection mecha
 
 ### Sub-Agents
 
-Six custom plugin sub-agents in `agents/*.md`, all specifying `model: sonnet`. Agent frontmatter must only use supported keys (`name`, `description`, `model`, `effort`, `maxTurns`, `tools`, `disallowedTools`, `skills`, `memory`, `background`, `isolation`) — `test_agent_frontmatter_only_supported_keys` enforces this. The global `PreToolUse` hook (`lib/validate-pretool.py`) enforces Bash and Agent tool restrictions across all agents. See `.claude/rules/cognitive-isolation.md` for the two-tier context model and debiasing rationale.
+Six custom plugin sub-agents in `agents/*.md`, all specifying `model: sonnet`. Agent frontmatter must only use supported keys (`name`, `description`, `model`, `effort`, `maxTurns`, `tools`, `disallowedTools`, `skills`, `memory`, `background`, `isolation`) — `test_agent_frontmatter_only_supported_keys` enforces this. The global `PreToolUse` hook (`bin/flow hook validate-pretool`) enforces Bash and Agent tool restrictions across all agents. See `.claude/rules/cognitive-isolation.md` for the two-tier context model and debiasing rationale.
 
 Agent `maxTurns` budgets follow a peer model: learn-analyst mirrors reviewer (both context-rich, read-only, 25 turns), onboarding mirrors pre-mortem (both context-sparse, read-only, 25 turns). When adding or modifying an agent's budget, check its peer's budget to maintain parity.
 
@@ -145,11 +145,11 @@ Claude never computes timestamps, time differences, or counter increments. All s
 
 ### Auto-Advance Architecture
 
-Phase auto-advance uses two layers. Layer 1: `phase-transition --action complete` returns `continue_action` (`"invoke"` or `"ask"`) and optionally `continue_target` (the next phase command) in its JSON output. Skill HARD-GATEs parse `continue_action` to decide whether to auto-invoke the next phase or prompt the user. Layer 2: `phase_complete()` writes `_auto_continue` to the state file when `continue_action` is `"invoke"`. The `validate-ask-user.py` PreToolUse hook reads `_auto_continue` and auto-answers any `AskUserQuestion` that fires — this is a safety net for cases where the model ignores the HARD-GATE and prompts anyway. `phase_enter()` clears `_auto_continue` when the next phase starts. The `continue_target` field is provided for diagnostic consumers; skills use hardcoded successor commands for reliability.
+Phase auto-advance uses two layers. Layer 1: `phase-transition --action complete` returns `continue_action` (`"invoke"` or `"ask"`) and optionally `continue_target` (the next phase command) in its JSON output. Skill HARD-GATEs parse `continue_action` to decide whether to auto-invoke the next phase or prompt the user. Layer 2: `phase_complete()` writes `_auto_continue` to the state file when `continue_action` is `"invoke"`. The `bin/flow hook validate-ask-user` PreToolUse hook reads `_auto_continue` and auto-answers any `AskUserQuestion` that fires — this is a safety net for cases where the model ignores the HARD-GATE and prompts anyway. `phase_enter()` clears `_auto_continue` when the next phase starts. The `continue_target` field is provided for diagnostic consumers; skills use hardcoded successor commands for reliability.
 
 ### Permission Invariant
 
-Every bash block in every skill must run without triggering a permission prompt. `test_permissions.py` enforces at test time (placeholder substitution, allow/deny matching); `validate-pretool.py` enforces at runtime via global PreToolUse hook (compound commands, redirection, file-read commands blocked; whitelist enforced when a flow is active). See `.claude/rules/permissions.md` for the pattern-adding protocol.
+Every bash block in every skill must run without triggering a permission prompt. `test_permissions.py` enforces at test time (placeholder substitution, allow/deny matching); `bin/flow hook validate-pretool` enforces at runtime via global PreToolUse hook (compound commands, redirection, file-read commands blocked; whitelist enforced when a flow is active). See `.claude/rules/permissions.md` for the pattern-adding protocol.
 
 ## Test Architecture
 
@@ -177,7 +177,7 @@ Key test files: `test_structural.py` (config invariants, version consistency), `
 - **Prefer dedicated tools over Bash** — see `.claude/rules/worktree-commands.md`
 - **Issue filing** — see `.claude/rules/filing-issues.md`
 - **Repo-level targets only** — see `.claude/rules/repo-level-only.md`
-- **No `run_in_background` during FLOW phases** — enforced by `validate-pretool.py` hook on Bash and Agent tool calls
+- **No `run_in_background` during FLOW phases** — enforced by `bin/flow hook validate-pretool` on Bash and Agent tool calls
 - **User evidence is ground truth** — when a user provides screenshots, error output, or logs that contradict your code analysis, trust the evidence. Your code reading is a hypothesis; the user's evidence is an observation. Never explain away evidence to preserve your analysis.
 
 <!-- FLOW:BEGIN -->
