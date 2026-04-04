@@ -130,6 +130,26 @@ def test_reset_interrupted_null_session_started_at_no_change(git_repo):
     assert updated["phases"]["flow-plan"]["cumulative_seconds"] == 300
 
 
+def test_reset_interrupted_null_cumulative_seconds(git_repo):
+    """Null cumulative_seconds (JSON null) must not cause TypeError — treat as 0."""
+    state_dir = git_repo / ".flow-states"
+    state_dir.mkdir(parents=True)
+    state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
+    state["phases"]["flow-plan"]["session_started_at"] = "2026-01-15T10:00:00Z"
+    state["phases"]["flow-plan"]["cumulative_seconds"] = None
+    write_state(state_dir, "my-feature", state)
+
+    _switch(git_repo, "my-feature")
+    _run(git_repo)
+
+    updated = json.loads((state_dir / "my-feature.json").read_text())
+    assert updated["phases"]["flow-plan"]["cumulative_seconds"] is not None, (
+        "cumulative_seconds should not stay null — None + elapsed must not TypeError"
+    )
+    assert updated["phases"]["flow-plan"]["cumulative_seconds"] > 0
+    assert isinstance(updated["phases"]["flow-plan"]["session_started_at"], str)
+
+
 def test_reset_interrupted_clears_blocked(git_repo):
     """_blocked must be cleared during reset_interrupted even when session_started_at is None."""
     state_dir = git_repo / ".flow-states"
