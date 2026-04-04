@@ -79,31 +79,19 @@ pub struct Args {
     pub started_only: bool,
 }
 
-pub fn run(args: Args) {
+/// Fallible CLI logic — returns the timings table on success or an error message.
+/// Extracted from `run()` so error paths can be unit-tested without `process::exit`.
+pub fn run_impl(args: &Args) -> Result<String, String> {
     let state_path = Path::new(&args.state_file);
     if !state_path.exists() {
-        json_error(
-            &format!("State file not found: {}", args.state_file),
-            &[],
-        );
-        process::exit(1);
+        return Err(format!("State file not found: {}", args.state_file));
     }
 
-    let content = match std::fs::read_to_string(state_path) {
-        Ok(c) => c,
-        Err(e) => {
-            json_error(&format!("Failed to read state file: {}", e), &[]);
-            process::exit(1);
-        }
-    };
+    let content = std::fs::read_to_string(state_path)
+        .map_err(|e| format!("Failed to read state file: {}", e))?;
 
-    let state: Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(e) => {
-            json_error(&format!("Failed to parse state file: {}", e), &[]);
-            process::exit(1);
-        }
-    };
+    let state: Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse state file: {}", e))?;
 
     let table = format_timings_table(&state, args.started_only);
 
@@ -111,15 +99,25 @@ pub fn run(args: Args) {
     if let Some(parent) = output_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    if let Err(e) = std::fs::write(output_path, &table) {
-        json_error(&format!("Failed to write output: {}", e), &[]);
-        process::exit(1);
-    }
+    std::fs::write(output_path, &table)
+        .map_err(|e| format!("Failed to write output: {}", e))?;
 
-    json_ok(&[
-        ("output", json!(args.output)),
-        ("table", json!(table)),
-    ]);
+    Ok(table)
+}
+
+pub fn run(args: Args) {
+    match run_impl(&args) {
+        Ok(table) => {
+            json_ok(&[
+                ("output", json!(args.output)),
+                ("table", json!(table)),
+            ]);
+        }
+        Err(msg) => {
+            json_error(&msg, &[]);
+            process::exit(1);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -300,5 +298,64 @@ mod tests {
         let result = format_timings_table(&state, false);
         assert!(result.contains("| Phase | Duration |"), "Result:\n{}", result);
         assert!(result.contains("| **Total** |"), "Result:\n{}", result);
+    }
+
+    #[test]
+    fn test_cli_missing_state_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = Args {
+            state_file: dir.path().join("missing.json").to_string_lossy().to_string(),
+            output: dir.path().join("out.md").to_string_lossy().to_string(),
+            started_only: false,
+        };
+        let result = run_impl(&args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[test]
+    fn test_cli_invalid_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_file = dir.path().join("bad.json");
+        std::fs::write(&state_file, "not valid json {{{").unwrap();
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            output: dir.path().join("out.md").to_string_lossy().to_string(),
+            started_only: false,
+        };
+        let result = run_impl(&args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to parse"));
+    }
+
+    #[test]
+    fn test_cli_happy_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let all_phases = [
+            "flow-start",
+            "flow-plan",
+            "flow-code",
+            "flow-code-review",
+            "flow-learn",
+            "flow-complete",
+        ];
+        let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
+        let mut state = make_state("flow-complete", &statuses);
+        state["phases"]["flow-start"]["cumulative_seconds"] = json!(60);
+
+        let state_file = dir.path().join("state.json");
+        std::fs::write(&state_file, serde_json::to_string(&state).unwrap()).unwrap();
+        let output_file = dir.path().join("timings.md");
+
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            output: output_file.to_string_lossy().to_string(),
+            started_only: false,
+        };
+        let result = run_impl(&args);
+        assert!(result.is_ok());
+        let table = result.unwrap();
+        assert!(table.contains("| Phase | Duration |"));
+        assert!(output_file.exists());
     }
 }

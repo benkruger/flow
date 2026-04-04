@@ -198,31 +198,19 @@ pub struct Args {
     pub closed_issues_file: Option<String>,
 }
 
-pub fn run(args: Args) {
+/// Fallible CLI logic — returns the SummaryResult on success or an error message.
+/// Extracted from `run()` so error paths can be unit-tested without `process::exit`.
+pub fn run_impl(args: &Args) -> Result<SummaryResult, String> {
     let state_path = Path::new(&args.state_file);
     if !state_path.exists() {
-        json_error(
-            &format!("State file not found: {}", args.state_file),
-            &[],
-        );
-        process::exit(1);
+        return Err(format!("State file not found: {}", args.state_file));
     }
 
-    let content = match std::fs::read_to_string(state_path) {
-        Ok(c) => c,
-        Err(e) => {
-            json_error(&format!("Failed to read state file: {}", e), &[]);
-            process::exit(1);
-        }
-    };
+    let content = std::fs::read_to_string(state_path)
+        .map_err(|e| format!("Failed to read state file: {}", e))?;
 
-    let state: Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(e) => {
-            json_error(&format!("Failed to parse state file: {}", e), &[]);
-            process::exit(1);
-        }
-    };
+    let state: Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse state file: {}", e))?;
 
     let closed_issues: Option<Vec<Value>> = args.closed_issues_file.as_ref().and_then(|path| {
         let closed_path = Path::new(path);
@@ -233,16 +221,23 @@ pub fn run(args: Args) {
         serde_json::from_str(&closed_content).ok()
     });
 
-    let result = format_complete_summary(
-        &state,
-        closed_issues.as_deref(),
-    );
+    Ok(format_complete_summary(&state, closed_issues.as_deref()))
+}
 
-    json_ok(&[
-        ("summary", json!(result.summary)),
-        ("total_seconds", json!(result.total_seconds)),
-        ("issues_links", json!(result.issues_links)),
-    ]);
+pub fn run(args: Args) {
+    match run_impl(&args) {
+        Ok(result) => {
+            json_ok(&[
+                ("summary", json!(result.summary)),
+                ("total_seconds", json!(result.total_seconds)),
+                ("issues_links", json!(result.issues_links)),
+            ]);
+        }
+        Err(msg) => {
+            json_error(&msg, &[]);
+            process::exit(1);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -617,5 +612,92 @@ mod tests {
         let result = truncate_prompt(&prompt);
         assert!(result.chars().count() <= 83); // 80 chars + "..."
         assert!(result.ends_with("..."));
+    }
+
+    // --- CLI (run_impl) tests ---
+
+    fn write_state_file(dir: &std::path::Path) -> std::path::PathBuf {
+        let state = all_complete_state();
+        let state_file = dir.join("state.json");
+        std::fs::write(&state_file, serde_json::to_string(&state).unwrap()).unwrap();
+        state_file
+    }
+
+    #[test]
+    fn test_cli_happy_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_file = write_state_file(dir.path());
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            closed_issues_file: None,
+        };
+        let result = run_impl(&args);
+        assert!(result.is_ok());
+        let summary = result.unwrap();
+        assert!(summary.summary.contains("Test Feature"));
+        assert!(summary.total_seconds > 0);
+        // issues_links is present (empty string is fine)
+        let _ = &summary.issues_links;
+    }
+
+    #[test]
+    fn test_cli_with_closed_issues_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_file = write_state_file(dir.path());
+        let closed = vec![json!({
+            "number": 407,
+            "url": "https://github.com/test/test/issues/407",
+        })];
+        let closed_file = dir.path().join("closed.json");
+        std::fs::write(&closed_file, serde_json::to_string(&closed).unwrap()).unwrap();
+
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            closed_issues_file: Some(closed_file.to_string_lossy().to_string()),
+        };
+        let result = run_impl(&args).unwrap();
+        assert!(result.summary.contains("Resolved"));
+        assert!(result.summary.contains("#407"));
+    }
+
+    #[test]
+    fn test_cli_missing_closed_issues_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_file = write_state_file(dir.path());
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            closed_issues_file: Some(
+                dir.path().join("nonexistent.json").to_string_lossy().to_string(),
+            ),
+        };
+        // Missing closed_issues_file should gracefully omit the Resolved section
+        let result = run_impl(&args).unwrap();
+        assert!(!result.summary.contains("Resolved"));
+    }
+
+    #[test]
+    fn test_cli_missing_state_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = Args {
+            state_file: dir.path().join("missing.json").to_string_lossy().to_string(),
+            closed_issues_file: None,
+        };
+        let result = run_impl(&args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[test]
+    fn test_cli_corrupt_state_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let bad_file = dir.path().join("bad.json");
+        std::fs::write(&bad_file, "{bad json").unwrap();
+        let args = Args {
+            state_file: bad_file.to_string_lossy().to_string(),
+            closed_issues_file: None,
+        };
+        let result = run_impl(&args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to parse"));
     }
 }
