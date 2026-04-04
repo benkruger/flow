@@ -234,12 +234,23 @@ pub fn fetch_blocker_counts(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, i
         Err(_) => return HashMap::new(),
     };
 
-    // 30s timeout (matches Python subprocess.run(timeout=30))
+    // Drain stdout in a thread to prevent pipe buffer deadlock, then
+    // poll for exit with a 30s timeout (matches Python timeout=30).
+    let stdout_handle = child.stdout.take();
+    let reader = std::thread::spawn(move || {
+        let mut buf = String::new();
+        if let Some(mut pipe) = stdout_handle {
+            use std::io::Read;
+            let _ = pipe.read_to_string(&mut buf);
+        }
+        buf
+    });
+
     let timeout = std::time::Duration::from_secs(30);
     let start = std::time::Instant::now();
-    loop {
+    let status = loop {
         match child.try_wait() {
-            Ok(Some(_)) => break,
+            Ok(Some(s)) => break Some(s),
             Ok(None) => {
                 if start.elapsed() >= timeout {
                     let _ = child.kill();
@@ -248,21 +259,16 @@ pub fn fetch_blocker_counts(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, i
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
-            Err(_) => return HashMap::new(),
+            Err(_) => break None,
         }
-    }
-
-    let output = match child.wait_with_output() {
-        Ok(o) => o,
-        Err(_) => return HashMap::new(),
     };
 
-    if !output.status.success() {
-        return HashMap::new();
-    }
+    let stdout = reader.join().unwrap_or_default();
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_blocker_response(&stdout, issue_numbers)
+    match status {
+        Some(s) if s.success() => parse_blocker_response(&stdout, issue_numbers),
+        _ => HashMap::new(),
+    }
 }
 
 /// Analyze a list of issues from gh issue list JSON.
@@ -445,12 +451,32 @@ pub fn run(args: Args) {
             }
         };
 
-        // 30s timeout
+        // Drain stdout in a thread to prevent pipe buffer deadlock, then
+        // poll for exit with a 30s timeout (matches Python timeout=30).
+        let stdout_handle = child.stdout.take();
+        let stderr_handle = child.stderr.take();
+        let stdout_reader = std::thread::spawn(move || {
+            let mut buf = String::new();
+            if let Some(mut pipe) = stdout_handle {
+                use std::io::Read;
+                let _ = pipe.read_to_string(&mut buf);
+            }
+            buf
+        });
+        let stderr_reader = std::thread::spawn(move || {
+            let mut buf = String::new();
+            if let Some(mut pipe) = stderr_handle {
+                use std::io::Read;
+                let _ = pipe.read_to_string(&mut buf);
+            }
+            buf
+        });
+
         let timeout = std::time::Duration::from_secs(30);
         let start = std::time::Instant::now();
-        loop {
+        let status = loop {
             match child.try_wait() {
-                Ok(Some(_)) => break,
+                Ok(Some(s)) => break Some(s),
                 Ok(None) => {
                     if start.elapsed() >= timeout {
                         let _ = child.kill();
@@ -468,29 +494,21 @@ pub fn run(args: Args) {
                     std::process::exit(1);
                 }
             }
-        }
+        };
 
-        let output = match child.wait_with_output() {
-            Ok(o) => o,
-            Err(e) => {
+        let stdout_data = stdout_reader.join().unwrap_or_default();
+        let stderr_data = stderr_reader.join().unwrap_or_default();
+
+        match status {
+            Some(s) if s.success() => stdout_data,
+            _ => {
                 crate::output::json_error(
-                    &format!("gh issue list failed: {}", e),
+                    &format!("gh issue list failed: {}", stderr_data.trim()),
                     &[],
                 );
                 std::process::exit(1);
             }
-        };
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            crate::output::json_error(
-                &format!("gh issue list failed: {}", stderr.trim()),
-                &[],
-            );
-            std::process::exit(1);
         }
-
-        String::from_utf8_lossy(&output.stdout).to_string()
     };
 
     let issues: Vec<Value> = match serde_json::from_str(&issues_json) {
@@ -948,6 +966,22 @@ mod tests {
         ];
         let result = analyze_issues(&issues, &HashMap::new());
         assert_eq!(result["total"], 3);
+    }
+
+    #[test]
+    fn analyze_stale_detection() {
+        let old_date = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
+        let issues = vec![make_issue(
+            1,
+            "Old issue",
+            "Check /nonexistent/gone.py",
+            &[],
+            &old_date,
+        )];
+        let result = analyze_issues(&issues, &HashMap::new());
+        let issue = &result["issues"][0];
+        assert!(issue["stale"].as_bool().unwrap());
+        assert!(issue["stale_missing"].as_i64().unwrap() >= 1);
     }
 
     #[test]
