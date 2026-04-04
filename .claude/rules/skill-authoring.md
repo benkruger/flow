@@ -364,3 +364,25 @@ are implicit contracts with the agent's Output Format section. If
 the agent's output format changes, the skill's detection markers
 must be updated in the same commit. Add a comment in the skill
 near the marker list citing the source agent file and section.
+
+## Delegation Path Tests Need No Migration
+
+When a plan migrates logic from one implementation to another (e.g.
+Python to Rust) but keeps the same public entry point (e.g. a bash
+shim that now delegates to the new implementation), check whether
+existing tests that drive the entry point automatically cover the new
+path before planning a test migration task.
+
+Why: integration tests that invoke the entry point (e.g. `bash
+SCRIPT`) are implementation-agnostic — they exercise whatever code
+the entry point ultimately runs. When the entry point delegates to a
+new implementation, the existing tests become the new
+implementation's integration tests automatically. Planning a "port
+the tests" task in this case wastes plan effort and produces no
+artifact.
+
+How to apply: in the Plan phase, before adding a test-migration
+task, verify whether existing tests at the entry-point level already
+cover the new delegation path. If yes, replace the migration task
+with a single verification task (run the existing tests and confirm
+they pass against the new implementation).

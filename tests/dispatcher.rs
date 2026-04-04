@@ -334,3 +334,83 @@ fn tombstone_no_python_test_label_issues() {
 // Note: format-issues-summary.py and test_format_issues_summary.py are retained
 // as a Python bridge — render-pr-body.py imports format_issues_summary() in-process.
 // The CLI entry point dispatches to Rust via bin/flow; the bridge serves Python callers.
+
+// --- tombstone tests: Python files ported to Rust in PR #852 ---
+
+#[test]
+fn tombstone_no_python_finalize_commit() {
+    // Tombstone: removed in PR #852. Must not return.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir)
+        .join("lib")
+        .join("finalize-commit.py");
+    assert!(
+        !path.exists(),
+        "lib/finalize-commit.py was ported to Rust and must not be re-added"
+    );
+}
+
+#[test]
+fn tombstone_no_python_test_finalize_commit() {
+    // Tombstone: removed in PR #852. Must not return.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir)
+        .join("tests")
+        .join("test_finalize_commit.py");
+    assert!(
+        !path.exists(),
+        "tests/test_finalize_commit.py was ported to Rust and must not be re-added"
+    );
+}
+
+#[test]
+fn tombstone_no_python_notify_slack() {
+    // Tombstone: removed in PR #852. Must not return.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir)
+        .join("lib")
+        .join("notify-slack.py");
+    assert!(
+        !path.exists(),
+        "lib/notify-slack.py was ported to Rust and must not be re-added"
+    );
+}
+
+#[test]
+fn tombstone_no_python_test_notify_slack() {
+    // Tombstone: removed in PR #852. Must not return.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir)
+        .join("tests")
+        .join("test_notify_slack.py");
+    assert!(
+        !path.exists(),
+        "tests/test_notify_slack.py was ported to Rust and must not be re-added"
+    );
+}
+
+#[test]
+fn tombstone_no_python_write_rule() {
+    // Tombstone: removed in PR #852. Must not return.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir)
+        .join("lib")
+        .join("write-rule.py");
+    assert!(
+        !path.exists(),
+        "lib/write-rule.py was ported to Rust and must not be re-added"
+    );
+}
+
+#[test]
+fn tombstone_no_python_test_write_rule() {
+    // Tombstone: removed in PR #852. Must not return.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir)
+        .join("tests")
+        .join("test_write_rule.py");
+    assert!(
+        !path.exists(),
+        "tests/test_write_rule.py was ported to Rust and must not be re-added"
+    );
+}
