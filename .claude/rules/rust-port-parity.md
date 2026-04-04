@@ -47,6 +47,16 @@ with no default parameter. When porting a Python function that uses
 `.unwrap_or()` or `.unwrap_or_else()`. Omitting the default changes
 error behavior — the Python code succeeds while the Rust code fails.
 
+## CLI Argument Group Parity
+
+Python `argparse.add_mutually_exclusive_group(required=True)` rejects
+invocations that omit all group members. Clap's `group = "action"` on
+individual args creates a mutually exclusive group but does not make it
+required — both booleans default to false and the command silently
+proceeds. Use a struct-level `ArgGroup` with `.required(true)` to match
+the Python behavior. Audit every `add_mutually_exclusive_group` call in
+the Python source for `required=True` during the port.
+
 ## Exec Target Parity
 
 When Python uses `os.execvp` to call `bin/flow` (the hybrid
