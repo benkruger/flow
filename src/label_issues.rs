@@ -85,17 +85,18 @@ pub fn label_issues(issue_numbers: &[i64], action: &str) -> LabelResult {
 
 #[derive(Parser, Debug)]
 #[command(name = "label-issues", about = "Add or remove Flow In-Progress label on issues")]
+#[command(group(clap::ArgGroup::new("action").args(["add", "remove"]).required(true)))]
 pub struct Args {
     /// Path to state JSON file
     #[arg(long)]
     pub state_file: String,
 
     /// Add label
-    #[arg(long, group = "action")]
+    #[arg(long)]
     pub add: bool,
 
     /// Remove label
-    #[arg(long, group = "action")]
+    #[arg(long)]
     pub remove: bool,
 }
 
