@@ -1,0 +1,188 @@
+use std::io::Read;
+use std::path::Path;
+
+use serde_json::{json, Value};
+
+use crate::git::{current_branch, project_root};
+use crate::lock::mutate_state;
+use crate::utils::now;
+
+/// Capture StopFailure event data into the state file.
+///
+/// Writes `_last_failure` object with type, message, and timestamp.
+/// Requires error_type key in hook_input to confirm this is a real
+/// StopFailure event.
+pub fn capture_failure_data(hook_input: &Value, state_path: &Path) {
+    if hook_input.get("error_type").is_none() {
+        return;
+    }
+
+    let error_type = hook_input
+        .get("error_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let error_message = hook_input
+        .get("error_message")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let timestamp = now();
+
+    let _ = mutate_state(state_path, |state| {
+        state["_last_failure"] = json!({
+            "type": error_type,
+            "message": error_message,
+            "timestamp": timestamp,
+        });
+    });
+}
+
+/// Run the stop-failure hook (entry point).
+pub fn run() {
+    let mut stdin_buf = String::new();
+    let _ = std::io::stdin().read_to_string(&mut stdin_buf);
+
+    let hook_input: Value = match serde_json::from_str(&stdin_buf) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let branch = match current_branch() {
+        Some(b) => b,
+        None => return,
+    };
+
+    let root = project_root();
+    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+
+    if !state_path.exists() {
+        return;
+    }
+
+    capture_failure_data(&hook_input, &state_path);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_writes_failure_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({"branch": "test", "current_phase": "flow-code"});
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let input = json!({
+            "error_type": "rate_limit",
+            "error_message": "429 Too Many Requests"
+        });
+        capture_failure_data(&input, &path);
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let failure = &state["_last_failure"];
+        assert_eq!(failure["type"], "rate_limit");
+        assert_eq!(failure["message"], "429 Too Many Requests");
+        assert!(failure.get("timestamp").is_some());
+        assert!(failure["timestamp"].as_str().unwrap().len() > 0);
+    }
+
+    #[test]
+    fn test_no_error_type_key_skips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({"branch": "test"});
+        fs::write(&path, serde_json::to_string_pretty(&initial).unwrap()).unwrap();
+        let original = fs::read_to_string(&path).unwrap();
+
+        let input = json!({"error_message": "some error"});
+        capture_failure_data(&input, &path);
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
+    }
+
+    #[test]
+    fn test_preserves_existing_state_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({
+            "branch": "test",
+            "session_id": "existing-session",
+            "notes": [{"note": "a correction"}]
+        });
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let input = json!({
+            "error_type": "rate_limit",
+            "error_message": "429 Too Many Requests"
+        });
+        capture_failure_data(&input, &path);
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(state["session_id"], "existing-session");
+        assert_eq!(state["notes"][0]["note"], "a correction");
+        assert_eq!(state["_last_failure"]["type"], "rate_limit");
+    }
+
+    #[test]
+    fn test_overwrites_previous_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({
+            "branch": "test",
+            "_last_failure": {
+                "type": "old_error",
+                "message": "Old message",
+                "timestamp": "2026-01-01T00:00:00-08:00"
+            }
+        });
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let input = json!({
+            "error_type": "network_timeout",
+            "error_message": "Connection timed out"
+        });
+        capture_failure_data(&input, &path);
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(state["_last_failure"]["type"], "network_timeout");
+        assert_eq!(state["_last_failure"]["message"], "Connection timed out");
+    }
+
+    #[test]
+    fn test_missing_error_message_defaults_to_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({"branch": "test"});
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let input = json!({"error_type": "auth_failure"});
+        capture_failure_data(&input, &path);
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(state["_last_failure"]["type"], "auth_failure");
+        assert_eq!(state["_last_failure"]["message"], "");
+    }
+
+    #[test]
+    fn test_no_state_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent.json");
+        let input = json!({"error_type": "rate_limit", "error_message": "429"});
+        // Should not panic
+        capture_failure_data(&input, &path);
+    }
+
+    #[test]
+    fn test_corrupt_state_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, "{bad json").unwrap();
+
+        let input = json!({"error_type": "rate_limit", "error_message": "429"});
+        // Should not panic
+        capture_failure_data(&input, &path);
+    }
+}
