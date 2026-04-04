@@ -345,3 +345,12 @@ that parse this script's output must say "parse the last line" — not
 convention: `_parse` reads `result.stdout.strip().splitlines()[-1]`.
 New lib scripts that inherit child stdout must follow the same pattern
 in their test helpers.
+
+## Truncation Detection Marker Contracts
+
+When a skill checks agent output for expected structural markers
+(e.g. truncation detection in flow-learn), those marker strings
+are implicit contracts with the agent's Output Format section. If
+the agent's output format changes, the skill's detection markers
+must be updated in the same commit. Add a comment in the skill
+near the marker list citing the source agent file and section.

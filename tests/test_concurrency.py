@@ -99,15 +99,15 @@ def _worker_create_state(state_dir_str, branch):
     path.write_text(json.dumps(state, indent=2))
 
 
-def _worker_cleanup(project_root_str, branch, worktree, lib_dir):
-    """Run cleanup() on a branch."""
-    sys.path.insert(0, lib_dir)
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("cleanup", os.path.join(lib_dir, "cleanup.py"))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    mod.cleanup(project_root_str, branch, worktree)
+def _worker_cleanup(project_root_str, branch, worktree, bin_flow):
+    """Run cleanup via bin/flow subprocess."""
+    result = subprocess.run(
+        [bin_flow, "cleanup", project_root_str, "--branch", branch, "--worktree", worktree],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"cleanup failed: {result.stderr or result.stdout}")
 
 
 def _worker_mutate_flag(state_path_str, lib_dir):
@@ -291,9 +291,11 @@ def test_cleanup_isolation(tmp_path):
     state_b = state_dir / "branch-b.json"
     state_b.write_text(json.dumps({"branch": "branch-b", "count": 0}))
 
+    bin_flow = str(Path(__file__).resolve().parent.parent / "bin" / "flow")
+
     p1 = multiprocessing.Process(
         target=_worker_cleanup,
-        args=(str(tmp_path), "branch-a", ".worktrees/branch-a", LIB_DIR),
+        args=(str(tmp_path), "branch-a", ".worktrees/branch-a", bin_flow),
     )
     p2 = multiprocessing.Process(
         target=_worker_mutate_flag,

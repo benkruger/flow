@@ -197,6 +197,16 @@ Provide all artifacts in the prompt with labeled sections:
 
 Wait for the agent to return its structured findings.
 
+**Truncation check.** Examine the learn-analyst output for expected category
+markers. Valid output contains at least one of: a `**Finding` block, or any
+of the phrases "Process violation", "Mistake", "Missing rule", "Process gap",
+"No process violation findings", "No mistake findings", "No missing rule
+findings", "No process gap findings". If none of these markers are present,
+the learn-analyst agent likely exhausted its turn budget before producing
+structured output. Flag it as truncated and note for the Step 2 synthesis:
+"Learn-analyst agent exhausted turn budget without producing structured
+findings. Analysis proceeding with parent session data only."
+
 **Maintainer and Standalone mode:** Review the current conversation for:
 - Moments where the user corrected Claude
 - Responses where Claude was overruled or pushed back
@@ -251,6 +261,14 @@ Provide the full diff output in the prompt, prefixed with:
 
 Wait for the agent to return its structured confusion report.
 
+**Truncation check.** Examine the onboarding output for expected structure
+markers. Valid output contains either a `**Finding` block or the phrase
+"No findings." If neither marker is present, the onboarding agent likely
+exhausted its turn budget before producing structured output. Flag it as
+truncated and note for the Step 2 synthesis: "Onboarding agent exhausted
+turn budget without producing structured findings. Comprehension barrier
+analysis unavailable."
+
 If the agent reports no findings, note "no comprehension barriers found"
 and continue to Step 2.
 
@@ -274,6 +292,12 @@ findings. The learn-analyst produces process violations, mistakes, missing
 rules, and process gaps from artifact evidence. The onboarding agent
 produces comprehension barriers from a newcomer perspective. Map each
 finding to the categories below.
+
+If either agent was flagged as truncated in Step 1, note which agent(s)
+were truncated at the top of the synthesis. Truncated agents produced no
+usable findings — do not attempt to extract partial findings from
+truncated output. Proceed with the findings from non-truncated sources
+only.
 
 **Maintainer and Standalone mode:** Organize all gathered evidence from
 Sources A and B into the categories below.
@@ -566,6 +590,11 @@ Present the full report to the user:
   - /flow:flow-commit should warn when branch is behind
   - ...
 
+  Truncated agents
+  ----------------
+  ⚠ learn-analyst — exhausted turn budget
+  ⚠ onboarding — exhausted turn budget
+
   Changes applied
   ---------------
   Project CLAUDE.md: 2 additions (committed)
@@ -579,6 +608,7 @@ Present the full report to the user:
 ```
 ````
 
+Omit "Truncated agents" if no agents were flagged as truncated in Step 1.
 Omit "Changes applied" if no CLAUDE.md changes were made. Omit "Issues
 filed" if no issues were filed or not in Phase 5 mode.
 

@@ -34,6 +34,15 @@ This asymmetry is intentional. See `agents/pre-mortem.md` Design
 Note for the full rationale and `agents/reviewer.md` Design Note
 for the cross-reference.
 
+## Silent Truncation on maxTurns Exhaustion
+
+Claude Code sub-agents stop silently after reaching their
+`maxTurns` ceiling. They produce no error signal — the response
+simply ends mid-sentence. The parent skill detects this by
+checking the returned output for expected structural markers
+(section headers, Finding blocks). Absence of markers means
+the agent was truncated, not that it found nothing.
+
 ## Never Break the Session
 
 Never force a session break for cognitive isolation. Claude Code

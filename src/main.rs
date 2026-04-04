@@ -4,8 +4,10 @@ use std::process;
 
 use flow_rs::add_issue;
 use flow_rs::add_notification;
+use flow_rs::analyze_issues;
 use flow_rs::append_note;
 use flow_rs::auto_close_parent;
+use flow_rs::cleanup;
 use flow_rs::check_phase::check_phase;
 use flow_rs::close_issue;
 use flow_rs::close_issues;
@@ -13,7 +15,9 @@ use flow_rs::commands;
 use flow_rs::create_dependencies;
 use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
+use flow_rs::format_issues_summary;
 use flow_rs::format_status;
+use flow_rs::label_issues;
 use flow_rs::git::{project_root, resolve_branch};
 use flow_rs::issue;
 use flow_rs::link_blocked_by;
@@ -64,12 +68,19 @@ enum Commands {
         reason: Option<String>,
     },
 
+    /// Analyze open GitHub issues for the flow-issues skill.
+    #[command(name = "analyze-issues")]
+    AnalyzeIssues(analyze_issues::Args),
+
     /// Append a note to FLOW state
     AppendNote(append_note::Args),
     /// Record a filed issue in FLOW state
     AddIssue(add_issue::Args),
     /// Record a Slack notification in FLOW state
     AddNotification(add_notification::Args),
+
+    /// FLOW cleanup orchestrator (worktree, branches, state files).
+    Cleanup(cleanup::Args),
 
     /// Create a GitHub issue via gh CLI with body-file.
     Issue(issue::Args),
@@ -207,6 +218,11 @@ enum Commands {
         branch: Option<String>,
     },
 
+    /// Add or remove Flow In-Progress label on issues
+    LabelIssues(label_issues::Args),
+    /// Format issues summary for Complete phase
+    FormatIssuesSummary(format_issues_summary::Args),
+
     #[command(external_subcommand)]
     #[allow(dead_code)]
     External(Vec<String>),
@@ -238,7 +254,9 @@ fn main() {
                 reason.as_deref(),
             );
         }
+        Some(Commands::AnalyzeIssues(args)) => analyze_issues::run(args),
         Some(Commands::AppendNote(args)) => append_note::run(args),
+        Some(Commands::Cleanup(args)) => cleanup::run(args),
         Some(Commands::AddIssue(args)) => add_issue::run(args),
         Some(Commands::AddNotification(args)) => add_notification::run(args),
         Some(Commands::Issue(args)) => issue::run(args),
@@ -318,6 +336,12 @@ fn main() {
         }
         Some(Commands::ContinueContext { branch }) => {
             commands::continue_context::run(branch.as_deref());
+        }
+        Some(Commands::LabelIssues(args)) => {
+            label_issues::run(args);
+        }
+        Some(Commands::FormatIssuesSummary(args)) => {
+            format_issues_summary::run(args);
         }
         Some(Commands::External(_)) => {
             process::exit(127);
