@@ -4,6 +4,7 @@ pub mod append_note;
 pub mod check_phase;
 pub mod commands;
 pub mod error;
+pub mod format_issues_summary;
 pub mod format_status;
 pub mod label_issues;
 pub mod phase_transition;
