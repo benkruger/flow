@@ -16,6 +16,7 @@ pub mod format_issues_summary;
 pub mod format_status;
 pub mod git;
 pub mod github;
+pub mod hooks;
 pub mod issue;
 pub mod label_issues;
 pub mod link_blocked_by;
