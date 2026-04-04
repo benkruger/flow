@@ -38,7 +38,7 @@ These skills are available at any point in the workflow, regardless of phase.
 | [`/flow-continue`](flow-continue.md) | Resume current feature — re-asks last transition question or rebuilds from state |
 | [`/flow-note`](flow-note.md) | Capture a correction or learning — invoked automatically on corrections |
 | [`/flow-abort`](flow-abort.md) | Abandon the current feature — close PR, delete branch, remove worktree |
-| [`/flow-reset`](flow-reset.md) | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files |
+| [`/flow-reset`](flow-reset.md) | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files/lock entries |
 | [`/flow-config`](flow-config.md) | Display current configuration — version, framework, per-skill autonomy |
 | [`/flow-doc-sync`](flow-doc-sync.md) | Full codebase documentation accuracy review — reports drift between code and docs |
 | [`/flow-issues`](flow-issues.md) | Fetch open issues, categorize, prioritize, and display a dashboard with recommended work order. Supports readiness filters (`--ready`, `--blocked`, `--decomposed`, `--quick-start`) |

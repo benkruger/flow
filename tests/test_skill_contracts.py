@@ -1217,6 +1217,12 @@ def test_reset_has_confirmation():
     assert "AskUserQuestion" in content, "Reset SKILL.md must use AskUserQuestion to confirm before destroying"
 
 
+def test_reset_clears_start_lock_queue():
+    """Reset SKILL.md must clean up the start-queue lock directory entries."""
+    content = (SKILLS_DIR / "flow-reset" / "SKILL.md").read_text()
+    assert "start-queue" in content, "Reset SKILL.md must address start-queue lock directory cleanup"
+
+
 # --- QA skill (maintainer) ---
 
 
