@@ -565,3 +565,20 @@ def test_no_python_hook_refs_in_hooks_json():
     assert "clear-blocked.py" not in hooks_content, (
         "hooks.json must not reference clear-blocked.py — use bin/flow clear-blocked"
     )
+
+
+# --- Tombstone: Python auto-close-parent ported to Rust (PR #832) ---
+
+
+def test_no_python_auto_close_parent():
+    """Tombstone: ported to Rust in PR #832. Must not return."""
+    assert not (LIB_DIR / "auto-close-parent.py").exists(), (
+        "auto-close-parent.py was ported to Rust — use flow-rs auto-close-parent"
+    )
+
+
+def test_no_python_test_auto_close_parent():
+    """Tombstone: ported to Rust in PR #832. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_auto_close_parent.py").exists(), (
+        "test_auto_close_parent.py was ported to Rust — tests are in src/auto_close_parent.rs"
+    )
