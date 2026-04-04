@@ -2127,20 +2127,30 @@ def test_start_flow_specific_errors_release_lock():
     )
 
 
-def test_start_main_broken_errors_hold_lock():
-    """Tombstone: lock release removed from Steps 6-8 in PR #826. Must not return.
+def test_start_no_lock_release_on_main_broken_errors():
+    """Tombstone: lock release removed from Steps 6 and 8 in PR #826. Must not return.
 
-    Steps 6-8 errors mean main is broken (CI failure, dep breakage). Releasing the
-    lock cascades the failure to the next queued flow. Hold the lock and report.
+    Steps 6 and 8 errors mean main is broken (CI failure, dep-induced breakage).
+    Releasing the lock cascades the failure to the next queued flow. Hold the lock
+    and report. Step 7 (update-deps error) releases because main is untouched.
     """
     content = _read_skill("flow-start")
-    # Extract Steps 6-8 (from Step 6 header to Step 9 header)
-    step6_8_match = re.search(r"### Step 6.*?\n(.*?)(?=\n### Step 9)", content, re.DOTALL)
-    assert step6_8_match, "Could not find Steps 6-8 in flow-start/SKILL.md"
-    step6_8_text = step6_8_match.group(1)
-    assert "start-lock --release" not in step6_8_text, (
-        "flow-start Steps 6-8 must NOT release the start lock on error — "
+    # Extract Step 6 (from Step 6 header to Step 7 header)
+    step6_match = re.search(r"### Step 6.*?\n(.*?)(?=\n### Step 7)", content, re.DOTALL)
+    assert step6_match, "Could not find Step 6 in flow-start/SKILL.md"
+    step6_text = step6_match.group(1)
+    assert "start-lock --release" not in step6_text, (
+        "flow-start Step 6 must NOT release the start lock on consistent CI failure — "
         "main is broken, the next queued flow would hit the same failure. "
+        "Lock release was removed in PR #826"
+    )
+    # Extract Step 8 (from Step 8 header to Step 9 header)
+    step8_match = re.search(r"### Step 8.*?\n(.*?)(?=\n### Step 9)", content, re.DOTALL)
+    assert step8_match, "Could not find Step 8 in flow-start/SKILL.md"
+    step8_text = step8_match.group(1)
+    assert "start-lock --release" not in step8_text, (
+        "flow-start Step 8 must NOT release the start lock on ci-fixer failure — "
+        "main has uncommitted dep-induced breakage. "
         "Lock release was removed in PR #826"
     )
 

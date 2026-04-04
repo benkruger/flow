@@ -259,8 +259,9 @@ git pull origin main
 
 ### Step 6 — CI baseline gate
 
-Main is pristine — nothing merges without clean CI. Any failure here is
-a flaky test, not a real breakage.
+Main is pristine — nothing merges without clean CI. A single-attempt
+failure is likely flaky and is retried. Consistent failure (all 3
+retries) indicates real main breakage.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 6 --branch <branch> -- ci --retry 3 --branch main
@@ -313,7 +314,11 @@ Parse the JSON output:
 - If `status` is `"skipped"` → skip to Step 10 (release lock).
 - If `status` is `"ok"` and `changes` is `false` → skip to Step 10 (release lock).
 - If `status` is `"ok"` and `changes` is `true` → continue to Step 8.
-- If `status` is `"error"` → hold the lock and stop. Main may be in a broken state — the next queued flow would hit the same failure. Report the error to the user.
+- If `status` is `"error"` → release the lock and stop. The dependency tool failed before modifying main (timeout, network, exec error) — main is untouched, so the next queued flow can proceed. Report the error to the user.
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
+```
 
 ### Step 8 — CI post-deps gate
 
