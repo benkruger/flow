@@ -7,7 +7,9 @@ use flow_rs::add_notification;
 use flow_rs::append_note;
 use flow_rs::check_phase::check_phase;
 use flow_rs::commands;
+use flow_rs::format_issues_summary;
 use flow_rs::format_status;
+use flow_rs::label_issues;
 use flow_rs::git::{project_root, resolve_branch};
 use flow_rs::lock::mutate_state;
 use flow_rs::output::json_error;
@@ -173,6 +175,11 @@ enum Commands {
         branch: Option<String>,
     },
 
+    /// Add or remove Flow In-Progress label on issues
+    LabelIssues(label_issues::Args),
+    /// Format issues summary for Complete phase
+    FormatIssuesSummary(format_issues_summary::Args),
+
     #[command(external_subcommand)]
     #[allow(dead_code)]
     External(Vec<String>),
@@ -276,6 +283,12 @@ fn main() {
         }
         Some(Commands::ContinueContext { branch }) => {
             commands::continue_context::run(branch.as_deref());
+        }
+        Some(Commands::LabelIssues(args)) => {
+            label_issues::run(args);
+        }
+        Some(Commands::FormatIssuesSummary(args)) => {
+            format_issues_summary::run(args);
         }
         Some(Commands::External(_)) => {
             process::exit(127);
