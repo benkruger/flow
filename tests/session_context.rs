@@ -894,3 +894,375 @@ fn compact_cwd_mismatch_shows_warning() {
     assert!(ctx.contains("/wrong/directory"), "Should mention wrong CWD");
     assert!(ctx.contains(".worktrees/my-feature"), "Should mention worktree");
 }
+
+// --- Context building ---
+
+#[test]
+fn single_feature_does_not_force_action() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-plan", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("in_progress");
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(!ctx.contains("FIRST action"), "Should not force FIRST action");
+    assert!(
+        !ctx.contains("Invoke the flow:flow-continue skill"),
+        "Should not command Claude to invoke"
+    );
+}
+
+#[test]
+fn single_feature_includes_note_instruction() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-plan", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("in_progress");
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("flow:flow-note"), "Should include note instruction");
+}
+
+#[test]
+fn phase_2_plan_approved_instructs_auto_continue() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-plan", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("in_progress");
+    state["plan_file"] = json!("/Users/test/.claude/plans/test-plan.md");
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("flow:flow-continue"), "Should mention flow-continue");
+    assert!(
+        !ctx.contains("Do NOT invoke flow:flow-continue"),
+        "Should not tell to NOT invoke"
+    );
+}
+
+#[test]
+fn phase_2_no_plan_file_does_not_auto_continue() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-plan", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("in_progress");
+    state["plan_file"] = Value::Null;
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("Do NOT invoke flow:flow-continue"));
+}
+
+#[test]
+fn phase_2_plan_approved_via_files_block() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-plan", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("in_progress");
+    state["files"]["plan"] = json!(".flow-states/my-feature-plan.md");
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("flow:flow-continue"));
+    assert!(!ctx.contains("Do NOT invoke flow:flow-continue"));
+}
+
+#[test]
+fn never_entered_phase_instructs_auto_continue() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    // current_phase advanced to flow-code by Plan completion, but flow-code is still pending
+    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "auto-continue"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    // flow-code is pending (not entered yet)
+    write_state(&state_dir, "auto-continue", &state);
+
+    switch_branch(dir.path(), "auto-continue");
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("flow:flow-continue"));
+    assert!(!ctx.contains("Do NOT invoke flow:flow-continue"));
+}
+
+#[test]
+fn phase_1_in_progress_does_not_auto_continue() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-start", "branch": "fresh-start"}));
+    state["phases"]["flow-start"]["status"] = json!("in_progress");
+    write_state(&state_dir, "fresh-start", &state);
+
+    switch_branch(dir.path(), "fresh-start");
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("Do NOT invoke"));
+}
+
+#[test]
+fn code_review_with_step_tracking_shows_progress() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-code-review", "branch": "step-tracking"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("complete");
+    state["phases"]["flow-code-review"]["status"] = json!("in_progress");
+    state["code_review_step"] = json!(2);
+    write_state(&state_dir, "step-tracking", &state);
+
+    switch_branch(dir.path(), "step-tracking");
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("Step 2/4 done"), "Should show step progress");
+    assert!(ctx.contains("Security"), "Should name step 3 (Security)");
+}
+
+#[test]
+fn code_review_bad_step_does_not_crash() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-code-review", "branch": "bad-step"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("complete");
+    state["phases"]["flow-code-review"]["status"] = json!("in_progress");
+    state["code_review_step"] = json!("bad");
+    write_state(&state_dir, "bad-step", &state);
+
+    switch_branch(dir.path(), "bad-step");
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("Bad Step"));
+    assert!(!ctx.contains("done"));
+}
+
+#[test]
+fn code_review_empty_string_step_does_not_crash() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-code-review", "branch": "empty-step"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("complete");
+    state["phases"]["flow-code-review"]["status"] = json!("in_progress");
+    state["code_review_step"] = json!("");
+    write_state(&state_dir, "empty-step", &state);
+
+    switch_branch(dir.path(), "empty-step");
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("Empty Step"));
+    assert!(!ctx.contains("done"));
+}
+
+#[test]
+fn multi_feature_code_review_step_tracking() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut s1 = make_state(json!({"current_phase": "flow-code-review", "branch": "review-feature"}));
+    s1["phases"]["flow-start"]["status"] = json!("complete");
+    s1["phases"]["flow-plan"]["status"] = json!("complete");
+    s1["phases"]["flow-code"]["status"] = json!("complete");
+    s1["phases"]["flow-code-review"]["status"] = json!("in_progress");
+    s1["code_review_step"] = json!(3);
+    write_state(&state_dir, "review-feature", &s1);
+
+    let mut s2 = make_state(json!({"current_phase": "flow-code", "branch": "other-feature"}));
+    s2["phases"]["flow-start"]["status"] = json!("complete");
+    s2["phases"]["flow-plan"]["status"] = json!("complete");
+    s2["phases"]["flow-code"]["status"] = json!("in_progress");
+    write_state(&state_dir, "other-feature", &s2);
+
+    detach_head(dir.path());
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("Step 3/4 done"));
+    assert!(ctx.contains("Code Review Plugin"));
+}
+
+#[test]
+fn single_feature_includes_implementation_guardrail() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "my-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("in_progress");
+    write_state(&state_dir, "my-feature", &state);
+
+    switch_branch(dir.path(), "my-feature");
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("NEVER implement"), "Should include guardrail");
+}
+
+#[test]
+fn multiple_features_includes_implementation_guardrail() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut s1 = make_state(json!({"current_phase": "flow-plan", "branch": "feature-a"}));
+    s1["phases"]["flow-start"]["status"] = json!("complete");
+    s1["phases"]["flow-plan"]["status"] = json!("in_progress");
+    write_state(&state_dir, "feature-a", &s1);
+
+    let mut s2 = make_state(json!({"current_phase": "flow-code", "branch": "feature-b"}));
+    s2["phases"]["flow-start"]["status"] = json!("complete");
+    s2["phases"]["flow-plan"]["status"] = json!("complete");
+    s2["phases"]["flow-code"]["status"] = json!("in_progress");
+    write_state(&state_dir, "feature-b", &s2);
+
+    detach_head(dir.path());
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("NEVER implement"), "Should include guardrail");
+}
+
+#[test]
+fn output_has_both_context_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-start", "branch": "some-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("in_progress");
+    write_state(&state_dir, "some-feature", &state);
+
+    switch_branch(dir.path(), "some-feature");
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+
+    let output = parse_stdout(&result);
+    assert!(output.get("additional_context").is_some());
+    assert!(output.get("hookSpecificOutput").is_some());
+    assert!(output["hookSpecificOutput"].get("additionalContext").is_some());
+    assert_eq!(
+        output["additional_context"],
+        output["hookSpecificOutput"]["additionalContext"],
+        "Both fields must contain identical context"
+    );
+}
+
+#[test]
+fn dev_mode_preamble_when_plugin_root_backup_present() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "dev-mode-test"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("in_progress");
+    write_state(&state_dir, "dev-mode-test", &state);
+
+    fs::write(
+        dir.path().join(".flow.json"),
+        r#"{"flow_version": "0.39.0", "plugin_root": "/local/path", "plugin_root_backup": "/cache/path"}"#,
+    )
+    .unwrap();
+
+    switch_branch(dir.path(), "dev-mode-test");
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("[DEV MODE]"), "Should include dev mode preamble");
+}
+
+#[test]
+fn no_dev_mode_preamble_without_plugin_root_backup() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "no-dev-mode"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("in_progress");
+    write_state(&state_dir, "no-dev-mode", &state);
+
+    fs::write(
+        dir.path().join(".flow.json"),
+        r#"{"flow_version": "0.39.0", "plugin_root": "/cache/path"}"#,
+    )
+    .unwrap();
+
+    switch_branch(dir.path(), "no-dev-mode");
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(!ctx.contains("[DEV MODE]"), "Should NOT include dev mode preamble");
+}

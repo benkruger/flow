@@ -436,12 +436,18 @@ fn is_plan_approved(state: &Value) -> bool {
     if cp != "flow-plan" {
         return false;
     }
-    // Check files.plan first, then legacy plan_file
-    let plan = state
+    // Check files.plan first (non-null only), then legacy plan_file (non-null only)
+    let files_plan = state
         .get("files")
         .and_then(|f| f.get("plan"))
-        .or_else(|| state.get("plan_file"));
-    matches!(plan, Some(v) if !v.is_null())
+        .filter(|v| !v.is_null());
+    if files_plan.is_some() {
+        return true;
+    }
+    state
+        .get("plan_file")
+        .filter(|v| !v.is_null())
+        .is_some()
 }
 
 fn is_never_entered(state: &Value) -> bool {
