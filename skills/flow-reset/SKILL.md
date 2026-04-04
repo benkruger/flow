@@ -37,6 +37,10 @@ List any worktrees besides the main working tree.
 
 Use Glob to find all files in `.flow-states/` — JSON state files and logs.
 
+### Start lock queue
+
+Use Glob to find files in `.flow-states/start-queue/`.
+
 ### Local branches
 
 Run:
@@ -79,6 +83,7 @@ Print the full inventory inside a fenced code block:
 
 Worktrees: <count>
 State files: <count>
+Start lock entries: <count>
 Local branches: <count>
 Remote branches: <count>
 Open PRs: <count>
@@ -125,6 +130,10 @@ For each remote branch (besides `origin/main` and `origin/HEAD`), run `git push 
 
 For each local branch (besides `main`), run `git branch -D <name>`.
 
+### Clear start lock queue
+
+For each file in `.flow-states/start-queue/`, run `rm .flow-states/start-queue/<filename>`.
+
 ### Delete state files and logs
 
 For each file in `.flow-states/`, run `rm .flow-states/<filename>`.
@@ -144,6 +153,7 @@ Worktrees removed: <count>
 Remote branches deleted: <count>
 Local branches deleted: <count>
 State files deleted: <count>
+Lock queue entries cleared: <count>
 Errors: <count or "none">
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
