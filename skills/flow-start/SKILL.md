@@ -122,6 +122,20 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --acquire --feature <feature-name>
   executed yet, re-running is safe. When the lock is eventually acquired,
   the skill proceeds through all steps normally.
 
+<HARD-GATE>
+When the lock status is "locked", the ONLY permitted action is to invoke
+the loop skill as described above. The start-lock command has built-in
+staleness detection (30-minute timeout) that handles genuinely dead sessions.
+
+Do NOT speculate about whether the lock is stale.
+Do NOT offer to release, reset, or clean up the lock.
+Do NOT suggest any workaround that bypasses the lock.
+Do NOT take any action other than invoking the loop skill and returning.
+
+Trust the tool output. Poll and wait.
+
+</HARD-GATE>
+
 ### Step 2 — Pre-flight checks
 
 Run both in parallel (one response, multiple tool calls):
@@ -138,7 +152,12 @@ Process the results in this order:
 
 **Version gate (prime-check):**
 
-- If `"status": "error"` — show the error message from the JSON (it suggests `/flow:flow-prime --reprime` or `/flow:flow-prime`) and stop. Do not proceed to any further steps.
+- If `"status": "error"` — release the lock, show the error message from the JSON (it suggests `/flow:flow-prime --reprime` or `/flow:flow-prime`), and stop. This is a flow-specific error — main is untouched, so the next queued flow can proceed.
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
+```
+
 - If `"status": "ok"` and `"auto_upgraded": true` — show this notice using the `old_version` and `new_version` fields from the JSON, then continue:
 
 ````markdown
@@ -195,10 +214,18 @@ If `--auto` was passed to this skill invocation, also pass `--auto`:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --auto --start-step 3 --start-steps-total 11
 ```
 
-Parse the JSON output. If `"status": "error"`, report the error and stop.
-If `"step"` is `"fetch_issue_title"`, the issue title could not be fetched —
-report the error to the user and stop. If `"step"` is `"duplicate_issue"`,
-another flow already targets the same issue — report the error and stop.
+Parse the JSON output. If `"status": "error"`, release the lock, report
+the error, and stop. These are flow-specific errors — main is untouched,
+so the next queued flow can proceed.
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
+```
+
+If `"step"` is `"fetch_issue_title"`, the issue title could not be fetched.
+If `"step"` is `"duplicate_issue"`, another flow already targets the same
+issue. In both cases, the lock release above already ran — report the
+error to the user and stop.
 
 On success, capture the `branch` field from the JSON output. This is the
 **canonical branch name** — it may differ from `<feature-name>` when the
@@ -266,12 +293,10 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_ti
 ```
 
 **If `status` is `"error"` and `consistent` is `true`** — all 3
-attempts failed. Release the lock and stop. Report to the user that
-CI is consistently failing on pristine main.
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
-```
+attempts failed. Hold the lock and stop. Main is broken — the next
+queued flow would hit the same failure. Report to the user that CI is
+consistently failing on pristine main. The 30-minute stale timeout
+releases the lock if the user does not act.
 
 ### Step 7 — Update dependencies
 
@@ -288,7 +313,7 @@ Parse the JSON output:
 - If `status` is `"skipped"` → skip to Step 10 (release lock).
 - If `status` is `"ok"` and `changes` is `false` → skip to Step 10 (release lock).
 - If `status` is `"ok"` and `changes` is `true` → continue to Step 8.
-- If `status` is `"error"` → release the lock and stop. Report the error to the user.
+- If `status` is `"error"` → hold the lock and stop. Main may be in a broken state — the next queued flow would hit the same failure. Report the error to the user.
 
 ### Step 8 — CI post-deps gate
 
@@ -339,7 +364,7 @@ sub-agent knows what failed.
 Wait for the sub-agent to return.
 
 - **Fixed** — continue to Step 9
-- **Not fixed** — release the lock and stop. Report to the user.
+- **Not fixed** — hold the lock and stop. Main has uncommitted dep-induced breakage — the next queued flow would hit the same failure. Report to the user.
 
 ### Step 9 — Commit to main
 

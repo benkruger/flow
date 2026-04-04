@@ -2114,6 +2114,50 @@ def test_start_no_manual_step_counter():
     )
 
 
+def test_start_flow_specific_errors_release_lock():
+    """Steps 2-3 errors are flow-specific (main untouched) — must release the lock before stopping."""
+    content = _read_skill("flow-start")
+    # Extract Steps 2-3 (from Step 2 header to Step 4 header)
+    step2_3_match = re.search(r"### Step 2.*?\n(.*?)(?=\n### Step 4)", content, re.DOTALL)
+    assert step2_3_match, "Could not find Steps 2-3 in flow-start/SKILL.md"
+    step2_3_text = step2_3_match.group(1)
+    assert "start-lock --release" in step2_3_text, (
+        "flow-start Steps 2-3 must release the start lock on error — "
+        "these are flow-specific errors (main untouched), the next queued flow would succeed"
+    )
+
+
+def test_start_main_broken_errors_hold_lock():
+    """Tombstone: lock release removed from Steps 6-8 in PR #826. Must not return.
+
+    Steps 6-8 errors mean main is broken (CI failure, dep breakage). Releasing the
+    lock cascades the failure to the next queued flow. Hold the lock and report.
+    """
+    content = _read_skill("flow-start")
+    # Extract Steps 6-8 (from Step 6 header to Step 9 header)
+    step6_8_match = re.search(r"### Step 6.*?\n(.*?)(?=\n### Step 9)", content, re.DOTALL)
+    assert step6_8_match, "Could not find Steps 6-8 in flow-start/SKILL.md"
+    step6_8_text = step6_8_match.group(1)
+    assert "start-lock --release" not in step6_8_text, (
+        "flow-start Steps 6-8 must NOT release the start lock on error — "
+        "main is broken, the next queued flow would hit the same failure. "
+        "Lock release was removed in PR #826"
+    )
+
+
+def test_start_step1_locked_has_hard_gate():
+    """Step 1 must have a HARD-GATE enforcing lock compliance when another flow holds the lock."""
+    content = _read_skill("flow-start")
+    # Extract Step 1 (from Step 1 header to Step 2 header)
+    step1_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 2)", content, re.DOTALL)
+    assert step1_match, "Could not find Step 1 in flow-start/SKILL.md"
+    step1_text = step1_match.group(1)
+    assert "HARD-GATE" in step1_text, (
+        "flow-start Step 1 must have a HARD-GATE enforcing lock compliance — "
+        "prohibiting speculation about lock staleness or offering to release another flow's lock"
+    )
+
+
 def test_prime_commit_step_enforces_flow_commit_exclusively():
     """flow-prime commit step must use /flow:flow-commit and not raw git commands."""
     content = _read_skill("flow-prime")
