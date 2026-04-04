@@ -97,3 +97,43 @@ a direct Python fallback (`_direct_append`) for `main()`. The
 fallback prevents infinite recursion when `bin/flow` dispatches
 to the Python script and the Rust binary is absent. Document
 which function is for which context with inline comments.
+
+## CLI Testability — Extract run_impl
+
+When a Rust port's plan requires CLI error-path tests (missing
+state file, corrupt JSON, happy-path JSON shape), extract a
+fallible `run_impl(args: &Args) -> Result<T, String>` helper
+and make `run()` a thin wrapper that calls `run_impl` and
+`process::exit(1)` on `Err`. `process::exit` terminates the
+test process, so any error-path test of `run()` directly is
+impossible — the tests must target `run_impl`.
+
+Why: existing modules like `format_issues_summary.rs` embed
+`process::exit` directly in `run()`. When a plan says "follow
+that pattern" AND lists `test_cli_missing_state_file` or
+`test_cli_corrupt_state_file` by name, the two requirements
+conflict. Extract `run_impl` as the testable layer so the plan
+can have both pattern parity and coverage.
+
+How to apply: at the start of the Code phase, before writing the
+first test, check whether the plan enumerates CLI error-path
+tests. If yes, refactor `run()` to delegate to `run_impl` as the
+first implementation step — writing the tests against a
+non-existent `run_impl` is a natural TDD cycle.
+
+## Test Naming — cli_ Prefix Contract
+
+Tests prefixed `test_cli_*` must exercise `run` or `run_impl` —
+not the pure format function. Tests that call only the pure
+formatter should drop the `cli_` prefix.
+
+Why: the `cli_` prefix signals that a test covers the CLI entry
+point's argument parsing, file I/O, and error handling. A test
+named `test_cli_writes_output_file` that calls the format
+function and writes the file manually misleads future readers
+about what the CLI layer is actually verified to do.
+
+How to apply: when adding a test to a Rust port module, decide
+first whether it covers CLI behavior (invoke `run_impl` with an
+`Args` struct) or format behavior (invoke the pure function
+directly). Name accordingly.
