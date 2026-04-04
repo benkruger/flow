@@ -13,6 +13,9 @@ fi
 "$PYTHON" -m pymarkdown -c "$REPO_ROOT/.pymarkdown.yml" scan -r -e ".venv" -e ".pytest_cache" -e ".claude" -e "tmp" -e ".flow-states" -e ".worktrees" .
 "$PYTHON" -m ruff check lib/ tests/
 "$PYTHON" -m ruff format --check lib/ tests/
+# Remove stale __pycache__ dirs (excluding .venv/) to prevent orphaned .pyc
+# files from interfering with coverage measurement and test discovery.
+find . -path './.venv' -prune -o -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 # Build Rust binary before Python tests so the hybrid dispatcher
 # can route to Rust commands during subprocess-based Python tests.
 if [ -f "$REPO_ROOT/Cargo.toml" ]; then
