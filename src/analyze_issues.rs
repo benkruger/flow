@@ -137,15 +137,16 @@ pub fn truncate_body(body: &str, max_length: usize) -> String {
     format!("{}...", truncated)
 }
 
-/// Build the GraphQL query for fetching blocker counts.
+/// Build the GraphQL query for fetching blocker details.
 ///
 /// Returns the full query string with aliased fragments for each issue number.
+/// Uses the `blockedBy` connection to get actual blocker issue numbers and state.
 pub fn build_blocker_query(issue_numbers: &[i64]) -> String {
     let fragments: Vec<String> = issue_numbers
         .iter()
         .map(|n| {
             format!(
-                "issue_{}: issue(number: {}) {{ issueDependenciesSummary {{ blockedBy }} }}",
+                "issue_{}: issue(number: {}) {{ blockedBy(first: 10) {{ nodes {{ number state }} }} }}",
                 n, n
             )
         })
@@ -157,12 +158,13 @@ pub fn build_blocker_query(issue_numbers: &[i64]) -> String {
     )
 }
 
-/// Parse a GraphQL response for blocker counts.
+/// Parse a GraphQL response for blocker details.
 ///
-/// Extracts `issueDependenciesSummary.blockedBy` for each issue number.
-/// Returns HashMap mapping issue number to blocker count.
-/// Handles null values at any level gracefully (defaults to 0).
-pub fn parse_blocker_response(json_str: &str, issue_numbers: &[i64]) -> HashMap<i64, i64> {
+/// Extracts `blockedBy.nodes` for each issue number.
+/// Returns HashMap mapping issue number to list of open blocker issue numbers.
+/// Only includes blockers where `state == "OPEN"` — closed blockers are resolved.
+/// Handles null values at any level gracefully (defaults to empty vec).
+pub fn parse_blocker_response(json_str: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<i64>> {
     let data: Value = match serde_json::from_str(json_str) {
         Ok(v) => v,
         Err(_) => return HashMap::new(),
@@ -179,28 +181,41 @@ pub fn parse_blocker_response(json_str: &str, issue_numbers: &[i64]) -> HashMap<
         _ => None,
     };
 
-    let mut counts = HashMap::new();
+    let mut blockers = HashMap::new();
     for &number in issue_numbers {
         let key = format!("issue_{}", number);
-        let blocked_by = repo_obj
+        let nodes = repo_obj
             .and_then(|m| m.get(&key))
-            .and_then(|issue| issue.get("issueDependenciesSummary"))
-            .and_then(|summary| summary.get("blockedBy"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        counts.insert(number, blocked_by);
+            .and_then(|issue| issue.get("blockedBy"))
+            .and_then(|blocked_by| blocked_by.get("nodes"))
+            .and_then(|n| n.as_array());
+
+        let blocker_numbers: Vec<i64> = match nodes {
+            Some(arr) => arr
+                .iter()
+                .filter(|node| {
+                    node.get("state")
+                        .and_then(|s| s.as_str())
+                        .map(|s| s == "OPEN")
+                        .unwrap_or(false)
+                })
+                .filter_map(|node| node.get("number").and_then(|n| n.as_i64()))
+                .collect(),
+            None => Vec::new(),
+        };
+        blockers.insert(number, blocker_numbers);
     }
 
-    counts
+    blockers
 }
 
-/// Fetch native blocked-by counts for issues via GitHub GraphQL API.
+/// Fetch native blocked-by details for issues via GitHub GraphQL API.
 ///
-/// Uses `issueDependenciesSummary.blockedBy` with batched aliased queries.
-/// Returns HashMap mapping issue number to blocker count.
+/// Uses `blockedBy(first: 10)` connection with batched aliased queries.
+/// Returns HashMap mapping issue number to list of open blocker issue numbers.
 /// Returns empty HashMap on any failure (graceful degradation).
 /// Timeout: 30 seconds (matches Python).
-pub fn fetch_blocker_counts(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, i64> {
+pub fn fetch_blockers(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<i64>> {
     if issue_numbers.is_empty() {
         return HashMap::new();
     }
@@ -275,9 +290,10 @@ pub fn fetch_blocker_counts(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, i
 ///
 /// Separates in-progress issues from available issues and enriches
 /// each available issue with labels, category, age, stale info, etc.
+/// The `blocker_map` maps issue numbers to lists of open blocker issue numbers.
 pub fn analyze_issues(
     issues: &[Value],
-    blocker_counts: &HashMap<i64, i64>,
+    blocker_map: &HashMap<i64, Vec<i64>>,
 ) -> Value {
     if issues.is_empty() {
         return serde_json::json!({
@@ -341,7 +357,8 @@ pub fn analyze_issues(
         let stale_info = check_stale(&file_paths, age_days);
         let category = categorize(&label_names, issue["title"].as_str().unwrap_or(""), body);
 
-        let native_blocked = blocker_counts.get(&number).copied().unwrap_or(0) > 0;
+        let blocked_by = blocker_map.get(&number).cloned().unwrap_or_default();
+        let native_blocked = !blocked_by.is_empty();
 
         available.push(serde_json::json!({
             "number": number,
@@ -353,6 +370,7 @@ pub fn analyze_issues(
             "decomposed": label_flags.decomposed,
             "blocked": label_flags.blocked || native_blocked,
             "native_blocked": native_blocked,
+            "blocked_by": blocked_by,
             "stale": stale_info.stale,
             "stale_missing": stale_info.stale_missing,
             "file_paths": file_paths,
@@ -519,19 +537,19 @@ pub fn run(args: Args) {
         }
     };
 
-    // Fetch native blocker counts via GraphQL (best-effort)
-    let blocker_counts = match crate::github::detect_repo(None) {
+    // Fetch native blocker details via GraphQL (best-effort)
+    let blocker_map = match crate::github::detect_repo(None) {
         Some(repo) => {
             let all_numbers: Vec<i64> = issues
                 .iter()
                 .filter_map(|i| i["number"].as_i64())
                 .collect();
-            fetch_blocker_counts(&repo, &all_numbers)
+            fetch_blockers(&repo, &all_numbers)
         }
         None => HashMap::new(),
     };
 
-    let mut output = analyze_issues(&issues, &blocker_counts);
+    let mut output = analyze_issues(&issues, &blocker_map);
 
     // Apply filter if requested
     let filter_name = if args.ready {
@@ -789,8 +807,10 @@ mod tests {
     fn build_blocker_query_single_issue() {
         let query = build_blocker_query(&[10]);
         assert!(query.contains("issue_10: issue(number: 10)"));
-        assert!(query.contains("issueDependenciesSummary"));
-        assert!(query.contains("blockedBy"));
+        assert!(query.contains("blockedBy(first: 10)"));
+        assert!(query.contains("nodes"));
+        assert!(query.contains("number"));
+        assert!(query.contains("state"));
     }
 
     #[test]
@@ -810,32 +830,55 @@ mod tests {
 
     // --- parse_blocker_response ---
 
-    fn graphql_response(issue_counts: &[(i64, i64)]) -> String {
-        let mut data = serde_json::Map::new();
-        for (number, count) in issue_counts {
-            let mut issue = serde_json::Map::new();
-            let mut summary = serde_json::Map::new();
-            summary.insert("blockedBy".to_string(), serde_json::json!(count));
-            issue.insert(
-                "issueDependenciesSummary".to_string(),
-                Value::Object(summary),
+    /// Build a GraphQL response with blockedBy nodes for testing.
+    /// Each entry is (issue_number, vec of (blocker_number, state)).
+    fn graphql_response(issue_blockers: &[(i64, Vec<(i64, &str)>)]) -> String {
+        let mut repo_data = serde_json::Map::new();
+        for (number, blockers) in issue_blockers {
+            let nodes: Vec<Value> = blockers
+                .iter()
+                .map(|(n, state)| serde_json::json!({"number": n, "state": state}))
+                .collect();
+            repo_data.insert(
+                format!("issue_{}", number),
+                serde_json::json!({"blockedBy": {"nodes": nodes}}),
             );
-            data.insert(format!("issue_{}", number), Value::Object(issue));
         }
-        let mut repo = serde_json::Map::new();
-        repo.insert("repository".to_string(), Value::Object(data));
-        let mut root = serde_json::Map::new();
-        root.insert("data".to_string(), Value::Object(repo));
-        serde_json::to_string(&Value::Object(root)).unwrap()
+        serde_json::json!({
+            "data": {"repository": repo_data}
+        })
+        .to_string()
     }
 
     #[test]
     fn parse_blocker_response_happy_path() {
-        let response = graphql_response(&[(10, 2), (20, 0), (30, 1)]);
+        let response = graphql_response(&[
+            (10, vec![(100, "OPEN"), (101, "OPEN")]),
+            (20, vec![]),
+            (30, vec![(200, "OPEN")]),
+        ]);
         let result = parse_blocker_response(&response, &[10, 20, 30]);
-        assert_eq!(result[&10], 2);
-        assert_eq!(result[&20], 0);
-        assert_eq!(result[&30], 1);
+        assert_eq!(result[&10], vec![100, 101]);
+        assert!(result[&20].is_empty());
+        assert_eq!(result[&30], vec![200]);
+    }
+
+    #[test]
+    fn parse_blocker_response_filters_closed() {
+        let response = graphql_response(&[
+            (10, vec![(100, "OPEN"), (101, "CLOSED")]),
+        ]);
+        let result = parse_blocker_response(&response, &[10]);
+        assert_eq!(result[&10], vec![100]);
+    }
+
+    #[test]
+    fn parse_blocker_response_all_closed_returns_empty() {
+        let response = graphql_response(&[
+            (10, vec![(100, "CLOSED"), (101, "CLOSED")]),
+        ]);
+        let result = parse_blocker_response(&response, &[10]);
+        assert!(result[&10].is_empty());
     }
 
     #[test]
@@ -848,35 +891,36 @@ mod tests {
     fn parse_blocker_response_null_repository() {
         let response = r#"{"data":{"repository":null}}"#;
         let result = parse_blocker_response(response, &[10]);
-        assert_eq!(result[&10], 0);
-    }
-
-    #[test]
-    fn parse_blocker_response_null_summary() {
-        let response =
-            r#"{"data":{"repository":{"issue_10":{"issueDependenciesSummary":null}}}}"#;
-        let result = parse_blocker_response(response, &[10]);
-        assert_eq!(result[&10], 0);
+        assert!(result[&10].is_empty());
     }
 
     #[test]
     fn parse_blocker_response_null_blocked_by() {
-        let response = r#"{"data":{"repository":{"issue_10":{"issueDependenciesSummary":{"blockedBy":null}}}}}"#;
+        let response =
+            r#"{"data":{"repository":{"issue_10":{"blockedBy":null}}}}"#;
         let result = parse_blocker_response(response, &[10]);
-        assert_eq!(result[&10], 0);
+        assert!(result[&10].is_empty());
     }
 
-    // --- fetch_blocker_counts ---
+    #[test]
+    fn parse_blocker_response_null_nodes() {
+        let response =
+            r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":null}}}}}"#;
+        let result = parse_blocker_response(response, &[10]);
+        assert!(result[&10].is_empty());
+    }
+
+    // --- fetch_blockers ---
 
     #[test]
-    fn fetch_blocker_counts_empty_list() {
-        let result = fetch_blocker_counts("owner/repo", &[]);
+    fn fetch_blockers_empty_list() {
+        let result = fetch_blockers("owner/repo", &[]);
         assert!(result.is_empty());
     }
 
     #[test]
-    fn fetch_blocker_counts_malformed_repo() {
-        let result = fetch_blocker_counts("noslash", &[10]);
+    fn fetch_blockers_malformed_repo() {
+        let result = fetch_blockers("noslash", &[10]);
         assert!(result.is_empty());
     }
 
@@ -987,12 +1031,19 @@ mod tests {
     #[test]
     fn analyze_native_blocked_without_label() {
         let issues = vec![make_issue(10, "Has native blocker", "", &[], &now_iso())];
-        let mut blocker_counts = HashMap::new();
-        blocker_counts.insert(10_i64, 2_i64);
-        let result = analyze_issues(&issues, &blocker_counts);
+        let mut blocker_map: HashMap<i64, Vec<i64>> = HashMap::new();
+        blocker_map.insert(10, vec![100, 200]);
+        let result = analyze_issues(&issues, &blocker_map);
         let issue = &result["issues"][0];
         assert!(issue["blocked"].as_bool().unwrap());
         assert!(issue["native_blocked"].as_bool().unwrap());
+        let blocked_by: Vec<i64> = issue["blocked_by"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_i64().unwrap())
+            .collect();
+        assert_eq!(blocked_by, vec![100, 200]);
     }
 
     #[test]
@@ -1002,6 +1053,7 @@ mod tests {
         let issue = &result["issues"][0];
         assert!(!issue["blocked"].as_bool().unwrap());
         assert!(!issue["native_blocked"].as_bool().unwrap());
+        assert!(issue["blocked_by"].as_array().unwrap().is_empty());
     }
 
     // --- filter_issues ---
