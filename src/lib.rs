@@ -25,4 +25,6 @@ pub mod phase_config;
 pub mod phase_transition;
 pub mod start_setup;
 pub mod state;
+pub mod render_pr_body;
+pub mod update_pr_body;
 pub mod utils;

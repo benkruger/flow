@@ -18,6 +18,8 @@ use flow_rs::create_sub_issue;
 use flow_rs::format_issues_summary;
 use flow_rs::format_status;
 use flow_rs::label_issues;
+use flow_rs::render_pr_body;
+use flow_rs::update_pr_body;
 use flow_rs::git::{project_root, resolve_branch};
 use flow_rs::issue;
 use flow_rs::link_blocked_by;
@@ -223,6 +225,14 @@ enum Commands {
     /// Format issues summary for Complete phase
     FormatIssuesSummary(format_issues_summary::Args),
 
+    /// Render complete PR body from state
+    #[command(name = "render-pr-body")]
+    RenderPrBody(render_pr_body::Args),
+
+    /// Update PR body with artifacts
+    #[command(name = "update-pr-body")]
+    UpdatePrBody(update_pr_body::Args),
+
     #[command(external_subcommand)]
     #[allow(dead_code)]
     External(Vec<String>),
@@ -342,6 +352,12 @@ fn main() {
         }
         Some(Commands::FormatIssuesSummary(args)) => {
             format_issues_summary::run(args);
+        }
+        Some(Commands::RenderPrBody(args)) => {
+            render_pr_body::run(args);
+        }
+        Some(Commands::UpdatePrBody(args)) => {
+            update_pr_body::run(args);
         }
         Some(Commands::External(_)) => {
             process::exit(127);
