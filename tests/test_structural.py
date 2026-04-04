@@ -596,3 +596,34 @@ def test_no_python_test_auto_close_parent():
     assert not (REPO_ROOT / "tests" / "test_auto_close_parent.py").exists(), (
         "test_auto_close_parent.py was ported to Rust — tests are in src/auto_close_parent.rs"
     )
+
+
+# --- Tombstone: Python display formatters ported to Rust (PR #851) ---
+
+
+def test_no_python_format_complete_summary():
+    """Tombstone: ported to Rust in PR #851. Must not return."""
+    assert not (LIB_DIR / "format-complete-summary.py").exists(), (
+        "format-complete-summary.py was ported to Rust — use flow-rs format-complete-summary"
+    )
+
+
+def test_no_python_format_pr_timings():
+    """Tombstone: ported to Rust in PR #851. Must not return."""
+    assert not (LIB_DIR / "format-pr-timings.py").exists(), (
+        "format-pr-timings.py was ported to Rust — use flow-rs format-pr-timings"
+    )
+
+
+def test_no_python_test_format_complete_summary():
+    """Tombstone: ported to Rust in PR #851. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_format_complete_summary.py").exists(), (
+        "test_format_complete_summary.py was ported to Rust — tests are in src/format_complete_summary.rs"
+    )
+
+
+def test_no_python_test_format_pr_timings():
+    """Tombstone: ported to Rust in PR #851. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_format_pr_timings.py").exists(), (
+        "test_format_pr_timings.py was ported to Rust — tests are in src/format_pr_timings.rs"
+    )
