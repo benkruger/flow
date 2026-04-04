@@ -1,4 +1,5 @@
 pub mod add_issue;
+pub mod finalize_commit;
 pub mod analyze_issues;
 pub mod add_notification;
 pub mod append_note;
@@ -16,8 +17,10 @@ pub mod git;
 pub mod github;
 pub mod issue;
 pub mod lock;
+pub mod notify_slack;
 pub mod output;
 pub mod phase_config;
 pub mod start_setup;
 pub mod state;
 pub mod utils;
+pub mod write_rule;
