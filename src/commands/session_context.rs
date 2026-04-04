@@ -113,12 +113,9 @@ fn detect_orchestrate(state_dir: &Path) -> String {
 /// Reset interrupted session timing. Accumulates elapsed seconds, clears _blocked.
 /// Operates on a mutable Value reference (for use inside mutate_state closure).
 fn reset_interrupted(state: &mut Value) {
-    let mut _changed = false;
-
     // Clear _blocked
-    if state.get("_blocked").is_some() {
-        state.as_object_mut().unwrap().remove("_blocked");
-        _changed = true;
+    if let Some(obj) = state.as_object_mut() {
+        obj.remove("_blocked");
     }
 
     let cp = state
