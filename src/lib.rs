@@ -1,4 +1,5 @@
 pub mod add_issue;
+pub mod analyze_issues;
 pub mod add_notification;
 pub mod append_note;
 pub mod auto_close_parent;

@@ -73,11 +73,20 @@ then into `bin/flow`.
 When Python uses `subprocess.run(timeout=N)`, the Rust port must
 preserve the same timeout. Omitting a timeout changes failure
 behavior — the Python call raises `TimeoutExpired` after N seconds,
-but the Rust call blocks indefinitely. Use `run_cmd` with
-`Some(Duration::from_secs(N))` or implement a polling-based timeout
-via `try_wait()`. Audit every `subprocess.run` call with a `timeout`
-parameter during the port — missing timeouts are silent regressions
-that only manifest under network failures or API outages.
+but the Rust call blocks indefinitely.
+
+Never use `try_wait()` polling followed by `wait_with_output()`.
+The `try_wait()` call reaps the child process on success, and
+`wait_with_output()` internally calls `wait()` again — which
+fails with ECHILD on an already-reaped process, silently
+discarding all stdout data. Additionally, if stdout is piped
+but never drained, the child process blocks when the pipe buffer
+fills (typically 64KB), causing `try_wait()` to never return and
+the timeout to fire on every invocation with large output.
+
+The correct pattern: take `child.stdout` before the poll loop,
+drain it in a spawned thread, poll `try_wait()` for exit status,
+then join the reader thread to get the buffered output.
 
 ## Python Bridge Pattern
 
