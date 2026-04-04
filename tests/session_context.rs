@@ -200,3 +200,197 @@ fn single_feature_returns_valid_json() {
     assert!(ctx.contains("Invoice Pdf Export"), "Should contain feature name");
     assert!(ctx.contains("flow:flow-continue"), "Should mention flow:flow-continue");
 }
+
+// --- Branch isolation ---
+
+#[test]
+fn processes_only_matching_branch_state() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut s1 = make_state(json!({"current_phase": "flow-code", "branch": "feature-alpha"}));
+    s1["phases"]["flow-start"]["status"] = json!("complete");
+    s1["phases"]["flow-plan"]["status"] = json!("complete");
+    s1["phases"]["flow-code"]["status"] = json!("in_progress");
+    write_state(&state_dir, "feature-alpha", &s1);
+
+    let mut s2 = make_state(json!({"current_phase": "flow-plan", "branch": "feature-beta"}));
+    s2["phases"]["flow-start"]["status"] = json!("complete");
+    s2["phases"]["flow-plan"]["status"] = json!("in_progress");
+    write_state(&state_dir, "feature-beta", &s2);
+
+    switch_branch(dir.path(), "feature-alpha");
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("Feature Alpha"), "Should contain Feature Alpha");
+    assert!(!ctx.contains("Feature Beta"), "Should NOT contain Feature Beta");
+    assert!(!ctx.contains("Multiple"), "Should NOT be multi-feature");
+}
+
+#[test]
+fn detached_head_multiple_files_fallback() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut s1 = make_state(json!({"current_phase": "flow-code", "branch": "feature-one"}));
+    s1["phases"]["flow-start"]["status"] = json!("complete");
+    s1["phases"]["flow-plan"]["status"] = json!("complete");
+    s1["phases"]["flow-code"]["status"] = json!("in_progress");
+    write_state(&state_dir, "feature-one", &s1);
+
+    let mut s2 = make_state(json!({"current_phase": "flow-plan", "branch": "feature-two"}));
+    s2["phases"]["flow-start"]["status"] = json!("complete");
+    s2["phases"]["flow-plan"]["status"] = json!("in_progress");
+    write_state(&state_dir, "feature-two", &s2);
+
+    detach_head(dir.path());
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("Multiple FLOW features"), "Should list multiple features");
+    assert!(ctx.contains("Feature One"), "Should contain Feature One");
+    assert!(ctx.contains("Feature Two"), "Should contain Feature Two");
+}
+
+#[test]
+fn on_main_sees_feature_state_file() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "some-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("in_progress");
+    write_state(&state_dir, "some-feature", &state);
+
+    // Stay on main — do NOT switch branch
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("Some Feature"), "Main branch should see all features");
+}
+
+// --- Edge cases ---
+
+#[test]
+fn phases_json_files_are_ignored() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "real-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("in_progress");
+    write_state(&state_dir, "real-feature", &state);
+
+    // Ghost: a -phases.json file
+    fs::write(
+        state_dir.join("real-feature-phases.json"),
+        r#"{"phases": []}"#,
+    )
+    .unwrap();
+
+    switch_branch(dir.path(), "real-feature");
+    let result = run_session_context(dir.path());
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("Real Feature"), "Should show Real Feature");
+    assert!(!ctx.contains("Multiple"), "Should NOT be multi-feature");
+}
+
+#[test]
+fn corrupt_state_file_among_valid_ones() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    // Corrupt file
+    fs::write(state_dir.join("corrupt.json"), "{bad json").unwrap();
+
+    // Valid file
+    let mut state = make_state(json!({"current_phase": "flow-start", "branch": "valid-branch"}));
+    state["phases"]["flow-start"]["status"] = json!("in_progress");
+    write_state(&state_dir, "valid-branch", &state);
+
+    switch_branch(dir.path(), "valid-branch");
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("Valid Branch"), "Should show valid feature despite corrupt file");
+}
+
+#[test]
+fn all_corrupt_state_files_exits_0_silent() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+    fs::write(state_dir.join("bad-one.json"), "{broken").unwrap();
+    fs::write(state_dir.join("bad-two.json"), "not json at all").unwrap();
+
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+    assert_eq!(result.stdout.len(), 0, "All corrupt → silent exit");
+}
+
+#[test]
+fn non_json_files_ignored() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+    fs::write(state_dir.join("notes.txt"), "not a state file").unwrap();
+    fs::write(state_dir.join("backup.bak"), "also not a state file").unwrap();
+
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+    assert_eq!(result.stdout.len(), 0, "Non-JSON files → silent exit");
+}
+
+// --- Multiple features ---
+
+#[test]
+fn multiple_features_mentions_both() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut s1 = make_state(json!({"current_phase": "flow-plan", "branch": "feature-alpha"}));
+    s1["phases"]["flow-start"]["status"] = json!("complete");
+    s1["phases"]["flow-plan"]["status"] = json!("in_progress");
+    write_state(&state_dir, "feature-alpha", &s1);
+
+    let mut s2 = make_state(json!({
+        "current_phase": "flow-code-review",
+        "branch": "feature-beta"
+    }));
+    s2["phases"]["flow-start"]["status"] = json!("complete");
+    s2["phases"]["flow-plan"]["status"] = json!("complete");
+    s2["phases"]["flow-code"]["status"] = json!("complete");
+    s2["phases"]["flow-code-review"]["status"] = json!("in_progress");
+    write_state(&state_dir, "feature-beta", &s2);
+
+    detach_head(dir.path());
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("Multiple FLOW features"), "Should say multiple");
+    assert!(ctx.contains("Feature Alpha"), "Should list alpha");
+    assert!(ctx.contains("Feature Beta"), "Should list beta");
+}
