@@ -265,6 +265,122 @@ pub fn fetch_blocker_counts(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, i
     parse_blocker_response(&stdout, issue_numbers)
 }
 
+/// Analyze a list of issues from gh issue list JSON.
+///
+/// Separates in-progress issues from available issues and enriches
+/// each available issue with labels, category, age, stale info, etc.
+pub fn analyze_issues(
+    issues: &[Value],
+    blocker_counts: &HashMap<i64, i64>,
+) -> Value {
+    if issues.is_empty() {
+        return serde_json::json!({
+            "status": "ok",
+            "total": 0,
+            "in_progress": [],
+            "issues": [],
+        });
+    }
+
+    let mut in_progress = Vec::new();
+    let mut available = Vec::new();
+
+    for issue in issues {
+        let number = issue["number"].as_i64().unwrap_or(0);
+        let body = issue.get("body").and_then(|b| b.as_str()).unwrap_or("");
+        let labels_arr = issue.get("labels").and_then(|l| l.as_array());
+        let labels_vec: Vec<Value> = labels_arr.cloned().unwrap_or_default();
+
+        let label_names: HashSet<String> = labels_vec
+            .iter()
+            .filter_map(|l| l.get("name")?.as_str().map(String::from))
+            .collect();
+        let mut label_list: Vec<String> = label_names.iter().cloned().collect();
+        label_list.sort();
+
+        let label_flags = detect_labels(&labels_vec);
+
+        if label_flags.in_progress {
+            in_progress.push(serde_json::json!({
+                "number": number,
+                "title": issue["title"],
+                "url": issue.get("url").cloned().unwrap_or(Value::String(String::new())),
+            }));
+            continue;
+        }
+
+        let file_paths = extract_file_paths(body);
+
+        let created_at_str = issue
+            .get("createdAt")
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
+        let age_days = if let Ok(created) =
+            chrono::DateTime::parse_from_rfc3339(created_at_str)
+        {
+            let now = chrono::Utc::now();
+            (now - created.with_timezone(&chrono::Utc))
+                .num_days()
+        } else {
+            // Try ISO format with Z suffix replaced
+            let normalized = created_at_str.replace('Z', "+00:00");
+            if let Ok(created) = chrono::DateTime::parse_from_rfc3339(&normalized) {
+                let now = chrono::Utc::now();
+                (now - created.with_timezone(&chrono::Utc)).num_days()
+            } else {
+                0
+            }
+        };
+
+        let stale_info = check_stale(&file_paths, age_days);
+        let category = categorize(&label_names, issue["title"].as_str().unwrap_or(""), body);
+
+        let native_blocked = blocker_counts.get(&number).copied().unwrap_or(0) > 0;
+
+        available.push(serde_json::json!({
+            "number": number,
+            "title": issue["title"],
+            "url": issue.get("url").cloned().unwrap_or(Value::String(String::new())),
+            "labels": label_list,
+            "category": category,
+            "age_days": age_days,
+            "decomposed": label_flags.decomposed,
+            "blocked": label_flags.blocked || native_blocked,
+            "native_blocked": native_blocked,
+            "stale": stale_info.stale,
+            "stale_missing": stale_info.stale_missing,
+            "file_paths": file_paths,
+            "brief": truncate_body(body, 200),
+        }));
+    }
+
+    serde_json::json!({
+        "status": "ok",
+        "total": issues.len(),
+        "in_progress": in_progress,
+        "issues": available,
+    })
+}
+
+/// Filter analyzed issues by readiness criteria.
+///
+/// Valid filter names: "ready", "blocked", "decomposed", "quick-start".
+/// Returns filtered list. Returns error string for unknown filters.
+pub fn filter_issues(issues: &[Value], filter_name: &str) -> Result<Vec<Value>, String> {
+    let predicate: Box<dyn Fn(&Value) -> bool> = match filter_name {
+        "ready" => Box::new(|i: &Value| !i["blocked"].as_bool().unwrap_or(false)),
+        "blocked" => Box::new(|i: &Value| i["blocked"].as_bool().unwrap_or(false)),
+        "decomposed" => Box::new(|i: &Value| i["decomposed"].as_bool().unwrap_or(false)),
+        "quick-start" => Box::new(|i: &Value| {
+            i["decomposed"].as_bool().unwrap_or(false)
+                && !i["blocked"].as_bool().unwrap_or(false)
+        }),
+        _ => return Err(format!("Unknown filter: {}", filter_name)),
+    };
+
+    Ok(issues.iter().filter(|i| predicate(i)).cloned().collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -574,5 +690,169 @@ mod tests {
     fn fetch_blocker_counts_malformed_repo() {
         let result = fetch_blocker_counts("noslash", &[10]);
         assert!(result.is_empty());
+    }
+
+    // --- analyze_issues helpers ---
+
+    fn make_issue(number: i64, title: &str, body: &str, labels: &[&str], created_at: &str) -> Value {
+        let label_arr: Vec<Value> = labels
+            .iter()
+            .map(|n| serde_json::json!({"name": n}))
+            .collect();
+        serde_json::json!({
+            "number": number,
+            "title": title,
+            "body": body,
+            "labels": label_arr,
+            "createdAt": created_at,
+            "url": format!("https://github.com/test/repo/issues/{}", number),
+        })
+    }
+
+    fn now_iso() -> String {
+        chrono::Local::now().to_rfc3339()
+    }
+
+    // --- analyze_issues ---
+
+    #[test]
+    fn analyze_empty_list() {
+        let result = analyze_issues(&[], &HashMap::new());
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["total"], 0);
+        assert_eq!(result["in_progress"].as_array().unwrap().len(), 0);
+        assert_eq!(result["issues"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn analyze_separates_in_progress() {
+        let issues = vec![
+            make_issue(1, "Active", "", &["Flow In-Progress"], &now_iso()),
+            make_issue(2, "Available", "", &[], &now_iso()),
+        ];
+        let result = analyze_issues(&issues, &HashMap::new());
+        assert_eq!(result["in_progress"].as_array().unwrap().len(), 1);
+        assert_eq!(result["in_progress"][0]["number"], 1);
+        assert_eq!(result["issues"].as_array().unwrap().len(), 1);
+        assert_eq!(result["issues"][0]["number"], 2);
+    }
+
+    #[test]
+    fn analyze_issue_fields() {
+        let issues = vec![make_issue(1, "Test", "Check lib/foo.py", &["decomposed"], &now_iso())];
+        let result = analyze_issues(&issues, &HashMap::new());
+        let issue = &result["issues"][0];
+        assert_eq!(issue["number"], 1);
+        assert_eq!(issue["title"], "Test");
+        assert!(issue.get("url").is_some());
+        assert!(issue["decomposed"].as_bool().unwrap());
+        assert!(issue.get("age_days").is_some());
+        assert!(issue.get("file_paths").is_some());
+        assert!(issue.get("blocked").is_some());
+        assert!(issue.get("brief").is_some());
+        assert!(issue.get("category").is_some());
+        assert!(issue.get("stale").is_some());
+        assert!(issue.get("stale_missing").is_some());
+    }
+
+    #[test]
+    fn analyze_blocked_label() {
+        let issues = vec![
+            make_issue(1, "Ready issue", "", &[], &now_iso()),
+            make_issue(2, "Blocked issue", "", &["Blocked"], &now_iso()),
+        ];
+        let result = analyze_issues(&issues, &HashMap::new());
+        let arr = result["issues"].as_array().unwrap();
+        let issue_1 = arr.iter().find(|i| i["number"] == 1).unwrap();
+        let issue_2 = arr.iter().find(|i| i["number"] == 2).unwrap();
+        assert!(!issue_1["blocked"].as_bool().unwrap());
+        assert!(issue_2["blocked"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn analyze_total_includes_all() {
+        let issues = vec![
+            make_issue(1, "A", "", &["Flow In-Progress"], &now_iso()),
+            make_issue(2, "B", "", &[], &now_iso()),
+            make_issue(3, "C", "", &[], &now_iso()),
+        ];
+        let result = analyze_issues(&issues, &HashMap::new());
+        assert_eq!(result["total"], 3);
+    }
+
+    #[test]
+    fn analyze_native_blocked_without_label() {
+        let issues = vec![make_issue(10, "Has native blocker", "", &[], &now_iso())];
+        let mut blocker_counts = HashMap::new();
+        blocker_counts.insert(10_i64, 2_i64);
+        let result = analyze_issues(&issues, &blocker_counts);
+        let issue = &result["issues"][0];
+        assert!(issue["blocked"].as_bool().unwrap());
+        assert!(issue["native_blocked"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn analyze_no_blocker_counts_default() {
+        let issues = vec![make_issue(10, "No counts", "", &[], &now_iso())];
+        let result = analyze_issues(&issues, &HashMap::new());
+        let issue = &result["issues"][0];
+        assert!(!issue["blocked"].as_bool().unwrap());
+        assert!(!issue["native_blocked"].as_bool().unwrap());
+    }
+
+    // --- filter_issues ---
+
+    #[test]
+    fn filter_ready_returns_not_blocked() {
+        let issues = vec![
+            serde_json::json!({"number": 1, "blocked": false, "decomposed": false}),
+            serde_json::json!({"number": 2, "blocked": true, "decomposed": false}),
+            serde_json::json!({"number": 3, "blocked": false, "decomposed": true}),
+        ];
+        let result = filter_issues(&issues, "ready").unwrap();
+        let numbers: Vec<i64> = result.iter().map(|i| i["number"].as_i64().unwrap()).collect();
+        assert_eq!(numbers, vec![1, 3]);
+    }
+
+    #[test]
+    fn filter_blocked_returns_blocked() {
+        let issues = vec![
+            serde_json::json!({"number": 1, "blocked": false, "decomposed": false}),
+            serde_json::json!({"number": 2, "blocked": true, "decomposed": false}),
+            serde_json::json!({"number": 3, "blocked": true, "decomposed": true}),
+        ];
+        let result = filter_issues(&issues, "blocked").unwrap();
+        let numbers: Vec<i64> = result.iter().map(|i| i["number"].as_i64().unwrap()).collect();
+        assert_eq!(numbers, vec![2, 3]);
+    }
+
+    #[test]
+    fn filter_decomposed_returns_decomposed() {
+        let issues = vec![
+            serde_json::json!({"number": 1, "blocked": false, "decomposed": false}),
+            serde_json::json!({"number": 2, "blocked": true, "decomposed": true}),
+            serde_json::json!({"number": 3, "blocked": false, "decomposed": true}),
+        ];
+        let result = filter_issues(&issues, "decomposed").unwrap();
+        let numbers: Vec<i64> = result.iter().map(|i| i["number"].as_i64().unwrap()).collect();
+        assert_eq!(numbers, vec![2, 3]);
+    }
+
+    #[test]
+    fn filter_quick_start() {
+        let issues = vec![
+            serde_json::json!({"number": 1, "blocked": false, "decomposed": false}),
+            serde_json::json!({"number": 2, "blocked": true, "decomposed": true}),
+            serde_json::json!({"number": 3, "blocked": false, "decomposed": true}),
+        ];
+        let result = filter_issues(&issues, "quick-start").unwrap();
+        let numbers: Vec<i64> = result.iter().map(|i| i["number"].as_i64().unwrap()).collect();
+        assert_eq!(numbers, vec![3]);
+    }
+
+    #[test]
+    fn filter_unknown_raises() {
+        let result = filter_issues(&[], "invalid");
+        assert!(result.is_err());
     }
 }
