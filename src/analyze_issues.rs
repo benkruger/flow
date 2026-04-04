@@ -4,7 +4,7 @@
 //! label detection, stale detection. Outputs condensed per-issue
 //! briefs so the LLM only needs to rank by impact.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use regex::Regex;
@@ -135,6 +135,134 @@ pub fn truncate_body(body: &str, max_length: usize) -> String {
     }
     let truncated: String = body.chars().take(max_length).collect();
     format!("{}...", truncated)
+}
+
+/// Build the GraphQL query for fetching blocker counts.
+///
+/// Returns the full query string with aliased fragments for each issue number.
+pub fn build_blocker_query(issue_numbers: &[i64]) -> String {
+    let fragments: Vec<String> = issue_numbers
+        .iter()
+        .map(|n| {
+            format!(
+                "issue_{}: issue(number: {}) {{ issueDependenciesSummary {{ blockedBy }} }}",
+                n, n
+            )
+        })
+        .collect();
+    let body = fragments.join(" ");
+    format!(
+        "query($owner: String!, $repo: String!) {{ repository(owner: $owner, name: $repo) {{ {} }} }}",
+        body
+    )
+}
+
+/// Parse a GraphQL response for blocker counts.
+///
+/// Extracts `issueDependenciesSummary.blockedBy` for each issue number.
+/// Returns HashMap mapping issue number to blocker count.
+/// Handles null values at any level gracefully (defaults to 0).
+pub fn parse_blocker_response(json_str: &str, issue_numbers: &[i64]) -> HashMap<i64, i64> {
+    let data: Value = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(_) => return HashMap::new(),
+    };
+
+    // Navigate: data.data.repository
+    let repo_data = data
+        .get("data")
+        .and_then(|d| d.get("repository"));
+
+    // repo_data may be null or absent
+    let repo_obj = match repo_data {
+        Some(Value::Object(m)) => Some(m),
+        _ => None,
+    };
+
+    let mut counts = HashMap::new();
+    for &number in issue_numbers {
+        let key = format!("issue_{}", number);
+        let blocked_by = repo_obj
+            .and_then(|m| m.get(&key))
+            .and_then(|issue| issue.get("issueDependenciesSummary"))
+            .and_then(|summary| summary.get("blockedBy"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        counts.insert(number, blocked_by);
+    }
+
+    counts
+}
+
+/// Fetch native blocked-by counts for issues via GitHub GraphQL API.
+///
+/// Uses `issueDependenciesSummary.blockedBy` with batched aliased queries.
+/// Returns HashMap mapping issue number to blocker count.
+/// Returns empty HashMap on any failure (graceful degradation).
+/// Timeout: 30 seconds (matches Python).
+pub fn fetch_blocker_counts(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, i64> {
+    if issue_numbers.is_empty() {
+        return HashMap::new();
+    }
+
+    if !repo.contains('/') {
+        return HashMap::new();
+    }
+
+    let parts: Vec<&str> = repo.splitn(2, '/').collect();
+    let owner = parts[0];
+    let name = parts[1];
+
+    let query = build_blocker_query(issue_numbers);
+
+    let mut child = match std::process::Command::new("gh")
+        .args([
+            "api",
+            "graphql",
+            "-f",
+            &format!("query={}", query),
+            "-f",
+            &format!("owner={}", owner),
+            "-f",
+            &format!("repo={}", name),
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return HashMap::new(),
+    };
+
+    // 30s timeout (matches Python subprocess.run(timeout=30))
+    let timeout = std::time::Duration::from_secs(30);
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return HashMap::new();
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(_) => return HashMap::new(),
+        }
+    }
+
+    let output = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(_) => return HashMap::new(),
+    };
+
+    if !output.status.success() {
+        return HashMap::new();
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_blocker_response(&stdout, issue_numbers)
 }
 
 #[cfg(test)]
@@ -349,5 +477,102 @@ mod tests {
         let result = truncate_body(&body, 200);
         assert!(result.chars().count() <= 203); // 200 + "..."
         assert!(result.ends_with("..."));
+    }
+
+    // --- build_blocker_query ---
+
+    #[test]
+    fn build_blocker_query_single_issue() {
+        let query = build_blocker_query(&[10]);
+        assert!(query.contains("issue_10: issue(number: 10)"));
+        assert!(query.contains("issueDependenciesSummary"));
+        assert!(query.contains("blockedBy"));
+    }
+
+    #[test]
+    fn build_blocker_query_multiple_issues() {
+        let query = build_blocker_query(&[10, 20, 30]);
+        assert!(query.contains("issue_10: issue(number: 10)"));
+        assert!(query.contains("issue_20: issue(number: 20)"));
+        assert!(query.contains("issue_30: issue(number: 30)"));
+    }
+
+    #[test]
+    fn build_blocker_query_has_variables() {
+        let query = build_blocker_query(&[1]);
+        assert!(query.contains("$owner: String!"));
+        assert!(query.contains("$repo: String!"));
+    }
+
+    // --- parse_blocker_response ---
+
+    fn graphql_response(issue_counts: &[(i64, i64)]) -> String {
+        let mut data = serde_json::Map::new();
+        for (number, count) in issue_counts {
+            let mut issue = serde_json::Map::new();
+            let mut summary = serde_json::Map::new();
+            summary.insert("blockedBy".to_string(), serde_json::json!(count));
+            issue.insert(
+                "issueDependenciesSummary".to_string(),
+                Value::Object(summary),
+            );
+            data.insert(format!("issue_{}", number), Value::Object(issue));
+        }
+        let mut repo = serde_json::Map::new();
+        repo.insert("repository".to_string(), Value::Object(data));
+        let mut root = serde_json::Map::new();
+        root.insert("data".to_string(), Value::Object(repo));
+        serde_json::to_string(&Value::Object(root)).unwrap()
+    }
+
+    #[test]
+    fn parse_blocker_response_happy_path() {
+        let response = graphql_response(&[(10, 2), (20, 0), (30, 1)]);
+        let result = parse_blocker_response(&response, &[10, 20, 30]);
+        assert_eq!(result[&10], 2);
+        assert_eq!(result[&20], 0);
+        assert_eq!(result[&30], 1);
+    }
+
+    #[test]
+    fn parse_blocker_response_malformed_json() {
+        let result = parse_blocker_response("{corrupt", &[10]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn parse_blocker_response_null_repository() {
+        let response = r#"{"data":{"repository":null}}"#;
+        let result = parse_blocker_response(response, &[10]);
+        assert_eq!(result[&10], 0);
+    }
+
+    #[test]
+    fn parse_blocker_response_null_summary() {
+        let response =
+            r#"{"data":{"repository":{"issue_10":{"issueDependenciesSummary":null}}}}"#;
+        let result = parse_blocker_response(response, &[10]);
+        assert_eq!(result[&10], 0);
+    }
+
+    #[test]
+    fn parse_blocker_response_null_blocked_by() {
+        let response = r#"{"data":{"repository":{"issue_10":{"issueDependenciesSummary":{"blockedBy":null}}}}}"#;
+        let result = parse_blocker_response(response, &[10]);
+        assert_eq!(result[&10], 0);
+    }
+
+    // --- fetch_blocker_counts ---
+
+    #[test]
+    fn fetch_blocker_counts_empty_list() {
+        let result = fetch_blocker_counts("owner/repo", &[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn fetch_blocker_counts_malformed_repo() {
+        let result = fetch_blocker_counts("noslash", &[10]);
+        assert!(result.is_empty());
     }
 }
