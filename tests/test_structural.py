@@ -598,6 +598,51 @@ def test_no_python_test_auto_close_parent():
     )
 
 
+# --- Tombstone: Python PR body scripts ported to Rust (PR #850) ---
+
+
+def test_no_python_render_pr_body():
+    """Tombstone: ported to Rust in PR #850. Must not return."""
+    assert not (LIB_DIR / "render-pr-body.py").exists(), (
+        "render-pr-body.py was ported to Rust — use flow-rs render-pr-body"
+    )
+
+
+def test_no_python_update_pr_body():
+    """Tombstone: ported to Rust in PR #850. Must not return."""
+    assert not (LIB_DIR / "update-pr-body.py").exists(), (
+        "update-pr-body.py was ported to Rust — use flow-rs update-pr-body"
+    )
+
+
+def test_no_python_format_pr_timings():
+    """Tombstone: ported to Rust in PR #850 and PR #851. Must not return."""
+    assert not (LIB_DIR / "format-pr-timings.py").exists(), (
+        "format-pr-timings.py was ported to Rust — use flow-rs format-pr-timings"
+    )
+
+
+def test_no_python_test_render_pr_body():
+    """Tombstone: ported to Rust in PR #850. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_render_pr_body.py").exists(), (
+        "test_render_pr_body.py was ported to Rust — tests are in src/render_pr_body.rs"
+    )
+
+
+def test_no_python_test_update_pr_body():
+    """Tombstone: ported to Rust in PR #850. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_update_pr_body.py").exists(), (
+        "test_update_pr_body.py was ported to Rust — tests are in src/update_pr_body.rs"
+    )
+
+
+def test_no_python_test_format_pr_timings():
+    """Tombstone: ported to Rust in PR #850 and PR #851. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_format_pr_timings.py").exists(), (
+        "test_format_pr_timings.py was ported to Rust — tests are in src/format_pr_timings.rs"
+    )
+
+
 # --- Tombstone: Python display formatters ported to Rust (PR #851) ---
 
 
@@ -608,22 +653,8 @@ def test_no_python_format_complete_summary():
     )
 
 
-def test_no_python_format_pr_timings():
-    """Tombstone: ported to Rust in PR #851. Must not return."""
-    assert not (LIB_DIR / "format-pr-timings.py").exists(), (
-        "format-pr-timings.py was ported to Rust — use flow-rs format-pr-timings"
-    )
-
-
 def test_no_python_test_format_complete_summary():
     """Tombstone: ported to Rust in PR #851. Must not return."""
     assert not (REPO_ROOT / "tests" / "test_format_complete_summary.py").exists(), (
         "test_format_complete_summary.py was ported to Rust — tests are in src/format_complete_summary.rs"
-    )
-
-
-def test_no_python_test_format_pr_timings():
-    """Tombstone: ported to Rust in PR #851. Must not return."""
-    assert not (REPO_ROOT / "tests" / "test_format_pr_timings.py").exists(), (
-        "test_format_pr_timings.py was ported to Rust — tests are in src/format_pr_timings.rs"
     )

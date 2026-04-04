@@ -540,9 +540,20 @@ def main():
             launcher_installed = True
 
         _prime_project = _import_sibling("prime_project", "prime-project.py")
-        _create_deps = _import_sibling("create_deps", "create-dependencies.py")
         prime_result = _prime_project.prime(str(project_root), framework)
-        deps_result = _create_deps.create(str(project_root), framework)
+
+        # create-dependencies is ported to Rust — call via bin/flow subprocess
+        _flow_bin = Path(__file__).resolve().parent.parent / "bin" / "flow"
+        try:
+            deps_proc = subprocess.run(
+                [str(_flow_bin), "create-dependencies", str(project_root), "--framework", framework],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            deps_result = json.loads(deps_proc.stdout.strip())
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception) as e:
+            deps_result = {"status": "error", "message": str(e)}
 
         print(
             json.dumps(

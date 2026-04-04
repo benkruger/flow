@@ -34,10 +34,11 @@ pub fn format_timings_table(state: &Value, started_only: bool) -> String {
         let phase = phases.get(key);
         let started = phase
             .and_then(|p| p.get("started_at"))
-            .and_then(|s| s.as_str());
+            .and_then(|s| s.as_str())
+            .filter(|s| !s.is_empty());
         let seconds = phase
             .and_then(|p| p.get("cumulative_seconds"))
-            .and_then(|s| s.as_i64())
+            .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
             .unwrap_or(0);
 
         if started_only && started.is_none() && seconds == 0 {
