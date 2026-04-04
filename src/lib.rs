@@ -5,6 +5,7 @@ pub mod check_phase;
 pub mod commands;
 pub mod error;
 pub mod format_status;
+pub mod label_issues;
 pub mod phase_transition;
 pub mod git;
 pub mod github;
