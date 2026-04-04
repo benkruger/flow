@@ -298,6 +298,13 @@ mod tests {
             .current_dir(dir)
             .output()
             .unwrap();
+        // Configure identity for CI environments without global git config
+        let config_path = dir.join(".git").join("config");
+        fs::write(
+            &config_path,
+            "[user]\n\temail = t@t.com\n\tname = T\n[commit]\n\tgpgsign = false\n",
+        )
+        .unwrap();
         StdCommand::new("git")
             .args(["commit", "--allow-empty", "-m", "init"])
             .current_dir(dir)
