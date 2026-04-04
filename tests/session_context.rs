@@ -394,3 +394,212 @@ fn multiple_features_mentions_both() {
     assert!(ctx.contains("Feature Alpha"), "Should list alpha");
     assert!(ctx.contains("Feature Beta"), "Should list beta");
 }
+
+// --- Orchestrate detection ---
+
+fn make_orchestrate_state(
+    queue: Vec<Value>,
+    completed_at: Option<&str>,
+    current_index: Option<i64>,
+) -> Value {
+    json!({
+        "started_at": "2026-03-20T22:00:00-07:00",
+        "completed_at": completed_at,
+        "queue": queue,
+        "current_index": current_index,
+    })
+}
+
+#[test]
+fn orchestrate_in_progress_injects_resume() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let orch = make_orchestrate_state(
+        vec![
+            json!({"issue_number": 42, "title": "Add PDF export", "status": "completed", "outcome": "completed"}),
+            json!({"issue_number": 43, "title": "Fix login timeout", "status": "in_progress", "outcome": null}),
+            json!({"issue_number": 44, "title": "Refactor auth", "status": "pending", "outcome": null}),
+        ],
+        None,
+        Some(1),
+    );
+    fs::write(
+        state_dir.join("orchestrate.json"),
+        serde_json::to_string(&orch).unwrap(),
+    )
+    .unwrap();
+
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.to_lowercase().contains("orchestrat"), "Should mention orchestration");
+    assert!(ctx.contains("#43"), "Should mention current issue");
+    assert!(ctx.to_lowercase().contains("flow-orchestrate"), "Should mention resume command");
+}
+
+#[test]
+fn orchestrate_completed_injects_report() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let orch = make_orchestrate_state(
+        vec![json!({"issue_number": 42, "title": "Add PDF export", "status": "completed", "outcome": "completed"})],
+        Some("2026-03-21T06:00:00-07:00"),
+        None,
+    );
+    fs::write(
+        state_dir.join("orchestrate.json"),
+        serde_json::to_string(&orch).unwrap(),
+    )
+    .unwrap();
+
+    let summary_content = "# FLOW Orchestration Report\n\nCompleted: 1, Failed: 0";
+    fs::write(state_dir.join("orchestrate-summary.md"), summary_content).unwrap();
+
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.to_lowercase().contains("orchestrat"), "Should mention orchestration");
+    assert!(ctx.contains("Orchestration Report"), "Should include report content");
+}
+
+#[test]
+fn orchestrate_completed_cleans_up() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let orch = make_orchestrate_state(vec![], Some("2026-03-21T06:00:00-07:00"), None);
+    fs::write(
+        state_dir.join("orchestrate.json"),
+        serde_json::to_string(&orch).unwrap(),
+    )
+    .unwrap();
+    fs::write(state_dir.join("orchestrate-summary.md"), "# Report").unwrap();
+    fs::write(state_dir.join("orchestrate.log"), "log line").unwrap();
+    fs::write(
+        state_dir.join("orchestrate-queue.json"),
+        r#"[{"issue_number": 42}]"#,
+    )
+    .unwrap();
+
+    run_session_context(dir.path());
+
+    assert!(!state_dir.join("orchestrate.json").exists(), "orchestrate.json should be deleted");
+    assert!(!state_dir.join("orchestrate-summary.md").exists(), "summary should be deleted");
+    assert!(!state_dir.join("orchestrate.log").exists(), "log should be deleted");
+    assert!(!state_dir.join("orchestrate-queue.json").exists(), "queue should be deleted");
+}
+
+#[test]
+fn orchestrate_all_processed_no_resume() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let orch = make_orchestrate_state(
+        vec![
+            json!({"issue_number": 42, "title": "Add PDF export", "status": "completed", "outcome": "completed"}),
+            json!({"issue_number": 43, "title": "Fix login timeout", "status": "failed", "outcome": "failed"}),
+            json!({"issue_number": 44, "title": "Refactor auth", "status": "completed", "outcome": "completed"}),
+        ],
+        None,
+        Some(2),
+    );
+    fs::write(
+        state_dir.join("orchestrate.json"),
+        serde_json::to_string(&orch).unwrap(),
+    )
+    .unwrap();
+
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+    assert_eq!(result.stdout.len(), 0, "All processed → silent exit");
+}
+
+#[test]
+fn orchestrate_coexists_with_feature() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    // Orchestrate state (in progress)
+    let orch = make_orchestrate_state(
+        vec![json!({"issue_number": 42, "title": "Add PDF export", "status": "in_progress", "outcome": null})],
+        None,
+        Some(0),
+    );
+    fs::write(
+        state_dir.join("orchestrate.json"),
+        serde_json::to_string(&orch).unwrap(),
+    )
+    .unwrap();
+
+    // Feature state
+    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "some-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("in_progress");
+    write_state(&state_dir, "some-feature", &state);
+
+    switch_branch(dir.path(), "some-feature");
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.to_lowercase().contains("orchestrat"), "Should mention orchestration");
+    assert!(ctx.contains("Some Feature"), "Should mention feature");
+}
+
+#[test]
+fn orchestrate_missing_summary() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let orch = make_orchestrate_state(vec![], Some("2026-03-21T06:00:00-07:00"), None);
+    fs::write(
+        state_dir.join("orchestrate.json"),
+        serde_json::to_string(&orch).unwrap(),
+    )
+    .unwrap();
+    // No summary file — should not crash
+
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+    // orchestrate.json should still be cleaned up
+    assert!(!state_dir.join("orchestrate.json").exists(), "Should clean up even without summary");
+}
+
+#[test]
+fn no_orchestrate_file_existing_behavior() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+
+    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "normal-feature"}));
+    state["phases"]["flow-start"]["status"] = json!("complete");
+    state["phases"]["flow-plan"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["status"] = json!("in_progress");
+    write_state(&state_dir, "normal-feature", &state);
+
+    switch_branch(dir.path(), "normal-feature");
+    let result = run_session_context(dir.path());
+    assert_eq!(result.status.code(), Some(0));
+    let output = parse_stdout(&result);
+    let ctx = output["additional_context"].as_str().unwrap();
+    assert!(ctx.contains("Normal Feature"), "Should show feature");
+    assert!(!ctx.to_lowercase().contains("orchestrat"), "Should NOT mention orchestration");
+}

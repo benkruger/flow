@@ -6,6 +6,105 @@ use serde_json::{json, Value};
 use crate::git::{current_branch, project_root};
 use crate::utils::derive_feature;
 
+/// Detect orchestrate.json state. Returns context block string.
+/// Handles completed (morning report + cleanup), all-processed (empty), and in-progress (resume).
+fn detect_orchestrate(state_dir: &Path) -> String {
+    let orch_path = state_dir.join("orchestrate.json");
+    let content = match fs::read_to_string(&orch_path) {
+        Ok(c) => c,
+        Err(_) => return String::new(),
+    };
+    let orch: Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return String::new(),
+    };
+
+    // Completed: inject morning report, then clean up
+    if !orch.get("completed_at").map_or(true, |v| v.is_null()) {
+        let summary = state_dir
+            .join("orchestrate-summary.md")
+            .exists()
+            .then(|| fs::read_to_string(state_dir.join("orchestrate-summary.md")).unwrap_or_default())
+            .unwrap_or_default();
+
+        let block = format!(
+            "<flow-orchestrate-report>\n\
+             FLOW orchestration completed. Present this report to the user:\n\n\
+             {}\n\
+             </flow-orchestrate-report>\n",
+            summary
+        );
+
+        // Clean up orchestrator files
+        for name in [
+            "orchestrate.json",
+            "orchestrate-summary.md",
+            "orchestrate.log",
+            "orchestrate-queue.json",
+        ] {
+            let p = state_dir.join(name);
+            let _ = fs::remove_file(&p);
+        }
+
+        return block;
+    }
+
+    // All items processed — orchestrator finishing, no resume needed
+    let queue = orch.get("queue").and_then(|q| q.as_array());
+    if let Some(items) = queue {
+        if !items.is_empty()
+            && items
+                .iter()
+                .all(|item| !item.get("outcome").map_or(true, |v| v.is_null()))
+        {
+            return String::new();
+        }
+    }
+
+    // In-progress: inject resume context with queue position
+    let queue_items = queue.cloned().unwrap_or_default();
+    let current_index = orch.get("current_index").and_then(|v| v.as_i64());
+    let current_issue = if let Some(idx) = current_index {
+        let idx = idx as usize;
+        if idx < queue_items.len() {
+            let item = &queue_items[idx];
+            let num = item
+                .get("issue_number")
+                .and_then(|v| v.as_i64())
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| "?".to_string());
+            let title = item
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            format!("#{} ({})", num, title)
+        } else {
+            "(unknown)".to_string()
+        }
+    } else {
+        "(unknown)".to_string()
+    };
+
+    let completed_count = queue_items
+        .iter()
+        .filter(|item| {
+            item.get("outcome")
+                .and_then(|v| v.as_str())
+                .map_or(false, |s| s == "completed")
+        })
+        .count();
+    let total = queue_items.len();
+
+    format!(
+        "<flow-orchestrate-context>\n\
+         FLOW orchestration in progress. Processing issue {}.\n\
+         Progress: {}/{} completed.\n\
+         Resume the orchestrator by invoking flow:flow-orchestrate --continue-step.\n\
+         </flow-orchestrate-context>\n",
+        current_issue, completed_count, total
+    )
+}
+
 /// Scan .flow-states/ for JSON state files, excluding *-phases.json and orchestrate.json.
 fn scan_state_files(state_dir: &Path) -> Vec<(PathBuf, Value)> {
     let entries = match fs::read_dir(state_dir) {
@@ -306,11 +405,12 @@ pub fn run() {
         return; // No state directory → exit silently
     }
 
-    let all_states = scan_state_files(&state_dir);
-    if all_states.is_empty() {
-        return; // No state files → exit silently
-    }
+    // Orchestrate detection (before feature state processing)
+    let orchestrate_block = detect_orchestrate(&state_dir);
 
+    let all_states = scan_state_files(&state_dir);
+
+    // Exclude orchestrate.json already done in scan_state_files.
     // Branch isolation
     let branch = current_branch();
     let states = filter_by_branch(all_states.clone(), branch.as_deref());
@@ -318,8 +418,8 @@ pub fn run() {
     // If filter returned empty (branch has no state file), keep all
     let states = if states.is_empty() { all_states } else { states };
 
-    if states.is_empty() {
-        return;
+    if states.is_empty() && orchestrate_block.is_empty() {
+        return; // No state files and no orchestrate → exit silently
     }
 
     // Dev mode detection
@@ -333,10 +433,24 @@ pub fn run() {
 
     let state_refs: Vec<&Value> = states.iter().map(|(_, s)| s).collect();
 
-    let context = if state_refs.len() == 1 {
+    // Build feature context (if any states exist)
+    let feature_context = if state_refs.is_empty() {
+        String::new()
+    } else if state_refs.len() == 1 {
         build_single_feature_context(state_refs[0], &dev_preamble)
     } else {
         build_multi_feature_context(&state_refs, &dev_preamble)
+    };
+
+    // Combine orchestrate and feature context (matching Python logic)
+    let context = if !orchestrate_block.is_empty() && feature_context.is_empty() {
+        // Only orchestrate context, no feature states
+        orchestrate_block
+    } else if !orchestrate_block.is_empty() {
+        // Both orchestrate and feature context
+        format!("{}\n{}", orchestrate_block, feature_context)
+    } else {
+        feature_context
     };
 
     emit_output(&context);
