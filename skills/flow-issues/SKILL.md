@@ -103,6 +103,8 @@ Parse the JSON output. The structure is:
       "age_days": 5,
       "decomposed": true,
       "blocked": false,
+      "native_blocked": false,
+      "blocked_by": [],
       "stale": false,
       "stale_missing": 0,
       "file_paths": ["lib/foo.py"],
@@ -165,7 +167,8 @@ is the `stale_missing` count.
 
 The `Rationale` column explains why this issue is at this position:
 
-- If blocked: "blocked" or a brief reason if known
+- If `blocked_by` is non-empty: "Blocked by #N, #M" listing the specific blocker issue numbers
+- If blocked by label only (no `blocked_by` entries): "Blocked"
 - If decomposed: "decomposed — ready for autonomous execution"
 - Otherwise: brief reason based on your impact assessment
 
