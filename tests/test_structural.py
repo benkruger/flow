@@ -198,6 +198,27 @@ def test_hooks_json_uses_bin_flow_hook_for_pretool_validators():
         )
 
 
+def test_bin_flow_fails_closed_for_hook_subcommand():
+    """bin/flow must exit 2 (block) not 1 (error) when the hook subcommand has no handler.
+
+    PR #856 added this guard so that if the Rust binary is absent and cargo is
+    unavailable to build it, PreToolUse hooks fail closed instead of silently
+    allowing all tool calls through. Claude Code treats exit 2 as a block with
+    stderr feedback; any other non-zero exit is treated as a non-blocking hook
+    error which would bypass every safety layer.
+    """
+    bin_flow = (BIN_DIR / "flow").read_text()
+    # The hook-specific fail-closed branch must exist and use exit 2
+    assert 'if [ "$subcmd" = "hook" ]; then' in bin_flow, (
+        "bin/flow must have a hook-specific fail-closed branch in the Python fallback"
+    )
+    # Find the hook branch and verify it uses exit 2
+    hook_branch_start = bin_flow.index('if [ "$subcmd" = "hook" ]; then')
+    hook_branch_end = bin_flow.index("fi", hook_branch_start)
+    hook_branch = bin_flow[hook_branch_start:hook_branch_end]
+    assert "exit 2" in hook_branch, "Hook fail-closed branch must use exit 2 (block), not exit 1 (error)"
+
+
 def test_hooks_json_read_glob_grep_consolidated():
     """Read, Glob, Grep must share a single matcher entry in hooks.json."""
     hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
