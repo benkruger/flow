@@ -6,6 +6,7 @@ use flow_rs::add_issue;
 use flow_rs::add_notification;
 use flow_rs::append_note;
 use flow_rs::auto_close_parent;
+use flow_rs::cleanup;
 use flow_rs::check_phase::check_phase;
 use flow_rs::close_issue;
 use flow_rs::close_issues;
@@ -66,6 +67,9 @@ enum Commands {
     AddIssue(add_issue::Args),
     /// Record a Slack notification in FLOW state
     AddNotification(add_notification::Args),
+
+    /// FLOW cleanup orchestrator (worktree, branches, state files).
+    Cleanup(cleanup::Args),
 
     /// Create a GitHub issue via gh CLI with body-file.
     Issue(issue::Args),
@@ -222,6 +226,7 @@ fn main() {
             );
         }
         Some(Commands::AppendNote(args)) => append_note::run(args),
+        Some(Commands::Cleanup(args)) => cleanup::run(args),
         Some(Commands::AddIssue(args)) => add_issue::run(args),
         Some(Commands::AddNotification(args)) => add_notification::run(args),
         Some(Commands::Issue(args)) => issue::run(args),
