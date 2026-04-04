@@ -26,6 +26,8 @@ Learn synthesises from all four before taking any action:
 
 Sources 1 and 3 survive compaction. Source 4 runs fresh each time. Context is a bonus if available.
 
+After each agent returns, Learn checks the output for expected structure markers. If an agent exhausted its turn budget without producing structured findings, Learn flags the truncation and proceeds with the remaining non-truncated sources.
+
 ---
 
 ## What Gets Captured

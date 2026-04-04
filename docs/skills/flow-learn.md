@@ -58,6 +58,7 @@ All filed issues are recorded in the state file via `bin/flow add-issue`.
 **Report** — presented after all changes are applied:
 
 - Findings (4 categories: process violations, mistakes, missing rules, process gaps — from learn-analyst and onboarding agents in Phase 5, from conversation review in other modes)
+- Truncated agents (if any agent exhausted its turn budget without producing structured findings)
 - Changes applied (file path + summary for each destination)
 - Issues filed (issue number + title)
 
