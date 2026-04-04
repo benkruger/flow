@@ -225,6 +225,10 @@ enum Commands {
         branch: Option<String>,
     },
 
+    /// Build SessionStart hook context from state files.
+    #[command(name = "session-context")]
+    SessionContext,
+
     /// Add or remove Flow In-Progress label on issues
     LabelIssues(label_issues::Args),
     /// Format issues summary for Complete phase
@@ -367,6 +371,9 @@ fn main() {
         }
         Some(Commands::ContinueContext { branch }) => {
             commands::continue_context::run(branch.as_deref());
+        }
+        Some(Commands::SessionContext) => {
+            commands::session_context::run();
         }
         Some(Commands::LabelIssues(args)) => {
             label_issues::run(args);

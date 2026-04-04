@@ -137,3 +137,38 @@ How to apply: when adding a test to a Rust port module, decide
 first whether it covers CLI behavior (invoke `run_impl` with an
 `Args` struct) or format behavior (invoke the pure function
 directly). Name accordingly.
+
+## Dead Changed-Flag Pattern
+
+When porting Python code that uses a `changed` flag (or `modified`,
+`dirty`, etc.) to decide whether to write back to disk, verify whether
+the Rust equivalent writes unconditionally. If so, drop the flag
+entirely — do not carry it forward as `_changed`.
+
+Why: Python's file-persistence pattern tracks state mutations to avoid
+unnecessary writes. Rust's `mutate_state()` acquires an exclusive lock
+and writes unconditionally, so the flag is dead code. The leading
+underscore suppresses the Rust `unused_variable` warning, which hides
+the dead code from the compiler.
+
+How to apply: when translating a function that mutates state, check the
+closure's write semantics. If it writes every time, remove the flag
+and the conditional writes. Do not preserve the flag "just in case" —
+that is a false preservation of Python semantics.
+
+## Sentinel Return Values — Document the Contract
+
+When a ported function returns a sentinel value (empty vec, `None`,
+`null`) to signal a condition to its caller, document the sentinel
+contract in the function's doc comment. Never place an inline comment
+above the return statement that describes the caller's fallback as if
+it were the function's behavior.
+
+Why: the Python original often inlined the check-and-fallback in one
+place. When split across function and caller in Rust, the sentinel
+contract lives in two places. Misleading inline comments at return
+sites mislead readers about what the function actually returns.
+
+How to apply: in the doc comment at the function's top, state what
+each return value means to the caller. Comments at return sites should
+describe the return value, not the caller's interpretation of it.

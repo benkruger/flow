@@ -161,6 +161,25 @@ def test_no_validate_ci_bash_filename():
     )
 
 
+def test_session_start_no_embedded_python():
+    """Tombstone: session-start.sh embedded Python heredoc ported to Rust in PR #853. Must not return.
+
+    The session-start hook previously embedded ~430 lines of Python in a bash
+    heredoc. That logic now lives in `bin/flow session-context` (Rust). The
+    bash shim must keep only the fast-exit guards and a single exec delegation.
+    """
+    content = (HOOKS_DIR / "session-start.sh").read_text()
+    assert "python3 -" not in content, (
+        "session-start.sh must not embed Python — ported to `bin/flow session-context` in PR #853"
+    )
+    assert "<< 'PYTHON'" not in content, (
+        "session-start.sh must not contain the Python heredoc marker — ported to Rust in PR #853"
+    )
+    assert "session-context" in content, (
+        "session-start.sh must delegate to `bin/flow session-context` (Rust subcommand)"
+    )
+
+
 def test_hooks_json_read_glob_grep_consolidated():
     """Read, Glob, Grep must share a single matcher entry in hooks.json."""
     hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
