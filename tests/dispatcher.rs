@@ -302,3 +302,35 @@ fn help_flag_exits_0() {
         "--help should exit 0"
     );
 }
+
+// --- tombstone tests: Python files ported to Rust in PR #833 ---
+
+#[test]
+fn tombstone_no_python_label_issues() {
+    // Tombstone: removed in PR #833. Must not return.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir)
+        .join("lib")
+        .join("label-issues.py");
+    assert!(
+        !path.exists(),
+        "lib/label-issues.py was ported to Rust and must not be re-added"
+    );
+}
+
+#[test]
+fn tombstone_no_python_test_label_issues() {
+    // Tombstone: removed in PR #833. Must not return.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir)
+        .join("tests")
+        .join("test_label_issues.py");
+    assert!(
+        !path.exists(),
+        "tests/test_label_issues.py was ported to Rust and must not be re-added"
+    );
+}
+
+// Note: format-issues-summary.py and test_format_issues_summary.py are retained
+// as a Python bridge — render-pr-body.py imports format_issues_summary() in-process.
+// The CLI entry point dispatches to Rust via bin/flow; the bridge serves Python callers.

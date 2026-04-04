@@ -1,13 +1,8 @@
-"""Format issues summary for the Complete phase.
+"""Python bridge for format-issues-summary (ported to Rust).
 
-Usage: bin/flow format-issues-summary --state-file <path> --output <path>
-
-Reads issues_filed from the state file, formats a markdown table and a
-banner summary line. Writes the table to --output if issues exist.
-
-Output (JSON to stdout):
-  Success: {"status": "ok", "has_issues": true/false, "banner_line": "...", "table": "..."}
-  Failure: {"status": "error", "message": "..."}
+This module provides the format_issues_summary() function for Python callers
+(e.g. render-pr-body.py). The main() entry point delegates to the Rust binary
+via bin/flow; in-process callers use the direct Python fallback.
 """
 
 import argparse
@@ -25,6 +20,7 @@ def format_issues_summary(state):
     """Build issues summary from state dict.
 
     Returns dict with has_issues, banner_line, and table keys.
+    Direct Python implementation for in-process callers.
     """
     issues = state.get("issues_filed", [])
 

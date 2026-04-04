@@ -80,6 +80,17 @@ for fast-tracking through the Plan phase.
   `.flow-issue-body-2`) and launch all Write + `bin/flow
   issue` calls concurrently.
 
+## Verify Before Filing
+
+When filing a bug discovered during a FLOW phase (Code Review
+tech debt, Learn process gaps), read the relevant source code
+and verify the root cause before filing. A hypothesis about
+what might be happening is not evidence. The issue body must
+contain the verified mechanism — file path, line number, and
+what the code actually does — not a guess about what it might
+do. A cold-start session should be able to act on the issue
+without re-doing the investigation.
+
 ## Repo Routing
 
 Most issue-filing paths target the current project (omit `--repo`):
