@@ -80,7 +80,7 @@ def test_single_feature_returns_valid_json(git_repo):
 
 
 def test_single_feature_resets_session_started_at(git_repo):
-    """Single feature should reset session_started_at to null and accumulate elapsed time."""
+    """Single feature should reset session_started_at to now() and accumulate elapsed time."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
@@ -92,7 +92,9 @@ def test_single_feature_resets_session_started_at(git_repo):
     _run(git_repo)
 
     updated = json.loads((state_dir / "my-feature.json").read_text())
-    assert updated["phases"]["flow-plan"]["session_started_at"] is None
+    restarted = updated["phases"]["flow-plan"]["session_started_at"]
+    assert isinstance(restarted, str), "session_started_at should be reset to now(), not None"
+    assert restarted != "2026-01-15T10:00:00Z", "session_started_at should be updated, not left as original"
     assert updated["phases"]["flow-plan"]["cumulative_seconds"] > 0
 
 
@@ -192,10 +194,10 @@ def test_multi_feature_preserves_all_timing(git_repo):
     updated_a = json.loads((state_dir / "feature-alpha.json").read_text())
     updated_b = json.loads((state_dir / "feature-beta.json").read_text())
 
-    assert updated_a["phases"]["flow-plan"]["session_started_at"] is None
+    assert isinstance(updated_a["phases"]["flow-plan"]["session_started_at"], str)
     assert updated_a["phases"]["flow-plan"]["cumulative_seconds"] > 0
 
-    assert updated_b["phases"]["flow-code"]["session_started_at"] is None
+    assert isinstance(updated_b["phases"]["flow-code"]["session_started_at"], str)
     assert updated_b["phases"]["flow-code"]["cumulative_seconds"] > 0
 
 
