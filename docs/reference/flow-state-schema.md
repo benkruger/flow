@@ -162,7 +162,7 @@ Each phase entry has identical fields regardless of status.
 - `started_at` is set on first entry and **never changed again**
 - `completed_at` is set on every exit — reflects the most recent completion
 - `session_started_at` is set on entry and cleared to `null` on exit
-- On session resume, if `session_started_at` is not null, it is reset to null — the interrupted visit's time is not counted
+- On session resume, if `session_started_at` is not null, elapsed time is accumulated into `cumulative_seconds` and `session_started_at` is reset to `now()` to continue timing
 - `cumulative_seconds` increments by `(exit_time - session_started_at)` on each clean exit
 
 ---
