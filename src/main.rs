@@ -6,6 +6,7 @@ use flow_rs::add_issue;
 use flow_rs::add_notification;
 use flow_rs::append_note;
 use flow_rs::check_phase::check_phase;
+use flow_rs::cleanup;
 use flow_rs::commands;
 use flow_rs::format_status;
 use flow_rs::git::{project_root, resolve_branch};
@@ -157,6 +158,10 @@ enum Commands {
     #[command(name = "start-setup")]
     StartSetup(start_setup::Args),
 
+    /// FLOW cleanup orchestrator (best-effort multi-step cleanup)
+    #[command(name = "cleanup")]
+    Cleanup(cleanup::Args),
+
     /// Format the FLOW status panel for display.
     #[command(name = "format-status")]
     FormatStatus {
@@ -270,6 +275,9 @@ fn main() {
         }
         Some(Commands::StartSetup(args)) => {
             start_setup::run(args);
+        }
+        Some(Commands::Cleanup(args)) => {
+            cleanup::run(args);
         }
         Some(Commands::FormatStatus { branch }) => {
             run_format_status(branch.as_deref());
