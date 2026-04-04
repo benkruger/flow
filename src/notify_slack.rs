@@ -48,14 +48,23 @@ pub struct SlackConfig {
     pub channel: String,
 }
 
+/// Build config from explicit token and channel values.
+/// Returns None if either is empty.
+pub fn build_config(bot_token: &str, channel: &str) -> Option<SlackConfig> {
+    if bot_token.is_empty() || channel.is_empty() {
+        return None;
+    }
+    Some(SlackConfig {
+        bot_token: bot_token.to_string(),
+        channel: channel.to_string(),
+    })
+}
+
 /// Read slack config from env vars. Returns None if not configured.
 pub fn read_slack_config() -> Option<SlackConfig> {
     let bot_token = std::env::var(TOKEN_ENV).unwrap_or_default();
     let channel = std::env::var(CHANNEL_ENV).unwrap_or_default();
-    if bot_token.is_empty() || channel.is_empty() {
-        return None;
-    }
-    Some(SlackConfig { bot_token, channel })
+    build_config(&bot_token, &channel)
 }
 
 /// Format a Slack notification message.
@@ -234,67 +243,28 @@ mod tests {
         }
     }
 
-    // --- read_slack_config ---
+    // --- build_config (parallel-safe, no env var mutation) ---
 
     #[test]
-    fn read_config_from_env() {
-        unsafe {
-            std::env::set_var(TOKEN_ENV, "xoxb-test-token");
-            std::env::set_var(CHANNEL_ENV, "C12345");
-        }
-        let config = read_slack_config().unwrap();
+    fn build_config_both_present() {
+        let config = build_config("xoxb-test-token", "C12345").unwrap();
         assert_eq!(config.bot_token, "xoxb-test-token");
         assert_eq!(config.channel, "C12345");
-        unsafe {
-            std::env::remove_var(TOKEN_ENV);
-            std::env::remove_var(CHANNEL_ENV);
-        }
     }
 
     #[test]
-    fn read_config_missing_token() {
-        unsafe {
-            std::env::remove_var(TOKEN_ENV);
-            std::env::set_var(CHANNEL_ENV, "C12345");
-        }
-        assert!(read_slack_config().is_none());
-        unsafe {
-            std::env::remove_var(CHANNEL_ENV);
-        }
+    fn build_config_missing_token() {
+        assert!(build_config("", "C12345").is_none());
     }
 
     #[test]
-    fn read_config_missing_channel() {
-        unsafe {
-            std::env::set_var(TOKEN_ENV, "xoxb-test");
-            std::env::remove_var(CHANNEL_ENV);
-        }
-        assert!(read_slack_config().is_none());
-        unsafe {
-            std::env::remove_var(TOKEN_ENV);
-        }
+    fn build_config_missing_channel() {
+        assert!(build_config("xoxb-test", "").is_none());
     }
 
     #[test]
-    fn read_config_both_missing() {
-        unsafe {
-            std::env::remove_var(TOKEN_ENV);
-            std::env::remove_var(CHANNEL_ENV);
-        }
-        assert!(read_slack_config().is_none());
-    }
-
-    #[test]
-    fn read_config_empty_values() {
-        unsafe {
-            std::env::set_var(TOKEN_ENV, "");
-            std::env::set_var(CHANNEL_ENV, "");
-        }
-        assert!(read_slack_config().is_none());
-        unsafe {
-            std::env::remove_var(TOKEN_ENV);
-            std::env::remove_var(CHANNEL_ENV);
-        }
+    fn build_config_both_empty() {
+        assert!(build_config("", "").is_none());
     }
 
     // --- format_message ---
