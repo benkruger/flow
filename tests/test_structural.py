@@ -234,6 +234,21 @@ def test_n_auto_in_pytest_ini():
     assert "-n auto" in addopts, "-n auto not found in pytest.ini addopts"
 
 
+def test_coveragerc_has_parallel_run_config():
+    """`.coveragerc` must declare parallel coverage for pytest-xdist workers.
+
+    Without [run] parallel = true and source = lib, coverage.py may not
+    combine worker data files correctly, causing intermittent coverage
+    gate failures (see issue #835).
+    """
+    config = configparser.ConfigParser()
+    config.read(REPO_ROOT / ".coveragerc")
+    assert config.has_section("run"), ".coveragerc missing [run] section"
+    assert config.get("run", "parallel") == "true", ".coveragerc [run] parallel must be true"
+    source = config.get("run", "source")
+    assert "lib" in source, ".coveragerc [run] source must include lib"
+
+
 def test_claude_md_has_no_lessons_learned_section():
     """CLAUDE.md must not have a Lessons Learned section.
 
