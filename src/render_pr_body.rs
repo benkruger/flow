@@ -49,7 +49,7 @@ pub fn format_timings_table(state: &serde_json::Value, started_only: bool) -> St
             .filter(|s| !s.is_empty());
         let seconds = phase
             .and_then(|p| p.get("cumulative_seconds"))
-            .and_then(|v| v.as_i64())
+            .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
             .unwrap_or(0);
 
         if started_only && started.is_none() && seconds == 0 {
@@ -134,7 +134,11 @@ pub fn render_body(state: &serde_json::Value, project_dir: &Path) -> Result<Stri
             "State file missing 'prompt' field — start-setup.py should always set this".to_string()
         })?;
 
-    let mut what_section = format!("## What\n\n{}.", what_text);
+    let mut what_section = if what_text.ends_with('.') {
+        format!("## What\n\n{}", what_text)
+    } else {
+        format!("## What\n\n{}.", what_text)
+    };
     let issue_numbers = extract_issue_numbers(what_text);
     if !issue_numbers.is_empty() {
         let closing_lines: Vec<String> = issue_numbers
@@ -880,6 +884,28 @@ mod tests {
         assert!(body.contains("fix #1 and #2."));
         assert!(body.contains("Closes #1"));
         assert!(body.contains("Closes #2"));
+    }
+
+    #[test]
+    fn what_section_no_double_period() {
+        let mut state = make_test_state();
+        state["prompt"] = json!("Fix the login timeout bug.");
+
+        let dir = tempfile::tempdir().unwrap();
+        let body = render_body(&state, dir.path()).unwrap();
+
+        assert!(body.contains("Fix the login timeout bug."));
+        assert!(!body.contains("Fix the login timeout bug.."));
+    }
+
+    #[test]
+    fn timings_table_float_cumulative_seconds() {
+        let mut state = make_test_state();
+        state["phases"]["flow-start"]["cumulative_seconds"] = json!(120.0);
+
+        let table = format_timings_table(&state, true);
+        assert!(table.contains("| Start | 2m |"));
+        assert!(table.contains("| **Total** | **2m** |"));
     }
 
     // --- CLI ---
