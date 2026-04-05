@@ -811,3 +811,44 @@ def test_no_python_test_format_complete_summary():
     assert not (REPO_ROOT / "tests" / "test_format_complete_summary.py").exists(), (
         "test_format_complete_summary.py was ported to Rust — tests are in src/format_complete_summary.rs"
     )
+
+
+def test_wait_with_output_absent_in_subprocess_runners():
+    """Tombstone for issue #875 and .claude/rules/rust-port-parity.md Subprocess
+    Timeout Parity. Must not return. These seven Rust modules previously used a
+    prohibited subprocess pattern that deadlocks on outputs larger than ~64KB
+    (pipe-buffer fill) or silently truncates stdout via ECHILD on already-reaped
+    children. The thread-drain pattern in src/analyze_issues.rs is the canonical
+    replacement. If a merge resolution or new port re-introduces the prohibited
+    method call in any of these files, this assertion catches it immediately.
+
+    Only non-comment lines are checked so that explanatory comments referencing
+    the historical pattern by name do not trip the assertion.
+    """
+    # Use concat-via-format so the searched method name is not itself a literal
+    # substring of this test file (self-reference would always trip the check).
+    needle = "wait_with_{suffix}".format(suffix="output")
+    files = [
+        "cleanup.rs",
+        "close_issue.rs",
+        "close_issues.rs",
+        "notify_slack.rs",
+        "finalize_commit.rs",
+        "issue.rs",
+        "start_setup.rs",
+    ]
+    offenders = []
+    for name in files:
+        path = REPO_ROOT / "src" / name
+        assert path.exists(), f"expected source file missing: src/{name}"
+        for line in path.read_text().splitlines():
+            stripped = line.lstrip()
+            if stripped.startswith("//"):
+                continue  # Rust single-line comment — historical references are allowed
+            if needle in line:
+                offenders.append(name)
+                break
+    assert not offenders, (
+        f"prohibited subprocess method must not appear in code lines of {offenders} — "
+        "see issue #875 and .claude/rules/rust-port-parity.md Subprocess Timeout Parity"
+    )
