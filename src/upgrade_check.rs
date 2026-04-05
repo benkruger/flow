@@ -190,7 +190,10 @@ fn run_gh_cmd(owner_repo: &str, timeout_secs: u64) -> GhResult {
         .spawn()
     {
         Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return GhResult::NotFound,
+        // Any spawn failure (NotFound, PermissionDenied, etc.) is reported
+        // as "gh CLI not found" — the user-visible distinction is unhelpful
+        // and Python's FileNotFoundError-only handler would panic on other
+        // errors, which we avoid here by fail-opening.
         Err(_) => return GhResult::NotFound,
     };
 
