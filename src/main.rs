@@ -34,6 +34,7 @@ use flow_rs::output::json_error;
 use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
 use flow_rs::phase_transition::{phase_complete, phase_enter};
 use flow_rs::start_setup;
+use flow_rs::upgrade_check;
 use flow_rs::utils::{detect_dev_mode, read_version};
 use flow_rs::write_rule;
 
@@ -256,6 +257,10 @@ enum Commands {
     #[command(name = "update-pr-body")]
     UpdatePrBody(update_pr_body::Args),
 
+    /// Check GitHub for newer FLOW releases.
+    #[command(name = "upgrade-check")]
+    UpgradeCheck(upgrade_check::Args),
+
     /// Run a Claude Code hook handler.
     Hook {
         #[command(subcommand)]
@@ -429,6 +434,7 @@ fn main() {
         Some(Commands::UpdatePrBody(args)) => {
             update_pr_body::run(args);
         }
+        Some(Commands::UpgradeCheck(args)) => upgrade_check::run(args),
         Some(Commands::Hook { hook }) => match hook {
             HookCommands::ValidatePretool => hooks::validate_pretool::run(),
             HookCommands::ValidateClaudePaths => hooks::validate_claude_paths::run(),
