@@ -20,12 +20,12 @@ find "$REPO_ROOT" -path "$REPO_ROOT/.venv" -prune -o -type d -name __pycache__ -
 # Build Rust binary before Python tests so the hybrid dispatcher
 # can route to Rust commands during subprocess-based Python tests.
 if [ -f "$REPO_ROOT/Cargo.toml" ]; then
-  cargo build
+  cargo build --quiet
 fi
 
 "$PYTHON" -m pytest tests/
 
 # Run Rust tests if Cargo.toml exists (hybrid phase)
 if [ -f "$REPO_ROOT/Cargo.toml" ]; then
-  cargo test
+  cargo test --quiet
 fi
