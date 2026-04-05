@@ -217,10 +217,98 @@ pub fn run_once(
     }
 }
 
+/// Retry CI path with flaky/consistent classification.
+///
+/// Runs `bin/ci` up to `max_attempts` times with captured stdout and
+/// stderr (via `Command::output()`) so the first failure's combined
+/// output can be returned as `first_failure_output` when a retry pass
+/// classifies the test as flaky. Force semantics — sentinel is NEVER
+/// checked for a skip, but is written on success and unlinked on
+/// consistent failure so downstream dirty-check runs behave correctly.
+///
+/// Return shapes:
+///
+/// - First attempt passes: `{"status":"ok","attempts":1}`
+/// - Retry pass (flaky):   `{"status":"ok","attempts":N,"flaky":true,"first_failure_output":"..."}`
+/// - All N attempts fail:  `{"status":"error","attempts":N,"consistent":true,"output":"..."}`
+pub fn run_with_retry(
+    cwd: &Path,
+    root: &Path,
+    bin_ci: &Path,
+    branch: Option<&str>,
+    max_attempts: u32,
+    simulate_branch: Option<&str>,
+) -> (Value, i32) {
+    let sentinel = branch.map(|b| {
+        root.join(".flow-states")
+            .join(format!("{}-ci-passed", b))
+    });
+
+    let mut first_failure_output: Option<String> = None;
+
+    for attempt in 1..=max_attempts {
+        let mut cmd = Command::new(bin_ci);
+        cmd.current_dir(cwd).env("FLOW_CI_RUNNING", "1");
+        if let Some(sim) = simulate_branch {
+            cmd.env("FLOW_SIMULATE_BRANCH", sim);
+        }
+
+        let output = match cmd.output() {
+            Ok(o) => o,
+            Err(e) => {
+                return (
+                    json!({
+                        "status": "error",
+                        "message": format!("failed to run bin/ci: {}", e),
+                    }),
+                    1,
+                );
+            }
+        };
+
+        if output.status.success() {
+            let snapshot = tree_snapshot(cwd, simulate_branch);
+            if let Some(ref path) = sentinel {
+                if let Some(parent) = path.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                let _ = fs::write(path, &snapshot);
+            }
+            let mut result = json!({"status": "ok", "attempts": attempt});
+            if attempt > 1 {
+                result["flaky"] = json!(true);
+                result["first_failure_output"] = json!(first_failure_output.unwrap_or_default());
+            }
+            return (result, 0);
+        } else {
+            if first_failure_output.is_none() {
+                let mut combined = String::from_utf8_lossy(&output.stdout).to_string();
+                combined.push_str(&String::from_utf8_lossy(&output.stderr));
+                first_failure_output = Some(combined.trim().to_string());
+            }
+            if let Some(ref path) = sentinel {
+                if path.exists() {
+                    let _ = fs::remove_file(path);
+                }
+            }
+        }
+    }
+
+    (
+        json!({
+            "status": "error",
+            "attempts": max_attempts,
+            "consistent": true,
+            "output": first_failure_output.unwrap_or_default(),
+        }),
+        1,
+    )
+}
+
 /// CLI entry point — not yet implemented. Subsequent tasks add
-/// run_with_retry and run_impl which this delegates to.
+/// run_impl which this delegates to.
 pub fn run(_args: Args) {
-    unimplemented!("ci::run is built incrementally — see plan tasks 10, 12, 13");
+    unimplemented!("ci::run is built incrementally — see plan tasks 12, 13");
 }
 
 #[cfg(test)]
@@ -836,5 +924,116 @@ mod tests {
         );
         assert_eq!(code, 0);
         assert_eq!(second["skipped"], false);
+    }
+
+    // --- run_with_retry() tests ---
+
+    /// Fixture: bin/ci that fails on the first attempt and passes on the
+    /// second by tracking a counter file in the project root.
+    fn make_flaky_ci_project() -> CiFixture {
+        let script = r#"#!/usr/bin/env bash
+COUNTER_FILE="$(pwd)/.ci-attempt-counter"
+if [ -f "$COUNTER_FILE" ]; then
+  COUNT=$(($(cat "$COUNTER_FILE") + 1))
+else
+  COUNT=1
+fi
+echo "$COUNT" > "$COUNTER_FILE"
+if [ "$COUNT" -lt 2 ]; then
+  echo "FAIL: flaky test on attempt $COUNT" >&2
+  exit 1
+fi
+echo "PASS: attempt $COUNT"
+exit 0
+"#;
+        make_ci_project_with(script, true)
+    }
+
+    /// Fixture: bin/ci that always fails with stderr output.
+    fn make_failing_ci_project() -> CiFixture {
+        make_ci_project_with(
+            "#!/usr/bin/env bash\necho 'CI FAILED: assertion error in test_foo' >&2\nexit 1\n",
+            true,
+        )
+    }
+
+    #[test]
+    fn retry_pass_first_attempt() {
+        let f = make_ci_project();
+        let (out, code) = run_with_retry(&f.path, &f.path, &f.bin_ci, Some(&f.branch), 3, None);
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+        assert_eq!(out["attempts"], 1);
+        assert!(out.get("flaky").is_none());
+        assert!(sentinel_path(&f).exists());
+    }
+
+    #[test]
+    fn retry_flaky() {
+        let f = make_flaky_ci_project();
+        let (out, code) = run_with_retry(&f.path, &f.path, &f.bin_ci, Some(&f.branch), 3, None);
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+        assert_eq!(out["attempts"], 2);
+        assert_eq!(out["flaky"], true);
+        let first_fail = out["first_failure_output"].as_str().unwrap();
+        assert!(!first_fail.is_empty());
+        assert!(first_fail.contains("FAIL"));
+    }
+
+    #[test]
+    fn retry_consistent_failure() {
+        let f = make_failing_ci_project();
+        let (out, code) = run_with_retry(&f.path, &f.path, &f.bin_ci, Some(&f.branch), 3, None);
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        assert_eq!(out["attempts"], 3);
+        assert_eq!(out["consistent"], true);
+        let output = out["output"].as_str().unwrap();
+        assert!(!output.is_empty());
+        assert!(output.contains("CI FAILED"));
+    }
+
+    #[test]
+    fn retry_with_branch_flag() {
+        let f = make_ci_project();
+        let (out, code) = run_with_retry(&f.path, &f.path, &f.bin_ci, Some("main"), 2, None);
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+        assert_eq!(out["attempts"], 1);
+    }
+
+    #[test]
+    fn retry_failure_removes_sentinel() {
+        let f = make_ci_project();
+        // Create a sentinel from a passing run
+        let (_first, _) = run_once(&f.path, &f.path, &f.bin_ci, Some(&f.branch), false, None);
+        assert!(sentinel_path(&f).exists());
+
+        // Swap to failing bin/ci
+        fs::write(
+            &f.bin_ci,
+            "#!/usr/bin/env bash\necho 'FAIL' >&2\nexit 1\n",
+        )
+        .unwrap();
+
+        let (out, code) = run_with_retry(&f.path, &f.path, &f.bin_ci, Some(&f.branch), 2, None);
+        assert_eq!(code, 1);
+        assert_eq!(out["consistent"], true);
+        assert!(!sentinel_path(&f).exists());
+    }
+
+    #[test]
+    fn retry_ignores_sentinel() {
+        let f = make_ci_project();
+        // Run once to create sentinel
+        let (first, _) = run_once(&f.path, &f.path, &f.bin_ci, Some(&f.branch), false, None);
+        assert_eq!(first["skipped"], false);
+        // Retry must NOT skip even though sentinel matches
+        let (second, code) =
+            run_with_retry(&f.path, &f.path, &f.bin_ci, Some(&f.branch), 3, None);
+        assert_eq!(code, 0);
+        assert_eq!(second["attempts"], 1);
+        assert!(second.get("skipped").is_none());
     }
 }
