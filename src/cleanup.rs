@@ -46,8 +46,17 @@ pub struct Args {
     pub pull: bool,
 }
 
-/// Run a command with a timeout, returning (success, output_string).
+/// Run a command with the default CMD_TIMEOUT, returning (success, output_string).
 fn run_cmd(args: &[&str], cwd: &Path) -> (bool, String) {
+    run_cmd_inner(args, cwd, CMD_TIMEOUT)
+}
+
+/// Run a command with a caller-provided timeout, returning (success, output_string).
+///
+/// Drains stdout and stderr in spawned threads to prevent pipe buffer
+/// deadlock on outputs larger than ~64KB. Joins reader threads on every
+/// exit path (success, timeout, try_wait error).
+fn run_cmd_inner(args: &[&str], cwd: &Path, timeout: Duration) -> (bool, String) {
     let result = Command::new(args[0])
         .args(&args[1..])
         .stdout(std::process::Stdio::piped())
@@ -60,36 +69,62 @@ fn run_cmd(args: &[&str], cwd: &Path) -> (bool, String) {
         Err(e) => return (false, e.to_string()),
     };
 
+    // Take pipes and spawn reader threads BEFORE the poll loop to prevent
+    // pipe buffer deadlock when the child writes more than ~64KB.
+    let stdout_handle = child.stdout.take();
+    let stderr_handle = child.stderr.take();
+    let stdout_reader = std::thread::spawn(move || {
+        let mut buf: Vec<u8> = Vec::new();
+        if let Some(mut pipe) = stdout_handle {
+            use std::io::Read;
+            let _ = pipe.read_to_end(&mut buf);
+        }
+        buf
+    });
+    let stderr_reader = std::thread::spawn(move || {
+        let mut buf: Vec<u8> = Vec::new();
+        if let Some(mut pipe) = stderr_handle {
+            use std::io::Read;
+            let _ = pipe.read_to_end(&mut buf);
+        }
+        buf
+    });
+
     let start = Instant::now();
     let poll_interval = Duration::from_millis(50);
-
-    loop {
+    let status = loop {
         match child.try_wait() {
-            Ok(Some(_)) => {
-                let output = match child.wait_with_output() {
-                    Ok(o) => o,
-                    Err(e) => return (false, e.to_string()),
-                };
-                if output.status.success() {
-                    return (true, String::from_utf8_lossy(&output.stdout).trim().to_string());
-                }
-                let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                if error.is_empty() {
-                    return (false, String::from_utf8_lossy(&output.stdout).trim().to_string());
-                }
-                return (false, error);
-            }
+            Ok(Some(s)) => break s,
             Ok(None) => {
-                if start.elapsed() >= CMD_TIMEOUT {
+                if start.elapsed() >= timeout {
                     let _ = child.kill();
                     let _ = child.wait();
+                    let _ = stdout_reader.join();
+                    let _ = stderr_reader.join();
                     return (false, "timeout".to_string());
                 }
-                let remaining = CMD_TIMEOUT - start.elapsed();
+                let remaining = timeout - start.elapsed();
                 std::thread::sleep(poll_interval.min(remaining));
             }
-            Err(e) => return (false, e.to_string()),
+            Err(e) => {
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return (false, e.to_string());
+            }
         }
+    };
+
+    let stdout_bytes = stdout_reader.join().unwrap_or_default();
+    let stderr_bytes = stderr_reader.join().unwrap_or_default();
+    let stdout = String::from_utf8_lossy(&stdout_bytes).trim().to_string();
+    let stderr = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
+
+    if status.success() {
+        (true, stdout)
+    } else if stderr.is_empty() {
+        (false, stdout)
+    } else {
+        (false, stderr)
     }
 }
 
@@ -818,6 +853,76 @@ mod tests {
         let (ok, output) = run_cmd(&["nonexistent_command_12345"], dir.path());
         assert!(!ok);
         assert!(!output.is_empty());
+    }
+
+    // --- run_cmd_inner large-output and timeout tests (issue #875) ---
+    //
+    // These verify the thread-drain pattern captures output exceeding the
+    // kernel pipe buffer (~64KB). The prior try_wait() + wait_with_output()
+    // pattern either deadlocked on pipe-buffer fill or silently truncated
+    // via ECHILD on already-reaped children.
+
+    #[test]
+    fn run_cmd_inner_captures_large_stdout_without_truncation() {
+        let dir = tempfile::tempdir().unwrap();
+        let (ok, output) = run_cmd_inner(
+            &["sh", "-c", "for i in $(seq 1 20000); do echo \"line $i\"; done"],
+            dir.path(),
+            Duration::from_secs(10),
+        );
+        assert!(ok, "command failed: {}", output);
+        assert!(
+            output.contains("line 20000"),
+            "last line missing — output was truncated"
+        );
+        assert!(
+            output.len() > 128_000,
+            "stdout truncated: {} bytes (expected > 128KB)",
+            output.len()
+        );
+    }
+
+    #[test]
+    fn run_cmd_inner_captures_large_stderr_on_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let (ok, output) = run_cmd_inner(
+            &[
+                "sh",
+                "-c",
+                "for i in $(seq 1 20000); do echo \"err $i\" 1>&2; done; exit 1",
+            ],
+            dir.path(),
+            Duration::from_secs(10),
+        );
+        assert!(!ok);
+        assert!(
+            output.contains("err 20000"),
+            "last stderr line missing — output was truncated"
+        );
+        assert!(
+            output.len() > 128_000,
+            "stderr truncated: {} bytes (expected > 128KB)",
+            output.len()
+        );
+    }
+
+    #[test]
+    fn run_cmd_inner_enforces_timeout() {
+        let dir = tempfile::tempdir().unwrap();
+        let start = Instant::now();
+        let (ok, output) = run_cmd_inner(
+            &["sh", "-c", "sleep 10"],
+            dir.path(),
+            Duration::from_secs(2),
+        );
+        let elapsed = start.elapsed();
+        assert!(!ok);
+        assert_eq!(output, "timeout");
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "timeout not enforced: elapsed {:?}",
+            elapsed
+        );
     }
 
     // --- Tombstone tests ---
