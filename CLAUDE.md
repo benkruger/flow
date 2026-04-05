@@ -82,7 +82,7 @@ CI will fail if these are missing:
 
 - Python virtualenv at `.venv/` — `bin/ci` uses `.venv/bin/python3` automatically
 - Run tests with `bin/ci` only — never invoke pytest directly
-- **Use `bin/test <path>` for targeted test runs during development** — `bin/ci` runs the full suite and is the gate before committing. `bin/test tests/test_specific.py` runs a subset via the same venv. Never call pytest directly — always use one of the two wrappers.
+- **Use `bin/test <path>` for targeted test runs during development** — `bin/ci` runs the full suite and is the gate before committing. `bin/test tests/test_specific.py` runs a subset of Python tests via the same venv; `bin/test --rust <filter>` runs a subset of Rust tests via `cargo test <filter>` (e.g. `bin/test --rust hooks` runs every test in `tests/hooks.rs`). Never call pytest or cargo directly — always use one of the two `bin/test` forms.
 - `ruff` enforces Python linting (E+F+W+I rules) and formatting at `line-length = 120` — configured in `ruff.toml`, runs inside `bin/ci`
 - Dependencies managed in the venv, not system Python
 
