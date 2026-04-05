@@ -161,3 +161,92 @@ fn test_post_compact_empty_stdin_exits_zero() {
     assert!(on_disk.get("compact_summary").is_none());
     assert!(on_disk.get("compact_count").is_none());
 }
+
+// ---------------------------------------------------------------------------
+// stop-failure hook
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_stop_failure_happy_path_writes_last_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "test-feature";
+    let state = json!({
+        "branch": branch,
+        "current_phase": "flow-code"
+    });
+    setup_git_and_state(dir.path(), branch, &state);
+
+    let stdin = br#"{"error_type":"rate_limit","error_message":"429 Too Many Requests"}"#;
+    let output = run_hook("stop-failure", dir.path(), branch, stdin);
+
+    assert_eq!(output.status.code().unwrap(), 0);
+
+    let on_disk: Value = serde_json::from_str(
+        &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
+    )
+    .unwrap();
+    let failure = &on_disk["_last_failure"];
+    assert_eq!(failure["type"], "rate_limit");
+    assert_eq!(failure["message"], "429 Too Many Requests");
+    assert!(
+        failure["timestamp"]
+            .as_str()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false),
+        "timestamp must be a non-empty string"
+    );
+}
+
+#[test]
+fn test_stop_failure_malformed_stdin_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "test-feature";
+    let state = json!({"branch": branch, "current_phase": "flow-code"});
+    setup_git_and_state(dir.path(), branch, &state);
+
+    let output = run_hook("stop-failure", dir.path(), branch, b"not json at all");
+
+    assert_eq!(output.status.code().unwrap(), 0);
+    assert!(output.stdout.is_empty());
+
+    // State unchanged — run() returns early on JSON parse failure.
+    let on_disk: Value = serde_json::from_str(
+        &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(on_disk.get("_last_failure").is_none());
+}
+
+#[test]
+fn test_stop_failure_no_state_file_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let _ = Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output();
+
+    let stdin = br#"{"error_type":"rate_limit","error_message":"429"}"#;
+    let output = run_hook("stop-failure", dir.path(), "test-feature", stdin);
+
+    assert_eq!(output.status.code().unwrap(), 0);
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn test_stop_failure_empty_stdin_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "test-feature";
+    let state = json!({"branch": branch, "current_phase": "flow-code"});
+    setup_git_and_state(dir.path(), branch, &state);
+
+    let output = run_hook("stop-failure", dir.path(), branch, b"");
+
+    assert_eq!(output.status.code().unwrap(), 0);
+    assert!(output.stdout.is_empty());
+
+    let on_disk: Value = serde_json::from_str(
+        &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(on_disk.get("_last_failure").is_none());
+}
