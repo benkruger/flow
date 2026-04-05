@@ -197,6 +197,39 @@ when run from a fresh temp dir fail when run as part of the full suite
 because `current_dir` differs. Always audit subprocess calls in the
 Python source for `cwd=` and mirror them in Rust `Command::current_dir()`.
 
+### Inherited CWD — Use current_dir(), Not project_root()
+
+The opposite direction also matters: when a Python script's
+`subprocess.run(...)` calls pass NO `cwd=` argument, the script
+inherits the caller's working directory implicitly. The Rust port
+MUST match that by reading `std::env::current_dir()` — NOT by
+calling `project_root()`.
+
+Why: `project_root()` returns the first entry of `git worktree list
+--porcelain`, which is always the MAIN repo root. When a FLOW phase
+invokes a per-branch script from a linked worktree (which is how
+every FLOW phase operates), `project_root()` sends git commands to
+the main worktree where `HEAD=main`. A freshness check like
+`git merge-base --is-ancestor origin/main HEAD` then trivially
+succeeds — `main` is an ancestor of itself — and the feature
+branch's actual state is never checked. The Python original
+inherits the worktree CWD via `subprocess.run` default behavior;
+the Rust port must match.
+
+`project_root()` is the right choice for scripts that operate on
+shared `.flow-states/` paths regardless of caller location. It is
+the WRONG choice for scripts that run git commands against the
+caller's branch.
+
+How to apply: when porting a Python script, grep its `subprocess.run`
+calls for `cwd=`. If none pass it, the script inherits CWD. Use
+`std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))`
+and pass that to every `Command::new(...).current_dir()` call.
+Integration tests must set up a LINKED worktree (`git worktree add`)
+and run the binary from inside it — tests that use standalone repos
+with no linked worktrees cannot distinguish `project_root()` from
+`current_dir()` and will falsely pass.
+
 ## CLI Testability — Extract run_impl
 
 When a Rust port's plan requires CLI error-path tests (missing
@@ -288,6 +321,71 @@ Audit every Python `resolve_branch()` call during a port. Hooks
 that fire from any shell (Stop, StopFailure, PostCompact) almost
 always need `resolve_branch()` because the user's shell cwd may
 not match the active flow branch.
+
+CLI subcommands that resolve a branch from an explicit cwd (e.g.
+`bin/flow ci` running in a worktree) must use `git::resolve_branch_in(
+override, cwd, root)` — the cwd-scoped variant — rather than
+`current_branch_in(cwd)`. The `_in` variant preserves the state-file
+scan fallback while reading the branch from the supplied directory
+instead of the process cwd.
+
+## Plan-Phase Cross-Checks for Rust Ports
+
+The Plan phase for a Rust port must cross-check this document
+before finalizing the task list. Mis-specifying a function at plan
+time lets the bug pass through Code phase (tests agree with the
+wrong function) and surfaces only during Code Review agent passes.
+
+For every function the plan calls out by name, verify:
+
+- **Branch resolution:** If the Python original reads a branch from
+  the filesystem, identify whether it called `current_branch()` or
+  `resolve_branch()`. Pick the matching Rust equivalent. In cwd-scoped
+  contexts, pick `current_branch_in` or `resolve_branch_in` to match.
+- **Subprocess timeout:** If the Python original passes `timeout=N`
+  to `subprocess.run` or `proc.wait`, the Rust port must preserve
+  the same timeout via `try_wait()` polling against a deadline.
+- **Subprocess cwd:** If the Python original passes `cwd=path` to
+  `subprocess.run`, the Rust port must call
+  `Command::current_dir(path)` on every subprocess.
+- **Upfront guards:** See "Upfront Guards Belong in run_impl" below.
+
+Add a concrete task to the plan: "Cross-check rust-port-parity.md
+sections Branch-Resolution Function Parity, Subprocess Timeout
+Parity, Subprocess CWD Parity, and Upfront Guards against the
+Python source." The check is one read of the Python source plus
+one read of this document — it takes minutes and catches the exact
+class of bug the review agents found.
+
+## Upfront Guards Belong in run_impl
+
+When the Python original performs a single upfront check in `main()`
+before dispatching to sub-functions (e.g. `if not bin_ci.exists():
+print(error); sys.exit(1)` in `lib/ci.py` before calling either the
+retry or non-retry path), the Rust port must place that guard in
+`run_impl` — not in the individual sub-functions.
+
+Why: placing the guard in only one sub-function silently diverges
+error behavior across dispatch paths. The non-retry path returns
+the Python-parity error message; the retry path fails later at
+`Command::spawn()` and returns a different error message. Tests
+that only cover the non-retry path miss the divergence entirely.
+
+How to apply: when reading the Python source at plan time, locate
+every guard in `main()` that runs before dispatch. For each guard,
+add an explicit task to the plan: "Guard X runs in run_impl before
+the retry/non-retry dispatch." When writing the test list for
+run_impl, include a test case that exercises each guard through
+both dispatch paths — a single test that asserts both paths return
+the same error message is sufficient, but the test must exercise
+both dispatch paths.
+
+The inverse mistake is also possible: placing the guard in
+`run_impl` when it belongs in a sub-function (e.g. when only one
+dispatch path depends on the guard). Verify which path the Python
+main() checks the guard for — if it checks before both, the guard
+is upfront; if it checks only before one, the guard belongs with
+that sub-function.
 
 ## State Mutation Object Guard
 
