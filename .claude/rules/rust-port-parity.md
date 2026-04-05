@@ -145,6 +145,39 @@ when run from a fresh temp dir fail when run as part of the full suite
 because `current_dir` differs. Always audit subprocess calls in the
 Python source for `cwd=` and mirror them in Rust `Command::current_dir()`.
 
+### Inherited CWD — Use current_dir(), Not project_root()
+
+The opposite direction also matters: when a Python script's
+`subprocess.run(...)` calls pass NO `cwd=` argument, the script
+inherits the caller's working directory implicitly. The Rust port
+MUST match that by reading `std::env::current_dir()` — NOT by
+calling `project_root()`.
+
+Why: `project_root()` returns the first entry of `git worktree list
+--porcelain`, which is always the MAIN repo root. When a FLOW phase
+invokes a per-branch script from a linked worktree (which is how
+every FLOW phase operates), `project_root()` sends git commands to
+the main worktree where `HEAD=main`. A freshness check like
+`git merge-base --is-ancestor origin/main HEAD` then trivially
+succeeds — `main` is an ancestor of itself — and the feature
+branch's actual state is never checked. The Python original
+inherits the worktree CWD via `subprocess.run` default behavior;
+the Rust port must match.
+
+`project_root()` is the right choice for scripts that operate on
+shared `.flow-states/` paths regardless of caller location. It is
+the WRONG choice for scripts that run git commands against the
+caller's branch.
+
+How to apply: when porting a Python script, grep its `subprocess.run`
+calls for `cwd=`. If none pass it, the script inherits CWD. Use
+`std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))`
+and pass that to every `Command::new(...).current_dir()` call.
+Integration tests must set up a LINKED worktree (`git worktree add`)
+and run the binary from inside it — tests that use standalone repos
+with no linked worktrees cannot distinguish `project_root()` from
+`current_dir()` and will falsely pass.
+
 ## CLI Testability — Extract run_impl
 
 When a Rust port's plan requires CLI error-path tests (missing

@@ -7,6 +7,7 @@ use flow_rs::add_notification;
 use flow_rs::analyze_issues;
 use flow_rs::append_note;
 use flow_rs::auto_close_parent;
+use flow_rs::check_freshness;
 use flow_rs::check_phase::check_phase;
 use flow_rs::ci;
 use flow_rs::cleanup;
@@ -38,6 +39,7 @@ use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
 use flow_rs::phase_transition::{phase_complete, phase_enter};
 use flow_rs::start_setup;
 use flow_rs::update_deps;
+use flow_rs::upgrade_check;
 use flow_rs::utils::{detect_dev_mode, read_version};
 use flow_rs::write_rule;
 
@@ -50,6 +52,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Pre-merge freshness check: fetch main, verify branch is up-to-date.
+    #[command(name = "check-freshness")]
+    CheckFreshness(check_freshness::Args),
+
     /// Verify prerequisite phase is complete before entry.
     #[command(name = "check-phase")]
     CheckPhase {
@@ -275,6 +281,10 @@ enum Commands {
     #[command(name = "update-pr-body")]
     UpdatePrBody(update_pr_body::Args),
 
+    /// Check GitHub for newer FLOW releases.
+    #[command(name = "upgrade-check")]
+    UpgradeCheck(upgrade_check::Args),
+
     /// Run a Claude Code hook handler.
     Hook {
         #[command(subcommand)]
@@ -319,6 +329,7 @@ fn main() {
             eprintln!("flow-rs: no command specified. Use --help for usage.");
             process::exit(1);
         }
+        Some(Commands::CheckFreshness(args)) => check_freshness::run(args),
         Some(Commands::CheckPhase { required, branch }) => {
             run_check_phase(&required, branch.as_deref());
         }
@@ -452,6 +463,7 @@ fn main() {
         Some(Commands::UpdatePrBody(args)) => {
             update_pr_body::run(args);
         }
+        Some(Commands::UpgradeCheck(args)) => upgrade_check::run(args),
         Some(Commands::Hook { hook }) => match hook {
             HookCommands::ValidatePretool => hooks::validate_pretool::run(),
             HookCommands::ValidateClaudePaths => hooks::validate_claude_paths::run(),
