@@ -218,14 +218,6 @@ enum Commands {
         branch: Option<String>,
     },
 
-    /// Build continue-context JSON for session resumption.
-    #[command(name = "continue-context")]
-    ContinueContext {
-        /// Override branch for state file lookup
-        #[arg(long)]
-        branch: Option<String>,
-    },
-
     /// Build SessionStart hook context from state files.
     #[command(name = "session-context")]
     SessionContext,
@@ -400,9 +392,6 @@ fn main() {
         }
         Some(Commands::FormatStatus { branch }) => {
             run_format_status(branch.as_deref());
-        }
-        Some(Commands::ContinueContext { branch }) => {
-            commands::continue_context::run(branch.as_deref());
         }
         Some(Commands::SessionContext) => {
             commands::session_context::run();

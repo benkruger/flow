@@ -1909,6 +1909,33 @@ def test_code_review_no_plugin_config_axis():
     )
 
 
+def test_no_flow_continue_skill():
+    """Tombstone: flow-continue skill was removed in PR #868. Must not return."""
+    skill_dir = SKILLS_DIR / "flow-continue"
+    assert not (skill_dir / "SKILL.md").exists(), (
+        "skills/flow-continue/SKILL.md must not exist — removed in PR #868. "
+        "The skill was obsolete; resume is handled by natural-language "
+        "'continue' and direct phase command invocation."
+    )
+    assert not skill_dir.exists(), "skills/flow-continue/ directory must not exist — removed in PR #868"
+
+
+def test_no_continue_context_rust_command():
+    """Tombstone: bin/flow continue-context Rust command was removed in PR #868. Must not return."""
+    rust_file = REPO_ROOT / "src" / "commands" / "continue_context.rs"
+    assert not rust_file.exists(), (
+        "src/commands/continue_context.rs must not exist — removed in PR #868 "
+        "along with its only consumer (flow-continue skill)"
+    )
+    main_rs = (REPO_ROOT / "src" / "main.rs").read_text()
+    assert "ContinueContext" not in main_rs, (
+        "src/main.rs must not contain ContinueContext enum variant — removed in PR #868"
+    )
+    assert "continue_context::run" not in main_rs, (
+        "src/main.rs must not dispatch to continue_context::run — removed in PR #868"
+    )
+
+
 def test_code_review_no_two_dot_diff():
     """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
     content = _read_skill("flow-code-review")

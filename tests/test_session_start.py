@@ -76,7 +76,7 @@ def test_single_feature_returns_valid_json(git_repo):
     ctx = output["additional_context"]
     assert "flow-session-context" in ctx
     assert "Invoice Pdf Export" in ctx
-    assert "flow:flow-continue" in ctx
+    assert "flow:flow-continue" not in ctx
 
 
 def test_single_feature_resets_session_started_at(git_repo):
@@ -334,7 +334,7 @@ def test_missing_current_phase_defaults_to_phase_1(git_repo):
 
 
 def test_single_feature_does_not_force_action(git_repo):
-    """Single feature context must NOT force Claude to invoke flow:flow-continue."""
+    """Single feature context must NOT force Claude to invoke any FLOW skill."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
     state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
@@ -345,7 +345,8 @@ def test_single_feature_does_not_force_action(git_repo):
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
     assert "FIRST action" not in ctx
-    assert "Invoke the flow:flow-continue skill" not in ctx
+    assert "flow:flow-continue" not in ctx
+    assert "NEVER implement" not in ctx
 
 
 def test_single_feature_includes_note_instruction(git_repo):
@@ -385,6 +386,8 @@ def test_multiple_features_does_not_force_action(git_repo):
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
     assert "FIRST action" not in ctx
+    assert "flow:flow-continue" not in ctx
+    assert "needs to resume" not in ctx
     assert "flow:flow-note" in ctx
 
 
@@ -414,52 +417,49 @@ def test_multiple_features_includes_note_instruction(git_repo):
     assert "corrects you" in ctx
 
 
-def test_phase_2_plan_approved_instructs_auto_continue(git_repo):
-    """Phase 2 with plan_file set → tells Claude to invoke flow:flow-continue
-    because ExitPlanMode's 'clear context and proceed' wiped the skill context."""
+def test_session_start_no_flow_continue_references(git_repo):
+    """Tombstone: removed in PR #868. Hook context must not reference flow-continue."""
     state_dir = git_repo / ".flow-states"
     state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
-    state["plan_file"] = "/Users/test/.claude/plans/test-plan.md"
-    write_state(state_dir, "my-feature", state)
 
-    _switch(git_repo, "my-feature")
+    # Single-feature scenario that previously emitted auto-continue language
+    s1 = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
+    s1["plan_file"] = "/Users/test/.claude/plans/test-plan.md"
+    s1["branch"] = "single-feature"
+    write_state(state_dir, "single-feature", s1)
+
+    _switch(git_repo, "single-feature")
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
-    assert "flow:flow-continue" in ctx
-    assert "Do NOT invoke flow:flow-continue" not in ctx
+    assert "flow-continue" not in ctx, "flow-continue must not appear in single-feature context"
+    assert "flow:flow-continue" not in ctx
+    assert "needs to resume" not in ctx
 
+    # Clean up and test multi-feature scenario
+    (state_dir / "single-feature.json").unlink()
+    s2 = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
+    s2["branch"] = "feature-m1"
+    write_state(state_dir, "feature-m1", s2)
+    s3 = make_state(
+        current_phase="flow-code",
+        phase_statuses={
+            "flow-start": "complete",
+            "flow-plan": "complete",
+            "flow-code": "in_progress",
+        },
+    )
+    s3["branch"] = "feature-m2"
+    write_state(state_dir, "feature-m2", s3)
 
-def test_phase_2_no_plan_file_does_not_auto_continue(git_repo):
-    """Phase 2 with plan_file null → normal behavior, no auto-continue."""
-    state_dir = git_repo / ".flow-states"
-    state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
-    state["plan_file"] = None
-    write_state(state_dir, "my-feature", state)
-
-    _switch(git_repo, "my-feature")
+    _detach(git_repo)
     result = _run(git_repo)
     output = json.loads(result.stdout)
     ctx = output["additional_context"]
-    assert "Do NOT invoke flow:flow-continue" in ctx
-
-
-def test_phase_2_plan_approved_via_files_block(git_repo):
-    """Phase 2 with files.plan set (new schema) → auto-continue works."""
-    state_dir = git_repo / ".flow-states"
-    state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
-    state["files"]["plan"] = ".flow-states/my-feature-plan.md"
-    write_state(state_dir, "my-feature", state)
-
-    _switch(git_repo, "my-feature")
-    result = _run(git_repo)
-    output = json.loads(result.stdout)
-    ctx = output["additional_context"]
-    assert "flow:flow-continue" in ctx
-    assert "Do NOT invoke flow:flow-continue" not in ctx
+    assert "flow-continue" not in ctx, "flow-continue must not appear in multi-feature context"
+    assert "flow:flow-continue" not in ctx
+    assert "needs to resume" not in ctx
+    assert "NEVER implement" not in ctx
 
 
 def test_phases_json_files_are_ignored(git_repo):
@@ -489,97 +489,6 @@ def test_phases_json_files_are_ignored(git_repo):
     assert "Real Feature" in ctx
     assert "None" not in ctx
     assert "Multiple" not in ctx
-
-
-def test_multiple_features_plan_approved_instructs_auto_continue(git_repo):
-    """Multi-feature: one at flow-plan with plan_file → auto-continue for that feature."""
-    state_dir = git_repo / ".flow-states"
-    state_dir.mkdir(parents=True)
-
-    s1 = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
-    s1["plan_file"] = "/Users/test/.claude/plans/test-plan.md"
-    s1["branch"] = "plan-ready"
-    write_state(state_dir, "plan-ready", s1)
-
-    s2 = make_state(
-        current_phase="flow-code",
-        phase_statuses={
-            "flow-start": "complete",
-            "flow-plan": "complete",
-            "flow-code": "in_progress",
-        },
-    )
-    s2["branch"] = "other-work"
-    write_state(state_dir, "other-work", s2)
-
-    _detach(git_repo)
-    result = _run(git_repo)
-    output = json.loads(result.stdout)
-    ctx = output["additional_context"]
-    assert "flow:flow-continue" in ctx
-    assert "Plan Ready" in ctx
-    assert "Do NOT invoke flow:flow-continue" not in ctx
-
-
-def test_single_feature_no_plan_includes_implementation_guardrail(git_repo):
-    """Single feature without plan approved must include implementation guardrail."""
-    state_dir = git_repo / ".flow-states"
-    state_dir.mkdir(parents=True)
-    state = make_state(
-        current_phase="flow-code",
-        phase_statuses={
-            "flow-start": "complete",
-            "flow-plan": "complete",
-            "flow-code": "in_progress",
-        },
-    )
-    write_state(state_dir, "my-feature", state)
-
-    _switch(git_repo, "my-feature")
-    result = _run(git_repo)
-    output = json.loads(result.stdout)
-    ctx = output["additional_context"]
-    assert "NEVER implement" in ctx
-
-
-def test_multiple_features_includes_implementation_guardrail(git_repo):
-    """Multiple features context must include implementation guardrail."""
-    state_dir = git_repo / ".flow-states"
-    state_dir.mkdir(parents=True)
-
-    s1 = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
-    write_state(state_dir, "feature-a", s1)
-
-    s2 = make_state(
-        current_phase="flow-code",
-        phase_statuses={
-            "flow-start": "complete",
-            "flow-plan": "complete",
-            "flow-code": "in_progress",
-        },
-    )
-    write_state(state_dir, "feature-b", s2)
-
-    _detach(git_repo)
-    result = _run(git_repo)
-    output = json.loads(result.stdout)
-    ctx = output["additional_context"]
-    assert "NEVER implement" in ctx
-
-
-def test_single_feature_plan_approved_includes_implementation_guardrail(git_repo):
-    """Single feature with plan approved must still include implementation guardrail."""
-    state_dir = git_repo / ".flow-states"
-    state_dir.mkdir(parents=True)
-    state = make_state(current_phase="flow-plan", phase_statuses={"flow-start": "complete", "flow-plan": "in_progress"})
-    state["plan_file"] = "/Users/test/.claude/plans/test-plan.md"
-    write_state(state_dir, "my-feature", state)
-
-    _switch(git_repo, "my-feature")
-    result = _run(git_repo)
-    output = json.loads(result.stdout)
-    ctx = output["additional_context"]
-    assert "NEVER implement" in ctx
 
 
 def test_code_review_with_step_tracking_shows_progress(git_repo):
@@ -742,28 +651,6 @@ def test_code_review_float_string_step_does_not_crash(git_repo):
     ctx = output["additional_context"]
     assert "Float Step" in ctx
     assert "done" not in ctx
-
-
-def test_never_entered_phase_instructs_auto_continue(git_repo):
-    """Phase advanced but never entered (status still pending) → auto-continue."""
-    state_dir = git_repo / ".flow-states"
-    state_dir.mkdir(parents=True)
-    # current_phase advanced to flow-code by Plan completion, but phase_enter never ran
-    state = make_state(
-        current_phase="flow-code",
-        phase_statuses={
-            "flow-start": "complete",
-            "flow-plan": "complete",
-        },
-    )
-    write_state(state_dir, "auto-continue", state)
-
-    _switch(git_repo, "auto-continue")
-    result = _run(git_repo)
-    output = json.loads(result.stdout)
-    ctx = output["additional_context"]
-    assert "flow:flow-continue" in ctx
-    assert "Do NOT invoke flow:flow-continue" not in ctx
 
 
 def test_phase_1_never_entered_does_not_auto_continue(git_repo):

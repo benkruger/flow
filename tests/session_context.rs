@@ -204,7 +204,7 @@ fn single_feature_returns_valid_json() {
     let ctx = output["additional_context"].as_str().unwrap();
     assert!(ctx.contains("flow-session-context"), "Should contain flow-session-context tag");
     assert!(ctx.contains("Invoice Pdf Export"), "Should contain feature name");
-    assert!(ctx.contains("flow:flow-continue"), "Should mention flow:flow-continue");
+    assert!(!ctx.contains("flow:flow-continue"), "Must not mention flow:flow-continue");
 }
 
 // --- Branch isolation ---
@@ -920,10 +920,8 @@ fn single_feature_does_not_force_action() {
     let output = parse_stdout(&result);
     let ctx = output["additional_context"].as_str().unwrap();
     assert!(!ctx.contains("FIRST action"), "Should not force FIRST action");
-    assert!(
-        !ctx.contains("Invoke the flow:flow-continue skill"),
-        "Should not command Claude to invoke"
-    );
+    assert!(!ctx.contains("flow:flow-continue"), "Must not reference flow:flow-continue");
+    assert!(!ctx.contains("NEVER implement"), "Must not contain implementation guardrail");
 }
 
 #[test]
@@ -946,90 +944,51 @@ fn single_feature_includes_note_instruction() {
 }
 
 #[test]
-fn phase_2_plan_approved_instructs_auto_continue() {
+fn session_context_no_flow_continue_references() {
+    // Tombstone: removed in PR #868. Hook context must not reference flow-continue.
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
     let state_dir = dir.path().join(".flow-states");
     fs::create_dir(&state_dir).unwrap();
 
-    let mut state = make_state(json!({"current_phase": "flow-plan", "branch": "my-feature"}));
+    // Scenario 1: single feature with plan_file (previously triggered auto-continue)
+    let mut state = make_state(json!({"current_phase": "flow-plan", "branch": "plan-done"}));
     state["phases"]["flow-start"]["status"] = json!("complete");
     state["phases"]["flow-plan"]["status"] = json!("in_progress");
     state["plan_file"] = json!("/Users/test/.claude/plans/test-plan.md");
-    write_state(&state_dir, "my-feature", &state);
+    write_state(&state_dir, "plan-done", &state);
 
-    switch_branch(dir.path(), "my-feature");
+    switch_branch(dir.path(), "plan-done");
     let result = run_session_context(dir.path());
     let output = parse_stdout(&result);
     let ctx = output["additional_context"].as_str().unwrap();
-    assert!(ctx.contains("flow:flow-continue"), "Should mention flow-continue");
-    assert!(
-        !ctx.contains("Do NOT invoke flow:flow-continue"),
-        "Should not tell to NOT invoke"
-    );
+    assert!(!ctx.contains("flow-continue"), "single-feature must not mention flow-continue");
+    assert!(!ctx.contains("flow:flow-continue"));
+    assert!(!ctx.contains("needs to resume"));
 }
 
 #[test]
-fn phase_2_no_plan_file_does_not_auto_continue() {
+fn session_context_no_implementation_guardrail_phrase() {
+    // Tombstone: removed in PR #868. Hook context must not contain the old guardrail phrase.
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
     let state_dir = dir.path().join(".flow-states");
     fs::create_dir(&state_dir).unwrap();
 
-    let mut state = make_state(json!({"current_phase": "flow-plan", "branch": "my-feature"}));
-    state["phases"]["flow-start"]["status"] = json!("complete");
-    state["phases"]["flow-plan"]["status"] = json!("in_progress");
-    state["plan_file"] = Value::Null;
-    write_state(&state_dir, "my-feature", &state);
-
-    switch_branch(dir.path(), "my-feature");
-    let result = run_session_context(dir.path());
-    let output = parse_stdout(&result);
-    let ctx = output["additional_context"].as_str().unwrap();
-    assert!(ctx.contains("Do NOT invoke flow:flow-continue"));
-}
-
-#[test]
-fn phase_2_plan_approved_via_files_block() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let state_dir = dir.path().join(".flow-states");
-    fs::create_dir(&state_dir).unwrap();
-
-    let mut state = make_state(json!({"current_phase": "flow-plan", "branch": "my-feature"}));
-    state["phases"]["flow-start"]["status"] = json!("complete");
-    state["phases"]["flow-plan"]["status"] = json!("in_progress");
-    state["files"]["plan"] = json!(".flow-states/my-feature-plan.md");
-    write_state(&state_dir, "my-feature", &state);
-
-    switch_branch(dir.path(), "my-feature");
-    let result = run_session_context(dir.path());
-    let output = parse_stdout(&result);
-    let ctx = output["additional_context"].as_str().unwrap();
-    assert!(ctx.contains("flow:flow-continue"));
-    assert!(!ctx.contains("Do NOT invoke flow:flow-continue"));
-}
-
-#[test]
-fn never_entered_phase_instructs_auto_continue() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let state_dir = dir.path().join(".flow-states");
-    fs::create_dir(&state_dir).unwrap();
-
-    // current_phase advanced to flow-code by Plan completion, but flow-code is still pending
-    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "auto-continue"}));
+    // Single feature in code phase (previously always included the guardrail)
+    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "guard-test"}));
     state["phases"]["flow-start"]["status"] = json!("complete");
     state["phases"]["flow-plan"]["status"] = json!("complete");
-    // flow-code is pending (not entered yet)
-    write_state(&state_dir, "auto-continue", &state);
+    state["phases"]["flow-code"]["status"] = json!("in_progress");
+    write_state(&state_dir, "guard-test", &state);
 
-    switch_branch(dir.path(), "auto-continue");
+    switch_branch(dir.path(), "guard-test");
     let result = run_session_context(dir.path());
     let output = parse_stdout(&result);
     let ctx = output["additional_context"].as_str().unwrap();
-    assert!(ctx.contains("flow:flow-continue"));
-    assert!(!ctx.contains("Do NOT invoke flow:flow-continue"));
+    assert!(!ctx.contains("NEVER implement code changes"), "Old guardrail phrase must not appear");
+    assert!(!ctx.contains("without first invoking"));
+    assert!(!ctx.contains("flow-continue"));
 }
 
 #[test]
@@ -1151,48 +1110,36 @@ fn multi_feature_code_review_step_tracking() {
 }
 
 #[test]
-fn single_feature_includes_implementation_guardrail() {
+fn multi_feature_no_auto_continue_pick() {
+    // Tombstone: removed in PR #868. Multi-feature context must not pick one
+    // feature to auto-resume based on state file iteration order.
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
     let state_dir = dir.path().join(".flow-states");
     fs::create_dir(&state_dir).unwrap();
 
-    let mut state = make_state(json!({"current_phase": "flow-code", "branch": "my-feature"}));
-    state["phases"]["flow-start"]["status"] = json!("complete");
-    state["phases"]["flow-plan"]["status"] = json!("complete");
-    state["phases"]["flow-code"]["status"] = json!("in_progress");
-    write_state(&state_dir, "my-feature", &state);
-
-    switch_branch(dir.path(), "my-feature");
-    let result = run_session_context(dir.path());
-    let output = parse_stdout(&result);
-    let ctx = output["additional_context"].as_str().unwrap();
-    assert!(ctx.contains("NEVER implement"), "Should include guardrail");
-}
-
-#[test]
-fn multiple_features_includes_implementation_guardrail() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let state_dir = dir.path().join(".flow-states");
-    fs::create_dir(&state_dir).unwrap();
-
+    // Feature A: plan approved (previously triggered auto-continue pick)
     let mut s1 = make_state(json!({"current_phase": "flow-plan", "branch": "feature-a"}));
     s1["phases"]["flow-start"]["status"] = json!("complete");
     s1["phases"]["flow-plan"]["status"] = json!("in_progress");
+    s1["plan_file"] = json!("/Users/test/.claude/plans/test-plan.md");
     write_state(&state_dir, "feature-a", &s1);
 
+    // Feature B: never-entered code (previously also triggered auto-continue pick)
     let mut s2 = make_state(json!({"current_phase": "flow-code", "branch": "feature-b"}));
     s2["phases"]["flow-start"]["status"] = json!("complete");
     s2["phases"]["flow-plan"]["status"] = json!("complete");
-    s2["phases"]["flow-code"]["status"] = json!("in_progress");
+    // flow-code still pending (never entered)
     write_state(&state_dir, "feature-b", &s2);
 
     detach_head(dir.path());
     let result = run_session_context(dir.path());
     let output = parse_stdout(&result);
     let ctx = output["additional_context"].as_str().unwrap();
-    assert!(ctx.contains("NEVER implement"), "Should include guardrail");
+    assert!(ctx.contains("Multiple FLOW features"), "Should still list features");
+    assert!(!ctx.contains("flow-continue"), "Must not mention flow-continue");
+    assert!(!ctx.contains("needs to resume"), "Must not auto-pick a feature");
+    assert!(!ctx.contains("NEVER implement"), "Must not include guardrail");
 }
 
 #[test]

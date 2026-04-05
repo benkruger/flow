@@ -54,7 +54,7 @@ CI will fail if a skill directory does not start with `flow-`.
 ```
 ══════════════════════════════════════════════════
   ◆ FLOW — Paused
-  Run /flow:flow-continue when ready.
+  Run the phase command when ready.
 ══════════════════════════════════════════════════
 ```
 ````
