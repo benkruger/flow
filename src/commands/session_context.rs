@@ -236,8 +236,7 @@ fn build_compact_block(summary: &Option<String>, cwd: &Option<String>, worktree:
         if c != worktree {
             block.push_str(&format!(
                 "WARNING: CWD at compaction was {} but the active \
-                 worktree is {}. Run /flow:flow-continue to \
-                 re-enter the worktree.\n\n",
+                 worktree is {}. cd into the worktree before editing.\n\n",
                 c, worktree
             ));
         }
@@ -426,55 +425,20 @@ fn phase_name(state: &Value) -> String {
     format!("{}{}", name, step_suffix(state))
 }
 
-fn is_plan_approved(state: &Value) -> bool {
-    let cp = state
-        .get("current_phase")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    if cp != "flow-plan" {
-        return false;
-    }
-    // Check files.plan first (non-null only), then legacy plan_file (non-null only)
-    let files_plan = state
-        .get("files")
-        .and_then(|f| f.get("plan"))
-        .filter(|v| !v.is_null());
-    if files_plan.is_some() {
-        return true;
-    }
-    state
-        .get("plan_file")
-        .filter(|v| !v.is_null())
-        .is_some()
-}
-
-fn is_never_entered(state: &Value) -> bool {
-    let cp = state
-        .get("current_phase")
-        .and_then(|v| v.as_str())
-        .unwrap_or("flow-start");
-    if cp == "flow-start" {
-        return false;
-    }
-    let status = state
-        .get("phases")
-        .and_then(|p| p.get(cp))
-        .and_then(|p| p.get("status"))
-        .and_then(|s| s.as_str())
-        .unwrap_or("");
-    status == "pending"
-}
-
-const IMPLEMENTATION_GUARDRAIL: &str = concat!(
-    "NEVER implement code changes, edit project files, or make commits for a FLOW feature\n",
-    "without first invoking /flow:flow-continue to restore worktree context and phase guards.\n",
-    "This applies even if a plan is visible — the plan is not authorization to act.\n",
-);
-
 const NOTE_INSTRUCTION: &str = concat!(
     "Throughout this session: whenever the user corrects you, disagrees\n",
     "with your response, or says something was wrong, invoke flow:flow-note\n",
     "immediately before replying to capture the correction.\n",
+);
+
+const SINGLE_FEATURE_RESUME_INSTRUCTION: &str = concat!(
+    "Do NOT invoke any FLOW skill or ask about this feature unprompted.\n",
+    "The user will type the phase command when ready to resume.\n",
+);
+
+const MULTI_FEATURE_RESUME_INSTRUCTION: &str = concat!(
+    "Do NOT invoke any FLOW skill or ask about these features unprompted.\n",
+    "The user will type the phase command when ready to resume.\n",
 );
 
 fn build_single_feature_context(
@@ -485,27 +449,6 @@ fn build_single_feature_context(
     let feature = feature_name(state);
     let phase = phase_name(state);
     let wt = worktree_path(state);
-
-    let resume_instruction = if is_plan_approved(state) {
-        concat!(
-            "The plan was approved and ExitPlanMode cleared context.\n",
-            "Invoke flow:flow-continue immediately to complete Phase 2 and ",
-            "transition to Phase 3: Code.\n",
-        )
-        .to_string()
-    } else if is_never_entered(state) {
-        concat!(
-            "The previous phase completed but the current phase was never entered.\n",
-            "Invoke flow:flow-continue immediately to resume.\n",
-        )
-        .to_string()
-    } else {
-        concat!(
-            "Do NOT invoke flow:flow-continue or ask about this feature unprompted.\n",
-            "The user will type /flow:flow-continue when ready to resume.\n",
-        )
-        .to_string()
-    };
 
     let failure_block = build_failure_block(&consumed.failure);
     let compact_block =
@@ -520,8 +463,6 @@ fn build_single_feature_context(
          {compact_block}\
          {resume_instruction}\
          \n\
-         {guardrail}\
-         \n\
          {note}\
          </flow-session-context>",
         dev_preamble = dev_preamble,
@@ -529,8 +470,7 @@ fn build_single_feature_context(
         phase = phase,
         failure_block = failure_block,
         compact_block = compact_block,
-        resume_instruction = resume_instruction,
-        guardrail = IMPLEMENTATION_GUARDRAIL,
+        resume_instruction = SINGLE_FEATURE_RESUME_INSTRUCTION,
         note = NOTE_INSTRUCTION,
     )
 }
@@ -547,32 +487,6 @@ fn build_multi_feature_context(
         features.push(format!("  - {} — {}", f, p));
     }
     let feature_list = features.join("\n");
-
-    // Detect auto-continue candidate
-    let mut auto_continue_feature = None;
-    for s in states {
-        if is_plan_approved(s) {
-            auto_continue_feature = Some(feature_name(s));
-            break;
-        }
-        if is_never_entered(s) {
-            auto_continue_feature = Some(feature_name(s));
-            break;
-        }
-    }
-
-    let resume_instruction = if let Some(ref feat) = auto_continue_feature {
-        format!(
-            "FLOW feature \"{}\" needs to resume.\n\
-             Invoke flow:flow-continue immediately to restore worktree context \
-             and continue.\n",
-            feat
-        )
-    } else {
-        "Do NOT invoke flow:flow-continue or ask about these features unprompted.\n\
-         The user will type /flow:flow-continue when ready to resume.\n"
-            .to_string()
-    };
 
     // Per-feature failure and compact blocks
     let mut failure_blocks = String::new();
@@ -601,16 +515,13 @@ fn build_multi_feature_context(
          {compact_blocks}\
          {resume_instruction}\
          \n\
-         {guardrail}\
-         \n\
          {note}\
          </flow-session-context>",
         dev_preamble = dev_preamble,
         feature_list = feature_list,
         failure_blocks = failure_blocks,
         compact_blocks = compact_blocks,
-        resume_instruction = resume_instruction,
-        guardrail = IMPLEMENTATION_GUARDRAIL,
+        resume_instruction = MULTI_FEATURE_RESUME_INSTRUCTION,
         note = NOTE_INSTRUCTION,
     )
 }
