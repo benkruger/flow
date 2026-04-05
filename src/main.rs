@@ -12,6 +12,7 @@ use flow_rs::check_phase::check_phase;
 use flow_rs::close_issue;
 use flow_rs::close_issues;
 use flow_rs::commands;
+use flow_rs::complete_merge;
 use flow_rs::complete_preflight;
 use flow_rs::create_dependencies;
 use flow_rs::create_milestone;
@@ -120,6 +121,10 @@ enum Commands {
     /// FLOW Complete phase preflight (state detection, PR check, merge main).
     #[command(name = "complete-preflight")]
     CompletePreflight(complete_preflight::Args),
+
+    /// FLOW Complete phase merge (freshness check + squash merge).
+    #[command(name = "complete-merge")]
+    CompleteMerge(complete_merge::Args),
 
     /// Set timestamp and value fields in the FLOW state file.
     #[command(name = "set-timestamp")]
@@ -332,6 +337,7 @@ fn main() {
         Some(Commands::CreateDependencies(args)) => create_dependencies::run(args),
         Some(Commands::AutoCloseParent(args)) => auto_close_parent::run(args),
         Some(Commands::CompletePreflight(args)) => complete_preflight::run(args),
+        Some(Commands::CompleteMerge(args)) => complete_merge::run(args),
         Some(Commands::SetTimestamp { set_args, branch }) => {
             commands::set_timestamp::run(set_args, branch);
         }
