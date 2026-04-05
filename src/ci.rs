@@ -305,10 +305,69 @@ pub fn run_with_retry(
     )
 }
 
-/// CLI entry point — not yet implemented. Subsequent tasks add
-/// run_impl which this delegates to.
-pub fn run(_args: Args) {
-    unimplemented!("ci::run is built incrementally — see plan tasks 12, 13");
+/// Testable CLI entry point. Extracted from [`run`] so tests can inject
+/// `cwd`, `root`, and the recursion-guard env var without mutating the
+/// test process environment.
+///
+/// Dispatches to [`run_once`] when `args.retry == 0` and to
+/// [`run_with_retry`] otherwise. Resolves the branch from `args.branch`
+/// or falls back to [`crate::git::current_branch_in`] using the given
+/// `cwd`.
+pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> (Value, i32) {
+    if flow_ci_running {
+        return (
+            json!({
+                "status": "ok",
+                "skipped": true,
+                "reason": "recursion guard",
+            }),
+            0,
+        );
+    }
+
+    let bin_ci = cwd.join("bin").join("ci");
+
+    let resolved_branch = match &args.branch {
+        Some(b) => Some(b.clone()),
+        None => crate::git::current_branch_in(cwd),
+    };
+
+    if args.retry > 0 {
+        run_with_retry(
+            cwd,
+            root,
+            &bin_ci,
+            resolved_branch.as_deref(),
+            args.retry,
+            args.simulate_branch.as_deref(),
+        )
+    } else {
+        run_once(
+            cwd,
+            root,
+            &bin_ci,
+            resolved_branch.as_deref(),
+            args.force,
+            args.simulate_branch.as_deref(),
+        )
+    }
+}
+
+/// CLI entry point for `bin/flow ci`.
+///
+/// Reads `FLOW_CI_RUNNING` from the parent environment (for recursion
+/// detection), resolves `cwd` via [`std::env::current_dir`] and the
+/// project root via [`crate::git::project_root`], then delegates to
+/// [`run_impl`]. Prints the JSON result as the last line of stdout
+/// (following the "last-line JSON parsing" convention) and exits with
+/// the returned code.
+pub fn run(args: Args) {
+    let flow_ci_running = std::env::var("FLOW_CI_RUNNING").is_ok();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let root = crate::git::project_root();
+    let (result, code) = run_impl(&args, &cwd, &root, flow_ci_running);
+    println!("{}", serde_json::to_string(&result).unwrap());
+    std::process::exit(code);
 }
 
 #[cfg(test)]
@@ -1035,5 +1094,128 @@ exit 0
         assert_eq!(code, 0);
         assert_eq!(second["attempts"], 1);
         assert!(second.get("skipped").is_none());
+    }
+
+    // --- run_impl() tests ---
+
+    fn default_args() -> Args {
+        Args {
+            force: false,
+            retry: 0,
+            branch: None,
+            simulate_branch: None,
+        }
+    }
+
+    #[test]
+    fn cli_recursion_guard() {
+        let f = make_ci_project();
+        let args = Args {
+            branch: Some(f.branch.clone()),
+            ..default_args()
+        };
+        let (out, code) = run_impl(&args, &f.path, &f.path, true);
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+        assert_eq!(out["skipped"], true);
+        assert_eq!(out["reason"], "recursion guard");
+        // No sentinel should be created — CI never ran
+        assert!(!sentinel_path(&f).exists());
+    }
+
+    #[test]
+    fn cli_dispatches_to_run_once_without_retry() {
+        let f = make_ci_project();
+        let args = Args {
+            branch: Some(f.branch.clone()),
+            ..default_args()
+        };
+        let (out, code) = run_impl(&args, &f.path, &f.path, false);
+        assert_eq!(code, 0);
+        // run_once response shape has "skipped" key; run_with_retry has "attempts"
+        assert_eq!(out["skipped"], false);
+        assert!(out.get("attempts").is_none());
+    }
+
+    #[test]
+    fn cli_dispatches_to_run_with_retry_when_retry_gt_zero() {
+        let f = make_ci_project();
+        let args = Args {
+            retry: 3,
+            branch: Some(f.branch.clone()),
+            ..default_args()
+        };
+        let (out, code) = run_impl(&args, &f.path, &f.path, false);
+        assert_eq!(code, 0);
+        // run_with_retry response has "attempts" key; run_once has "skipped"
+        assert_eq!(out["attempts"], 1);
+        assert!(out.get("skipped").is_none());
+    }
+
+    #[test]
+    fn cli_branch_override_threads_through() {
+        let f = make_ci_project();
+        let args = Args {
+            branch: Some("other-feature".to_string()),
+            ..default_args()
+        };
+        let (_out, code) = run_impl(&args, &f.path, &f.path, false);
+        assert_eq!(code, 0);
+        let sentinel = f
+            .path
+            .join(".flow-states")
+            .join("other-feature-ci-passed");
+        assert!(sentinel.exists());
+    }
+
+    #[test]
+    fn cli_auto_detects_branch_from_cwd() {
+        // No args.branch → run_impl must fall back to current_branch_in(cwd)
+        let f = make_ci_project();
+        let args = default_args();
+        let (_out, code) = run_impl(&args, &f.path, &f.path, false);
+        assert_eq!(code, 0);
+        // The fixture's branch is "main" and that's what current_branch_in
+        // should return from the cwd. Sentinel should land at main-ci-passed.
+        assert!(sentinel_path(&f).exists());
+    }
+
+    #[test]
+    fn cli_force_threads_through() {
+        let f = make_ci_project();
+        // First run creates the sentinel
+        let (first, _) = run_impl(
+            &Args {
+                branch: Some(f.branch.clone()),
+                ..default_args()
+            },
+            &f.path,
+            &f.path,
+            false,
+        );
+        assert_eq!(first["skipped"], false);
+        // Second run without force — should skip
+        let (second, _) = run_impl(
+            &Args {
+                branch: Some(f.branch.clone()),
+                ..default_args()
+            },
+            &f.path,
+            &f.path,
+            false,
+        );
+        assert_eq!(second["skipped"], true);
+        // Third run with force — should NOT skip
+        let (third, _) = run_impl(
+            &Args {
+                force: true,
+                branch: Some(f.branch.clone()),
+                ..default_args()
+            },
+            &f.path,
+            &f.path,
+            false,
+        );
+        assert_eq!(third["skipped"], false);
     }
 }

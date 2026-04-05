@@ -7,8 +7,9 @@ use flow_rs::add_notification;
 use flow_rs::analyze_issues;
 use flow_rs::append_note;
 use flow_rs::auto_close_parent;
-use flow_rs::cleanup;
 use flow_rs::check_phase::check_phase;
+use flow_rs::ci;
+use flow_rs::cleanup;
 use flow_rs::close_issue;
 use flow_rs::close_issues;
 use flow_rs::commands;
@@ -75,6 +76,9 @@ enum Commands {
         #[arg(long)]
         reason: Option<String>,
     },
+
+    /// Run bin/ci with dirty-check optimization, retry logic, and CI sentinel management.
+    Ci(ci::Args),
 
     /// Analyze open GitHub issues for the flow-issues skill.
     #[command(name = "analyze-issues")]
@@ -313,6 +317,7 @@ fn main() {
                 reason.as_deref(),
             );
         }
+        Some(Commands::Ci(args)) => ci::run(args),
         Some(Commands::AnalyzeIssues(args)) => analyze_issues::run(args),
         Some(Commands::AppendNote(args)) => append_note::run(args),
         Some(Commands::Cleanup(args)) => cleanup::run(args),
