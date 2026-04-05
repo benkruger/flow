@@ -96,23 +96,15 @@ fn test_detect_branch_from_worktree_subdir() {
 #[test]
 fn test_detect_branch_not_in_worktree() {
     // Not in a worktree — falls back to git subprocess.
-    // Create a git repo on detached HEAD so branch --show-current returns empty.
+    // Use an empty (non-git) directory so `git branch --show-current` exits
+    // non-zero and the helper returns None. Avoid creating a real git repo
+    // because CI runners don't have user.name/user.email configured and
+    // `git init` populates HEAD with the default branch name.
     let dir = tempfile::tempdir().unwrap();
-    let _ = std::process::Command::new("git")
-        .args(["init"])
-        .current_dir(dir.path())
-        .output();
-    // Make a commit so we can detach
-    let _ = std::process::Command::new("git")
-        .args(["commit", "--allow-empty", "-m", "init"])
-        .current_dir(dir.path())
-        .output();
-    let _ = std::process::Command::new("git")
-        .args(["checkout", "--detach"])
-        .current_dir(dir.path())
-        .output();
+    let empty_subdir = dir.path().join("not-a-git-repo");
+    fs::create_dir_all(&empty_subdir).unwrap();
 
-    let branch = hooks::detect_branch_from_path(dir.path());
+    let branch = hooks::detect_branch_from_path(&empty_subdir);
     assert!(branch.is_none());
 }
 
