@@ -840,3 +840,59 @@ def test_no_python_test_update_deps():
     assert not (REPO_ROOT / "tests" / "test_update_deps.py").exists(), (
         "tests/test_update_deps.py must not exist — tests ported to Rust in src/update_deps.rs"
     )
+
+
+def test_no_python_prime_check():
+    """Tombstone: ported to Rust in issue #786. Must not return."""
+    assert not (LIB_DIR / "prime-check.py").exists(), (
+        "prime-check.py was ported to Rust — use flow-rs prime-check (src/prime_check.rs)"
+    )
+
+
+def test_no_python_test_prime_check():
+    """Tombstone: ported to Rust in issue #786. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_prime_check.py").exists(), (
+        "tests/test_prime_check.py must not exist — tests ported to Rust in tests/prime_check.rs"
+    )
+
+
+def test_no_python_prime_project():
+    """Tombstone: ported to Rust in issue #786. Must not return."""
+    assert not (LIB_DIR / "prime-project.py").exists(), (
+        "prime-project.py was ported to Rust — use flow-rs prime-project (src/prime_project.rs)"
+    )
+
+
+def test_no_python_test_prime_project():
+    """Tombstone: ported to Rust in issue #786. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_prime_project.py").exists(), (
+        "tests/test_prime_project.py must not exist — tests ported to Rust in tests/prime_project.rs"
+    )
+
+
+def test_no_python_detect_framework():
+    """Tombstone: ported to Rust in issue #786. Must not return."""
+    assert not (LIB_DIR / "detect-framework.py").exists(), (
+        "detect-framework.py was ported to Rust — use flow-rs detect-framework (src/detect_framework.rs)"
+    )
+
+
+def test_no_python_test_detect_framework():
+    """Tombstone: ported to Rust in issue #786. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_detect_framework.py").exists(), (
+        "tests/test_detect_framework.py must not exist — tests ported to Rust in tests/detect_framework.rs"
+    )
+
+
+def test_no_python_promote_permissions():
+    """Tombstone: ported to Rust in issue #786. Must not return."""
+    assert not (LIB_DIR / "promote-permissions.py").exists(), (
+        "promote-permissions.py was ported to Rust — use flow-rs promote-permissions (src/promote_permissions.rs)"
+    )
+
+
+def test_no_python_test_promote_permissions():
+    """Tombstone: ported to Rust in issue #786. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_promote_permissions.py").exists(), (
+        "tests/test_promote_permissions.py must not exist — tests ported to Rust in tests/promote_permissions.rs"
+    )
