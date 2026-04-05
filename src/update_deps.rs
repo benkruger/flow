@@ -374,19 +374,24 @@ mod tests {
 
     #[test]
     fn deps_stdout_does_not_corrupt_return_value() {
-        // Regression trip-wire: verifies that run_update_deps returns a
-        // well-formed Value when bin/dependencies runs arbitrary commands
-        // (including echo). Rust's return Value is built via json!(...)
-        // literals — it cannot structurally be corrupted by child stdout
-        // no matter what the child writes. This test exists so that any
-        // future refactor which starts parsing child output will break
-        // this assertion and force a re-evaluation of the contract.
+        // Verifies that run_update_deps returns a well-formed Value on
+        // the happy path: bin/dependencies exits 0, the repo is clean
+        // after the script runs, and the Value contains
+        // status="ok"/changes=false exactly. The production Value is
+        // assembled from json!(...) literals that use only the exit
+        // code and the `git status` output — child stdout is not part
+        // of the Value assembly, so there is no code path where a
+        // child's inherited writes can corrupt the return structure.
+        // That structural guarantee lives in run_update_deps itself,
+        // not in this test; this test only exercises the happy-path
+        // JSON shape.
         //
-        // The echo is redirected to /dev/null inside the child so the
-        // bytes never reach the inherited terminal (cargo test does not
-        // capture inherited child fds, unlike pytest). The echo still
-        // runs, exercising the full process_group + try_wait + timeout
-        // + exit status + git status + Value assembly path.
+        // The echo is redirected to /dev/null inside the bash script
+        // so no bytes reach the inherited terminal (cargo test does
+        // not capture inherited child fds, unlike pytest). The echo
+        // still runs inside the child, exercising the full
+        // process_group + try_wait + timeout + exit status + git
+        // status + Value assembly path.
         let dir = tempfile::tempdir().unwrap();
         init_git_repo(dir.path());
         write_deps_script(dir.path(), "echo 'Installing dependencies...' > /dev/null 2>&1");
