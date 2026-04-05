@@ -44,6 +44,19 @@ fn setup_git_and_state(dir: &Path, branch: &str, state: &Value) {
     .unwrap();
 }
 
+/// Read `<dir>/.flow-states/<branch>.json` and parse it as a `Value`.
+///
+/// Every test that writes fixture state with `setup_git_and_state` and
+/// then asserts on the mutated state after running a hook needs this
+/// exact four-line read-and-parse dance. Extracting it keeps the test
+/// bodies focused on the assertions that matter and eliminates the
+/// risk that a branch-name typo in the path diverges from the
+/// `setup_git_and_state` call.
+fn read_state(dir: &Path, branch: &str) -> Value {
+    let path = dir.join(format!(".flow-states/{}.json", branch));
+    serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
+}
+
 /// Spawn `flow-rs hook <hook>` with simulated branch resolution, pipe
 /// `stdin_data` to the child, and return the captured `Output`.
 ///
@@ -100,10 +113,7 @@ fn test_post_compact_happy_path_writes_state() {
 
     assert_eq!(output.status.code().unwrap(), 0);
 
-    let on_disk: Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
-    )
-    .unwrap();
+    let on_disk = read_state(dir.path(), branch);
     assert_eq!(on_disk["compact_summary"], "Working on tests.");
     assert_eq!(on_disk["compact_cwd"], "/Users/ben/code/myapp");
     assert_eq!(on_disk["compact_count"], 1);
@@ -122,10 +132,7 @@ fn test_post_compact_malformed_stdin_exits_zero() {
     assert!(output.stdout.is_empty());
 
     // State must be unchanged — `run()` returns early on malformed JSON.
-    let on_disk: Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
-    )
-    .unwrap();
+    let on_disk = read_state(dir.path(), branch);
     assert!(on_disk.get("compact_summary").is_none());
     assert!(on_disk.get("compact_count").is_none());
 }
@@ -159,10 +166,7 @@ fn test_post_compact_empty_stdin_exits_zero() {
 
     // Empty stdin → serde_json::from_str fails → run() returns before
     // touching the state file.
-    let on_disk: Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
-    )
-    .unwrap();
+    let on_disk = read_state(dir.path(), branch);
     assert!(on_disk.get("compact_summary").is_none());
     assert!(on_disk.get("compact_count").is_none());
 }
@@ -186,10 +190,7 @@ fn test_stop_failure_happy_path_writes_last_failure() {
 
     assert_eq!(output.status.code().unwrap(), 0);
 
-    let on_disk: Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
-    )
-    .unwrap();
+    let on_disk = read_state(dir.path(), branch);
     let failure = &on_disk["_last_failure"];
     assert_eq!(failure["type"], "rate_limit");
     assert_eq!(failure["message"], "429 Too Many Requests");
@@ -215,10 +216,7 @@ fn test_stop_failure_malformed_stdin_exits_zero() {
     assert!(output.stdout.is_empty());
 
     // State unchanged — run() returns early on JSON parse failure.
-    let on_disk: Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
-    )
-    .unwrap();
+    let on_disk = read_state(dir.path(), branch);
     assert!(on_disk.get("_last_failure").is_none());
 }
 
@@ -249,10 +247,7 @@ fn test_stop_failure_empty_stdin_exits_zero() {
     assert_eq!(output.status.code().unwrap(), 0);
     assert!(output.stdout.is_empty());
 
-    let on_disk: Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
-    )
-    .unwrap();
+    let on_disk = read_state(dir.path(), branch);
     assert!(on_disk.get("_last_failure").is_none());
 }
 
@@ -431,10 +426,7 @@ fn test_stop_continue_stale_session_clears_and_captures_new() {
     assert_eq!(output.status.code().unwrap(), 0);
     assert!(output.stdout.is_empty(), "session mismatch must not emit block output");
 
-    let on_disk: Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
-    )
-    .unwrap();
+    let on_disk = read_state(dir.path(), branch);
     assert_eq!(on_disk["_continue_pending"], "", "pending must be cleared");
     assert_eq!(on_disk["_continue_context"], "", "context must be cleared");
     assert_eq!(
@@ -463,10 +455,7 @@ fn test_stop_continue_sets_blocked_when_idle() {
     assert_eq!(output.status.code().unwrap(), 0);
     assert!(output.stdout.is_empty());
 
-    let on_disk: Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
-    )
-    .unwrap();
+    let on_disk = read_state(dir.path(), branch);
     let blocked = on_disk["_blocked"].as_str();
     assert!(
         blocked.map(|s| !s.is_empty()).unwrap_or(false),
