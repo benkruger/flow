@@ -324,12 +324,12 @@ mod tests {
     /// on branch `initial_branch`. Used by current_branch_in tests.
     fn init_git_repo(dir: &Path, initial_branch: &str) {
         let run = |args: &[&str]| {
-            let status = Command::new("git")
+            let output = Command::new("git")
                 .args(args)
                 .current_dir(dir)
-                .status()
+                .output()
                 .expect("git command failed");
-            assert!(status.success(), "git {:?} failed", args);
+            assert!(output.status.success(), "git {:?} failed", args);
         };
         run(&["init", "--initial-branch", initial_branch]);
         run(&["config", "user.email", "test@test.com"]);
@@ -357,12 +357,12 @@ mod tests {
             .output()
             .unwrap();
         let sha = String::from_utf8_lossy(&sha.stdout).trim().to_string();
-        let status = Command::new("git")
+        let output = Command::new("git")
             .args(["checkout", &sha])
             .current_dir(dir.path())
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success());
+        assert!(output.status.success());
 
         let branch = current_branch_in(dir.path());
         assert_eq!(branch, None);

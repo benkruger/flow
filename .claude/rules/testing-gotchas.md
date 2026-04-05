@@ -119,3 +119,19 @@ fail because the subprocess recreated the directory after the
 cleanup step; asserting `not stale_file.exists()` correctly verifies
 the cleanup happened because the recreated directory contains only
 fresh files.
+
+## Test Doc Comment Must Support the Test Name
+
+A test's doc comment should describe what the test verifies in terms
+consistent with the test function's name. Never rewrite a doc comment
+during code review in a way that disavows the test name's assertion —
+e.g., a test named `deps_stdout_does_not_corrupt_return_value` whose
+comment says "the structural guarantee lives in production, not this
+test". If the test's exercise path only indirectly verifies the
+property the name claims (e.g., the property is enforced structurally
+in production code, and the test trip-wires a regression of that
+structure), the comment should explain HOW the exercise path
+trip-wires a regression of the named property — not that the property
+is someone else's responsibility. A reader whose first exposure to
+the test is its name should find the comment affirmatively supporting
+the name, not contradicting it.

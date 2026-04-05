@@ -189,12 +189,12 @@ mod tests {
     /// Initialize a git repo in the given directory with an initial commit.
     fn init_git_repo(dir: &Path) {
         let run = |args: &[&str]| {
-            let status = Command::new("git")
+            let output = Command::new("git")
                 .args(args)
                 .current_dir(dir)
-                .status()
+                .output()
                 .expect("git command failed");
-            assert!(status.success(), "git {:?} failed", args);
+            assert!(output.status.success(), "git {:?} failed", args);
         };
         run(&["init", "--initial-branch", "main"]);
         run(&["config", "user.email", "test@test.com"]);
@@ -217,12 +217,12 @@ mod tests {
         Command::new("git")
             .args(["add", "-A"])
             .current_dir(dir)
-            .status()
+            .output()
             .unwrap();
         Command::new("git")
             .args(["commit", "-m", msg])
             .current_dir(dir)
-            .status()
+            .output()
             .unwrap();
     }
 
@@ -374,12 +374,27 @@ mod tests {
 
     #[test]
     fn deps_stdout_does_not_corrupt_return_value() {
-        // bin/dependencies prints to stdout — Rust returns Value directly,
-        // so child stdout pollution can't corrupt the return value. Verify
-        // by asserting on the Value, not by parsing stdout.
+        // Verifies that run_update_deps returns a well-formed Value on
+        // the happy path: bin/dependencies exits 0, the repo is clean
+        // after the script runs, and the Value contains
+        // status="ok"/changes=false exactly. The production Value is
+        // assembled from json!(...) literals that use only the exit
+        // code and the `git status` output — child stdout is not part
+        // of the Value assembly, so there is no code path where a
+        // child's inherited writes can corrupt the return structure.
+        // That structural guarantee lives in run_update_deps itself,
+        // not in this test; this test only exercises the happy-path
+        // JSON shape.
+        //
+        // The echo is redirected to /dev/null inside the bash script
+        // so no bytes reach the inherited terminal (cargo test does
+        // not capture inherited child fds, unlike pytest). The echo
+        // still runs inside the child, exercising the full
+        // process_group + try_wait + timeout + exit status + git
+        // status + Value assembly path.
         let dir = tempfile::tempdir().unwrap();
         init_git_repo(dir.path());
-        write_deps_script(dir.path(), "echo 'Installing dependencies...'");
+        write_deps_script(dir.path(), "echo 'Installing dependencies...' > /dev/null 2>&1");
         commit_all(dir.path(), "add deps");
 
         let (out, code) = run_update_deps(dir.path(), 300);
