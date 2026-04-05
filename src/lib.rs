@@ -4,6 +4,7 @@ pub mod analyze_issues;
 pub mod add_notification;
 pub mod append_note;
 pub mod auto_close_parent;
+pub mod check_freshness;
 pub mod check_phase;
 pub mod cleanup;
 pub mod close_issue;

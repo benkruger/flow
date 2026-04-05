@@ -7,6 +7,7 @@ use flow_rs::add_notification;
 use flow_rs::analyze_issues;
 use flow_rs::append_note;
 use flow_rs::auto_close_parent;
+use flow_rs::check_freshness;
 use flow_rs::cleanup;
 use flow_rs::check_phase::check_phase;
 use flow_rs::close_issue;
@@ -45,6 +46,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Pre-merge freshness check: fetch main, verify branch is up-to-date.
+    #[command(name = "check-freshness")]
+    CheckFreshness(check_freshness::Args),
+
     /// Verify prerequisite phase is complete before entry.
     #[command(name = "check-phase")]
     CheckPhase {
@@ -295,6 +300,7 @@ fn main() {
             eprintln!("flow-rs: no command specified. Use --help for usage.");
             process::exit(1);
         }
+        Some(Commands::CheckFreshness(args)) => check_freshness::run(args),
         Some(Commands::CheckPhase { required, branch }) => {
             run_check_phase(&required, branch.as_deref());
         }
