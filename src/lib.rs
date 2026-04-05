@@ -17,6 +17,7 @@ pub mod complete_preflight;
 pub mod create_dependencies;
 pub mod create_milestone;
 pub mod create_sub_issue;
+pub mod detect_framework;
 pub mod error;
 pub mod format_complete_summary;
 pub mod format_issues_summary;

@@ -20,6 +20,7 @@ use flow_rs::complete_preflight;
 use flow_rs::create_dependencies;
 use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
+use flow_rs::detect_framework;
 use flow_rs::finalize_commit;
 use flow_rs::format_complete_summary;
 use flow_rs::format_issues_summary;
@@ -129,6 +130,10 @@ enum Commands {
     /// Copy framework dependency template to bin/dependencies.
     #[command(name = "create-dependencies")]
     CreateDependencies(create_dependencies::Args),
+
+    /// Detect supported frameworks in a project directory.
+    #[command(name = "detect-framework")]
+    DetectFramework(detect_framework::Args),
 
     /// Auto-close parent issue and milestone when all children are done.
     #[command(name = "auto-close-parent")]
@@ -362,6 +367,7 @@ fn main() {
         Some(Commands::LinkBlockedBy(args)) => link_blocked_by::run(args),
         Some(Commands::CreateMilestone(args)) => create_milestone::run(args),
         Some(Commands::CreateDependencies(args)) => create_dependencies::run(args),
+        Some(Commands::DetectFramework(args)) => detect_framework::run(args),
         Some(Commands::AutoCloseParent(args)) => auto_close_parent::run(args),
         Some(Commands::CompletePreflight(args)) => complete_preflight::run(args),
         Some(Commands::CompleteMerge(args)) => complete_merge::run(args),
