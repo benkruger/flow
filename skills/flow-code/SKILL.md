@@ -516,7 +516,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 ```text
 ══════════════════════════════════════════════════
   ◆ FLOW — Paused
-  Run /flow:flow-code when ready.
+  Run /flow:flow-code-review when ready.
 ══════════════════════════════════════════════════
 ```
 ````

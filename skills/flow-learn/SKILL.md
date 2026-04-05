@@ -699,7 +699,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 ```text
 ══════════════════════════════════════════════════
   ◆ FLOW — Paused
-  Run /flow:flow-learn when ready.
+  Run /flow:flow-complete when ready.
 ══════════════════════════════════════════════════
 ```
 ````
