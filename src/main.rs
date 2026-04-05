@@ -259,10 +259,10 @@ enum Commands {
     #[command(name = "update-pr-body")]
     UpdatePrBody(update_pr_body::Args),
 
-    /// PreToolUse hook validators (read stdin JSON, exit 0/2).
+    /// Run a Claude Code hook handler.
     Hook {
         #[command(subcommand)]
-        validator: HookCommand,
+        hook: HookCommands,
     },
 
     #[command(external_subcommand)]
@@ -271,7 +271,7 @@ enum Commands {
 }
 
 #[derive(Subcommand)]
-enum HookCommand {
+enum HookCommands {
     /// Validate Bash/Agent command input against blocklist and allowlist.
     #[command(name = "validate-pretool")]
     ValidatePretool,
@@ -284,6 +284,15 @@ enum HookCommand {
     /// Enforce auto-continue for AskUserQuestion prompts.
     #[command(name = "validate-ask-user")]
     ValidateAskUser,
+    /// Stop hook: continuation gating, blocked-flag management, tab color.
+    #[command(name = "stop-continue")]
+    StopContinue,
+    /// StopFailure hook: capture API error context into state file.
+    #[command(name = "stop-failure")]
+    StopFailure,
+    /// PostCompact hook: capture compaction summary into state file.
+    #[command(name = "post-compact")]
+    PostCompact,
 }
 
 fn main() {
@@ -404,12 +413,6 @@ fn main() {
         Some(Commands::FormatIssuesSummary(args)) => {
             format_issues_summary::run(args);
         }
-        Some(Commands::Hook { validator }) => match validator {
-            HookCommand::ValidatePretool => hooks::validate_pretool::run(),
-            HookCommand::ValidateClaudePaths => hooks::validate_claude_paths::run(),
-            HookCommand::ValidateWorktreePaths => hooks::validate_worktree_paths::run(),
-            HookCommand::ValidateAskUser => hooks::validate_ask_user::run(),
-        },
         Some(Commands::FormatCompleteSummary(args)) => {
             format_complete_summary::run(args);
         }
@@ -431,6 +434,15 @@ fn main() {
         Some(Commands::UpdatePrBody(args)) => {
             update_pr_body::run(args);
         }
+        Some(Commands::Hook { hook }) => match hook {
+            HookCommands::ValidatePretool => hooks::validate_pretool::run(),
+            HookCommands::ValidateClaudePaths => hooks::validate_claude_paths::run(),
+            HookCommands::ValidateWorktreePaths => hooks::validate_worktree_paths::run(),
+            HookCommands::ValidateAskUser => hooks::validate_ask_user::run(),
+            HookCommands::StopContinue => hooks::stop_continue::run(),
+            HookCommands::StopFailure => hooks::stop_failure::run(),
+            HookCommands::PostCompact => hooks::post_compact::run(),
+        },
         Some(Commands::External(_)) => {
             process::exit(127);
         }

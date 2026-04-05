@@ -164,3 +164,6 @@ pub mod validate_pretool;
 pub mod validate_claude_paths;
 pub mod validate_worktree_paths;
 pub mod validate_ask_user;
+pub mod post_compact;
+pub mod stop_continue;
+pub mod stop_failure;
