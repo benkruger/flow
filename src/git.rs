@@ -56,6 +56,35 @@ pub fn current_branch() -> Option<String> {
     }
 }
 
+/// Get the current git branch name from a specific working directory.
+///
+/// Like [`current_branch`] but runs `git branch --show-current` with
+/// `.current_dir(cwd)` so tests can point at a fixture repo without
+/// mutating the test process cwd. Returns None for detached HEAD,
+/// non-git directories, or git failures.
+///
+/// Unlike [`current_branch`], this helper does NOT consult the
+/// FLOW_SIMULATE_BRANCH env var. Callers that need simulate-branch
+/// semantics must layer it on top.
+pub fn current_branch_in(cwd: &Path) -> Option<String> {
+    let output = Command::new("git")
+        .args(["branch", "--show-current"])
+        .current_dir(cwd)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if branch.is_empty() {
+        None
+    } else {
+        Some(branch)
+    }
+}
+
 /// Resolve which branch's state file to use.
 ///
 /// Resolution order:
@@ -265,5 +294,76 @@ mod tests {
         let (branch, candidates) = resolve_branch(None, dir.path());
         assert_eq!(branch, Some("good".to_string()));
         assert!(candidates.is_empty());
+    }
+
+    // --- current_branch_in() ---
+
+    /// Initialize a git repo in the given directory with an initial commit
+    /// on branch `initial_branch`. Used by current_branch_in tests.
+    fn init_git_repo(dir: &Path, initial_branch: &str) {
+        let run = |args: &[&str]| {
+            let status = Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .status()
+                .expect("git command failed");
+            assert!(status.success(), "git {:?} failed", args);
+        };
+        run(&["init", "--initial-branch", initial_branch]);
+        run(&["config", "user.email", "test@test.com"]);
+        run(&["config", "user.name", "Test"]);
+        run(&["config", "commit.gpgsign", "false"]);
+        run(&["commit", "--allow-empty", "-m", "init"]);
+    }
+
+    #[test]
+    fn current_branch_in_reads_cwd_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        init_git_repo(dir.path(), "my-feature");
+        let branch = current_branch_in(dir.path());
+        assert_eq!(branch, Some("my-feature".to_string()));
+    }
+
+    #[test]
+    fn current_branch_in_detached_head() {
+        let dir = tempfile::tempdir().unwrap();
+        init_git_repo(dir.path(), "main");
+        // Detach HEAD by checking out the commit SHA directly
+        let sha = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let sha = String::from_utf8_lossy(&sha.stdout).trim().to_string();
+        let status = Command::new("git")
+            .args(["checkout", &sha])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let branch = current_branch_in(dir.path());
+        assert_eq!(branch, None);
+    }
+
+    #[test]
+    fn current_branch_in_non_git_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let branch = current_branch_in(dir.path());
+        assert_eq!(branch, None);
+    }
+
+    #[test]
+    fn current_branch_in_ignores_simulate_env_var() {
+        // current_branch_in is cwd-scoped and does NOT consult the
+        // FLOW_SIMULATE_BRANCH env var. This test documents that
+        // invariant by asserting the helper returns the real branch
+        // name regardless of what env::var would return — without
+        // actually mutating the env var (which would race with
+        // parallel tests).
+        let dir = tempfile::tempdir().unwrap();
+        init_git_repo(dir.path(), "real-branch");
+        let branch = current_branch_in(dir.path());
+        assert_eq!(branch, Some("real-branch".to_string()));
     }
 }
