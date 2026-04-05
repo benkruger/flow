@@ -104,6 +104,30 @@ Every plan must include test tasks — even for pure-markdown skills,
 add contract tests in `test_skill_contracts.py`. TDD means the test
 task comes before the implementation task it validates.
 
+## Plan Pseudocode Templates
+
+When a plan Approach section contains a code template (a canonical
+fix shape, a pseudocode block, a reference pattern) that will be
+transcribed into multiple files during the Code phase, treat that
+template as code — not as illustration. Every identifier, operator,
+and call in the template propagates to every instance it is copied
+into. A bug in the template becomes N bugs in the implementation.
+
+Before finalizing the plan, review each code template against every
+risk enumerated in the plan's Risks section. For each risk, verify
+that the template's code handles the risk correctly. If the plan
+lists "Reader-thread join on every exit path" as a risk, the template
+must show the join in every exit path. If the plan lists "Duration
+subtraction panic on underflow" as a risk, the template must use
+`saturating_sub` not bare subtraction. A template that satisfies
+fewer than all enumerated risks will propagate the gap to every
+implementation that copies it.
+
+When the Code phase begins, re-read the Approach section's templates
+alongside the Risks section before writing Task 1. Do not rely on
+the reference modules cited in the plan — the template in the plan
+file is what the Code phase will actually transcribe.
+
 ## Decompose Completeness
 
 When the user makes a material correction to the approach after the

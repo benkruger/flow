@@ -41,6 +41,46 @@ performed the removal so the intent is traceable.
 `test_code_review_no_plugin_step`,
 `test_code_review_no_plugin_config_axis`.
 
+When a plan task prescribes tombstone test names, verify the
+prescribed name matches the `test_<scope>_no_<removed_thing>`
+convention BEFORE finalizing the plan. Citing this rule file in
+a plan task is not compliance — the prescribed name itself must
+also follow the pattern. Catching the naming violation in Code
+Review is too late; renaming forces a separate commit and adds
+friction the Plan phase could have avoided.
+
+## Self-Reference Avoidance
+
+A tombstone assertion that searches a file for a forbidden string
+trips itself if the assertion text contains that same string as a
+literal substring. The test must assemble the needle at runtime
+so the searched pattern is not a literal in the test's own source.
+
+In Rust, use `concat!`:
+
+```rust
+#[test]
+fn test_start_setup_no_wait_timeout_trait() {
+    let source = include_str!("start_setup.rs");
+    let needle = concat!("trait ", "WaitTimeout");
+    assert!(!source.contains(needle), "...");
+}
+```
+
+In Python, use `.format()` or string concatenation:
+
+```python
+def test_subprocess_runners_no_wait_with_output():
+    needle = "wait_with_{suffix}".format(suffix="output")
+    # ... assert needle not in source lines ...
+```
+
+Cross-file tombstones that iterate multiple source files must
+also skip comment lines so historical references in explanatory
+comments do not trip the assertion. In Rust, skip lines starting
+with `//`. In Python contexts scanning Rust files, apply the
+same filter.
+
 ## Error Messages
 
 Tombstone assertion messages must describe the current state of the

@@ -124,6 +124,58 @@ The broader principle applies to any rule in this file: a reference
 implementation predating the rule cannot be trusted. Verify before
 copying.
 
+### Saturating Duration Arithmetic in Poll Loops
+
+Rust `Duration::Sub` panics on underflow with "overflow when
+subtracting durations". Every `Duration` subtraction in a timeout
+poll loop must use `saturating_sub`, not bare subtraction:
+
+```rust
+// WRONG — panics if elapsed crosses timeout between the guard
+// check and the subtraction.
+if start.elapsed() >= timeout { /* return timeout error */ }
+let remaining = timeout - start.elapsed();
+std::thread::sleep(poll_interval.min(remaining));
+
+// CORRECT — saturating_sub returns Duration::ZERO on underflow,
+// the sleep becomes a no-op, and the next loop iteration's
+// guard fires the timeout branch.
+if start.elapsed() >= timeout { /* return timeout error */ }
+let remaining = timeout.saturating_sub(start.elapsed());
+std::thread::sleep(poll_interval.min(remaining));
+```
+
+The race window: between the `>= timeout` check and the
+subtraction, a scheduler preemption can cause `elapsed()` to
+exceed `timeout`. Bare subtraction then panics and propagates up
+through the subprocess runner, killing `flow-rs` with exit 101
+and no JSON output. The panic is narrow but real under load and
+will not reproduce deterministically in tests — the only reliable
+prevention is using `saturating_sub` everywhere.
+
+When porting or refactoring a subprocess helper, grep the function
+for `timeout - start.elapsed()` and `dur - start.elapsed()` before
+committing. Both forms must become `saturating_sub`.
+
+### Empty-Stderr Non-Zero Exit Test Coverage
+
+Every subprocess runner that returns an error on non-zero exit
+must include a test for the case where the process exits non-zero
+with empty stderr. The test must verify that the function produces
+a non-empty error string (falling back to stdout, the exit code,
+or a sentinel message) rather than an empty string. An empty error
+string from a failed subprocess is always a bug — it loses the
+failure signal at the caller.
+
+When refactoring a runner that has a behavioral twin in a sibling
+module (e.g. `close_issue.rs::close_issue_by_number` vs
+`close_issues.rs::close_single_issue`), verify behavioral parity
+explicitly. The plan for the refactor should state "matches
+`<sibling function>` behavior on error paths" as a correctness
+requirement, and the Code phase TDD cycle should include at least
+one test per error path (empty-stderr, empty-stdout, timeout,
+spawn failure).
+
 ## Python Bridge Pattern
 
 When a ported script still has Python callers that import its
