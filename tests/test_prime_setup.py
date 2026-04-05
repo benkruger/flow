@@ -1149,3 +1149,19 @@ def test_cli_dependencies_subprocess_failure_graceful(git_repo, monkeypatch, cap
     assert exit_code == 0
     data = json.loads(stdout)
     assert data["dependencies"] == "error"
+
+
+def test_cli_prime_project_subprocess_failure_graceful(git_repo, monkeypatch, capsys):
+    """When the prime-project subprocess fails, main() still succeeds with error status."""
+    original_run = subprocess.run
+
+    def _failing_run(cmd, **kwargs):
+        if isinstance(cmd, list) and "prime-project" in cmd:
+            raise subprocess.TimeoutExpired(cmd="bin/flow", timeout=30)
+        return original_run(cmd, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", _failing_run)
+    exit_code, stdout = _run_main(monkeypatch, capsys, git_repo, framework="rails")
+    assert exit_code == 0
+    data = json.loads(stdout)
+    assert data["prime_project"] == "error"

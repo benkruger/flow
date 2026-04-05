@@ -12,7 +12,6 @@ Output (JSON to stdout):
 """
 
 import hashlib
-import importlib.util
 import json
 import os
 import re
@@ -20,18 +19,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from flow_utils import frameworks_dir as _frameworks_dir
-from flow_utils import permission_to_regex
-
-
-def _import_sibling(name, filename):
-    """Import a sibling module with a hyphenated filename."""
-    path = Path(__file__).resolve().parent / filename
-    spec = importlib.util.spec_from_file_location(name, path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
+from flow_utils import (
+    frameworks_dir as _frameworks_dir,
+)
+from flow_utils import (
+    permission_to_regex,
+)
 
 UNIVERSAL_ALLOW = [
     "Bash(git add *)",
@@ -539,11 +532,19 @@ def main():
             check_launcher_path()
             launcher_installed = True
 
-        _prime_project = _import_sibling("prime_project", "prime-project.py")
-        prime_result = _prime_project.prime(str(project_root), framework)
-
-        # create-dependencies is ported to Rust — call via bin/flow subprocess
+        # prime-project and create-dependencies are ported to Rust — call via bin/flow subprocess
         _flow_bin = Path(__file__).resolve().parent.parent / "bin" / "flow"
+        try:
+            proj_proc = subprocess.run(
+                [str(_flow_bin), "prime-project", str(project_root), "--framework", framework],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            prime_result = json.loads(proj_proc.stdout.strip())
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception) as e:
+            prime_result = {"status": "error", "message": str(e)}
+
         try:
             deps_proc = subprocess.run(
                 [str(_flow_bin), "create-dependencies", str(project_root), "--framework", framework],

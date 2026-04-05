@@ -487,6 +487,62 @@ array, foreign-edited, or partially written during a crash causes
 the hook to panic with exit 101 — breaking the fail-open contract
 that hooks must never disturb the user's session.
 
+### Nested Object Guards for Chained Index Assignment
+
+The object guard above protects `state["key"] = v` at the top
+level. But `state["outer"]["inner"] = v` has the same problem one
+level deeper: if `state["outer"]` exists and is not an object
+(e.g. an array), the second index operation panics. Reading the
+top-level guard as "fully protected" is a trap.
+
+Example from PR #882: `promote-permissions` read `.claude/settings.json`
+and executed `settings_data["permissions"]["allow"] = ...`. The
+top-level `settings_data` was guarded, but a malformed
+`settings.json` with `"permissions": ["Bash(git *)"]` (array
+instead of object) still panicked because the second `[]` hit
+an array with a string key.
+
+Rule: every chained index assignment must guard every non-final
+level. When `data["a"]["b"] = v` is needed and `data["a"]` could
+be any type, check the type before the assignment and replace
+non-object values with an empty object:
+
+```rust
+if !matches!(settings_data.get("permissions"), Some(v) if v.is_object()) {
+    settings_data["permissions"] = json!({});
+}
+settings_data["permissions"]["allow"] = Value::Array(existing_allow);
+```
+
+This costs two lines and eliminates an entire class of exit-101
+crashes on malformed inputs that the Python original would also
+have handled (Python's `dict[key]` on a non-dict raises TypeError,
+which the caller usually catches as a JSON parse error).
+
+## Glob Pattern Parity with Python Path.glob
+
+Python `pathlib.Path.glob("*.ext")` skips dot-prefixed entries
+when the pattern does not itself start with a dot — this is the
+fnmatch convention that `*` does not match leading dots. A Rust
+port that iterates `fs::read_dir` and matches suffixes naively
+will happily match `.xcodeproj` against `*.xcodeproj`, diverging
+from Python behavior.
+
+When porting `Path.glob(pattern)` to Rust, filter entries whose
+name starts with `.` unless the pattern itself starts with `.`:
+
+```rust
+entries.filter_map(|e| e.ok()).any(|e| {
+    let name = e.file_name().to_string_lossy().into_owned();
+    !name.starts_with('.') && name.ends_with(&suffix)
+})
+```
+
+Without this filter, a stray `.xcodeproj` directory in a project
+falsely triggers iOS detection (Python would not match it). The
+same applies to any other `*.ext` pattern in framework detection
+or file discovery code.
+
 ## Empty-String vs Missing-Key Falsy Equivalence
 
 Python's truthy check `if x:` treats both missing keys (via
@@ -520,3 +576,44 @@ state.get("compact_count")
 
 Use `as_i64()` alone only for fields where you control both the
 writer and reader in the same codebase generation.
+
+## Hook Input Boolean Field Tolerance
+
+When a Rust hook reads a boolean flag from external JSON input
+(e.g. `run_in_background` from `tool_input`), never guard with
+`value.as_bool() == Some(true)` alone. `as_bool()` returns `None`
+for any non-bool form — string `"true"`, integer `1`, float
+`1.0` — so a schema-confused caller silently bypasses the guard.
+In a security-enforcement hook (CI gate, permission check, deny
+list), a silent bypass defeats the gate entirely.
+
+Write a defensive helper that accepts every plausible truthy form:
+
+```rust
+fn is_truthy(value: &Value) -> bool {
+    match value {
+        Value::Bool(b) => *b,
+        Value::String(s) => s.eq_ignore_ascii_case("true") || s == "1",
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() { i != 0 }
+            else if let Some(f) = n.as_f64() { f != 0.0 }
+            else { false }
+        }
+        _ => false,
+    }
+}
+```
+
+Null, bool false, empty string, zero, objects, and arrays return
+false. Claude Code's Bash tool schema enforces `bool` today, but
+the hook must not depend on upstream schema enforcement — hooks
+are a defense-in-depth layer. This is the same class of bug as
+"Counter Field Type Tolerance" above but applies to hook input
+fields, not state file fields.
+
+How to apply: in the Plan phase for any hook that reads an
+external JSON boolean, add a task to audit every `as_bool()` call
+site. Replace direct `as_bool()` checks with the defensive helper
+in security-sensitive guards. The test surface is small — nine
+tests (each JSON type × truthy/falsy boundary) — and it costs
+nothing to add.
