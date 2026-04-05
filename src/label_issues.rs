@@ -8,7 +8,7 @@ use serde_json::json;
 use crate::output::{json_error, json_ok};
 use crate::utils::extract_issue_numbers;
 
-const LABEL: &str = "Flow In-Progress";
+pub const LABEL: &str = "Flow In-Progress";
 const TIMEOUT_SECS: u64 = 30;
 
 // Polling-based wait_timeout for child processes (same pattern as start_setup.rs)
