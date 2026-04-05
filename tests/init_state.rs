@@ -406,12 +406,19 @@ fn duplicate_issue_detected_before_state_creation() {
     )
     .unwrap();
 
-    // Run init_state with a prompt that also references #777
-    // Need a gh stub that returns a title so fetch_issue_title succeeds
+    // Run init_state with a prompt that also references #777.
+    // The gh stub must emit the JSON shape that fetch_issue_info now parses
+    // (issue #887): `{title, labels}`. An empty labels array bypasses the
+    // Flow In-Progress guard so the test still reaches the duplicate-issue
+    // guard, which is what this test is exercising.
     let stub_dir = dir.path().join("stubs");
     fs::create_dir_all(&stub_dir).unwrap();
     let stub_path = stub_dir.join("gh");
-    fs::write(&stub_path, "#!/bin/bash\necho \"Some Issue Title\"\n").unwrap();
+    fs::write(
+        &stub_path,
+        "#!/bin/bash\necho '{\"title\": \"Some Issue Title\", \"labels\": []}'\n",
+    )
+    .unwrap();
     let mut perms = fs::metadata(&stub_path).unwrap().permissions();
     perms.set_mode(0o755);
     fs::set_permissions(&stub_path, perms).unwrap();
@@ -433,6 +440,229 @@ fn duplicate_issue_detected_before_state_creation() {
     assert_eq!(data["step"], "duplicate_issue");
     let msg = data["message"].as_str().unwrap();
     assert!(msg.contains("existing-flow"), "Error should reference the existing branch");
+}
+
+// --- Flow In-Progress label guard (issue #887) ---
+
+fn write_gh_stub(dir: &std::path::Path, json_body: &str) -> std::path::PathBuf {
+    let stub_dir = dir.join("stubs");
+    fs::create_dir_all(&stub_dir).unwrap();
+    let stub_path = stub_dir.join("gh");
+    let script = format!("#!/bin/bash\necho '{}'\n", json_body);
+    fs::write(&stub_path, script).unwrap();
+    let mut perms = fs::metadata(&stub_path).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&stub_path, perms).unwrap();
+    stub_dir
+}
+
+fn write_prompt_file(state_dir: &std::path::Path, body: &str) -> std::path::PathBuf {
+    fs::create_dir_all(state_dir).unwrap();
+    let prompt_file = state_dir.join("test-prompt");
+    fs::write(&prompt_file, body).unwrap();
+    prompt_file
+}
+
+#[test]
+fn flow_in_progress_label_blocks_start() {
+    // When a referenced issue carries the Flow In-Progress label, init-state
+    // must exit with status=error, step=flow_in_progress_label, and NOT
+    // create a state file. The error message must name the issue number and
+    // direct the user to /flow:flow-continue. Issue #887.
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+
+    let stub_dir = write_gh_stub(
+        dir.path(),
+        r#"{"title": "Some Issue", "labels": ["Flow In-Progress"]}"#,
+    );
+    let prompt_file = write_prompt_file(
+        &dir.path().join(".flow-states"),
+        "work on issue #100",
+    );
+
+    let output = flow_rs()
+        .arg("init-state")
+        .args(["label blocks test", "--prompt-file", prompt_file.to_str().unwrap()])
+        .current_dir(dir.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
+        .output()
+        .unwrap();
+
+    assert_ne!(output.status.code(), Some(0), "should fail when label is present");
+    let data = parse_stdout(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "flow_in_progress_label");
+    let msg = data["message"].as_str().unwrap();
+    assert!(msg.contains("#100"), "message should name the issue: {}", msg);
+    assert!(
+        msg.contains("/flow:flow-continue"),
+        "message should direct to flow-continue: {}",
+        msg
+    );
+
+    // No state file should be created when the guard fires
+    let state_path = dir.path().join(".flow-states").join("some-issue.json");
+    assert!(
+        !state_path.exists(),
+        "state file must not be created when label guard fires"
+    );
+}
+
+#[test]
+fn flow_in_progress_label_absent_allows_start() {
+    // When the referenced issue has no Flow In-Progress label, init-state
+    // proceeds normally and creates the state file with the branch derived
+    // from the issue title.
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+
+    let stub_dir = write_gh_stub(
+        dir.path(),
+        r#"{"title": "Some Issue", "labels": []}"#,
+    );
+    let prompt_file = write_prompt_file(
+        &dir.path().join(".flow-states"),
+        "work on issue #100",
+    );
+
+    let output = flow_rs()
+        .arg("init-state")
+        .args(["label absent test", "--prompt-file", prompt_file.to_str().unwrap()])
+        .current_dir(dir.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_stdout(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["branch"], "some-issue");
+
+    let state_path = dir.path().join(".flow-states").join("some-issue.json");
+    assert!(
+        state_path.exists(),
+        "state file should be created when label is absent"
+    );
+}
+
+#[test]
+fn flow_in_progress_label_case_sensitive_match() {
+    // The label guard uses exact string comparison. A lowercase label must
+    // NOT block — the canonical label is "Flow In-Progress" byte-for-byte.
+    // This test locks the semantic against an accidental .to_lowercase()
+    // refactor.
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+
+    let stub_dir = write_gh_stub(
+        dir.path(),
+        r#"{"title": "Some Issue", "labels": ["flow in-progress"]}"#,
+    );
+    let prompt_file = write_prompt_file(
+        &dir.path().join(".flow-states"),
+        "work on issue #100",
+    );
+
+    let output = flow_rs()
+        .arg("init-state")
+        .args(["case sensitive test", "--prompt-file", prompt_file.to_str().unwrap()])
+        .current_dir(dir.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "lowercase label must NOT block; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_stdout(&output);
+    assert_eq!(data["status"], "ok");
+}
+
+#[test]
+fn flow_in_progress_label_with_other_labels() {
+    // The guard must use .any() semantics — a label array containing
+    // "Flow In-Progress" alongside other labels must still block.
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+
+    let stub_dir = write_gh_stub(
+        dir.path(),
+        r#"{"title": "Multi Label", "labels": ["bug", "Flow In-Progress", "decomposed"]}"#,
+    );
+    let prompt_file = write_prompt_file(
+        &dir.path().join(".flow-states"),
+        "work on issue #100",
+    );
+
+    let output = flow_rs()
+        .arg("init-state")
+        .args(["multi label test", "--prompt-file", prompt_file.to_str().unwrap()])
+        .current_dir(dir.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
+        .output()
+        .unwrap();
+
+    assert_ne!(output.status.code(), Some(0), "should block when label is among others");
+    let data = parse_stdout(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "flow_in_progress_label");
+}
+
+#[test]
+fn flow_in_progress_label_checked_before_duplicate_issue() {
+    // Ordering invariant: the label guard fires BEFORE check_duplicate_issue.
+    // When both conditions are true (label present AND a local state file
+    // already targets the same issue), the reported step must be
+    // flow_in_progress_label, not duplicate_issue. The label is the broader
+    // (cross-machine) guard and must catch the conflict first.
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+
+    // Pre-create a local state file targeting the same issue
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join("existing-flow.json"),
+        serde_json::json!({
+            "prompt": "work on issue #100",
+            "branch": "existing-flow",
+            "current_phase": "flow-code",
+            "pr_url": "https://github.com/test/repo/pull/50",
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    // gh stub returns the label
+    let stub_dir = write_gh_stub(
+        dir.path(),
+        r#"{"title": "Ordering Test", "labels": ["Flow In-Progress"]}"#,
+    );
+    let prompt_file = write_prompt_file(&state_dir, "work on issue #100");
+
+    let output = flow_rs()
+        .arg("init-state")
+        .args(["ordering test", "--prompt-file", prompt_file.to_str().unwrap()])
+        .current_dir(dir.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
+        .output()
+        .unwrap();
+
+    assert_ne!(output.status.code(), Some(0));
+    let data = parse_stdout(&output);
+    assert_eq!(
+        data["step"], "flow_in_progress_label",
+        "label guard must run before duplicate_issue guard"
+    );
 }
 
 // --- Tombstone tests ---

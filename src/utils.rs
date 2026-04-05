@@ -6,6 +6,7 @@ use std::time::Duration;
 use chrono::{DateTime, FixedOffset, Utc};
 use chrono_tz::America::Los_Angeles;
 use regex::Regex;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -250,9 +251,39 @@ pub struct DuplicateInfo {
     pub pr_url: String,
 }
 
-/// Fetch issue title from GitHub. Returns title string or None on failure.
+/// Issue metadata fetched from GitHub — used by init-state to derive branch
+/// names and to check the Flow In-Progress label guard for issue #887.
+///
+/// The `labels` field uses `deserialize_null_to_default` (via `deserialize_with`)
+/// to coerce both absent keys AND explicit `null` values to an empty vec. This
+/// is load-bearing defensive handling: a gh/jq shape that produces `"labels": null`
+/// would otherwise fail deserialization and surface as a misleading fetch error,
+/// hiding the real problem from users running into the label guard.
+#[derive(Debug, Deserialize)]
+pub struct IssueInfo {
+    pub title: String,
+    #[serde(default, deserialize_with = "deserialize_null_to_default")]
+    pub labels: Vec<String>,
+}
+
+/// Deserialize helper that treats explicit JSON `null` as `T::default()`.
+///
+/// Combined with `#[serde(default)]` on the same field, this handles all three
+/// shapes a JSON key can take: present with a value, present with null, or
+/// absent entirely. See `IssueInfo::labels` for the primary consumer.
+fn deserialize_null_to_default<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+where
+    T: Default + Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    let opt = Option::<T>::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_default())
+}
+
+/// Fetch issue title and labels from GitHub in a single `gh` call.
+/// Returns None on fetch failure, parse failure, or empty title.
 /// Uses a 10-second timeout matching the Python implementation.
-pub fn fetch_issue_title(issue_number: i64) -> Option<String> {
+pub fn fetch_issue_info(issue_number: i64) -> Option<IssueInfo> {
     let dir = std::env::current_dir().ok()?;
     let (stdout, _) = run_cmd(
         &[
@@ -261,21 +292,21 @@ pub fn fetch_issue_title(issue_number: i64) -> Option<String> {
             "view",
             &issue_number.to_string(),
             "--json",
-            "title",
+            "title,labels",
             "--jq",
-            ".title",
+            "{title, labels: [.labels[].name]}",
         ],
         &dir,
-        "fetch_issue_title",
+        "fetch_issue_info",
         Some(Duration::from_secs(10)),
     )
     .ok()?;
 
-    let title = stdout.trim().to_string();
-    if title.is_empty() {
+    let info: IssueInfo = serde_json::from_str(stdout.trim()).ok()?;
+    if info.title.is_empty() {
         None
     } else {
-        Some(title)
+        Some(info)
     }
 }
 
@@ -1037,6 +1068,38 @@ mod tests {
         )
         .unwrap();
         assert!(check_duplicate_issue(dir.path(), &[123], "other-branch").is_none());
+    }
+
+    // --- IssueInfo deserialization (issue #887) ---
+
+    #[test]
+    fn fetch_issue_info_struct_deserializes_full() {
+        let json = r#"{"title": "Some Issue", "labels": ["bug", "Flow In-Progress"]}"#;
+        let info: IssueInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.title, "Some Issue");
+        assert_eq!(info.labels, vec!["bug".to_string(), "Flow In-Progress".to_string()]);
+    }
+
+    #[test]
+    fn fetch_issue_info_struct_deserializes_missing_labels() {
+        // When the `labels` key is absent, `#[serde(default)]` must yield an empty vec
+        // rather than failing deserialization. This is the defensive default for
+        // older gh versions or shapes where jq does not emit the key.
+        let json = r#"{"title": "Some Issue"}"#;
+        let info: IssueInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.title, "Some Issue");
+        assert!(info.labels.is_empty());
+    }
+
+    #[test]
+    fn fetch_issue_info_struct_deserializes_null_labels() {
+        // When `labels` is explicitly null, `#[serde(default)]` combined with
+        // the `Vec<String>` field type must still coerce to empty. Without this,
+        // a label-guard failure would surface as a misleading fetch error.
+        let json = r#"{"title": "Some Issue", "labels": null}"#;
+        let info: IssueInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.title, "Some Issue");
+        assert!(info.labels.is_empty());
     }
 
     // --- read_version_from() ---

@@ -11,7 +11,8 @@ use crate::phase_config::{
     auto_skills, build_initial_phases, freeze_phases, read_flow_json,
 };
 use crate::state::{Framework, SkillConfig};
-use crate::utils::{branch_name, check_duplicate_issue, detect_tty, extract_issue_numbers, fetch_issue_title, now, plugin_root, read_prompt_file};
+use crate::label_issues::LABEL;
+use crate::utils::{branch_name, check_duplicate_issue, detect_tty, extract_issue_numbers, fetch_issue_info, now, plugin_root, read_prompt_file};
 
 /// Create the initial FLOW state file with null PR fields.
 ///
@@ -141,14 +142,42 @@ pub fn run(
         feature_name.to_string()
     };
 
-    // Issue-aware branch naming: fetch title if prompt references issues
+    // Issue-aware branch naming: fetch title AND labels in one call (issue #887).
+    // When the prompt references issues, fetch the first issue's metadata so we
+    // can (a) derive the branch name from the title and (b) enforce the
+    // Flow In-Progress label guard before any state file is created.
     let issue_numbers = extract_issue_numbers(&prompt);
     let branch = if !issue_numbers.is_empty() {
-        match fetch_issue_title(issue_numbers[0]) {
-            Some(title) => branch_name(&title),
+        match fetch_issue_info(issue_numbers[0]) {
+            Some(info) => {
+                // Cross-machine WIP guard (issue #887): block if the issue is
+                // already being worked on. The Flow In-Progress label is the
+                // authoritative cross-tenant signal (.claude/rules/concurrency-model.md).
+                // Only the first referenced issue is checked — matches the existing
+                // single-issue title-derivation semantics above.
+                //
+                // This guard fires BEFORE check_duplicate_issue below because the
+                // label is a broader (cross-machine) signal than the local-only
+                // duplicate-state-file check.
+                if info.labels.iter().any(|l| l == LABEL) {
+                    json_error(
+                        &format!(
+                            "Issue #{} already carries the '{}' label — another flow is in progress. Run /flow:flow-continue to resume the existing flow, or reference a different issue.",
+                            issue_numbers[0], LABEL
+                        ),
+                        &[("step", json!("flow_in_progress_label"))],
+                    );
+                    std::process::exit(1);
+                }
+                branch_name(&info.title)
+            }
             None => {
                 json_error(
                     &format!("Could not fetch title for issue #{}", issue_numbers[0]),
+                    // Step value preserved from the pre-refactor `fetch_issue_title`
+                    // name because it is an external contract documented in
+                    // skills/flow-start/SKILL.md Step 3. Changing the step value
+                    // would force a SKILL.md update with no user benefit.
                     &[("step", json!("fetch_issue_title"))],
                 );
                 std::process::exit(1);
