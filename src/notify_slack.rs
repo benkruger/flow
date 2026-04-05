@@ -150,43 +150,93 @@ pub fn post_message_inner(
     }
 }
 
-/// Run curl as a subprocess with timeout.
+/// Run curl as a subprocess with timeout. Thin wrapper over `run_with_timeout_inner`
+/// that hardcodes the "curl" program name.
 fn run_curl_with_timeout(
     args: &[&str],
     timeout_secs: u64,
 ) -> Result<(i32, String, String), String> {
-    let mut child = Command::new("curl")
+    run_with_timeout_inner("curl", args, Duration::from_secs(timeout_secs))
+        .map_err(|e| {
+            // Preserve the existing Slack-specific timeout error message.
+            if e == "timeout" {
+                "Timeout posting to Slack".to_string()
+            } else if e.starts_with("Failed to spawn: ") {
+                format!("Failed to spawn curl: {}", &e[17..])
+            } else {
+                e
+            }
+        })
+}
+
+/// Run a subprocess with a timeout, returning (exit_code, stdout, stderr).
+///
+/// Drains stdout and stderr in spawned reader threads before the poll loop
+/// to prevent pipe buffer deadlock on outputs larger than ~64KB. Joins reader
+/// threads on every exit path (success, timeout, try_wait error).
+///
+/// The `program` parameter is test-injectable — production passes "curl".
+fn run_with_timeout_inner(
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<(i32, String, String), String> {
+    let mut child = Command::new(program)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to spawn curl: {}", e))?;
+        .map_err(|e| format!("Failed to spawn: {}", e))?;
 
-    let timeout = Duration::from_secs(timeout_secs);
+    let stdout_handle = child.stdout.take();
+    let stderr_handle = child.stderr.take();
+    let stdout_reader = std::thread::spawn(move || {
+        let mut buf: Vec<u8> = Vec::new();
+        if let Some(mut pipe) = stdout_handle {
+            use std::io::Read;
+            let _ = pipe.read_to_end(&mut buf);
+        }
+        buf
+    });
+    let stderr_reader = std::thread::spawn(move || {
+        let mut buf: Vec<u8> = Vec::new();
+        if let Some(mut pipe) = stderr_handle {
+            use std::io::Read;
+            let _ = pipe.read_to_end(&mut buf);
+        }
+        buf
+    });
+
     let start = Instant::now();
     let poll_interval = Duration::from_millis(50);
-
-    loop {
+    let status = loop {
         match child.try_wait() {
-            Ok(Some(_)) => {
-                let output = child.wait_with_output().map_err(|e| e.to_string())?;
-                let code = output.status.code().unwrap_or(1);
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                return Ok((code, stdout, stderr));
-            }
+            Ok(Some(s)) => break s,
             Ok(None) => {
                 if start.elapsed() >= timeout {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Err("Timeout posting to Slack".to_string());
+                    let _ = stdout_reader.join();
+                    let _ = stderr_reader.join();
+                    return Err("timeout".to_string());
                 }
                 let remaining = timeout.saturating_sub(start.elapsed());
                 std::thread::sleep(poll_interval.min(remaining));
             }
-            Err(e) => return Err(e.to_string()),
+            Err(e) => {
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(e.to_string());
+            }
         }
-    }
+    };
+
+    let stdout_bytes = stdout_reader.join().unwrap_or_default();
+    let stderr_bytes = stderr_reader.join().unwrap_or_default();
+    let code = status.code().unwrap_or(1);
+    let stdout = String::from_utf8_lossy(&stdout_bytes).into_owned();
+    let stderr = String::from_utf8_lossy(&stderr_bytes).into_owned();
+    Ok((code, stdout, stderr))
 }
 
 /// Post a message to Slack via real curl subprocess.
@@ -395,4 +445,73 @@ mod tests {
         let result = post_message_inner("xoxb-token", "C12345", "Hello", None, &curl);
         assert_eq!(result["status"], "error");
     }
+
+    // --- run_with_timeout_inner large-output and timeout tests (issue #875) ---
+    //
+    // These verify the thread-drain pattern captures output exceeding the
+    // kernel pipe buffer (~64KB). The prior try_wait() + wait_with_output()
+    // pattern either deadlocked on pipe-buffer fill or silently truncated
+    // via ECHILD on already-reaped children.
+
+    #[test]
+    fn run_with_timeout_inner_captures_large_stdout() {
+        let result = run_with_timeout_inner(
+            "sh",
+            &["-c", "for i in $(seq 1 20000); do echo \"line $i\"; done"],
+            Duration::from_secs(10),
+        );
+        let (code, stdout, _) = result.expect("subprocess failed");
+        assert_eq!(code, 0);
+        assert!(
+            stdout.contains("line 20000"),
+            "last line missing — output was truncated"
+        );
+        assert!(
+            stdout.len() > 128_000,
+            "stdout truncated: {} bytes (expected > 128KB)",
+            stdout.len()
+        );
+    }
+
+    #[test]
+    fn run_with_timeout_inner_captures_large_stderr_on_failure() {
+        let result = run_with_timeout_inner(
+            "sh",
+            &[
+                "-c",
+                "for i in $(seq 1 20000); do echo \"err $i\" 1>&2; done; exit 4",
+            ],
+            Duration::from_secs(10),
+        );
+        let (code, _, stderr) = result.expect("subprocess failed");
+        assert_eq!(code, 4);
+        assert!(
+            stderr.contains("err 20000"),
+            "last stderr line missing — output was truncated"
+        );
+        assert!(
+            stderr.len() > 128_000,
+            "stderr truncated: {} bytes (expected > 128KB)",
+            stderr.len()
+        );
+    }
+
+    #[test]
+    fn run_with_timeout_inner_enforces_timeout() {
+        let start = Instant::now();
+        let result = run_with_timeout_inner(
+            "sh",
+            &["-c", "sleep 10"],
+            Duration::from_secs(2),
+        );
+        let elapsed = start.elapsed();
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "timeout");
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "timeout not enforced: elapsed {:?}",
+            elapsed
+        );
+    }
+
 }
