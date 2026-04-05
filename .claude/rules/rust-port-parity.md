@@ -220,6 +220,69 @@ tests. If yes, refactor `run()` to delegate to `run_impl` as the
 first implementation step — writing the tests against a
 non-existent `run_impl` is a natural TDD cycle.
 
+### run_impl Return Type — Result<Value, String> vs Result<Value, Value>
+
+Pick one return type per module and document the choice at the
+`run_impl` doc comment. Two valid shapes:
+
+- `Result<Value, String>` — infrastructure errors (plugin root not
+  found, plugin.json unreadable) return a plain String; `run()`
+  wraps it in a `json_error` call and exits 1. Status-error JSON
+  responses (e.g. "FLOW not initialized") are returned via `Ok`
+  with a `status: error` field so `run()` prints them and exits 0.
+  This matches Python scripts whose error-JSON responses use
+  `print(json); sys.exit(0)` semantics.
+- `Result<Value, Value>` — every error response, including
+  status-error JSON responses, goes through the `Err` channel
+  carrying the full JSON `Value`; `run()` prints it and exits 1.
+  This matches Python scripts whose error-JSON responses use
+  `print(json); sys.exit(1)` semantics.
+
+The choice comes from the Python original's exit behavior. When
+the Python `main()` does `sys.exit(1)` on error-status output,
+pick `Result<Value, Value>`. When it prints and exits 0, pick
+`Result<Value, String>`. Mixing both shapes within the same port
+is a design smell — a newcomer reading the four new modules in
+a PR and seeing two different return types cannot tell which is
+the convention without reading every `run()` wrapper. Pick one
+for the PR, document it in the `run_impl` doc comment at each
+call site, and note the choice in the plan file so reviewers
+can enforce consistency.
+
+## Local Doc Comments for Non-Obvious Patterns
+
+Module-level doc comments explain why a pattern exists, but
+readers rarely arrive at a struct, constant, or function via
+the top of the file. They arrive via code search, diff scan, or
+symbol navigation — and land directly on the definition site.
+
+Any non-obvious design decision (custom `serde_json::ser::Formatter`,
+duplicated-from-Python constants, single-purpose helper functions,
+unusual return types) must have a local doc comment on the
+definition that summarizes why it exists in one sentence. The
+module doc is a reference; the local doc is the action item that
+a reader sees the moment they consider editing.
+
+Example: `UNIVERSAL_ALLOW` in `src/prime_check.rs` is duplicated
+from `lib/prime-setup.py`. The local doc comment must name the
+specific parity test that enforces the duplication:
+`/// If you edit this list, also edit UNIVERSAL_ALLOW in
+lib/prime-setup.py — test_universal_allow_parity asserts they
+match byte-for-byte.`
+
+Example: a `PythonDefaultFormatter` struct that mimics Python's
+`json.dumps` default separators must have a local doc comment
+stating the byte-parity requirement:
+`/// Emits Python's default (', ', ': ') separators so SHA-256
+input bytes match json.dumps(sort_keys=True) exactly. Removing
+this breaks auto-upgrade for every user.`
+
+Without local docs, the next session editing the file sees a
+weird pattern, fails to find its rationale in the 10 lines of
+context around the cursor, and either removes it ("looks unused")
+or copies it without understanding ("must be important"). Both
+outcomes are expensive.
+
 ## Test Naming — cli_ Prefix Contract
 
 Tests prefixed `test_cli_*` must exercise `run` or `run_impl` —
@@ -369,6 +432,62 @@ Without the guard, a state file that was manually edited to an
 array, foreign-edited, or partially written during a crash causes
 the hook to panic with exit 101 — breaking the fail-open contract
 that hooks must never disturb the user's session.
+
+### Nested Object Guards for Chained Index Assignment
+
+The object guard above protects `state["key"] = v` at the top
+level. But `state["outer"]["inner"] = v` has the same problem one
+level deeper: if `state["outer"]` exists and is not an object
+(e.g. an array), the second index operation panics. Reading the
+top-level guard as "fully protected" is a trap.
+
+Example from PR #882: `promote-permissions` read `.claude/settings.json`
+and executed `settings_data["permissions"]["allow"] = ...`. The
+top-level `settings_data` was guarded, but a malformed
+`settings.json` with `"permissions": ["Bash(git *)"]` (array
+instead of object) still panicked because the second `[]` hit
+an array with a string key.
+
+Rule: every chained index assignment must guard every non-final
+level. When `data["a"]["b"] = v` is needed and `data["a"]` could
+be any type, check the type before the assignment and replace
+non-object values with an empty object:
+
+```rust
+if !matches!(settings_data.get("permissions"), Some(v) if v.is_object()) {
+    settings_data["permissions"] = json!({});
+}
+settings_data["permissions"]["allow"] = Value::Array(existing_allow);
+```
+
+This costs two lines and eliminates an entire class of exit-101
+crashes on malformed inputs that the Python original would also
+have handled (Python's `dict[key]` on a non-dict raises TypeError,
+which the caller usually catches as a JSON parse error).
+
+## Glob Pattern Parity with Python Path.glob
+
+Python `pathlib.Path.glob("*.ext")` skips dot-prefixed entries
+when the pattern does not itself start with a dot — this is the
+fnmatch convention that `*` does not match leading dots. A Rust
+port that iterates `fs::read_dir` and matches suffixes naively
+will happily match `.xcodeproj` against `*.xcodeproj`, diverging
+from Python behavior.
+
+When porting `Path.glob(pattern)` to Rust, filter entries whose
+name starts with `.` unless the pattern itself starts with `.`:
+
+```rust
+entries.filter_map(|e| e.ok()).any(|e| {
+    let name = e.file_name().to_string_lossy().into_owned();
+    !name.starts_with('.') && name.ends_with(&suffix)
+})
+```
+
+Without this filter, a stray `.xcodeproj` directory in a project
+falsely triggers iOS detection (Python would not match it). The
+same applies to any other `*.ext` pattern in framework detection
+or file discovery code.
 
 ## Empty-String vs Missing-Key Falsy Equivalence
 
