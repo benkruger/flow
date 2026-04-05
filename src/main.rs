@@ -34,6 +34,7 @@ use flow_rs::output::json_error;
 use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
 use flow_rs::phase_transition::{phase_complete, phase_enter};
 use flow_rs::start_setup;
+use flow_rs::update_deps;
 use flow_rs::utils::{detect_dev_mode, read_version};
 use flow_rs::write_rule;
 
@@ -79,6 +80,10 @@ enum Commands {
 
     /// Run bin/ci with dirty-check optimization, retry logic, and CI sentinel management.
     Ci(ci::Args),
+
+    /// Run bin/dependencies with a configurable timeout and report git status changes.
+    #[command(name = "update-deps")]
+    UpdateDeps,
 
     /// Analyze open GitHub issues for the flow-issues skill.
     #[command(name = "analyze-issues")]
@@ -318,6 +323,7 @@ fn main() {
             );
         }
         Some(Commands::Ci(args)) => ci::run(args),
+        Some(Commands::UpdateDeps) => update_deps::run(),
         Some(Commands::AnalyzeIssues(args)) => analyze_issues::run(args),
         Some(Commands::AppendNote(args)) => append_note::run(args),
         Some(Commands::Cleanup(args)) => cleanup::run(args),

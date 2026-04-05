@@ -32,6 +32,7 @@ pub mod phase_transition;
 pub mod start_setup;
 pub mod state;
 pub mod render_pr_body;
+pub mod update_deps;
 pub mod update_pr_body;
 pub mod utils;
 pub mod write_rule;
