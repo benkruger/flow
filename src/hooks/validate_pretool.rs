@@ -225,24 +225,20 @@ pub fn run() {
         .cloned()
         .unwrap_or(Value::Object(Default::default()));
 
+    let command = tool_input
+        .get("command")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
     // Pre-validation: CI is always a gate; other commands only blocked in FLOW phases
     if let Some(bg) = tool_input.get("run_in_background") {
         if bg.as_bool() == Some(true) {
-            let bg_command = tool_input
-                .get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if let Some(msg) = should_block_background(bg_command, flow_active) {
+            if let Some(msg) = should_block_background(command, flow_active) {
                 eprintln!("{}", msg);
                 std::process::exit(2);
             }
         }
     }
-
-    let command = tool_input
-        .get("command")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
     if command.is_empty() {
         std::process::exit(0);
     }
