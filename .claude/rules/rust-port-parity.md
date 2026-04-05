@@ -178,6 +178,46 @@ and run the binary from inside it — tests that use standalone repos
 with no linked worktrees cannot distinguish `project_root()` from
 `current_dir()` and will falsely pass.
 
+## Test-Module Subprocess Stdio
+
+Cargo's test harness does not capture inherited child-process file
+descriptors. Unlike pytest, which captures child stdio by default,
+`cargo test` only captures Rust's own `println!` output — anything a
+spawned subprocess writes to the inherited stdout/stderr goes straight
+to the terminal. Rust tests that call `Command::...status()` without
+explicit stdio redirection leak every byte the child writes: git's
+`Initialized empty Git repository`, `[main (root-commit) <sha>]` commit
+lines, `Switched to a new branch`, the detached HEAD advice block, and
+any script `echo` the fixture uses. When porting Python tests that used
+`subprocess.run` (which pytest captured implicitly), the Rust port must
+redirect stdio explicitly — do not rely on implicit capture.
+
+The standard fix is `Command::output()`. It captures and drops
+stdout/stderr and returns an `Output { status, stdout, stderr }` whose
+`.status.success()` check is a drop-in replacement for the existing
+`.status().unwrap().success()` pattern. No new imports are required —
+`Output` is in `std::process` alongside `Command`. The diff per
+callsite is mechanical: `.status()` → `.output()` and, where the
+closure asserts on the return value, `status.success()` →
+`output.status.success()`. Pipe deadlock is not a concern for the
+typical fixture workload: `Command::output()` drains stdout/stderr
+internally, and git/fixture scripts emit well under the 64 KB pipe
+buffer.
+
+For the rare test that intentionally routes output through a
+stdio-inheriting production function (e.g., a trip-wire verifying that
+child stdout cannot corrupt a json-literal return value), do not
+override the production function's stdio contract. Instead, have the
+test's child script self-redirect at the shell level —
+`echo 'msg' > /dev/null 2>&1` — so the bytes never reach the inherited
+fd. Update the test's doc comment to explain the invariant the test is
+protecting and why the redirect preserves the trip-wire.
+
+Never introduce a dependency on implicit cargo capture. The Python
+originals did not leak only because pytest captured child fds; there
+is no equivalent guarantee in Rust. Every subprocess callsite in a
+`#[cfg(test)]` module is the author's responsibility.
+
 ## CLI Testability — Extract run_impl
 
 When a Rust port's plan requires CLI error-path tests (missing
@@ -297,13 +337,19 @@ For every function the plan calls out by name, verify:
   `subprocess.run`, the Rust port must call
   `Command::current_dir(path)` on every subprocess.
 - **Upfront guards:** See "Upfront Guards Belong in run_impl" below.
+- **Test-module subprocess stdio:** If the port adds Rust integration
+  tests that spawn subprocesses, every `Command` call in a
+  `#[cfg(test)]` module must use `.output()` (or explicit
+  `Stdio::null()`) — never inherited `.status()`. Cargo's test harness
+  does not capture inherited child fds (unlike pytest), and leaked
+  stdout drowns CI output. See "Test-Module Subprocess Stdio" above.
 
 Add a concrete task to the plan: "Cross-check rust-port-parity.md
 sections Branch-Resolution Function Parity, Subprocess Timeout
-Parity, Subprocess CWD Parity, and Upfront Guards against the
-Python source." The check is one read of the Python source plus
-one read of this document — it takes minutes and catches the exact
-class of bug the review agents found.
+Parity, Subprocess CWD Parity, Upfront Guards, and Test-Module
+Subprocess Stdio against the Python source." The check is one read
+of the Python source plus one read of this document — it takes
+minutes and catches the exact class of bug the review agents found.
 
 ## Upfront Guards Belong in run_impl
 

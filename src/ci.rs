@@ -396,12 +396,12 @@ mod tests {
     /// simple lines.
     fn init_git_repo(dir: &Path, initial_branch: &str) {
         let run = |args: &[&str]| {
-            let status = Command::new("git")
+            let output = Command::new("git")
                 .args(args)
                 .current_dir(dir)
-                .status()
+                .output()
                 .expect("git command failed");
-            assert!(status.success(), "git {:?} failed", args);
+            assert!(output.status.success(), "git {:?} failed", args);
         };
         run(&["init", "--initial-branch", initial_branch]);
         run(&["config", "user.email", "test@test.com"]);
@@ -438,12 +438,12 @@ mod tests {
         Command::new("git")
             .args(["add", "-A"])
             .current_dir(dir.path())
-            .status()
+            .output()
             .unwrap();
         Command::new("git")
             .args(["commit", "-m", "add app"])
             .current_dir(dir.path())
-            .status()
+            .output()
             .unwrap();
 
         let baseline = tree_snapshot(dir.path(), None);
@@ -559,12 +559,12 @@ mod tests {
         let path = dir.path().to_path_buf();
 
         let run_git = |args: &[&str]| {
-            let status = Command::new("git")
+            let output = Command::new("git")
                 .args(args)
                 .current_dir(&path)
-                .status()
+                .output()
                 .expect("git command failed");
-            assert!(status.success(), "git {:?} failed", args);
+            assert!(output.status.success(), "git {:?} failed", args);
         };
         run_git(&["init", "--initial-branch", "main"]);
         run_git(&["config", "user.email", "test@test.com"]);
@@ -663,12 +663,12 @@ mod tests {
         Command::new("git")
             .args(["add", "-A"])
             .current_dir(&f.path)
-            .status()
+            .output()
             .unwrap();
         Command::new("git")
             .args(["commit", "-m", "add feature"])
             .current_dir(&f.path)
-            .status()
+            .output()
             .unwrap();
 
         let (first, _) = run_once(&f.path, &f.path, &f.bin_ci, Some(&f.branch), false, None);
@@ -797,12 +797,12 @@ mod tests {
         Command::new("git")
             .args(["add", "-A"])
             .current_dir(&f.path)
-            .status()
+            .output()
             .unwrap();
         Command::new("git")
             .args(["commit", "-m", "add app"])
             .current_dir(&f.path)
-            .status()
+            .output()
             .unwrap();
 
         // Modify (status M)
@@ -835,7 +835,7 @@ mod tests {
         Command::new("git")
             .args(["add", "config.py"])
             .current_dir(&f.path)
-            .status()
+            .output()
             .unwrap();
         let (first, _) = run_once(&f.path, &f.path, &f.bin_ci, Some(&f.branch), false, None);
         assert_eq!(first["skipped"], false);
@@ -844,7 +844,7 @@ mod tests {
         Command::new("git")
             .args(["add", "config.py"])
             .current_dir(&f.path)
-            .status()
+            .output()
             .unwrap();
         let (second, _) = run_once(&f.path, &f.path, &f.bin_ci, Some(&f.branch), false, None);
         assert_eq!(second["skipped"], false);
@@ -892,7 +892,7 @@ mod tests {
         Command::new("git")
             .args(["switch", "-c", "my-feature"])
             .current_dir(&f.path)
-            .status()
+            .output()
             .unwrap();
 
         let (_out, code) = run_once(
@@ -1201,12 +1201,12 @@ exit 0
         let dir = tempfile::tempdir().unwrap();
         // Initialize a git repo so resolve_branch_in succeeds; no bin/ci though
         let run = |args: &[&str]| {
-            let status = Command::new("git")
+            let output = Command::new("git")
                 .args(args)
                 .current_dir(dir.path())
-                .status()
+                .output()
                 .expect("git command failed");
-            assert!(status.success(), "git {:?} failed", args);
+            assert!(output.status.success(), "git {:?} failed", args);
         };
         run(&["init", "--initial-branch", "main"]);
         run(&["config", "user.email", "test@test.com"]);
