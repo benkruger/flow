@@ -38,6 +38,7 @@ use flow_rs::lock::mutate_state;
 use flow_rs::output::json_error;
 use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
 use flow_rs::phase_transition::{phase_complete, phase_enter};
+use flow_rs::prime_check;
 use flow_rs::prime_project;
 use flow_rs::promote_permissions;
 use flow_rs::start_setup;
@@ -136,6 +137,10 @@ enum Commands {
     /// Detect supported frameworks in a project directory.
     #[command(name = "detect-framework")]
     DetectFramework(detect_framework::Args),
+
+    /// Verify /flow:flow-prime has been run with a matching version.
+    #[command(name = "prime-check")]
+    PrimeCheck(prime_check::Args),
 
     /// Insert or replace FLOW priming content in a project's CLAUDE.md.
     #[command(name = "prime-project")]
@@ -378,6 +383,7 @@ fn main() {
         Some(Commands::CreateMilestone(args)) => create_milestone::run(args),
         Some(Commands::CreateDependencies(args)) => create_dependencies::run(args),
         Some(Commands::DetectFramework(args)) => detect_framework::run(args),
+        Some(Commands::PrimeCheck(args)) => prime_check::run(args),
         Some(Commands::PrimeProject(args)) => prime_project::run(args),
         Some(Commands::PromotePermissions(args)) => promote_permissions::run(args),
         Some(Commands::AutoCloseParent(args)) => auto_close_parent::run(args),
