@@ -23,19 +23,38 @@ issues are pre-planned by definition.
 
 ## The Pattern
 
-1. Write the issue body to `.flow-issue-body` in the project
-   root using the Write tool
-2. Call `bin/flow issue --title "..." --body-file .flow-issue-body`
+`bin/flow issue --body-file <path>` resolves `<path>` against
+`project_root()` (the main repo root), but the `validate-worktree-paths`
+hook blocks writing files directly to the main repo when the session
+is running inside a linked worktree. Using a relative path like
+`.flow-issue-body` creates a split: the Write tool writes it to the
+worktree (where the hook allows writes), but `bin/flow issue` then
+looks for it at `<main_repo>/.flow-issue-body` (where it does not
+exist). The fix is to always pass an absolute worktree path.
+
+1. Write the issue body to `<worktree>/.flow-issue-body` (or
+   `<worktree>/.flow-issue-body-1`, etc., for parallel filing)
+   using the Write tool — the worktree path is allowed by the
+   `validate-worktree-paths` hook
+2. Call `bin/flow issue --title "..." --body-file
+   <worktree>/.flow-issue-body` using the absolute worktree path
 3. The script reads the file, deletes it, then creates the issue
+
+In Maintainer or Standalone mode (no worktree), the project root
+IS the repo root — a relative path `.flow-issue-body` works because
+the Write tool and `bin/flow issue` both resolve to the same
+directory. Use the relative form in that case.
 
 ## Editing Existing Issues
 
-Use the same `.flow-issue-body` temp file pattern:
+Use the same `.flow-issue-body` temp file pattern with the same
+absolute-worktree-path discipline described above:
 
-1. Write the updated body to `.flow-issue-body` using the Write tool
-2. Call `gh issue edit <number> --repo <owner/repo> --body-file .flow-issue-body`
-3. Delete `.flow-issue-body` yourself — `gh issue edit` does not
-   auto-delete
+1. Write the updated body to `<worktree>/.flow-issue-body` using the Write tool
+2. Call `gh issue edit <number> --repo <owner/repo> --body-file
+   <worktree>/.flow-issue-body`
+3. Delete `<worktree>/.flow-issue-body` yourself — `gh issue edit`
+   does not auto-delete
 
 Never write temp files to `/tmp/` — the project's `defaultMode:
 "plan"` has no allow-list pattern for `/tmp/` paths, triggering

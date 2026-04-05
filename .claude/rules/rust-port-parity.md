@@ -197,6 +197,51 @@ into pytest's capture buffer rather than the terminal. There is no
 equivalent guarantee in Rust: every subprocess callsite in a
 `#[cfg(test)]` module is the author's responsibility.
 
+### spawn() + wait_with_output() Also Requires Explicit Stdio Piping
+
+`Command::output()` is the standard fix only when the test does not
+need to write to the child's stdin. When the test MUST pipe stdin to
+the child (e.g., hook subprocess tests that craft a Claude Code event
+as JSON on stdin), `Command::output()` is unusable because it spawns
+with no stdin handle. The correct pattern is
+`spawn() + write stdin + wait_with_output()` — and this pattern has
+the same stdio-leak failure mode as `.status()` unless all three
+streams are piped explicitly before `spawn()`.
+
+`wait_with_output()` reads only the streams that were set to
+`Stdio::piped()` before `spawn()`. A `Command` built with only
+`.stdin(Stdio::piped())` inherits the parent's stdout and stderr
+handles, so the child's output goes straight to the cargo test
+terminal and `output.stdout` / `output.stderr` come back empty.
+Symptom: assertions that parse `output.stdout` as JSON fail with
+`Error("EOF while parsing a value", line: 1, column: 0)` while the
+actual JSON is printed to the terminal immediately before the failure.
+
+Rule: every `Command` in a `#[cfg(test)]` module that uses the
+`spawn() + wait_with_output()` pattern must pipe all three streams
+explicitly:
+
+```rust
+cmd.stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+let mut child = cmd.spawn().unwrap();
+child.stdin.as_mut().unwrap().write_all(stdin_data).unwrap();
+let output = child.wait_with_output().unwrap();
+```
+
+How this fails in practice: when a reference test pattern targets a
+subject that emits no stdout (e.g. `tests/clear_blocked.rs` testing
+`clear-blocked`, a hook with no stdout output), omitting the stdout
+pipe is latent — the test passes because the buffer is empty for the
+right reason. Copying the pattern to a subject that DOES emit stdout
+(e.g. `stop-continue` with its `{"decision":"block", ...}` Claude
+Code contract) surfaces the defect on the first assertion that reads
+`output.stdout`. Always audit the reference pattern's stdio piping
+against the stdout/stderr surface of the new subject before adopting
+it — if the new subject emits anything the reference subject did
+not, the three-stream piping is mandatory.
+
 ## CLI Testability — Extract run_impl
 
 When a Rust port's plan requires CLI error-path tests (missing
@@ -378,17 +423,26 @@ For every function the plan calls out by name, verify:
 - **Upfront guards:** See "Upfront Guards Belong in run_impl" below.
 - **Test-module subprocess stdio:** If the port adds Rust integration
   tests that spawn subprocesses, every `Command` call in a
-  `#[cfg(test)]` module must use `.output()` — never inherited
-  `.status()`. Cargo's test harness does not capture inherited child
-  fds (unlike pytest), and leaked stdout drowns CI output. See
-  "Test-Module Subprocess Stdio" above.
+  `#[cfg(test)]` module must use `.output()` — or, when stdin must be
+  piped to the child, `spawn() + wait_with_output()` with all three
+  stdio streams explicitly piped before `spawn()`. Never inherited
+  `.status()` and never `spawn()` with only `.stdin(Stdio::piped())`.
+  Cargo's test harness does not capture inherited child fds (unlike
+  pytest), and leaked stdout drowns CI output. See "Test-Module
+  Subprocess Stdio" above.
 
 Add a concrete task to the plan: "Cross-check rust-port-parity.md
 sections Branch-Resolution Function Parity, Subprocess CWD Parity,
 Upfront Guards, and Test-Module Subprocess Stdio against the Python
-source." The check is one read
-of the Python source plus one read of this document — it takes
-minutes and catches the exact class of bug the review agents found.
+source." Prose acknowledgment in the Risks section does NOT satisfy
+this requirement — the cross-check must appear as a named, tracked
+task in the Dependency Graph with a verification step (run
+`bin/flow ci` green). Without a task, there is no commit boundary
+that proves the check was performed, and the parity rule slips into
+Code phase where the review agents find it instead. The check is
+one read of the Python source plus one read of this document — it
+takes minutes and catches the exact class of bug the review agents
+would otherwise find.
 
 ## Upfront Guards Belong in run_impl
 
