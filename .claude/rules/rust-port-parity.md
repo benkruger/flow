@@ -199,10 +199,13 @@ stdout/stderr and returns an `Output { status, stdout, stderr }` whose
 `Output` is in `std::process` alongside `Command`. The diff per
 callsite is mechanical: `.status()` → `.output()` and, where the
 closure asserts on the return value, `status.success()` →
-`output.status.success()`. Pipe deadlock is not a concern for the
-typical fixture workload: `Command::output()` drains stdout/stderr
-internally, and git/fixture scripts emit well under the 64 KB pipe
-buffer.
+`output.status.success()`. `Command::output()` drains stdout and
+stderr concurrently via internal reader threads in the stdlib
+implementation, so pipe-buffer deadlock cannot occur regardless of
+child output size. (The 64 KB buffer limit discussed under
+"Subprocess Timeout Parity" above is specific to the manual
+`try_wait()` + `wait_with_output()` anti-pattern — it does not apply
+to `.output()`.)
 
 For the rare test that intentionally routes output through a
 stdio-inheriting production function (e.g., a trip-wire verifying that
@@ -213,9 +216,24 @@ test's child script self-redirect at the shell level —
 fd. Update the test's doc comment to explain the invariant the test is
 protecting and why the redirect preserves the trip-wire.
 
+When a refactor converts every test-module `.status()` to `.output()`
+but intentionally preserves one or more production `.status()` calls
+(e.g., a `run_once` function whose contract is to inherit stdio so end
+users see real-time output), add an inline comment at each preserved
+production call site explaining why the preservation is intentional.
+Without an inline comment, a reviewer scanning the diff sees an
+asymmetry (N test conversions plus one production survivor) and
+cannot tell whether the survivor was missed. A one-line comment at
+the call site — `// Inherits stdio intentionally (see function doc).
+Do not convert to .output().` — resolves the ambiguity without
+requiring the reader to find and re-read the function doc.
+
 Never introduce a dependency on implicit cargo capture. The Python
-originals did not leak only because pytest captured child fds; there
-is no equivalent guarantee in Rust. Every subprocess callsite in a
+originals did not leak only because pytest's default `--capture=fd`
+mode replaces the test process's stdout and stderr file descriptors
+before each test, so child processes that inherit those fds write
+into pytest's capture buffer rather than the terminal. There is no
+equivalent guarantee in Rust: every subprocess callsite in a
 `#[cfg(test)]` module is the author's responsibility.
 
 ## CLI Testability — Extract run_impl
@@ -339,10 +357,10 @@ For every function the plan calls out by name, verify:
 - **Upfront guards:** See "Upfront Guards Belong in run_impl" below.
 - **Test-module subprocess stdio:** If the port adds Rust integration
   tests that spawn subprocesses, every `Command` call in a
-  `#[cfg(test)]` module must use `.output()` (or explicit
-  `Stdio::null()`) — never inherited `.status()`. Cargo's test harness
-  does not capture inherited child fds (unlike pytest), and leaked
-  stdout drowns CI output. See "Test-Module Subprocess Stdio" above.
+  `#[cfg(test)]` module must use `.output()` — never inherited
+  `.status()`. Cargo's test harness does not capture inherited child
+  fds (unlike pytest), and leaked stdout drowns CI output. See
+  "Test-Module Subprocess Stdio" above.
 
 Add a concrete task to the plan: "Cross-check rust-port-parity.md
 sections Branch-Resolution Function Parity, Subprocess Timeout
