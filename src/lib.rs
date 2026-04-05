@@ -34,6 +34,7 @@ pub mod notify_slack;
 pub mod output;
 pub mod phase_config;
 pub mod phase_transition;
+pub mod promote_permissions;
 pub mod start_setup;
 pub mod state;
 pub mod render_pr_body;
