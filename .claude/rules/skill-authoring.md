@@ -212,6 +212,33 @@ Before finalizing the dependency graph, check every removal task against
 presence of the removed content, pair the removal with the re-addition
 task.
 
+## Paused Banner Next-Phase Semantics
+
+When rewriting phase skill paused banner text during a refactor — for
+example, when the banner previously pointed at a skill that is being
+deleted — the replacement must reference the NEXT phase command, not
+the current phase's own command. Each phase skill's paused banner
+fires inside its Done section after the user answers "Not yet" to the
+"Ready to begin Phase N+1?" transition prompt. At that moment, the
+user is declining to start the NEXT phase, so the correct resume
+instruction is the next phase's command.
+
+Self-referential banners (flow-plan's banner saying "Run /flow:flow-plan
+when ready") re-run a phase whose `phases.<name>.status` is already
+`complete`, which re-executes the phase unnecessarily and may overwrite
+artifacts. The correct mapping is:
+
+- `flow-start` paused banner → `/flow:flow-plan`
+- `flow-plan` paused banner → `/flow:flow-code`
+- `flow-code` paused banner → `/flow:flow-code-review`
+- `flow-code-review` paused banner → `/flow:flow-learn`
+- `flow-learn` paused banner → `/flow:flow-complete`
+
+When planning a phase banner rewrite, read each banner's surrounding
+Done section HARD-GATE to confirm which transition declination triggers
+the banner, then derive the next-phase command from there. Do not
+default to self-referential symmetry.
+
 ## Destination Renumbering
 
 When renumbering destinations or steps within a SKILL.md, grep for the
