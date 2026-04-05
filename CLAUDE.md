@@ -82,7 +82,7 @@ CI will fail if these are missing:
 
 - Python virtualenv at `.venv/` — `bin/ci` uses `.venv/bin/python3` automatically
 - Run tests with `bin/ci` only — never invoke pytest directly
-- **Use `bin/test <path>` for targeted test runs during development** — `bin/ci` runs the full suite and is the gate before committing. `bin/test tests/test_specific.py` runs a subset via the same venv. Never call pytest directly — always use one of the two wrappers.
+- **Use `bin/test <path>` for targeted test runs during development** — `bin/ci` runs the full suite and is the gate before committing. `bin/test tests/test_specific.py` runs a subset of Python tests via the same venv; `bin/test --rust <filter>` runs a subset of Rust tests via `cargo test <filter>` (e.g. `bin/test --rust hooks` runs every test in `tests/hooks.rs`). Never call pytest or cargo directly — always use one of the two `bin/test` forms.
 - `ruff` enforces Python linting (E+F+W+I rules) and formatting at `line-length = 120` — configured in `ruff.toml`, runs inside `bin/ci`
 - Dependencies managed in the venv, not system Python
 
@@ -177,7 +177,7 @@ Key test files: `test_structural.py` (config invariants, version consistency), `
 - **Prefer dedicated tools over Bash** — see `.claude/rules/worktree-commands.md`
 - **Issue filing** — see `.claude/rules/filing-issues.md`
 - **Repo-level targets only** — see `.claude/rules/repo-level-only.md`
-- **No `run_in_background` during FLOW phases** — enforced by `bin/flow hook validate-pretool` on Bash and Agent tool calls
+- **No `run_in_background` during FLOW phases**; `bin/flow ci` and `bin/ci` are never allowed in the background regardless of mode — see `.claude/rules/ci-is-a-gate.md`. Both enforced by `bin/flow hook validate-pretool`.
 - **User evidence is ground truth** — when a user provides screenshots, error output, or logs that contradict your code analysis, trust the evidence. Your code reading is a hypothesis; the user's evidence is an observation. Never explain away evidence to preserve your analysis.
 
 <!-- FLOW:BEGIN -->

@@ -197,6 +197,51 @@ into pytest's capture buffer rather than the terminal. There is no
 equivalent guarantee in Rust: every subprocess callsite in a
 `#[cfg(test)]` module is the author's responsibility.
 
+### spawn() + wait_with_output() Also Requires Explicit Stdio Piping
+
+`Command::output()` is the standard fix only when the test does not
+need to write to the child's stdin. When the test MUST pipe stdin to
+the child (e.g., hook subprocess tests that craft a Claude Code event
+as JSON on stdin), `Command::output()` is unusable because it spawns
+with no stdin handle. The correct pattern is
+`spawn() + write stdin + wait_with_output()` — and this pattern has
+the same stdio-leak failure mode as `.status()` unless all three
+streams are piped explicitly before `spawn()`.
+
+`wait_with_output()` reads only the streams that were set to
+`Stdio::piped()` before `spawn()`. A `Command` built with only
+`.stdin(Stdio::piped())` inherits the parent's stdout and stderr
+handles, so the child's output goes straight to the cargo test
+terminal and `output.stdout` / `output.stderr` come back empty.
+Symptom: assertions that parse `output.stdout` as JSON fail with
+`Error("EOF while parsing a value", line: 1, column: 0)` while the
+actual JSON is printed to the terminal immediately before the failure.
+
+Rule: every `Command` in a `#[cfg(test)]` module that uses the
+`spawn() + wait_with_output()` pattern must pipe all three streams
+explicitly:
+
+```rust
+cmd.stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+let mut child = cmd.spawn().unwrap();
+child.stdin.as_mut().unwrap().write_all(stdin_data).unwrap();
+let output = child.wait_with_output().unwrap();
+```
+
+How this fails in practice: when a reference test pattern targets a
+subject that emits no stdout (e.g. `tests/clear_blocked.rs` testing
+`clear-blocked`, a hook with no stdout output), omitting the stdout
+pipe is latent — the test passes because the buffer is empty for the
+right reason. Copying the pattern to a subject that DOES emit stdout
+(e.g. `stop-continue` with its `{"decision":"block", ...}` Claude
+Code contract) surfaces the defect on the first assertion that reads
+`output.stdout`. Always audit the reference pattern's stdio piping
+against the stdout/stderr surface of the new subject before adopting
+it — if the new subject emits anything the reference subject did
+not, the three-stream piping is mandatory.
+
 ## CLI Testability — Extract run_impl
 
 When a Rust port's plan requires CLI error-path tests (missing
@@ -219,6 +264,69 @@ first test, check whether the plan enumerates CLI error-path
 tests. If yes, refactor `run()` to delegate to `run_impl` as the
 first implementation step — writing the tests against a
 non-existent `run_impl` is a natural TDD cycle.
+
+### run_impl Return Type — Result<Value, String> vs Result<Value, Value>
+
+Pick one return type per module and document the choice at the
+`run_impl` doc comment. Two valid shapes:
+
+- `Result<Value, String>` — infrastructure errors (plugin root not
+  found, plugin.json unreadable) return a plain String; `run()`
+  wraps it in a `json_error` call and exits 1. Status-error JSON
+  responses (e.g. "FLOW not initialized") are returned via `Ok`
+  with a `status: error` field so `run()` prints them and exits 0.
+  This matches Python scripts whose error-JSON responses use
+  `print(json); sys.exit(0)` semantics.
+- `Result<Value, Value>` — every error response, including
+  status-error JSON responses, goes through the `Err` channel
+  carrying the full JSON `Value`; `run()` prints it and exits 1.
+  This matches Python scripts whose error-JSON responses use
+  `print(json); sys.exit(1)` semantics.
+
+The choice comes from the Python original's exit behavior. When
+the Python `main()` does `sys.exit(1)` on error-status output,
+pick `Result<Value, Value>`. When it prints and exits 0, pick
+`Result<Value, String>`. Mixing both shapes within the same port
+is a design smell — a newcomer reading the four new modules in
+a PR and seeing two different return types cannot tell which is
+the convention without reading every `run()` wrapper. Pick one
+for the PR, document it in the `run_impl` doc comment at each
+call site, and note the choice in the plan file so reviewers
+can enforce consistency.
+
+## Local Doc Comments for Non-Obvious Patterns
+
+Module-level doc comments explain why a pattern exists, but
+readers rarely arrive at a struct, constant, or function via
+the top of the file. They arrive via code search, diff scan, or
+symbol navigation — and land directly on the definition site.
+
+Any non-obvious design decision (custom `serde_json::ser::Formatter`,
+duplicated-from-Python constants, single-purpose helper functions,
+unusual return types) must have a local doc comment on the
+definition that summarizes why it exists in one sentence. The
+module doc is a reference; the local doc is the action item that
+a reader sees the moment they consider editing.
+
+Example: `UNIVERSAL_ALLOW` in `src/prime_check.rs` is duplicated
+from `lib/prime-setup.py`. The local doc comment must name the
+specific parity test that enforces the duplication:
+`/// If you edit this list, also edit UNIVERSAL_ALLOW in
+lib/prime-setup.py — test_universal_allow_parity asserts they
+match byte-for-byte.`
+
+Example: a `PythonDefaultFormatter` struct that mimics Python's
+`json.dumps` default separators must have a local doc comment
+stating the byte-parity requirement:
+`/// Emits Python's default (', ', ': ') separators so SHA-256
+input bytes match json.dumps(sort_keys=True) exactly. Removing
+this breaks auto-upgrade for every user.`
+
+Without local docs, the next session editing the file sees a
+weird pattern, fails to find its rationale in the 10 lines of
+context around the cursor, and either removes it ("looks unused")
+or copies it without understanding ("must be important"). Both
+outcomes are expensive.
 
 ## Test Naming — cli_ Prefix Contract
 
@@ -315,17 +423,26 @@ For every function the plan calls out by name, verify:
 - **Upfront guards:** See "Upfront Guards Belong in run_impl" below.
 - **Test-module subprocess stdio:** If the port adds Rust integration
   tests that spawn subprocesses, every `Command` call in a
-  `#[cfg(test)]` module must use `.output()` — never inherited
-  `.status()`. Cargo's test harness does not capture inherited child
-  fds (unlike pytest), and leaked stdout drowns CI output. See
-  "Test-Module Subprocess Stdio" above.
+  `#[cfg(test)]` module must use `.output()` — or, when stdin must be
+  piped to the child, `spawn() + wait_with_output()` with all three
+  stdio streams explicitly piped before `spawn()`. Never inherited
+  `.status()` and never `spawn()` with only `.stdin(Stdio::piped())`.
+  Cargo's test harness does not capture inherited child fds (unlike
+  pytest), and leaked stdout drowns CI output. See "Test-Module
+  Subprocess Stdio" above.
 
 Add a concrete task to the plan: "Cross-check rust-port-parity.md
 sections Branch-Resolution Function Parity, Subprocess CWD Parity,
 Upfront Guards, and Test-Module Subprocess Stdio against the Python
-source." The check is one read
-of the Python source plus one read of this document — it takes
-minutes and catches the exact class of bug the review agents found.
+source." Prose acknowledgment in the Risks section does NOT satisfy
+this requirement — the cross-check must appear as a named, tracked
+task in the Dependency Graph with a verification step (run
+`bin/flow ci` green). Without a task, there is no commit boundary
+that proves the check was performed, and the parity rule slips into
+Code phase where the review agents find it instead. The check is
+one read of the Python source plus one read of this document — it
+takes minutes and catches the exact class of bug the review agents
+would otherwise find.
 
 ## Upfront Guards Belong in run_impl
 
