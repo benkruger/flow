@@ -84,7 +84,7 @@ fn run_gh_close_with_timeout(
                         timeout.as_secs()
                     ));
                 }
-                std::thread::sleep(poll_interval.min(timeout - start.elapsed()));
+                std::thread::sleep(poll_interval.min(timeout.saturating_sub(start.elapsed())));
             }
             Err(e) => {
                 let _ = stdout_reader.join();

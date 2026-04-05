@@ -112,7 +112,7 @@ fn run_gh_close_with_timeout(
                     let _ = stderr_reader.join();
                     return Err("timeout".to_string());
                 }
-                std::thread::sleep(poll_interval.min(timeout - start.elapsed()));
+                std::thread::sleep(poll_interval.min(timeout.saturating_sub(start.elapsed())));
             }
             Err(e) => {
                 let _ = stdout_reader.join();
@@ -142,8 +142,13 @@ fn close_single_issue(
 
     match run_gh_close_with_timeout("gh", &args, timeout) {
         Ok((0, _, _)) => Ok(()),
-        Ok((_, _, stderr_bytes)) => {
-            Err(String::from_utf8_lossy(&stderr_bytes).trim().to_string())
+        Ok((_, stdout_bytes, stderr_bytes)) => {
+            let stderr = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
+            if !stderr.is_empty() {
+                Err(stderr)
+            } else {
+                Err(String::from_utf8_lossy(&stdout_bytes).trim().to_string())
+            }
         }
         Err(e) => Err(e),
     }

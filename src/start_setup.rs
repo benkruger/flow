@@ -145,7 +145,7 @@ fn run_cmd_inner(
                         let _ = stderr_reader.join();
                         return Err(format!("Timed out after {}s", dur.as_secs()));
                     }
-                    std::thread::sleep(poll_interval.min(dur - start.elapsed()));
+                    std::thread::sleep(poll_interval.min(dur.saturating_sub(start.elapsed())));
                 }
                 Err(e) => {
                     let _ = stdout_reader.join();
@@ -805,7 +805,7 @@ mod tests {
     // --- Tombstone: the custom-timeout-trait was removed in PR #878 ---
 
     #[test]
-    fn removed_timeout_trait_tombstone() {
+    fn test_start_setup_no_wait_timeout_trait() {
         // Tombstone: removed in PR #878 (issue #875). Must not return. The
         // custom timeout trait was removed as part of the thread-drain
         // refactor. The subprocess helper now uses try_wait() polling inline

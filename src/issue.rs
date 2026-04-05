@@ -280,7 +280,7 @@ fn run_cmd_inner(
                         let _ = stderr_reader.join();
                         return Err(format!("Command timed out after {}s", dur.as_secs()));
                     }
-                    std::thread::sleep(poll_interval.min(dur - start.elapsed()));
+                    std::thread::sleep(poll_interval.min(dur.saturating_sub(start.elapsed())));
                 }
                 Err(e) => {
                     let _ = stdout_reader.join();

@@ -103,7 +103,7 @@ fn run_cmd_inner(args: &[&str], cwd: &Path, timeout: Duration) -> (bool, String)
                     let _ = stderr_reader.join();
                     return (false, "timeout".to_string());
                 }
-                let remaining = timeout - start.elapsed();
+                let remaining = timeout.saturating_sub(start.elapsed());
                 std::thread::sleep(poll_interval.min(remaining));
             }
             Err(e) => {

@@ -813,7 +813,7 @@ def test_no_python_test_format_complete_summary():
     )
 
 
-def test_wait_with_output_absent_in_subprocess_runners():
+def test_subprocess_runners_no_wait_with_output():
     """Tombstone: removed in PR #878 (issue #875). Must not return.
 
     Enforces .claude/rules/rust-port-parity.md Subprocess Timeout Parity.
