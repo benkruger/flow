@@ -56,17 +56,22 @@ fn setup_git_and_state(dir: &Path, branch: &str, state: &Value) {
 /// - `current_dir(dir)` scopes `project_root()` discovery to the tempdir
 ///   so the child reads and mutates only the fixture's `.flow-states/`
 ///   directory — satisfies Subprocess CWD Parity in rust-port-parity.md.
-/// - `wait_with_output()` captures stdout/stderr via stdlib reader threads;
-///   `cargo test` does not capture inherited child fds, so omitting
-///   capture here would leak git init noise — satisfies Test-Module
-///   Subprocess Stdio in rust-port-parity.md.
+/// - All three stdio streams must be piped explicitly. `Command::spawn`
+///   defaults to inheriting stdout/stderr, which means `wait_with_output`
+///   would return empty buffers while the child's output leaks directly
+///   to the test harness terminal — the exact failure mode that the
+///   Test-Module Subprocess Stdio rule in rust-port-parity.md forbids.
+///   Piping stdout and stderr lets `wait_with_output` capture them for
+///   assertion AND keeps cargo test output clean.
 fn run_hook(hook: &str, dir: &Path, branch: &str, stdin_data: &[u8]) -> Output {
     let mut cmd = flow_rs();
     cmd.arg("hook")
         .arg(hook)
         .env("FLOW_SIMULATE_BRANCH", branch)
         .current_dir(dir)
-        .stdin(Stdio::piped());
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     let mut child = cmd.spawn().unwrap();
     {
@@ -249,4 +254,222 @@ fn test_stop_failure_empty_stdin_exits_zero() {
     )
     .unwrap();
     assert!(on_disk.get("_last_failure").is_none());
+}
+
+// ---------------------------------------------------------------------------
+// stop-continue hook
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_stop_continue_pending_set_outputs_block_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "test-feature";
+    let state = json!({
+        "branch": branch,
+        "_continue_pending": "simplify"
+    });
+    setup_git_and_state(dir.path(), branch, &state);
+
+    let output = run_hook("stop-continue", dir.path(), branch, b"{}");
+
+    assert_eq!(output.status.code().unwrap(), 0);
+
+    // Stdout contract: `{"decision": "block", "reason": "..."}` — this is what
+    // Claude Code's continue=auto session continuation depends on. Regressing
+    // this JSON shape breaks every FLOW auto-advance flow.
+    let stdout = std::str::from_utf8(&output.stdout).unwrap().trim();
+    assert!(!stdout.is_empty(), "stdout must contain block JSON");
+    let parsed: Value = serde_json::from_str(stdout).unwrap();
+    assert_eq!(parsed["decision"], "block");
+    let reason = parsed["reason"].as_str().unwrap();
+    assert!(
+        reason.contains("simplify"),
+        "reason must name the pending skill, got: {}",
+        reason
+    );
+}
+
+#[test]
+fn test_stop_continue_context_included_in_block_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "test-feature";
+    let state = json!({
+        "branch": branch,
+        "_continue_pending": "commit",
+        "_continue_context": "Set learn_step=5, then self-invoke flow:flow-learn --continue-step."
+    });
+    setup_git_and_state(dir.path(), branch, &state);
+
+    let output = run_hook("stop-continue", dir.path(), branch, b"{}");
+
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stdout = std::str::from_utf8(&output.stdout).unwrap().trim();
+    let parsed: Value = serde_json::from_str(stdout).unwrap();
+    assert_eq!(parsed["decision"], "block");
+    let reason = parsed["reason"].as_str().unwrap();
+    assert!(reason.contains("Next steps:"), "reason must include 'Next steps:' header");
+    assert!(reason.contains("learn_step=5"), "reason must embed the context body");
+}
+
+#[test]
+fn test_stop_continue_no_context_uses_generic_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "test-feature";
+    let state = json!({
+        "branch": branch,
+        "_continue_pending": "commit"
+    });
+    setup_git_and_state(dir.path(), branch, &state);
+
+    let output = run_hook("stop-continue", dir.path(), branch, b"{}");
+
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stdout = std::str::from_utf8(&output.stdout).unwrap().trim();
+    let parsed: Value = serde_json::from_str(stdout).unwrap();
+    assert_eq!(parsed["decision"], "block");
+    let reason = parsed["reason"].as_str().unwrap();
+    assert!(
+        reason.contains("Resume the parent skill instructions"),
+        "reason must use generic wording when context is absent, got: {}",
+        reason
+    );
+    assert!(!reason.contains("Next steps:"), "no context → no 'Next steps:' header");
+}
+
+#[test]
+fn test_stop_continue_empty_pending_no_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "test-feature";
+    let state = json!({
+        "branch": branch,
+        "_continue_pending": ""
+    });
+    setup_git_and_state(dir.path(), branch, &state);
+
+    let output = run_hook("stop-continue", dir.path(), branch, b"{}");
+
+    assert_eq!(output.status.code().unwrap(), 0);
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn test_stop_continue_malformed_stdin_no_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let _ = Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output();
+
+    // Malformed stdin → `serde_json::from_str` fails → the hook falls back to
+    // an empty `{}` hook_input and continues. With no state file present,
+    // `check_continue` returns no block and stdout stays empty.
+    let output = run_hook(
+        "stop-continue",
+        dir.path(),
+        "test-feature",
+        b"not json at all",
+    );
+
+    assert_eq!(output.status.code().unwrap(), 0);
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn test_stop_continue_qa_pending_fallback_blocks() {
+    let dir = tempfile::tempdir().unwrap();
+    let _ = Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output();
+
+    // No branch state file — only a qa-pending breadcrumb. The hook's
+    // `check_qa_pending` fallback in `run()` should fire and produce block
+    // output carrying the QA context.
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join("qa-pending.json"),
+        r#"{"_continue_context": "Return to FLOW repo and verify."}"#,
+    )
+    .unwrap();
+
+    let output = run_hook("stop-continue", dir.path(), "test-feature", b"{}");
+
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stdout = std::str::from_utf8(&output.stdout).unwrap().trim();
+    let parsed: Value = serde_json::from_str(stdout).unwrap();
+    assert_eq!(parsed["decision"], "block");
+    let reason = parsed["reason"].as_str().unwrap();
+    assert!(
+        reason.contains("Return to FLOW repo"),
+        "qa-pending context must be embedded in reason, got: {}",
+        reason
+    );
+}
+
+#[test]
+fn test_stop_continue_stale_session_clears_and_captures_new() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "test-feature";
+    let state = json!({
+        "branch": branch,
+        "session_id": "old-session",
+        "_continue_pending": "simplify",
+        "_continue_context": "stale"
+    });
+    setup_git_and_state(dir.path(), branch, &state);
+
+    // Hook stdin carries a different session_id than the state file — the
+    // session isolation path in `check_continue` should clear the flag and
+    // allow the stop (empty stdout). Then `capture_session_id` runs AFTER
+    // `check_continue` and must write the new session_id and transcript_path.
+    // This test proves the dispatch ordering in `run()`: check_continue fires
+    // BEFORE capture_session_id.
+    let stdin = br#"{"session_id":"new-session","transcript_path":"/p.jsonl"}"#;
+    let output = run_hook("stop-continue", dir.path(), branch, stdin);
+
+    assert_eq!(output.status.code().unwrap(), 0);
+    assert!(output.stdout.is_empty(), "session mismatch must not emit block output");
+
+    let on_disk: Value = serde_json::from_str(
+        &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(on_disk["_continue_pending"], "", "pending must be cleared");
+    assert_eq!(on_disk["_continue_context"], "", "context must be cleared");
+    assert_eq!(
+        on_disk["session_id"], "new-session",
+        "capture_session_id must record the new session (proves check→capture ordering)"
+    );
+    assert_eq!(on_disk["transcript_path"], "/p.jsonl");
+}
+
+#[test]
+fn test_stop_continue_sets_blocked_when_idle() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "test-feature";
+    let state = json!({
+        "branch": branch,
+        "current_phase": "flow-code"
+    });
+    setup_git_and_state(dir.path(), branch, &state);
+
+    // No `_continue_pending` → hook does not block → `set_blocked_idle` runs
+    // in the not-blocking branch of `run()`, writing `_blocked` as the current
+    // timestamp. Proves the idle side of the clear/set blocked branch.
+    let stdin = br#"{"session_id":"test-session"}"#;
+    let output = run_hook("stop-continue", dir.path(), branch, stdin);
+
+    assert_eq!(output.status.code().unwrap(), 0);
+    assert!(output.stdout.is_empty());
+
+    let on_disk: Value = serde_json::from_str(
+        &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
+    )
+    .unwrap();
+    let blocked = on_disk["_blocked"].as_str();
+    assert!(
+        blocked.map(|s| !s.is_empty()).unwrap_or(false),
+        "_blocked must be a non-empty timestamp string after idle run"
+    );
 }
