@@ -752,6 +752,22 @@ def test_flow_start_surfaces_auto_upgrade():
     )
 
 
+def test_flow_start_documents_flow_in_progress_label_step():
+    """flow-start Step 3 must document the flow_in_progress_label error step
+    and name the 'Flow In-Progress' label so users can search for it. Added for
+    issue #887 — tombstones the SKILL.md contract so a later edit cannot silently
+    drop the documentation. Does not reference /flow:flow-continue: that skill
+    was removed in PR #868 and the resume instruction is now prose ('resume the
+    existing flow in its worktree')."""
+    content = _read_skill("flow-start")
+    assert "flow_in_progress_label" in content, (
+        "flow-start/SKILL.md must document the flow_in_progress_label step for issue #887"
+    )
+    assert "Flow In-Progress" in content, (
+        "flow-start/SKILL.md must name the 'Flow In-Progress' label so users can find what blocked them"
+    )
+
+
 def test_phase_skills_have_logging_section():
     """All phase skills must have a ## Logging section."""
     phase_skills = _phase_skills()

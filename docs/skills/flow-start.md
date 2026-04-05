@@ -48,6 +48,8 @@ The derived name is hyphenated and used for the branch, worktree (`.worktrees/<n
 
 When the prompt contains `#N` issue references (e.g., `work on issue #309`), `start-setup` automatically fetches the first issue's title and derives the branch name and PR title from it. This produces descriptive names like `organize-settings-allow-list` rather than generic names like `work-on-issue-309`. If the issue fetch fails, it falls back to deriving from the prompt words.
 
+If the referenced issue already carries the "Flow In-Progress" label, `start-setup` stops with a hard error before creating the worktree — another flow (on this machine or another engineer's machine) is already working on that issue. The user should resume the existing flow in its worktree, or reference a different issue.
+
 ---
 
 ## Mode
@@ -64,6 +66,7 @@ When `--auto` is passed to `/flow-start`, it overrides ALL skill autonomy settin
 - Serializes starts with a lock — only one start runs at a time
 - Stops if CI baseline on main cannot be fixed
 - Stops if `git pull` fails
+- Stops if a referenced `#N` issue already carries the "Flow In-Progress" label — cross-machine WIP detection prevents concurrent flows on the same issue
 - Will not proceed past dependency upgrade until `bin/flow ci` is green
 - Escalates to the user if `bin/flow ci` cannot be fixed after three attempts
 

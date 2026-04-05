@@ -496,8 +496,13 @@ fn flow_in_progress_label_blocks_start() {
     let msg = data["message"].as_str().unwrap();
     assert!(msg.contains("#100"), "message should name the issue: {}", msg);
     assert!(
-        msg.contains("/flow:flow-continue"),
-        "message should direct to flow-continue: {}",
+        msg.contains("Flow In-Progress"),
+        "message should name the label so users can search for it: {}",
+        msg
+    );
+    assert!(
+        msg.contains("Resume the existing flow"),
+        "message should direct the user to resume the existing flow: {}",
         msg
     );
 

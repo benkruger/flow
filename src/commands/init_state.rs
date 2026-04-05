@@ -160,9 +160,13 @@ pub fn run(
                 // label is a broader (cross-machine) signal than the local-only
                 // duplicate-state-file check.
                 if info.labels.iter().any(|l| l == LABEL) {
+                    // Message pattern mirrors check_duplicate_issue below — "resume
+                    // the existing flow instead" without naming a specific command.
+                    // flow-continue was removed in PR #868, so the message must
+                    // describe the action without referencing a non-existent skill.
                     json_error(
                         &format!(
-                            "Issue #{} already carries the '{}' label — another flow is in progress. Run /flow:flow-continue to resume the existing flow, or reference a different issue.",
+                            "Issue #{} already carries the '{}' label — another flow is in progress. Resume the existing flow in its worktree, or reference a different issue.",
                             issue_numbers[0], LABEL
                         ),
                         &[("step", json!("flow_in_progress_label"))],
