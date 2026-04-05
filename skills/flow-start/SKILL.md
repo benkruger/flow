@@ -30,6 +30,12 @@ from it. If the fetch fails, init-state returns a hard error — there
 is no silent fallback to the prompt words. Capture the `branch` field
 from init-state's JSON output and use it for all subsequent steps.
 
+If the referenced issue already carries the "Flow In-Progress" label,
+init-state also returns a hard error — the issue is already being worked
+on by another flow (on this machine or another engineer's machine). The
+user should resume the existing flow in its worktree, or reference a
+different issue.
+
 | Prompt | Issue title | Derived branch name |
 |--------|-------------|-------------------|
 | `work on issue #309` | "Organize settings.json allow list" | `organize-settings-allow-list` |
@@ -223,9 +229,12 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
 ```
 
 If `"step"` is `"fetch_issue_title"`, the issue title could not be fetched.
-If `"step"` is `"duplicate_issue"`, another flow already targets the same
-issue. In both cases, the lock release above already ran — report the
-error to the user and stop.
+If `"step"` is `"flow_in_progress_label"`, a referenced issue already carries
+the "Flow In-Progress" label — another flow (on this or another machine) is
+working on that issue, and the user should resume the existing flow in its
+worktree or reference a different issue. If `"step"` is `"duplicate_issue"`,
+another flow already targets the same issue. In all cases, the lock release
+above already ran — report the error to the user and stop.
 
 On success, capture the `branch` field from the JSON output. This is the
 **canonical branch name** — it may differ from `<feature-name>` when the
