@@ -403,3 +403,44 @@ state.get("compact_count")
 
 Use `as_i64()` alone only for fields where you control both the
 writer and reader in the same codebase generation.
+
+## Hook Input Boolean Field Tolerance
+
+When a Rust hook reads a boolean flag from external JSON input
+(e.g. `run_in_background` from `tool_input`), never guard with
+`value.as_bool() == Some(true)` alone. `as_bool()` returns `None`
+for any non-bool form — string `"true"`, integer `1`, float
+`1.0` — so a schema-confused caller silently bypasses the guard.
+In a security-enforcement hook (CI gate, permission check, deny
+list), a silent bypass defeats the gate entirely.
+
+Write a defensive helper that accepts every plausible truthy form:
+
+```rust
+fn is_truthy(value: &Value) -> bool {
+    match value {
+        Value::Bool(b) => *b,
+        Value::String(s) => s.eq_ignore_ascii_case("true") || s == "1",
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() { i != 0 }
+            else if let Some(f) = n.as_f64() { f != 0.0 }
+            else { false }
+        }
+        _ => false,
+    }
+}
+```
+
+Null, bool false, empty string, zero, objects, and arrays return
+false. Claude Code's Bash tool schema enforces `bool` today, but
+the hook must not depend on upstream schema enforcement — hooks
+are a defense-in-depth layer. This is the same class of bug as
+"Counter Field Type Tolerance" above but applies to hook input
+fields, not state file fields.
+
+How to apply: in the Plan phase for any hook that reads an
+external JSON boolean, add a task to audit every `as_bool()` call
+site. Replace direct `as_bool()` checks with the defensive helper
+in security-sensitive guards. The test surface is small — nine
+tests (each JSON type × truthy/falsy boundary) — and it costs
+nothing to add.
