@@ -48,6 +48,12 @@ fn bin_flow_path() -> String {
 }
 
 /// Run a subprocess command with a timeout. `args[0]` is the program.
+///
+/// Drains stdout and stderr in spawned threads to prevent pipe buffer
+/// deadlock — children writing >64KB to a piped stream would otherwise
+/// block forever when the kernel buffer fills and `try_wait()` would
+/// never observe the child exiting. See `.claude/rules/rust-port-parity.md`
+/// "Subprocess Timeout Parity".
 fn run_cmd_with_timeout(args: &[&str], timeout_secs: u64) -> CmdResult {
     let (program, rest) = match args.split_first() {
         Some(p) => p,
@@ -60,31 +66,55 @@ fn run_cmd_with_timeout(args: &[&str], timeout_secs: u64) -> CmdResult {
         .spawn()
         .map_err(|e| format!("Failed to spawn {}: {}", program, e))?;
 
+    let stdout_handle = child.stdout.take();
+    let stderr_handle = child.stderr.take();
+    let stdout_reader = std::thread::spawn(move || {
+        let mut buf = String::new();
+        if let Some(mut pipe) = stdout_handle {
+            use std::io::Read;
+            let _ = pipe.read_to_string(&mut buf);
+        }
+        buf
+    });
+    let stderr_reader = std::thread::spawn(move || {
+        let mut buf = String::new();
+        if let Some(mut pipe) = stderr_handle {
+            use std::io::Read;
+            let _ = pipe.read_to_string(&mut buf);
+        }
+        buf
+    });
+
     let timeout = Duration::from_secs(timeout_secs);
     let start = Instant::now();
     let poll_interval = Duration::from_millis(50);
 
-    loop {
+    let status = loop {
         match child.try_wait() {
-            Ok(Some(_)) => {
-                let output = child.wait_with_output().map_err(|e| e.to_string())?;
-                let code = output.status.code().unwrap_or(1);
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                return Ok((code, stdout, stderr));
-            }
+            Ok(Some(s)) => break s,
             Ok(None) => {
                 if start.elapsed() >= timeout {
                     let _ = child.kill();
                     let _ = child.wait();
+                    let _ = stdout_reader.join();
+                    let _ = stderr_reader.join();
                     return Err(format!("Timed out after {}s", timeout_secs));
                 }
                 let remaining = timeout.saturating_sub(start.elapsed());
                 std::thread::sleep(poll_interval.min(remaining));
             }
-            Err(e) => return Err(e.to_string()),
+            Err(e) => {
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(e.to_string());
+            }
         }
-    }
+    };
+
+    let stdout = stdout_reader.join().unwrap_or_default();
+    let stderr = stderr_reader.join().unwrap_or_default();
+    let code = status.code().unwrap_or(1);
+    Ok((code, stdout, stderr))
 }
 
 /// Build an error result with pr_number.
