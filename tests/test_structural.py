@@ -581,6 +581,21 @@ def test_no_python_test_log():
     assert not (REPO_ROOT / "tests" / "test_log.py").exists(), "tests/test_log.py must not exist — tests ported to Rust"
 
 
+def test_no_python_complete_preflight():
+    """Tombstone: ported to Rust in PR #872. Must not return."""
+    assert not (LIB_DIR / "complete-preflight.py").exists(), (
+        "lib/complete-preflight.py was ported to Rust (src/complete_preflight.rs) and must not return"
+    )
+
+
+def test_no_python_test_complete_preflight():
+    """Tombstone: ported to Rust in PR #872. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_complete_preflight.py").exists(), (
+        "tests/test_complete_preflight.py was ported to Rust "
+        "(src/complete_preflight.rs #[cfg(test)]) and must not return"
+    )
+
+
 def test_checksum_version_invariant():
     """Validate checksum functions exist and the upgrade mechanism is documented.
 
