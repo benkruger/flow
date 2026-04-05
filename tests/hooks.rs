@@ -259,9 +259,14 @@ fn test_stop_failure_empty_stdin_exits_zero() {
 fn test_stop_continue_pending_set_outputs_block_json() {
     let dir = tempfile::tempdir().unwrap();
     let branch = "test-feature";
+    // Pre-set `_blocked` so the test can verify the blocking path clears it.
+    // `run()` calls `clear_blocked(&state_path)` in the `should_block=true`
+    // branch; without a pre-existing `_blocked` value the clear would be a
+    // no-op and the path would go untested at the subprocess level.
     let state = json!({
         "branch": branch,
-        "_continue_pending": "simplify"
+        "_continue_pending": "simplify",
+        "_blocked": "2026-01-01T10:00:00-08:00"
     });
     setup_git_and_state(dir.path(), branch, &state);
 
@@ -281,6 +286,14 @@ fn test_stop_continue_pending_set_outputs_block_json() {
         reason.contains("simplify"),
         "reason must name the pending skill, got: {}",
         reason
+    );
+
+    // `_blocked` must be cleared when the hook blocks — proves the
+    // `clear_blocked(&state_path)` call in the blocking branch of `run()`.
+    let on_disk = read_state(dir.path(), branch);
+    assert!(
+        on_disk.get("_blocked").is_none(),
+        "_blocked must be removed when blocking for continuation"
     );
 }
 
@@ -345,6 +358,18 @@ fn test_stop_continue_empty_pending_no_output() {
 
     assert_eq!(output.status.code().unwrap(), 0);
     assert!(output.stdout.is_empty());
+
+    // Empty-string pending is distinct from missing pending: both should
+    // reach `set_blocked_idle` and write `_blocked`, but they exercise
+    // different branches of the `pending.is_empty()` check in
+    // `check_continue`. This assertion verifies the empty-string branch
+    // does not corrupt the state or skip the idle side effect.
+    let on_disk = read_state(dir.path(), branch);
+    let blocked = on_disk["_blocked"].as_str();
+    assert!(
+        blocked.map(|s| !s.is_empty()).unwrap_or(false),
+        "_blocked must be set when pending is the empty string"
+    );
 }
 
 #[test]
@@ -434,6 +459,16 @@ fn test_stop_continue_stale_session_clears_and_captures_new() {
         "capture_session_id must record the new session (proves check→capture ordering)"
     );
     assert_eq!(on_disk["transcript_path"], "/p.jsonl");
+
+    // Stale-session path reaches `set_blocked_idle` because `should_block`
+    // is false after the session-mismatch clear. Assert `_blocked` is set
+    // to a non-empty timestamp so this distinct path through the idle
+    // branch is verified separately from `test_stop_continue_sets_blocked_when_idle`.
+    let blocked = on_disk["_blocked"].as_str();
+    assert!(
+        blocked.map(|s| !s.is_empty()).unwrap_or(false),
+        "_blocked must be set on the stale-session idle path"
+    );
 }
 
 #[test]
