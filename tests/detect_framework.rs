@@ -332,3 +332,24 @@ fn cli_invalid_project_root_errors() {
     let data = parse_stdout(&output.stdout);
     assert_eq!(data["status"], "error");
 }
+
+#[test]
+fn hidden_xcodeproj_dir_does_not_detect_ios() {
+    // Adversarial regression (PR #882): Python `Path.glob("*.xcodeproj")`
+    // skips dot-prefixed entries. The Rust port must match — otherwise a
+    // stray `.xcodeproj` directory falsely detects as iOS.
+    let tmp = tempfile::tempdir().unwrap();
+    let project = make_project(tmp.path());
+    fs::create_dir(project.join(".xcodeproj")).unwrap();
+
+    let output = flow_rs()
+        .args(["detect-framework", project.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let data = parse_stdout(&output.stdout);
+    assert!(
+        !detected_names(&data).contains(&"ios".to_string()),
+        "hidden .xcodeproj directory must not trigger iOS detection"
+    );
+}

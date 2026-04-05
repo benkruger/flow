@@ -327,3 +327,61 @@ fn cli_no_local_skipped() {
     assert_eq!(data["reason"], "no_local_file");
     assert_eq!(code, 0);
 }
+
+#[test]
+fn settings_permissions_as_array_does_not_panic() {
+    // Adversarial regression (PR #882): if settings.json has `permissions`
+    // as an array instead of an object, assigning
+    // `settings_data["permissions"]["allow"]` would trigger a serde_json
+    // IndexMut panic (exit 101). The promote() guard now replaces a
+    // malformed permissions value with an empty object so the merge
+    // proceeds without panicking.
+    let tmp = tempfile::tempdir().unwrap();
+    let claude_dir = tmp.path().join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    fs::write(
+        claude_dir.join("settings.json"),
+        serde_json::to_string_pretty(&json!({"permissions": ["Bash(git *)"]})).unwrap(),
+    )
+    .unwrap();
+    setup_local(tmp.path(), json!({"permissions": {"allow": ["Bash(npm run *)"]}}));
+
+    let output = flow_rs()
+        .args(["promote-permissions", "--worktree-path"])
+        .arg(tmp.path())
+        .output()
+        .unwrap();
+    // Exit 101 is a Rust panic; any other code is a controlled response.
+    assert_ne!(
+        output.status.code(),
+        Some(101),
+        "binary panicked on permissions-as-array input (stdout: {:?})",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let data = parse_stdout(&output.stdout);
+    assert!(data.get("status").is_some(), "expected JSON status field");
+}
+
+#[test]
+fn settings_permissions_as_string_does_not_panic() {
+    // Defensive: the same guard must hold for every non-object value
+    // (string, number, bool) — not just arrays.
+    let tmp = tempfile::tempdir().unwrap();
+    let claude_dir = tmp.path().join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    fs::write(
+        claude_dir.join("settings.json"),
+        serde_json::to_string_pretty(&json!({"permissions": "malformed"})).unwrap(),
+    )
+    .unwrap();
+    setup_local(tmp.path(), json!({"permissions": {"allow": ["Bash(git *)"]}}));
+
+    let output = flow_rs()
+        .args(["promote-permissions", "--worktree-path"])
+        .arg(tmp.path())
+        .output()
+        .unwrap();
+    assert_ne!(output.status.code(), Some(101));
+    let data = parse_stdout(&output.stdout);
+    assert!(data.get("status").is_some());
+}

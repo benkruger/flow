@@ -132,6 +132,27 @@ fn happy_path_go() {
     assert_eq!(data["framework"], "go");
 }
 
+#[test]
+fn fails_on_invalid_framework() {
+    // Plan check: explicit invalid framework name must hit the same
+    // "Missing framework" error as an absent framework key. Covers the
+    // non-default branch of `matches!(framework, "rails"|...)` in run_impl.
+    let tmp = tempfile::tempdir().unwrap();
+    let version = current_plugin_version();
+    write_flow_json(
+        tmp.path(),
+        json!({"flow_version": version, "framework": "nonexistent-framework"}),
+    );
+    let (data, code) = run_prime_check(tmp.path());
+    assert_eq!(data["status"], "error");
+    assert!(data["message"]
+        .as_str()
+        .unwrap()
+        .to_lowercase()
+        .contains("framework"));
+    assert_eq!(code, 0);
+}
+
 // --- Auto-upgrade path tests ---
 //
 // These tests use the Rust public API (compute_config_hash /

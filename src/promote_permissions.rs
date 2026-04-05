@@ -110,7 +110,11 @@ pub fn promote(worktree_path: &Path) -> Value {
         });
     }
 
-    if settings_data.get("permissions").is_none() {
+    // Guard both the top-level settings object and the nested `permissions`
+    // value — if either is not an object, assigning `["permissions"]["allow"]`
+    // would trigger a serde_json IndexMut panic. Replace a malformed
+    // permissions value with a fresh empty object so the merge can proceed.
+    if !matches!(settings_data.get("permissions"), Some(v) if v.is_object()) {
         settings_data["permissions"] = json!({});
     }
     settings_data["permissions"]["allow"] = Value::Array(existing_allow);
