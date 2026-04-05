@@ -48,7 +48,7 @@ The derived name is hyphenated and used for the branch, worktree (`.worktrees/<n
 
 When the prompt contains `#N` issue references (e.g., `work on issue #309`), `start-setup` automatically fetches the first issue's title and derives the branch name and PR title from it. This produces descriptive names like `organize-settings-allow-list` rather than generic names like `work-on-issue-309`. If the issue fetch fails, it falls back to deriving from the prompt words.
 
-If the referenced issue already carries the "Flow In-Progress" label, `start-setup` stops with a hard error before creating the worktree — another flow (on this machine or another engineer's machine) is already working on that issue. The user should resume the existing flow in its worktree, or reference a different issue.
+If the referenced issue already carries the "Flow In-Progress" label, `init-state` (Step 3) stops with a hard error before creating the state file — another flow (on this machine or another engineer's machine) is already working on that issue. The user should resume the existing flow in its worktree, or reference a different issue.
 
 ---
 

@@ -439,7 +439,11 @@ fn write_gh_stub(dir: &std::path::Path, json_body: &str) -> std::path::PathBuf {
     let stub_dir = dir.join("stubs");
     fs::create_dir_all(&stub_dir).unwrap();
     let stub_path = stub_dir.join("gh");
-    let script = format!("#!/bin/bash\necho '{}'\n", json_body);
+    // Escape single quotes in the JSON body so the bash echo does not break
+    // on titles like "It's broken". The '\\'' idiom ends the single-quoted
+    // string, inserts a literal quote, and reopens the single-quoted string.
+    let escaped = json_body.replace('\'', "'\\''");
+    let script = format!("#!/bin/bash\necho '{}'\n", escaped);
     fs::write(&stub_path, script).unwrap();
     let mut perms = fs::metadata(&stub_path).unwrap().permissions();
     perms.set_mode(0o755);
@@ -458,8 +462,9 @@ fn write_prompt_file(state_dir: &std::path::Path, body: &str) -> std::path::Path
 fn flow_in_progress_label_blocks_start() {
     // When a referenced issue carries the Flow In-Progress label, init-state
     // must exit with status=error, step=flow_in_progress_label, and NOT
-    // create a state file. The error message must name the issue number and
-    // direct the user to /flow:flow-continue. Issue #887.
+    // create a state file. The error message must name the issue number, name
+    // the label, and direct the user to resume the existing flow in its
+    // worktree (/flow:flow-continue was removed in PR #868). Issue #887.
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
 
