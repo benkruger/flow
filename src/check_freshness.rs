@@ -13,7 +13,6 @@ use std::time::{Duration, Instant};
 use clap::Parser;
 use serde_json::{json, Value};
 
-use crate::git::project_root;
 use crate::lock::mutate_state;
 use crate::utils::parse_conflict_files;
 
@@ -306,7 +305,17 @@ pub fn run(args: Args) {
         }
     }
 
-    let cwd = project_root();
+    // Inherit CWD from the calling process — must match Python's behavior.
+    // Python's `subprocess.run` calls in check-freshness.py pass no `cwd=`
+    // argument, so git commands run in the shell's current directory (the
+    // feature worktree when invoked from complete-merge.py). Using
+    // `project_root()` here would return the MAIN repo root (the first
+    // entry of `git worktree list --porcelain`), causing git commands to
+    // run in the main worktree where HEAD=main — which would make
+    // `git merge-base --is-ancestor origin/main HEAD` trivially succeed
+    // and always return `up_to_date` regardless of the feature branch's
+    // actual state.
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let result = check_freshness(state_file.as_deref(), &cwd);
 
     let status = result

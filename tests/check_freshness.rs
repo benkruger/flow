@@ -223,3 +223,61 @@ fn cli_unknown_args_ignored() {
     let data = parse_last_json(&output.stdout);
     assert_eq!(data["status"], "up_to_date");
 }
+
+/// Regression: check-freshness must inherit CWD from the caller. When
+/// invoked from a linked worktree, the main repo's HEAD is still `main`
+/// so git commands run there would trivially report `up_to_date`. This
+/// test sets up a repo where main is ahead of a feature worktree and
+/// runs check-freshness from INSIDE the feature worktree — it must
+/// report `merged` (feature brought up to date), not a false
+/// `up_to_date` from the main repo's perspective.
+#[test]
+fn cli_runs_git_in_caller_worktree_not_main_repo() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
+    attach_bare_remote(tmp.path(), &repo);
+
+    // Create a linked worktree on a feature branch whose HEAD is the
+    // initial commit (so it is behind main once we advance main below).
+    let worktree = tmp.path().join("feature-wt");
+    git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            worktree.to_str().unwrap(),
+            "-b",
+            "feature",
+        ],
+    );
+
+    // Advance main in the main repo, then push.
+    fs::write(repo.join("advance.txt"), "advance\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-m", "advance main"]);
+    git(&repo, &["push", "origin", "main"]);
+
+    // Run check-freshness from the LINKED WORKTREE. A buggy
+    // implementation that resolves the CWD via `project_root()` would
+    // run git commands in the main repo (where HEAD=main) and return
+    // up_to_date trivially. A correct implementation inherits the
+    // feature worktree's CWD and merges origin/main into feature.
+    let output = flow_rs()
+        .arg("check-freshness")
+        .current_dir(&worktree)
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_last_json(&output.stdout);
+    assert_eq!(
+        data["status"], "merged",
+        "expected merged (feature was behind main), got: {}",
+        data
+    );
+}

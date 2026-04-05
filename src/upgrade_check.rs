@@ -137,9 +137,13 @@ pub fn upgrade_check_impl(
     let installed_tuple = match parse_version(&installed) {
         Some(t) => t,
         None => {
+            // Intentional divergence from Python: the Python original used
+            // `tag` here (copy-paste from the latest branch above), which
+            // misattributes the problem to the remote tag when the
+            // locally-stored installed version is the actual culprit.
             return json!({
                 "status": "unknown",
-                "reason": format!("Could not parse version: {}", tag),
+                "reason": format!("Could not parse version: {}", installed),
             });
         }
     };
@@ -416,5 +420,36 @@ mod tests {
         let result = upgrade_check_impl(&plugin, 10, &mut gh);
         assert_eq!(result["status"], "unknown");
         assert!(result["reason"].as_str().unwrap().contains("timed out"));
+    }
+
+    /// Regression: when the INSTALLED version (from plugin.json) fails to
+    /// parse, the error message must cite the installed value — not the
+    /// remote tag. The Python original had a copy-paste bug that reported
+    /// the remote tag in both error branches; the Rust port corrects it.
+    #[test]
+    fn malformed_installed_version_error_cites_installed() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugin = write_plugin_json(
+            dir.path(),
+            r#"{"version":"not-semver","repository":"https://github.com/foo/bar"}"#,
+        );
+        let mut gh = |_owner_repo: &str, _t: u64| GhResult::Ok {
+            returncode: 0,
+            stdout: "v1.0.0".to_string(),
+            stderr: String::new(),
+        };
+        let result = upgrade_check_impl(&plugin, 10, &mut gh);
+        assert_eq!(result["status"], "unknown");
+        let reason = result["reason"].as_str().unwrap();
+        assert!(
+            reason.contains("not-semver"),
+            "reason should cite the malformed installed version 'not-semver', got: {}",
+            reason
+        );
+        assert!(
+            !reason.contains("v1.0.0"),
+            "reason should NOT cite the remote tag 'v1.0.0' when the installed version is at fault, got: {}",
+            reason
+        );
     }
 }
