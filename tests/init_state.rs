@@ -411,20 +411,11 @@ fn duplicate_issue_detected_before_state_creation() {
     // (issue #887): `{title, labels}`. An empty labels array bypasses the
     // Flow In-Progress guard so the test still reaches the duplicate-issue
     // guard, which is what this test is exercising.
-    let stub_dir = dir.path().join("stubs");
-    fs::create_dir_all(&stub_dir).unwrap();
-    let stub_path = stub_dir.join("gh");
-    fs::write(
-        &stub_path,
-        "#!/bin/bash\necho '{\"title\": \"Some Issue Title\", \"labels\": []}'\n",
-    )
-    .unwrap();
-    let mut perms = fs::metadata(&stub_path).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(&stub_path, perms).unwrap();
-
-    let prompt_file = state_dir.join("dup-test-prompt");
-    fs::write(&prompt_file, "work on issue #777").unwrap();
+    let stub_dir = write_gh_stub(
+        dir.path(),
+        r#"{"title": "Some Issue Title", "labels": []}"#,
+    );
+    let prompt_file = write_prompt_file(&state_dir, "work on issue #777");
 
     let output = flow_rs()
         .arg("init-state")
