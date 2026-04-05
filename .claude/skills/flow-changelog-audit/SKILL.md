@@ -57,9 +57,9 @@ note the matchers and which scripts handle them.
 **Hook scripts.** Read each script referenced in `hooks/hooks.json`:
 
 - `hooks/session-start.sh` — what Claude Code session events it handles
-- `lib/validate-pretool.py` — what PreToolUse capabilities it uses
-- `lib/validate-worktree-paths.py` — what PreToolUse capabilities it uses
-- `lib/validate-ask-user.py` — what PreToolUse capabilities it uses (especially `updatedInput` and `permissionDecision`)
+- `src/hooks/validate_pretool.rs` — what PreToolUse capabilities it uses
+- `src/hooks/validate_worktree_paths.rs` — what PreToolUse capabilities it uses
+- `src/hooks/validate_ask_user.rs` — what PreToolUse capabilities it uses (especially `updatedInput` and `permissionDecision`)
 - `lib/clear-blocked.py` — what PostToolUse capabilities it uses
 - `lib/post-compact.py` — what PostCompact capabilities it uses
 - `lib/stop-continue.py` — what Stop hook capabilities it uses

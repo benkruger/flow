@@ -13,7 +13,6 @@ use flow_rs::close_issue;
 use flow_rs::close_issues;
 use flow_rs::commands;
 use flow_rs::create_dependencies;
-use flow_rs::hooks;
 use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
 use flow_rs::finalize_commit;
@@ -21,6 +20,7 @@ use flow_rs::format_complete_summary;
 use flow_rs::format_issues_summary;
 use flow_rs::format_pr_timings;
 use flow_rs::format_status;
+use flow_rs::hooks;
 use flow_rs::label_issues;
 use flow_rs::notify_slack;
 use flow_rs::render_pr_body;
@@ -272,6 +272,18 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum HookCommands {
+    /// Validate Bash/Agent command input against blocklist and allowlist.
+    #[command(name = "validate-pretool")]
+    ValidatePretool,
+    /// Block Edit/Write on .claude/rules, .claude/skills, CLAUDE.md during FLOW phases.
+    #[command(name = "validate-claude-paths")]
+    ValidateClaudePaths,
+    /// Block file tool calls targeting the main repo from inside a worktree.
+    #[command(name = "validate-worktree-paths")]
+    ValidateWorktreePaths,
+    /// Enforce auto-continue for AskUserQuestion prompts.
+    #[command(name = "validate-ask-user")]
+    ValidateAskUser,
     /// Stop hook: continuation gating, blocked-flag management, tab color.
     #[command(name = "stop-continue")]
     StopContinue,
@@ -423,6 +435,10 @@ fn main() {
             update_pr_body::run(args);
         }
         Some(Commands::Hook { hook }) => match hook {
+            HookCommands::ValidatePretool => hooks::validate_pretool::run(),
+            HookCommands::ValidateClaudePaths => hooks::validate_claude_paths::run(),
+            HookCommands::ValidateWorktreePaths => hooks::validate_worktree_paths::run(),
+            HookCommands::ValidateAskUser => hooks::validate_ask_user::run(),
             HookCommands::StopContinue => hooks::stop_continue::run(),
             HookCommands::StopFailure => hooks::stop_failure::run(),
             HookCommands::PostCompact => hooks::post_compact::run(),

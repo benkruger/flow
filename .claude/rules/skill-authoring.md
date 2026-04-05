@@ -43,13 +43,14 @@ a testable alternative.
 
 Claude Code has built-in protections that cannot be overridden by
 settings.json entries. `.claude/` paths are protected regardless
-of `defaultMode` or allow-list patterns. The `validate-claude-paths.py`
-PreToolUse hook enforces this for `.claude/rules/`, `.claude/skills/`,
-and `CLAUDE.md` during active FLOW phases — blocking Edit/Write and
-redirecting to `bin/flow write-rule`. When a permission prompt
-persists despite allow-list entries, the cause is a platform
-constraint — not a missing permission. Never propose adding
-permissions for paths that are platform-protected.
+of `defaultMode` or allow-list patterns. The `validate-claude-paths`
+PreToolUse hook (`bin/flow hook validate-claude-paths`) enforces this
+for `.claude/rules/`, `.claude/skills/`, and `CLAUDE.md` during active
+FLOW phases — blocking Edit/Write and redirecting to
+`bin/flow write-rule`. When a permission prompt persists despite
+allow-list entries, the cause is a platform constraint — not a missing
+permission. Never propose adding permissions for paths that are
+platform-protected.
 
 ## Commit Skill Internals
 
@@ -62,13 +63,22 @@ Never run `git add -A` in commit Step 4. Files are already
 staged from Step 1. Running it again stages `.flow-commit-msg`
 itself, causing it to be tracked in the commit.
 
+Parent phases that invoke `/flow:flow-commit` must never write
+`.flow-commit-msg` themselves. The commit skill owns the file:
+it writes the message in Round 5 Step 1 and finalize-commit
+deletes it after the commit. When a parent phase writes the file
+before invoking the commit skill, Round 3's `git add -A` stages
+it, forcing a manual `git restore --staged .flow-commit-msg`
+after every commit to keep it out of the tracked tree. Let the
+commit skill own the message file end to end.
+
 ## Sub-Agent Safety
 
 Never use `general-purpose` sub-agents in skills — they ignore
 tool restriction rules in their prompts. Use custom plugin
 sub-agents with the global `PreToolUse` hook for system-level
-enforcement. The hook (`lib/validate-pretool.py`) is registered
-in `hooks/hooks.json` and blocks compound commands and
+enforcement. The hook (`bin/flow hook validate-pretool`) is
+registered in `hooks/hooks.json` and blocks compound commands and
 file-read commands with exit code 2, feeding helpful error
 messages back to the sub-agent so it adapts.
 
@@ -326,7 +336,7 @@ In a linked worktree, `git worktree list --porcelain` returns the
 main repo as the first entry (the "project root"). Repo-tracked
 files live in the worktree, not the main repo. Directing Claude to
 "the project root" sends it to the wrong copy, and the
-`validate-worktree-paths.py` hook blocks the call.
+`validate-worktree-paths` hook blocks the call.
 
 Project root is correct only for shared paths that live outside
 the worktree: `.flow-states/`, `.flow-issue-body`, and other

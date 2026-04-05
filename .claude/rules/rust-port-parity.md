@@ -38,6 +38,23 @@ When writing Rust tests for char-count-bounded functions, assert
 distinction documents the invariant the code enforces, even when
 both are equivalent for ASCII output.
 
+## Regex Lookbehind/Lookahead Not Supported
+
+Python `re` supports lookbehinds `(?<!\\);` and lookaheads `(?=foo)`.
+Rust's `regex` crate does not — compiling a pattern with lookaround
+returns `Err(Syntax(look-around ... is not supported))` at runtime.
+When porting a Python regex with lookaround, replace it with
+byte-level scanning: iterate `command.as_bytes()` and check
+`bytes[i-1]` manually for the condition the lookbehind expressed.
+
+Example: Python `(?<!\\);` (unescaped semicolon) becomes a loop
+that returns true for any `;` where `i == 0 || bytes[i-1] != b'\\'`.
+
+Pure byte scanning is safe for ASCII operators (`;`, `>`, `&`, `|`)
+which is the typical use case for shell command validation. For
+non-ASCII contexts, use `fancy-regex` crate (which supports
+lookaround) or restructure the pattern to avoid lookaround.
+
 ## Default Value Handling
 
 Python `dict.get(key, default)` returns a default when the key is
@@ -97,6 +114,17 @@ a direct Python fallback (`_direct_append`) for `main()`. The
 fallback prevents infinite recursion when `bin/flow` dispatches
 to the Python script and the Rust binary is absent. Document
 which function is for which context with inline comments.
+
+## Subprocess CWD Parity
+
+When porting a Python function that calls `subprocess.run(..., cwd=path)`
+to Rust, pass the equivalent directory to `Command::current_dir(path)`.
+Omitting it causes the subprocess to inherit the parent process CWD,
+which in tests means the test binary's CWD (typically the host repo
+root) rather than the fixture directory. Symptom: tests that pass
+when run from a fresh temp dir fail when run as part of the full suite
+because `current_dir` differs. Always audit subprocess calls in the
+Python source for `cwd=` and mirror them in Rust `Command::current_dir()`.
 
 ## CLI Testability — Extract run_impl
 

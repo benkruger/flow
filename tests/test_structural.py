@@ -128,7 +128,7 @@ def test_hook_scripts_are_executable():
 
 
 def test_hooks_json_has_pretooluse_bash_validator():
-    """hooks.json must register validate-pretool.py as a global PreToolUse hook."""
+    """hooks.json must register the pretool validator as a global PreToolUse hook."""
     hooks = json.loads((HOOKS_DIR / "hooks.json").read_text())
     assert "PreToolUse" in hooks["hooks"], (
         "hooks.json missing PreToolUse key — the global Bash validator must be registered"
@@ -140,8 +140,8 @@ def test_hooks_json_has_pretooluse_bash_validator():
         "PreToolUse Bash validator must also match Agent tool (matcher should be 'Bash|Agent')"
     )
     commands = [h["command"] for h in bash_matchers[0]["hooks"]]
-    assert any("validate-pretool.py" in cmd for cmd in commands), (
-        "PreToolUse Bash hook must reference validate-pretool.py"
+    assert any("bin/flow hook validate-pretool" in cmd for cmd in commands), (
+        "PreToolUse Bash hook must reference bin/flow hook validate-pretool"
     )
 
 
@@ -149,16 +149,74 @@ def test_no_validate_ci_bash_filename():
     """Tombstone: renamed in PR #693. Must not return."""
     lib_files = [f.name for f in LIB_DIR.iterdir() if f.is_file()]
     assert "validate-ci-bash.py" not in lib_files, (
-        "validate-ci-bash.py must not exist in lib/ — renamed to validate-pretool.py"
+        "validate-ci-bash.py must not exist in lib/ — replaced by Rust hook bin/flow hook validate-pretool"
     )
     hooks_content = (HOOKS_DIR / "hooks.json").read_text()
-    assert "validate-ci-bash" not in hooks_content, (
-        "validate-ci-bash must not appear in hooks.json — renamed to validate-pretool"
-    )
+    assert "validate-ci-bash" not in hooks_content, "validate-ci-bash must not appear in hooks.json"
     test_files = [f.name for f in (REPO_ROOT / "tests").iterdir() if f.is_file()]
-    assert "test_validate_ci_bash.py" not in test_files, (
-        "test_validate_ci_bash.py must not exist in tests/ — renamed to test_validate_pretool.py"
+    assert "test_validate_ci_bash.py" not in test_files, "test_validate_ci_bash.py must not exist in tests/"
+
+
+def test_no_python_validator_scripts():
+    """Tombstone: validate-*.py scripts were ported to Rust in PR #856. Must not return."""
+    lib_files = {f.name for f in LIB_DIR.iterdir() if f.is_file()}
+    ported = [
+        "validate-pretool.py",
+        "validate-claude-paths.py",
+        "validate-worktree-paths.py",
+        "validate-ask-user.py",
+    ]
+    for name in ported:
+        assert name not in lib_files, (
+            f"{name} must not exist in lib/ — ported to Rust. "
+            f"Use bin/flow hook {name.replace('.py', '').replace('validate-', 'validate-')} instead."
+        )
+
+
+def test_no_python_validator_tests():
+    """Tombstone: test_validate_*.py tests were ported to Rust in PR #856. Must not return."""
+    test_files = {f.name for f in (REPO_ROOT / "tests").iterdir() if f.is_file()}
+    ported_tests = [
+        "test_validate_pretool.py",
+        "test_validate_claude_paths.py",
+        "test_validate_worktree_paths.py",
+        "test_validate_ask_user.py",
+    ]
+    for name in ported_tests:
+        assert name not in test_files, (
+            f"{name} must not exist in tests/ — ported to Rust. "
+            f"See src/hooks/ for the Rust implementations and inline tests."
+        )
+
+
+def test_hooks_json_uses_bin_flow_hook_for_pretool_validators():
+    """All PreToolUse hook commands must use bin/flow hook instead of Python scripts."""
+    hooks_content = (HOOKS_DIR / "hooks.json").read_text()
+    for name in ("validate-pretool", "validate-claude-paths", "validate-worktree-paths", "validate-ask-user"):
+        assert f"lib/{name}.py" not in hooks_content, (
+            f"hooks.json must not reference lib/{name}.py — use bin/flow hook {name} instead"
+        )
+
+
+def test_bin_flow_fails_closed_for_hook_subcommand():
+    """bin/flow must exit 2 (block) not 1 (error) when the hook subcommand has no handler.
+
+    PR #856 added this guard so that if the Rust binary is absent and cargo is
+    unavailable to build it, PreToolUse hooks fail closed instead of silently
+    allowing all tool calls through. Claude Code treats exit 2 as a block with
+    stderr feedback; any other non-zero exit is treated as a non-blocking hook
+    error which would bypass every safety layer.
+    """
+    bin_flow = (BIN_DIR / "flow").read_text()
+    # The hook-specific fail-closed branch must exist and use exit 2
+    assert 'if [ "$subcmd" = "hook" ]; then' in bin_flow, (
+        "bin/flow must have a hook-specific fail-closed branch in the Python fallback"
     )
+    # Find the hook branch and verify it uses exit 2
+    hook_branch_start = bin_flow.index('if [ "$subcmd" = "hook" ]; then')
+    hook_branch_end = bin_flow.index("fi", hook_branch_start)
+    hook_branch = bin_flow[hook_branch_start:hook_branch_end]
+    assert "exit 2" in hook_branch, "Hook fail-closed branch must use exit 2 (block), not exit 1 (error)"
 
 
 def test_session_start_no_embedded_python():

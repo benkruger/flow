@@ -117,7 +117,7 @@ Replace `PREV` with the previous phase number and `PREV_NAME` with its name:
 
 FLOW uses six custom plugin sub-agents in `agents/*.md`: ci-fixer, reviewer,
 pre-mortem, adversarial, learn-analyst, and onboarding. The `PreToolUse`
-hook (`lib/validate-pretool.py`) is registered globally in `hooks/hooks.json`,
+hook (`bin/flow hook validate-pretool`) is registered globally in `hooks/hooks.json`,
 enforcing tool restrictions on all Bash calls — including those from
 built-in skills' sub-agents. The hook validates three layers: compound
 command blocking, file-read command blocking, and whitelist enforcement

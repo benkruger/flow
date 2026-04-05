@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-pretool.py"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/flow hook validate-pretool"
           }
         ]
       },
@@ -27,11 +27,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-worktree-paths.py"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/flow hook validate-worktree-paths"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-claude-paths.py"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/flow hook validate-claude-paths"
           }
         ]
       },
@@ -40,11 +40,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-worktree-paths.py"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/flow hook validate-worktree-paths"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-claude-paths.py"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/flow hook validate-claude-paths"
           }
         ]
       },
@@ -53,7 +53,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-worktree-paths.py"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/flow hook validate-worktree-paths"
           }
         ]
       },
@@ -62,7 +62,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/lib/validate-ask-user.py"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/flow hook validate-ask-user"
           }
         ]
       }
