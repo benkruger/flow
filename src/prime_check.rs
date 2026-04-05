@@ -235,12 +235,13 @@ pub fn compute_setup_hash(plugin_root: &Path) -> Result<String, String> {
 }
 
 fn hex_prefix(bytes: &[u8], n: usize) -> String {
-    let mut s = String::with_capacity(n);
-    for b in bytes {
-        if s.len() >= n {
-            break;
-        }
-        s.push_str(&format!("{:02x}", b));
+    use std::fmt::Write;
+    // (n + 1) / 2 bytes provide enough hex chars to cover n output
+    // characters; `truncate` trims the final char when n is odd.
+    let take = (n + 1) / 2;
+    let mut s = String::with_capacity(take * 2);
+    for b in bytes.iter().take(take) {
+        write!(&mut s, "{:02x}", b).unwrap();
     }
     s.truncate(n);
     s

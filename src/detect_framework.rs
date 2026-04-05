@@ -68,39 +68,39 @@ fn load_detect_configs(fw_dir: &Path) -> Vec<Value> {
     configs
 }
 
+/// Build a name+display_name JSON object from a detect.json config.
+fn framework_summary(config: &Value) -> Value {
+    json!({
+        "name": config.get("name").cloned().unwrap_or(Value::Null),
+        "display_name": config.get("display_name").cloned().unwrap_or(Value::Null),
+    })
+}
+
+/// Return true if the config's `detect_globs` match any file in the project.
+fn config_matches_project(config: &Value, project: &Path) -> bool {
+    config
+        .get("detect_globs")
+        .and_then(|v| v.as_array())
+        .map(|globs| {
+            globs
+                .iter()
+                .any(|g| g.as_str().is_some_and(|s| matches_glob(project, s)))
+        })
+        .unwrap_or(false)
+}
+
 /// Return the list of detected frameworks for a project root.
 pub fn detect(project: &Path, fw_dir: &Path) -> Vec<Value> {
-    let configs = load_detect_configs(fw_dir);
-    let mut detected = Vec::new();
-    for config in configs {
-        let globs = match config.get("detect_globs").and_then(|v| v.as_array()) {
-            Some(g) => g,
-            None => continue,
-        };
-        let matched = globs
-            .iter()
-            .any(|g| g.as_str().is_some_and(|s| matches_glob(project, s)));
-        if matched {
-            detected.push(json!({
-                "name": config.get("name").cloned().unwrap_or(Value::Null),
-                "display_name": config.get("display_name").cloned().unwrap_or(Value::Null),
-            }));
-        }
-    }
-    detected
+    load_detect_configs(fw_dir)
+        .iter()
+        .filter(|c| config_matches_project(c, project))
+        .map(framework_summary)
+        .collect()
 }
 
 /// Return the list of all available frameworks from `fw_dir`.
 pub fn available_frameworks(fw_dir: &Path) -> Vec<Value> {
-    load_detect_configs(fw_dir)
-        .into_iter()
-        .map(|c| {
-            json!({
-                "name": c.get("name").cloned().unwrap_or(Value::Null),
-                "display_name": c.get("display_name").cloned().unwrap_or(Value::Null),
-            })
-        })
-        .collect()
+    load_detect_configs(fw_dir).iter().map(framework_summary).collect()
 }
 
 /// Build the CLI result as a JSON value.
@@ -109,14 +109,23 @@ pub fn available_frameworks(fw_dir: &Path) -> Vec<Value> {
 /// missing frameworks directory). Error-status responses are returned
 /// via `Err` so `run` can exit non-zero; this matches the Python
 /// script's behavior of printing JSON + `sys.exit(1)`.
+///
+/// Loads detect.json configs once and derives both `detected` and
+/// `available` from the single load — avoids reading each detect.json
+/// twice that the `detect()` + `available_frameworks()` combo would do.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let project_root = PathBuf::from(&args.project_root);
     if !project_root.is_dir() {
         return Err(format!("Project root not found: {}", args.project_root));
     }
     let fw_dir = frameworks_dir().ok_or_else(|| "Plugin root not found".to_string())?;
-    let detected = detect(&project_root, &fw_dir);
-    let available = available_frameworks(&fw_dir);
+    let configs = load_detect_configs(&fw_dir);
+    let detected: Vec<Value> = configs
+        .iter()
+        .filter(|c| config_matches_project(c, &project_root))
+        .map(framework_summary)
+        .collect();
+    let available: Vec<Value> = configs.iter().map(framework_summary).collect();
     Ok(json!({
         "status": "ok",
         "detected": detected,
