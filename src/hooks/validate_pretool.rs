@@ -163,7 +163,7 @@ fn has_redirect(command: &str) -> bool {
 pub fn should_block_background(command: &str, flow_active: bool) -> Option<String> {
     if is_ci_command(command) {
         return Some(
-            "BLOCKED: bin/flow ci must never run in the background. \
+            "BLOCKED: bin/flow ci and bin/ci must never run in the background. \
              CI is a gate — it must complete before any commit or phase \
              transition proceeds. Run it in the foreground."
                 .to_string(),
@@ -182,8 +182,11 @@ pub fn should_block_background(command: &str, flow_active: bool) -> Option<Strin
 /// Check whether a command invokes FLOW CI (bin/flow ci or bin/ci).
 ///
 /// Matches by tokenizing on whitespace, so path prefixes and trailing
-/// arguments are handled. Rejects substring-containing commands like
-/// `npm run ci` (first token is `npm`) and `git commit`.
+/// arguments are handled. The suffix match on `/bin/ci` and `/bin/flow`
+/// is intentional: it covers both FLOW's own binary and target projects'
+/// `bin/ci` scripts — all of which are CI gates by convention. Rejects
+/// substring-containing commands like `npm run ci` (first token is `npm`)
+/// and `git commit`.
 fn is_ci_command(command: &str) -> bool {
     let mut tokens = command.split_whitespace();
     let first = match tokens.next() {
@@ -197,6 +200,30 @@ fn is_ci_command(command: &str) -> bool {
         return tokens.next() == Some("ci");
     }
     false
+}
+
+/// Check whether a JSON value represents a truthy `run_in_background` flag.
+///
+/// Claude Code's Bash tool schema defines `run_in_background` as a bool,
+/// but we defensively accept truthy non-bool forms (string `"true"`,
+/// non-zero integer) so a schema-confused caller cannot bypass the CI
+/// gate by passing the wrong JSON type. Null, bool false, empty string,
+/// zero, and non-truthy strings all return false.
+fn is_bg_truthy(value: &Value) -> bool {
+    match value {
+        Value::Bool(b) => *b,
+        Value::String(s) => s.eq_ignore_ascii_case("true") || s == "1",
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                i != 0
+            } else if let Some(f) = n.as_f64() {
+                f != 0.0
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
 }
 
 /// Run the validate-pretool hook (entry point from CLI).
@@ -232,7 +259,7 @@ pub fn run() {
 
     // Pre-validation: CI is always a gate; other commands only blocked in FLOW phases
     if let Some(bg) = tool_input.get("run_in_background") {
-        if bg.as_bool() == Some(true) {
+        if is_bg_truthy(bg) {
             if let Some(msg) = should_block_background(command, flow_active) {
                 eprintln!("{}", msg);
                 std::process::exit(2);
@@ -740,7 +767,9 @@ mod tests {
     fn test_blocks_background_bin_flow_ci_outside_flow() {
         let msg = should_block_background("bin/flow ci", false);
         assert!(msg.is_some());
-        assert!(msg.unwrap().contains("bin/flow ci"));
+        let text = msg.unwrap();
+        assert!(text.contains("bin/flow ci"));
+        assert!(text.contains("bin/ci"));
     }
 
     #[test]
@@ -753,11 +782,20 @@ mod tests {
     fn test_blocks_background_bin_ci_outside_flow() {
         let msg = should_block_background("bin/ci", false);
         assert!(msg.is_some());
+        // Error message must name both CI forms so callers that ran `bin/ci`
+        // don't get misled by a message that only names `bin/flow ci`.
+        assert!(msg.unwrap().contains("bin/ci"));
     }
 
     #[test]
     fn test_blocks_background_absolute_bin_flow_ci_outside_flow() {
         let msg = should_block_background("/Users/ben/code/flow/bin/flow ci", false);
+        assert!(msg.is_some());
+    }
+
+    #[test]
+    fn test_blocks_background_absolute_bin_ci_outside_flow() {
+        let msg = should_block_background("/Users/ben/code/flow/bin/ci", false);
         assert!(msg.is_some());
     }
 
@@ -780,5 +818,62 @@ mod tests {
         assert!(should_block_background("npm run ci", false).is_none());
         // "git commit" has no relation to ci
         assert!(should_block_background("git commit", false).is_none());
+    }
+
+    // --- is_bg_truthy: defensive JSON type handling ---
+
+    #[test]
+    fn test_is_bg_truthy_bool_true() {
+        assert!(is_bg_truthy(&json!(true)));
+    }
+
+    #[test]
+    fn test_is_bg_truthy_bool_false() {
+        assert!(!is_bg_truthy(&json!(false)));
+    }
+
+    #[test]
+    fn test_is_bg_truthy_string_true() {
+        // A schema-confused caller passing "true" as a string must not bypass
+        // the CI gate. Case-insensitive.
+        assert!(is_bg_truthy(&json!("true")));
+        assert!(is_bg_truthy(&json!("True")));
+        assert!(is_bg_truthy(&json!("TRUE")));
+    }
+
+    #[test]
+    fn test_is_bg_truthy_string_one() {
+        assert!(is_bg_truthy(&json!("1")));
+    }
+
+    #[test]
+    fn test_is_bg_truthy_string_other() {
+        assert!(!is_bg_truthy(&json!("false")));
+        assert!(!is_bg_truthy(&json!("yes")));
+        assert!(!is_bg_truthy(&json!("")));
+        assert!(!is_bg_truthy(&json!("foreground")));
+    }
+
+    #[test]
+    fn test_is_bg_truthy_integer_nonzero() {
+        assert!(is_bg_truthy(&json!(1)));
+        assert!(is_bg_truthy(&json!(42)));
+        assert!(is_bg_truthy(&json!(-1)));
+    }
+
+    #[test]
+    fn test_is_bg_truthy_integer_zero() {
+        assert!(!is_bg_truthy(&json!(0)));
+    }
+
+    #[test]
+    fn test_is_bg_truthy_null() {
+        assert!(!is_bg_truthy(&Value::Null));
+    }
+
+    #[test]
+    fn test_is_bg_truthy_object_and_array() {
+        assert!(!is_bg_truthy(&json!({})));
+        assert!(!is_bg_truthy(&json!([])));
     }
 }
