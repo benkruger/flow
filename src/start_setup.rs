@@ -802,15 +802,15 @@ mod tests {
         assert_eq!(code, 42);
     }
 
-    // --- Tombstone: the custom-timeout-trait was removed for issue #875 ---
+    // --- Tombstone: the custom-timeout-trait was removed in PR #878 ---
 
     #[test]
     fn removed_timeout_trait_tombstone() {
-        // Tombstone: the custom timeout trait was removed as part of the
-        // thread-drain refactor for issue #875. The subprocess helper now
-        // uses try_wait() polling inline with thread-drained pipes. If a
-        // merge conflict or regression re-introduces the trait, this
-        // assertion catches it immediately.
+        // Tombstone: removed in PR #878 (issue #875). Must not return. The
+        // custom timeout trait was removed as part of the thread-drain
+        // refactor. The subprocess helper now uses try_wait() polling inline
+        // with thread-drained pipes. If a merge conflict or regression
+        // re-introduces the trait, this assertion catches it immediately.
         //
         // `concat!` is used so the searched pattern is not itself a literal
         // substring of this file — otherwise the test would always fail by
@@ -819,7 +819,7 @@ mod tests {
         let needle = concat!("trait ", "WaitTimeout");
         assert!(
             !source.contains(needle),
-            "removed timeout trait must not return — issue #875"
+            "removed timeout trait must not return — PR #878, issue #875"
         );
     }
 }

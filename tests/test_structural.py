@@ -814,13 +814,15 @@ def test_no_python_test_format_complete_summary():
 
 
 def test_wait_with_output_absent_in_subprocess_runners():
-    """Tombstone for issue #875 and .claude/rules/rust-port-parity.md Subprocess
-    Timeout Parity. Must not return. These seven Rust modules previously used a
-    prohibited subprocess pattern that deadlocks on outputs larger than ~64KB
-    (pipe-buffer fill) or silently truncates stdout via ECHILD on already-reaped
-    children. The thread-drain pattern in src/analyze_issues.rs is the canonical
-    replacement. If a merge resolution or new port re-introduces the prohibited
-    method call in any of these files, this assertion catches it immediately.
+    """Tombstone: removed in PR #878 (issue #875). Must not return.
+
+    Enforces .claude/rules/rust-port-parity.md Subprocess Timeout Parity.
+    These seven Rust modules previously used a prohibited subprocess pattern
+    that deadlocks on outputs larger than ~64KB (pipe-buffer fill) or silently
+    truncates stdout via ECHILD on already-reaped children. The thread-drain
+    pattern in src/analyze_issues.rs is the canonical replacement. If a merge
+    resolution or new port re-introduces the prohibited method call in any of
+    these files, this assertion catches it immediately.
 
     Only non-comment lines are checked so that explanatory comments referencing
     the historical pattern by name do not trip the assertion.
