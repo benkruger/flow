@@ -198,17 +198,16 @@ fn read_retries_value(state: &Value) -> i64 {
         .unwrap_or(0)
 }
 
-/// Real git subprocess runner with polling-based timeout.
+/// Real git subprocess runner with polling-based timeout and thread-drain.
 ///
-/// # Safety on pipe buffering
-///
-/// Uses `try_wait()` + `wait_with_output()`. This is safe here because all
-/// callers run bounded-output git commands (fetch, merge-base, merge,
-/// status) — pipe buffer never fills beyond 64KB, and stdlib caches exit
-/// status after `try_wait` so the subsequent `wait_with_output` does not
-/// hit ECHILD. See `.claude/rules/rust-port-parity.md` Subprocess Timeout
-/// Parity for the large-output pattern that requires a drain thread.
+/// Uses the thread-drain pattern from `.claude/rules/rust-port-parity.md`
+/// Subprocess Timeout Parity: take stdout/stderr handles before the poll
+/// loop, drain them in spawned reader threads, poll `try_wait()` for exit
+/// status, then join the readers. Compliant reference: see
+/// `src/analyze_issues.rs` lines 472-518.
 fn run_git_cmd(args: &[&str], timeout_secs: u64, cwd: &Path) -> CmdResult {
+    use std::io::Read;
+
     let mut child = match Command::new(args[0])
         .args(&args[1..])
         .current_dir(cwd)
@@ -228,35 +227,42 @@ fn run_git_cmd(args: &[&str], timeout_secs: u64, cwd: &Path) -> CmdResult {
         }
     };
 
+    // Drain stdout/stderr in threads to prevent pipe buffer deadlock.
+    let stdout_handle = child.stdout.take();
+    let stderr_handle = child.stderr.take();
+    let stdout_reader = thread::spawn(move || {
+        let mut buf = String::new();
+        if let Some(mut pipe) = stdout_handle {
+            let _ = pipe.read_to_string(&mut buf);
+        }
+        buf
+    });
+    let stderr_reader = thread::spawn(move || {
+        let mut buf = String::new();
+        if let Some(mut pipe) = stderr_handle {
+            let _ = pipe.read_to_string(&mut buf);
+        }
+        buf
+    });
+
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
-    loop {
+    let status = loop {
         match child.try_wait() {
-            Ok(Some(status)) => {
-                let output = match child.wait_with_output() {
-                    Ok(o) => o,
-                    Err(_) => {
-                        return CmdResult::Ok {
-                            returncode: -1,
-                            stdout: String::new(),
-                            stderr: String::new(),
-                        };
-                    }
-                };
-                return CmdResult::Ok {
-                    returncode: status.code().unwrap_or(-1),
-                    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-                };
-            }
+            Ok(Some(s)) => break Some(s),
             Ok(None) => {
                 if Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait();
+                    // Join readers even on timeout so they do not leak.
+                    let _ = stdout_reader.join();
+                    let _ = stderr_reader.join();
                     return CmdResult::Timeout;
                 }
                 thread::sleep(Duration::from_millis(50));
             }
             Err(_) => {
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
                 return CmdResult::Ok {
                     returncode: -1,
                     stdout: String::new(),
@@ -264,6 +270,15 @@ fn run_git_cmd(args: &[&str], timeout_secs: u64, cwd: &Path) -> CmdResult {
                 };
             }
         }
+    };
+
+    let stdout = stdout_reader.join().unwrap_or_default();
+    let stderr = stderr_reader.join().unwrap_or_default();
+
+    CmdResult::Ok {
+        returncode: status.and_then(|s| s.code()).unwrap_or(-1),
+        stdout,
+        stderr,
     }
 }
 
@@ -649,5 +664,64 @@ mod tests {
         assert_eq!(result, json!({"status": "merged", "retries": 1}));
         let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(state["freshness_retries"], 1);
+    }
+
+    // Counter type tolerance tests: the fallback chain in `read_retries_value`
+    // exists per `.claude/rules/rust-port-parity.md` Counter Field Type
+    // Tolerance. State files can outlive the code that writes them, so
+    // freshness_retries may arrive as int, float, or string.
+
+    #[test]
+    fn test_retry_value_as_float() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        // Write freshness_retries as a float (e.g. from older Python code
+        // that did float arithmetic on the counter).
+        fs::write(
+            &path,
+            r#"{"branch":"test","freshness_retries":1.0}"#,
+        )
+        .unwrap();
+        let responses = vec![ok(), err(1, ""), ok()];
+        let mut git = mock_runner(responses);
+        let result = check_freshness_impl(Some(&path), &mut git);
+        assert_eq!(result, json!({"status": "merged", "retries": 2}));
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(state["freshness_retries"], 2);
+    }
+
+    #[test]
+    fn test_retry_value_as_string() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        // Write freshness_retries as a JSON string (e.g. from a hand-edited
+        // state file or a corrupted write).
+        fs::write(
+            &path,
+            r#"{"branch":"test","freshness_retries":"2"}"#,
+        )
+        .unwrap();
+        let responses = vec![ok(), err(1, ""), ok()];
+        let mut git = mock_runner(responses);
+        let result = check_freshness_impl(Some(&path), &mut git);
+        assert_eq!(result, json!({"status": "merged", "retries": 3}));
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(state["freshness_retries"], 3);
+    }
+
+    #[test]
+    fn test_retry_value_as_unparseable_string_defaults_to_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(
+            &path,
+            r#"{"branch":"test","freshness_retries":"garbage"}"#,
+        )
+        .unwrap();
+        let responses = vec![ok(), err(1, ""), ok()];
+        let mut git = mock_runner(responses);
+        let result = check_freshness_impl(Some(&path), &mut git);
+        // Unparseable string falls back to 0, then increments to 1.
+        assert_eq!(result, json!({"status": "merged", "retries": 1}));
     }
 }

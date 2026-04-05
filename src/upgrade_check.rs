@@ -168,20 +168,20 @@ fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
     Some((a, b, c))
 }
 
-/// Real `gh` subprocess runner with polling-based timeout.
+/// Real `gh` subprocess runner with polling-based timeout and thread-drain.
 ///
-/// # Safety on pipe buffering
+/// Uses the thread-drain pattern from `.claude/rules/rust-port-parity.md`
+/// Subprocess Timeout Parity: take stdout/stderr handles before the poll
+/// loop, drain them in spawned reader threads, poll `try_wait()` for exit
+/// status, then join the readers. Compliant reference: see
+/// `src/analyze_issues.rs` lines 472-518.
 ///
-/// Uses `try_wait()` + `wait_with_output()`. Safe because the `gh api
-/// releases/latest --jq .tag_name` output is a single version string,
-/// well under the 64KB pipe buffer threshold. See
-/// `.claude/rules/rust-port-parity.md` Subprocess Timeout Parity for
-/// the large-output pattern.
-///
-/// Maps `ErrorKind::NotFound` (gh binary missing) to `GhResult::NotFound`
-/// so the caller can report "gh CLI not found" exactly like Python's
-/// `FileNotFoundError` handler.
+/// Any spawn failure (NotFound, PermissionDenied, etc.) is mapped to
+/// `GhResult::NotFound` — a deliberate improvement over Python's
+/// `FileNotFoundError`-only handler which would panic on other errors.
 fn run_gh_cmd(owner_repo: &str, timeout_secs: u64) -> GhResult {
+    use std::io::Read;
+
     let api_path = format!("repos/{}/releases/latest", owner_repo);
     let mut child = match Command::new("gh")
         .args(["api", &api_path, "--jq", ".tag_name"])
@@ -190,42 +190,45 @@ fn run_gh_cmd(owner_repo: &str, timeout_secs: u64) -> GhResult {
         .spawn()
     {
         Ok(c) => c,
-        // Any spawn failure (NotFound, PermissionDenied, etc.) is reported
-        // as "gh CLI not found" — the user-visible distinction is unhelpful
-        // and Python's FileNotFoundError-only handler would panic on other
-        // errors, which we avoid here by fail-opening.
         Err(_) => return GhResult::NotFound,
     };
 
+    // Drain stdout/stderr in threads to prevent pipe buffer deadlock.
+    let stdout_handle = child.stdout.take();
+    let stderr_handle = child.stderr.take();
+    let stdout_reader = thread::spawn(move || {
+        let mut buf = String::new();
+        if let Some(mut pipe) = stdout_handle {
+            let _ = pipe.read_to_string(&mut buf);
+        }
+        buf
+    });
+    let stderr_reader = thread::spawn(move || {
+        let mut buf = String::new();
+        if let Some(mut pipe) = stderr_handle {
+            let _ = pipe.read_to_string(&mut buf);
+        }
+        buf
+    });
+
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
-    loop {
+    let status = loop {
         match child.try_wait() {
-            Ok(Some(status)) => {
-                let output = match child.wait_with_output() {
-                    Ok(o) => o,
-                    Err(_) => {
-                        return GhResult::Ok {
-                            returncode: -1,
-                            stdout: String::new(),
-                            stderr: String::new(),
-                        };
-                    }
-                };
-                return GhResult::Ok {
-                    returncode: status.code().unwrap_or(-1),
-                    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-                };
-            }
+            Ok(Some(s)) => break Some(s),
             Ok(None) => {
                 if Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait();
+                    // Join readers even on timeout so they do not leak.
+                    let _ = stdout_reader.join();
+                    let _ = stderr_reader.join();
                     return GhResult::Timeout;
                 }
                 thread::sleep(Duration::from_millis(50));
             }
             Err(_) => {
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
                 return GhResult::Ok {
                     returncode: -1,
                     stdout: String::new(),
@@ -233,6 +236,15 @@ fn run_gh_cmd(owner_repo: &str, timeout_secs: u64) -> GhResult {
                 };
             }
         }
+    };
+
+    let stdout = stdout_reader.join().unwrap_or_default();
+    let stderr = stderr_reader.join().unwrap_or_default();
+
+    GhResult::Ok {
+        returncode: status.and_then(|s| s.code()).unwrap_or(-1),
+        stdout,
+        stderr,
     }
 }
 
