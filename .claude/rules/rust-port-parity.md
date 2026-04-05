@@ -105,6 +105,25 @@ The correct pattern: take `child.stdout` before the poll loop,
 drain it in a spawned thread, poll `try_wait()` for exit status,
 then join the reader thread to get the buffered output.
 
+### Reference Implementation Verification
+
+When writing a new subprocess runner by modeling it on an existing
+module, verify the reference module complies with this section
+BEFORE copying its shape. Several pre-existing modules
+(`src/finalize_commit.rs`, `src/notify_slack.rs`,
+`src/close_issue.rs`, `src/close_issues.rs`, `src/issue.rs`,
+`src/start_setup.rs`, `src/cleanup.rs`) were ported before this
+rule was codified and use the prohibited `try_wait()` +
+`wait_with_output()` pattern. The compliant reference is
+`src/analyze_issues.rs` lines 472-518, which uses the thread-drain
+pattern. Grep the candidate module for `wait_with_output` before
+adopting its runner as a template — presence of that call means
+the module is non-compliant and unsafe to copy.
+
+The broader principle applies to any rule in this file: a reference
+implementation predating the rule cannot be trusted. Verify before
+copying.
+
 ## Python Bridge Pattern
 
 When a ported script still has Python callers that import its
