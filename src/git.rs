@@ -101,11 +101,33 @@ pub fn resolve_branch(
     override_branch: Option<&str>,
     root: &Path,
 ) -> (Option<String>, Vec<String>) {
+    resolve_branch_impl(override_branch, root, current_branch())
+}
+
+/// Cwd-scoped variant of [`resolve_branch`] that uses [`current_branch_in`]
+/// instead of [`current_branch`].
+///
+/// This is the correct choice for CLI subcommands that resolve a branch
+/// from an explicit working directory (e.g., the `ci` subcommand running
+/// in a worktree) where the branch must be read from the given cwd, not
+/// the process's cwd.
+pub fn resolve_branch_in(
+    override_branch: Option<&str>,
+    cwd: &Path,
+    root: &Path,
+) -> (Option<String>, Vec<String>) {
+    resolve_branch_impl(override_branch, root, current_branch_in(cwd))
+}
+
+fn resolve_branch_impl(
+    override_branch: Option<&str>,
+    root: &Path,
+    branch: Option<String>,
+) -> (Option<String>, Vec<String>) {
     if let Some(b) = override_branch {
         return (Some(b.to_string()), vec![]);
     }
 
-    let branch = current_branch();
     let state_dir = root.join(".flow-states");
 
     // Exact match — current branch has a state file

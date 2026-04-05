@@ -313,8 +313,14 @@ pub fn run_with_retry(
 ///
 /// Dispatches to [`run_once`] when `args.retry == 0` and to
 /// [`run_with_retry`] otherwise. Resolves the branch from `args.branch`
-/// or falls back to [`crate::git::current_branch_in`] using the given
-/// `cwd`.
+/// or falls back to [`crate::git::resolve_branch_in`] using the given
+/// `cwd` — matching Python `lib/ci.py` which called `resolve_branch()`
+/// so the state-file scan fallback fires when git HEAD is detached
+/// but `.flow-states/` contains exactly one feature.
+///
+/// Also performs the `bin/ci not found` pre-check here (before
+/// dispatch) so both retry and non-retry paths return the same error
+/// message, matching Python's single upfront check in `main()`.
 pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> (Value, i32) {
     if flow_ci_running {
         return (
@@ -328,11 +334,18 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
     }
 
     let bin_ci = cwd.join("bin").join("ci");
+    if !bin_ci.exists() {
+        return (
+            json!({"status": "error", "message": "bin/ci not found"}),
+            1,
+        );
+    }
 
-    let resolved_branch = match &args.branch {
-        Some(b) => Some(b.clone()),
-        None => crate::git::current_branch_in(cwd),
-    };
+    let (resolved_branch, _candidates) = crate::git::resolve_branch_in(
+        args.branch.as_deref(),
+        cwd,
+        root,
+    );
 
     if args.retry > 0 {
         run_with_retry(
@@ -1178,6 +1191,47 @@ exit 0
         // The fixture's branch is "main" and that's what current_branch_in
         // should return from the cwd. Sentinel should land at main-ci-passed.
         assert!(fixture_sentinel(&f).exists());
+    }
+
+    #[test]
+    fn cli_missing_bin_ci_uniform_error_across_retry_modes() {
+        // Both retry=0 and retry>0 paths must return the same
+        // "bin/ci not found" error — matching Python's single upfront
+        // check in main() before dispatching to either path.
+        let dir = tempfile::tempdir().unwrap();
+        // Initialize a git repo so resolve_branch_in succeeds; no bin/ci though
+        let run = |args: &[&str]| {
+            let status = Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .status()
+                .expect("git command failed");
+            assert!(status.success(), "git {:?} failed", args);
+        };
+        run(&["init", "--initial-branch", "main"]);
+        run(&["config", "user.email", "test@test.com"]);
+        run(&["config", "user.name", "Test"]);
+        run(&["config", "commit.gpgsign", "false"]);
+        run(&["commit", "--allow-empty", "-m", "init"]);
+
+        // Non-retry path
+        let (out_once, code_once) = run_impl(&default_args(), dir.path(), dir.path(), false);
+        assert_eq!(code_once, 1);
+        assert_eq!(out_once["status"], "error");
+        assert!(out_once["message"].as_str().unwrap().contains("not found"));
+
+        // Retry path
+        let args = Args {
+            retry: 3,
+            ..default_args()
+        };
+        let (out_retry, code_retry) = run_impl(&args, dir.path(), dir.path(), false);
+        assert_eq!(code_retry, 1);
+        assert_eq!(out_retry["status"], "error");
+        assert!(out_retry["message"].as_str().unwrap().contains("not found"));
+
+        // Same error message on both paths
+        assert_eq!(out_once["message"], out_retry["message"]);
     }
 
     #[test]
