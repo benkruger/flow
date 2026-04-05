@@ -524,7 +524,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 ```text
 ══════════════════════════════════════════════════
   ◆ FLOW — Paused
-  Run /flow:flow-continue when ready.
+  Run /flow:flow-start when ready.
 ══════════════════════════════════════════════════
 ```
 ````
