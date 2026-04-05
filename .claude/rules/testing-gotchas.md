@@ -135,3 +135,60 @@ trip-wires a regression of the named property — not that the property
 is someone else's responsibility. A reader whose first exposure to
 the test is its name should find the comment affirmatively supporting
 the name, not contradicting it.
+
+## Message Content Assertions — Per Variant, Not Just Presence
+
+When a function returns a human-readable message that names a specific
+command, path, or identifier, and the function handles multiple
+variants of that input (e.g. `bin/flow ci` and `bin/ci`), every test
+that exercises a different variant must assert on the message content,
+not just `msg.is_some()`. A single hardcoded message string that names
+only one variant will silently mislead callers who triggered the
+function via the other variant — the test passes because the message
+exists, but the content is wrong.
+
+Pattern:
+
+```rust
+#[test]
+fn test_bin_ci_variant_produces_correct_message() {
+    let msg = should_block_background("bin/ci", false);
+    assert!(msg.is_some());
+    assert!(msg.unwrap().contains("bin/ci")); // content, not just presence
+}
+```
+
+How to apply: when writing tests for a function with multi-variant
+message output, enumerate the variants in the test list and add one
+content assertion per variant. If the function returns the same
+message for every variant, use a generalized message that names all
+variants so the assertion is meaningful across the test set.
+
+## Suffix-Match Path Coverage
+
+When a function uses `ends_with("/path/segment")` for matching a
+file or binary (e.g. `first.ends_with("/bin/ci")`), tests must
+include BOTH the bare form (`bin/ci`) and the absolute-path form
+(`/Users/name/project/bin/ci` or `/opt/tools/bin/ci`). Parallel
+tests for each path variant document the intended coverage and
+catch bugs where the suffix match is silently broken (e.g. a
+refactor that accidentally changes `ends_with` to `starts_with`).
+
+Pattern for every `ends_with(path)` callsite in production code:
+
+```rust
+#[test]
+fn test_bare_form_matches() {
+    assert!(is_ci_command("bin/ci"));
+}
+
+#[test]
+fn test_absolute_path_matches() {
+    assert!(is_ci_command("/Users/me/project/bin/ci"));
+}
+```
+
+How to apply: during Plan phase, enumerate every `ends_with` pattern
+the implementation will use, then add one test per pattern for each
+form (bare + absolute). The test count is small — two tests per
+pattern — and it locks the intended match surface.
