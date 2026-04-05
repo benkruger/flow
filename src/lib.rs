@@ -10,6 +10,7 @@ pub mod close_issue;
 pub mod close_issues;
 pub mod commands;
 pub mod complete_merge;
+pub mod complete_post_merge;
 pub mod complete_preflight;
 pub mod create_dependencies;
 pub mod create_milestone;

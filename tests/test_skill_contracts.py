@@ -641,9 +641,9 @@ def test_phase_skills_use_phase_transition_for_entry():
 
 def test_phase_skills_use_phase_transition_for_completion():
     """Phases 1-6 must use bin/flow phase-transition for state completion.
-    Phase 6 delegates phase-transition complete to complete-post-merge.py."""
+    Phase 6 delegates phase-transition complete to complete-post-merge (Rust)."""
     phase_skills = _phase_skills()
-    # flow-complete delegates phase-transition complete to complete-post-merge.py
+    # flow-complete delegates phase-transition complete to complete-post-merge (Rust)
     skip_complete = {"flow-complete"}
     for key in PHASE_ORDER:
         skill_name = phase_skills[key]
