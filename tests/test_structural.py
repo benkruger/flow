@@ -581,6 +581,50 @@ def test_no_python_test_log():
     assert not (REPO_ROOT / "tests" / "test_log.py").exists(), "tests/test_log.py must not exist — tests ported to Rust"
 
 
+def test_no_python_complete_preflight():
+    """Tombstone: ported to Rust in PR #872. Must not return."""
+    assert not (LIB_DIR / "complete-preflight.py").exists(), (
+        "lib/complete-preflight.py was ported to Rust (src/complete_preflight.rs) and must not return"
+    )
+
+
+def test_no_python_test_complete_preflight():
+    """Tombstone: ported to Rust in PR #872. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_complete_preflight.py").exists(), (
+        "tests/test_complete_preflight.py was ported to Rust "
+        "(src/complete_preflight.rs #[cfg(test)]) and must not return"
+    )
+
+
+def test_no_python_complete_merge():
+    """Tombstone: ported to Rust in PR #872. Must not return."""
+    assert not (LIB_DIR / "complete-merge.py").exists(), (
+        "lib/complete-merge.py was ported to Rust (src/complete_merge.rs) and must not return"
+    )
+
+
+def test_no_python_test_complete_merge():
+    """Tombstone: ported to Rust in PR #872. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_complete_merge.py").exists(), (
+        "tests/test_complete_merge.py was ported to Rust (src/complete_merge.rs #[cfg(test)]) and must not return"
+    )
+
+
+def test_no_python_complete_post_merge():
+    """Tombstone: ported to Rust in PR #872. Must not return."""
+    assert not (LIB_DIR / "complete-post-merge.py").exists(), (
+        "lib/complete-post-merge.py was ported to Rust (src/complete_post_merge.rs) and must not return"
+    )
+
+
+def test_no_python_test_complete_post_merge():
+    """Tombstone: ported to Rust in PR #872. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_complete_post_merge.py").exists(), (
+        "tests/test_complete_post_merge.py was ported to Rust "
+        "(src/complete_post_merge.rs #[cfg(test)]) and must not return"
+    )
+
+
 def test_checksum_version_invariant():
     """Validate checksum functions exist and the upgrade mechanism is documented.
 
@@ -766,4 +810,33 @@ def test_no_python_test_format_complete_summary():
     """Tombstone: ported to Rust in PR #851. Must not return."""
     assert not (REPO_ROOT / "tests" / "test_format_complete_summary.py").exists(), (
         "test_format_complete_summary.py was ported to Rust — tests are in src/format_complete_summary.rs"
+    )
+
+
+# --- Tombstone: lib/ci.py and lib/update-deps.py ported to Rust (PR #874) ---
+
+
+def test_no_python_ci():
+    """Tombstone: ported to Rust in PR #874. Must not return."""
+    assert not (LIB_DIR / "ci.py").exists(), "ci.py was ported to Rust — use flow-rs ci (src/ci.rs)"
+
+
+def test_no_python_test_ci():
+    """Tombstone: ported to Rust in PR #874. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_ci.py").exists(), (
+        "tests/test_ci.py must not exist — tests ported to Rust in src/ci.rs"
+    )
+
+
+def test_no_python_update_deps():
+    """Tombstone: ported to Rust in PR #874. Must not return."""
+    assert not (LIB_DIR / "update-deps.py").exists(), (
+        "update-deps.py was ported to Rust — use flow-rs update-deps (src/update_deps.rs)"
+    )
+
+
+def test_no_python_test_update_deps():
+    """Tombstone: ported to Rust in PR #874. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_update_deps.py").exists(), (
+        "tests/test_update_deps.py must not exist — tests ported to Rust in src/update_deps.rs"
     )

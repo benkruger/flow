@@ -8,11 +8,15 @@ use flow_rs::analyze_issues;
 use flow_rs::append_note;
 use flow_rs::auto_close_parent;
 use flow_rs::check_freshness;
-use flow_rs::cleanup;
 use flow_rs::check_phase::check_phase;
+use flow_rs::ci;
+use flow_rs::cleanup;
 use flow_rs::close_issue;
 use flow_rs::close_issues;
 use flow_rs::commands;
+use flow_rs::complete_merge;
+use flow_rs::complete_post_merge;
+use flow_rs::complete_preflight;
 use flow_rs::create_dependencies;
 use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
@@ -34,6 +38,7 @@ use flow_rs::output::json_error;
 use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
 use flow_rs::phase_transition::{phase_complete, phase_enter};
 use flow_rs::start_setup;
+use flow_rs::update_deps;
 use flow_rs::upgrade_check;
 use flow_rs::utils::{detect_dev_mode, read_version};
 use flow_rs::write_rule;
@@ -82,6 +87,13 @@ enum Commands {
         reason: Option<String>,
     },
 
+    /// Run bin/ci with dirty-check optimization, retry logic, and CI sentinel management.
+    Ci(ci::Args),
+
+    /// Run bin/dependencies with a configurable timeout and report git status changes.
+    #[command(name = "update-deps")]
+    UpdateDeps,
+
     /// Analyze open GitHub issues for the flow-issues skill.
     #[command(name = "analyze-issues")]
     AnalyzeIssues(analyze_issues::Args),
@@ -121,6 +133,18 @@ enum Commands {
     /// Auto-close parent issue and milestone when all children are done.
     #[command(name = "auto-close-parent")]
     AutoCloseParent(auto_close_parent::Args),
+
+    /// FLOW Complete phase preflight (state detection, PR check, merge main).
+    #[command(name = "complete-preflight")]
+    CompletePreflight(complete_preflight::Args),
+
+    /// FLOW Complete phase merge (freshness check + squash merge).
+    #[command(name = "complete-merge")]
+    CompleteMerge(complete_merge::Args),
+
+    /// FLOW Complete phase post-merge operations.
+    #[command(name = "complete-post-merge")]
+    CompletePostMerge(complete_post_merge::Args),
 
     /// Set timestamp and value fields in the FLOW state file.
     #[command(name = "set-timestamp")]
@@ -324,6 +348,8 @@ fn main() {
                 reason.as_deref(),
             );
         }
+        Some(Commands::Ci(args)) => ci::run(args),
+        Some(Commands::UpdateDeps) => update_deps::run(),
         Some(Commands::AnalyzeIssues(args)) => analyze_issues::run(args),
         Some(Commands::AppendNote(args)) => append_note::run(args),
         Some(Commands::Cleanup(args)) => cleanup::run(args),
@@ -337,6 +363,9 @@ fn main() {
         Some(Commands::CreateMilestone(args)) => create_milestone::run(args),
         Some(Commands::CreateDependencies(args)) => create_dependencies::run(args),
         Some(Commands::AutoCloseParent(args)) => auto_close_parent::run(args),
+        Some(Commands::CompletePreflight(args)) => complete_preflight::run(args),
+        Some(Commands::CompleteMerge(args)) => complete_merge::run(args),
+        Some(Commands::CompletePostMerge(args)) => complete_post_merge::run(args),
         Some(Commands::SetTimestamp { set_args, branch }) => {
             commands::set_timestamp::run(set_args, branch);
         }
