@@ -282,6 +282,16 @@ sessions — can be wrong about what a script does internally. A single
 grep of the script for the relevant field or function catches false
 assumptions before they become bugs in the implementation.
 
+## Verify Command References in Issues
+
+When an issue body or plan references a `/flow:<skill-name>` command as
+a user directive (e.g. "the user should run `/flow:flow-continue`"),
+verify `skills/<skill-name>/` exists in the repo during the Plan phase.
+Prior-session issue authors — including Claude — can reference skills
+that have since been removed. A single glob for the skill directory
+catches stale references before they become error messages that direct
+users to non-existent commands.
+
 ## Config Chain Integrity
 
 The autonomy config chain is: prime presets → `.flow.json` → state file → skill reads.
