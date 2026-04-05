@@ -85,45 +85,6 @@ with no fallback. Locate `bin/flow` by traversing up from
 `current_exe()` (3 levels: binary → release → target → root)
 then into `bin/flow`.
 
-## Subprocess Timeout Parity
-
-When Python uses `subprocess.run(timeout=N)`, the Rust port must
-preserve the same timeout. Omitting a timeout changes failure
-behavior — the Python call raises `TimeoutExpired` after N seconds,
-but the Rust call blocks indefinitely.
-
-Never use `try_wait()` polling followed by `wait_with_output()`.
-The `try_wait()` call reaps the child process on success, and
-`wait_with_output()` internally calls `wait()` again — which
-fails with ECHILD on an already-reaped process, silently
-discarding all stdout data. Additionally, if stdout is piped
-but never drained, the child process blocks when the pipe buffer
-fills (typically 64KB), causing `try_wait()` to never return and
-the timeout to fire on every invocation with large output.
-
-The correct pattern: take `child.stdout` before the poll loop,
-drain it in a spawned thread, poll `try_wait()` for exit status,
-then join the reader thread to get the buffered output.
-
-### Reference Implementation Verification
-
-When writing a new subprocess runner by modeling it on an existing
-module, verify the reference module complies with this section
-BEFORE copying its shape. Several pre-existing modules
-(`src/finalize_commit.rs`, `src/notify_slack.rs`,
-`src/close_issue.rs`, `src/close_issues.rs`, `src/issue.rs`,
-`src/start_setup.rs`, `src/cleanup.rs`) were ported before this
-rule was codified and use the prohibited `try_wait()` +
-`wait_with_output()` pattern. The compliant reference is
-`src/analyze_issues.rs` lines 472-518, which uses the thread-drain
-pattern. Grep the candidate module for `wait_with_output` before
-adopting its runner as a template — presence of that call means
-the module is non-compliant and unsafe to copy.
-
-The broader principle applies to any rule in this file: a reference
-implementation predating the rule cannot be trusted. Verify before
-copying.
-
 ## Python Bridge Pattern
 
 When a ported script still has Python callers that import its
@@ -348,9 +309,6 @@ For every function the plan calls out by name, verify:
   the filesystem, identify whether it called `current_branch()` or
   `resolve_branch()`. Pick the matching Rust equivalent. In cwd-scoped
   contexts, pick `current_branch_in` or `resolve_branch_in` to match.
-- **Subprocess timeout:** If the Python original passes `timeout=N`
-  to `subprocess.run` or `proc.wait`, the Rust port must preserve
-  the same timeout via `try_wait()` polling against a deadline.
 - **Subprocess cwd:** If the Python original passes `cwd=path` to
   `subprocess.run`, the Rust port must call
   `Command::current_dir(path)` on every subprocess.
@@ -363,9 +321,9 @@ For every function the plan calls out by name, verify:
   "Test-Module Subprocess Stdio" above.
 
 Add a concrete task to the plan: "Cross-check rust-port-parity.md
-sections Branch-Resolution Function Parity, Subprocess Timeout
-Parity, Subprocess CWD Parity, Upfront Guards, and Test-Module
-Subprocess Stdio against the Python source." The check is one read
+sections Branch-Resolution Function Parity, Subprocess CWD Parity,
+Upfront Guards, and Test-Module Subprocess Stdio against the Python
+source." The check is one read
 of the Python source plus one read of this document — it takes
 minutes and catches the exact class of bug the review agents found.
 
