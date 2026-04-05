@@ -21,7 +21,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use clap::Parser;
@@ -44,6 +44,14 @@ pub struct Args {
     /// Set FLOW_SIMULATE_BRANCH in the child env and mix it into the snapshot hash
     #[arg(long = "simulate-branch")]
     pub simulate_branch: Option<String>,
+}
+
+/// Build the sentinel file path for a given branch: `<root>/.flow-states/<branch>-ci-passed`.
+///
+/// Centralizes the naming convention so [`run_once`], [`run_with_retry`], and the
+/// inline tests all agree on where sentinels live.
+fn sentinel_path(root: &Path, branch: &str) -> PathBuf {
+    root.join(".flow-states").join(format!("{}-ci-passed", branch))
 }
 
 /// Run a git command in `cwd`, returning its stdout as a lossy UTF-8 string.
@@ -153,10 +161,7 @@ pub fn run_once(
         );
     }
 
-    let sentinel = branch.map(|b| {
-        root.join(".flow-states")
-            .join(format!("{}-ci-passed", b))
-    });
+    let sentinel = branch.map(|b| sentinel_path(root, b));
 
     let snapshot = tree_snapshot(cwd, simulate_branch);
 
@@ -239,10 +244,7 @@ pub fn run_with_retry(
     max_attempts: u32,
     simulate_branch: Option<&str>,
 ) -> (Value, i32) {
-    let sentinel = branch.map(|b| {
-        root.join(".flow-states")
-            .join(format!("{}-ci-passed", b))
-    });
+    let sentinel = branch.map(|b| sentinel_path(root, b));
 
     let mut first_failure_output: Option<String> = None;
 
@@ -579,10 +581,8 @@ mod tests {
         }
     }
 
-    fn sentinel_path(f: &CiFixture) -> std::path::PathBuf {
-        f.path
-            .join(".flow-states")
-            .join(format!("{}-ci-passed", f.branch))
+    fn fixture_sentinel(f: &CiFixture) -> std::path::PathBuf {
+        sentinel_path(&f.path, &f.branch)
     }
 
     // --- run_once() tests ---
@@ -594,13 +594,13 @@ mod tests {
         assert_eq!(code, 0);
         assert_eq!(out["status"], "ok");
         assert_eq!(out["skipped"], false);
-        assert!(sentinel_path(&f).exists());
+        assert!(fixture_sentinel(&f).exists());
     }
 
     #[test]
     fn run_once_stale_sentinel_does_not_skip() {
         let f = make_ci_project();
-        let sentinel = sentinel_path(&f);
+        let sentinel = fixture_sentinel(&f);
         fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
         fs::write(&sentinel, "stale-snapshot-content").unwrap();
 
@@ -689,7 +689,7 @@ mod tests {
     #[test]
     fn run_once_failure_exits_1_and_removes_sentinel() {
         let f = make_ci_project();
-        let sentinel = sentinel_path(&f);
+        let sentinel = fixture_sentinel(&f);
         fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
         fs::write(&sentinel, "pre-existing-content").unwrap();
 
@@ -710,7 +710,7 @@ mod tests {
         let (out, code) = run_once(&f.path, &f.path, &f.bin_ci, Some(&f.branch), false, None);
         assert_eq!(code, 1);
         assert_eq!(out["status"], "error");
-        assert!(!sentinel_path(&f).exists());
+        assert!(!fixture_sentinel(&f).exists());
     }
 
     #[test]
@@ -730,7 +730,7 @@ mod tests {
         let (out, code) = run_once(&f.path, &f.path, &f.bin_ci, Some(&f.branch), true, None);
         assert_eq!(code, 0);
         assert_eq!(out["skipped"], false);
-        assert!(sentinel_path(&f).exists());
+        assert!(fixture_sentinel(&f).exists());
     }
 
     #[test]
@@ -924,7 +924,7 @@ mod tests {
     #[test]
     fn run_once_simulate_branch_different_snapshot() {
         let f = make_ci_project();
-        let sentinel = sentinel_path(&f);
+        let sentinel = fixture_sentinel(&f);
 
         let (_first, _) = run_once(&f.path, &f.path, &f.bin_ci, Some(&f.branch), false, None);
         let plain_hash = fs::read_to_string(&sentinel).unwrap();
@@ -1024,7 +1024,7 @@ exit 0
         assert_eq!(out["status"], "ok");
         assert_eq!(out["attempts"], 1);
         assert!(out.get("flaky").is_none());
-        assert!(sentinel_path(&f).exists());
+        assert!(fixture_sentinel(&f).exists());
     }
 
     #[test]
@@ -1067,7 +1067,7 @@ exit 0
         let f = make_ci_project();
         // Create a sentinel from a passing run
         let (_first, _) = run_once(&f.path, &f.path, &f.bin_ci, Some(&f.branch), false, None);
-        assert!(sentinel_path(&f).exists());
+        assert!(fixture_sentinel(&f).exists());
 
         // Swap to failing bin/ci
         fs::write(
@@ -1079,7 +1079,7 @@ exit 0
         let (out, code) = run_with_retry(&f.path, &f.path, &f.bin_ci, Some(&f.branch), 2, None);
         assert_eq!(code, 1);
         assert_eq!(out["consistent"], true);
-        assert!(!sentinel_path(&f).exists());
+        assert!(!fixture_sentinel(&f).exists());
     }
 
     #[test]
@@ -1120,7 +1120,7 @@ exit 0
         assert_eq!(out["skipped"], true);
         assert_eq!(out["reason"], "recursion guard");
         // No sentinel should be created — CI never ran
-        assert!(!sentinel_path(&f).exists());
+        assert!(!fixture_sentinel(&f).exists());
     }
 
     #[test]
@@ -1177,7 +1177,7 @@ exit 0
         assert_eq!(code, 0);
         // The fixture's branch is "main" and that's what current_branch_in
         // should return from the cwd. Sentinel should land at main-ci-passed.
-        assert!(sentinel_path(&f).exists());
+        assert!(fixture_sentinel(&f).exists());
     }
 
     #[test]
