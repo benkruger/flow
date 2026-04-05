@@ -152,6 +152,53 @@ fn has_redirect(command: &str) -> bool {
     false
 }
 
+/// Determine whether a command should be blocked from run_in_background.
+///
+/// `bin/flow ci` and `bin/ci` are always blocked — CI is a gate in every
+/// mode (FLOW phase, Maintainer, Standalone). Other commands are only
+/// blocked from background execution during an active FLOW phase.
+///
+/// Returns `Some(error_message)` if the command should be blocked,
+/// `None` if the command is allowed to run in the background.
+pub fn should_block_background(command: &str, flow_active: bool) -> Option<String> {
+    if is_ci_command(command) {
+        return Some(
+            "BLOCKED: bin/flow ci must never run in the background. \
+             CI is a gate — it must complete before any commit or phase \
+             transition proceeds. Run it in the foreground."
+                .to_string(),
+        );
+    }
+    if flow_active {
+        return Some(
+            "BLOCKED: run_in_background is not allowed during a FLOW phase. \
+             Use parallel foreground calls instead."
+                .to_string(),
+        );
+    }
+    None
+}
+
+/// Check whether a command invokes FLOW CI (bin/flow ci or bin/ci).
+///
+/// Matches by tokenizing on whitespace, so path prefixes and trailing
+/// arguments are handled. Rejects substring-containing commands like
+/// `npm run ci` (first token is `npm`) and `git commit`.
+fn is_ci_command(command: &str) -> bool {
+    let mut tokens = command.split_whitespace();
+    let first = match tokens.next() {
+        Some(t) => t,
+        None => return false,
+    };
+    if first == "bin/ci" || first.ends_with("/bin/ci") {
+        return true;
+    }
+    if first == "bin/flow" || first.ends_with("/bin/flow") {
+        return tokens.next() == Some("ci");
+    }
+    false
+}
+
 /// Run the validate-pretool hook (entry point from CLI).
 pub fn run() {
     let hook_input = match read_hook_input() {
@@ -178,14 +225,15 @@ pub fn run() {
         .cloned()
         .unwrap_or(Value::Object(Default::default()));
 
-    // Pre-validation: Block run_in_background during active FLOW phases
-    if flow_active {
-        if let Some(bg) = tool_input.get("run_in_background") {
-            if bg.as_bool() == Some(true) {
-                eprintln!(
-                    "BLOCKED: run_in_background is not allowed during a FLOW phase. \
-                     Use parallel foreground calls instead."
-                );
+    // Pre-validation: CI is always a gate; other commands only blocked in FLOW phases
+    if let Some(bg) = tool_input.get("run_in_background") {
+        if bg.as_bool() == Some(true) {
+            let bg_command = tool_input
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if let Some(msg) = should_block_background(bg_command, flow_active) {
+                eprintln!("{}", msg);
                 std::process::exit(2);
             }
         }
@@ -688,5 +736,53 @@ mod tests {
         let (allowed, msg) = validate("git log --format=>%s", None, true);
         assert!(allowed);
         assert!(msg.is_empty());
+    }
+
+    // --- run_in_background blocking ---
+
+    #[test]
+    fn test_blocks_background_bin_flow_ci_outside_flow() {
+        let msg = should_block_background("bin/flow ci", false);
+        assert!(msg.is_some());
+        assert!(msg.unwrap().contains("bin/flow ci"));
+    }
+
+    #[test]
+    fn test_blocks_background_bin_flow_ci_with_args_outside_flow() {
+        let msg = should_block_background("bin/flow ci --retry 3", false);
+        assert!(msg.is_some());
+    }
+
+    #[test]
+    fn test_blocks_background_bin_ci_outside_flow() {
+        let msg = should_block_background("bin/ci", false);
+        assert!(msg.is_some());
+    }
+
+    #[test]
+    fn test_blocks_background_absolute_bin_flow_ci_outside_flow() {
+        let msg = should_block_background("/Users/ben/code/flow/bin/flow ci", false);
+        assert!(msg.is_some());
+    }
+
+    #[test]
+    fn test_blocks_background_any_command_inside_flow() {
+        let msg = should_block_background("echo hi", true);
+        assert!(msg.is_some());
+        assert!(msg.unwrap().contains("FLOW phase"));
+    }
+
+    #[test]
+    fn test_allows_background_non_ci_outside_flow() {
+        let msg = should_block_background("echo hi", false);
+        assert!(msg.is_none());
+    }
+
+    #[test]
+    fn test_does_not_false_positive_on_commands_containing_ci() {
+        // "npm run ci" first token is "npm" — not a FLOW CI command
+        assert!(should_block_background("npm run ci", false).is_none());
+        // "git commit" has no relation to ci
+        assert!(should_block_background("git commit", false).is_none());
     }
 }
