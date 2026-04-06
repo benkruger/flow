@@ -12,6 +12,7 @@ pub mod close_issue;
 pub mod close_issues;
 pub mod commands;
 pub mod complete_fast;
+pub mod complete_finalize;
 pub mod complete_merge;
 pub mod complete_post_merge;
 pub mod complete_preflight;
