@@ -162,7 +162,7 @@ impl Formatter for PythonDefaultFormatter {
 
 /// Load framework-specific permissions from frameworks/<name>/permissions.json.
 /// Returns an empty vec if the file is missing (Python parity).
-fn load_framework_permissions(framework: &str, fw_dir: &Path) -> Vec<String> {
+pub fn load_framework_permissions(framework: &str, fw_dir: &Path) -> Vec<String> {
     let path = fw_dir.join(framework).join("permissions.json");
     if !path.exists() {
         return Vec::new();
