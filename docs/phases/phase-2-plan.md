@@ -15,8 +15,20 @@ ordered implementation plan with explicit dependency tracking.
 
 ## How It Works
 
-1. Claude reads the feature description and fetches any referenced
-   GitHub issues
+The phase starts with the `plan-extract` CLI command, which handles
+gate checks, phase entry, issue fetch, and fast-path detection in a
+single process call.
+
+**Fast path** — for issues filed by `/flow:flow-create-issue` that have
+the "decomposed" label and an `## Implementation Plan` section,
+`plan-extract` completes the entire phase in one call: extracts the
+plan, promotes headings, writes DAG and plan files, updates state,
+renders the PR body, and completes the phase. Steps 2–6 below are
+skipped.
+
+**Standard path** — when the fast path does not apply:
+
+1. `plan-extract` enters the phase and returns the issue context
 2. Claude invokes `/decompose:decompose` for structured DAG analysis
    (nodes, dependencies, topological ordering)
 3. The DAG output is stored to `.flow-states/<branch>-dag.md`

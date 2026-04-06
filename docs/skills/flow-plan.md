@@ -19,26 +19,39 @@ an ordered implementation plan with a dependency graph.
 
 ## What It Does
 
-1. Reads the feature description from the `prompt` field in the state file
-   (the full text passed to `/flow-start`)
-2. Fetches referenced GitHub issues (`#N` patterns in the prompt) and
-   checks for the "decomposed" label
-3. If a referenced issue has the "decomposed" label, skips decompose
-   and uses the issue body as a head start (see Pre-Decomposed Issues
-   below). Otherwise, invokes `/decompose:decompose` for structured
-   DAG decomposition (configurable via `dag` mode — see below), then
-   self-invokes with `--continue-step` to ensure continuation after
-   the turn boundary
-4. Explores the codebase to validate the DAG against reality
-5. Verifies script behavior assertions from issue bodies by reading the
-   relevant source code — catches false assumptions before they become
-   bugs in the plan
-6. Validates that file targets are inside the repo working tree — notes
-   out-of-repo paths in the Risks section, defaulting to repo-local
-   equivalents when the prompt contains repo-related keywords
-7. Writes the plan file with a Dependency Graph section and ordered tasks
-8. Renders the full plan content inline in the conversation for review
-9. Stores the plan file path in state and transitions to Code
+The Plan phase has two paths depending on whether the referenced issue
+was pre-decomposed with an Implementation Plan section.
+
+### Fast path (pre-decomposed issues)
+
+When the prompt references an issue with the "decomposed" label and an
+`## Implementation Plan` section, the `plan-extract` Rust subcommand
+completes the entire phase in a single CLI call:
+
+1. Checks the phase gate (Start must be complete) and enters the phase
+2. Fetches the first referenced issue via `gh issue view`
+3. Detects the "decomposed" label and `## Implementation Plan` section
+4. Writes the DAG file and extracts the plan with heading promotion
+5. Updates state, logs, renders the PR body, and completes the phase
+6. Returns the plan content to the skill for inline rendering
+
+### Standard path (non-decomposed issues)
+
+When no pre-decomposed plan is available, the model drives the full
+planning process:
+
+1. `plan-extract` enters the phase, fetches issue context, and returns
+   `path: "standard"` with the issue body and DAG mode
+2. The skill invokes `/decompose:decompose` for structured DAG analysis
+   (configurable via `dag` mode — see below), then self-invokes with
+   `--continue-step` to continue after the turn boundary
+3. Claude explores the codebase to validate the DAG against reality
+4. Claude verifies script behavior assertions from issue bodies by
+   reading the relevant source code
+5. Claude validates that file targets are inside the repo working tree
+6. Claude writes the plan file with a Dependency Graph and ordered tasks
+7. Renders the full plan content inline in the conversation for review
+8. Stores the plan file path in state and transitions to Code
 
 ---
 
@@ -73,16 +86,15 @@ Configurable via `.flow.json` under `skills.flow-plan.dag`:
 ### Pre-Decomposed Issues
 
 When a referenced issue has the "decomposed" label (applied by
-`/create-issue`), the Plan phase skips the decompose plugin invocation
-entirely. The issue body — which contains verified file paths, acceptance
-criteria, scope boundaries, and architectural context from a prior
-decompose run — is written to `.flow-states/<branch>-dag.md` as a
-pre-existing analysis and used as a head start for plan writing. This
-applies regardless of the configured DAG mode.
+`/create-issue`) and contains an `## Implementation Plan` section, the
+`plan-extract` command handles the entire phase in one call. It extracts
+the plan section, promotes headings (`###` → `##`, `####` → `###`),
+writes DAG and plan files, updates state, renders the PR body, and
+completes the phase — returning `path: "extracted"` to the skill.
 
-No self-invocation or continuation flags are needed when skipping
-decompose — execution proceeds directly to codebase exploration and
-plan writing in the same turn.
+Decomposed issues without an `## Implementation Plan` section (older
+format) fall back to the standard path, using the issue body as a head
+start for model-driven plan writing.
 
 ---
 
@@ -102,13 +114,16 @@ The plan file lives at `.flow-states/<branch>-plan.md` and includes:
 
 ## Resuming
 
-The Resume Check handles both session restarts and mid-session
-self-invocation (after decompose returns). It checks the state file:
+The `plan-extract` command handles the `files.plan` resume path
+internally — if the plan already exists, it enters and completes the
+phase in one call, returning `path: "resumed"`.
+
+For mid-session self-invocation (after decompose returns), the skill's
+Resume Check reads the state file:
 
 - `files.dag` set, `files.plan` null — DAG was produced, skip to plan
   writing (triggered by self-invocation or session restart)
-- `files.plan` set — plan was written, complete the phase
-- Both null — restart from Step 1
+- Both null — proceed to Step 2 using issue context from `plan-extract`
 
 ---
 
