@@ -36,6 +36,7 @@ pub mod phase_config;
 pub mod phase_transition;
 pub mod prime_check;
 pub mod prime_project;
+pub mod prime_setup;
 pub mod promote_permissions;
 pub mod start_setup;
 pub mod state;
