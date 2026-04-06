@@ -15,7 +15,7 @@ CI would have caught land on main.
 This applies in every mode:
 
 - FLOW phases (Code, Code Review)
-- Maintainer mode (`/flow:flow-commit` on main)
+- FLOW-enabled projects (`/flow:flow-commit` with `.flow.json` — runs CI before every commit)
 - Standalone mode (direct CI runs)
 
 ## Enforcement

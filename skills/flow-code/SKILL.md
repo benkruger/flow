@@ -390,7 +390,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invok
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
-If commit=auto, use `/flow:flow-commit --auto`. Otherwise, use `/flow:flow-commit`.
+Invoke `/flow:flow-commit`.
 
 The commit message subject should reference the task:
 

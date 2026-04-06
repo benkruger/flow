@@ -74,10 +74,10 @@ Store the answer as `framework` (lowercase name from the JSON).
 
 FLOW has two independent axes for skills that support them:
 
-- **Commit** — how `/flow:flow-commit` is invoked during phase work (auto = skip diff approval, manual = require approval). Also controls per-task approval in Code.
+- **Commit** — controls per-task review in phase skills (auto = skip review prompts, manual = require explicit approval before each commit).
 - **Continue** — whether to auto-advance to the next phase or prompt first.
 
-Phase skills that commit (code, code-review, learning) have both axes. Phase skills that don't commit (start) only have continue. Utility skills (complete, abort) have a single mode value. The `/flow:flow-commit` skill is not configurable — it defaults to auto and can be overridden with `--manual`.
+Phase skills that commit (code, code-review, learning) have both axes. Phase skills that don't commit (start) only have continue. Utility skills (complete, abort) have a single mode value.
 
 Ask the user how much autonomy FLOW should have using AskUserQuestion:
 
@@ -136,7 +136,7 @@ For **code** (commit and continue), ask two AskUserQuestions:
 
 First question:
 
-> "Commit mode for /flow:flow-code? (controls diff approval and per-task approval)"
+> "Commit mode for /flow:flow-code? (controls per-task review before each commit)"
 >
 > - **Manual (Recommended)** — "Require explicit approval"
 > - **Auto** — "Skip approval prompts"
@@ -152,7 +152,7 @@ For **code-review** (commit and continue), ask two AskUserQuestions:
 
 First question:
 
-> "Commit mode for /flow:flow-code-review? (controls diff approval and per-task approval)"
+> "Commit mode for /flow:flow-code-review? (controls per-task review before each commit)"
 >
 > - **Auto (Recommended)** — "Skip approval prompts"
 > - **Manual** — "Require explicit approval"
@@ -168,7 +168,7 @@ For **learning** (commit and continue), ask two AskUserQuestions:
 
 First question:
 
-> "Commit mode for /flow:flow-learn? (controls diff approval and per-task approval)"
+> "Commit mode for /flow:flow-learn? (controls per-task review before each commit)"
 >
 > - **Auto (Recommended)** — "Skip approval prompts"
 > - **Manual** — "Require explicit approval"

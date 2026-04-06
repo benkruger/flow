@@ -67,7 +67,7 @@ Use the actual values from `.flow.json`. The table above is just an example.
 
 If `.flow.json` has no `skills` key, show "No skills configured — using built-in defaults" instead of the table.
 
-Tell the user they can override any setting at invocation time with `--auto` or `--manual` flags.
+Tell the user that phase skills can be overridden at invocation time with flags controlling autonomy.
 
 ## Hard Rules
 

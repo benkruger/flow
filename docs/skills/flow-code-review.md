@@ -68,7 +68,7 @@ Each finding is classified during triage:
 Mode is configurable via `.flow.json` (default: manual). Two axes are
 configurable independently:
 
-- **commit** — `"auto"` or `"manual"` (default). Controls diff approval.
+- **commit** — `"auto"` or `"manual"` (default). Controls per-task review before committing.
 - **continue** — `"auto"` or `"manual"` (default). Controls phase advancement.
 
 In auto mode, findings are auto-fixed and the phase transition advances to
