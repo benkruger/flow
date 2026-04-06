@@ -42,6 +42,7 @@ use flow_rs::prime_check;
 use flow_rs::prime_project;
 use flow_rs::prime_setup;
 use flow_rs::promote_permissions;
+use flow_rs::start_init;
 use flow_rs::start_setup;
 use flow_rs::update_deps;
 use flow_rs::upgrade_check;
@@ -261,6 +262,10 @@ enum Commands {
         subcommand: Vec<String>,
     },
 
+    /// Consolidated start initialization (lock + prime + upgrade + init-state + labels)
+    #[command(name = "start-init")]
+    StartInit(start_init::Args),
+
     /// FLOW Start phase setup (worktree, PR, state file)
     #[command(name = "start-setup")]
     StartSetup(start_setup::Args),
@@ -456,6 +461,9 @@ fn main() {
                 subcommand
             };
             commands::start_step::run(step, &branch, subcommand);
+        }
+        Some(Commands::StartInit(args)) => {
+            start_init::run(args);
         }
         Some(Commands::StartSetup(args)) => {
             start_setup::run(args);
