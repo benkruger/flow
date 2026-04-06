@@ -19,11 +19,14 @@ use std::path::PathBuf;
 use clap::Parser;
 use serde_json::{json, Value};
 
+use std::process::Command;
+
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
 use crate::output::json_error;
 use crate::phase_config::load_phase_config;
 use crate::phase_transition::{phase_complete, phase_enter};
+use crate::utils::extract_issue_numbers;
 
 /// Extract and fast-track pre-decomposed plans, or prepare state for model-driven planning.
 #[derive(Parser, Debug)]
@@ -112,6 +115,62 @@ fn load_frozen_config(root: &PathBuf, branch: &str) -> (Option<Vec<String>>, Opt
     let frozen_order = frozen_config.as_ref().map(|c| c.order.clone());
     let frozen_commands = frozen_config.as_ref().map(|c| c.commands.clone());
     (frozen_order, frozen_commands)
+}
+
+/// Fetch a GitHub issue via `gh issue view` and return the parsed JSON.
+///
+/// Returns None if gh is not available, the command fails, or times out.
+fn fetch_issue(issue_number: i64) -> Option<Value> {
+    let output = Command::new("gh")
+        .args([
+            "issue",
+            "view",
+            &issue_number.to_string(),
+            "--json",
+            "number,title,body,labels",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .ok()?
+        .wait_with_output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    serde_json::from_slice(&output.stdout).ok()
+}
+
+/// Check if an issue has the "decomposed" label (case-insensitive).
+fn is_decomposed(issue: &Value) -> bool {
+    issue
+        .get("labels")
+        .and_then(|l| l.as_array())
+        .map(|labels| {
+            labels.iter().any(|label| {
+                label
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .map(|n| n.eq_ignore_ascii_case("decomposed"))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
+/// Read the DAG mode from the state file's skills config.
+///
+/// Returns "auto" if the key is missing or not a string.
+fn read_dag_mode(state: &Value) -> String {
+    state
+        .get("skills")
+        .and_then(|s| s.get("flow-plan"))
+        .and_then(|p| p.get("dag"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("auto")
+        .to_string()
 }
 
 /// Run phase_complete via mutate_state and return the result JSON.
@@ -217,17 +276,67 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     })
     .map_err(|e| format!("Failed to enter phase: {}", e))?;
 
-    // TODO: Tasks 3-5 continue from here (issue fetch, extraction, completion)
-    // For now, return standard path so the model takes over
-    let pr = args
-        .pr
-        .or_else(|| state.get("pr_number").and_then(|v| v.as_i64()));
+    // --- Issue fetch + decomposed detection ---
+    let prompt = state
+        .get("prompt")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
 
+    let issue_numbers = extract_issue_numbers(prompt);
+    let dag_mode = read_dag_mode(&state);
+
+    // No issue references → standard path
+    if issue_numbers.is_empty() {
+        return Ok(json!({
+            "status": "ok",
+            "path": "standard",
+            "issue_body": null,
+            "issue_number": null,
+            "dag_mode": dag_mode,
+        }));
+    }
+
+    // Fetch the first referenced issue
+    let issue_number = issue_numbers[0];
+    let issue_data = match fetch_issue(issue_number) {
+        Some(data) => data,
+        None => {
+            // gh failed — return standard path with no issue body
+            return Ok(json!({
+                "status": "ok",
+                "path": "standard",
+                "issue_body": null,
+                "issue_number": issue_number,
+                "dag_mode": dag_mode,
+            }));
+        }
+    };
+
+    let issue_body = issue_data
+        .get("body")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    // Not decomposed → standard path with issue body
+    if !is_decomposed(&issue_data) {
+        return Ok(json!({
+            "status": "ok",
+            "path": "standard",
+            "issue_body": issue_body,
+            "issue_number": issue_number,
+            "dag_mode": dag_mode,
+        }));
+    }
+
+    // --- Decomposed issue detected ---
+    // TODO: Tasks 4-5 implement extraction, state updates, logging, PR render, phase complete
+    // For now, return standard path so the model handles older-format decomposed issues
     Ok(json!({
         "status": "ok",
         "path": "standard",
-        "issue_body": null,
-        "issue_number": null,
-        "dag_mode": "auto",
+        "issue_body": issue_body,
+        "issue_number": issue_number,
+        "dag_mode": dag_mode,
     }))
 }
