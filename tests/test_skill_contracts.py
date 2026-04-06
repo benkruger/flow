@@ -2578,20 +2578,20 @@ def test_complete_post_merge_references_pr_sections():
 
 
 def test_complete_merged_path_includes_post_merge():
-    """Complete Step 1 MERGED path must route through Step 6 (post-merge) before cleanup."""
+    """Complete Step 1 merged/already_merged path must route through Step 6 (finalize) before Done."""
     content = _read_skill("flow-complete")
     assert "Step 6" in content, "flow-complete/SKILL.md must reference Step 6"
     assert "Step 7" in content, "flow-complete/SKILL.md must reference Step 7"
-    # The MERGED path instruction must mention Step 6
+    # The already_merged path instruction must mention Step 6
     # to ensure post-merge runs before cleanup
-    merged_idx = content.find("MERGED")
-    assert merged_idx != -1, "flow-complete/SKILL.md must contain MERGED path handling"
-    # Find the boundary after the MERGED handling
-    next_status = content.find('"merge": "clean"', merged_idx)
-    assert next_status > merged_idx, "flow-complete/SKILL.md must have clean/merged path after MERGED path"
-    merged_section = content[merged_idx:next_status]
+    merged_idx = content.find("already_merged")
+    assert merged_idx != -1, "flow-complete/SKILL.md must contain already_merged path handling"
+    # Find the boundary after the already_merged handling — the confirm path
+    next_path = content.find('"path": "confirm"', merged_idx)
+    assert next_path > merged_idx, "flow-complete/SKILL.md must have confirm path after already_merged path"
+    merged_section = content[merged_idx:next_path]
     assert "Step 6" in merged_section, (
-        "flow-complete/SKILL.md MERGED path must route through Step 6 (post-merge) before proceeding to cleanup"
+        "flow-complete/SKILL.md already_merged path must route through Step 6 (finalize) before proceeding"
     )
 
 
@@ -2703,6 +2703,33 @@ def test_complete_no_steps_total_in_skill():
     assert "complete_steps_total=" not in content, (
         "flow-complete/SKILL.md must not contain complete_steps_total= — "
         "the preflight script sets this via mutate_state"
+    )
+
+
+def test_complete_no_simulate_branch():
+    """Tombstone: --simulate-branch removed from flow-complete in PR #902. Must not return."""
+    content = _read_skill("flow-complete")
+    assert "--simulate-branch" not in content, (
+        "flow-complete/SKILL.md must not contain --simulate-branch — "
+        "dropped in PR #902 because host-environment-leaking tests are now prevented by convention"
+    )
+
+
+def test_complete_uses_complete_fast():
+    """flow-complete must reference complete-fast for the consolidated fast path."""
+    content = _read_skill("flow-complete")
+    assert "complete-fast" in content, (
+        "flow-complete/SKILL.md must reference complete-fast — "
+        "the consolidated command that replaces SOFT-GATE + preflight + CI + merge"
+    )
+
+
+def test_complete_uses_complete_finalize():
+    """flow-complete must reference complete-finalize for the consolidated post-merge + cleanup."""
+    content = _read_skill("flow-complete")
+    assert "complete-finalize" in content, (
+        "flow-complete/SKILL.md must reference complete-finalize — "
+        "the consolidated command that replaces post-merge + cd + cleanup"
     )
 
 
