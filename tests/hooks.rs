@@ -94,6 +94,59 @@ fn run_hook(hook: &str, dir: &Path, branch: &str, stdin_data: &[u8]) -> Output {
     child.wait_with_output().unwrap()
 }
 
+/// Initialize a git repo in `dir` with an initial commit on `branch_name`.
+///
+/// Creates a deterministic HEAD so `git branch --show-current` returns
+/// `branch_name` inside the child process. Mirrors `init_git_repo` from
+/// `src/git.rs` tests but is self-contained in this integration test module.
+/// Uses `Command::output()` (not `.status()`) per rust-port-parity rules.
+fn setup_git_repo_on_branch(dir: &Path, branch_name: &str) {
+    let run = |args: &[&str]| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("git command failed");
+        assert!(output.status.success(), "git {:?} failed", args);
+    };
+    run(&["init", "--initial-branch", branch_name]);
+    run(&["config", "user.email", "test@test.com"]);
+    run(&["config", "user.name", "Test"]);
+    run(&["config", "commit.gpgsign", "false"]);
+    run(&["commit", "--allow-empty", "-m", "init"]);
+}
+
+/// Spawn `flow-rs hook <hook>` WITHOUT `FLOW_SIMULATE_BRANCH`, pipe
+/// `stdin_data` to the child, and return the captured `Output`.
+///
+/// Unlike [`run_hook`], this helper does NOT set `FLOW_SIMULATE_BRANCH`
+/// on the child process, and explicitly removes it from the inherited
+/// environment via `env_remove`. This forces the hook to resolve the
+/// branch via real git (`git branch --show-current`) and the
+/// `resolve_branch` state-file-scan fallback — exercising the exact
+/// production code path that `FLOW_SIMULATE_BRANCH` short-circuits.
+///
+/// Callers must use [`setup_git_repo_on_branch`] (not
+/// [`setup_git_and_state`]) so the fixture repo has a deterministic
+/// HEAD branch and an initial commit.
+fn run_hook_no_simulate(hook: &str, dir: &Path, stdin_data: &[u8]) -> Output {
+    let mut cmd = flow_rs();
+    cmd.arg("hook")
+        .arg(hook)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .current_dir(dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().unwrap();
+    {
+        let stdin = child.stdin.as_mut().unwrap();
+        stdin.write_all(stdin_data).unwrap();
+    }
+    child.wait_with_output().unwrap()
+}
+
 // ---------------------------------------------------------------------------
 // post-compact hook
 // ---------------------------------------------------------------------------
