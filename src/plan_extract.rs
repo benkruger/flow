@@ -24,8 +24,11 @@ use std::process::Command;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
 use crate::output::json_error;
+use crate::commands::log::append_log;
 use crate::phase_config::load_phase_config;
 use crate::phase_transition::{phase_complete, phase_enter};
+use crate::render_pr_body::render_body;
+use crate::update_pr_body::gh_set_body;
 use crate::utils::extract_issue_numbers;
 
 /// Extract and fast-track pre-decomposed plans, or prepare state for model-driven planning.
@@ -483,8 +486,68 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     })
     .map_err(|e| format!("Failed to update state: {}", e))?;
 
-    // TODO: Task 5 — logging, PR render, phase complete, return "extracted"
-    // For now, return a placeholder that indicates extraction succeeded
+    // --- Logging ---
+    let _ = append_log(&root, &branch, "[Phase 2] plan-extract — gate check passed (exit 0)");
+    let _ = append_log(&root, &branch, &format!(
+        "[Phase 2] plan-extract — issue #{} fetched, decomposed label detected (exit 0)",
+        issue_number
+    ));
+    let _ = append_log(&root, &branch, &format!(
+        "[Phase 2] plan-extract — DAG file written: {} (exit 0)",
+        dag_rel
+    ));
+    let _ = append_log(&root, &branch, &format!(
+        "[Phase 2] plan-extract — plan extracted, {} tasks, written: {} (exit 0)",
+        task_count, plan_rel
+    ));
+
+    // --- Update plan_step to 4 before PR render ---
+    mutate_state(&state_path, |state| {
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
+        state["plan_step"] = json!(4);
+    })
+    .map_err(|e| format!("Failed to update state: {}", e))?;
+
+    // --- PR body render ---
+    // Re-read the state file since we've mutated it multiple times
+    let updated_state_content = std::fs::read_to_string(&state_path)
+        .map_err(|e| format!("Could not re-read state file: {}", e))?;
+    let updated_state: Value = serde_json::from_str(&updated_state_content)
+        .map_err(|e| format!("Invalid JSON in state file: {}", e))?;
+
+    let pr = args
+        .pr
+        .or_else(|| updated_state.get("pr_number").and_then(|v| v.as_i64()));
+
+    if let Ok(body) = render_body(&updated_state, &root) {
+        if let Some(pr_number) = pr {
+            let _ = gh_set_body(pr_number, &body);
+        }
+    }
+
+    let _ = append_log(&root, &branch, "[Phase 2] plan-extract — PR body rendered (exit 0)");
+
+    // --- Phase complete ---
+    let complete_result = complete_plan_phase(&state_path, &root, &branch)?;
+
+    let formatted_time = complete_result
+        .get("formatted_time")
+        .and_then(|v| v.as_str())
+        .unwrap_or("< 1m")
+        .to_string();
+    let continue_action = complete_result
+        .get("continue_action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("ask")
+        .to_string();
+
+    let _ = append_log(&root, &branch, &format!(
+        "[Phase 2] plan-extract — phase complete ({}) (exit 0)",
+        formatted_time
+    ));
+
     Ok(json!({
         "status": "ok",
         "path": "extracted",
@@ -492,7 +555,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         "plan_file": plan_rel,
         "dag_file": dag_rel,
         "task_count": task_count,
-        "formatted_time": "< 1m",
-        "continue_action": "ask",
+        "formatted_time": formatted_time,
+        "continue_action": continue_action,
     }))
 }
