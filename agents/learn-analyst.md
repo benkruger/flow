@@ -1,9 +1,9 @@
 ---
 name: learn-analyst
 description: "Cognitively isolated compliance audit and process analysis. Receives diff, state file data, plan, and project rules. Produces findings categorized by the three Learn tenants: process gaps, rule compliance, and missing rules."
-model: sonnet
+model: haiku
 tools: Read, Glob, Grep, Bash
-maxTurns: 40
+maxTurns: 100
 ---
 
 # Learning Analysis

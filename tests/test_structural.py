@@ -405,9 +405,18 @@ def test_agent_frontmatter_only_supported_keys():
         )
 
 
-def test_all_agents_specify_model_sonnet():
-    """All sub-agents must specify model: sonnet to avoid inheriting Opus from the parent session."""
+def test_all_agents_specify_model():
+    """All sub-agents must specify an explicit model to avoid inheriting from the parent session."""
     import yaml
+
+    expected_models = {
+        "ci-fixer.md": "opus",
+        "adversarial.md": "opus",
+        "reviewer.md": "sonnet",
+        "pre-mortem.md": "sonnet",
+        "learn-analyst.md": "haiku",
+        "documentation.md": "haiku",
+    }
 
     for agent_file in sorted(AGENTS_DIR.glob("*.md")):
         content = agent_file.read_text()
@@ -417,11 +426,12 @@ def test_all_agents_specify_model_sonnet():
         assert isinstance(frontmatter, dict), f"{agent_file.name} frontmatter is not a dict"
         assert "model" in frontmatter, (
             f"{agent_file.name} missing 'model' key in frontmatter — "
-            f"agents without an explicit model inherit Opus from the parent session"
+            f"agents without an explicit model inherit from the parent session"
         )
-        assert frontmatter["model"] == "sonnet", (
-            f"{agent_file.name} has model={frontmatter['model']!r}, expected 'sonnet' — "
-            f"all sub-agents should run on Sonnet to reduce credit consumption"
+        expected = expected_models.get(agent_file.name)
+        assert expected is not None, f"{agent_file.name} not in expected_models map — add it when creating a new agent"
+        assert frontmatter["model"] == expected, (
+            f"{agent_file.name} has model={frontmatter['model']!r}, expected {expected!r}"
         )
 
 
