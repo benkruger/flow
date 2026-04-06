@@ -53,7 +53,6 @@ CI will fail if these are missing:
 - Changed phase behavior — update `docs/phases/phase-<N>-<name>.md` and the Description column in `docs/skills/index.md` to match
 - Changed architecture or capabilities — update `README.md` and `docs/index.html` if the change affects how FLOW is described to users
 
-
 ### Test requirements
 
 - New `lib/*.py` script — corresponding `tests/test_*.py` with 100% coverage
