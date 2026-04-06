@@ -38,6 +38,7 @@ use flow_rs::lock::mutate_state;
 use flow_rs::output::json_error;
 use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
 use flow_rs::phase_transition::{phase_complete, phase_enter};
+use flow_rs::plan_extract;
 use flow_rs::prime_check;
 use flow_rs::prime_project;
 use flow_rs::prime_setup;
@@ -318,6 +319,10 @@ enum Commands {
     #[command(name = "write-rule")]
     WriteRule(write_rule::Args),
 
+    /// Extract pre-decomposed plan or prepare state for model-driven planning.
+    #[command(name = "plan-extract")]
+    PlanExtract(plan_extract::Args),
+
     /// Render complete PR body from state
     #[command(name = "render-pr-body")]
     RenderPrBody(render_pr_body::Args),
@@ -518,6 +523,9 @@ fn main() {
         }
         Some(Commands::WriteRule(args)) => {
             write_rule::run(args);
+        }
+        Some(Commands::PlanExtract(args)) => {
+            plan_extract::run(args);
         }
         Some(Commands::RenderPrBody(args)) => {
             render_pr_body::run(args);
