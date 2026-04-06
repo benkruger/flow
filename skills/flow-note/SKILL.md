@@ -1,6 +1,6 @@
 ---
 name: flow-note
-description: "Invoke automatically whenever the user corrects Claude, disagrees with a response, or says something was wrong. Also invoke explicitly with /flow:flow-note to capture any learning mid-session. Fast — captures and continues without interrupting flow."
+description: "Capture a correction or learning to the FLOW state file. Invoke explicitly with /flow:flow-note or when directed by session context. Fast — captures and continues without interrupting flow."
 ---
 
 # FLOW Note
