@@ -42,6 +42,7 @@ use flow_rs::prime_check;
 use flow_rs::prime_project;
 use flow_rs::prime_setup;
 use flow_rs::promote_permissions;
+use flow_rs::start_finalize;
 use flow_rs::start_gate;
 use flow_rs::start_init;
 use flow_rs::start_setup;
@@ -264,6 +265,10 @@ enum Commands {
         subcommand: Vec<String>,
     },
 
+    /// Complete Start phase and send notifications
+    #[command(name = "start-finalize")]
+    StartFinalize(start_finalize::Args),
+
     /// Consolidated CI and dependency gate for start phase
     #[command(name = "start-gate")]
     StartGate(start_gate::Args),
@@ -471,6 +476,9 @@ fn main() {
                 subcommand
             };
             commands::start_step::run(step, &branch, subcommand);
+        }
+        Some(Commands::StartFinalize(args)) => {
+            start_finalize::run(args);
         }
         Some(Commands::StartGate(args)) => {
             start_gate::run(args);
