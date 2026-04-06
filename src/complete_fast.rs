@@ -17,8 +17,19 @@
 //!   Max retries:  {"status": "ok", "path": "max_retries", ...}
 //!   Error:        {"status": "error", "message": "..."}
 
+use std::path::Path;
+
 use clap::Parser;
 use serde_json::{json, Value};
+
+use crate::complete_preflight::{check_learn_phase, resolve_mode};
+use crate::git::{project_root, resolve_branch};
+use crate::lock::mutate_state;
+use crate::phase_transition::phase_enter;
+use crate::utils::derive_worktree;
+
+/// Step counter total for complete-fast (reduced from 7 to 5).
+const COMPLETE_STEPS_TOTAL: i64 = 5;
 
 #[derive(Parser, Debug)]
 #[command(name = "complete-fast", about = "FLOW Complete phase fast path")]
@@ -34,12 +45,76 @@ pub struct Args {
     pub manual: bool,
 }
 
+/// Read and parse a state file, returning (state_value, state_path).
+fn read_state(root: &Path, branch: &str) -> Result<(Value, std::path::PathBuf), String> {
+    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    if !state_path.exists() {
+        return Err(format!(
+            "No state file found for branch '{}'. Run /flow:flow-start first.",
+            branch
+        ));
+    }
+    let content = std::fs::read_to_string(&state_path)
+        .map_err(|e| format!("Could not read state file: {}", e))?;
+    let state: Value = serde_json::from_str(&content)
+        .map_err(|_| format!("Could not parse state file: {}", state_path.display()))?;
+    Ok((state, state_path))
+}
+
 /// Core complete-fast logic. Returns Ok(json) on success paths (including
 /// unhappy paths like ci_failed that the skill handles interactively),
 /// Err(string) only for infrastructure failures.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
-    let _ = args;
-    Err("not implemented".to_string())
+    let root = project_root();
+    let (resolved, _) = resolve_branch(args.branch.as_deref(), &root);
+    let branch = resolved.ok_or("Could not determine current branch")?;
+
+    // Read state file
+    let (state, state_path) = read_state(&root, &branch)?;
+
+    // Gate: Learn phase must be complete
+    let learn_status = state
+        .get("phases")
+        .and_then(|p| p.get("flow-learn"))
+        .and_then(|l| l.get("status"))
+        .and_then(|s| s.as_str())
+        .unwrap_or("pending");
+    if learn_status != "complete" {
+        return Ok(json!({
+            "status": "error",
+            "message": format!("Phase 5: Learn must be complete before Complete. Current status: {}", learn_status)
+        }));
+    }
+
+    // Resolve mode
+    let mode = resolve_mode(args.auto, args.manual, Some(&state));
+
+    // Collect warnings
+    let warnings = check_learn_phase(&state);
+
+    // Phase enter + set step counters
+    mutate_state(&state_path, |s| {
+        if !(s.is_object() || s.is_null()) {
+            return;
+        }
+        phase_enter(s, "flow-complete", None);
+        s["complete_steps_total"] = json!(COMPLETE_STEPS_TOTAL);
+        s["complete_step"] = json!(1);
+    })
+    .map_err(|e| format!("Failed to update state: {}", e))?;
+
+    // Extract PR info from state
+    let pr_number = state.get("pr_number").and_then(|v| v.as_i64());
+    let pr_url = state
+        .get("pr_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let worktree = derive_worktree(&branch);
+
+    // TODO: Tasks 3-7 will add PR check, merge-main, CI, GH CI, and merge logic here
+
+    Err("not yet implemented: remaining steps".to_string())
 }
 
 /// CLI entry point.
