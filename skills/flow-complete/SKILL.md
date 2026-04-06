@@ -589,11 +589,11 @@ commands. This is a narrative recap, not a structured template.
 
 ## Rules
 
-- Steps 1-6 run from the worktree (feature branch); Step 7 reports cleanup results from the project root
+- Steps 1-5 run from the worktree (feature branch); Step 6 (finalize) runs from the project root
 - If the merge fails, never retry with additional flags or elevated privileges — report to the user and stop
 - Confirm with the user only when mode is **manual**
 - State file deletion is what resets the session hook — do not skip it
-- Every step after the merge (Step 6) is best-effort — if it fails, continue to the next
+- Every operation inside `complete-finalize` (Step 6) is best-effort — if one fails, continue to the next
 - The skill is idempotent: safe to re-invoke via `/loop` after a "pending CI" stop
 - Never use `general-purpose` sub-agents — use `"flow:ci-fixer"` for CI failures
 - Never use Bash to print banners — output them as text in your response

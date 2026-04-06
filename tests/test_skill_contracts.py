@@ -646,9 +646,9 @@ def test_phase_skills_have_update_state_section():
 def test_phase_skills_use_phase_transition_for_entry():
     """Phases 2-6 must use bin/flow phase-transition for state entry.
     Phase 1 uses start-init (which calls init-state internally) to create the state file.
-    Phase 6 uses complete-preflight (Rust) which calls phase-transition internally."""
+    Phase 6 uses complete-fast (Rust) which calls phase-transition internally."""
     phase_skills = _phase_skills()
-    # flow-complete delegates phase-transition to complete-preflight (Rust)
+    # flow-complete delegates phase-transition to complete-fast (Rust)
     skip_entry = {"flow-complete"}
     for key in PHASE_ORDER[1:]:
         skill_name = phase_skills[key]
@@ -664,9 +664,9 @@ def test_phase_skills_use_phase_transition_for_entry():
 
 def test_phase_skills_use_phase_transition_for_completion():
     """Phases 1-6 must use bin/flow phase-transition for state completion.
-    Phase 6 delegates phase-transition complete to complete-post-merge (Rust)."""
+    Phase 6 delegates phase-transition complete to complete-finalize (Rust)."""
     phase_skills = _phase_skills()
-    # flow-complete delegates phase-transition complete to complete-post-merge (Rust)
+    # flow-complete delegates phase-transition complete to complete-finalize (Rust)
     skip_complete = {"flow-complete"}
     for key in PHASE_ORDER:
         skill_name = phase_skills[key]
