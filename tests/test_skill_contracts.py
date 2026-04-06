@@ -2695,11 +2695,11 @@ def test_complete_no_twelve_steps():
 
 
 def test_complete_no_steps_total_in_skill():
-    """Tombstone: complete_steps_total moved to complete-preflight.py in PR #751. Must not return."""
+    """Tombstone: complete_steps_total moved to complete-fast (Rust) in PR #751. Must not return."""
     content = _read_skill("flow-complete")
     assert "complete_steps_total=" not in content, (
         "flow-complete/SKILL.md must not contain complete_steps_total= — "
-        "the preflight script sets this via mutate_state"
+        "the complete-fast command sets this via mutate_state"
     )
 
 

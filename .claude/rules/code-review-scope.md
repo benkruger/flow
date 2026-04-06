@@ -31,3 +31,11 @@ This applies to all finding types: bugs, structural issues,
 duplicate code, missing abstractions, naming problems. "Low
 severity" and "simplicity" findings in PR-touched files are still
 in-scope.
+
+## In-Scope Means Fix, Not File
+
+Never file a GitHub issue for an in-scope finding — not even one
+you intend to close immediately. In-scope findings go directly to
+Step 4 for fixing. Filing and closing an issue in the same PR adds
+overhead (API calls, issue noise) without benefit. The diff boundary
+test already decided the finding belongs in this PR.
