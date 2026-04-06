@@ -16,6 +16,7 @@ use flow_rs::close_issues;
 use flow_rs::commands;
 use flow_rs::complete_merge;
 use flow_rs::complete_post_merge;
+use flow_rs::complete_fast;
 use flow_rs::complete_preflight;
 use flow_rs::create_dependencies;
 use flow_rs::create_milestone;
@@ -158,6 +159,10 @@ enum Commands {
     /// Auto-close parent issue and milestone when all children are done.
     #[command(name = "auto-close-parent")]
     AutoCloseParent(auto_close_parent::Args),
+
+    /// FLOW Complete phase fast path (gate + preflight + CI + merge in one call).
+    #[command(name = "complete-fast")]
+    CompleteFast(complete_fast::Args),
 
     /// FLOW Complete phase preflight (state detection, PR check, merge main).
     #[command(name = "complete-preflight")]
@@ -393,6 +398,7 @@ fn main() {
         Some(Commands::PrimeSetup(args)) => prime_setup::run(args),
         Some(Commands::PromotePermissions(args)) => promote_permissions::run(args),
         Some(Commands::AutoCloseParent(args)) => auto_close_parent::run(args),
+        Some(Commands::CompleteFast(args)) => complete_fast::run(args),
         Some(Commands::CompletePreflight(args)) => complete_preflight::run(args),
         Some(Commands::CompleteMerge(args)) => complete_merge::run(args),
         Some(Commands::CompletePostMerge(args)) => complete_post_merge::run(args),
