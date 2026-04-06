@@ -404,46 +404,6 @@ override, cwd, root)` — the cwd-scoped variant — rather than
 scan fallback while reading the branch from the supplied directory
 instead of the process cwd.
 
-## Plan-Phase Cross-Checks for Rust Ports
-
-The Plan phase for a Rust port must cross-check this document
-before finalizing the task list. Mis-specifying a function at plan
-time lets the bug pass through Code phase (tests agree with the
-wrong function) and surfaces only during Code Review agent passes.
-
-For every function the plan calls out by name, verify:
-
-- **Branch resolution:** If the Python original reads a branch from
-  the filesystem, identify whether it called `current_branch()` or
-  `resolve_branch()`. Pick the matching Rust equivalent. In cwd-scoped
-  contexts, pick `current_branch_in` or `resolve_branch_in` to match.
-- **Subprocess cwd:** If the Python original passes `cwd=path` to
-  `subprocess.run`, the Rust port must call
-  `Command::current_dir(path)` on every subprocess.
-- **Upfront guards:** See "Upfront Guards Belong in run_impl" below.
-- **Test-module subprocess stdio:** If the port adds Rust integration
-  tests that spawn subprocesses, every `Command` call in a
-  `#[cfg(test)]` module must use `.output()` — or, when stdin must be
-  piped to the child, `spawn() + wait_with_output()` with all three
-  stdio streams explicitly piped before `spawn()`. Never inherited
-  `.status()` and never `spawn()` with only `.stdin(Stdio::piped())`.
-  Cargo's test harness does not capture inherited child fds (unlike
-  pytest), and leaked stdout drowns CI output. See "Test-Module
-  Subprocess Stdio" above.
-
-Add a concrete task to the plan: "Cross-check rust-port-parity.md
-sections Branch-Resolution Function Parity, Subprocess CWD Parity,
-Upfront Guards, and Test-Module Subprocess Stdio against the Python
-source." Prose acknowledgment in the Risks section does NOT satisfy
-this requirement — the cross-check must appear as a named, tracked
-task in the Dependency Graph with a verification step (run
-`bin/flow ci` green). Without a task, there is no commit boundary
-that proves the check was performed, and the parity rule slips into
-Code phase where the review agents find it instead. The check is
-one read of the Python source plus one read of this document — it
-takes minutes and catches the exact class of bug the review agents
-would otherwise find.
-
 ## Upfront Guards Belong in run_impl
 
 When the Python original performs a single upfront check in `main()`
