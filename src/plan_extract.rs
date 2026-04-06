@@ -455,6 +455,10 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         if !(state.is_object() || state.is_null()) {
             return;
         }
+        // Nested guard: ensure files is an object before chained assignment
+        if !matches!(state.get("files"), Some(v) if v.is_object()) {
+            state["files"] = json!({});
+        }
         state["files"]["dag"] = json!(&dag_rel);
         state["plan_step"] = json!(2);
     })
@@ -492,6 +496,10 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     mutate_state(&state_path, |state| {
         if !(state.is_object() || state.is_null()) {
             return;
+        }
+        // Nested guard: ensure files is an object before chained assignment
+        if !matches!(state.get("files"), Some(v) if v.is_object()) {
+            state["files"] = json!({});
         }
         state["files"]["plan"] = json!(&plan_rel);
         state["code_tasks_total"] = json!(task_count);

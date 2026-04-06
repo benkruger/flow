@@ -128,11 +128,12 @@ Then skip to "Done — Banner and transition", using `formatted_time` and
 
 ## Resume Check
 
-Read `files.plan` and `files.dag` from the state file (use Read tool to
-read `<project_root>/.flow-states/<branch>.json`). Note `pr_number`,
-`prompt`, and `branch` from the state file — you will need them for
-Steps 2–4. Keep the project root, branch, state data, and `pr_number`
-in context.
+Establish context for the standard path: run `git worktree list
+--porcelain` to get `<project_root>` (first worktree line) and `git
+branch --show-current` to get `<branch>`. Then read the state file at
+`<project_root>/.flow-states/<branch>.json`. Note `pr_number`, `prompt`,
+and `branch` from the state file — you will need them for Steps 2–4.
+Keep the project root, branch, state data, and `pr_number` in context.
 
 - If `files.dag` is set (not null) but `files.plan` is null, the DAG was
   produced but the plan was not yet written (dag_file resume). Read the
