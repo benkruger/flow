@@ -22,7 +22,9 @@ use std::path::Path;
 use clap::Parser;
 use serde_json::{json, Value};
 
-use crate::complete_preflight::{check_learn_phase, resolve_mode};
+use crate::complete_preflight::{
+    check_learn_phase, check_pr_status, merge_main, resolve_mode, run_cmd_with_timeout,
+};
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
 use crate::phase_transition::phase_enter;
@@ -112,9 +114,69 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         .to_string();
     let worktree = derive_worktree(&branch);
 
-    // TODO: Tasks 3-7 will add PR check, merge-main, CI, GH CI, and merge logic here
+    // --- PR check ---
+    let pr_state = match check_pr_status(pr_number, &branch, &run_cmd_with_timeout) {
+        Ok(s) => s,
+        Err(e) => {
+            return Ok(json!({
+                "status": "error",
+                "message": e,
+                "branch": branch,
+            }));
+        }
+    };
 
-    Err("not yet implemented: remaining steps".to_string())
+    // Already merged — skip to finalize
+    if pr_state == "MERGED" {
+        return Ok(json!({
+            "status": "ok",
+            "path": "already_merged",
+            "mode": mode,
+            "pr_number": pr_number,
+            "pr_url": pr_url,
+            "branch": branch,
+            "worktree": worktree,
+            "warnings": warnings,
+        }));
+    }
+
+    if pr_state == "CLOSED" {
+        return Ok(json!({
+            "status": "error",
+            "message": "PR is closed but not merged. Reopen or create a new PR first.",
+            "branch": branch,
+        }));
+    }
+
+    // --- Merge main into branch ---
+    let (merge_status, merge_data) = merge_main(&run_cmd_with_timeout);
+    let tree_changed = merge_status == "merged";
+
+    if merge_status == "conflict" {
+        return Ok(json!({
+            "status": "ok",
+            "path": "conflict",
+            "conflict_files": merge_data.unwrap_or(json!([])),
+            "mode": mode,
+            "pr_number": pr_number,
+            "pr_url": pr_url,
+            "branch": branch,
+            "worktree": worktree,
+            "warnings": warnings,
+        }));
+    }
+
+    if merge_status == "error" {
+        return Ok(json!({
+            "status": "error",
+            "message": merge_data.unwrap_or(json!("")),
+            "branch": branch,
+        }));
+    }
+
+    // TODO: Tasks 4-7 will add CI dirty check, GH CI check, and merge logic here
+
+    Err("not yet implemented: CI and merge steps".to_string())
 }
 
 /// CLI entry point.

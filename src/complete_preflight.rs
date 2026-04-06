@@ -27,7 +27,7 @@ const LOCAL_TIMEOUT: u64 = 30;
 const NETWORK_TIMEOUT: u64 = 60;
 const COMPLETE_STEPS_TOTAL: i64 = 7;
 
-type CmdResult = Result<(i32, String, String), String>;
+pub type CmdResult = Result<(i32, String, String), String>;
 
 #[derive(Parser, Debug)]
 #[command(name = "complete-preflight", about = "FLOW Complete phase preflight")]
@@ -60,7 +60,7 @@ fn bin_flow_path() -> String {
 /// block forever when the kernel buffer fills and `try_wait()` would
 /// never observe the child exiting. See `.claude/rules/rust-port-parity.md`
 /// "Subprocess Timeout Parity".
-fn run_cmd_with_timeout(args: &[&str], timeout_secs: u64) -> CmdResult {
+pub fn run_cmd_with_timeout(args: &[&str], timeout_secs: u64) -> CmdResult {
     let (program, rest) = match args.split_first() {
         Some(p) => p,
         None => return Err("empty command".to_string()),
@@ -198,7 +198,7 @@ fn phase_transition_enter(
 }
 
 /// Check PR state via gh pr view. Returns PR state string on success.
-fn check_pr_status(
+pub fn check_pr_status(
     pr_number: Option<i64>,
     branch: &str,
     runner: &dyn Fn(&[&str], u64) -> CmdResult,
@@ -247,7 +247,7 @@ fn check_pr_status(
 ///   ("merged", None) — merged successfully (new commits)
 ///   ("conflict", Some(files_array)) — merge conflicts
 ///   ("error", Some(message_string)) — unexpected error
-fn merge_main(runner: &dyn Fn(&[&str], u64) -> CmdResult) -> (String, Option<Value>) {
+pub fn merge_main(runner: &dyn Fn(&[&str], u64) -> CmdResult) -> (String, Option<Value>) {
     // Fetch
     match runner(&["git", "fetch", "origin", "main"], NETWORK_TIMEOUT) {
         Err(e) => return ("error".to_string(), Some(json!(e))),
