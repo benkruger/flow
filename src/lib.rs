@@ -41,6 +41,7 @@ pub mod promote_permissions;
 pub mod start_gate;
 pub mod start_init;
 pub mod start_setup;
+pub mod start_workspace;
 pub mod state;
 pub mod render_pr_body;
 pub mod update_deps;

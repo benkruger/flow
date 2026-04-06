@@ -45,6 +45,7 @@ use flow_rs::promote_permissions;
 use flow_rs::start_gate;
 use flow_rs::start_init;
 use flow_rs::start_setup;
+use flow_rs::start_workspace;
 use flow_rs::update_deps;
 use flow_rs::upgrade_check;
 use flow_rs::utils::{detect_dev_mode, read_version};
@@ -275,6 +276,10 @@ enum Commands {
     #[command(name = "start-setup")]
     StartSetup(start_setup::Args),
 
+    /// Create worktree, PR, backfill state, release lock
+    #[command(name = "start-workspace")]
+    StartWorkspace(start_workspace::Args),
+
     /// Format the FLOW status panel for display.
     #[command(name = "format-status")]
     FormatStatus {
@@ -475,6 +480,9 @@ fn main() {
         }
         Some(Commands::StartSetup(args)) => {
             start_setup::run(args);
+        }
+        Some(Commands::StartWorkspace(args)) => {
+            start_workspace::run(args);
         }
         Some(Commands::FormatStatus { branch }) => {
             run_format_status(branch.as_deref());
