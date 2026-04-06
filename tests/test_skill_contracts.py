@@ -2332,10 +2332,10 @@ def test_code_skill_sets_continue_pending_before_commit():
     assert flag_pos < commit_pos, "_continue_pending=commit must appear before /flow:flow-commit"
 
 
-def test_plan_step_1_fetches_referenced_issues():
-    """Plan Step 1 must instruct fetching referenced GitHub issues."""
+def test_plan_uses_plan_extract_for_issue_fetch():
+    """Plan must use plan-extract command which handles issue fetch internally."""
     content = _read_skill("flow-plan")
-    assert "gh issue view" in content
+    assert "plan-extract" in content
 
 
 # --- Code phase self-invocation contracts ---

@@ -19,28 +19,10 @@ description: "Phase 2: Plan — invoke DAG decomposition, explore the codebase, 
 - `/flow:flow-plan --manual` — requires explicit approval before advancing
 - `/flow:flow-plan --continue-step` — self-invocation: skip Announce and Update State, dispatch via Resume Check
 
-<HARD-GATE>
-Run this phase entry check as your very first action. If any check fails,
-stop immediately and show the error to the user.
-
-1. Run both commands in parallel (two Bash calls in one response):
-   - `git worktree list --porcelain` — note the path on the first `worktree` line (this is the project root).
-   - `git branch --show-current` — this is the current branch.
-2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
-   - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
-     Run /flow:flow-start first."
-3. Check `phases.flow-start.status` in the JSON.
-   - If not `"complete"`: STOP. "BLOCKED: Phase 1: Start must be
-     complete. Run /flow:flow-start first."
-4. Note `pr_number`, `prompt`, and `branch` from the state file — you will need them later.
-
-</HARD-GATE>
-
-Keep the project root, branch, state data, and `pr_number` from the gate
-in context — use the project root to build Read tool paths (e.g.
-`<project_root>/.flow-states/<branch>.json`). Do not re-read the state
-file or re-run git commands to gather the same information. Do not `cd`
-to the project root — `bin/flow` commands find paths internally.
+The `plan-extract` command handles the phase entry gate check (flow-start
+must be complete), phase enter, issue fetch, and fast-path extraction for
+pre-decomposed issues. It is called as the first action after the Announce
+banner. See the Plan Extract section below.
 
 ## Concurrency
 
@@ -82,26 +64,39 @@ At the very start, output the following banner in your response (not via Bash) i
 ```
 ````
 
-## Update State
+## Plan Extract
 
-Update state for phase entry:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-plan --action enter
-```
-
-Parse the JSON output to confirm `"status": "ok"`.
-If `"status": "error"`, report the error and stop.
-
-Set the step tracking fields for TUI progress display:
+Run plan-extract as the first action. This command handles the phase
+entry gate check, phase enter, issue fetch, decomposed label detection,
+and plan extraction for pre-decomposed issues — all in a single process
+call.
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_steps_total=4
+${CLAUDE_PLUGIN_ROOT}/bin/flow plan-extract
 ```
+
+Parse the JSON output. Branch on the `path` field:
+
+**If `path` is `"extracted"` or `"resumed"`** — the plan phase is already
+complete. The response contains `plan_content`, `plan_file`, `formatted_time`,
+and `continue_action`. Skip directly to the "Fast Path Done" section below.
+
+**If `path` is `"standard"`** — the command entered the phase and fetched
+issue context. The response contains `issue_body` (may be null),
+`issue_number` (may be null), and `dag_mode`. Note these values and
+continue to the Resume Check below.
+
+**If `status` is `"error"`** — show the error message and stop.
+
+<HARD-GATE>
+Do NOT proceed past Plan Extract if it returns an error status.
+The command checks `phases.flow-start.status` is complete internally.
+Show the error message and stop.
+</HARD-GATE>
 
 ## Logging
 
-After every Bash command in Steps 1–4, log it to `.flow-states/<branch>.log`
+After every Bash command in Steps 2–4, log it to `.flow-states/<branch>.log`
 using `bin/flow log`.
 
 Run the command first, then log the result. Pipeline the log call with the
@@ -115,76 +110,37 @@ Get `<branch>` from the state file.
 
 ---
 
-## Resume Check
+## Fast Path Done
 
-Check `files.plan` and `files.dag` in the state file:
+When plan-extract returns `"extracted"` or `"resumed"`, the phase is already
+complete. Render the plan and transition.
 
-- If `files.plan` is set (not null), the plan was previously written.
-  Output in your response (not via Bash) inside a fenced code block:
+Use the `plan_content` from the plan-extract response. Render it inline in
+your response — the complete Context, Exploration, Risks, Approach,
+Dependency Graph, and Tasks sections. Run Script Behavior Verification and
+Target Path Validation on the plan content (see Step 3 for definitions).
+Use Glob and Read to verify files referenced in the Tasks section exist.
 
-````markdown
-```text
-──────────────────────────────────────────────────
-  FLOW — Plan already approved
-──────────────────────────────────────────────────
-  Plan file: <files.plan path>
-──────────────────────────────────────────────────
-```
-````
-
-  Skip to "Done — Banner and transition" to finish the phase.
-
-- If `files.dag` is set (not null) but `files.plan` is null, the DAG was
-  produced but the plan was not yet written. Read the DAG output file
-  at `files.dag` path. Skip to Step 3 (Explore and write plan).
-
-- If both are null, proceed to Step 1.
+Then skip to "Done — Banner and transition", using `formatted_time` and
+`continue_action` from the plan-extract response.
 
 ---
 
-## Step 1 — Feature description and issue context
+## Resume Check
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_step=1
-```
+Read `files.plan` and `files.dag` from the state file (use Read tool to
+read `<project_root>/.flow-states/<branch>.json`). Note `pr_number`,
+`prompt`, and `branch` from the state file — you will need them for
+Steps 2–4. Keep the project root, branch, state data, and `pr_number`
+in context.
 
-Use the `prompt` from the state file as the feature description. This is the
-full text the user passed to `/flow:flow-start` — it describes what to build.
+- If `files.dag` is set (not null) but `files.plan` is null, the DAG was
+  produced but the plan was not yet written (dag_file resume). Read the
+  DAG output file at `files.dag` path. Skip to Step 3 (Explore and write
+  plan).
 
-Do not ask "What are we building?" — the prompt is the input for the planning
-phase.
-
-### Fetch referenced issues
-
-Check the prompt for `#N` patterns (e.g., `#107`, `#42`). For each unique
-issue number found, fetch the issue body:
-
-```bash
-gh issue view <issue_number> --json number,title,body,labels
-```
-
-Use the issue body as primary planning context — it contains the detailed
-problem description, acceptance criteria, and context that the short prompt
-cannot convey. The prompt words alone may be ambiguous; the issue body is
-the authoritative source.
-
-### Detect pre-decomposed issues
-
-After fetching each issue, check the `labels` array for an entry with
-`name` equal to `"decomposed"`. If any referenced issue has this label,
-note it as a pre-decomposed issue and keep the issue body for Step 2.
-Issues with the "decomposed" label were filed by `/create-issue` and
-already contain verified file paths, acceptance criteria, scope
-boundaries, and architectural context from a prior decompose run.
-
-If the prompt contains no `#N` patterns, skip this step and use the prompt
-as-is.
-
-If a fetch fails (issue does not exist, permissions error, network failure),
-note the failure and continue with the remaining issues and prompt text.
-Do not stop planning because one issue could not be fetched.
-
-Proceed to Step 2.
+- If both are null, proceed to Step 2 using `issue_body` and `dag_mode`
+  from the plan-extract response.
 
 ---
 
@@ -196,13 +152,17 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_step=2
 
 ### Pre-decomposed issue skip
 
-If any referenced issue from Step 1 has the "decomposed" label, skip the
-decompose plugin entirely — regardless of the configured DAG mode. The
-issue body already contains a thorough analysis from a prior decompose run.
+If the plan-extract response returned a non-null `issue_body` and the
+issue has the "decomposed" label (plan-extract detected this internally),
+the DAG file and plan file were already created by plan-extract — and the
+`"extracted"` path was returned. This Step 2 section only runs for the
+`"standard"` path, meaning the issue was NOT decomposed or had no
+`## Implementation Plan` section.
 
-Write the pre-decomposed issue body to
-`<project_root>/.flow-states/<branch>-dag.md` using the Write tool,
-wrapped with a markdown heading:
+If the `issue_body` from plan-extract is non-null and represents an
+older-format decomposed issue (no Implementation Plan section), write the
+issue body to `<project_root>/.flow-states/<branch>-dag.md` using the
+Write tool, wrapped with a markdown heading:
 
 ```text
 # Pre-Decomposed Analysis: <feature description>
@@ -224,11 +184,11 @@ same turn.
 
 ### Standard DAG decomposition
 
-If no referenced issue has the "decomposed" label, check the DAG mode
-from DAG Mode Resolution:
+If the issue is not decomposed, check the `dag_mode` from the
+plan-extract response:
 
-- If dag=`"never"` → skip to Step 3.
-- If dag=`"auto"` or `"always"` → invoke the decompose plugin.
+- If `dag_mode` is `"never"` → skip to Step 3.
+- If `dag_mode` is `"auto"` or `"always"` → invoke the decompose plugin.
 
 Before invoking the decompose plugin, set the continuation flags so the
 stop-continue hook forces continuation after decompose returns:
