@@ -76,9 +76,20 @@ count is one.
 
 ## Workflow
 
+**All artifacts are in your prompt.** The diff, state file data, plan,
+CLAUDE.md, and rules files are provided inline below. Do not Glob or
+Read these files again — they are already in your context. Reserve
+tool calls for investigating source files, test files, and patterns
+in the codebase that are NOT provided inline.
+
+**Budget your turns.** You have limited turns. Spend at most half your
+turns on codebase investigation. Reserve the remainder for analysis
+and writing findings. If you run out of turns mid-analysis, partially
+written findings are lost.
+
 **Read the rules.** Note every convention and constraint from the
-PROJECT CLAUDE.MD and RULES FILES sections. These are the standards
-the code must meet.
+PROJECT CLAUDE.MD and RULES FILES sections in your prompt. These are
+the standards the code must meet.
 
 **Read the plan.** Note the approach, risks, and task descriptions.
 Check whether the plan's risks materialized — look for evidence in the
@@ -99,8 +110,10 @@ diff that a risk was encountered but not handled.
 - Are there patterns that contradict a stated rule?
 - Are there signs of incomplete or abandoned work?
 
-**Investigate the codebase.** Use Read, Glob, and Grep to check whether
-changes are consistent with existing patterns in the project.
+**Investigate selectively.** For suspected violations or patterns that
+need verification, use targeted Read or Grep on specific source files.
+Do not broadly scan the codebase — investigate only when a finding
+requires confirmation from code not already in the prompt.
 
 **Write findings incrementally.** As soon as you identify a finding,
 write it immediately as a structured `**Finding` block. Do not wait
