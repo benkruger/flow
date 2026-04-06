@@ -137,7 +137,7 @@ The version lives in 3 places (across 2 files), all must match: `.claude-plugin/
 
 ### Checksum → Version Invariant
 
-`config_hash` covers permission structure (allow/deny lists, defaultMode, exclude entries). `setup_hash` is a SHA-256 of the entire `prime-setup.py` file, covering all installation artifacts (hooks, excludes, priming, dependencies). Both hashes are stored in `.flow.json` and compared by `prime-check.py` when a version mismatch is detected. Matching hashes allow auto-upgrade (just update the version in `.flow.json`); mismatching hashes force a full `/flow:flow-prime` re-run. Hash changes during development do not require version bumps — version bumps are a release decision via `/flow-release`. The hashes ensure that users get the right upgrade path when they update to a new release.
+`config_hash` covers permission structure (allow/deny lists, defaultMode, exclude entries). `setup_hash` is a SHA-256 of `src/prime_setup.rs`, covering all installation artifacts (hooks, excludes, priming, dependencies). Both hashes are stored in `.flow.json` and compared by `prime_check.rs` when a version mismatch is detected. Matching hashes allow auto-upgrade (just update the version in `.flow.json`); mismatching hashes force a full `/flow:flow-prime` re-run. Hash changes during development do not require version bumps — version bumps are a release decision via `/flow-release`. The hashes ensure that users get the right upgrade path when they update to a new release.
 
 ### State Mutations
 

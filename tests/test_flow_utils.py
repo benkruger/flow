@@ -687,6 +687,16 @@ def test_freeze_phases_matches_source(tmp_path):
     assert json.loads(dest.read_text()) == json.loads(source.read_text())
 
 
+# --- frameworks_dir ---
+
+
+def test_frameworks_dir_returns_path():
+    """frameworks_dir() returns a Path ending with 'frameworks'."""
+    result = _mod.frameworks_dir()
+    assert result.name == "frameworks"
+    assert result.is_dir()
+
+
 # --- build_initial_phases ---
 
 

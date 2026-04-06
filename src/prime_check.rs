@@ -8,14 +8,11 @@
 //!   Auto-upgrade: `{"status": "ok", "framework": "...", "auto_upgraded": true, "old_version": "...", "new_version": "..."}`
 //!   Failure: `{"status": "error", "message": "..."}`
 //!
-//! # Constant parity with lib/prime-setup.py
+//! # Constants
 //!
-//! `UNIVERSAL_ALLOW`, `FLOW_DENY`, and `EXCLUDE_ENTRIES` are duplicated
-//! from `lib/prime-setup.py` because `prime-setup.py` is out of scope
-//! for the #786 port. Drift between the two copies would break the
-//! auto-upgrade path silently — a static contract test in
-//! `tests/test_prime_port_parity.py` parses this file and asserts the
-//! constants match the Python source entry-by-entry.
+//! `UNIVERSAL_ALLOW`, `FLOW_DENY`, and `EXCLUDE_ENTRIES` are the
+//! canonical source for permission and exclude lists. They are shared
+//! with `src/prime_setup.rs` which imports them via `pub use`.
 //!
 //! # Hash byte-parity with Python
 //!
@@ -26,8 +23,7 @@
 //! resulting digests differ, breaking round-trip with Python-written
 //! `.flow.json` files. `PythonDefaultFormatter` below implements the
 //! three `serde_json::ser::Formatter` methods needed to emit the
-//! Python separators. End-to-end parity is verified by
-//! `tests/test_prime_port_parity.py::test_rust_accepts_python_computed_hashes`.
+//! Python separators.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -43,8 +39,8 @@ use sha2::{Digest, Sha256};
 
 use crate::utils::{frameworks_dir, plugin_root};
 
-/// Universal allow list — duplicated from lib/prime-setup.py.
-/// Kept in sync via `tests/test_prime_port_parity.py`.
+/// Universal allow list — canonical source for all permission merging.
+/// Shared with `prime_setup.rs` via pub import.
 pub const UNIVERSAL_ALLOW: &[&str] = &[
     "Bash(git add *)",
     "Bash(git blame *)",
@@ -98,8 +94,8 @@ pub const UNIVERSAL_ALLOW: &[&str] = &[
     "Skill(decompose:decompose)",
 ];
 
-/// FLOW deny list — duplicated from lib/prime-setup.py.
-/// Kept in sync via `tests/test_prime_port_parity.py`.
+/// FLOW deny list — canonical source for deny permissions.
+/// Shared with `prime_setup.rs` via pub import.
 pub const FLOW_DENY: &[&str] = &[
     "Bash(git rebase *)",
     "Bash(git push --force *)",
@@ -113,8 +109,8 @@ pub const FLOW_DENY: &[&str] = &[
     "Bash(* | *)",
 ];
 
-/// Excluded paths — duplicated from lib/prime-setup.py.
-/// Kept in sync via `tests/test_prime_port_parity.py`.
+/// Excluded paths — canonical source for git exclude entries.
+/// Shared with `prime_setup.rs` via pub import.
 pub const EXCLUDE_ENTRIES: &[&str] = &[
     ".flow-states/",
     ".worktrees/",
@@ -223,9 +219,12 @@ pub fn compute_config_hash(framework: &str, fw_dir: &Path) -> Result<String, Str
     Ok(hex_prefix(&digest, 12))
 }
 
-/// Compute a 12-char hex digest of lib/prime-setup.py bytes.
+/// Compute a 12-char hex digest of src/prime_setup.rs bytes.
+/// Changed from lib/prime-setup.py in PR #894 (Rust port). Existing
+/// users with Python-era hashes will be forced to re-prime, which is
+/// correct for this major infrastructure change.
 pub fn compute_setup_hash(plugin_root: &Path) -> Result<String, String> {
-    let path = plugin_root.join("lib").join("prime-setup.py");
+    let path = plugin_root.join("src").join("prime_setup.rs");
     let bytes =
         fs::read(&path).map_err(|e| format!("Could not read {}: {}", path.display(), e))?;
     let mut hasher = Sha256::new();
