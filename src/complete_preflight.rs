@@ -1,7 +1,9 @@
-//! Port of lib/complete-preflight.py — consolidated Complete phase preflight.
+//! Complete phase preflight — shared functions and standalone subcommand.
 //!
-//! Absorbs SOFT-GATE + Steps 1-3: state detection, PR status check, and
-//! merge main into branch.
+//! Provides `resolve_mode`, `check_learn_phase`, `check_pr_status`,
+//! `merge_main`, and `run_cmd_with_timeout` — reused by `complete-fast`
+//! (the skill's Step 1 entry point) and available as a standalone
+//! subcommand for backward compatibility.
 //!
 //! Usage: bin/flow complete-preflight [--branch <name>] [--auto] [--manual]
 //!
@@ -25,6 +27,9 @@ use crate::utils::{derive_worktree, parse_conflict_files};
 
 const LOCAL_TIMEOUT: u64 = 30;
 const NETWORK_TIMEOUT: u64 = 60;
+/// Legacy step count — retained for backward compatibility when
+/// complete-preflight is called as a standalone subcommand.
+/// complete_fast.rs uses COMPLETE_STEPS_TOTAL=5 (the new reduced count).
 const COMPLETE_STEPS_TOTAL: i64 = 7;
 
 pub type CmdResult = Result<(i32, String, String), String>;

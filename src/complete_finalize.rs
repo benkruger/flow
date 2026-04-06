@@ -88,14 +88,19 @@ pub fn finalize_inner(
         .unwrap_or("")
         .to_string();
 
-    // --- Cleanup ---
-    let cleanup_steps = cleanup_fn();
+    // --- Cleanup (best-effort — catch panics like post-merge) ---
+    let cleanup_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(cleanup_fn));
 
-    // Convert IndexMap<String, String> to Value for JSON output
-    let cleanup_json: serde_json::Map<String, Value> = cleanup_steps
-        .into_iter()
-        .map(|(k, v)| (k, Value::String(v)))
-        .collect();
+    let (cleanup_json, cleanup_error) = match cleanup_result {
+        Ok(steps) => {
+            let map: serde_json::Map<String, Value> = steps
+                .into_iter()
+                .map(|(k, v)| (k, Value::String(v)))
+                .collect();
+            (map, None)
+        }
+        Err(_) => (serde_json::Map::new(), Some("cleanup panicked".to_string())),
+    };
 
     // Build result
     let mut result = json!({
@@ -110,6 +115,9 @@ pub fn finalize_inner(
 
     if let Some(err) = post_merge_error {
         result["post_merge_error"] = json!(err);
+    }
+    if let Some(err) = cleanup_error {
+        result["cleanup_error"] = json!(err);
     }
     if let Some(ref pm) = post_merge_data {
         if let Some(failures) = pm.get("failures") {

@@ -31,7 +31,10 @@ use crate::lock::mutate_state;
 use crate::phase_transition::phase_enter;
 use crate::utils::derive_worktree;
 
-/// Step counter total for complete-fast (reduced from 7 to 5).
+/// Step counter total for complete-fast. Set to 5 because complete-fast
+/// consolidates the old 7-step flow into fewer skill-visible steps.
+/// Note: complete_preflight.rs retains COMPLETE_STEPS_TOTAL=7 for
+/// backward compatibility when called as a standalone subcommand.
 const COMPLETE_STEPS_TOTAL: i64 = 5;
 const NETWORK_TIMEOUT: u64 = 60;
 
@@ -72,6 +75,12 @@ fn read_state(root: &Path, branch: &str) -> Result<(Value, PathBuf), String> {
         .map_err(|e| format!("Could not read state file: {}", e))?;
     let state: Value = serde_json::from_str(&content)
         .map_err(|_| format!("Could not parse state file: {}", state_path.display()))?;
+    if !state.is_object() {
+        return Err(format!(
+            "Corrupt state file (expected JSON object): {}",
+            state_path.display()
+        ));
+    }
     Ok((state, state_path))
 }
 
@@ -108,7 +117,7 @@ fn parse_gh_checks_output(stdout: &str) -> String {
 /// Core complete-fast logic with injectable runner for testability.
 ///
 /// All subprocess calls (gh, git, check-freshness) go through `runner`.
-/// CI dirty check uses `ci_skipped` and `ci_run_fn` parameters so tests
+/// CI dirty check uses `ci_skipped` and `ci_failed_output` parameters so tests
 /// can control CI behavior without real git repos.
 ///
 /// Returns Ok(json) for all path outcomes (including unhappy paths the
@@ -345,7 +354,7 @@ pub fn fast_inner(
                             if !(s.is_object() || s.is_null()) {
                                 return;
                             }
-                            s["complete_step"] = json!(5);
+                            s["complete_step"] = json!(6);
                         });
 
                         json!({
@@ -538,8 +547,8 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 
     // --- GitHub CI check ---
     let pr_number = state.get("pr_number").and_then(|v| v.as_i64());
-    let gh_ci_status = {
-        let pr_str = pr_number.unwrap_or(0).to_string();
+    let gh_ci_status = if let Some(pr_num) = pr_number {
+        let pr_str = pr_num.to_string();
         match run_cmd_with_timeout(
             &["gh", "pr", "checks", &pr_str],
             NETWORK_TIMEOUT,
@@ -547,6 +556,9 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
             Ok((_, stdout, _)) => parse_gh_checks_output(&stdout),
             Err(_) => "none".to_string(),
         }
+    } else {
+        // No pr_number — skip GH CI check rather than querying PR #0
+        "none".to_string()
     };
 
     // Delegate to fast_inner for the remaining logic (mode branch, freshness, merge)
@@ -990,6 +1002,76 @@ mod tests {
 
         let updated = fs::read_to_string(&state_path).unwrap();
         let updated_state: Value = serde_json::from_str(&updated).unwrap();
-        assert_eq!(updated_state["complete_step"], json!(5));
+        assert_eq!(updated_state["complete_step"], json!(6));
+    }
+
+    // --- Freshness error without message key ---
+
+    #[test]
+    fn test_freshness_error_without_message_uses_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        let state_path = setup_state_file(dir.path(), "test-feature", &state);
+
+        let runner = mock_runner(vec![
+            ok(r#"{"status": "error"}"#), // no "message" key
+        ]);
+
+        let result = fast_inner(
+            "test-feature",
+            dir.path(),
+            &state,
+            &state_path,
+            true,
+            false,
+            "/fake/bin/flow",
+            false,
+            true,
+            None,
+            "pass",
+            &runner,
+        );
+
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("check-freshness failed"));
+    }
+
+    // --- Push failure in merged freshness path ---
+
+    #[test]
+    fn test_freshness_merged_push_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        let state_path = setup_state_file(dir.path(), "test-feature", &state);
+
+        let runner = mock_runner(vec![
+            ok(r#"{"status": "merged"}"#), // freshness says main moved
+            Ok((1, String::new(), "remote rejected".to_string())), // push fails
+        ]);
+
+        let result = fast_inner(
+            "test-feature",
+            dir.path(),
+            &state,
+            &state_path,
+            true,
+            false,
+            "/fake/bin/flow",
+            false,
+            true,
+            None,
+            "pass",
+            &runner,
+        );
+
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .to_lowercase()
+            .contains("push failed"));
     }
 }
