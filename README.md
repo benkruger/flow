@@ -200,7 +200,7 @@ The next time you open a Claude Code session, the session-start hook delivers a 
 
 ### Sub-Agent Architecture
 
-Start and Complete use a ci-fixer sub-agent for CI failures. Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition. Code Review performs inline review passes for clarity (code reuse, quality, efficiency, convention compliance), correctness (plan alignment, logic, test coverage, API contracts, rule compliance), and safety (input validation, auth, data exposure), then launches three context-isolated agents in parallel: `reviewer` (receives diff + plan + CLAUDE.md + rules), `pre-mortem` (receives only the diff, investigates independently), and `adversarial` (writes tests designed to break the implementation). Code has no sub-agent. Learn uses `learn-analyst` (cognitively isolated artifact analysis) and `onboarding` (newcomer comprehension barriers).
+Start and Complete use a ci-fixer sub-agent for CI failures. Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition. Code Review launches four cognitively isolated agents in parallel: `reviewer` (context-rich — receives diff + plan + CLAUDE.md + rules, covers architecture, simplicity, and correctness including security), `pre-mortem` (context-sparse — receives only the diff, investigates failure modes including security), `adversarial` (context-sparse — writes tests designed to break the implementation), and `documentation` (context-sparse — assesses maintainability and documentation accuracy). The parent session gathers context, triages findings, and fixes. Code has no sub-agent. Learn uses `learn-analyst` (cognitively isolated compliance audit).
 
 ```text
 Main conversation          Sub-agent (custom plugin)
@@ -263,7 +263,7 @@ Every correction and observation has a path to becoming a permanent, reusable pa
 User corrects Claude → /flow-note captures it in state["notes"]
 Claude writes observations → auto-memory (shared across worktrees)
        ↓
-Learn reads four sources in Phase 5 (CLAUDE.md rules, learn-analyst agent, state/plan data, onboarding agent)
+Learn reads three sources in Phase 5 (CLAUDE.md rules, learn-analyst agent, state/plan data)
        ↓
 Each learning is routed to the right repo-local destination:
     → Project CLAUDE.md   (process rules and architecture — committed via PR)

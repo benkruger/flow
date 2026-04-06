@@ -10,64 +10,52 @@ parent: Skills
 
 **Usage:** `/flow-code-review`, `/flow-code-review --auto`, or `/flow-code-review --manual`
 
-Four review steps — clarity with convention compliance, correctness with
-rule compliance, safety, and parallel agent reviews (context-isolated code
-review, pre-mortem incident analysis, adversarial test generation launched
-concurrently). Combines inline review passes and three context-isolated
-agents into a single phase with four ordered steps, each with its own
-commit checkpoint.
+Six tenants assessed by four cognitively isolated agents (reviewer,
+pre-mortem, adversarial, documentation) launched in parallel. The parent
+session gathers context, triages findings, and fixes. All analysis comes
+from agents — the parent session never reviews the diff itself.
+
+---
+
+## Six Tenants
+
+1. Architecture — conventions, rules, plan alignment
+2. Simplicity — unnecessary complexity, duplication
+3. Maintainability — comprehension barriers for newcomers
+4. Correctness — logic errors, edge cases, security
+5. Test coverage — proven gaps via adversarial tests
+6. Documentation — drift between docs and code behavior
 
 ---
 
 ## Steps
 
-### Step 1 — Simplify (clarity + convention compliance)
+### Step 1 — Gather
 
-Performs four inline review passes sequentially (code reuse, code
-quality, efficiency, convention compliance) against the branch diff. If changes are proposed,
-shows the diff, commits via `/flow-commit`, and runs `bin/flow ci`. If
-no changes, skips to Step 2.
+Collect all artifacts: branch diff, plan file, CLAUDE.md, rules files,
+check for `bin/test`. No analysis.
 
-### Step 2 — Review (correctness)
+### Step 2 — Launch
 
-Performs an inline correctness review of the branch diff using five review
-passes: plan alignment, logic correctness, test coverage, API contracts,
-and rule compliance. Uses the plan file as context. When the diff modifies
-files containing step headings, the logic correctness pass also reads the
-full resulting file to verify sequential step numbering and cross-reference
-consistency. If no findings, skips to the next step.
-Every finding is fixed, `bin/flow ci` is run, and changes are committed
-via `/flow-commit`.
+Launch four agents in parallel. Reviewer is context-rich (receives diff,
+plan, CLAUDE.md, rules). Pre-mortem, adversarial, and documentation are
+context-sparse (receive diff only, investigate independently).
 
-### Step 3 — Security (safety)
+### Step 3 — Triage
 
-Performs an inline security review of the branch diff using three security
-lenses: input validation, authentication and authorization, and data
-exposure. If no findings, skips to the next step. Every finding is fixed,
-`bin/flow ci` is run, and changes are committed via `/flow-commit`.
+Classify each finding: real in-scope (fix), real out-of-scope (file
+issue), or false positive (discard). Shows triage summary table.
 
-### Step 4 — Agent Reviews (parallel launch)
+### Step 4 — Fix
 
-Launches three independent sub-agents in parallel — reviewer, pre-mortem,
-and adversarial — using multiple Agent tool calls in a single response.
-After all agents return, findings are triaged and fixed sequentially.
-
-The **reviewer** agent is context-rich: it receives the branch diff, plan
-file, CLAUDE.md, and `.claude/rules/` inline. The **pre-mortem** agent is
-context-sparse: it receives only the branch diff and investigates the
-codebase independently. The **adversarial** agent is also context-sparse:
-it receives the diff, a branch-scoped temp test file path, and the CLAUDE.md
-path for test conventions.
-
-The main session triages each finding as real or false positive. Real
-findings are fixed, `bin/flow ci` is run, and changes are committed via
+Fix all real in-scope findings, run `bin/flow ci`, commit once via
 `/flow-commit`.
 
 ---
 
 ## Out-of-Scope Findings
 
-Each finding is classified before fixing:
+Each finding is classified during triage:
 
 - **In-scope** — related to the feature, fixed as normal
 - **Tech Debt** — pre-existing, unrelated. Filed as a "Tech Debt" issue via `bin/flow issue`, recorded via `bin/flow add-issue`, then skipped
@@ -97,15 +85,11 @@ a conversation turn boundary. The `--continue-step` flag skips the
 Announce banner and phase entry update, proceeding directly to the Resume
 Check which dispatches to the next step.
 
-Steps 1-3 perform inline review passes sequentially within the response
-turn. Step 4 launches all three agents (reviewer, pre-mortem, adversarial)
-in parallel, then triages and fixes findings after all return.
-
 ---
 
 ## Gates
 
 - Code phase must be complete before Code Review can start
-- `bin/flow ci` must be green after every fix in every step
+- `bin/flow ci` must be green after all fixes
 - `bin/flow ci` must be green before transitioning to Learn
 - Can return to Code or Plan

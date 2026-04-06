@@ -116,7 +116,7 @@ Replace `PREV` with the previous phase number and `PREV_NAME` with its name:
 ## Sub-Agent Pattern
 
 FLOW uses six custom plugin sub-agents in `agents/*.md`: ci-fixer, reviewer,
-pre-mortem, adversarial, learn-analyst, and onboarding. The `PreToolUse`
+pre-mortem, adversarial, learn-analyst, and documentation. The `PreToolUse`
 hook (`bin/flow hook validate-pretool`) is registered globally in `hooks/hooks.json`,
 enforcing tool restrictions on all Bash calls — including those from
 built-in skills' sub-agents. The hook validates three layers: compound
@@ -127,12 +127,11 @@ use supported keys — unsupported keys like `hooks` can cause loading failures.
 
 Start and Complete use ci-fixer for CI failure diagnosis and fix.
 Plan invokes the `decompose` plugin for DAG-based task decomposition.
-Code Review performs inline review passes for clarity, correctness, and
-safety, then launches reviewer, pre-mortem, and adversarial agents in
-parallel for context-isolated analysis.
+Code Review launches four agents in parallel — reviewer, pre-mortem,
+adversarial, and documentation — for cognitively isolated analysis.
+The parent session gathers context, triages findings, and fixes.
 Code has no sub-agents.
-Learn uses learn-analyst (cognitively isolated artifact analysis) and
-onboarding (newcomer comprehension barriers).
+Learn uses learn-analyst (cognitively isolated compliance audit).
 
 **Code phase rationale:** By the time Code starts, the plan file contains
 thorough exploration, a validated approach, identified risks, and ordered

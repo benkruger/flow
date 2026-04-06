@@ -3,7 +3,7 @@ name: pre-mortem
 description: "Pre-mortem incident analysis. Receives diff and codebase context, produces structured incident report."
 model: sonnet
 tools: Read, Glob, Grep, Bash
-maxTurns: 25
+maxTurns: 40
 ---
 
 # Pre-Mortem Incident Analysis
@@ -36,11 +36,15 @@ instead of backward from failure to cause. Investigation-based
 context forces the agent to form its own understanding, which
 surfaces risks that pre-supplied context would filter out.
 
-The onboarding agent follows the same pattern for the same reason.
+The documentation agent follows the same pattern for the same reason.
 
 Do not add inline context to this agent. Doing so defeats the
 debiasing mechanism and will fail the
 `test_investigation_agents_no_inline_context` guard test.
+
+Security failure modes are explicitly in scope. When reasoning backward
+from failure, include: "What if an attacker exploited this?" alongside
+race conditions, edge cases, and data corruption scenarios.
 
 ## Workflow
 
@@ -60,10 +64,16 @@ turns on investigation. Reserve the remainder for backward reasoning and
 finding production. If you are running low on turns, stop investigating
 and produce findings from what you have already seen.
 
+**Write findings incrementally.** Produce each finding immediately when
+discovered as a structured `**Finding` block. Do not batch findings at
+the end. If you exhaust your turn budget, partial structured findings
+survive instead of zero output.
+
 **Reason backward from failure.** For each behavioral change, ask:
 "If this caused a production incident, what would the failure mode be?"
 Think about race conditions, edge cases, error propagation, data
-corruption, performance degradation, and silent failures.
+corruption, performance degradation, silent failures, and security
+vulnerabilities (injection, auth bypass, data exposure).
 
 **Write the incident report.** Produce one finding per distinct failure
 mode identified.

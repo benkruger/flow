@@ -1,6 +1,6 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — four review steps: clarity with convention compliance (inline review passes), correctness with rule compliance (inline review), safety (inline security review), and parallel agent reviews (context-isolated code review, pre-mortem incident analysis, adversarial test generation launched concurrently). Commits after each step."
+description: "Phase 4: Code Review — six tenants assessed by four cognitively isolated agents (reviewer, pre-mortem, adversarial, documentation) launched in parallel. Parent session gathers context, triages findings, and fixes."
 ---
 
 # FLOW Code Review — Phase 4: Code Review
@@ -34,6 +34,7 @@ stop immediately and show the error to the user.
 3. Check `phases.flow-code.status` in the JSON.
    - If not `"complete"`: STOP. "BLOCKED: Phase 3: Code must be
      complete. Run /flow:flow-code first."
+
 </HARD-GATE>
 
 Keep the project root, branch, and state data from the gate in context —
@@ -41,6 +42,42 @@ use the project root to build Read tool paths (e.g.
 `<project_root>/.flow-states/<branch>.json`). Do not re-read the state
 file or re-run git commands to gather the same information. Do not `cd`
 to the project root — `bin/flow` commands find paths internally.
+
+Compute `<worktree_path>` for repo-destination edits:
+`<worktree_path>` = `<project_root>/<state.worktree>` (from the state
+file's `worktree` field, e.g. `<project_root>/.worktrees/<branch>`)
+
+## Six Tenants
+
+The Code Review phase assesses the work through six tenants. Every
+finding from every agent must map to one of these tenants. Findings
+that do not map to a tenant are dropped.
+
+**Tenant 1 — Architecture.** Does the code follow the project's
+conventions, rules, and planned approach? Deviations from CLAUDE.md,
+`.claude/rules/`, and the implementation plan are findings.
+
+**Tenant 2 — Simplicity.** Is there unnecessary complexity? Duplicated
+logic, missed abstractions, over-engineering, conditionals that could be
+flattened, names that could be clearer.
+
+**Tenant 3 — Maintainability.** Can a newcomer understand this code
+without context from the conversation that produced it? Implicit
+assumptions, undocumented patterns, names that only make sense with
+tribal knowledge.
+
+**Tenant 4 — Correctness.** Does the code actually work? Logic errors,
+edge cases, off-by-one errors, null handling gaps, error propagation,
+race conditions, and security vulnerabilities (injection, auth bypass,
+data exposure).
+
+**Tenant 5 — Test coverage.** Are the changes adequately tested?
+Meaningful assertions, edge cases covered, error paths exercised. Gaps
+are proven by adversarial tests that fail.
+
+**Tenant 6 — Documentation.** Do the docs match the code after these
+changes? CLAUDE.md, `.claude/rules/`, README, doc comments, and inline
+comments that no longer reflect the code's actual behavior.
 
 ## Concurrency
 
@@ -89,6 +126,12 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-code-review --actio
 Parse the JSON output to confirm `"status": "ok"`.
 If `"status": "error"`, report the error and stop.
 
+Set the step tracking fields for TUI progress display:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_steps_total=4
+```
+
 ## Logging
 
 After every Bash command completes, log it to `.flow-states/<branch>.log`
@@ -112,138 +155,36 @@ Read `code_review_step` from the state file (default `0` if absent).
 - If `3` — Steps 1-3 are done. Skip to Step 4.
 - If `4` — All steps are done. Skip to Done.
 
-## Framework Conventions
-
-Read the project's CLAUDE.md for framework-specific conventions. The
-four review steps perform inline review passes against the branch
-diff. The CLAUDE.md conventions inform fix decisions.
-
 ---
 
-## Step 1 — Simplify
+## Step 1 — Gather
 
-Get the full branch diff to use as review context:
+Collect all artifacts needed by the agents. No analysis — just
+artifact collection.
+
+**Read the plan file.** Read `files.plan` from the state file to get the
+plan file path. Use the Read tool to read the plan file.
+
+**Read project conventions.** Use the Read tool to read the project
+CLAUDE.md at `<worktree_path>/CLAUDE.md`. Use the Glob tool to find all
+`.claude/rules/*.md` files at `<worktree_path>/.claude/rules/*.md`, then
+read each file.
+
+**Get the branch diff.**
 
 ```bash
 git diff origin/main...HEAD
 ```
 
-Perform four review passes on the diff output. Execute each pass
-sequentially, aggregating findings as you go.
-
-**Pass 1 — Code Reuse:** Review the diff for duplicated logic, missed
-abstractions, and opportunities to consolidate. Identify patterns that
-appear in multiple locations and suggest how to share them.
-
-**Pass 2 — Code Quality:** Review the diff for naming clarity,
-structural simplicity, readability improvements, and unnecessary
-complexity. Identify conditionals that could be simplified, names that
-could be clearer, and abstractions that add complexity without value.
-
-**Pass 3 — Efficiency:** Review the diff for unnecessary allocations,
-redundant operations, and performance patterns. Identify operations that
-could be avoided or simplified without changing behavior.
-
-**Pass 4 — Convention Compliance:** Review the diff against the project's
-`CLAUDE.md` and `.claude/rules/` conventions. Identify deviations from
-documented coding standards, architectural patterns, naming conventions,
-and process rules. Flag anything that contradicts an explicit rule in
-the project's conventions.
-
-After all four passes, aggregate the findings. Apply fixes
-for any valid findings that improve the code without changing behavior.
-It is safe to refactor here because Phase 3 (Code) tests already
-verified all behavior.
-
-### Out-of-scope findings
-
-Review the findings for any that are pre-existing
-(not introduced by the current PR). For each out-of-scope finding,
-classify as Tech Debt and file an issue.
-
-Write the issue body to `.flow-issue-body` in the project root using the
-Write tool, then file:
+**Check for test runner.**
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Tech Debt" --title "<issue_title>" --body-file .flow-issue-body
+test -f bin/test
 ```
 
-After filing, record it:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Tech Debt" --title "<issue_title>" --url "<issue_url>" --phase "flow-code-review"
-```
-
-Repeat for each out-of-scope finding. Then continue to the diff review below.
-
-### Diff review
-
-Show the user what the review passes changed:
-
-```bash
-git diff HEAD
-```
-
-Render the diff inline in your response.
-
-**If there are no changes** (empty diff), skip the commit and proceed
-directly to Step 2.
-
-**If there are changes and commit=auto**, skip the AskUserQuestion and
-proceed directly to commit. The diff is still shown for visibility.
-
-**If there are changes and commit=manual**, use AskUserQuestion:
-
-> "Accept Simplify refactoring?"
->
-> - **Yes, commit these changes** — accept and proceed to commit
-> - **No, revert** — undo the simplifications
-> - **Edit manually** — make specific changes before committing
-> - **Go back to Code** — revert changes and return to Code phase
-
-**If "Edit manually"**: The user will describe changes. After editing,
-run `git diff HEAD` again to show the revised diff. Then ask again:
-"Ready to commit?" with the two options: **Yes, commit** or **No, revert**.
-
-**If "No, revert"**: Run `git diff --stat` to list changed files, then
-restore each file individually:
-
-```bash
-git restore <file>
-```
-
-Repeat for each changed file. Never use `git restore .`, `git reset HEAD`,
-or `git clean` — these discard changes without review. Restore files one
-at a time so each revert is deliberate. After restoring, skip the commit
-and proceed to Step 2.
-
-**If "Go back to Code"**: Restore each changed file individually (same
-process as "No, revert" above), then follow the back-navigation
-instructions below.
-
-**Commit**: Run CI first:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci
-```
-
-If green, set the continuation context and flag.
-
-If commit=auto, use the first form. If commit=manual, use the second:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_review_step=1, then self-invoke flow:flow-code-review --continue-step --auto."
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_review_step=1, then self-invoke flow:flow-code-review --continue-step --manual."
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
-```
-
-If commit=auto, use `/flow:flow-commit --auto`; otherwise use `/flow:flow-commit`.
+If the command succeeds (exit 0), `bin/test` exists — the adversarial
+agent should be launched in Step 2. If it fails (exit non-zero), skip
+the adversarial agent in Step 2.
 
 Record step completion:
 
@@ -251,316 +192,18 @@ Record step completion:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=1
 ```
 
-To continue to Step 2, invoke `flow:flow-code-review --continue-step` using
-the Skill tool as your final action. If commit=auto was resolved, pass
-`--auto` as well. Do not output anything else after this invocation.
+To continue to Step 2, invoke `flow:flow-code-review --continue-step`
+using the Skill tool as your final action. If commit=auto was resolved,
+pass `--auto` as well. Do not output anything else after this invocation.
 
 ---
 
-## Step 2 — Review
-
-Read `files.plan` from the state file to get the plan file path. Use the
-Read tool to read the plan file.
-
-Get the full branch diff to use as review context:
-
-```bash
-git diff origin/main...HEAD
-```
-
-Perform five correctness review passes on the diff output, using the plan
-file as context. Execute each pass sequentially, aggregating findings as
-you go.
-
-**Pass 1 — Plan Alignment:** Review the diff against the plan. Does the
-implementation match the plan's intent? Identify missing tasks, extra
-scope beyond the plan, and deviations from the planned approach.
-
-**Pass 2 — Logic Correctness:** Review the diff for logic errors. Identify
-edge cases, off-by-one errors, null handling gaps, incorrect error
-propagation, and race conditions.
-
-**Step numbering consistency check:** When the diff modifies files containing
-step headings (`### Step N` or `## Step N`), read the full resulting file —
-not just the diff — and verify two things:
-
-**(a) Sequential numbering:** Step headings must be numbered sequentially
-starting from 1 with no gaps or duplicates.
-
-**(b) Cross-reference resolution:** Every internal cross-reference matching
-`Step N` must resolve to a step heading that exists in the same file. Check
-all six cross-reference patterns: skip/route (`Skip to Step N`,
-`continue to Step N`), forward (`needed for Step N`, `Keep ... for Step N`),
-jump (`Jump to Step N`), back (`from Step N`, `value from Step N`,
-`output from Step N`), range (`Steps M–N`), and prose (`Step N` followed by
-other words). Each referenced number must correspond to an actual step heading
-in the file.
-
-**Pass 3 — Test Coverage:** Review the diff for untested code paths.
-Identify missing assertions, untested error paths, boundary conditions
-without tests, and tests that do not verify what they claim.
-
-**Pass 4 — API Contracts:** Review the diff for interface mismatches.
-Identify function signatures that do not match their callers, inconsistent
-return types, and interfaces that do not match their documentation.
-
-**Pass 5 — Rule Compliance:** Use the Glob tool to find all
-`.claude/rules/*.md` files in the working directory. If no files are
-found, skip this pass. Otherwise, use the Read tool to read each file.
-Treat each rule as a checklist item. Review the diff for violations of
-any accumulated project rule. Identify code that contradicts explicit
-guidance from the rules files.
-
-After all five passes, aggregate the findings.
-
-If no findings were identified, show the Review summary with zero
-findings listed, then without pausing continue to Step 3.
-
-### Fix every finding
-
-For each finding from the review, classify it:
-
-**Minor finding** (style, missing option, small oversight):
-
-- Fix it directly
-- Describe what was fixed and why
-
-**Significant finding** (logic error, missing risk coverage, plan mismatch):
-
-If commit=auto, fix it directly without asking.
-
-If commit=manual, use AskUserQuestion:
-
-> "Found a significant issue: &lt;description&gt;. How would you like to proceed?"
->
-> - **Fix it here in Code Review**
-> - **Go back to Code**
-> - **Go back to Plan**
-
-**Out-of-scope finding** (pre-existing, unrelated to the feature):
-
-Classify as one of:
-
-- **Tech Debt** — working but fragile, duplicated, or convention-violating code
-- **Documentation Drift** — docs out of sync with actual behavior
-
-File an issue and move on — do not fix out-of-scope findings.
-
-Write the issue body to `.flow-issue-body` in the project root using the
-Write tool, then file:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Tech Debt" --title "<issue_title>" --body-file .flow-issue-body
-```
-
-Or for documentation:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Documentation Drift" --title "<issue_title>" --body-file .flow-issue-body
-```
-
-After filing, record it:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Tech Debt" --title "<issue_title>" --url "<issue_url>" --phase "flow-code-review"
-```
-
-After fixing in-scope findings, run:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci
-```
-
-<HARD-GATE>
-`bin/flow ci` must be green before proceeding to Step 3.
-Any fix made during Review requires `bin/flow ci` to run again.
-</HARD-GATE>
-
-If fixes were made, set the continuation context and flag before committing.
-
-If commit=auto, use the first form. If commit=manual, use the second:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Show review summary, set code_review_step=2, then self-invoke flow:flow-code-review --continue-step --auto."
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Show review summary, set code_review_step=2, then self-invoke flow:flow-code-review --continue-step --manual."
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
-```
-
-If commit=auto use `/flow:flow-commit --auto`,
-otherwise use `/flow:flow-commit` for the Review fixes.
-
-### Review summary
-
-Show a summary of what was found and fixed inside a fenced code block:
-
-````markdown
-```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  FLOW — Code Review — Step 2: Review — SUMMARY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Findings fixed
-  --------------
-  - <description of fix and why>
-  - <description of fix and why>
-
-  bin/flow ci       : ✓ green
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-````
-
-Record step completion:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=2
-```
-
-To continue to Step 3, invoke `flow:flow-code-review --continue-step` using
-the Skill tool as your final action. If commit=auto was resolved, pass
-`--auto` as well. Do not output anything else after this invocation.
-
----
-
-## Step 3 — Security
-
-Get the full branch diff to use as security review context:
-
-```bash
-git diff origin/main...HEAD
-```
-
-Perform three security review passes on the diff output. Execute each pass
-sequentially, aggregating findings as you go.
-
-**Pass 1 — Input Validation:** Review the diff for injection vulnerabilities,
-unsanitized user input, command injection, path traversal, and unsafe
-deserialization. Identify any place where external input flows into sensitive
-operations without validation or escaping.
-
-**Pass 2 — Authentication & Authorization:** Review the diff for
-authentication bypasses, missing access controls, insecure session handling,
-and privilege escalation. Identify any place where identity or permissions
-are checked incorrectly or not at all.
-
-**Pass 3 — Data Exposure:** Review the diff for sensitive data leaks,
-hardcoded secrets, insecure storage, weak cryptography, and information
-disclosure. Identify any place where confidential data could be exposed
-to unauthorized parties.
-
-After all three passes, aggregate the findings.
-
-### Fix every finding
-
-For each finding from the security review, fix the issue in code, then
-run CI:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci
-```
-
-Set the continuation context and flag:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Continue fixing remaining security findings."
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
-```
-
-If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise
-invoke `/flow:flow-commit`.
-
-Move to the next finding.
-
-<HARD-GATE>
-`bin/flow ci` must be green after every fix. Do not move to the next
-finding until the current fix passes `bin/flow ci` and is committed.
-</HARD-GATE>
-
-Repeat until all findings are fixed.
-
-If no findings, skip the commit. Show the Security summary with zero
-findings, then without pausing continue to Done.
-
-### Security summary
-
-Show a summary of what was found and fixed inside a fenced code block:
-
-````markdown
-```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  FLOW — Code Review — Step 3: Security — SUMMARY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Findings         : N
-  Fixed            : N
-
-  Findings
-  --------
-  - [FIXED] <description of finding>
-  - [FIXED] <description of finding>
-
-  bin/flow ci      : ✓ green
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-````
-
-Record step completion:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=3
-```
-
-To continue to Step 4, invoke `flow:flow-code-review --continue-step` using
-the Skill tool as your final action. If commit=auto was resolved, pass
-`--auto` as well. Do not output anything else after this invocation.
-
----
-
-## Step 4 — Agent Reviews
-
-This step launches three independent sub-agents in parallel — reviewer,
-pre-mortem, and adversarial — then triages and fixes findings from all
-three after they return.
-
-### Gather context
-
-Get the full branch diff once for all agents:
-
-```bash
-git diff origin/main...HEAD
-```
-
-Read `files.plan` from the state file to get the plan file path. Use the
-Read tool to read the plan file. Use the Read tool to read the project
-CLAUDE.md. Use the Glob tool to find all `.claude/rules/*.md` files,
-then use the Read tool to read each one. Collect all content — you will
-pass it inline to the reviewer agent.
-
-### Check for test runner
-
-```bash
-test -f bin/test
-```
-
-If the command succeeds (exit 0), `bin/test` exists — the adversarial
-agent should be launched. If it fails (exit non-zero), skip the
-adversarial agent.
-
-### Launch agents in parallel
+## Step 2 — Launch agents
 
 Launch all applicable agents in a single response using multiple Agent
-tool calls. All three agents are independent — they share no state and
-can run concurrently.
+tool calls. All agents are independent — they share no state and can
+run concurrently. Each agent is cognitively isolated from the
+conversation that produced the code, eliminating self-reporting bias.
 
 **Reviewer agent** — context-rich (receives diff, plan, CLAUDE.md, rules):
 
@@ -587,7 +230,8 @@ Prefix the prompt with:
 
 > "You are reviewing code you did not write. The full diff, the plan,
 > the project CLAUDE.md, and all project rules are provided inline below.
-> Review the diff for correctness, convention compliance, and coverage."
+> Review the diff for architecture adherence, simplicity, correctness,
+> and security."
 
 **Pre-mortem agent** — context-sparse (receives only the diff):
 
@@ -599,7 +243,8 @@ Use the Agent tool with:
 Provide the full diff output in the prompt, prefixed with:
 
 > "This PR was merged and caused a production incident. The full diff
-> is below. Investigate the codebase and write the incident report."
+> is below. Investigate the codebase and write the incident report.
+> Security failure modes are explicitly in scope."
 
 **Adversarial agent** — context-sparse (receives diff, temp file path,
 CLAUDE.md path, branch name). Only launch if `bin/test` exists:
@@ -623,7 +268,25 @@ Provide the full diff output in the prompt, along with:
 - The path to the project CLAUDE.md
 - The branch name
 
-### After all agents return
+**Documentation agent** — context-sparse (receives diff, doc paths):
+
+Use the Agent tool with:
+
+- `subagent_type`: `"flow:documentation"`
+- `description`: `"Documentation and maintainability review"`
+
+Provide the full diff output in the prompt, along with:
+
+- The path to the project CLAUDE.md
+- The path to the `.claude/rules/` directory
+
+Prefix the prompt with:
+
+> "You are a new team member reading this PR for the first time. The
+> full diff is below. Investigate the codebase and documentation for
+> comprehension barriers and documentation drift."
+
+Wait for all agents to return.
 
 If the adversarial agent was launched (`bin/test` exists), verify the
 temp test file was deleted. If it still exists, delete it:
@@ -632,99 +295,177 @@ temp test file was deleted. If it still exists, delete it:
 rm tests/test_adversarial_<branch>.py
 ```
 
-Skip this cleanup when `bin/test` does not exist — no adversarial agent
-was launched and no temp file was created.
+Record step completion:
 
-### Triage findings
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=2
+```
+
+To continue to Step 3, invoke `flow:flow-code-review --continue-step`
+using the Skill tool as your final action. If commit=auto was resolved,
+pass `--auto` as well. Do not output anything else after this invocation.
+
+---
+
+## Step 3 — Triage
 
 Triage findings from each agent in order: reviewer, pre-mortem,
-adversarial. For each finding, evaluate it as either **real** (a
-credible issue supported by evidence) or **false positive** (speculative,
-not supported by the code, or already covered by tests).
+adversarial, documentation. For each finding, classify it:
 
-Show each finding with its source agent, your triage decision, and
-rationale.
+**Real + in-scope** — a credible issue supported by evidence, introduced
+by this PR. Route to Step 4 for fixing.
 
-If all agents report no findings, skip the commit. Show the Agent
-Reviews summary with zero findings, then without pausing continue
-to Done.
+**Real + out-of-scope** — a credible issue that is pre-existing or
+unrelated to the feature. File an issue and move on — do not fix.
 
-### Fix every real finding
+**False positive** — speculative, not supported by the code, or already
+covered by tests. Discard with rationale.
 
-For each finding triaged as real, fix the issue in code, then run CI:
+### Truncation check
+
+Examine each agent's output for expected structure. Valid output contains
+`**Finding` blocks with category labels or explicit "No findings" markers.
+If an agent's output ends mid-sentence or is missing expected categories,
+the agent exhausted its turn budget. Note the incomplete agent in the
+triage table so the user knows coverage was partial.
+
+### File out-of-scope issues
+
+For each real + out-of-scope finding, classify as one of:
+
+- **Tech Debt** — working but fragile, duplicated, or convention-violating code
+- **Documentation Drift** — docs out of sync with actual behavior
+
+Write the issue body to `.flow-issue-body` in the project root using the
+Write tool, then file:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Tech Debt" --title "<issue_title>" --body-file .flow-issue-body
+```
+
+Or for documentation:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Documentation Drift" --title "<issue_title>" --body-file .flow-issue-body
+```
+
+After filing, record it:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Tech Debt" --title "<issue_title>" --url "<issue_url>" --phase "flow-code-review"
+```
+
+### Triage summary
+
+Show each finding with its source agent, tenant, triage decision, and
+rationale inside a fenced code block:
+
+````markdown
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  FLOW — Code Review — Step 3: Triage — SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Reviewer
+  --------
+  - [T1 Architecture] [REAL] <finding description>
+  - [T2 Simplicity] [FALSE POSITIVE] <reason>
+
+  Pre-Mortem
+  ----------
+  - [T4 Correctness] [REAL] <finding description>
+
+  Adversarial
+  -----------
+  - [T5 Test coverage] [REAL] <finding description>
+
+  Documentation
+  -------------
+  - [T6 Documentation] [REAL] <finding description>
+  - [T3 Maintainability] [OUT OF SCOPE] filed #123
+
+  Truncated agents: none
+
+  Real findings to fix : N
+  Out-of-scope filed   : N
+  False positives       : N
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+````
+
+If all agents report no findings, show the triage summary with zero
+findings, then skip the commit and proceed directly to Done.
+
+Record step completion:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=3
+```
+
+To continue to Step 4, invoke `flow:flow-code-review --continue-step`
+using the Skill tool as your final action. If commit=auto was resolved,
+pass `--auto` as well. Do not output anything else after this invocation.
+
+---
+
+## Step 4 — Fix
+
+Fix all real in-scope findings from Step 3.
+
+If no real in-scope findings exist, skip this step and proceed to Done.
+
+### Fix each finding
+
+For each real in-scope finding, fix the issue in code. After fixing all
+findings, run CI once:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
 
-Set the continuation context and flag:
+<HARD-GATE>
+`bin/flow ci` must be green before committing.
+If CI fails, identify the breaking fix and iterate until green.
+
+</HARD-GATE>
+
+### Back navigation
+
+If a finding is too significant to fix in Code Review:
+
+If commit=auto, fix it directly without asking.
+
+If commit=manual, use AskUserQuestion:
+
+> - **Go back to Code** — implementation issue
+> - **Go back to Plan** — plan was missing something
+
+**Go back to Code:** update Phase 4 to `pending`, Phase 3 to
+`in_progress`, then invoke `flow:flow-code`.
+
+**Go back to Plan:** update Phases 4 and 3 to `pending`, Phase 2 to
+`in_progress`, then invoke `flow:flow-plan`.
+
+### Commit
+
+Set the continuation context and flag before committing.
+
+If commit=auto, use the first form. If commit=manual, use the second:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Continue fixing remaining agent review findings."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_review_step=4, then self-invoke flow:flow-code-review --continue-step --auto."
+```
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_review_step=4, then self-invoke flow:flow-code-review --continue-step --manual."
 ```
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
-If commit=auto, invoke `/flow:flow-commit --auto` for the fix. Otherwise
-invoke `/flow:flow-commit`.
-
-Move to the next finding.
-
-<HARD-GATE>
-`bin/flow ci` must be green after every fix. Do not move to the next
-finding until the current fix passes `bin/flow ci` and is committed.
-
-</HARD-GATE>
-
-Repeat until all real findings are fixed.
-
-### Agent Reviews summary
-
-Show a summary of what was found and triaged inside a fenced code block:
-
-````markdown
-```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  FLOW — Code Review — Step 4: Agent Reviews — SUMMARY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Context-Isolated Review
-  -----------------------
-  Agent findings  : N
-  Real            : N
-  False positive  : N
-  Fixed           : N
-
-  Pre-Mortem
-  ----------
-  Agent findings  : N
-  Real            : N
-  False positive  : N
-  Fixed           : N
-
-  Adversarial Testing
-  -------------------
-  Agent findings  : N
-  Real            : N
-  False positive  : N
-  Fixed           : N
-
-  Findings
-  --------
-  - [REVIEWER] [FIXED] <description of real finding>
-  - [REVIEWER] [FALSE POSITIVE] <description and why>
-  - [PRE-MORTEM] [FIXED] <description of real finding>
-  - [PRE-MORTEM] [FALSE POSITIVE] <description and why>
-  - [ADVERSARIAL] [FIXED] <description of real finding>
-  - [ADVERSARIAL] [FALSE POSITIVE] <description and why>
-
-  bin/flow ci      : ✓ green
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-````
+If commit=auto, use `/flow:flow-commit --auto`; otherwise use `/flow:flow-commit`.
 
 Record step completion:
 
@@ -735,21 +476,6 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=4
 To continue to Done, invoke `flow:flow-code-review --continue-step` using
 the Skill tool as your final action. If commit=auto was resolved, pass
 `--auto` as well. Do not output anything else after this invocation.
-
----
-
-## Back Navigation
-
-Use AskUserQuestion if a finding is too significant to fix in Code Review:
-
-> - **Go back to Code** — implementation issue
-> - **Go back to Plan** — plan was missing something
-
-**Go back to Code:** update Phase 4 to `pending`, Phase 3 to
-`in_progress`, then invoke `flow:flow-code`.
-
-**Go back to Plan:** update Phases 4 and 3 to `pending`, Phase 2 to
-`in_progress`, then invoke `flow:flow-plan`.
 
 ---
 
@@ -837,12 +563,15 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
 - Always run `bin/flow ci` after any fix made during Code Review
 - Never transition to Learn unless `bin/flow ci` is green
-- Fix every finding from inline review passes, inline correctness review, and inline security review — do not leave findings unaddressed
+- Fix every real in-scope finding from agent triage — do not leave findings unaddressed
 - Follow the project CLAUDE.md conventions when fixing
-- Each active step (Simplify, Review, Security, and Agent Reviews combining Context-Isolated Review, Pre-Mortem, and Adversarial Testing) gets its own commit when changes are made
+- All analysis comes from cognitively isolated agents — the parent session never reviews the diff itself
+- Parent session gathers, launches, triages, and fixes — it does not analyze
+- Every finding must map to one of the six tenants — findings that do not map are dropped
+- One commit for all Code Review fixes (Step 4), not one commit per finding
+- After each step completes, advance to the next step via self-invocation — never pause or wait for user input between steps (Gather, Launch, Triage, Fix advance automatically; only the Done HARD-GATE can pause)
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories
 - Never cd before running `bin/flow` — it detects the project root internally
-- After each active step completes, advance to the next step via self-invocation — never pause or wait for user input between steps
 - Never discard uncommitted changes to unblock a workflow step — if any git command fails due to uncommitted changes, show `git diff` to the user and ask how to proceed

@@ -29,7 +29,7 @@ In the target project:
 | 1 | Start | `/flow:flow-start` | Create worktree, PR, state file, configure workspace |
 | 2 | Plan | `/flow:flow-plan` | Invoke decompose plugin for DAG analysis, explore codebase, create implementation plan |
 | 3 | Code | `/flow:flow-code` | Execute plan tasks one at a time with TDD |
-| 4 | Code Review | `/flow:flow-code-review` | Four review steps: clarity with convention compliance, correctness with rule compliance, safety, and parallel agent reviews (context-isolated code review, pre-mortem incident analysis, adversarial test generation launched concurrently) |
+| 4 | Code Review | `/flow:flow-code-review` | Six tenants assessed by four cognitively isolated agents (reviewer, pre-mortem, adversarial, documentation) launched in parallel. Parent gathers, triages, and fixes. |
 | 5 | Learn | `/flow:flow-learn` | Review mistakes, capture learnings, route to permanent homes |
 | 6 | Complete | `/flow:flow-complete` | Merge PR, remove worktree, delete state file |
 
@@ -71,7 +71,7 @@ CI will fail if these are missing:
 - `.github/workflows/autoupdate.yml` — auto-updates PR branches when main advances
 - `docs/` — GitHub Pages site (static HTML); `docs/reference/flow-state-schema.md` for state file schema
 - `frameworks/<name>/` — per-framework data: `detect.json`, `permissions.json`, `dependencies`, `priming.md`
-- `agents/*.md` — six custom plugin sub-agents: ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, onboarding
+- `agents/*.md` — six custom plugin sub-agents: ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, documentation
 - `lib/flow_utils.py` — shared utilities (timestamps, branch detection, state mutation, repo detection)
 - `lib/*.py` — utility scripts invoked by `bin/flow` subcommands (read individual files for details)
 - `bin/flow` — hybrid dispatcher: tries Rust binary first (`target/release/flow-rs` or `target/debug/flow-rs`), auto-rebuilds when source is newer than binary, falls back to `lib/*.py` on exit 127
@@ -113,7 +113,7 @@ The "Flow In-Progress" label on issues is the cross-engineer WIP detection mecha
 
 Six custom plugin sub-agents in `agents/*.md`, all specifying `model: sonnet`. Agent frontmatter must only use supported keys (`name`, `description`, `model`, `effort`, `maxTurns`, `tools`, `disallowedTools`, `skills`, `memory`, `background`, `isolation`) — `test_agent_frontmatter_only_supported_keys` enforces this. The global `PreToolUse` hook (`bin/flow hook validate-pretool`) enforces Bash and Agent tool restrictions across all agents. See `.claude/rules/cognitive-isolation.md` for the two-tier context model and debiasing rationale.
 
-Agent `maxTurns` budgets are set in each agent's frontmatter. When adding or modifying an agent's budget, read peer agents' frontmatter to maintain parity between agents with similar scope (e.g. context-rich read-only agents should have comparable budgets). The onboarding agent is planned for migration from Learn to Code Review (Phase 4).
+Agent `maxTurns` budgets are set in each agent's frontmatter. When adding or modifying an agent's budget, read peer agents' frontmatter to maintain parity between agents with similar scope (e.g. context-rich read-only agents should have comparable budgets).
 
 ### Orchestration
 

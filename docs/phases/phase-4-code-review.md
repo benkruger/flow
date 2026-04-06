@@ -7,85 +7,69 @@ nav_order: 5
 
 **Command:** `/flow-code-review`
 
-Four steps on the same diff — clarity with convention compliance,
-correctness with rule compliance, safety, and parallel agent reviews
-(context-isolated code review, pre-mortem incident analysis, adversarial
-test generation launched concurrently). Combines inline review passes and
-three context-isolated agents into a single phase with four ordered steps,
-each with its own commit checkpoint.
+Six tenants assessed by four cognitively isolated agents launched in
+parallel. The parent session gathers context, triages findings, and
+fixes. All analysis comes from agents — the parent session never reviews
+the diff itself, eliminating the self-reporting bias of inline
+self-review.
+
+---
+
+## Six Tenants
+
+Every finding must map to one of these tenants:
+
+1. **Architecture** — does the code follow the project's conventions?
+2. **Simplicity** — is there unnecessary complexity?
+3. **Maintainability** — can a newcomer understand this?
+4. **Correctness** — logic errors, edge cases, security?
+5. **Test coverage** — are changes adequately tested?
+6. **Documentation** — do docs match the code after these changes?
 
 ---
 
 ## The Four Steps
 
-### Step 1 — Simplify (clarity + convention compliance)
+### Step 1 — Gather
 
-Performs four inline review passes sequentially against the branch diff:
-code reuse, code quality, efficiency, and convention compliance. Refactors for clarity: removes
-unnecessary abstractions, simplifies conditionals, improves naming. Never
-changes what the code does, only how.
+Collect all artifacts: branch diff, plan file, CLAUDE.md, `.claude/rules/`
+files, and check whether `bin/test` exists for adversarial testing.
 
-If changes are proposed, they are shown as a diff, committed via
-`/flow-commit`, and `bin/flow ci` is run. If no changes are proposed, this
-step is skipped.
+### Step 2 — Launch
 
-### Step 2 — Review (correctness)
+Launch four agents in parallel using multiple Agent tool calls in a
+single response:
 
-Performs an inline correctness review of the branch diff using five review
-passes: plan alignment, logic correctness, test coverage, API contracts,
-and rule compliance. Uses the plan file as context for
-implementation-vs-intent alignment.
+- **Reviewer** (context-rich): receives diff, plan, CLAUDE.md, rules.
+  Covers architecture (T1), simplicity (T2), and correctness including
+  security (T4).
+- **Pre-mortem** (context-sparse): receives only the diff, investigates
+  the codebase independently. Covers correctness failure modes including
+  security (T4).
+- **Adversarial** (context-sparse): receives the diff and writes tests
+  designed to fail. Covers test coverage (T5). Only launched if
+  `bin/test` exists.
+- **Documentation** (context-sparse): receives the diff and doc paths,
+  investigates the codebase. Covers maintainability (T3) and
+  documentation accuracy (T6).
 
-Every finding is fixed, `bin/flow ci` is run, and changes are committed
-via `/flow-commit`.
+### Step 3 — Triage
 
-### Step 3 — Security (safety)
+For each finding from all agents, classify as:
 
-Performs an inline security review of the branch diff using three security
-lenses: input validation, authentication and authorization, and data
-exposure.
+- **Real + in-scope** — fix in Step 4
+- **Real + out-of-scope** — file as Tech Debt or Documentation Drift issue
+- **False positive** — discard with rationale
 
-Every finding is fixed, `bin/flow ci` is run, and changes are committed
-via `/flow-commit`.
+### Step 4 — Fix
 
-### Step 4 — Agent Reviews (parallel launch)
-
-Launches three independent sub-agents in parallel — reviewer, pre-mortem,
-and adversarial — using multiple Agent tool calls in a single response.
-After all agents return, findings are triaged and fixed sequentially.
-
-The **reviewer** agent is context-rich: it receives the branch diff, plan
-file, CLAUDE.md, and `.claude/rules/` inline. The **pre-mortem** agent is
-context-sparse: it receives only the branch diff and investigates the
-codebase independently. The **adversarial** agent is also context-sparse:
-it receives the diff, a branch-scoped temp test file path, and the CLAUDE.md
-path for test conventions.
-
-The main session triages each finding as real or false positive. Real
-findings are fixed, `bin/flow ci` is run, and changes are committed via
-`/flow-commit`.
-
----
-
-## Step Advancement
-
-Steps advance via self-invocation rather than inline continuation
-directives. After each step completes, the skill invokes itself with
-`--continue-step` as its final action. This mirrors the phase-transition
-pattern (Phase 1 invoking Phase 2) and prevents context loss that occurs
-when the model treats a built-in skill return as a conversation turn
-boundary. The Resume Check section dispatches to the correct step on
-re-entry.
-
-Steps 1-3 perform inline review passes sequentially within the response
-turn. Step 4 launches all three agents (reviewer, pre-mortem, adversarial)
-in parallel, then triages and fixes findings after all return.
+Fix all real in-scope findings, run `bin/flow ci`, commit once.
 
 ---
 
 ## Out-of-Scope Findings
 
-Each finding is classified before fixing:
+Each finding is classified during triage:
 
 - **In-scope** — related to the feature, fixed as normal
 - **Tech Debt** — pre-existing, unrelated to the feature. Filed as a "Tech Debt" issue via `bin/flow issue`, recorded via `bin/flow add-issue`, then skipped
@@ -97,7 +81,7 @@ This keeps reviews focused on the feature while ensuring nothing is lost.
 
 ## bin/flow ci Rule
 
-`bin/flow ci` runs after every fix in every step. Code Review does not
+`bin/flow ci` runs after all fixes in Step 4. Code Review does not
 transition to Learn until `bin/flow ci` is green.
 
 ---
@@ -111,5 +95,5 @@ transition to Learn until `bin/flow ci` is green.
 
 ## What Comes Next
 
-Phase 5: Learn (`/flow-learn`) — extract learnings and update
-CLAUDE.md before the PR is merged.
+Phase 5: Learn (`/flow-learn`) — audit rule compliance and identify
+process gaps before the PR is merged.

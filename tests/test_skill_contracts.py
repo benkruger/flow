@@ -253,15 +253,12 @@ def test_complete_uses_ci_fixer_subagent():
     )
 
 
-def test_code_review_step1_no_general_purpose_agents():
-    """Code Review Step 1 must not use Agent tool — inline review passes only."""
-    for step_num, step_text in _code_review_steps():
-        if step_num != 1:
-            continue
-        assert "Agent tool" not in step_text, (
-            "Code Review Step 1 must not reference 'Agent tool' — use inline review passes instead"
-        )
-        assert '"general-purpose"' not in step_text, "Code Review Step 1 must not reference general-purpose sub-agents"
+def test_code_review_has_six_tenants():
+    """Code Review SKILL.md must define all six tenants."""
+    content = _read_skill("flow-code-review")
+    assert "## Six Tenants" in content, "flow-code-review must have a '## Six Tenants' section"
+    for tenant in ("Architecture", "Simplicity", "Maintainability", "Correctness", "Test coverage", "Documentation"):
+        assert tenant in content, f"flow-code-review must mention tenant '{tenant}'"
 
 
 def test_complete_merge_command_no_delete_branch():
@@ -326,18 +323,29 @@ def test_pre_mortem_agent_exists():
     )
 
 
-def test_onboarding_agent_exists():
-    """agents/onboarding.md must exist with required frontmatter fields."""
-    agent_file = REPO_ROOT / "agents" / "onboarding.md"
-    assert agent_file.exists(), "agents/onboarding.md does not exist"
+def test_documentation_agent_exists():
+    """agents/documentation.md must exist with required frontmatter fields."""
+    agent_file = REPO_ROOT / "agents" / "documentation.md"
+    assert agent_file.exists(), "agents/documentation.md does not exist"
     content = agent_file.read_text()
-    assert "name: onboarding" in content, "agents/onboarding.md missing 'name: onboarding' in frontmatter"
-    # Onboarding agent must be read-only — no Edit or Write tools
+    assert "name: documentation" in content, "agents/documentation.md missing 'name: documentation' in frontmatter"
+    # Documentation agent must be read-only — no Edit or Write tools
     assert "Edit" not in content.split("---")[1], (
-        "agents/onboarding.md must not include Edit tool — onboarding is read-only"
+        "agents/documentation.md must not include Edit tool — documentation is read-only"
     )
     assert "Write" not in content.split("---")[1], (
-        "agents/onboarding.md must not include Write tool — onboarding is read-only"
+        "agents/documentation.md must not include Write tool — documentation is read-only"
+    )
+
+
+def test_code_review_no_onboarding_agent():
+    """Tombstone: onboarding agent renamed to documentation in Code Review rework.
+
+    agents/onboarding.md was repurposed to agents/documentation.md with expanded scope
+    covering both maintainability (T3) and documentation accuracy (T6)."""
+    agent_file = REPO_ROOT / "agents" / "onboarding.md"
+    assert not agent_file.exists(), (
+        "agents/onboarding.md must not exist — renamed to documentation.md in Code Review rework"
     )
 
 
@@ -413,16 +421,39 @@ def test_adversarial_agent_exists():
     )
 
 
-def test_learn_agents_have_sufficient_max_turns():
-    """Learn phase agents must have maxTurns >= 25 to match their Code Review peers.
+def test_code_review_agents_have_sufficient_max_turns():
+    """Code Review agents must have maxTurns >= 40 to avoid truncation.
 
-    learn-analyst is the peer of reviewer (both context-rich, read-only).
-    onboarding is the peer of pre-mortem (both context-sparse, read-only).
-    Both Code Review peers have maxTurns: 25.
+    All four agents (reviewer, pre-mortem, adversarial, documentation)
+    were bumped to 40 in the Code Review rework to eliminate truncation
+    that caused incomplete findings."""
+    import yaml
+
+    for agent_name in ("reviewer", "pre-mortem", "adversarial", "documentation"):
+        agent_file = REPO_ROOT / "agents" / f"{agent_name}.md"
+        content = agent_file.read_text()
+        parts = content.split("---", 2)
+        assert len(parts) >= 3, f"{agent_name}.md missing YAML frontmatter delimiters"
+        frontmatter = yaml.safe_load(parts[1])
+        assert isinstance(frontmatter, dict), f"{agent_name}.md frontmatter is not a dict"
+        max_turns = frontmatter.get("maxTurns", 0)
+        assert max_turns >= 40, (
+            f"agents/{agent_name}.md has maxTurns={max_turns}, expected >= 40 — "
+            f"Code Review agents need sufficient turn budget to complete structured "
+            f"analysis without truncation"
+        )
+
+
+def test_learn_agents_have_sufficient_max_turns():
+    """Learn phase agents must have maxTurns >= 25 for structured analysis.
+
+    learn-analyst is context-rich, read-only. documentation is context-sparse,
+    read-only. Both need sufficient budget to complete structured analysis
+    without truncation.
     """
     import yaml
 
-    for agent_name in ("learn-analyst", "onboarding"):
+    for agent_name in ("learn-analyst", "documentation"):
         agent_file = REPO_ROOT / "agents" / f"{agent_name}.md"
         content = agent_file.read_text()
         parts = content.split("---", 2)
@@ -473,7 +504,7 @@ def test_cognitive_isolation_lists_all_context_rich_agents():
 
 
 def test_investigation_agents_no_inline_context():
-    """Guard: pre-mortem and onboarding agents must NOT receive inline context.
+    """Guard: pre-mortem, documentation, and adversarial agents must NOT receive inline context.
 
     These agents intentionally receive only the diff and must investigate the
     codebase themselves. Pre-supplied context (plan, CLAUDE.md, rules) masks
@@ -482,7 +513,7 @@ def test_investigation_agents_no_inline_context():
     check against known standards — a fundamentally different task. See
     agents/pre-mortem.md Design Note for the full rationale.
     """
-    for agent_name in ("pre-mortem", "onboarding", "adversarial"):
+    for agent_name in ("pre-mortem", "documentation", "adversarial"):
         agent_file = REPO_ROOT / "agents" / f"{agent_name}.md"
         content = agent_file.read_text()
         # Split on frontmatter delimiter to check body only
@@ -494,26 +525,21 @@ def test_investigation_agents_no_inline_context():
 
 
 def test_reviewer_inline_context_format_convention():
-    """Code Review Step 4 and reviewer agent must agree on labeled section format.
+    """Code Review Step 2 (Launch) and reviewer agent must agree on labeled section format.
 
-    The producer (SKILL.md Step 4) must specify the exact section labels to use
+    The producer (SKILL.md Step 2) must specify the exact section labels to use
     when passing inline context to the reviewer agent. The consumer (reviewer.md)
     must document the matching expected sections. This prevents unpredictable
     prompt assembly across sessions. See issue #651.
     """
-    # Producer side: Step 4 must contain the section labels
+    # Producer side: Step 2 (Launch) must contain the section labels
     skill_content = _read_skill("flow-code-review")
-    step4_start = skill_content.index("## Step 4")
-    # Step 4 ends at Back Navigation or Done (Steps 5-6 merged into Step 4 in PR #686)
-    step4_end = len(skill_content)
-    for boundary in ("## Back Navigation", "## Done"):
-        idx = skill_content.find(boundary, step4_start)
-        if idx != -1:
-            step4_end = min(step4_end, idx)
-    step4_text = skill_content[step4_start:step4_end]
+    step2_start = skill_content.index("## Step 2")
+    step3_start = skill_content.index("## Step 3")
+    step2_text = skill_content[step2_start:step3_start]
     for label in ("DIFF:", "PLAN:", "CLAUDE.MD:", "RULES:"):
-        assert label in step4_text, (
-            f"flow-code-review Step 4 must contain '{label}' section label — "
+        assert label in step2_text, (
+            f"flow-code-review Step 2 must contain '{label}' section label — "
             f"format convention required for consistent reviewer agent prompts"
         )
 
@@ -527,43 +553,34 @@ def test_reviewer_inline_context_format_convention():
         )
 
 
-def test_code_review_has_inline_correctness_review():
-    """Code Review skill must perform inline correctness review in Step 2."""
+def test_code_review_no_inline_correctness_review():
+    """Tombstone: inline correctness review removed in Code Review rework.
+
+    Correctness review is now handled by cognitively isolated agents (reviewer
+    and pre-mortem) instead of inline self-review passes."""
     content = _read_skill("flow-code-review")
-    # Step 2 must contain inline correctness review passes
-    step2_pos = content.index("## Step 2")
-    step3_pos = content.index("## Step 3")
-    step2_content = content[step2_pos:step3_pos]
-    assert "Plan Alignment" in step2_content, "Step 2 must include Plan Alignment pass"
-    assert "Logic Correctness" in step2_content, "Step 2 must include Logic Correctness pass"
-    assert "Test Coverage" in step2_content, "Step 2 must include Test Coverage pass"
-    assert "API Contracts" in step2_content, "Step 2 must include API Contracts pass"
-    assert "Rule Compliance" in step2_content, "Step 2 must include Rule Compliance pass"
-    assert "git diff origin/main...HEAD" in step2_content, "Step 2 must get the branch diff inline (three-dot)"
+    assert "Plan Alignment" not in content, (
+        "flow-code-review must NOT contain 'Plan Alignment' inline review pass — "
+        "correctness review delegated to agents in Code Review rework"
+    )
+    assert "Logic Correctness" not in content, (
+        "flow-code-review must NOT contain 'Logic Correctness' inline review pass — "
+        "correctness review delegated to agents in Code Review rework"
+    )
 
 
-def test_code_review_step2_has_step_numbering_verification():
-    """Code Review Step 2 must verify step numbering consistency when diff contains step headings."""
+def test_code_review_no_inline_security_step():
+    """Tombstone: inline security review step removed in Code Review rework.
+
+    Security is now covered by the reviewer agent (explicit security section)
+    and pre-mortem agent (security failure modes) instead of a dedicated
+    inline self-review step."""
     content = _read_skill("flow-code-review")
-    step2_pos = content.index("## Step 2")
-    step3_pos = content.index("## Step 3")
-    step2_content = content[step2_pos:step3_pos]
-    assert "step heading" in step2_content.lower(), "Step 2 must mention step headings as a trigger condition"
-    assert "sequential" in step2_content.lower(), "Step 2 must verify sequential step numbering"
-    assert "cross-reference" in step2_content.lower(), "Step 2 must verify cross-reference consistency"
-    assert "read the full" in step2_content.lower(), "Step 2 must instruct reading the full file (not just the diff)"
-
-
-def test_code_review_has_inline_security_review():
-    """Code Review skill must perform inline security review in Step 3."""
-    content = _read_skill("flow-code-review")
-    # Step 3 must contain inline security review passes
-    step3_pos = content.index("## Step 3")
-    step3_content = content[step3_pos:]
-    assert "Input Validation" in step3_content, "Step 3 must include Input Validation pass"
-    assert "Authentication" in step3_content, "Step 3 must include Authentication pass"
-    assert "Data Exposure" in step3_content, "Step 3 must include Data Exposure pass"
-    assert "git diff origin/main...HEAD" in step3_content, "Step 3 must get the branch diff inline (three-dot)"
+    # The old Step 3 had these specific inline security review passes
+    assert "Input Validation" not in content, (
+        "flow-code-review must NOT contain 'Input Validation' inline pass — "
+        "security review delegated to agents in Code Review rework"
+    )
 
 
 def test_phase_skills_have_tool_restriction_in_hard_rules():
@@ -1533,16 +1550,19 @@ def test_code_review_files_tech_debt_issues():
     assert "bin/flow issue" in content, "Code Review skill must use 'bin/flow issue' to file issues"
 
 
-def test_code_review_step1_files_tech_debt_issues():
-    """Code Review Step 1 (Simplify) must file Tech Debt issues for out-of-scope findings."""
+def test_code_review_no_inline_simplify_step():
+    """Tombstone: inline Simplify step removed in Code Review rework.
+
+    Simplicity review is now handled by the cognitively isolated reviewer
+    agent (Tenant 2) instead of inline self-review passes."""
     content = _read_skill("flow-code-review")
-    step1_start = content.index("## Step 1")
-    step2_start = content.index("## Step 2")
-    step1_content = content[step1_start:step2_start]
-    assert "Tech Debt" in step1_content, "Code Review Step 1 must mention 'Tech Debt' for out-of-scope findings"
-    assert "bin/flow issue" in step1_content, "Code Review Step 1 must use 'bin/flow issue' to file issues"
-    assert "bin/flow add-issue" in step1_content, (
-        "Code Review Step 1 must use 'bin/flow add-issue' to record filed issues"
+    assert "Code Reuse" not in content, (
+        "flow-code-review must NOT contain 'Code Reuse' inline review pass — "
+        "simplicity review delegated to reviewer agent in Code Review rework"
+    )
+    assert "Code Quality" not in content, (
+        "flow-code-review must NOT contain 'Code Quality' inline review pass — "
+        "simplicity review delegated to reviewer agent in Code Review rework"
     )
 
 
@@ -1825,21 +1845,21 @@ def test_code_review_steps_have_continuation_directives():
     """Each Code Review step must have a continuation directive to the next."""
     content = _read_skill("flow-code-review")
 
-    # Step 1 must continue to Step 2
+    # Step 1 (Gather) must continue to Step 2
     step1_match = re.search(r"## Step 1.*?\n(.*?)(?=\n## Step 2)", content, re.DOTALL)
     assert step1_match, "Could not find Step 1 in flow-code-review/SKILL.md"
     assert "continue to Step 2" in step1_match.group(1), (
         "flow-code-review Step 1 must contain 'continue to Step 2' directive"
     )
 
-    # Step 2 must continue to Step 3
+    # Step 2 (Launch) must continue to Step 3
     step2_match = re.search(r"## Step 2.*?\n(.*?)(?=\n## Step 3)", content, re.DOTALL)
     assert step2_match, "Could not find Step 2 in flow-code-review/SKILL.md"
     assert "continue to Step 3" in step2_match.group(1), (
         "flow-code-review Step 2 must contain 'continue to Step 3' directive"
     )
 
-    # Step 3 must continue to Step 4
+    # Step 3 (Triage) must continue to Step 4
     step3_match = re.search(
         r"## Step 3.*?\n(.*?)(?=\n## Step 4)",
         content,
@@ -1850,9 +1870,9 @@ def test_code_review_steps_have_continuation_directives():
         "flow-code-review Step 3 must contain 'continue to Step 4' directive"
     )
 
-    # Step 4 must continue to Done
+    # Step 4 (Fix) must continue to Done
     step4_match = re.search(
-        r"## Step 4.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
+        r"## Step 4.*?\n(.*?)(?=\n## Done)",
         content,
         re.DOTALL,
     )
@@ -1863,7 +1883,7 @@ def test_code_review_steps_have_continuation_directives():
 
 
 def test_code_review_hard_rules_require_step_continuation():
-    """Hard Rules must require immediate continuation between all 4 steps and reference all review lenses."""
+    """Hard Rules must require immediate continuation between all 4 steps and reference all step names."""
     content = _read_skill("flow-code-review")
     hard_rules_match = re.search(r"## Hard Rules\n(.*)", content, re.DOTALL)
     assert hard_rules_match, "Could not find Hard Rules in flow-code-review/SKILL.md"
@@ -1871,34 +1891,29 @@ def test_code_review_hard_rules_require_step_continuation():
     assert re.search(r"never pause", hard_rules, re.IGNORECASE), (
         "flow-code-review Hard Rules must contain 'never pause' language"
     )
-    for step_name in ["Simplify", "Review", "Security", "Context-Isolated Review", "Pre-Mortem", "Adversarial"]:
+    for step_name in ["Gather", "Launch", "Triage", "Fix"]:
         assert step_name in hard_rules, f"flow-code-review Hard Rules must mention '{step_name}' step"
 
 
-def test_code_review_step_2_handles_no_findings():
-    """Step 2 must explicitly handle the no-findings path."""
-    content = _read_skill("flow-code-review")
-    step2_match = re.search(r"## Step 2.*?\n(.*?)(?=\n## Step 3)", content, re.DOTALL)
-    assert step2_match, "Could not find Step 2 in flow-code-review/SKILL.md"
-    assert "no findings" in step2_match.group(1).lower(), "flow-code-review Step 2 must handle the no-findings path"
-
-
-def test_code_review_step_3_handles_no_findings():
-    """Step 3 must explicitly handle the no-findings path."""
+def test_code_review_step_3_has_triage():
+    """Step 3 (Triage) must classify findings and handle the no-findings path."""
     content = _read_skill("flow-code-review")
     step3_match = re.search(r"## Step 3.*?\n(.*?)(?=\n## Step 4)", content, re.DOTALL)
     assert step3_match, "Could not find Step 3 in flow-code-review/SKILL.md"
-    assert "no findings" in step3_match.group(1).lower(), "flow-code-review Step 3 must handle the no-findings path"
+    step3_text = step3_match.group(1)
+    assert "triage" in step3_text.lower(), "Step 3 must perform triage of agent findings"
+    assert "false positive" in step3_text.lower(), "Step 3 must classify false positives"
+    assert "no findings" in step3_text.lower(), "Step 3 must handle the no-findings path"
 
 
-def test_code_review_step_1_has_convention_compliance_pass():
-    """Step 1 must include a convention compliance review pass."""
+def test_code_review_step_2_launches_four_agents():
+    """Step 2 (Launch) must reference all four agents."""
     content = _read_skill("flow-code-review")
-    step1_match = re.search(r"## Step 1.*?\n(.*?)(?=\n## Step 2)", content, re.DOTALL)
-    assert step1_match, "Could not find Step 1 in flow-code-review/SKILL.md"
-    assert "convention compliance" in step1_match.group(1).lower(), (
-        "flow-code-review Step 1 must include a convention compliance review pass"
-    )
+    step2_match = re.search(r"## Step 2.*?\n(.*?)(?=\n## Step 3)", content, re.DOTALL)
+    assert step2_match, "Could not find Step 2 in flow-code-review/SKILL.md"
+    step2_text = step2_match.group(1)
+    for agent in ("reviewer", "pre-mortem", "adversarial", "documentation"):
+        assert agent in step2_text.lower(), f"Step 2 must reference the {agent} agent"
 
 
 def test_code_review_no_plugin_step():
@@ -2003,34 +2018,35 @@ def test_adversarial_agent_no_two_dot_diff():
     )
 
 
-def test_onboarding_agent_no_two_dot_diff():
+def test_documentation_agent_no_two_dot_diff():
     """Tombstone: two-dot diff replaced with three-dot in PR #660. Must not return."""
-    content = (REPO_ROOT / "agents" / "onboarding.md").read_text()
+    content = (REPO_ROOT / "agents" / "documentation.md").read_text()
     assert "origin/main..HEAD" not in content, (
-        "agents/onboarding.md must NOT use two-dot diff (origin/main..HEAD) — "
+        "agents/documentation.md must NOT use two-dot diff (origin/main..HEAD) — "
         "replaced with three-dot (origin/main...HEAD) in PR #660"
     )
 
 
-def test_onboarding_agent_filters_doc_accuracy():
-    """Onboarding agent must filter out doc accuracy issues (PR #688)."""
-    content = (REPO_ROOT / "agents" / "onboarding.md").read_text().lower()
-    has_filter = "not report documentation accuracy" in content
-    assert has_filter, (
-        "agents/onboarding.md must instruct the agent not to report documentation accuracy or staleness issues"
+def test_code_review_uses_documentation_subagent():
+    """Code Review skill must reference the documentation sub-agent."""
+    content = _read_skill("flow-code-review")
+    assert '"flow:documentation"' in content, (
+        "skills/flow-code-review/SKILL.md must reference flow:documentation sub-agent"
     )
 
 
 def test_code_review_step_4_handles_no_findings():
-    """Step 4 (Agent Reviews) must explicitly handle the no-findings path."""
+    """Step 4 (Fix) must explicitly handle the no-findings path."""
     content = _read_skill("flow-code-review")
     step4_match = re.search(
-        r"## Step 4.*?\n(.*?)(?=\n## Back Navigation|\n## Done)",
+        r"## Step 4.*?\n(.*?)(?=\n## Done)",
         content,
         re.DOTALL,
     )
     assert step4_match, "Could not find Step 4 in flow-code-review/SKILL.md"
-    assert "no findings" in step4_match.group(1).lower(), "flow-code-review Step 4 must handle the no-findings path"
+    assert "no findings" in step4_match.group(1).lower() or "no real" in step4_match.group(1).lower(), (
+        "flow-code-review Step 4 must handle the no-findings path"
+    )
 
 
 def test_code_review_no_step_5():
@@ -2067,7 +2083,7 @@ def _code_review_steps():
         if step_num < 4:
             next_header = f"## Step {step_num + 1}"
         else:
-            next_header = "## Back Navigation|## Done"
+            next_header = "## Done"
         step_match = re.search(
             rf"## Step {step_num}.*?\n(.*?)(?=\n(?:{next_header}))",
             content,
@@ -2094,14 +2110,14 @@ def test_code_review_steps_self_invoke():
 
 
 def test_code_review_steps_await_background_agents():
-    """Step 4 must reference all three agents (Steps 1-3 use inline review passes)."""
+    """Step 2 (Launch) must reference all four agents."""
     for step_num, step_text in _code_review_steps():
-        if step_num in (1, 2, 3):
+        if step_num != 2:
             continue
-        if step_num == 4:
-            assert "reviewer" in step_text.lower(), "Step 4 must reference the reviewer agent"
-            assert "pre-mortem" in step_text.lower(), "Step 4 must reference the pre-mortem agent"
-            assert "adversarial" in step_text.lower(), "Step 4 must reference the adversarial agent"
+        assert "reviewer" in step_text.lower(), "Step 2 must reference the reviewer agent"
+        assert "pre-mortem" in step_text.lower(), "Step 2 must reference the pre-mortem agent"
+        assert "adversarial" in step_text.lower(), "Step 2 must reference the adversarial agent"
+        assert "documentation" in step_text.lower(), "Step 2 must reference the documentation agent"
 
 
 def test_code_review_has_self_invocation_check():
@@ -2114,7 +2130,7 @@ def test_code_review_has_self_invocation_check():
 
 
 def test_code_review_has_bash_bintest_check():
-    """Code Review Step 4 must check bin/test existence via bash block, not prose."""
+    """Code Review Step 1 (Gather) must check bin/test existence via bash block, not prose."""
     content = _read_skill("flow-code-review")
     assert "```bash\ntest -f bin/test\n```" in content, (
         "flow-code-review must contain 'test -f bin/test' inside a fenced bash block "
@@ -2672,7 +2688,7 @@ def test_continue_context_includes_mode_flag():
     """Every _continue_context with --continue-step must include --auto or --manual."""
     skills_with_min = {
         "flow-code": 2,
-        "flow-code-review": 4,
+        "flow-code-review": 2,
         "flow-complete": 9,
         "flow-learn": 2,
     }

@@ -3,7 +3,7 @@ name: adversarial
 description: "Adversarial test generation. Writes tests designed to break the implementation, runs them, and reports failures as findings."
 model: sonnet
 tools: Read, Glob, Grep, Write, Bash
-maxTurns: 20
+maxTurns: 40
 ---
 
 # Adversarial Test Generation
@@ -66,6 +66,11 @@ bin/test <temp_test_file>
 - If it **fails** — this is a finding. Record the test name, the test
   code, the failure output, and what code path it proves is uncovered.
 - If it **passes** — discard it. A passing test is not a finding.
+
+**Write findings incrementally.** Produce each finding immediately when
+a test fails as a structured `**Finding` block. Do not batch findings at
+the end. If you exhaust your turn budget, partial structured findings
+survive instead of zero output.
 
 **Round 2 (optional).** If Round 1 produced mostly passing tests, refine
 your approach. Write harder tests targeting deeper edge cases. Overwrite
