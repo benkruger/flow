@@ -366,10 +366,16 @@ def test_learn_analyst_agent_has_design_note():
     )
 
 
-def test_learn_uses_onboarding_subagent():
-    """Learn skill must reference the onboarding sub-agent."""
+def test_learn_no_onboarding_subagent():
+    """Tombstone: onboarding agent removed from Learn in learn-phase rework.
+    Onboarding belongs in Code Review (Phase 4), not Learn (Phase 5).
+    Its purpose is documentation quality for human newcomers — a code quality
+    concern, not a compliance/process audit concern."""
     content = _read_skill("flow-learn")
-    assert '"flow:onboarding"' in content, "skills/flow-learn/SKILL.md must reference flow:onboarding sub-agent"
+    assert '"flow:onboarding"' not in content, (
+        "skills/flow-learn/SKILL.md must not reference flow:onboarding — "
+        "onboarding agent was removed from Learn and is planned for Code Review"
+    )
 
 
 def test_learn_uses_learn_analyst_subagent():
@@ -981,28 +987,25 @@ def test_plan_dag_capture_is_explicit():
     )
 
 
-def test_learn_step3_requires_output_for_mistakes():
-    """Learn SKILL.md Step 3 must require concrete output for every mistake.
+def test_learn_step3_requires_output_for_findings():
+    """Learn SKILL.md Step 3 must require concrete output for every finding.
 
-    When Learn identifies Claude mistakes in Step 2, Step 3 must not allow
-    'existing rules cover it' as an escape hatch. Every mistake must produce
-    at least one artifact (CLAUDE.md edit, Rule issue, or Flow issue)."""
+    When Learn identifies findings that survive the generalization filter,
+    Step 3 must produce at least one artifact (rule edit or GitHub issue)
+    for each finding."""
     step3_lower = _learn_step_text(3).lower()
 
-    assert "every mistake must produce" in step3_lower or "must produce at least one" in step3_lower, (
-        "flow-learn/SKILL.md Step 3 must require every identified mistake to produce at least one concrete artifact"
-    )
-    assert "failed to prevent" in step3_lower, (
-        "flow-learn/SKILL.md Step 3 must state that a rule which failed to prevent a mistake is not sufficient coverage"
+    assert "must produce at least one" in step3_lower or "every finding" in step3_lower, (
+        "flow-learn/SKILL.md Step 3 must require every finding to produce at least one concrete artifact"
     )
 
 
 def test_learn_detects_truncated_agent_output():
     """Learn SKILL.md must check agent output for expected structure after return.
 
-    Both learn-analyst and onboarding agents can exhaust their maxTurns budget
-    and return without structured findings. The skill must detect this and flag
-    it rather than synthesizing from incomplete data (issue #841)."""
+    The learn-analyst agent can exhaust its maxTurns budget and return without
+    structured findings. The skill must detect this and flag it rather than
+    synthesizing from incomplete data (issue #841)."""
     content = _read_skill("flow-learn")
     content_lower = content.lower()
 
@@ -1010,11 +1013,9 @@ def test_learn_detects_truncated_agent_output():
         "flow-learn/SKILL.md must contain truncation detection instructions — "
         "agents can exhaust maxTurns without producing structured output"
     )
-    # Must check both agents have truncation detection
-    for agent in ("learn-analyst", "onboarding"):
-        assert f"**truncation check.** examine the {agent}" in content_lower, (
-            f"flow-learn/SKILL.md must have a truncation check for the {agent} agent"
-        )
+    assert "**truncation check.**" in content_lower, (
+        "flow-learn/SKILL.md must have a truncation check for the learn-analyst agent"
+    )
 
 
 def test_anti_patterns_has_inline_output_rule():
@@ -1449,19 +1450,12 @@ def test_learning_destinations_are_repo_only():
     """Learn skill must define repo-local destinations with correct routing.
 
     Both destinations are direct (on disk). CLAUDE.md and .claude/rules/
-    are both edited using dedicated tools and committed in Step 4."""
+    are both edited via write-rule and committed in Step 5."""
     content = _read_skill("flow-learn")
-    assert "Destinations and routing" in content, "Learn skill must have a 'Destinations and routing' section"
+    assert "### Routing" in content, "Learn skill must have a '### Routing' section"
     assert "Project CLAUDE.md" in content, "Learn skill must include 'Project CLAUDE.md' as a destination"
-    routing_match = re.search(
-        r"Destinations and routing.*?\n\n(.*?)(?:\n###|\n---)",
-        content,
-        re.DOTALL,
-    )
-    assert routing_match, "Could not extract routing table"
-    routing_text = routing_match.group(1)
-    edit_count = routing_text.count("Edit on disk")
-    assert edit_count >= 2, f"Both destinations must use 'Edit on disk' method, found {edit_count}"
+    assert "write-rule" in content, "Learn skill must use write-rule mechanism for applying changes"
+    assert ".claude/rules/" in content, "Learn skill must reference .claude/rules/ as a destination"
 
 
 def test_learning_detects_dangling_async_operations():
@@ -1506,15 +1500,15 @@ def test_learning_files_flow_issues_not_learning():
 
 
 def test_learn_step3_excludes_flow_process_gaps():
-    """Learn Step 3 must direct FLOW process gaps to Step 5, not file them here.
+    """Learn Step 3 must direct FLOW process gaps to Step 6, not file them here.
 
     Issue #311: learnings about FLOW skill behavior were misrouted as Rule
     issues on the user's project repo. Step 3 must contain explicit routing
-    guidance that FLOW process gaps belong in Step 5."""
+    guidance that FLOW process gaps belong in Step 6."""
     step3_text = _learn_step_text(3)
     step3_lower = step3_text.lower()
     assert "process gap" in step3_lower, "Learn Step 3 must mention 'process gap' to guide routing"
-    assert "step 5" in step3_lower, "Learn Step 3 must reference Step 5 as the destination for process gaps"
+    assert "step 6" in step3_lower, "Learn Step 3 must reference Step 6 as the destination for process gaps"
 
 
 def test_code_files_flaky_test_issues():

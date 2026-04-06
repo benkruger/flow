@@ -7,32 +7,43 @@ nav_order: 6
 
 **Command:** `/flow-learn`
 
-Runs before the PR is merged. Autonomously reviews what went wrong across
-all phases, routes learnings to their correct permanent homes, files GitHub
-issues for plugin improvements, and presents a comprehensive report. The
-only commits are CLAUDE.md and `.claude/` changes — application code is
-never touched.
+Runs before the PR is merged. Audits rule compliance, identifies process
+gaps, and creates missing rules. Routes findings to their correct
+permanent homes, files GitHub issues for plugin improvements, and
+presents a comprehensive report. The only commits are CLAUDE.md and
+`.claude/` changes — application code is never touched.
 
 ---
 
-## Four Sources
+## Three Tenants
 
-Learn synthesises from all four before taking any action:
+Learn is an audit, not a retrospective. It asks three specific questions:
 
-1. **CLAUDE.md rules** — the project's rules and conventions that should have been followed
-2. **Conversation context** — what Claude can still see of the session's back-and-forth
-3. **State file and plan data** — visit counts, timing, captured `/flow-note` entries, plan file risks (Phase 5 only)
-4. **Onboarding agent confusion report** — a context-isolated agent reads the PR diff as a new team member and surfaces comprehension barriers the author cannot see (Phase 5 only)
+1. **Did the FLOW process work?** — identify gaps in the plugin's workflow. These become GitHub issues filed against the plugin repo.
+2. **Did Claude follow the rules?** — audit CLAUDE.md and `.claude/rules/` compliance. For each violation, assess whether the rule was unclear (clarify it) or clear but ignored (escalate to HARD-GATE or hook).
+3. **What rules should exist but don't?** — create forward-looking rules for undocumented patterns and gaps in coverage.
 
-Sources 1 and 3 survive compaction. Source 4 runs fresh each time. Context is a bonus if available.
+---
 
-After each agent returns, Learn checks the output for expected structure markers. If an agent exhausted its turn budget without producing structured findings, Learn flags the truncation and proceeds with the remaining non-truncated sources.
+## Sources
+
+Learn gathers artifacts and passes them to the learn-analyst agent for
+cognitively isolated analysis:
+
+1. **CLAUDE.md and rules files** — the project's rules and conventions that should have been followed
+2. **State file and plan data** — visit counts, timing, captured `/flow-note` entries, plan file risks
+3. **Branch diff** — the full `git diff origin/main...HEAD`
+
+All artifacts are passed inline to the learn-analyst agent, which
+produces structured findings categorized by the three tenants. The agent
+writes findings incrementally — if it exhausts its turn budget, partial
+findings are preserved.
 
 ---
 
 ## What Gets Captured
 
-Claude decides destinations autonomously using content-type heuristics:
+Claude routes findings autonomously based on content and tenant:
 
 | Destination | What goes here | Write method |
 |---|---|---|
@@ -45,16 +56,17 @@ never user-level `~/.claude/` paths.
 
 **GitHub issues** — filed during Learn:
 
-- **Flow** issues — FLOW process gaps, filed on the plugin repo (`benkruger/flow`)
+- **Process gap** issues — FLOW process gaps, filed on the plugin repo (`benkruger/flow`)
+- **Enforcement escalation** issues — rules that were clearly stated but ignored, recommending HARD-GATE or hook enforcement
 
 All filed issues are recorded in the state file via `bin/flow add-issue`
 and surfaced in the Complete phase.
 
 ---
 
-## What Makes a Good CLAUDE.md Entry
+## What Makes a Good Rule
 
-**Good:** Generic pattern that prevents the same mistake in any future feature
+**Good:** Generic principle that prevents the same class of mistake in any future feature
 > "Never assume branch-behind is unlikely in a multi-session workflow"
 
 **Bad:** Feature-specific note that only applies here
@@ -62,24 +74,16 @@ and surfaced in the Complete phase.
 
 ---
 
-## Three Modes
+## Enforcement Escalation
 
-Learn auto-detects its context and adjusts behavior:
+When a rule is violated, Learn assesses the enforcement level:
 
-| Mode | Trigger | Sources | Commits | Permission promotion | GitHub issues |
-|------|---------|---------|---------|----------------------|---------------|
-| Phase 5 | State file with Code Review complete | 4 (CLAUDE.md, learn-analyst agent, state/plan, onboarding agent) | `/flow-commit --auto` | Yes | Yes |
-| Maintainer | No state file, `flow-phases.json` exists | 2 (CLAUDE.md, context) | `/flow-commit --auto` | Yes | No |
-| Standalone | No state file, no `flow-phases.json` | 2 (CLAUDE.md, context) | None | Yes | No |
-
-All three modes route learnings to 2 repo-local destinations: Project
-CLAUDE.md and project rules. Both are committed to the repo. Stealth
-users (who exclude `.claude/` from git) are safe — git's own exclusion
-mechanism prevents excluded files from being staged.
+1. **Rule was unclear** → clarify the rule wording
+2. **Rule was clear but ignored** → clarify the rule AND file an enforcement escalation issue (recommend HARD-GATE or hook)
 
 ---
 
 ## What Comes Next
 
 Run Phase 6: Complete (`/flow-complete`) to merge the PR (which now
-includes CLAUDE.md improvements) and clean up.
+includes rule improvements) and clean up.

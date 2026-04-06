@@ -113,7 +113,7 @@ The "Flow In-Progress" label on issues is the cross-engineer WIP detection mecha
 
 Six custom plugin sub-agents in `agents/*.md`, all specifying `model: sonnet`. Agent frontmatter must only use supported keys (`name`, `description`, `model`, `effort`, `maxTurns`, `tools`, `disallowedTools`, `skills`, `memory`, `background`, `isolation`) — `test_agent_frontmatter_only_supported_keys` enforces this. The global `PreToolUse` hook (`bin/flow hook validate-pretool`) enforces Bash and Agent tool restrictions across all agents. See `.claude/rules/cognitive-isolation.md` for the two-tier context model and debiasing rationale.
 
-Agent `maxTurns` budgets follow a peer model: learn-analyst mirrors reviewer (both context-rich, read-only, 25 turns), onboarding mirrors pre-mortem (both context-sparse, read-only, 25 turns). When adding or modifying an agent's budget, check its peer's budget to maintain parity.
+Agent `maxTurns` budgets are set in each agent's frontmatter. When adding or modifying an agent's budget, read peer agents' frontmatter to maintain parity between agents with similar scope (e.g. context-rich read-only agents should have comparable budgets). The onboarding agent is planned for migration from Learn to Code Review (Phase 4).
 
 ### Orchestration
 

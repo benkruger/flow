@@ -23,12 +23,12 @@ context is a design choice matched to the agent's task:
   CLAUDE.md, and rules inline. Its task is checking against known
   standards where having the standards at hand saves turns.
   Learn-analyst additionally receives state file data (visit counts,
-  timings, session notes) to detect process friction and mistakes.
-- **Context-sparse** (pre-mortem, onboarding, adversarial) —
-  receives only the diff and must investigate the codebase itself.
-  Less context forces independent investigation, surfacing risks,
-  comprehension barriers, and coverage gaps that pre-supplied
-  context would mask.
+  timings, session notes) to detect process friction and rule
+  violations.
+- **Context-sparse** (pre-mortem, adversarial) — receives only the
+  diff and must investigate the codebase itself. Less context forces
+  independent investigation, surfacing risks and coverage gaps that
+  pre-supplied context would mask.
 
 This asymmetry is intentional. See `agents/pre-mortem.md` Design
 Note for the full rationale and `agents/reviewer.md` Design Note
@@ -56,11 +56,17 @@ history by design, not by instruction.
 
 ## Reference Implementation
 
+The learn-analyst agent (`agents/learn-analyst.md`) demonstrates
+the context-rich pattern: it runs in the foreground during Learn,
+receives the diff, state data, plan, and all project rules, and
+returns structured compliance findings to the parent session. Its
+prompt explicitly states it has no knowledge of the conversation
+that produced the changes.
+
 The onboarding agent (`agents/onboarding.md`) demonstrates the
-pattern: it runs in the foreground during Learn, receives only
-the diff and codebase access, and returns findings to the parent
-session. Its prompt explicitly states it has no knowledge of the
-conversation that produced the changes.
+context-sparse pattern. It is planned for migration from Learn to
+Code Review (Phase 4) where its documentation quality focus is a
+better fit.
 
 ## Checklist for New Consumers
 

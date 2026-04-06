@@ -23,11 +23,13 @@ Skip the reasoning discipline when the agent:
 - Produces concrete artifacts rather than prose findings (e.g.,
   a code generator that outputs compilable code)
 - Performs process analysis rather than code-semantic analysis
-  (e.g., learn-analyst reviewing workflow friction)
+  (e.g., learn-analyst auditing rule compliance and process gaps)
 - Evaluates comprehension or documentation rather than behavior
   (e.g., onboarding agent reviewing readability)
 
 Current agents without the discipline: learn-analyst, onboarding.
+Learn-analyst performs compliance auditing, not code-semantic
+analysis — the reasoning discipline does not apply.
 
 ## The Template
 
