@@ -173,6 +173,96 @@ fn read_dag_mode(state: &Value) -> String {
         .to_string()
 }
 
+/// Extract the `## Implementation Plan` section from an issue body.
+///
+/// Returns the content between `## Implementation Plan` and the next `##`-level
+/// heading (or end of string). Returns None if the section is not found.
+pub fn extract_implementation_plan(body: &str) -> Option<String> {
+    let marker = "## Implementation Plan";
+    let start_idx = body.find(marker)?;
+    let after_marker = start_idx + marker.len();
+
+    // Find the next ## heading after the marker
+    let content_after = &body[after_marker..];
+    let end_offset = content_after
+        .find("\n## ")
+        .map(|pos| after_marker + pos)
+        .unwrap_or(body.len());
+
+    let section = body[after_marker..end_offset].trim().to_string();
+    if section.is_empty() {
+        return None;
+    }
+    Some(section)
+}
+
+/// Promote markdown headings by one level: `###` → `##`, `####` → `###`.
+///
+/// Tracks fenced code block boundaries to skip promotions inside code blocks.
+pub fn promote_headings(content: &str) -> String {
+    let mut result = String::with_capacity(content.len());
+    let mut in_code_block = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        // Track fenced code blocks
+        if trimmed.starts_with("```") {
+            in_code_block = !in_code_block;
+            result.push_str(line);
+            result.push('\n');
+            continue;
+        }
+
+        if in_code_block {
+            result.push_str(line);
+            result.push('\n');
+            continue;
+        }
+
+        // Promote headings: remove one leading # if line starts with ## or more
+        if trimmed.starts_with("####") {
+            // #### → ###
+            if let Some(pos) = line.find("####") {
+                result.push_str(&line[..pos]);
+                result.push_str(&line[pos + 1..]);
+            }
+        } else if trimmed.starts_with("###") {
+            // ### → ##
+            if let Some(pos) = line.find("###") {
+                result.push_str(&line[..pos]);
+                result.push_str(&line[pos + 1..]);
+            }
+        } else {
+            result.push_str(line);
+        }
+        result.push('\n');
+    }
+
+    // Remove trailing newline added by the loop
+    if result.ends_with('\n') && !content.ends_with('\n') {
+        result.pop();
+    }
+    result
+}
+
+/// Count `#### Task N:` headings in the content (pre-promotion format).
+pub fn count_tasks(content: &str) -> usize {
+    let mut count = 0;
+    let mut in_code_block = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            in_code_block = !in_code_block;
+            continue;
+        }
+        if !in_code_block && trimmed.starts_with("#### Task ") {
+            count += 1;
+        }
+    }
+    count
+}
+
 /// Run phase_complete via mutate_state and return the result JSON.
 fn complete_plan_phase(state_path: &PathBuf, root: &PathBuf, branch: &str) -> Result<Value, String> {
     let (frozen_order, frozen_commands) = load_frozen_config(root, branch);
@@ -220,7 +310,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty());
 
-    let dag_path = state
+    let _dag_path = state
         .get("files")
         .and_then(|f| f.get("dag"))
         .and_then(|v| v.as_str())
@@ -263,9 +353,9 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }));
     }
 
-    // Resume: DAG exists but no plan → enter phase, skip to extraction (Task 4 logic)
-    // For now, fall through to the standard enter-phase path.
-    // Extraction logic will be added in Task 4.
+    // Resume: DAG exists but no plan → enter phase, read DAG for issue body,
+    // then fall through to extraction logic below.
+    // (The extraction code after issue fetch handles this case too.)
 
     // --- Phase enter ---
     mutate_state(&state_path, |state| {
@@ -329,14 +419,80 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }));
     }
 
-    // --- Decomposed issue detected ---
-    // TODO: Tasks 4-5 implement extraction, state updates, logging, PR render, phase complete
-    // For now, return standard path so the model handles older-format decomposed issues
+    // --- Decomposed issue: write DAG file ---
+    let feature_desc = issue_data
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("feature");
+
+    let dag_content = format!(
+        "# Pre-Decomposed Analysis: {}\n\n{}",
+        feature_desc, issue_body
+    );
+    let dag_rel = format!(".flow-states/{}-dag.md", branch);
+    let dag_abs = root.join(&dag_rel);
+    std::fs::write(&dag_abs, &dag_content)
+        .map_err(|e| format!("Failed to write DAG file: {}", e))?;
+
+    // Update files.dag in state
+    mutate_state(&state_path, |state| {
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
+        state["files"]["dag"] = json!(&dag_rel);
+        state["plan_step"] = json!(2);
+    })
+    .map_err(|e| format!("Failed to update state: {}", e))?;
+
+    // --- Extract Implementation Plan section ---
+    let plan_section = match extract_implementation_plan(&issue_body) {
+        Some(s) => s,
+        None => {
+            // No Implementation Plan section — return standard path
+            // so the model handles it as an older-format decomposed issue
+            return Ok(json!({
+                "status": "ok",
+                "path": "standard",
+                "issue_body": issue_body,
+                "issue_number": issue_number,
+                "dag_mode": dag_mode,
+            }));
+        }
+    };
+
+    // Count tasks before promotion (#### Task N: format)
+    let task_count = count_tasks(&plan_section);
+
+    // Promote headings: ### → ##, #### → ###
+    let promoted = promote_headings(&plan_section);
+
+    // Write plan file
+    let plan_rel = format!(".flow-states/{}-plan.md", branch);
+    let plan_abs = root.join(&plan_rel);
+    std::fs::write(&plan_abs, &promoted)
+        .map_err(|e| format!("Failed to write plan file: {}", e))?;
+
+    // Update state: files.plan, code_tasks_total, plan_step
+    mutate_state(&state_path, |state| {
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
+        state["files"]["plan"] = json!(&plan_rel);
+        state["code_tasks_total"] = json!(task_count);
+        state["plan_step"] = json!(3);
+    })
+    .map_err(|e| format!("Failed to update state: {}", e))?;
+
+    // TODO: Task 5 — logging, PR render, phase complete, return "extracted"
+    // For now, return a placeholder that indicates extraction succeeded
     Ok(json!({
         "status": "ok",
-        "path": "standard",
-        "issue_body": issue_body,
-        "issue_number": issue_number,
-        "dag_mode": dag_mode,
+        "path": "extracted",
+        "plan_content": promoted,
+        "plan_file": plan_rel,
+        "dag_file": dag_rel,
+        "task_count": task_count,
+        "formatted_time": "< 1m",
+        "continue_action": "ask",
     }))
 }
