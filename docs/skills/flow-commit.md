@@ -8,19 +8,18 @@ parent: Skills
 
 **Phase:** Any
 
-**Usage:** `/flow-commit`, `/flow-commit --auto`, or `/flow-commit --manual`
+**Usage:** `/flow-commit`
 
-Reviews all pending changes before committing. You see the full diff and proposed commit message, then approve or deny before anything is pushed. This is the only way commits are made in the FLOW workflow.
+Reviews all pending changes before committing. You see the full diff and proposed commit message before anything is pushed. This is the only way commits are made in the FLOW workflow.
 
 ---
 
 ## What It Does
 
-1. Runs CI (if dirty) and stages changes in parallel
+1. Runs CI (FLOW-enabled mode) and stages changes in parallel
 2. Shows `git status` and `git diff --cached` in parallel
 3. Proposes a commit message in the `tl;dr` format
-4. On approval — commits, pulls, and pushes via `bin/flow finalize-commit`
-5. On denial — unstages and asks what needs to be fixed
+4. Commits, pulls, and pushes via `bin/flow finalize-commit`
 
 ---
 
@@ -58,35 +57,18 @@ Subject starts with an imperative verb — Add, Fix, Update, Remove, Refactor. I
 
 Commit auto-detects its context:
 
-| Mode | When | Banner |
-|------|------|--------|
-| FLOW | State file exists | Versioned (`FLOW v0.14.0 — flow:flow-commit`) |
-| Maintainer | No state file, `flow-phases.json` exists | Plain (`Commit`) |
-| Standalone | No state file, no `flow-phases.json` | Plain (`Commit`) |
+| Mode | When | CI | Banner |
+|------|------|----|--------|
+| FLOW-enabled | `.flow.json` exists | Runs `bin/flow ci` | Versioned if state file exists, plain otherwise |
+| Standalone | No `.flow.json` | Skips CI | Plain (`Commit`) |
 
-All three modes share the same diff/message/approval/push process.
+Both modes share the same diff/message/push process.
 
 ---
 
 ## Gates
 
 - Never commits without showing the diff first
-- Never skips the approval step — unless mode is **auto** (via `--auto` flag or `.flow.json` config)
 - Never uses `--no-verify`
-- FLOW and Maintainer mode: Runs `bin/flow ci` before the diff (skips automatically if nothing changed) — skipped in Standalone mode
+- FLOW-enabled mode: Runs `bin/flow ci` before the diff — skipped in Standalone mode
 - FLOW mode: Warns if `bin/flow ci` has not been run since the last code change
-
----
-
-## Auto/Manual Mode
-
-Mode is resolved in this order:
-
-1. `--auto` flag → auto mode (skip approval)
-2. `--manual` flag → manual mode (require approval)
-3. `.flow.json` `skills.flow-commit` value
-4. Built-in default: **auto**
-
-Everything else stays identical: `bin/flow ci` runs first (FLOW and Maintainer mode only), the full diff is displayed, the commit message is generated and shown, and pull-before-push happens. The only difference is whether Step 3 (approval prompt) is shown.
-
-`--auto` is user-invoked only. Claude must never call `/flow-commit --auto` programmatically.

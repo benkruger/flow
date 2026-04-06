@@ -52,7 +52,7 @@ Findings are routed autonomously by tenant:
 | 2 | `.claude/rules/` | `.claude/rules/<topic>.md` in worktree | `bin/flow write-rule` |
 
 Both CLAUDE.md and `.claude/rules/` edits are committed to the feature branch
-via `/flow-commit --auto`. All edits target the project repo — never
+via `/flow-commit`. All edits target the project repo — never
 user-level `~/.claude/` paths.
 
 **Permission promotion** — session permissions accumulated in

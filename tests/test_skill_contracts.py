@@ -1248,25 +1248,53 @@ def test_docs_no_equals_banners():
         )
 
 
-# --- Commit --auto flag ---
+# --- Commit two-mode detection ---
 
 
-def test_commit_auto_flag_restriction():
-    """Commit SKILL.md must document that --auto is user-invoked only."""
-    content = (SKILLS_DIR / "flow-commit" / "SKILL.md").read_text()
+def test_commit_no_auto_manual_flags():
+    """Tombstone: removed in PR #898. flow-commit has no approval prompt flags."""
+    content = _read_skill("flow-commit")
+    assert "--auto" not in content, "flow-commit must not contain --auto flag (removed in PR #898)"
+    assert "--manual" not in content, "flow-commit must not contain --manual flag (removed in PR #898)"
 
-    restriction = "`--auto` is user-invoked only"
-    assert restriction in content, "skills/flow-commit/SKILL.md missing '--auto is user-invoked only' restriction"
+
+def test_commit_two_mode_detection():
+    """Commit SKILL.md must have two-mode detection (FLOW-enabled/Standalone)."""
+    content = _read_skill("flow-commit")
+    assert "FLOW-enabled" in content, "skills/flow-commit/SKILL.md missing 'FLOW-enabled' mode"
+    assert "Standalone" in content, "skills/flow-commit/SKILL.md missing 'Standalone' mode"
+    assert ".flow-states" in content, "skills/flow-commit/SKILL.md missing '.flow-states' for banner detection"
+    assert ".flow.json" in content, "skills/flow-commit/SKILL.md missing '.flow.json' for CI gating"
 
 
-def test_commit_tri_modal_detection():
-    """Commit SKILL.md must have tri-modal detection (FLOW/Maintainer/Standalone)."""
-    content = (SKILLS_DIR / "flow-commit" / "SKILL.md").read_text()
+def test_commit_no_flow_phases_json():
+    """Tombstone: removed in PR #898. flow-commit must not detect via flow-phases.json."""
+    content = _read_skill("flow-commit")
+    assert "flow-phases.json" not in content, "flow-commit must not reference flow-phases.json (removed in PR #898)"
 
-    assert "flow-phases.json" in content, "skills/flow-commit/SKILL.md missing 'flow-phases.json' for mode detection"
-    assert "Maintainer" in content, "skills/flow-commit/SKILL.md missing 'Maintainer' mode reference"
-    assert "Standalone" in content, "skills/flow-commit/SKILL.md missing 'Standalone' mode reference"
-    assert ".flow-states" in content, "skills/flow-commit/SKILL.md missing '.flow-states' for FLOW mode detection"
+
+def test_commit_no_maintainer_mode():
+    """Tombstone: removed in PR #898. flow-commit must not reference Maintainer as a runtime mode."""
+    content = _read_skill("flow-commit")
+    assert "Maintainer" not in content, "flow-commit must not reference 'Maintainer' mode (removed in PR #898)"
+
+
+def test_commit_no_approval_prompt():
+    """Tombstone: removed in PR #898. flow-commit must not contain AskUserQuestion."""
+    content = _read_skill("flow-commit")
+    assert "AskUserQuestion" not in content, "flow-commit must not contain AskUserQuestion (removed in PR #898)"
+
+
+def test_commit_no_git_reset_head():
+    """Tombstone: removed in PR #898. flow-commit must not unstage via git reset HEAD."""
+    content = _read_skill("flow-commit")
+    assert "git reset HEAD" not in content, "flow-commit must not contain 'git reset HEAD' (removed in PR #898)"
+
+
+def test_commit_no_docs_sync():
+    """Tombstone: removed in PR #898. flow-commit must not have docs sync check."""
+    content = _read_skill("flow-commit")
+    assert "Docs sync" not in content, "flow-commit must not contain 'Docs sync' section (removed in PR #898)"
 
 
 # --- Reset skill (plugin) ---
@@ -1331,14 +1359,12 @@ def test_flow_qa_no_create_issue_step():
     assert "flow-create-issue" not in content, "flow-qa create-issue step was removed in PR #729"
 
 
-def test_commit_mode_resolution():
-    """Commit SKILL.md must default to auto and have Mode Resolution."""
-    content = (SKILLS_DIR / "flow-commit" / "SKILL.md").read_text()
-    assert "the default is auto" in content, (
-        "skills/flow-commit/SKILL.md missing 'the default is auto' — "
-        "commit mode must default to auto (no approval prompt)"
+def test_commit_no_mode_resolution():
+    """Tombstone: removed in PR #898. flow-commit has no Mode Resolution section."""
+    content = _read_skill("flow-commit")
+    assert "## Mode Resolution" not in content, (
+        "flow-commit must not contain Mode Resolution section (removed in PR #898)"
     )
-    assert "Mode Resolution" in content, "skills/flow-commit/SKILL.md missing Mode Resolution section"
 
 
 def test_commit_has_commit_format_support():
@@ -1350,24 +1376,14 @@ def test_commit_has_commit_format_support():
 
 
 def test_no_skill_invokes_commit_with_auto():
-    """Skills that use /flow:flow-commit --auto must be in the allow list.
-
-    Start uses --auto for CI baseline fixes and dependency commits on main.
-    Learn uses --auto because the phase is fully autonomous. Code and
-    Code Review conditionally use --auto based on the commit axis setting."""
+    """Tombstone: removed in PR #898. No skill may pass --auto to flow-commit."""
     for d in sorted(SKILLS_DIR.iterdir()):
-        if not d.is_dir() or d.name in (
-            "flow-commit",
-            "flow-start",
-            "flow-learn",
-            "flow-code",
-            "flow-code-review",
-        ):
+        if not d.is_dir():
             continue
         content = (d / "SKILL.md").read_text()
         assert "/flow:flow-commit --auto" not in content, (
             f"skills/{d.name}/SKILL.md references '/flow:flow-commit --auto' — "
-            f"--auto is user-invoked only, skills must not invoke it programmatically"
+            f"flow-commit has no --auto flag (removed in PR #898)"
         )
 
 
@@ -2332,10 +2348,16 @@ def test_code_skill_sets_continue_pending_before_commit():
     assert flag_pos < commit_pos, "_continue_pending=commit must appear before /flow:flow-commit"
 
 
-def test_plan_step_1_fetches_referenced_issues():
-    """Plan Step 1 must instruct fetching referenced GitHub issues."""
+def test_plan_uses_plan_extract_for_issue_fetch():
+    """Plan must use plan-extract command which handles issue fetch internally."""
     content = _read_skill("flow-plan")
-    assert "gh issue view" in content
+    assert "plan-extract" in content
+
+
+def test_plan_no_direct_gh_issue_view():
+    """Tombstone: removed in PR #900. plan-extract handles issue fetch internally."""
+    content = _read_skill("flow-plan")
+    assert "gh issue view" not in content
 
 
 # --- Code phase self-invocation contracts ---

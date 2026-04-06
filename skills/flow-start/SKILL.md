@@ -387,7 +387,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 9 --branch <branch>
 ```
 
 If there are any uncommitted changes (dependency updates + CI fixes),
-commit them to main via `/flow:flow-commit --auto`.
+commit them to main via `/flow:flow-commit`.
 
 ### Step 10 — Release start lock
 
