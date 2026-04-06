@@ -312,11 +312,16 @@ pass `--auto` as well. Do not output anything else after this invocation.
 Triage findings from each agent in order: reviewer, pre-mortem,
 adversarial, documentation. For each finding, classify it:
 
-**Real + in-scope** — a credible issue supported by evidence, introduced
-by this PR. Route to Step 4 for fixing.
+**Real + in-scope** — a credible issue supported by evidence. Apply the
+diff-boundary test: if the finding is in a file that appears in
+`git diff origin/main...HEAD`, it is in-scope — fix it. This includes
+structural issues like duplicate code, missing abstractions, and naming
+problems in files the PR created or modified. Route to Step 4 for fixing.
 
-**Real + out-of-scope** — a credible issue that is pre-existing or
-unrelated to the feature. File an issue and move on — do not fix.
+**Real + out-of-scope** — a credible issue in a file that does NOT
+appear in the PR diff. The problem pre-dates this PR. File an issue and
+move on — do not fix. Never classify a finding as out-of-scope when the
+file was created or modified by this PR.
 
 **False positive** — speculative, not supported by the code, or already
 covered by tests. Discard with rationale.
