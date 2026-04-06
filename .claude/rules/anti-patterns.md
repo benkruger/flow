@@ -29,8 +29,8 @@ tokenization. A mismatch between the rule prose and the code's
 matching logic misleads future readers trying to predict hook
 behavior without reading the source.
 
-When a rule references project-specific mode names ("Maintainer
-mode", "Standalone mode", "FLOW phase"), either define the term
+When a rule references project-specific mode names ("FLOW-enabled",
+"Standalone mode", "FLOW phase"), either define the term
 parenthetically on first use or cite the skill file that defines
 it (e.g. "see `skills/flow-commit/SKILL.md` Round 2"). A rule
 file must stand alone for a reader who has not yet memorized the

@@ -40,7 +40,7 @@ exist). The fix is to always pass an absolute worktree path.
    <worktree>/.flow-issue-body` using the absolute worktree path
 3. The script reads the file, deletes it, then creates the issue
 
-In Maintainer or Standalone mode (no worktree), the project root
+When not in a worktree (no active FLOW phase), the project root
 IS the repo root — a relative path `.flow-issue-body` works because
 the Write tool and `bin/flow issue` both resolve to the same
 directory. Use the relative form in that case.

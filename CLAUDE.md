@@ -123,9 +123,9 @@ Agent `maxTurns` budgets are set in each agent's frontmatter. When adding or mod
 
 Auto-memory is shared across git worktrees of the same repository (since Claude Code 2.1.63).
 
-Learn is tri-modal (Phase 5, Maintainer, Standalone). Routes learnings to project CLAUDE.md and `.claude/rules/`. Also files GitHub issues for process gaps. All filed issues recorded via `bin/flow add-issue`.
+Learn routes learnings to project CLAUDE.md and `.claude/rules/`. Also files GitHub issues for process gaps. All filed issues recorded via `bin/flow add-issue`.
 
-Commit is also tri-modal (FLOW, Maintainer, Standalone). All modes share the same diff/message/approval/push process.
+Commit is dual-mode (FLOW-enabled, Standalone). FLOW-enabled mode (`.flow.json` exists) runs CI before committing; Standalone mode skips CI. Both modes share the same diff/message/push process.
 
 ### Logging
 
