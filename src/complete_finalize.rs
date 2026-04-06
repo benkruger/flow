@@ -13,6 +13,7 @@
 //!    "issues_links": "...", "banner_line": "...", "cleanup": {...}}
 
 use clap::Parser;
+use indexmap::IndexMap;
 use serde_json::{json, Value};
 
 use crate::cleanup;
@@ -39,18 +40,17 @@ pub struct Args {
     pub pull: bool,
 }
 
-/// Core complete-finalize logic. Runs post-merge then cleanup,
-/// continuing cleanup even if post-merge fails.
+/// Testable inner function with injectable post-merge and cleanup.
 ///
-/// Returns Ok(json) with merged results from both operations,
-/// Err(string) only for catastrophic failures that prevent any output.
-pub fn run_impl(args: &Args) -> Result<Value, String> {
-    let root = project_root();
-
+/// `post_merge_fn` returns the post-merge JSON result.
+/// `cleanup_fn` returns the cleanup steps map.
+/// Both are called in sequence; cleanup runs even if post-merge panics.
+pub fn finalize_inner(
+    post_merge_fn: &dyn Fn() -> Value,
+    cleanup_fn: &dyn Fn() -> IndexMap<String, String>,
+) -> Value {
     // --- Post-merge (best-effort) ---
-    let pm_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        complete_post_merge::post_merge(args.pr, &args.state_file, &args.branch)
-    }));
+    let pm_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(post_merge_fn));
 
     let (post_merge_data, post_merge_error) = match pm_result {
         Ok(data) => (Some(data), None),
@@ -89,8 +89,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         .to_string();
 
     // --- Cleanup ---
-    // cleanup() does not need pr_number (that's for abort only — pass None)
-    let cleanup_steps = cleanup::cleanup(&root, &args.branch, &args.worktree, None, args.pull);
+    let cleanup_steps = cleanup_fn();
 
     // Convert IndexMap<String, String> to Value for JSON output
     let cleanup_json: serde_json::Map<String, Value> = cleanup_steps
@@ -120,6 +119,22 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }
     }
 
+    result
+}
+
+/// Core complete-finalize logic. Runs post-merge then cleanup,
+/// continuing cleanup even if post-merge fails.
+///
+/// Returns Ok(json) with merged results from both operations,
+/// Err(string) only for catastrophic failures that prevent any output.
+pub fn run_impl(args: &Args) -> Result<Value, String> {
+    let root = project_root();
+
+    let result = finalize_inner(
+        &|| complete_post_merge::post_merge(args.pr, &args.state_file, &args.branch),
+        &|| cleanup::cleanup(&root, &args.branch, &args.worktree, None, args.pull),
+    );
+
     Ok(result)
 }
 
@@ -133,5 +148,108 @@ pub fn run(args: Args) {
             println!("{}", json!({"status": "error", "message": e}));
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use indexmap::IndexMap;
+
+    fn mock_post_merge_ok() -> Value {
+        json!({
+            "status": "ok",
+            "formatted_time": "2m",
+            "cumulative_seconds": 120,
+            "summary": "Feature complete",
+            "issues_links": "https://github.com/test/test/issues/42",
+            "banner_line": "Issues filed: 1",
+            "failures": {},
+        })
+    }
+
+    fn mock_cleanup_ok() -> IndexMap<String, String> {
+        let mut steps = IndexMap::new();
+        steps.insert("worktree".to_string(), "removed".to_string());
+        steps.insert("state_file".to_string(), "deleted".to_string());
+        steps.insert("log_file".to_string(), "deleted".to_string());
+        steps
+    }
+
+    #[test]
+    fn test_happy_path() {
+        let result = finalize_inner(&mock_post_merge_ok, &mock_cleanup_ok);
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["formatted_time"], "2m");
+        assert_eq!(result["cumulative_seconds"], 120);
+        assert_eq!(result["summary"], "Feature complete");
+        assert_eq!(
+            result["issues_links"],
+            "https://github.com/test/test/issues/42"
+        );
+        assert_eq!(result["cleanup"]["worktree"], "removed");
+        assert_eq!(result["cleanup"]["state_file"], "deleted");
+        assert!(result.get("post_merge_error").is_none());
+        assert!(result.get("post_merge_failures").is_none());
+    }
+
+    #[test]
+    fn test_post_merge_failure_still_cleans_up() {
+        let panicking_pm = || -> Value {
+            panic!("simulated post-merge crash");
+        };
+
+        let result = finalize_inner(&panicking_pm, &mock_cleanup_ok);
+
+        // Overall status is still ok — cleanup succeeded
+        assert_eq!(result["status"], "ok");
+        // Post-merge error captured
+        assert_eq!(result["post_merge_error"], "post-merge panicked");
+        // Cleanup still ran
+        assert_eq!(result["cleanup"]["worktree"], "removed");
+        assert_eq!(result["cleanup"]["state_file"], "deleted");
+        // Post-merge fields default to empty
+        assert_eq!(result["formatted_time"], "");
+        assert_eq!(result["cumulative_seconds"], 0);
+    }
+
+    #[test]
+    fn test_post_merge_with_failures_propagated() {
+        let pm_with_failures = || -> Value {
+            json!({
+                "status": "ok",
+                "formatted_time": "<1m",
+                "cumulative_seconds": 30,
+                "summary": "done",
+                "issues_links": "",
+                "banner_line": "",
+                "failures": {
+                    "render_pr_body": "gh API error",
+                    "label_issues": "timeout",
+                },
+            })
+        };
+
+        let result = finalize_inner(&pm_with_failures, &mock_cleanup_ok);
+
+        assert_eq!(result["status"], "ok");
+        let failures = result["post_merge_failures"].as_object().unwrap();
+        assert!(failures.contains_key("render_pr_body"));
+        assert!(failures.contains_key("label_issues"));
+    }
+
+    #[test]
+    fn test_cleanup_results_included() {
+        let cleanup_with_pull = || -> IndexMap<String, String> {
+            let mut steps = mock_cleanup_ok();
+            steps.insert("git_pull".to_string(), "pulled".to_string());
+            steps
+        };
+
+        let result = finalize_inner(&mock_post_merge_ok, &cleanup_with_pull);
+
+        assert_eq!(result["cleanup"]["git_pull"], "pulled");
+        assert_eq!(result["cleanup"]["worktree"], "removed");
     }
 }
