@@ -22,16 +22,11 @@ Begins a new feature. This is always the first command run for any piece of work
 
 ## What It Does
 
-1. Acquires a start lock so only one start runs at a time (concurrent starts poll via `/loop` every 15 seconds until the lock is released)
-2. Pre-flight: runs version gate and upgrade check in parallel
-3. Pulls latest main
-4. Runs `bin/flow ci` for a clean baseline — retries up to 3 times for flaky tests, files a Flaky Test issue if intermittent, stops if all fail
-5. Updates dependencies on main via `bin/dependencies`
-6. Runs `bin/flow ci` again to catch dep-induced breakage — retries up to 3 times for flaky tests, falls back to ci-fixer sub-agent if all retries fail
-7. Commits any changes to main
-8. Releases the start lock
-9. Runs `lib/start-setup.py` — worktree creation, empty commit + push + PR, and state file creation. The user's raw input (including `#N` issue references) is written to `.flow-states/<branch>-start-prompt` and passed via `--prompt-file` so it is preserved verbatim in the state file for issue closing at completion
-10. Labels referenced issues — if the prompt contains `#N` issue references, adds the "Flow In-Progress" label so other engineers can see these issues are being worked on
+1. **start-init** — acquires start lock, runs version gate and upgrade check, creates early state file via `init-state`, labels referenced issues with "Flow In-Progress" (concurrent starts poll via `/loop` every 15 seconds until the lock is released)
+2. **start-gate** — pulls latest main, runs `bin/flow ci` baseline with retry (3 attempts), updates dependencies, runs post-deps CI with retry if deps changed. Falls back to ci-fixer sub-agent for dep-induced breakage
+3. **start-workspace** — creates worktree, opens PR, backfills state file with PR fields, releases the start lock as its final action (lock release is after worktree creation, closing a race condition)
+4. Changes to the worktree directory
+5. **start-finalize** — completes the phase transition, sends Slack notification, returns timing and continue mode
 
 ---
 
@@ -46,9 +41,9 @@ Claude derives a concise branch name (2-5 words) from the prompt:
 
 The derived name is hyphenated and used for the branch, worktree (`.worktrees/<name>`), and PR title (title-cased). Branch names are capped at 32 characters, truncated at word boundaries.
 
-When the prompt contains `#N` issue references (e.g., `work on issue #309`), `start-setup` automatically fetches the first issue's title and derives the branch name and PR title from it. This produces descriptive names like `organize-settings-allow-list` rather than generic names like `work-on-issue-309`. If the issue fetch fails, it falls back to deriving from the prompt words.
+When the prompt contains `#N` issue references (e.g., `work on issue #309`), `start-init` automatically fetches the first issue's title and derives the branch name and PR title from it. This produces descriptive names like `organize-settings-allow-list` rather than generic names like `work-on-issue-309`. If the issue fetch fails, start-init returns a hard error.
 
-If the referenced issue already carries the "Flow In-Progress" label, `init-state` (Step 3) stops with a hard error before creating the state file — another flow (on this machine or another engineer's machine) is already working on that issue. The user should resume the existing flow in its worktree, or reference a different issue.
+If the referenced issue already carries the "Flow In-Progress" label, `start-init` stops with a hard error before creating the state file — another flow (on this machine or another engineer's machine) is already working on that issue. The user should resume the existing flow in its worktree, or reference a different issue.
 
 ---
 
@@ -56,7 +51,7 @@ If the referenced issue already carries the "Flow In-Progress" label, `init-stat
 
 Mode is configurable via `.flow.json` (default: manual) and cached in the state file during setup. The Done section reads the resolved mode from the state file, not `.flow.json` directly. In auto mode, the phase transition advances to Plan without asking.
 
-When `--auto` is passed to `/flow-start`, it overrides ALL skill autonomy settings to fully autonomous for this feature — not just flow-start's own continue mode. Every phase will auto-commit and auto-continue. The override is written to the state file by `lib/start-setup.py` and propagates to all downstream phases automatically. This is equivalent to the "Fully autonomous" preset from `/flow-prime`, applied per-feature without changing `.flow.json`.
+When `--auto` is passed to `/flow-start`, it overrides ALL skill autonomy settings to fully autonomous for this feature — not just flow-start's own continue mode. Every phase will auto-commit and auto-continue. The override is written to the state file by `start-init` and propagates to all downstream phases automatically. This is equivalent to the "Fully autonomous" preset from `/flow-prime`, applied per-feature without changing `.flow.json`.
 
 ---
 

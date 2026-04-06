@@ -183,7 +183,8 @@ fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
 /// Any spawn failure (NotFound, PermissionDenied, etc.) is mapped to
 /// `GhResult::NotFound` — a deliberate improvement over Python's
 /// `FileNotFoundError`-only handler which would panic on other errors.
-fn run_gh_cmd(owner_repo: &str, timeout_secs: u64) -> GhResult {
+/// Public wrapper for start-init to compose upgrade-check inline.
+pub fn run_gh_cmd(owner_repo: &str, timeout_secs: u64) -> GhResult {
     use std::io::Read;
 
     let api_path = format!("repos/{}/releases/latest", owner_repo);

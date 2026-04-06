@@ -45,7 +45,11 @@ use flow_rs::prime_check;
 use flow_rs::prime_project;
 use flow_rs::prime_setup;
 use flow_rs::promote_permissions;
+use flow_rs::start_finalize;
+use flow_rs::start_gate;
+use flow_rs::start_init;
 use flow_rs::start_setup;
+use flow_rs::start_workspace;
 use flow_rs::update_deps;
 use flow_rs::upgrade_check;
 use flow_rs::utils::{detect_dev_mode, read_version};
@@ -272,9 +276,25 @@ enum Commands {
         subcommand: Vec<String>,
     },
 
+    /// Complete Start phase and send notifications
+    #[command(name = "start-finalize")]
+    StartFinalize(start_finalize::Args),
+
+    /// Consolidated CI and dependency gate for start phase
+    #[command(name = "start-gate")]
+    StartGate(start_gate::Args),
+
+    /// Consolidated start initialization (lock + prime + upgrade + init-state + labels)
+    #[command(name = "start-init")]
+    StartInit(start_init::Args),
+
     /// FLOW Start phase setup (worktree, PR, state file)
     #[command(name = "start-setup")]
     StartSetup(start_setup::Args),
+
+    /// Create worktree, PR, backfill state, release lock
+    #[command(name = "start-workspace")]
+    StartWorkspace(start_workspace::Args),
 
     /// Format the FLOW status panel for display.
     #[command(name = "format-status")]
@@ -474,8 +494,20 @@ fn main() {
             };
             commands::start_step::run(step, &branch, subcommand);
         }
+        Some(Commands::StartFinalize(args)) => {
+            start_finalize::run(args);
+        }
+        Some(Commands::StartGate(args)) => {
+            start_gate::run(args);
+        }
+        Some(Commands::StartInit(args)) => {
+            start_init::run(args);
+        }
         Some(Commands::StartSetup(args)) => {
             start_setup::run(args);
+        }
+        Some(Commands::StartWorkspace(args)) => {
+            start_workspace::run(args);
         }
         Some(Commands::FormatStatus { branch }) => {
             run_format_status(branch.as_deref());
