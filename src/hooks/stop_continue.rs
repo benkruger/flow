@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 
 use crate::commands::clear_blocked::clear_blocked;
 use crate::commands::set_blocked::set_blocked;
-use crate::git::{current_branch, project_root};
+use crate::git::{project_root, resolve_branch};
 use crate::github::detect_repo;
 use crate::lock::mutate_state;
 use crate::phase_config::find_state_files;
@@ -284,18 +284,24 @@ pub fn format_block_output(skill: &str, context: Option<&str>) -> Value {
 }
 
 /// Run the stop-continue hook (entry point).
+///
+/// Uses `resolve_branch` (not `current_branch`) so the hook finds the
+/// active flow's state file even when Claude Code runs from a shell
+/// whose git HEAD points to a different branch than the active flow —
+/// the common worktree case where the shell sits on main while a flow
+/// runs in a feature worktree. Matches the original Python behavior.
 pub fn run() {
     let mut stdin_buf = String::new();
     let _ = std::io::stdin().read_to_string(&mut stdin_buf);
 
     let hook_input: Value = serde_json::from_str(&stdin_buf).unwrap_or_else(|_| json!({}));
 
-    let branch = match current_branch() {
+    let root: PathBuf = project_root();
+    let (branch, _candidates) = resolve_branch(None, &root);
+    let branch = match branch {
         Some(b) => b,
         None => return,
     };
-
-    let root: PathBuf = project_root();
     let state_path = root.join(".flow-states").join(format!("{}.json", branch));
 
     let mut result = check_continue(&hook_input, &state_path);
