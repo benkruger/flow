@@ -37,7 +37,7 @@ One-time project setup. Configures workspace permissions in `.claude/settings.js
 
 FLOW has two independent axes for skills that support them:
 
-- **Commit** — how `/flow-commit` is invoked during phase work (auto = skip diff approval, manual = require approval). Also controls per-task approval in Code.
+- **Commit** — controls per-task review in phase skills (auto = skip review prompts, manual = require explicit approval before each commit).
 - **Continue** — whether to auto-advance to the next phase or prompt first.
 
 The chosen configuration is stored in `.flow.json` under a `skills` key:
@@ -58,9 +58,9 @@ The chosen configuration is stored in `.flow.json` under a `skills` key:
 }
 ```
 
-Phase skills that commit (Code, Code Review, Learn) have both axes as a nested object. Phase skills that don't commit (Start, Plan) have only the continue axis. Utility skills (Abort, Complete) have a single string value. The `/flow-commit` skill is not configurable — it defaults to auto and can be overridden with `--manual`.
+Phase skills that commit (Code, Code Review, Learn) have both axes as a nested object. Phase skills that don't commit (Start, Plan) have only the continue axis. Utility skills (Abort, Complete) have a single string value.
 
-Individual skills can always be overridden at invocation time with `--auto` or `--manual` flags, regardless of the `.flow.json` configuration.
+Phase skills can be overridden at invocation time with `--auto` or `--manual` flags, regardless of the `.flow.json` configuration.
 
 ---
 

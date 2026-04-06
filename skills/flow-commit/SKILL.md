@@ -1,11 +1,11 @@
 ---
 name: flow-commit
-description: "Review the full diff, approve or deny, then git add + commit + push. Use at every commit checkpoint in the FLOW workflow."
+description: "Review the full diff, then git add + commit + push. Use at every commit checkpoint in the FLOW workflow."
 ---
 
 # Commit
 
-Review all pending changes as a diff before committing. You must get explicit approval before touching git.
+Review all pending changes as a diff before committing.
 
 ## Concurrency
 
@@ -30,13 +30,12 @@ Keep the project root and branch in context for the rest of this skill.
 
 Run all of these in parallel (one response, all use the project root from Round 1):
 
-1. Use the Glob tool: pattern `*.json`, path `<project_root>/.flow-states` — if any results, this is **FLOW** mode.
-2. Use the Glob tool: pattern `flow-phases.json`, path `<project_root>` — if found (and no state files from #1), this is **Maintainer** mode.
-3. Use the Read tool: read `<project_root>/.flow.json`.
+1. Use the Glob tool: pattern `*.json`, path `<project_root>/.flow-states` — if any results, a FLOW phase is active (used for banner selection only).
+2. Use the Read tool: read `<project_root>/.flow.json`.
+   - If `.flow.json` exists → **FLOW-enabled** mode (run CI before committing).
+   - If `.flow.json` does not exist → **Standalone** mode (skip CI).
    - Parse the `commit_format` value: `"title-only"` or `"full"`.
    - If `.flow.json` does not exist or has no `commit_format` key → use `"full"`.
-
-If neither Glob returned results → **Standalone** mode.
 
 Keep the detected mode and `commit_format` in context.
 
@@ -44,7 +43,7 @@ Keep the detected mode and `commit_format` in context.
 
 At the very start, output the following banner in your response (not via Bash) inside a fenced code block:
 
-**FLOW mode:**
+**If a state file exists (`.flow-states/*.json` Glob returned results):**
 
 ````markdown
 ```text
@@ -54,7 +53,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ```
 ````
 
-**Maintainer and Standalone mode:**
+**Otherwise (no state file):**
 
 ````markdown
 ```text
@@ -64,9 +63,9 @@ At the very start, output the following banner in your response (not via Bash) i
 ```
 ````
 
-On completion (whether approved, denied, or nothing to commit), print the same way:
+On completion (whether nothing to commit or committed successfully), print the same way:
 
-**FLOW mode:**
+**If a state file exists:**
 
 ````markdown
 ```text
@@ -76,7 +75,7 @@ On completion (whether approved, denied, or nothing to commit), print the same w
 ```
 ````
 
-**Maintainer and Standalone mode:**
+**Otherwise:**
 
 ````markdown
 ```text
@@ -90,21 +89,7 @@ On completion (whether approved, denied, or nothing to commit), print the same w
 
 ```text
 /flow:flow-commit
-/flow:flow-commit --auto
-/flow:flow-commit --manual
 ```
-
-- `/flow:flow-commit` — defaults to auto (no approval prompt)
-- `/flow:flow-commit --auto` — skips the approval prompt
-- `/flow:flow-commit --manual` — requires explicit approval
-
-## Mode Resolution
-
-1. If `--auto` was passed → mode is **auto**
-2. If `--manual` was passed → mode is **manual**
-3. Otherwise → mode is **auto**
-
-`--auto` is user-invoked only. Claude must never call `/flow:flow-commit --auto` programmatically — except in phase skills (`/flow:flow-start`, `/flow:flow-code`, `/flow:flow-code-review`, `/flow:flow-learn`) which commit autonomously as part of their workflow.
 
 ---
 
@@ -112,7 +97,7 @@ On completion (whether approved, denied, or nothing to commit), print the same w
 
 ### Round 3 — Test and stage
 
-**FLOW and Maintainer mode:** run both in parallel (one response, two Bash calls):
+**FLOW-enabled mode:** run both in parallel (one response, two Bash calls):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
@@ -167,18 +152,6 @@ deleted:    path/to/removed.rb
 ````
 
 The `diff` code block renders red/green in most markdown environments.
-
-#### Docs sync check
-
-**FLOW and Maintainer mode only.** Skip for Standalone.
-
-If the diff includes changes to any of these files:
-
-- `skills/*/SKILL.md` — check `docs/skills/` and `docs/phases/` for matching updates
-- `flow-phases.json` — check `docs/phases/`, `docs/skills/index.md`, `README.md`, `docs/index.html`
-- `docs/reference/flow-state-schema.md` — check against `conftest.make_state()` fields
-
-Flag any docs that may need updates before writing the commit message. If docs are already current, proceed.
 
 ### Step 1 — Commit Message
 
@@ -247,19 +220,9 @@ If any element is missing or out of order, rewrite before displaying.
 **Additional body rules (full format only):**
 - Explain the motivation — what prompted this change?
 
-Display the full message under the heading **Commit Message** before asking for approval.
+Display the full message under the heading **Commit Message**.
 
-### Step 2 — Ask for approval
-
-**Unless `--manual` was explicitly passed, skip this step entirely — the default is auto.**
-
-If `--manual` was explicitly passed, use the `AskUserQuestion` tool with exactly these two options:
-
-Question: "Approve this commit?"
-- Option 1: **Approve** — "Looks good, commit and push"
-- Option 2: **Deny** — "Something needs to be fixed first"
-
-### Round 5 — Commit and push (on approval)
+### Round 5 — Commit and push
 
 Files are already staged from Round 3. No need to `git add -A` again.
 
@@ -291,33 +254,9 @@ The script returns JSON:
   - Once all conflicts are resolved: `git add -A`, then `git push`
 - `{"status": "error", ...}` — report the step and message to the user.
 
-### Step 3 — Handle denial
-
-Unstage everything first (files were staged in Round 3 for diff purposes):
-
-```bash
-git reset HEAD
-```
-
-`git reset HEAD` only unstages — it moves files back from staged to unstaged.
-No code is deleted, no changes are lost. It is the opposite of `git add`.
-
-Clean up the message file (written in Round 5 Step 1 before denial):
-
-```bash
-rm .flow-commit-msg
-```
-
-Then ask: **What needs to be addressed before committing?**
-
-Listen to the reason, acknowledge it clearly, and stop. Do not commit. The user
-will make fixes and re-invoke the commit skill when ready.
-
 ### Hard Rules
 
 - Never commit without showing the diff first
-- The default commit mode is auto — never prompt for approval unless `--manual` was explicitly passed
-- `--auto` is user-invoked only. Claude must never call `/flow:flow-commit --auto` programmatically — except in phase skills (`/flow:flow-start`, `/flow:flow-code`, `/flow:flow-code-review`, `/flow:flow-learn`) which commit autonomously as part of their workflow.
 - Never use `--no-verify`
 - Never add Co-Authored-By trailers or attribution lines — commits are authored by the user alone
 - Always pull before pushing — other sessions may have merged changes
@@ -326,4 +265,4 @@ will make fixes and re-invoke the commit skill when ready.
 
 ## Additional Rules
 
-- **FLOW mode only:** If `bin/flow ci` has not been run since the last code change, warn the user before asking for approval
+- **FLOW mode only:** If `bin/flow ci` has not been run since the last code change, warn the user before committing

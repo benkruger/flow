@@ -465,7 +465,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_r
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
-If commit=auto, use `/flow:flow-commit --auto`; otherwise use `/flow:flow-commit`.
+Invoke `/flow:flow-commit`.
 
 Record step completion:
 

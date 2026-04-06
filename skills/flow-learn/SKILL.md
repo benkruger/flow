@@ -425,8 +425,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
 ```
 
-If commit=auto, use `/flow:flow-commit --auto`. Otherwise, use
-`/flow:flow-commit`.
+Invoke `/flow:flow-commit`.
 
 After the commit completes, record step completion:
 
@@ -641,7 +640,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 - Apply the generalization filter to all findings — no backward-looking output about already-fixed code
 - Routing decisions and rule wording are autonomous — do not ask the user for approval mid-process
 - The report in Step 7 is the user's review point — make it comprehensive
-- CLAUDE.md and `.claude/rules/` files are written via `bin/flow write-rule` subprocess and committed via `/flow:flow-commit --auto` — never via Edit or Write tools on `.claude/` paths
+- CLAUDE.md and `.claude/rules/` files are written via `bin/flow write-rule` subprocess and committed via `/flow:flow-commit` — never via Edit or Write tools on `.claude/` paths
 - All edits target the project repo — never user-level `~/.claude/` paths
 - Plugin process gaps and enforcement escalations are filed as GitHub issues on the plugin repo with label "Flow"
 - Never use Bash to print banners — output them as text in your response

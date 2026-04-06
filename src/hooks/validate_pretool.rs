@@ -155,7 +155,7 @@ fn has_redirect(command: &str) -> bool {
 /// Determine whether a command should be blocked from run_in_background.
 ///
 /// `bin/flow ci` and `bin/ci` are always blocked — CI is a gate in every
-/// mode (FLOW phase, Maintainer, Standalone). Other commands are only
+/// mode (FLOW-enabled, Standalone). Other commands are only
 /// blocked from background execution during an active FLOW phase.
 ///
 /// Returns `Some(error_message)` if the command should be blocked,
