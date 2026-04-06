@@ -1,166 +1,129 @@
-"""Python↔Rust parity tests for the prime-check port (#786).
+"""Rust prime-check hash verification tests.
 
-Two layers of defense against constant drift and hash divergence between
-lib/prime-setup.py (Python) and src/prime_check.rs (Rust):
+After the prime-setup.py → prime_setup.rs port (PR #894), the Python
+source no longer exists. These tests verify that:
 
-1. Static constant parity — parse the three const arrays out of the Rust
-   source and assert each entry matches the Python source entry-by-entry.
-   Fails fast with a detailed diff if any entry drifts.
-
-2. End-to-end hash round-trip — for each framework, compute the config
-   hash and setup hash in Python, write a .flow.json containing those
-   hashes with an old flow_version, invoke `bin/flow prime-check`, and
-   assert it accepts them (auto_upgraded=true). Proves Rust produces
-   byte-identical hash output to Python's `json.dumps(sort_keys=True)`.
+1. compute_setup_hash reads src/prime_setup.rs (not lib/prime-setup.py)
+2. Config hash round-trip works (Rust writes, Rust reads)
+3. The deleted Python files do not return (tombstones)
 """
 
+import hashlib
 import json
-import re
 import subprocess
 
 import pytest
-from conftest import REPO_ROOT, import_lib
+from conftest import REPO_ROOT
 
-RUST_SRC = REPO_ROOT / "src" / "prime_check.rs"
 BIN_FLOW = REPO_ROOT / "bin" / "flow"
+RUST_SRC = REPO_ROOT / "src" / "prime_setup.rs"
 
 
-def _load_prime_setup():
-    """Load prime-setup module for constant + hash access."""
-    return import_lib("prime-setup.py")
+def _compute_setup_hash_from_rust_source():
+    """Compute setup hash the same way Rust does — SHA-256 of src/prime_setup.rs."""
+    content = RUST_SRC.read_bytes()
+    return hashlib.sha256(content).hexdigest()[:12]
 
 
-def _extract_rust_const(name: str) -> list[str]:
-    """Extract entries from a `const NAME: &[&str] = &[ ... ];` block.
+# --- Setup hash targets Rust source ---
 
-    Returns the list of string literals inside the array. Assumes
-    well-formed Rust syntax — entries are comma-separated "..." strings
-    optionally followed by trailing commas and whitespace.
+
+def test_setup_hash_reads_rust_source(tmp_path):
+    """compute_setup_hash must hash src/prime_setup.rs bytes.
+
+    We verify by computing the hash locally from the Rust source and
+    checking that prime-setup stores the same hash in .flow.json.
     """
-    content = RUST_SRC.read_text()
-    pattern = rf"const {re.escape(name)}:\s*&\[&str\]\s*=\s*&\[(.*?)\];"
-    match = re.search(pattern, content, re.DOTALL)
-    if not match:
-        raise AssertionError(f"Could not find `const {name}: &[&str] = &[...];` in {RUST_SRC}")
-    body = match.group(1)
-    string_literal = re.compile(r'"((?:[^"\\]|\\.)*)"')
-    return [m.group(1) for m in string_literal.finditer(body)]
+    expected_hash = _compute_setup_hash_from_rust_source()
 
+    # Create a minimal git repo so prime-setup succeeds
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "init"],
+        cwd=tmp_path,
+        capture_output=True,
+    )
 
-# --- Static constant parity ---
+    result = subprocess.run(
+        [str(BIN_FLOW), "prime-setup", str(tmp_path), "--framework", "rails"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, f"prime-setup failed: {result.stderr}"
 
-
-def test_universal_allow_parity():
-    """Rust UNIVERSAL_ALLOW must equal Python UNIVERSAL_ALLOW entry-by-entry."""
-    prime_setup = _load_prime_setup()
-    rust = _extract_rust_const("UNIVERSAL_ALLOW")
-    python = prime_setup.UNIVERSAL_ALLOW
-    assert rust == python, (
-        "UNIVERSAL_ALLOW drift between Python and Rust:\n"
-        f"  Only in Python: {sorted(set(python) - set(rust))}\n"
-        f"  Only in Rust:   {sorted(set(rust) - set(python))}\n"
+    flow_json = tmp_path / ".flow.json"
+    data = json.loads(flow_json.read_text())
+    assert data["setup_hash"] == expected_hash, (
+        f"setup_hash mismatch: .flow.json has {data['setup_hash']}, expected {expected_hash} from src/prime_setup.rs"
     )
 
 
-def test_flow_deny_parity():
-    """Rust FLOW_DENY must equal Python FLOW_DENY entry-by-entry."""
-    prime_setup = _load_prime_setup()
-    rust = _extract_rust_const("FLOW_DENY")
-    python = prime_setup.FLOW_DENY
-    assert rust == python, (
-        "FLOW_DENY drift between Python and Rust:\n"
-        f"  Only in Python: {sorted(set(python) - set(rust))}\n"
-        f"  Only in Rust:   {sorted(set(rust) - set(python))}\n"
-    )
-
-
-def test_exclude_entries_parity():
-    """Rust EXCLUDE_ENTRIES must equal Python EXCLUDE_ENTRIES entry-by-entry."""
-    prime_setup = _load_prime_setup()
-    rust = _extract_rust_const("EXCLUDE_ENTRIES")
-    python = prime_setup.EXCLUDE_ENTRIES
-    assert rust == python, (
-        "EXCLUDE_ENTRIES drift between Python and Rust:\n"
-        f"  Only in Python: {sorted(set(python) - set(rust))}\n"
-        f"  Only in Rust:   {sorted(set(rust) - set(python))}\n"
-    )
-
-
-# --- End-to-end hash round-trip ---
+# --- Config hash round-trip ---
 
 
 @pytest.mark.parametrize("framework", ["rails", "python", "ios", "go", "rust"])
-def test_rust_accepts_python_computed_hashes(framework, tmp_path):
-    """Rust prime-check must auto-upgrade .flow.json built with Python hashes.
+def test_rust_config_hash_round_trip(framework, tmp_path):
+    """prime-check accepts hashes written by prime-setup for all frameworks.
 
-    If Python and Rust hashes diverge for any framework, this test fails
-    because Rust returns a version mismatch instead of auto_upgraded=true.
+    Writes .flow.json via prime-setup with a real framework, then changes
+    the version so prime-check must auto-upgrade. If config_hash and
+    setup_hash match, auto-upgrade succeeds.
     """
-    prime_setup = _load_prime_setup()
-    config_hash = prime_setup.compute_config_hash(framework)
-    setup_hash = prime_setup.compute_setup_hash()
-
-    flow_json = tmp_path / ".flow.json"
-    flow_json.write_text(
-        json.dumps(
-            {
-                "flow_version": "0.0.1",
-                "framework": framework,
-                "config_hash": config_hash,
-                "setup_hash": setup_hash,
-            }
-        )
+    # Create a minimal git repo
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "init"],
+        cwd=tmp_path,
+        capture_output=True,
     )
 
+    # Run prime-setup to get real hashes
+    result = subprocess.run(
+        [str(BIN_FLOW), "prime-setup", str(tmp_path), "--framework", framework],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, f"prime-setup failed for {framework}: {result.stderr}"
+
+    flow_json = tmp_path / ".flow.json"
+    data = json.loads(flow_json.read_text())
+
+    # Downgrade the version so prime-check will try auto-upgrade
+    data["flow_version"] = "0.0.1"
+    flow_json.write_text(json.dumps(data))
+
+    # Run prime-check — should auto-upgrade
     result = subprocess.run(
         [str(BIN_FLOW), "prime-check"],
         cwd=tmp_path,
         capture_output=True,
         text=True,
+        timeout=30,
     )
-    assert result.returncode == 0, f"bin/flow prime-check failed: {result.stderr}"
-    # bin/flow may emit build output before the JSON line; parse the last line.
+    assert result.returncode == 0, f"prime-check failed: {result.stderr}"
     last_line = result.stdout.strip().splitlines()[-1]
-    data = json.loads(last_line)
-    assert data["status"] == "ok", f"Rust rejected Python hashes for {framework}: {data}"
-    assert data.get("auto_upgraded") is True, (
-        f"Rust did not auto-upgrade {framework} with Python-computed hashes — "
-        f"this means Python and Rust hashes diverge. Response: {data}"
-    )
-    assert data["framework"] == framework
-
-
-def test_setup_hash_reads_prime_setup_py_bytes(tmp_path):
-    """compute_setup_hash must hash the current lib/prime-setup.py bytes.
-
-    Guards against the Rust port accidentally hashing a different file
-    (e.g., resolving the wrong path under plugin_root).
-    """
-    prime_setup = _load_prime_setup()
-    python_hash = prime_setup.compute_setup_hash()
-
-    # Build a .flow.json that Rust should accept by auto-upgrading.
-    flow_json = tmp_path / ".flow.json"
-    flow_json.write_text(
-        json.dumps(
-            {
-                "flow_version": "0.0.1",
-                "framework": "rails",
-                "config_hash": prime_setup.compute_config_hash("rails"),
-                "setup_hash": python_hash,
-            }
-        )
+    check_data = json.loads(last_line)
+    assert check_data["status"] == "ok", f"prime-check rejected hashes for {framework}: {check_data}"
+    assert check_data.get("auto_upgraded") is True, (
+        f"prime-check did not auto-upgrade {framework} — hashes diverge. Response: {check_data}"
     )
 
-    result = subprocess.run(
-        [str(BIN_FLOW), "prime-check"],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
+
+# --- Tombstones: deleted Python files must not return ---
+
+
+def test_no_python_prime_setup():
+    """Tombstone: lib/prime-setup.py removed in PR #894. Must not return."""
+    assert not (REPO_ROOT / "lib" / "prime-setup.py").exists(), (
+        "lib/prime-setup.py was deleted in PR #894 (ported to src/prime_setup.rs). It must not be re-introduced."
     )
-    assert result.returncode == 0
-    data = json.loads(result.stdout.strip().splitlines()[-1])
-    assert data.get("auto_upgraded") is True, (
-        "Rust setup_hash does not match Python — verify "
-        "compute_setup_hash reads lib/prime-setup.py bytes via plugin_root"
+
+
+def test_no_python_test_prime_setup():
+    """Tombstone: tests/test_prime_setup.py removed in PR #894. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_prime_setup.py").exists(), (
+        "tests/test_prime_setup.py was deleted in PR #894 (ported to tests/prime_setup.rs). "
+        "It must not be re-introduced."
     )

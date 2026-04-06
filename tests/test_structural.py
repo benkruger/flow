@@ -4,12 +4,12 @@ import configparser
 import json
 import os
 import re
+from pathlib import Path
 
 from conftest import (
     BIN_DIR,
     FRAMEWORKS_DIR,
     HOOKS_DIR,
-    LIB_DIR,
     REPO_ROOT,
     SKILLS_DIR,
     make_state,
@@ -319,7 +319,7 @@ def test_framework_dependencies_is_executable_script():
 def test_plugin_json_has_no_config_hash():
     """plugin.json must not contain config_hash — it breaks the validator.
 
-    The hash is computed dynamically by prime-setup.py and prime-check.py.
+    The hash is computed dynamically by prime_setup.rs and prime_check.rs.
     """
     plugin = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())
     assert "config_hash" not in plugin, (
@@ -426,32 +426,47 @@ def test_all_agents_specify_model_sonnet():
 
 
 def test_checksum_version_invariant():
-    """Validate checksum functions exist and the upgrade mechanism is documented.
+    """Validate hash computation works and the upgrade mechanism is documented.
 
     This test verifies:
-    1. compute_setup_hash() exists and returns a valid 12-char hex digest
-    2. compute_config_hash() exists and returns a valid 12-char hex digest
+    1. prime-setup produces a valid 12-char hex setup_hash in .flow.json
+    2. prime-setup produces a valid 12-char hex config_hash in .flow.json
     3. The checksum → version section is documented in CLAUDE.md
 
-    Hashes are used by prime-check.py for auto-upgrade detection at runtime.
-    When a version mismatch exists, matching hashes allow auto-upgrade while
-    mismatching hashes force a re-prime. Hash changes during development do
-    not require version bumps — version bumps are a release decision.
+    Hashes are computed by Rust (src/prime_check.rs) and used by
+    prime-check for auto-upgrade detection at runtime.
     """
-    import importlib.util
+    import hashlib
+    import subprocess
+    import tempfile
 
-    prime_setup_path = LIB_DIR / "prime-setup.py"
-    spec = importlib.util.spec_from_file_location("prime_setup", prime_setup_path)
-    prime_setup = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(prime_setup)
-
-    setup_hash = prime_setup.compute_setup_hash()
+    # Verify setup_hash from Rust source
+    rust_source = REPO_ROOT / "src" / "prime_setup.rs"
+    content = rust_source.read_bytes()
+    setup_hash = hashlib.sha256(content).hexdigest()[:12]
     assert len(setup_hash) == 12
     assert all(c in "0123456789abcdef" for c in setup_hash)
 
-    config_hash = prime_setup.compute_config_hash("python")
-    assert len(config_hash) == 12
-    assert all(c in "0123456789abcdef" for c in config_hash)
+    # Verify config_hash via prime-setup subprocess
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "--allow-empty", "-m", "init"],
+            cwd=tmp_path,
+            capture_output=True,
+        )
+        result = subprocess.run(
+            [str(REPO_ROOT / "bin" / "flow"), "prime-setup", str(tmp_path), "--framework", "python"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"prime-setup failed: {result.stderr}"
+        flow_data = json.loads((tmp_path / ".flow.json").read_text())
+        config_hash = flow_data["config_hash"]
+        assert len(config_hash) == 12
+        assert all(c in "0123456789abcdef" for c in config_hash)
 
     claude_md = (REPO_ROOT / "CLAUDE.md").read_text()
     assert "Checksum → Version Invariant" in claude_md, "CLAUDE.md must document the checksum → version invariant"

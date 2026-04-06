@@ -6,17 +6,11 @@ skills). Prohibition tests enforce that bash blocks never contain patterns
 that break permission matching or shell behavior.
 """
 
-import importlib.util
 import json
 import re
 
-from conftest import LIB_DIR, REPO_ROOT, SKILLS_DIR
+from conftest import REPO_ROOT, SKILLS_DIR
 from flow_utils import permission_to_regex as _permission_to_regex_impl
-
-# Import prime-setup.py for dynamic pattern generation
-_ps_spec = importlib.util.spec_from_file_location("prime_setup", LIB_DIR / "prime-setup.py")
-_ps_mod = importlib.util.module_from_spec(_ps_spec)
-_ps_spec.loader.exec_module(_ps_mod)
 
 MAINTAINER_SKILLS_DIR = REPO_ROOT / ".claude" / "skills"
 SETTINGS_JSON = REPO_ROOT / ".claude" / "settings.json"
@@ -1009,25 +1003,40 @@ def test_no_dedicated_tool_commands_in_bash_blocks():
     )
 
 
+def _extract_rust_const(name):
+    """Extract entries from a `const NAME: &[&str] = &[ ... ];` block in src/prime_check.rs."""
+    content = (REPO_ROOT / "src" / "prime_check.rs").read_text()
+    pattern = rf"const {re.escape(name)}:\s*&\[&str\]\s*=\s*&\[(.*?)\];"
+    match = re.search(pattern, content, re.DOTALL)
+    if not match:
+        raise AssertionError(f"Could not find `const {name}` in src/prime_check.rs")
+    body = match.group(1)
+    string_literal = re.compile(r'"((?:[^"\\]|\\.)*)"')
+    return [m.group(1) for m in string_literal.finditer(body)]
+
+
 def test_prime_setup_lists_match_skill_md_reference():
-    """Permission lists in lib/prime-setup.py must match prime/SKILL.md JSON.
+    """Permission lists in src/prime_check.rs must match prime/SKILL.md JSON.
 
-    prime-setup.py is the code that writes permissions at runtime.
-    prime/SKILL.md contains the reference JSON for documentation.
-    If they drift, the docs lie about what gets installed."""
-    import importlib.util
+    prime_check.rs defines the canonical UNIVERSAL_ALLOW and FLOW_DENY
+    constants used at runtime by prime_setup.rs. prime/SKILL.md contains
+    the reference JSON for documentation. If they drift, the docs lie
+    about what gets installed."""
+    # Build complete sets from Rust constants + framework permissions
+    universal_allow = _extract_rust_const("UNIVERSAL_ALLOW")
+    flow_deny = _extract_rust_const("FLOW_DENY")
 
-    spec = importlib.util.spec_from_file_location("prime_setup", LIB_DIR / "prime-setup.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-
-    # Build complete sets from prime-setup.py (universal + all frameworks)
     all_framework_perms = []
-    for framework_dir in sorted(mod._frameworks_dir().iterdir()):
+    frameworks_dir = REPO_ROOT / "frameworks"
+    for framework_dir in sorted(frameworks_dir.iterdir()):
         if framework_dir.is_dir():
-            all_framework_perms.extend(mod._load_framework_permissions(framework_dir.name))
-    code_allow = set(mod.UNIVERSAL_ALLOW + all_framework_perms)
-    code_deny = set(mod.FLOW_DENY)
+            perms_file = framework_dir / "permissions.json"
+            if perms_file.exists():
+                data = json.loads(perms_file.read_text())
+                all_framework_perms.extend(data.get("allow", []))
+
+    code_allow = set(universal_allow + all_framework_perms)
+    code_deny = set(flow_deny)
 
     # Get reference JSON from prime/SKILL.md
     perms = _extract_prime_permissions_block()
@@ -1038,22 +1047,22 @@ def test_prime_setup_lists_match_skill_md_reference():
 
     only_in_code_allow = code_allow - skill_allow
     if only_in_code_allow:
-        errors.append(f"In prime-setup.py allow but not prime/SKILL.md: {sorted(only_in_code_allow)}")
+        errors.append(f"In prime_check.rs allow but not prime/SKILL.md: {sorted(only_in_code_allow)}")
 
     only_in_skill_allow = skill_allow - code_allow
     if only_in_skill_allow:
-        errors.append(f"In prime/SKILL.md allow but not prime-setup.py: {sorted(only_in_skill_allow)}")
+        errors.append(f"In prime/SKILL.md allow but not prime_check.rs: {sorted(only_in_skill_allow)}")
 
     only_in_code_deny = code_deny - skill_deny
     if only_in_code_deny:
-        errors.append(f"In prime-setup.py deny but not prime/SKILL.md: {sorted(only_in_code_deny)}")
+        errors.append(f"In prime_check.rs deny but not prime/SKILL.md: {sorted(only_in_code_deny)}")
 
     only_in_skill_deny = skill_deny - code_deny
     if only_in_skill_deny:
-        errors.append(f"In prime/SKILL.md deny but not prime-setup.py: {sorted(only_in_skill_deny)}")
+        errors.append(f"In prime/SKILL.md deny but not prime_check.rs: {sorted(only_in_skill_deny)}")
 
     assert not errors, (
-        "Permission lists out of sync between lib/prime-setup.py (runtime "
+        "Permission lists out of sync between src/prime_check.rs (runtime "
         "source) and skills/prime/SKILL.md (reference docs):\n" + "\n".join(f"  - {e}" for e in errors)
     )
 

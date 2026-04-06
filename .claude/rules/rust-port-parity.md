@@ -308,12 +308,11 @@ definition that summarizes why it exists in one sentence. The
 module doc is a reference; the local doc is the action item that
 a reader sees the moment they consider editing.
 
-Example: `UNIVERSAL_ALLOW` in `src/prime_check.rs` is duplicated
-from `lib/prime-setup.py`. The local doc comment must name the
-specific parity test that enforces the duplication:
-`/// If you edit this list, also edit UNIVERSAL_ALLOW in
-lib/prime-setup.py — test_universal_allow_parity asserts they
-match byte-for-byte.`
+Example: `UNIVERSAL_ALLOW` in `src/prime_check.rs` is the canonical
+source shared with `prime_setup.rs` via pub import. The local doc
+comment must name the sharing relationship:
+`/// Universal allow list — canonical source for all permission
+merging. Shared with prime_setup.rs via pub import.`
 
 Example: a `PythonDefaultFormatter` struct that mimics Python's
 `json.dumps` default separators must have a local doc comment
