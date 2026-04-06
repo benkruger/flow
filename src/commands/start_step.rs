@@ -14,11 +14,15 @@ use crate::lock::mutate_state;
 use crate::output::json_ok;
 
 /// Update start_step in the state file. Returns true if updated.
+/// Guards against non-object state files to avoid IndexMut panics.
 pub fn update_step(state_path: &Path, step: i64) -> bool {
     if !state_path.exists() {
         return false;
     }
     mutate_state(state_path, |state| {
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
         state["start_step"] = json!(step);
     })
     .is_ok()

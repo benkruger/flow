@@ -13,7 +13,7 @@ description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrad
 /flow:flow-start --manual invoice pdf export
 ```
 
-**Feature name resolution:** Strip flags (`--auto`, `--manual`) from the arguments. The remaining text is the **prompt** — a description of what to build. Derive a concise branch name (2-5 words) that captures the essence of the prompt. The `start-setup` script handles sanitization (special characters, casing, truncation) automatically.
+**Feature name resolution:** Strip flags (`--auto`, `--manual`) from the arguments. The remaining text is the **prompt** — a description of what to build. Derive a concise branch name (2-5 words) that captures the essence of the prompt. The `start-init` command handles sanitization (special characters, casing, truncation) automatically via `init-state`.
 
 Examples:
 
@@ -24,14 +24,14 @@ Examples:
 | `there is a bug where flow-start treats arguments as conversation` | `flow-start-arg-handling` |
 
 **Issue-aware branch naming:** When the prompt contains `#N` issue
-references (e.g., `work on issue #309`, `fix #42`), `init-state`
-(Step 3) fetches the first issue's title and derives the branch name
-from it. If the fetch fails, init-state returns a hard error — there
+references (e.g., `work on issue #309`, `fix #42`), `start-init`
+fetches the first issue's title and derives the branch name
+from it. If the fetch fails, start-init returns a hard error — there
 is no silent fallback to the prompt words. Capture the `branch` field
-from init-state's JSON output and use it for all subsequent steps.
+from start-init's JSON output and use it for all subsequent steps.
 
 If the referenced issue already carries the "Flow In-Progress" label,
-init-state also returns a hard error — the issue is already being worked
+start-init also returns a hard error — the issue is already being worked
 on by another flow (on this machine or another engineer's machine). The
 user should resume the existing flow in its worktree, or reference a
 different issue.
@@ -77,9 +77,9 @@ shared state must be idempotent.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → continue=auto AND override ALL skills to fully autonomous (all commits auto, all continues auto). The `--auto` flag is passed through to `start-setup` in Step 11, which writes the autonomous preset to the state file. All downstream phases inherit the override automatically.
+1. If `--auto` was passed → continue=auto AND override ALL skills to fully autonomous (all commits auto, all continues auto). The `--auto` flag is passed through to `start-init`, which writes the autonomous preset to the state file. All downstream phases inherit the override automatically.
 2. If `--manual` was passed → continue=manual
-3. Otherwise → resolved in the Done section by reading `skills.flow-start.continue` from `.flow-states/<branch>.json` (which exists after Step 11)
+3. Otherwise → resolved in the Done section by reading `skills.flow-start.continue` from `.flow-states/<branch>.json` (which exists after Step 1)
 
 ## Announce
 
@@ -95,76 +95,45 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ## Logging
 
-After every Bash command in Steps 2–11, log it to `.flow-states/<branch>.log`
-using `bin/flow log`. Step 11 handles its own logging internally via start-setup.
-
-Run the command first, then log the result. Pipeline the log call with the
-next command where possible (run both in parallel in one response).
+All four consolidated commands (`start-init`, `start-gate`, `start-workspace`,
+`start-finalize`) handle logging internally via `append_log()` to
+`.flow-states/<branch>.log`. No model-level logging calls are needed.
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 1] Step X — desc (exit EC)"
+${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 1] ..."
 ```
 
-Use the feature name as `<branch>` — it matches the branch name.
+The bash block above is for reference only — all four commands call
+`append_log()` internally. Do not run `bin/flow log` manually.
 
 ---
 
 ## Steps
 
-Steps 1–10 serialize all main-branch work behind a lock. Only one
-flow-start runs this section at a time. Concurrent starts poll via
-`/loop` until the lock is released.
+### Step 1 — Initialize (lock, version checks, state file, labels)
 
-### Step 1 — Acquire start lock
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --acquire --feature <feature-name>
-```
-
-- If `"status": "acquired"` — continue to Step 2. If `stale_broken` is true, log it.
-- If `"status": "locked"` — another start holds the lock. Invoke the `loop`
-  skill via the Skill tool with args `15s /flow:flow-start` and return.
-  The loop re-invokes the entire skill every 15 seconds. Since nothing has
-  executed yet, re-running is safe. When the lock is eventually acquired,
-  the skill proceeds through all steps normally.
-
-<HARD-GATE>
-When the lock status is "locked", the ONLY permitted action is to invoke
-the loop skill as described above. The start-lock command has built-in
-staleness detection (30-minute timeout) that handles genuinely dead sessions.
-
-Do NOT speculate about whether the lock is stale.
-Do NOT offer to release, reset, or clean up the lock.
-Do NOT suggest any workaround that bypasses the lock.
-Do NOT take any action other than invoking the loop skill and returning.
-
-Trust the tool output. Poll and wait.
-
-</HARD-GATE>
-
-### Step 2 — Pre-flight checks
-
-Run both in parallel (one response, multiple tool calls):
+Write the user's original start prompt (verbatim, including `#N` issue references
+and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
+Write tool. Then run start-init. If `--auto` was passed, also pass `--auto`:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow prime-check
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-init <feature-name> --prompt-file .flow-states/<feature-name>-start-prompt
 ```
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow upgrade-check
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-init <feature-name> --prompt-file .flow-states/<feature-name>-start-prompt --auto
 ```
 
-Process the results in this order:
+Use the first form when no mode flag was passed or `--manual` was passed.
+Use the second form when `--auto` was passed.
 
-**Version gate (prime-check):**
+Parse the JSON output and branch on `status`:
 
-- If `"status": "error"` — release the lock, show the error message from the JSON (it suggests `/flow:flow-prime --reprime` or `/flow:flow-prime`), and stop. This is a flow-specific error — main is untouched, so the next queued flow can proceed.
+**If `"status": "ready"`** — capture the `branch` field. This is the
+**canonical branch name** — use it for all subsequent steps.
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
-```
-
-- If `"status": "ok"` and `"auto_upgraded": true` — show this notice using the `old_version` and `new_version` fields from the JSON, then continue:
+If `auto_upgraded` is `true`, show this notice using the `old_version` and
+`new_version` fields:
 
 ````markdown
 ```text
@@ -172,17 +141,8 @@ FLOW auto-upgraded from v{old_version} to v{new_version} (config unchanged).
 ```
 ````
 
-- If `"status": "ok"` without `auto_upgraded` — proceed silently.
-
-<HARD-GATE>
-Do NOT proceed if version check fails. Show the error message and stop.
-</HARD-GATE>
-
-**Upgrade check:**
-
-- `"status": "current"` — proceed silently
-- `"status": "unknown"` — proceed silently (best-effort check)
-- `"status": "upgrade_available"` — show this notice, then continue:
+If `upgrade` is present and `upgrade.status` is `"upgrade_available"`, show
+the upgrade notice:
 
 ````markdown
 ```text
@@ -198,96 +158,51 @@ Do NOT proceed if version check fails. Show the error message and stop.
 ```
 ````
 
-### Step 3 — Create early state file
+Continue to Step 2.
 
-Write the user's original start prompt (verbatim, including `#N` issue references
-and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
-Write tool.
+**If `"status": "locked"`** — another start holds the lock. Invoke the `loop`
+skill via the Skill tool with args `15s /flow:flow-start` and return.
+The loop re-invokes the entire skill every 15 seconds. Since nothing has
+executed yet, re-running is safe. When the lock is eventually acquired,
+the skill proceeds through all steps normally.
 
-Create the state file immediately so the TUI can see this flow during
-the locked main operations in Steps 1–10. The state file has null PR fields
-at this point — start-setup backfills them after PR creation. Pass the prompt
-file so the `prompt` field contains the original text with `#N` references
-(needed by Step 4 for labeling).
+<HARD-GATE>
+When the status is "locked", the ONLY permitted action is to invoke
+the loop skill as described above. The start-init command has built-in
+staleness detection (30-minute timeout) that handles genuinely dead sessions.
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --start-step 3 --start-steps-total 11
-```
+Do NOT speculate about whether the lock is stale.
+Do NOT offer to release, reset, or clean up the lock.
+Do NOT suggest any workaround that bypasses the lock.
+Do NOT take any action other than invoking the loop skill and returning.
 
-If `--auto` was passed to this skill invocation, also pass `--auto`:
+Trust the tool output. Poll and wait.
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow init-state "<feature-name>" --prompt-file .flow-states/<feature-name>-start-prompt --auto --start-step 3 --start-steps-total 11
-```
+</HARD-GATE>
 
-Parse the JSON output. If `"status": "error"`, release the lock, report
-the error, and stop. These are flow-specific errors — main is untouched,
-so the next queued flow can proceed.
+**If `"status": "error"`** — show the error message and stop. start-init
+has already released the lock for flow-specific errors. Common error steps
+include `fetch_issue_title` (issue not found), `flow_in_progress_label`
+(issue already being worked on), and `duplicate_issue` (another flow
+targets the same issue).
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
-```
+<HARD-GATE>
+Do NOT proceed if version check fails. Show the error message and stop.
+</HARD-GATE>
 
-If `"step"` is `"fetch_issue_title"`, the issue title could not be fetched.
-If `"step"` is `"flow_in_progress_label"`, a referenced issue already carries
-the "Flow In-Progress" label — another flow (on this or another machine) is
-working on that issue, and the user should resume the existing flow in its
-worktree or reference a different issue. If `"step"` is `"duplicate_issue"`,
-another flow already targets the same issue. In all cases, the lock release
-above already ran — report the error to the user and stop.
-
-On success, capture the `branch` field from the JSON output. This is the
-**canonical branch name** — it may differ from `<feature-name>` when the
-prompt contains issue references (e.g., `<feature-name>` is
-`work-on-issue-309` but `branch` is `organize-settings-allow-list`).
-Use this canonical branch for all `--branch` flags in Steps 4–10.
-
-### Step 4 — Label referenced issues
-
-If the start prompt contains `#N` issue references, add the "Flow In-Progress"
-label so other engineers can see these issues are being worked on:
+### Step 2 — CI and dependency gate
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 4 --branch <branch> -- label-issues --state-file <project_root>/.flow-states/<branch>.json --add
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-gate --branch <branch>
 ```
 
-Best-effort — if labeling fails, log the result and continue. Do not block
-the Start phase for a label failure.
+Parse the JSON output and branch on `status`:
 
-### Step 5 — Pull latest main
+**If `"status": "clean"`** — all gates passed. Continue to Step 3.
 
-Run both in parallel (one response, two Bash calls):
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 5 --branch <branch>
-```
-
-```bash
-git pull origin main
-```
-
-### Step 6 — CI baseline gate
-
-Main is pristine — nothing merges without clean CI. A single-attempt
-failure is likely flaky and is retried. Consistent failure (all 3
-retries) indicates real main breakage.
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 6 --branch <branch> -- ci --retry 3 --branch main
-```
-
-Parse the JSON output:
-
-**If `status` is `"ok"` and `flaky` is absent** — CI passed cleanly.
-Continue to Step 7.
-
-**If `status` is `"ok"` and `flaky` is `true`** — a test failed then
-passed on retry. File a "Flaky Test" issue with reproduction data from
-the `first_failure_output` field, then continue to Step 7.
-
-The issue body must include: the failure output from `first_failure_output`,
-how many attempts it took to pass (from the `attempts` field), and the
-context "CI baseline on pristine main during flow-start".
+**If `"status": "ci_flaky"`** — a test failed then passed on retry.
+File a "Flaky Test" issue with reproduction data from the `first_failure_output`
+and `attempts` fields, using the `flaky_context` field for the issue body context.
 
 Write the issue body to `.flow-issue-body` in the project root using the
 Write tool, then file:
@@ -302,72 +217,17 @@ After filing, record it:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_title>" --url "<issue_url>" --phase "flow-start"
 ```
 
-**If `status` is `"error"` and `consistent` is `true`** — all 3
-attempts failed. Hold the lock and stop. Main is broken — the next
-queued flow would hit the same failure. Report to the user that CI is
-consistently failing on pristine main. The 30-minute stale timeout
-releases the lock if the user does not act.
+Then continue to Step 3.
 
-### Step 7 — Update dependencies
+**If `"status": "ci_failed"`** — all retry attempts failed consistently.
+Hold the lock and stop. Main is broken — the next queued flow would hit
+the same failure. Report to the user that CI is consistently failing on
+pristine main. The 30-minute stale timeout releases the lock if the user
+does not act.
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 7 --branch <branch>
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow update-deps
-```
-
-Parse the JSON output:
-
-- If `status` is `"skipped"` → skip to Step 10 (release lock).
-- If `status` is `"ok"` and `changes` is `false` → skip to Step 10 (release lock).
-- If `status` is `"ok"` and `changes` is `true` → continue to Step 8.
-- If `status` is `"error"` → release the lock and stop. The dependency tool failed before modifying main (timeout, network, exec error) — main is untouched, so the next queued flow can proceed. Report the error to the user.
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-lock --release --feature <feature-name>
-```
-
-### Step 8 — CI post-deps gate
-
-If dependencies changed anything, run CI again to catch dep-induced breakage
-(rubocop violations, breaking changes, etc.):
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 8 --branch <branch> -- ci --retry 3 --branch main
-```
-
-Parse the JSON output:
-
-**If `status` is `"ok"` and `flaky` is absent** — CI passed cleanly.
-Continue to Step 9.
-
-**If `status` is `"ok"` and `flaky` is `true`** — a test failed then
-passed on retry. File a "Flaky Test" issue with reproduction data from
-the `first_failure_output` field, then continue to Step 9.
-
-The issue body must include: the failure output from `first_failure_output`,
-how many attempts it took to pass (from the `attempts` field), and the
-context "CI post-deps gate during flow-start after dependency update".
-
-Write the issue body to `.flow-issue-body` in the project root using the
-Write tool, then file:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Flaky Test" --title "<issue_title>" --body-file .flow-issue-body
-```
-
-After filing, record it:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_title>" --url "<issue_url>" --phase "flow-start"
-```
-
-**If `status` is `"error"` and `consistent` is `true`** — all 3
-attempts failed consistently. This is real dep-induced breakage.
-Launch the `ci-fixer` sub-agent to diagnose and fix. Use the Agent
-tool:
+**If `"status": "deps_ci_failed"`** — dependencies were updated but
+post-deps CI failed consistently. Launch the `ci-fixer` sub-agent to
+diagnose and fix. Use the Agent tool:
 
 - `subagent_type`: `"flow:ci-fixer"`
 - `description`: `"Fix bin/flow ci failures after dependency update"`
@@ -377,66 +237,25 @@ sub-agent knows what failed.
 
 Wait for the sub-agent to return.
 
-- **Fixed** — continue to Step 9
-- **Not fixed** — hold the lock and stop. Main has uncommitted dep-induced breakage — the next queued flow would hit the same failure. Report to the user.
+- **Fixed** — commit CI fixes to main via `/flow:flow-commit`, then continue to Step 3
+- **Not fixed** — hold the lock and stop. Main has uncommitted dep-induced breakage. Report to the user.
 
-### Step 9 — Commit to main
+**If `"status": "error"`** — show the error message and stop.
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 9 --branch <branch>
-```
-
-If there are any uncommitted changes (dependency updates + CI fixes),
-commit them to main via `/flow:flow-commit`.
-
-### Step 10 — Release start lock
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 10 --branch <branch> -- start-lock --release --feature <feature-name>
-```
-
-<HARD-GATE>
-Do NOT proceed to Step 11 until the lock is released and `bin/flow ci` is green.
-Uncommitted fixes on main will not appear in the worktree.
-</HARD-GATE>
-
-### Step 11 — Set up workspace
+### Step 3 — Create workspace (worktree, PR, lock release)
 
 Write the user's original start prompt (verbatim, including `#N` issue references
 and any special characters) to `.flow-states/<branch>-start-prompt` using the
-Write tool. Then run the setup script. If `--auto` was passed to this skill
-invocation, also pass `--auto` to the start-setup command:
+Write tool. Then run start-workspace:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 11 --branch <branch> -- start-setup "<feature-name>" --branch <branch> --prompt-file .flow-states/<branch>-start-prompt --skip-pull
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-workspace "<feature-name>" --branch <branch> --prompt-file .flow-states/<branch>-start-prompt
 ```
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-step --step 11 --branch <branch> -- start-setup "<feature-name>" --branch <branch> --prompt-file .flow-states/<branch>-start-prompt --skip-pull --auto
-```
+The command creates the worktree, opens a PR, backfills the state file with
+PR fields, and releases the start lock as its final action.
 
-Use the first form when no mode flag was passed or `--manual` was passed.
-Use the second form when `--auto` was passed.
-
-The script reads the prompt file and deletes it automatically after reading.
-The `--branch` flag passes the canonical branch from init-state (Step 3)
-directly, so start-setup does not need to scan for the state file.
-
-The script performs these operations in a single process:
-
-1. `git worktree add .worktrees/<branch> -b <branch>`
-2. `git commit --allow-empty` + `git push -u origin` + `gh pr create`
-3. Backfill `pr_number`, `pr_url`, `repo`, and `prompt` into the existing state file
-
-The script logs each operation to `.flow-states/<branch>.log` internally.
-
-**On success** — stdout is JSON:
-
-```json
-{"status": "ok", "worktree": ".worktrees/<branch>", "pr_url": "...", "pr_number": 123, "feature": "...", "branch": "..."}
-```
-
-Parse the JSON. Then run:
+**On success** — parse the JSON output. Then run:
 
 ```bash
 cd .worktrees/<branch>
@@ -446,26 +265,27 @@ The Bash tool persists working directory between calls, so all subsequent
 commands run inside the worktree automatically. Do NOT repeat `cd .worktrees/`
 in later steps — it would look for a nested `.worktrees/` that doesn't exist.
 
-**On failure** — stdout is error JSON, details on stderr:
+**On failure** — report the error and stop. The command releases the lock
+even on error (main is untouched by worktree operations).
 
-```json
-{"status": "error", "step": "worktree", "message": "..."}
-```
+### Step 4 — Change to worktree
 
-If the script returns an error, read the stderr output for details, report
-the failure to the user, and stop.
+This step is the `cd` from Step 3. The TUI shows Step 4 while the
+worktree directory is active and start-finalize runs in Step 5.
 
-### Done — Update state and complete phase
-
-Complete the phase:
+### Step 5 — Update state and finalize (complete phase, notify)
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-start --action complete
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-finalize --branch <branch> --pr-url <pr_url>
 ```
 
-Parse the JSON output. If `"status": "error"`, report the error and stop.
+The command runs `phase-transition --action complete` internally, updates
+the state file, and sends Slack notifications. Parse the JSON output.
 Use the `formatted_time` field in the COMPLETE banner below. Do not print
-the timing calculation.
+the timing calculation. Use the `continue_action` field for the transition
+HARD-GATE.
+
+### Done — Banner and transition
 
 Output the following banner in your response (not via Bash) inside a fenced code block:
 
@@ -477,33 +297,13 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ```
 ````
 
-### Slack Notification
-
-Post the initial Slack thread message (creates the thread). Best-effort — skip silently on failure.
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-start --message "<message_text>" --pr-url <pr_url>
-```
-
-Parse the JSON output. If `"status": "ok"`, store the thread timestamp and record the notification:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set slack_thread_ts=<ts>
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-start --ts <ts> --thread-ts <ts> --message "<message_text>"
-```
-
-If `"status": "skipped"` or `"status": "error"`, continue without error.
-
 <HARD-GATE>
-STOP. Parse `continue_action` from the `phase-transition --action complete`
-output above to determine how to advance.
+STOP. Parse `continue_action` from the `start-finalize` output above
+to determine how to advance.
 
 1. If `--auto` was passed to this skill invocation → continue=auto.
    If `--manual` was passed → continue=manual.
-   Otherwise, use `continue_action` from the phase-transition output.
+   Otherwise, use `continue_action` from the start-finalize output.
    If `continue_action` is `"invoke"` → continue=auto.
    If `continue_action` is `"ask"` → continue=manual.
 2. If continue=auto → invoke `flow:flow-plan` directly using the Skill tool.
