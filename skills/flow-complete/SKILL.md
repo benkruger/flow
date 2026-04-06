@@ -101,46 +101,117 @@ Read `complete_step` from the state file (default `0` if absent).
 - If `complete_step` is `3`: skip to Step 3 (Check GitHub CI status).
 - If `complete_step` is `4`: skip to Step 4 (Confirm with user).
 - If `complete_step` is `5`: skip to Step 5 (Merge PR).
+- If `complete_step` is `6`: skip to Step 6 (Finalize).
 - If `complete_step` is `0` or absent: proceed normally to Step 1.
 
 ---
 
 ## Steps
 
-### Step 1 — Preflight
+### Step 1 — Run complete-fast
 
-Run the consolidated preflight script. It handles state detection, PR
-status check, phase transition entry, mode resolution, Learn phase
-warning, and merging main into the branch — all in a single call.
+Run the consolidated fast-path command. It handles phase entry, state
+detection, PR status check, merge main, local CI dirty check (without
+simulate-branch), GitHub CI check, and squash merge — all in a single
+call.
 
 Pass the mode flag resolved from Mode Resolution:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow complete-preflight --branch <branch> --auto
+${CLAUDE_PLUGIN_ROOT}/bin/flow complete-fast --branch <branch> --auto
 ```
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow complete-preflight --branch <branch> --manual
+${CLAUDE_PLUGIN_ROOT}/bin/flow complete-fast --branch <branch> --manual
 ```
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow complete-preflight --branch <branch>
+${CLAUDE_PLUGIN_ROOT}/bin/flow complete-fast --branch <branch>
 ```
 
 Use the first form when mode is **auto**, the second when **manual**,
 the third when no flag was resolved (lets the script decide from the
 state file).
 
-Parse the JSON output and handle each status:
+Parse the JSON output and dispatch on the `path` field:
 
-**If `"status": "ok"` and `"pr_state": "MERGED"`** — the PR is already
-merged. Skip directly to Step 6 (post-merge) to archive artifacts,
-then continue through Step 7 (cleanup). Skip Steps 2–5.
+**If `"path": "merged"`** — the PR is merged (auto mode happy path).
+Skip directly to Step 6 (finalize).
 
-**If `"status": "ok"` and `"merge": "clean"` or `"merge": "merged"`** —
-continue to Step 2.
+**If `"path": "already_merged"`** — the PR was already merged before
+this invocation. Skip directly to Step 6 (finalize).
 
-**If `"status": "conflict"`** — merge conflicts detected. The
+**If `"path": "confirm"`** — manual mode. All CI checks passed. Skip
+to Step 4 (confirm with user).
+
+**If `"path": "ci_stale"`** — main was merged into the branch and the
+tree changed. Set the resume step and self-invoke to run CI:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=2
+```
+
+If mode is **auto**, use the first form. If mode is **manual**, use the second:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --auto."
+```
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --manual."
+```
+
+To continue, invoke `flow:flow-complete --continue-step` using
+the Skill tool as your final action. If mode was resolved to auto, pass
+`--auto` as well. Do not output anything else after this invocation.
+
+**If `"path": "ci_failed"`** — local CI or GitHub CI failed. Launch the
+`ci-fixer` sub-agent to diagnose and fix. Use the Agent tool:
+
+- `subagent_type`: `"flow:ci-fixer"`
+- `description`: `"Fix CI failures before merge"`
+
+Provide the `output` field from the JSON in the prompt so the sub-agent
+knows what failed.
+
+If fixed, set the resume step, continuation flags, and commit:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=2
+```
+
+If mode is **auto**, use the first form. If mode is **manual**, use the second:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --auto."
+```
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --manual."
+```
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+```
+
+Commit the fixes via `/flow:flow-commit`.
+
+To re-check CI, invoke `flow:flow-complete --continue-step` using
+the Skill tool as your final action. If mode was resolved to auto, pass
+`--auto` as well. Do not output anything else after this invocation.
+
+If not fixed after 3 attempts, stop and report.
+
+**If `"path": "ci_pending"`** — GitHub CI has not finished. Record the
+resume step:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=3
+```
+
+Then invoke the `loop` skill via the Skill tool with args `15s /flow:flow-complete` and return. The loop will re-invoke the complete skill automatically until CI completes.
+
+**If `"path": "conflict"`** — merge conflicts detected. The
 `conflict_files` array lists the conflicted files.
 
 1. Read each conflicted file using the Read tool
@@ -173,28 +244,32 @@ To continue to Step 2, invoke `flow:flow-complete --continue-step` using
 the Skill tool as your final action. If mode was resolved to auto, pass
 `--auto` as well. Do not output anything else after this invocation.
 
+**If `"path": "max_retries"`** — stop and report to the user:
+> "High contention: main has moved 3 times since the CI gate. Another
+> engineer is merging frequently. Wait for a quieter window and
+> re-invoke `/flow:flow-complete`."
+
 **If `"status": "error"`** — stop and report the error to the user.
+Do not retry the command with any additional flags or elevated privileges.
 
 Check the `warnings` array from the output. Carry any warnings forward
 to the confirmation step in Step 4.
 
 ### Step 2 — Run local CI gate
 
-Run CI locally with the branch name simulated as "main" to catch
-branch-dependent test failures before merge:
+Run CI locally:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci --simulate-branch main
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
 
 If it passes, continue to Step 3.
 
-If it fails, the failure is likely a branch-dependent test that passes
-on the feature branch but would fail on main. Launch the `ci-fixer`
-sub-agent to diagnose and fix. Use the Agent tool:
+If it fails, launch the `ci-fixer` sub-agent to diagnose and fix.
+Use the Agent tool:
 
 - `subagent_type`: `"flow:ci-fixer"`
-- `description`: `"Fix branch-dependent test failures"`
+- `description`: `"Fix CI failures before merge"`
 
 If fixed, record the resume step, set continuation flags, commit, and
 self-invoke to re-check:
@@ -350,8 +425,10 @@ after this invocation.
 
 ### Step 5 — Merge PR
 
-Run the consolidated merge script. It handles the freshness check and
-squash merge in a single call:
+Skip this step if the PR was already merged in Step 1 (complete-fast
+returned `"merged"` or `"already_merged"`).
+
+For manual mode (after Step 4 confirmation), run the merge command:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow complete-merge --pr <pr_number> --state-file <project_root>/.flow-states/<branch>.json
@@ -428,50 +505,48 @@ the Skill tool as your final action. If mode was resolved to auto, pass
 Do not retry the merge command with any additional flags or elevated
 privileges.
 
-### Step 6 — Post-merge operations
+### Step 6 — Finalize: post-merge + cleanup
 
-Run the consolidated post-merge script. It handles phase-transition
-complete, render-pr-body, format-issues-summary, close-issues,
-format-complete-summary, label-issues --remove, auto-close-parent,
-and notify-slack — all best-effort in a single call.
-
-The script produces the PR body with all sections — What, Artifacts,
-Plan, DAG Analysis, Phase Timings, State File, Session Log, and
-Issues Filed — from the state file and available artifact files.
-Sections with missing data are omitted automatically.
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow complete-post-merge --pr <pr_number> --state-file <project_root>/.flow-states/<branch>.json --branch <branch>
-```
-
-Parse the JSON output. Keep `formatted_time`, `cumulative_seconds`,
-`summary`, `issues_links`, and `banner_line` for the Done banner.
-
-If the output has a non-empty `failures` dict, note the failures but
-continue — all post-merge operations are best-effort.
-
-### Navigate to project root
-
-The worktree is about to be removed — you cannot be inside it when that
-happens. Navigate to the project root now. All subsequent steps (cleanup)
-run from the project root on main.
+Navigate to the project root before finalize — the worktree is about
+to be removed:
 
 ```bash
 cd <project_root>
 ```
 
-### Step 7 — Run cleanup script
+Run the consolidated finalize command. It handles phase-transition
+complete, render-pr-body, format-issues-summary, close-issues,
+format-complete-summary, label-issues with --remove, auto-close-parent,
+notify-slack, worktree removal, state file deletion, and git pull —
+all best-effort in a single call.
 
-Run the cleanup script with `--pull` to pull merged changes after
-worktree removal:
+The render-pr-body step produces the PR body with all sections —
+What, Artifacts, Plan, DAG Analysis, Phase Timings, State File,
+Session Log, and Issues Filed — from the state file and available
+artifact files. Sections with missing data are omitted automatically.
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup <project_root> --branch <branch> --worktree <worktree_path> --pull
+${CLAUDE_PLUGIN_ROOT}/bin/flow complete-finalize --pr <pr_number> --state-file <project_root>/.flow-states/<branch>.json --branch <branch> --worktree <worktree_path> --pull
 ```
 
-The script outputs JSON with a `steps` dict showing what happened to each
-resource (worktree, state\_file, log\_file, ci\_sentinel, git\_pull). Each
-step reports "removed"/"deleted"/"pulled", "skipped", or "failed: reason".
+Parse the JSON output. Keep `formatted_time`, `cumulative_seconds`,
+`summary`, `issues_links`, and `banner_line` for the Done banner.
+
+The `cleanup` field contains the results of Step 7 (cleanup operations):
+worktree removal, state file and log deletion, branch cleanup, and
+git pull. Report the results to the user: what was cleaned, what was
+already gone, and what failed.
+
+If the output has a non-empty `post_merge_failures` dict, note the
+failures but continue — all post-merge operations are best-effort.
+
+### Step 7 — Cleanup results
+
+The cleanup operations were performed as part of the complete-finalize
+call in Step 6. The `cleanup` field in the JSON output shows what
+happened to each resource (worktree, state\_file, log\_file,
+ci\_sentinel, git\_pull). Each step reports "removed"/"deleted"/"pulled",
+"skipped", or "failed: reason".
 
 Report the results to the user: what was cleaned, what was already gone,
 and what failed.
@@ -501,7 +576,7 @@ Complete:, Total:), and artifact counts (issues filed count, notes
 captured count). Do not add a separate PR line — it is part of the
 summary.
 
-If the `complete-post-merge` JSON output has a non-empty
+If the `complete-finalize` JSON output has a non-empty
 `issues_links` field, render it as regular text (not inside a code
 block) immediately after the banner code block. This makes the issue
 URLs clickable — URLs inside code blocks are not rendered as links.
@@ -514,7 +589,7 @@ commands. This is a narrative recap, not a structured template.
 
 ## Rules
 
-- Steps 1-6 run from the worktree (feature branch); Step 7 runs from the project root after an explicit cd before Step 7
+- Steps 1-6 run from the worktree (feature branch); Step 7 reports cleanup results from the project root
 - If the merge fails, never retry with additional flags or elevated privileges — report to the user and stop
 - Confirm with the user only when mode is **manual**
 - State file deletion is what resets the session hook — do not skip it
