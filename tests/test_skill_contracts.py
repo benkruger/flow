@@ -934,21 +934,17 @@ def test_status_formatter_shows_timing_for_completed_phases():
 
 
 def test_start_logging_uses_safe_pattern():
-    """Start SKILL.md logging section must use a safe logging pattern.
+    """Start SKILL.md logging section must note that commands handle logging internally.
 
-    Either Read+Write (tool layer timestamps) or bin/flow log (Python
-    subprocess) is acceptable. The >> (Bash append) pattern requires
-    $(date ...) which triggers Claude Code's security prompt."""
+    All four consolidated commands (start-init, start-gate, start-workspace,
+    start-finalize) call append_log() internally. No model-level log calls needed."""
     content = _read_skill("flow-start")
     logging_match = re.search(r"## Logging\n(.*?)(?=\n## |\n---|\Z)", content, re.DOTALL)
     assert logging_match, "flow-start/SKILL.md has no ## Logging section"
     logging_section = logging_match.group(1)
 
-    uses_read_write = "Read" in logging_section and "Write" in logging_section
-    uses_flow_log = "bin/flow log" in logging_section
-    assert uses_read_write or uses_flow_log, (
-        "flow-start/SKILL.md ## Logging section must use Read+Write or "
-        "bin/flow log pattern — Bash >> with $(date) triggers permission prompts"
+    assert "internally" in logging_section.lower(), (
+        "flow-start/SKILL.md ## Logging section must note that commands handle logging internally"
     )
     assert ">>" not in logging_section, (
         "flow-start/SKILL.md ## Logging section must NOT use >> (Bash append) — "
@@ -1048,12 +1044,37 @@ def test_anti_patterns_has_inline_output_rule():
     )
 
 
-def test_start_references_setup_script():
-    """Start SKILL.md must reference start-setup.py for consolidated setup."""
+def test_start_no_start_setup_reference():
+    """Tombstone: start-setup replaced by start-init/start-workspace in PR #904. Must not return."""
     content = _read_skill("flow-start")
-    assert "start-setup" in content, (
-        "start/SKILL.md must reference start-setup — Steps 2-7 are consolidated into a single Python script"
+    assert "start-setup" not in content, (
+        "start/SKILL.md must not reference start-setup — replaced by start-init, start-gate, "
+        "start-workspace, and start-finalize in PR #904"
     )
+
+
+def test_start_references_start_init():
+    """flow-start must reference start-init for consolidated initialization."""
+    content = _read_skill("flow-start")
+    assert "start-init" in content, "flow-start/SKILL.md must reference start-init"
+
+
+def test_start_references_start_gate():
+    """flow-start must reference start-gate for CI and dependency gating."""
+    content = _read_skill("flow-start")
+    assert "start-gate" in content, "flow-start/SKILL.md must reference start-gate"
+
+
+def test_start_references_start_workspace():
+    """flow-start must reference start-workspace for worktree and PR creation."""
+    content = _read_skill("flow-start")
+    assert "start-workspace" in content, "flow-start/SKILL.md must reference start-workspace"
+
+
+def test_start_references_start_finalize():
+    """flow-start must reference start-finalize for phase completion."""
+    content = _read_skill("flow-start")
+    assert "start-finalize" in content, "flow-start/SKILL.md must reference start-finalize"
 
 
 # --- Release skill (maintainer) ---
@@ -1835,26 +1856,24 @@ def test_phase_1_hard_gate_requires_rerun_with_arguments():
 
 
 def test_start_step_2_has_ci_fix_subagent():
-    """Locked section (Steps 1–10) must launch ci-fixer sub-agent for CI failures."""
+    """Step 2 (start-gate) must launch ci-fixer sub-agent for deps CI failures."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
-    locked_text = locked_match.group(1)
-    assert "ci-fixer" in locked_text, (
-        "flow-start locked section must reference the ci-fixer sub-agent for automatic CI fix"
-    )
-    assert "sub-agent" in locked_text.lower() or "Agent" in locked_text, (
-        "flow-start locked section must reference launching a sub-agent"
+    step2_match = re.search(r"### Step 2.*?\n(.*?)(?=\n### Step 3)", content, re.DOTALL)
+    assert step2_match, "Could not find Step 2 in flow-start/SKILL.md"
+    step2_text = step2_match.group(1)
+    assert "ci-fixer" in step2_text, "flow-start Step 2 must reference the ci-fixer sub-agent for automatic CI fix"
+    assert "sub-agent" in step2_text.lower() or "Agent" in step2_text, (
+        "flow-start Step 2 must reference launching a sub-agent"
     )
 
 
 def test_start_ci_fixes_committed_via_flow_commit():
-    """CI fixes on main must be committed via /flow:flow-commit (Steps 1–10)."""
+    """CI fixes on main must be committed via /flow:flow-commit (Step 2)."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
-    locked_text = locked_match.group(1)
-    assert "/flow:flow-commit" in locked_text, "flow-start locked section must commit CI fixes via /flow:flow-commit"
+    step2_match = re.search(r"### Step 2.*?\n(.*?)(?=\n### Step 3)", content, re.DOTALL)
+    assert step2_match, "Could not find Step 2 in flow-start/SKILL.md"
+    step2_text = step2_match.group(1)
+    assert "/flow:flow-commit" in step2_text, "flow-start Step 2 must commit CI fixes via /flow:flow-commit"
 
 
 def test_code_review_steps_have_continuation_directives():
@@ -2154,37 +2173,34 @@ def test_code_review_has_bash_bintest_check():
     )
 
 
-def test_start_step_2_acquires_lock():
-    """Locked section (Steps 1–10) must acquire start lock before CI work."""
+def test_start_no_explicit_lock_acquire():
+    """Tombstone: explicit start-lock acquire removed in PR #904. Lock is internal to start-init."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
-    locked_text = locked_match.group(1)
-    assert "start-lock" in locked_text, "flow-start locked section must reference start-lock for serialization"
+    assert "start-lock --acquire" not in content, (
+        "flow-start/SKILL.md must not contain explicit start-lock --acquire calls — "
+        "lock acquisition is internal to start-init (PR #904)"
+    )
 
 
-def test_start_step_2_has_two_ci_gates():
-    """Locked section (Steps 1–10) must have two bin/flow ci calls."""
+def test_start_no_explicit_ci_bash_blocks():
+    """Tombstone: explicit ci bash blocks removed in PR #904. CI is internal to start-gate."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
-    locked_text = locked_match.group(1)
-    ci_count = locked_text.count("bin/flow ci")
-    assert ci_count >= 2, (
-        f"flow-start locked section must have at least 2 bin/flow ci calls (baseline + post-deps), found {ci_count}"
+    # Count bin/flow ci in bash blocks (not in prose descriptions like ci-fixer agent)
+    bash_ci_count = content.count("bin/flow start-step") + content.count("bin/flow ci --retry")
+    assert bash_ci_count == 0, (
+        f"flow-start/SKILL.md must not contain explicit CI bash block calls — "
+        f"CI baseline and post-deps CI are internal to start-gate (PR #904), found {bash_ci_count}"
     )
 
 
 def test_start_files_flaky_test_issues():
-    """Locked section (Steps 1–10) must file Flaky Test issues for intermittent CI failures."""
+    """Step 2 (start-gate) must file Flaky Test issues for intermittent CI failures."""
     content = _read_skill("flow-start")
-    locked_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 11)", content, re.DOTALL)
-    assert locked_match, "Could not find Steps 1–10 in flow-start/SKILL.md"
-    locked_text = locked_match.group(1)
-    assert "Flaky Test" in locked_text, "flow-start locked section must detect and file 'Flaky Test' issues"
-    assert "bin/flow issue" in locked_text, (
-        "flow-start locked section must use 'bin/flow issue' to file flaky test issues"
-    )
+    step2_match = re.search(r"### Step 2.*?\n(.*?)(?=\n### Step 3)", content, re.DOTALL)
+    assert step2_match, "Could not find Step 2 in flow-start/SKILL.md"
+    step2_text = step2_match.group(1)
+    assert "Flaky Test" in step2_text, "flow-start Step 2 must detect and file 'Flaky Test' issues"
+    assert "bin/flow issue" in step2_text, "flow-start Step 2 must use 'bin/flow issue' to file flaky test issues"
 
 
 def test_start_truncation_proceeds_without_confirmation():
@@ -2217,19 +2233,18 @@ def test_start_derives_branch_name_from_prompt():
 
 
 def test_flow_start_no_gh_issue_view_instruction():
-    """Tombstone: removed in PR #741. start-setup.py handles issue fetching internally."""
+    """Tombstone: removed in PR #741. start-init handles issue fetching internally."""
     content = _read_skill("flow-start")
     assert "gh issue view" not in content, (
-        "flow-start/SKILL.md must not instruct gh issue view"
-        " — start-setup.py handles issue-aware branch naming internally"
+        "flow-start/SKILL.md must not instruct gh issue view — start-init handles issue-aware branch naming internally"
     )
 
 
 def test_flow_start_documents_automatic_issue_branch_naming():
-    """flow-start must document that start-setup handles issue-aware branch naming."""
+    """flow-start must document that start-init handles issue-aware branch naming."""
     content = _read_skill("flow-start")
-    assert "start-setup" in content.lower(), (
-        "flow-start/SKILL.md must document that start-setup handles issue-aware branch naming"
+    assert "start-init" in content.lower(), (
+        "flow-start/SKILL.md must document that start-init handles issue-aware branch naming"
     )
 
 
@@ -2242,49 +2257,31 @@ def test_start_no_manual_step_counter():
     )
 
 
-def test_start_flow_specific_errors_release_lock():
-    """Steps 2-3 errors are flow-specific (main untouched) — must release the lock before stopping."""
+def test_start_no_explicit_lock_release():
+    """Tombstone: explicit start-lock --release removed in PR #904. Lock release is internal to commands."""
     content = _read_skill("flow-start")
-    # Extract Steps 2-3 (from Step 2 header to Step 4 header)
-    step2_3_match = re.search(r"### Step 2.*?\n(.*?)(?=\n### Step 4)", content, re.DOTALL)
-    assert step2_3_match, "Could not find Steps 2-3 in flow-start/SKILL.md"
-    step2_3_text = step2_3_match.group(1)
-    assert "start-lock --release" in step2_3_text, (
-        "flow-start Steps 2-3 must release the start lock on error — "
-        "these are flow-specific errors (main untouched), the next queued flow would succeed"
+    assert "start-lock --release" not in content, (
+        "flow-start/SKILL.md must not contain explicit start-lock --release calls — "
+        "lock release is internal to start-init and start-workspace (PR #904)"
     )
 
 
-def test_start_no_lock_release_on_main_broken_errors():
-    """Tombstone: lock release removed from Steps 6 and 8 in PR #826. Must not return.
+def test_start_no_old_step_numbering():
+    """Tombstone: old 11-step structure removed in PR #904. Must not return.
 
-    Steps 6 and 8 errors mean main is broken (CI failure, dep-induced breakage).
-    Releasing the lock cascades the failure to the next queued flow. Hold the lock
-    and report. Step 7 (update-deps error) releases because main is untouched.
-    """
+    The old Steps 6-10 are consolidated into start-gate and start-workspace.
+    The SKILL.md should only have Steps 1-5."""
     content = _read_skill("flow-start")
-    # Extract Step 6 (from Step 6 header to Step 7 header)
-    step6_match = re.search(r"### Step 6.*?\n(.*?)(?=\n### Step 7)", content, re.DOTALL)
-    assert step6_match, "Could not find Step 6 in flow-start/SKILL.md"
-    step6_text = step6_match.group(1)
-    assert "start-lock --release" not in step6_text, (
-        "flow-start Step 6 must NOT release the start lock on consistent CI failure — "
-        "main is broken, the next queued flow would hit the same failure. "
-        "Lock release was removed in PR #826"
+    assert "### Step 6" not in content, (
+        "flow-start/SKILL.md must not have Step 6 — old 11-step structure was consolidated into 5 steps in PR #904"
     )
-    # Extract Step 8 (from Step 8 header to Step 9 header)
-    step8_match = re.search(r"### Step 8.*?\n(.*?)(?=\n### Step 9)", content, re.DOTALL)
-    assert step8_match, "Could not find Step 8 in flow-start/SKILL.md"
-    step8_text = step8_match.group(1)
-    assert "start-lock --release" not in step8_text, (
-        "flow-start Step 8 must NOT release the start lock on ci-fixer failure — "
-        "main has uncommitted dep-induced breakage. "
-        "Lock release was removed in PR #826"
+    assert "### Step 11" not in content, (
+        "flow-start/SKILL.md must not have Step 11 — old 11-step structure was consolidated into 5 steps in PR #904"
     )
 
 
 def test_start_step1_locked_has_hard_gate():
-    """Step 1 must have a HARD-GATE enforcing lock compliance when another flow holds the lock."""
+    """Step 1 must have a HARD-GATE enforcing lock compliance when start-init returns locked."""
     content = _read_skill("flow-start")
     # Extract Step 1 (from Step 1 header to Step 2 header)
     step1_match = re.search(r"### Step 1.*?\n(.*?)(?=\n### Step 2)", content, re.DOTALL)
@@ -3055,10 +3052,11 @@ def test_flow_issues_start_commands_exclude_blocked():
 
 
 def test_flow_start_labels_issues():
-    """flow-start SKILL.md must call bin/flow label-issues with --add."""
+    """flow-start SKILL.md must document issue labeling via start-init."""
     content = _read_skill("flow-start")
-    assert "label-issues" in content, "flow-start/SKILL.md must reference label-issues"
-    assert "--add" in content, "flow-start/SKILL.md must use --add flag for label-issues"
+    assert "Flow In-Progress" in content, (
+        "flow-start/SKILL.md must document the Flow In-Progress label for issue labeling"
+    )
 
 
 def test_flow_complete_removes_labels():
