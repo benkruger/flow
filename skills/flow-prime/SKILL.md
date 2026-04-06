@@ -248,7 +248,6 @@ All permissions (universal + all framework sets) for reference:
       "Bash(git add *)",
       "Bash(git blame *)",
       "Bash(git branch *)",
-      "Bash(git commit *)",
       "Bash(git config *)",
       "Bash(git -C *)",
       "Bash(git diff *)",
@@ -330,6 +329,7 @@ All permissions (universal + all framework sets) for reference:
       "Bash(git stash *)",
       "Bash(git checkout *)",
       "Bash(git clean *)",
+      "Bash(git commit *)",
       "Bash(* && *)",
       "Bash(* ; *)",
       "Bash(* | *)"

@@ -143,6 +143,40 @@ fn settings_has_all_deny_entries() {
 }
 
 #[test]
+fn deny_list_includes_git_commit() {
+    let tmp = tempfile::tempdir().unwrap();
+    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
+    let settings = read_settings(tmp.path());
+    let deny: Vec<String> = settings["permissions"]["deny"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    assert!(
+        deny.contains(&"Bash(git commit *)".to_string()),
+        "git commit must be denied to prevent Claude's built-in commit behavior"
+    );
+}
+
+#[test]
+fn allow_list_excludes_git_commit() {
+    let tmp = tempfile::tempdir().unwrap();
+    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
+    let settings = read_settings(tmp.path());
+    let allow: Vec<String> = settings["permissions"]["allow"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    assert!(
+        !allow.contains(&"Bash(git commit *)".to_string()),
+        "git commit must not be in the allow list — it belongs in deny"
+    );
+}
+
+#[test]
 fn settings_sets_default_mode() {
     let tmp = tempfile::tempdir().unwrap();
     prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
