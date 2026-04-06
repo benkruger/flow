@@ -134,10 +134,9 @@ pub fn derive_permissions(project_root: &Path, framework: &str, fw_dir: &Path) -
             .filter_map(|e| {
                 let name = e.file_name().to_string_lossy().into_owned();
                 // Python Path.glob("*.ext") skips dot-prefixed entries
-                if !name.starts_with('.') && name.ends_with(suffix) {
-                    // stem = filename without the suffix
-                    let stem = &name[..name.len() - suffix.len()];
-                    Some(stem.to_string())
+                if !name.starts_with('.')  {
+                    // strip_suffix is UTF-8 safe — no byte-index arithmetic
+                    name.strip_suffix(suffix).map(|stem| stem.to_string())
                 } else {
                     None
                 }
@@ -319,7 +318,7 @@ pub fn write_version_marker(
     commit_format: Option<&str>,
     plugin_root_path: Option<&str>,
     skills: Option<&Value>,
-) {
+) -> Result<(), String> {
     let mut data = json!({
         "flow_version": version,
         "framework": framework,
@@ -340,8 +339,11 @@ pub fn write_version_marker(
         data["skills"] = s.clone();
     }
     let flow_json = project_root.join(".flow.json");
-    let content = serde_json::to_string(&data).unwrap();
-    let _ = fs::write(flow_json, format!("{}\n", content));
+    let content = serde_json::to_string(&data)
+        .map_err(|e| format!("Could not serialize .flow.json: {}", e))?;
+    fs::write(&flow_json, format!("{}\n", content))
+        .map_err(|e| format!("Could not write {}: {}", flow_json.display(), e))?;
+    Ok(())
 }
 
 /// Add FLOW-specific entries to `.git/info/exclude` if not present.
@@ -483,11 +485,11 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
     }
 
     let framework = match &args.framework {
-        Some(f) => f.clone(),
-        None => {
+        Some(f) if !f.is_empty() => f.clone(),
+        _ => {
             return Err(json!({
                 "status": "error",
-                "message": "Missing or invalid --framework argument: None",
+                "message": format!("Missing or invalid --framework argument: {:?}", args.framework),
             }));
         }
     };
@@ -557,7 +559,8 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
         args.commit_format.as_deref(),
         args.plugin_root.as_deref(),
         skills.as_ref(),
-    );
+    )
+    .map_err(|e| json!({"status": "error", "message": e}))?;
 
     let exclude_updated = update_git_exclude(&project_root);
 

@@ -157,8 +157,8 @@ fn fails_on_invalid_framework() {
 //
 // These tests use the Rust public API (compute_config_hash /
 // compute_setup_hash) to build the "stored" hashes so the Rust binary
-// can verify them. This is a self-consistency test — Python-vs-Rust
-// hash parity is verified separately by tests/test_prime_port_parity.py.
+// can verify them. This is a self-consistency test — end-to-end hash
+// round-trips are verified separately by tests/test_prime_port_parity.py.
 
 fn computed_config_hash(framework: &str) -> String {
     let fw_dir = plugin_root().join("frameworks");

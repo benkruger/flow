@@ -405,7 +405,7 @@ fn derived_permissions_subsumed() {
 #[test]
 fn version_marker_created() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None);
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None).unwrap();
     assert!(tmp.path().join(".flow.json").exists());
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
@@ -416,7 +416,7 @@ fn version_marker_created() {
 #[test]
 fn version_marker_trailing_newline() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None);
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None).unwrap();
     let content = fs::read_to_string(tmp.path().join(".flow.json")).unwrap();
     assert!(content.ends_with('\n'));
 }
@@ -433,7 +433,8 @@ fn version_marker_with_config_hash() {
         None,
         None,
         None,
-    );
+    )
+    .unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert_eq!(data["config_hash"], "abc123def456");
@@ -442,7 +443,7 @@ fn version_marker_with_config_hash() {
 #[test]
 fn version_marker_without_config_hash() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None);
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None).unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert!(data.get("config_hash").is_none());
@@ -460,7 +461,8 @@ fn version_marker_with_setup_hash() {
         None,
         None,
         None,
-    );
+    )
+    .unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert_eq!(data["setup_hash"], "abc123def456");
@@ -479,7 +481,8 @@ fn version_marker_with_skills() {
         None,
         None,
         Some(&skills),
-    );
+    )
+    .unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert_eq!(data["skills"], skills);
@@ -488,7 +491,7 @@ fn version_marker_with_skills() {
 #[test]
 fn version_marker_without_skills() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None);
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None).unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert!(data.get("skills").is_none());
@@ -506,7 +509,8 @@ fn version_marker_with_commit_format() {
         Some("full"),
         None,
         None,
-    );
+    )
+    .unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert_eq!(data["commit_format"], "full");
@@ -524,7 +528,8 @@ fn version_marker_with_plugin_root() {
         None,
         Some("/some/cache/path"),
         None,
-    );
+    )
+    .unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert_eq!(data["plugin_root"], "/some/cache/path");
