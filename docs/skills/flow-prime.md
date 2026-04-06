@@ -44,7 +44,7 @@ The chosen configuration is stored in `.flow.json` under a `skills` key:
 
 ```json
 {
-  "flow_version": "0.16.4",
+  "flow_version": "1.1.0",
   "framework": "python",
   "skills": {
     "flow-start": {"continue": "manual"},

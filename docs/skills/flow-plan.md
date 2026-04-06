@@ -86,7 +86,7 @@ Configurable via `.flow.json` under `skills.flow-plan.dag`:
 ### Pre-Decomposed Issues
 
 When a referenced issue has the "decomposed" label (applied by
-`/create-issue`) and contains an `## Implementation Plan` section, the
+`/flow:flow-create-issue`) and contains an `## Implementation Plan` section, the
 `plan-extract` command handles the entire phase in one call. It extracts
 the plan section, promotes headings (`###` → `##`, `####` → `###`),
 writes DAG and plan files, updates state, renders the PR body, and

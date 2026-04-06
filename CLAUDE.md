@@ -33,7 +33,7 @@ In the target project:
 | 5 | Learn | `/flow:flow-learn` | Review mistakes, capture learnings, route to permanent homes |
 | 6 | Complete | `/flow:flow-complete` | Merge PR, remove worktree, delete state file |
 
-Phase gates are enforced by `lib/check-phase.py` — there is no instruction path to skip a phase. Back-transitions (e.g., Code Review can return to Code or Plan) are defined in `flow-phases.json`.
+Phase gates are enforced by `bin/flow check-phase` (`src/check_phase.rs`) — there is no instruction path to skip a phase. Back-transitions (e.g., Code Review can return to Code or Plan) are defined in `flow-phases.json`.
 
 ## When You Must Update Docs and Tests
 

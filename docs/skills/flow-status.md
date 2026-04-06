@@ -25,7 +25,7 @@ Shows where you are in the FLOW workflow at any moment. Reads `.flow-states/<bra
 
 ```text
 ──────────────────────────────────────────────────
-  FLOW v0.8.4 — Current Status
+  FLOW v1.1.0 — Current Status
 ──────────────────────────────────────────────────
 
   Feature : App Payment Webhooks

@@ -18,7 +18,7 @@ Claude Code is powerful, but undisciplined by default. FLOW imposes structure. N
 
 ### Unobtrusive
 
-Zero dependencies — pure Markdown skills with a thin Python dispatcher. Prime commits `.claude/settings.json` and `CLAUDE.md` as project config — shared permissions and framework conventions. `.flow.json` and `.flow-states/` are git-excluded. During active development, a single gitignored JSON state file exists at `.flow-states/<branch>.json`. When the feature completes, that file is deleted too. Three commands to set up. One file while you work. Zero when you're done.
+Zero dependencies — pure Markdown skills with a hybrid Rust/Python dispatcher. Prime commits `.claude/settings.json` and `CLAUDE.md` as project config — shared permissions and framework conventions. `.flow.json` and `.flow-states/` are git-excluded. During active development, a single gitignored JSON state file exists at `.flow-states/<branch>.json`. When the feature completes, that file is deleted too. Three commands to set up. One file while you work. Zero when you're done.
 
 ### Autonomous or Manual
 
@@ -46,7 +46,7 @@ Start → Plan → Code → Code Review → Learn → Complete
 | **1: Start** | `/flow-start <prompt>` | Lock, pull main, `bin/ci` baseline, upgrade dependencies, `bin/ci` post-deps, commit to main, unlock, new worktree + PR — ci-fixer sub-agent handles failures |
 | **2: Plan** | `/flow-plan` | Reads the start prompt, invokes DAG decompose plugin for dependency analysis, explores codebase, produces ordered tasks with dependency graph |
 | **3: Code** | `/flow-code` | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
-| **4: Code Review** | `/flow-code-review` | Four steps — clarity (with convention compliance), correctness (with rule compliance), safety, and parallel agent reviews (context-isolated code review, pre-mortem incident analysis, adversarial test generation launched concurrently) |
+| **4: Code Review** | `/flow-code-review` | Four steps — gather artifacts, launch four cognitively isolated agents in parallel (reviewer, pre-mortem, adversarial, documentation), triage findings, fix in-scope issues |
 | **5: Learn** | `/flow-learn` | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
 | **6: Complete** | `/flow-complete` | Close issues referenced in prompt, PR merged, worktree removed, state file deleted, feature done |
 
@@ -169,7 +169,9 @@ Monitor every active flow from your terminal — no Claude session needed. `flow
 | Left/Right | Switch tab |
 | Enter | Open worktree in terminal (activates existing iTerm2 tab or opens new tab) |
 | p | Open PR in browser |
-| i | Open issue in browser |
+| i | Show issues list |
+| I | Open issue in browser |
+| t | Show tasks view |
 | l | Show session log |
 | a | Abort flow (with Y/N confirmation) |
 | r | Force refresh |
@@ -317,9 +319,9 @@ Most agent workflows put enforcement in instructions: "always run bin/ci", "neve
 
 Three independent mechanisms enforce this:
 
-- **Inline phase guard** — every phase skill opens with a Python gate that reads the state file and exits immediately with `BLOCKED` if the previous phase isn't complete. The skill doesn't run — there's nothing for Claude to interpret or override.
+- **Inline phase guard** — every phase skill opens with a tool-based gate (HARD-GATE) or a Rust command that reads the state file and exits immediately with `BLOCKED` if the previous phase isn't complete. The skill doesn't run — there's nothing for Claude to interpret or override.
 
-- **`check-phase.py`** — a standalone verification script callable from anywhere in the workflow. One source of truth for phase state, used by skills, hooks, and utility commands alike.
+- **`bin/flow check-phase`** — a standalone Rust verification command callable from anywhere in the workflow. One source of truth for phase state, used by skills, hooks, and utility commands alike.
 
 - **SessionStart hook** — fires on every session start (`startup`, `/clear`, `/compact`). Reads the state file and injects the current phase directly into Claude's context. After a week away, Claude opens knowing exactly where it is and cannot proceed as if it doesn't.
 

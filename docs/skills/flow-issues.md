@@ -18,7 +18,7 @@ parent: Skills
 /flow-issues --quick-start
 ```
 
-Fetches all open issues for the current repository, analyzes them via Python script (file paths, labels, stale detection), ranks by impact using LLM judgment, and displays a dashboard with a recommended work order. Supports optional readiness filters to narrow results. Read-only — never creates, edits, or closes issues.
+Fetches all open issues for the current repository, analyzes them via `bin/flow analyze-issues` (file paths, labels, stale detection), ranks by impact using LLM judgment, and displays a dashboard with a recommended work order. Supports optional readiness filters to narrow results. Read-only — never creates, edits, or closes issues.
 
 ---
 

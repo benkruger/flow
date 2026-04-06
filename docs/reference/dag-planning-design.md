@@ -1,5 +1,10 @@
 # DAG-Enhanced Planning — Design Document
 
+> **Note:** This is a historical design document from before DAG
+> decomposition was implemented. The feature shipped as Option A.
+> For current behavior, see
+> [/flow-plan](../skills/flow-plan.md).
+
 ## Context
 
 FLOW's Plan phase (Phase 2) produces a linear task list. For complex
