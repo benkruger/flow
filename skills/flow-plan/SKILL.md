@@ -202,7 +202,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=decompose
 ```
 
 Invoke `/decompose:decompose` using the Skill tool. Pass the feature
-description (the `prompt` from Step 1, plus any issue context fetched)
+description (the `prompt` from the state file, plus the `issue_body` from plan-extract if non-null)
 as the task argument.
 
 The decompose plugin will produce structured DAG output:

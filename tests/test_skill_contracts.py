@@ -2338,6 +2338,12 @@ def test_plan_uses_plan_extract_for_issue_fetch():
     assert "plan-extract" in content
 
 
+def test_plan_no_direct_gh_issue_view():
+    """Tombstone: removed in PR #900. plan-extract handles issue fetch internally."""
+    content = _read_skill("flow-plan")
+    assert "gh issue view" not in content
+
+
 # --- Code phase self-invocation contracts ---
 
 

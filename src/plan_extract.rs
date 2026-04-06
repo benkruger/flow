@@ -122,7 +122,8 @@ fn load_frozen_config(root: &PathBuf, branch: &str) -> (Option<Vec<String>>, Opt
 
 /// Fetch a GitHub issue via `gh issue view` and return the parsed JSON.
 ///
-/// Returns None if gh is not available, the command fails, or times out.
+/// Returns None if gh is not available or the command fails. Relies on
+/// gh's internal HTTP timeout for network-level protection.
 fn fetch_issue(issue_number: i64) -> Option<Value> {
     let output = Command::new("gh")
         .args([
@@ -134,9 +135,7 @@ fn fetch_issue(issue_number: i64) -> Option<Value> {
         ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .spawn()
-        .ok()?
-        .wait_with_output()
+        .output()
         .ok()?;
 
     if !output.status.success() {
@@ -172,6 +171,7 @@ fn read_dag_mode(state: &Value) -> String {
         .and_then(|s| s.get("flow-plan"))
         .and_then(|p| p.get("dag"))
         .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
         .unwrap_or("auto")
         .to_string()
 }
@@ -293,7 +293,10 @@ fn complete_plan_phase(state_path: &PathBuf, root: &PathBuf, branch: &str) -> Re
 /// `Err(String)` only for infrastructure failures (file I/O, lock errors).
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     // --- Resolve state file ---
-    let (root, branch, state_path) = resolve_state(args).map_err(|v| v.to_string())?;
+    let (root, branch, state_path) = match resolve_state(args) {
+        Ok(v) => v,
+        Err(err_json) => return Ok(err_json),
+    };
 
     // --- Read state for gate and resume checks ---
     let state_content = std::fs::read_to_string(&state_path)
@@ -313,18 +316,13 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty());
 
-    let _dag_path = state
-        .get("files")
-        .and_then(|f| f.get("dag"))
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty());
-
     // Resume: plan already exists → enter phase, complete immediately, return "resumed"
     if let Some(plan_rel) = plan_path {
         let plan_abs = root.join(plan_rel);
 
         // Enter the phase (idempotent if already in_progress)
         mutate_state(&state_path, |state| {
+            if !(state.is_object() || state.is_null()) { return; }
             phase_enter(state, "flow-plan", None);
         })
         .map_err(|e| format!("Failed to enter phase: {}", e))?;
@@ -356,12 +354,12 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }));
     }
 
-    // Resume: DAG exists but no plan → enter phase, read DAG for issue body,
-    // then fall through to extraction logic below.
-    // (The extraction code after issue fetch handles this case too.)
+    // DAG-exists resume is not fast-pathed — re-fetch from GitHub.
+    // The skill's Resume Check handles the DAG-only case after plan-extract returns.
 
     // --- Phase enter ---
     mutate_state(&state_path, |state| {
+        if !(state.is_object() || state.is_null()) { return; }
         phase_enter(state, "flow-plan", None);
         // Set step tracking for TUI
         state["plan_steps_total"] = json!(4);
@@ -389,38 +387,53 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }));
     }
 
-    // Fetch the first referenced issue
-    let issue_number = issue_numbers[0];
-    let issue_data = match fetch_issue(issue_number) {
+    // Fetch all referenced issues, looking for a decomposed one
+    let mut first_issue_body: Option<String> = None;
+    let mut first_issue_number: Option<i64> = None;
+    let mut decomposed_data: Option<Value> = None;
+
+    for &num in &issue_numbers {
+        let data = match fetch_issue(num) {
+            Some(d) => d,
+            None => continue,
+        };
+
+        let body = data
+            .get("body")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        // Keep the first successfully fetched issue as context
+        if first_issue_body.is_none() {
+            first_issue_body = Some(body.clone());
+            first_issue_number = Some(num);
+        }
+
+        if is_decomposed(&data) {
+            decomposed_data = Some(data);
+            first_issue_body = Some(body);
+            first_issue_number = Some(num);
+            break;
+        }
+    }
+
+    let issue_body = first_issue_body.unwrap_or_default();
+    let issue_number = first_issue_number.unwrap_or(issue_numbers[0]);
+
+    // No decomposed issue found → standard path with first issue body
+    let issue_data = match decomposed_data {
         Some(data) => data,
         None => {
-            // gh failed — return standard path with no issue body
             return Ok(json!({
                 "status": "ok",
                 "path": "standard",
-                "issue_body": null,
+                "issue_body": if issue_body.is_empty() { Value::Null } else { json!(issue_body) },
                 "issue_number": issue_number,
                 "dag_mode": dag_mode,
             }));
         }
     };
-
-    let issue_body = issue_data
-        .get("body")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    // Not decomposed → standard path with issue body
-    if !is_decomposed(&issue_data) {
-        return Ok(json!({
-            "status": "ok",
-            "path": "standard",
-            "issue_body": issue_body,
-            "issue_number": issue_number,
-            "dag_mode": dag_mode,
-        }));
-    }
 
     // --- Decomposed issue: write DAG file ---
     let feature_desc = issue_data
