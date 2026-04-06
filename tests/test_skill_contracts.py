@@ -645,7 +645,7 @@ def test_phase_skills_have_update_state_section():
 
 def test_phase_skills_use_phase_transition_for_entry():
     """Phases 2-6 must use bin/flow phase-transition for state entry.
-    Phase 1 uses start-setup.py which creates the state file directly.
+    Phase 1 uses start-init (which calls init-state internally) to create the state file.
     Phase 6 uses complete-preflight (Rust) which calls phase-transition internally."""
     phase_skills = _phase_skills()
     # flow-complete delegates phase-transition to complete-preflight (Rust)

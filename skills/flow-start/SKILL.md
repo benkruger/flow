@@ -246,19 +246,11 @@ Wait for the sub-agent to return.
 
 Write the user's original start prompt (verbatim, including `#N` issue references
 and any special characters) to `.flow-states/<branch>-start-prompt` using the
-Write tool. Then run start-workspace. If `--auto` was passed to this skill
-invocation, also pass `--auto`:
+Write tool. Then run start-workspace:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow start-workspace "<feature-name>" --branch <branch> --prompt-file .flow-states/<branch>-start-prompt
 ```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-workspace "<feature-name>" --branch <branch> --prompt-file .flow-states/<branch>-start-prompt --auto
-```
-
-Use the first form when no mode flag was passed or `--manual` was passed.
-Use the second form when `--auto` was passed.
 
 The command creates the worktree, opens a PR, backfills the state file with
 PR fields, and releases the start lock as its final action.

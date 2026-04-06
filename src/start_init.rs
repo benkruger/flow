@@ -151,6 +151,11 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         .output()
         .map_err(|e| format!("Failed to spawn init-state: {}", e))?;
 
+    // Clean up the prompt file after init-state has read it
+    if let Some(ref pf) = args.prompt_file {
+        let _ = fs::remove_file(pf);
+    }
+
     let init_stdout = String::from_utf8_lossy(&init_output.stdout);
     let init_json: Value = init_stdout
         .trim()
@@ -181,11 +186,11 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     update_step(&state_path, 1);
 
     // Step 5: Label issues (best-effort)
-    // Read the prompt from the state file to extract issue numbers
-    let prompt = init_json["prompt"]
+    // Read the prompt from init-state JSON or fall back to the state file
+    let prompt_owned: String = init_json["prompt"]
         .as_str()
+        .map(String::from)
         .or_else(|| {
-            // Fall back to reading the state file for the prompt
             fs::read_to_string(&state_path)
                 .ok()
                 .and_then(|content| {
@@ -193,10 +198,9 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
                         .ok()
                         .and_then(|state| state["prompt"].as_str().map(String::from))
                 })
-                .as_deref()
-                .map(|_| "") // This branch doesn't work well with lifetimes
         })
-        .unwrap_or("");
+        .unwrap_or_default();
+    let prompt = prompt_owned.as_str();
 
     let issue_numbers = extract_issue_numbers(prompt);
     let mut labels_result = json!({});

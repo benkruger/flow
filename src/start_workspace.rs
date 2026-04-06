@@ -35,10 +35,6 @@ pub struct Args {
     /// Path to file containing start prompt
     #[arg(long = "prompt-file")]
     pub prompt_file: Option<String>,
-
-    /// Override all skills to fully autonomous preset
-    #[arg(long)]
-    pub auto: bool,
 }
 
 /// Testable entry point.
@@ -61,12 +57,22 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         release(feature, &queue_dir);
     };
 
-    // Read prompt from file if provided
+    // Read prompt from file if provided. Release lock on failure.
     let prompt = if let Some(ref pf) = args.prompt_file {
-        let content = std::fs::read_to_string(pf)
-            .map_err(|e| format!("Could not read prompt file: {}", e))?;
-        let _ = std::fs::remove_file(pf);
-        content.trim().to_string()
+        match std::fs::read_to_string(pf) {
+            Ok(content) => {
+                let _ = std::fs::remove_file(pf);
+                content.trim().to_string()
+            }
+            Err(e) => {
+                release_lock(&args.feature_name);
+                return Ok(json!({
+                    "status": "error",
+                    "step": "prompt_file",
+                    "message": format!("Could not read prompt file: {}", e),
+                }));
+            }
+        }
     } else {
         args.feature_name.clone()
     };

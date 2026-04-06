@@ -147,7 +147,13 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
 
     // Step 4: Post-deps CI (only if deps changed)
-    assert!(deps_changed);
+    if !deps_changed {
+        return Ok(json!({
+            "status": "error",
+            "message": format!("Unexpected deps status: {}", deps_result["status"]),
+            "step": "update_deps",
+        }));
+    }
     let (post_ci_result, _post_ci_code) =
         run_with_retry(&cwd, &root, &bin_ci, Some("main"), 3, None);
     let _ = append_log(
