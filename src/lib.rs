@@ -38,6 +38,7 @@ pub mod prime_check;
 pub mod prime_project;
 pub mod prime_setup;
 pub mod promote_permissions;
+pub mod start_gate;
 pub mod start_init;
 pub mod start_setup;
 pub mod state;

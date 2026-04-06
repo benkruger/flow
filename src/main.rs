@@ -42,6 +42,7 @@ use flow_rs::prime_check;
 use flow_rs::prime_project;
 use flow_rs::prime_setup;
 use flow_rs::promote_permissions;
+use flow_rs::start_gate;
 use flow_rs::start_init;
 use flow_rs::start_setup;
 use flow_rs::update_deps;
@@ -262,6 +263,10 @@ enum Commands {
         subcommand: Vec<String>,
     },
 
+    /// Consolidated CI and dependency gate for start phase
+    #[command(name = "start-gate")]
+    StartGate(start_gate::Args),
+
     /// Consolidated start initialization (lock + prime + upgrade + init-state + labels)
     #[command(name = "start-init")]
     StartInit(start_init::Args),
@@ -461,6 +466,9 @@ fn main() {
                 subcommand
             };
             commands::start_step::run(step, &branch, subcommand);
+        }
+        Some(Commands::StartGate(args)) => {
+            start_gate::run(args);
         }
         Some(Commands::StartInit(args)) => {
             start_init::run(args);
