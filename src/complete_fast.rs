@@ -64,6 +64,52 @@ fn read_state(root: &Path, branch: &str) -> Result<(Value, std::path::PathBuf), 
     Ok((state, state_path))
 }
 
+/// Check GitHub CI status via `gh pr checks`. Returns "pass", "pending",
+/// "fail", or "none" (no checks configured / gh unavailable).
+fn check_github_ci(pr_number: i64) -> String {
+    let pr_str = pr_number.to_string();
+    let output = std::process::Command::new("gh")
+        .args(["pr", "checks", &pr_str])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output();
+
+    let output = match output {
+        Ok(o) => o,
+        Err(_) => return "none".to_string(),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // gh pr checks outputs tab-separated lines: NAME\tSTATUS\tDURATION\tURL
+    // STATUS is one of: pass, fail, pending, skipping
+    let mut has_any = false;
+    let mut has_pending = false;
+    let mut has_fail = false;
+
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() >= 2 {
+            has_any = true;
+            match parts[1] {
+                "fail" => has_fail = true,
+                "pending" => has_pending = true,
+                _ => {} // pass, skipping
+            }
+        }
+    }
+
+    if !has_any {
+        "none".to_string()
+    } else if has_fail {
+        "fail".to_string()
+    } else if has_pending {
+        "pending".to_string()
+    } else {
+        "pass".to_string()
+    }
+}
+
 /// Core complete-fast logic. Returns Ok(json) on success paths (including
 /// unhappy paths like ci_failed that the skill handles interactively),
 /// Err(string) only for infrastructure failures.
@@ -235,9 +281,42 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }
     }
 
-    // TODO: Tasks 5-7 will add GH CI check, freshness + merge, and manual confirm here
+    // --- GitHub CI check ---
+    let gh_ci_result = check_github_ci(pr_number.unwrap_or(0));
+    match gh_ci_result.as_str() {
+        "pass" => {} // All checks passed — continue
+        "pending" => {
+            return Ok(json!({
+                "status": "ok",
+                "path": "ci_pending",
+                "mode": mode,
+                "pr_number": pr_number,
+                "pr_url": pr_url,
+                "branch": branch,
+                "worktree": worktree,
+                "warnings": warnings,
+            }));
+        }
+        "fail" => {
+            return Ok(json!({
+                "status": "ok",
+                "path": "ci_failed",
+                "output": "GitHub CI checks failed",
+                "source": "github",
+                "mode": mode,
+                "pr_number": pr_number,
+                "pr_url": pr_url,
+                "branch": branch,
+                "worktree": worktree,
+                "warnings": warnings,
+            }));
+        }
+        _ => {} // Unknown or no checks — continue optimistically
+    }
 
-    Err("not yet implemented: GH CI and merge steps".to_string())
+    // TODO: Tasks 6-7 will add freshness + merge and manual confirm here
+
+    Err("not yet implemented: merge steps".to_string())
 }
 
 /// CLI entry point.
