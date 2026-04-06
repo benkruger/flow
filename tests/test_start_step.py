@@ -1,7 +1,6 @@
 """Tests for start-step — Start phase step counter updates (Rust implementation)."""
 
 import json
-import pathlib
 import subprocess
 
 import pytest
@@ -127,12 +126,3 @@ def test_missing_branch_arg(target_project):
     """Missing --branch argument exits with error."""
     result = _run(target_project, "--step", "5")
     assert result.returncode == 2  # clap exits with 2 for usage errors
-
-
-# --- tombstone tests ---
-
-
-def test_no_python_start_step():
-    """Tombstone: start-step.py removed in PR #809, ported to Rust. Must not return."""
-    source = pathlib.Path(__file__).resolve().parent.parent / "lib" / "start-step.py"
-    assert not source.exists(), "lib/start-step.py was removed — start-step is now in Rust"

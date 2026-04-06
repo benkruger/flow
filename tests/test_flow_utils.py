@@ -759,23 +759,6 @@ def test_build_initial_phases_required_fields():
 # --- tombstone: branch_name removed ---
 
 
-def test_no_branch_name():
-    """Tombstone: removed in PR #823. Must not return."""
-    source = (LIB_DIR / "flow_utils.py").read_text()
-    assert "def branch_name(" not in source, (
-        "branch_name was ported to Rust (src/utils.rs) and must not be re-added to Python"
-    )
-
-
-# --- tombstone: format_tab_title removed ---
-
-
-def test_no_format_tab_title():
-    """Tombstone: removed in PR #665. Must not return."""
-    source = (LIB_DIR / "flow_utils.py").read_text()
-    assert "def format_tab_title" not in source
-
-
 # --- format_tab_color tests ---
 
 

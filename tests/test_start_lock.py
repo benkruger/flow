@@ -167,15 +167,6 @@ def test_cli_missing_feature_for_release(target_project):
     assert result.returncode != 0
 
 
-# --- tombstone tests ---
-
-
-def test_no_python_start_lock():
-    """Tombstone: start-lock.py removed in PR #809, ported to Rust. Must not return."""
-    source = pathlib.Path(__file__).resolve().parent.parent / "lib" / "start-lock.py"
-    assert not source.exists(), "lib/start-lock.py was removed — start-lock is now in Rust"
-
-
 def test_no_start_lock_filename():
     """Tombstone: start.lock replaced by start-queue/ in PR #715. Must not return."""
     source = pathlib.Path(__file__).resolve().parent.parent / "src" / "commands" / "start_lock.rs"

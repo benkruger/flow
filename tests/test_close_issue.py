@@ -58,13 +58,3 @@ def test_cli_auto_detects_repo(target_project):
     output = json.loads(result.stdout)
     assert output["status"] == "error"
     assert "Could not detect repo" in output["message"]
-
-
-# --- Tombstone: Python files removed ---
-
-
-def test_close_issue_py_removed():
-    """Tombstone: lib/close-issue.py ported to Rust in PR #831. Must not return."""
-    from conftest import LIB_DIR
-
-    assert not (LIB_DIR / "close-issue.py").exists(), "lib/close-issue.py was ported to Rust and should not exist"

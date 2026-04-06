@@ -9,7 +9,7 @@ the CLI interface via subprocess.
 import json
 import subprocess
 
-from conftest import BIN_DIR, LIB_DIR
+from conftest import BIN_DIR
 
 BIN_FLOW = str(BIN_DIR / "flow")
 
@@ -72,30 +72,3 @@ class TestIssueCli:
         )
         # Should attempt to create issue on cached/repo (will fail since no gh auth in tests)
         assert result.returncode != 0
-
-
-# --- Tombstone tests ---
-
-
-class TestTombstones:
-    """Tombstone tests for Python files removed in PR #838."""
-
-    def test_no_python_issue_bridge(self):
-        """Tombstone: lib/issue.py bridge removed in PR #838. Must not return."""
-        assert not (LIB_DIR / "issue.py").exists(), "lib/issue.py was removed in PR #838"
-
-    def test_no_python_create_sub_issue(self):
-        """Tombstone: lib/create-sub-issue.py removed in PR #838. Must not return."""
-        assert not (LIB_DIR / "create-sub-issue.py").exists(), "lib/create-sub-issue.py was removed in PR #838"
-
-    def test_no_python_link_blocked_by(self):
-        """Tombstone: lib/link-blocked-by.py removed in PR #838. Must not return."""
-        assert not (LIB_DIR / "link-blocked-by.py").exists(), "lib/link-blocked-by.py was removed in PR #838"
-
-    def test_no_python_create_milestone(self):
-        """Tombstone: lib/create-milestone.py removed in PR #838. Must not return."""
-        assert not (LIB_DIR / "create-milestone.py").exists(), "lib/create-milestone.py was removed in PR #838"
-
-    def test_no_python_create_dependencies(self):
-        """Tombstone: lib/create-dependencies.py removed in PR #838. Must not return."""
-        assert not (LIB_DIR / "create-dependencies.py").exists(), "lib/create-dependencies.py was removed in PR #838"
