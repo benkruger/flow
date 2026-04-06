@@ -20,19 +20,20 @@ Phase 5 is incomplete.
 
 ## Steps
 
-### 1. Preflight
+### 1. Run complete-fast
 
-`complete-preflight` handles state detection, PR status check, phase
-transition entry, mode resolution, Learn phase warning, and merging
-main into the branch — all in a single script call. If the PR is
-already merged, skips to post-merge (step 6) then cleanup. If there
-are merge conflicts, resolves them and self-invokes to continue.
+`complete-fast` consolidates phase entry, state detection, PR status
+check, merge main, local CI dirty check, GitHub CI check, and squash
+merge into a single call. Returns a `path` field for dispatch:
+`"merged"` (auto happy path), `"already_merged"`, `"confirm"` (manual
+mode), `"ci_stale"`, `"ci_failed"`, `"ci_pending"`, `"conflict"`, or
+`"max_retries"`. If the PR is already merged, skips to finalize
+(step 6). If there are merge conflicts, resolves them and self-invokes
+to continue.
 
 ### 2. Run local CI gate
 
-Runs `bin/flow ci --simulate-branch main` locally to catch
-branch-dependent test failures (tests that pass on feature branches but
-fail on main because `current_branch()` resolves against the host repo).
+Runs `bin/flow ci` locally to catch test failures after merging main.
 If it fails, launch the ci-fixer sub-agent to diagnose and fix.
 
 ### 3. Check GitHub CI status
@@ -58,10 +59,10 @@ infinite loops under high contention. Once up-to-date, squash-merges
 via `gh pr merge --squash`. Detects branch protection policy blocks
 and returns for CI wait.
 
-### 6. Post-merge operations
+### 6. Finalize: post-merge + cleanup
 
-`complete-post-merge` handles all post-merge work in a single
-best-effort script call:
+`complete-finalize` handles all post-merge work AND cleanup in a single
+best-effort call:
 
 - Phase transition complete (records timing)
 - PR body rendering (What, Artifacts, Plan, DAG Analysis, Phase
@@ -72,15 +73,16 @@ best-effort script call:
 - Remove "Flow In-Progress" labels
 - Auto-close parent issues and milestones
 - Post Slack notification
+- Worktree removal, state file deletion, log file deletion, CI
+  sentinel deletion, and git pull
 
-### 7. Cleanup
-
-`cleanup --pull` handles all resource cleanup from the project root:
-remote and local branch deletion, worktree removal, state file deletion,
-log file deletion, CI sentinel deletion, and pulls merged changes to
-main. Each step is best-effort — if one fails, the rest still run.
-
+Each cleanup step is best-effort — if one fails, the rest still run.
 This resets the SessionStart hook — the next session starts clean.
+
+### 7. Cleanup results
+
+Reports what `complete-finalize` cleaned up in Step 6: what was
+removed, what was already gone, and what failed.
 
 ---
 
@@ -108,7 +110,7 @@ The skill is safe to re-invoke (e.g., via `/loop 15s /flow:flow-complete`):
 
 | State | Behavior |
 |---|---|
-| PR already merged | Runs post-merge operations, then skips to cleanup |
+| PR already merged | Runs finalize (post-merge + cleanup) |
 | Main already merged into branch | No-op merge |
 | CI already passing | Skips to merge |
 | Freshness retry in progress | Loops back through CI gate, respects retry limit |
@@ -125,8 +127,8 @@ The skill is safe to re-invoke (e.g., via `/loop 15s /flow:flow-complete`):
 | State file missing | Warns, infers from git, proceeds (confirms if `--manual`) |
 | PR not open or merged | Hard block, does not proceed |
 
-Every step after the merge (Step 6) is best-effort — if one fails,
-continue to the next.
+Every operation inside `complete-finalize` (Step 6) is best-effort — if
+one fails, continue to the next.
 
 ---
 
@@ -137,4 +139,4 @@ continue to the next.
 - Missing state file is a warning, not a hard block
 - CI must pass before merge
 - Confirmation only when `--manual` is passed
-- Steps 1-6 run from the worktree; Step 7 runs from the project root
+- Steps 1-5 run from the worktree; Step 6 (finalize) runs from the project root
