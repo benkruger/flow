@@ -1,7 +1,7 @@
 ---
 name: adversarial
 description: "Adversarial test generation. Writes tests designed to break the implementation, runs them, and reports failures as findings."
-model: sonnet
+model: opus
 tools: Read, Glob, Grep, Write, Bash
 maxTurns: 40
 ---

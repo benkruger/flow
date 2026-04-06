@@ -1,9 +1,9 @@
 ---
 name: documentation
 description: "Documentation and maintainability review. Receives diff, investigates codebase and docs, produces findings for comprehension barriers and documentation drift."
-model: sonnet
+model: haiku
 tools: Read, Glob, Grep, Bash
-maxTurns: 40
+maxTurns: 100
 ---
 
 # Documentation and Maintainability Review

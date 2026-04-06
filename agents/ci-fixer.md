@@ -1,7 +1,7 @@
 ---
 name: ci-fixer
 description: "Fix CI failures. Use when bin/flow ci or bin/ci fails and needs diagnosis."
-model: sonnet
+model: opus
 tools: Read, Glob, Grep, Edit, Write, Bash
 maxTurns: 20
 ---
