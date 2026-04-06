@@ -22,6 +22,7 @@ use std::path::Path;
 use clap::Parser;
 use serde_json::{json, Value};
 
+use crate::ci;
 use crate::complete_preflight::{
     check_learn_phase, check_pr_status, merge_main, resolve_mode, run_cmd_with_timeout,
 };
@@ -174,9 +175,69 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }));
     }
 
-    // TODO: Tasks 4-7 will add CI dirty check, GH CI check, and merge logic here
+    // --- CI dirty check (no simulate-branch) ---
+    // If main was merged in (tree changed), the sentinel won't match — return ci_stale
+    // so the skill runs CI interactively and loops back.
+    if tree_changed {
+        return Ok(json!({
+            "status": "ok",
+            "path": "ci_stale",
+            "reason": "main merged into branch — tree changed, CI must re-run",
+            "mode": mode,
+            "pr_number": pr_number,
+            "pr_url": pr_url,
+            "branch": branch,
+            "worktree": worktree,
+            "warnings": warnings,
+        }));
+    }
 
-    Err("not yet implemented: CI and merge steps".to_string())
+    // Compute snapshot WITHOUT --simulate-branch so the Code phase sentinel matches
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let snapshot = ci::tree_snapshot(&cwd, None);
+    let sentinel_path = root
+        .join(".flow-states")
+        .join(format!("{}-ci-passed", branch));
+
+    let ci_skipped = if sentinel_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&sentinel_path) {
+            content == snapshot
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    if !ci_skipped {
+        // Sentinel doesn't match — run CI locally
+        let bin_ci = cwd.join("bin").join("ci");
+        let (ci_result, ci_code) =
+            ci::run_once(&cwd, &root, &bin_ci, Some(&branch), false, None);
+
+        if ci_code != 0 {
+            let ci_output = ci_result
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("bin/ci failed")
+                .to_string();
+            return Ok(json!({
+                "status": "ok",
+                "path": "ci_failed",
+                "output": ci_output,
+                "mode": mode,
+                "pr_number": pr_number,
+                "pr_url": pr_url,
+                "branch": branch,
+                "worktree": worktree,
+                "warnings": warnings,
+            }));
+        }
+    }
+
+    // TODO: Tasks 5-7 will add GH CI check, freshness + merge, and manual confirm here
+
+    Err("not yet implemented: GH CI and merge steps".to_string())
 }
 
 /// CLI entry point.
