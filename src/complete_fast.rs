@@ -17,7 +17,7 @@
 //!   Max retries:  {"status": "ok", "path": "max_retries", ...}
 //!   Error:        {"status": "error", "message": "..."}
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -33,6 +33,17 @@ use crate::utils::derive_worktree;
 
 /// Step counter total for complete-fast (reduced from 7 to 5).
 const COMPLETE_STEPS_TOTAL: i64 = 5;
+const NETWORK_TIMEOUT: u64 = 60;
+
+/// Locate bin/flow via current_exe traversal, falling back to "bin/flow".
+fn bin_flow_path() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent()?.parent()?.parent().map(|d| d.to_path_buf()))
+        .map(|d: PathBuf| d.join("bin").join("flow"))
+        .and_then(|p| p.to_str().map(String::from))
+        .unwrap_or_else(|| "bin/flow".to_string())
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "complete-fast", about = "FLOW Complete phase fast path")]
@@ -314,9 +325,191 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         _ => {} // Unknown or no checks — continue optimistically
     }
 
-    // TODO: Tasks 6-7 will add freshness + merge and manual confirm here
+    // --- Mode branch: manual returns "confirm", auto proceeds to merge ---
+    if mode == "manual" {
+        return Ok(json!({
+            "status": "ok",
+            "path": "confirm",
+            "mode": mode,
+            "pr_number": pr_number,
+            "pr_url": pr_url,
+            "branch": branch,
+            "worktree": worktree,
+            "warnings": warnings,
+            "ci_skipped": ci_skipped,
+        }));
+    }
 
-    Err("not yet implemented: merge steps".to_string())
+    // --- Freshness check + squash merge (auto mode) ---
+    let bin_flow = bin_flow_path();
+    let state_file_str = state_path.to_string_lossy().to_string();
+    let freshness_result = run_cmd_with_timeout(
+        &[&bin_flow, "check-freshness", "--state-file", &state_file_str],
+        NETWORK_TIMEOUT,
+    );
+
+    let (_code, stdout, _stderr) = match freshness_result {
+        Err(e) => {
+            return Ok(json!({
+                "status": "error",
+                "message": format!("check-freshness failed: {}", e),
+                "branch": branch,
+            }));
+        }
+        Ok(triple) => triple,
+    };
+
+    let freshness: Value = match serde_json::from_str(stdout.trim()) {
+        Ok(v) => v,
+        Err(_) => {
+            return Ok(json!({
+                "status": "error",
+                "message": format!("Invalid JSON from check-freshness: {}", stdout),
+                "branch": branch,
+            }));
+        }
+    };
+
+    let freshness_status = freshness
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    match freshness_status {
+        "max_retries" => {
+            return Ok(json!({
+                "status": "ok",
+                "path": "max_retries",
+                "mode": mode,
+                "pr_number": pr_number,
+                "pr_url": pr_url,
+                "branch": branch,
+                "worktree": worktree,
+                "warnings": warnings,
+            }));
+        }
+        "error" => {
+            let msg = freshness
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("check-freshness failed");
+            return Ok(json!({
+                "status": "error",
+                "message": msg,
+                "branch": branch,
+            }));
+        }
+        "conflict" => {
+            let files = freshness.get("files").cloned().unwrap_or(json!([]));
+            return Ok(json!({
+                "status": "ok",
+                "path": "conflict",
+                "conflict_files": files,
+                "mode": mode,
+                "pr_number": pr_number,
+                "pr_url": pr_url,
+                "branch": branch,
+                "worktree": worktree,
+                "warnings": warnings,
+            }));
+        }
+        "merged" => {
+            // Main moved again — push and return ci_stale
+            match run_cmd_with_timeout(&["git", "push"], NETWORK_TIMEOUT) {
+                Err(e) => {
+                    return Ok(json!({
+                        "status": "error",
+                        "message": format!("Push failed after freshness merge: {}", e),
+                        "branch": branch,
+                    }));
+                }
+                Ok((code, _, stderr)) => {
+                    if code != 0 {
+                        return Ok(json!({
+                            "status": "error",
+                            "message": format!("Push failed after freshness merge: {}", stderr.trim()),
+                            "branch": branch,
+                        }));
+                    }
+                    return Ok(json!({
+                        "status": "ok",
+                        "path": "ci_stale",
+                        "reason": "main moved during freshness check — pushed, CI must re-run",
+                        "mode": mode,
+                        "pr_number": pr_number,
+                        "pr_url": pr_url,
+                        "branch": branch,
+                        "worktree": worktree,
+                        "warnings": warnings,
+                    }));
+                }
+            }
+        }
+        "up_to_date" => {
+            // Proceed to squash merge
+            let pr_str = pr_number.unwrap_or(0).to_string();
+            match run_cmd_with_timeout(
+                &["gh", "pr", "merge", &pr_str, "--squash"],
+                NETWORK_TIMEOUT,
+            ) {
+                Err(e) => {
+                    return Ok(json!({
+                        "status": "error",
+                        "message": e,
+                        "branch": branch,
+                    }));
+                }
+                Ok((code, _, stderr)) => {
+                    if code == 0 {
+                        // Update step counter
+                        let _ = mutate_state(&state_path, |s| {
+                            if !(s.is_object() || s.is_null()) {
+                                return;
+                            }
+                            s["complete_step"] = json!(5);
+                        });
+
+                        return Ok(json!({
+                            "status": "ok",
+                            "path": "merged",
+                            "mode": mode,
+                            "pr_number": pr_number,
+                            "pr_url": pr_url,
+                            "branch": branch,
+                            "worktree": worktree,
+                            "warnings": warnings,
+                            "ci_skipped": ci_skipped,
+                        }));
+                    }
+                    let stderr_trim = stderr.trim();
+                    if stderr_trim.contains("base branch policy") {
+                        return Ok(json!({
+                            "status": "ok",
+                            "path": "ci_pending",
+                            "mode": mode,
+                            "pr_number": pr_number,
+                            "pr_url": pr_url,
+                            "branch": branch,
+                            "worktree": worktree,
+                            "warnings": warnings,
+                        }));
+                    }
+                    return Ok(json!({
+                        "status": "error",
+                        "message": stderr_trim,
+                        "branch": branch,
+                    }));
+                }
+            }
+        }
+        other => {
+            return Ok(json!({
+                "status": "error",
+                "message": format!("Unexpected check-freshness status: {}", other),
+                "branch": branch,
+            }));
+        }
+    }
 }
 
 /// CLI entry point.
