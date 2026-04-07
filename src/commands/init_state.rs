@@ -209,8 +209,11 @@ pub fn run(
         }
     }
 
-    // commit_format wiring: Task 2 will extract from flow_json and pass here
-    let commit_format: Option<&str> = None;
+    let commit_format_owned = flow_json
+        .get("commit_format")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let commit_format = commit_format_owned.as_deref();
 
     if let Err(e) = create_state(
         &root,
