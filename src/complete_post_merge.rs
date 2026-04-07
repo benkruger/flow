@@ -6,7 +6,7 @@
 //!
 //! Usage: bin/flow complete-post-merge --pr <N> --state-file <path> --branch <name>
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -15,6 +15,7 @@ use serde_json::{json, Map, Value};
 
 use crate::git::project_root;
 use crate::lock::mutate_state;
+use crate::utils::bin_flow_path;
 
 const LOCAL_TIMEOUT: u64 = 30;
 const NETWORK_TIMEOUT: u64 = 60;
@@ -34,16 +35,6 @@ pub struct Args {
     /// Branch name
     #[arg(long, required = true)]
     pub branch: String,
-}
-
-/// Locate bin/flow via current_exe traversal, falling back to "bin/flow".
-fn bin_flow_path() -> String {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent()?.parent()?.parent().map(|d| d.to_path_buf()))
-        .map(|d: PathBuf| d.join("bin").join("flow"))
-        .and_then(|p| p.to_str().map(String::from))
-        .unwrap_or_else(|| "bin/flow".to_string())
 }
 
 /// Run a subprocess command with a timeout. `args[0]` is the program.
@@ -481,6 +472,7 @@ mod tests {
     use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::fs;
+    use std::path::PathBuf;
     use std::rc::Rc;
 
     const PT_COMPLETE_OK: &str = r#"{"status": "ok", "phase": "flow-complete", "action": "complete", "cumulative_seconds": 45, "formatted_time": "<1m", "next_phase": "flow-complete", "continue_action": "invoke"}"#;
