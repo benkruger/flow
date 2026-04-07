@@ -1422,6 +1422,14 @@ def test_commit_no_mode_resolution():
     )
 
 
+def test_commit_no_separate_ci_step():
+    """Tombstone: removed in PR #934. CI runs inside finalize-commit, not as a separate skill step."""
+    content = _read_skill("flow-commit")
+    assert "bin/flow ci" not in content, (
+        "flow-commit must not contain 'bin/flow ci' — CI is enforced inside finalize-commit itself (PR #934)"
+    )
+
+
 def test_commit_has_commit_format_support():
     """Commit SKILL.md must support both commit_format options."""
     content = _read_skill("flow-commit")
