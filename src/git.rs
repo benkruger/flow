@@ -401,6 +401,52 @@ mod tests {
         assert_eq!(branch, None);
     }
 
+    // --- resolve_branch_impl: singleton fallback for hooks ---
+
+    #[test]
+    fn resolve_branch_singleton_fallback_ignores_branch_mismatch() {
+        // Hooks (post_compact, stop_failure) rely on the singleton
+        // fallback to find the active flow's state file even when
+        // current_branch() returns a different branch. The guard
+        // (is_foreign_branch) is in interactive callers only — not
+        // in resolve_branch itself.
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir(&state_dir).unwrap();
+        fs::write(
+            state_dir.join("feature-abc.json"),
+            r#"{"branch": "feature-abc"}"#,
+        )
+        .unwrap();
+
+        // Current branch is "main" — doesn't match the state file
+        let (branch, candidates) = resolve_branch_impl(
+            None,
+            dir.path(),
+            Some("main".to_string()),
+        );
+        assert_eq!(branch, Some("feature-abc".to_string()));
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn resolve_branch_singleton_fallback_with_detached_head() {
+        // Even with detached HEAD (None current branch), the singleton
+        // fallback returns the only state file. Hooks rely on this.
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir(&state_dir).unwrap();
+        fs::write(
+            state_dir.join("feature-xyz.json"),
+            r#"{"branch": "feature-xyz"}"#,
+        )
+        .unwrap();
+
+        let (branch, candidates) = resolve_branch_impl(None, dir.path(), None);
+        assert_eq!(branch, Some("feature-xyz".to_string()));
+        assert!(candidates.is_empty());
+    }
+
     // --- is_foreign_branch_impl() ---
 
     #[test]
