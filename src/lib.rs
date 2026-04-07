@@ -33,6 +33,7 @@ pub mod label_issues;
 pub mod link_blocked_by;
 pub mod lock;
 pub mod notify_slack;
+pub mod orchestrate_report;
 pub mod orchestrate_state;
 pub mod output;
 pub mod phase_config;
