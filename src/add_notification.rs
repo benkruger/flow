@@ -3,7 +3,7 @@ use std::process;
 use clap::Parser;
 use serde_json::json;
 
-use crate::git::{project_root, resolve_branch};
+use crate::git::{is_foreign_branch, project_root, resolve_branch};
 use crate::lock::mutate_state;
 use crate::output::{json_error, json_ok};
 use crate::phase_config::phase_names;
@@ -55,6 +55,13 @@ pub fn run(args: Args) {
     }
 
     let branch = branch.unwrap();
+
+    // Guard: reject singleton-fallback resolution for interactive commands
+    if is_foreign_branch(&branch, args.branch.as_deref()) {
+        json_error("Resolved branch does not match current branch", &[]);
+        process::exit(1);
+    }
+
     let state_path = root.join(".flow-states").join(format!("{}.json", branch));
 
     if !state_path.exists() {
