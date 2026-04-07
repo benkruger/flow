@@ -104,6 +104,7 @@ pub fn start_issue(state_path: &Path, index: i64) -> Value {
 
     match mutate_state(state_path, |state| {
         if !(state.is_object() || state.is_null()) {
+            error_result = Some(json!({"status": "error", "message": "State file is not a JSON object"}));
             return;
         }
         let queue_len = state
@@ -118,6 +119,10 @@ pub fn start_issue(state_path: &Path, index: i64) -> Value {
             return;
         }
         let idx = index as usize;
+        if !state["queue"][idx].is_object() {
+            error_result = Some(json!({"status": "error", "message": "Queue item is not a JSON object"}));
+            return;
+        }
         state["current_index"] = json!(index);
         state["queue"][idx]["status"] = json!("in_progress");
         state["queue"][idx]["started_at"] = json!(now());
@@ -151,6 +156,7 @@ pub fn record_outcome(
 
     match mutate_state(state_path, |state| {
         if !(state.is_object() || state.is_null()) {
+            error_result = Some(json!({"status": "error", "message": "State file is not a JSON object"}));
             return;
         }
         let queue_len = state
@@ -165,6 +171,10 @@ pub fn record_outcome(
             return;
         }
         let idx = index as usize;
+        if !state["queue"][idx].is_object() {
+            error_result = Some(json!({"status": "error", "message": "Queue item is not a JSON object"}));
+            return;
+        }
         state["queue"][idx]["status"] = json!(outcome);
         state["queue"][idx]["outcome"] = json!(outcome);
         state["queue"][idx]["completed_at"] = json!(now());
@@ -192,13 +202,16 @@ pub fn complete_orchestration(state_path: &Path) -> Value {
         });
     }
 
+    let mut error_result: Option<Value> = None;
+
     match mutate_state(state_path, |state| {
         if !(state.is_object() || state.is_null()) {
+            error_result = Some(json!({"status": "error", "message": "State file is not a JSON object"}));
             return;
         }
         state["completed_at"] = json!(now());
     }) {
-        Ok(_) => json!({"status": "ok"}),
+        Ok(_) => error_result.unwrap_or_else(|| json!({"status": "ok"})),
         Err(e) => json!({"status": "error", "message": format!("{}", e)}),
     }
 }
@@ -325,15 +338,6 @@ pub struct Args {
 /// for infrastructure failures.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     if args.create {
-        let queue_file = args
-            .queue_file
-            .as_deref()
-            .ok_or_else(|| "missing".to_string())
-            .and_then(|_| Ok(()))
-            .err();
-        if queue_file.is_some() && args.queue_file.is_none() {
-            return Ok(json!({"status": "error", "message": "--queue-file required with --create"}));
-        }
         let queue_path = match &args.queue_file {
             Some(p) => p,
             None => {
@@ -559,6 +563,19 @@ mod tests {
         assert!(result["message"].as_str().unwrap().contains("not found"));
     }
 
+    #[test]
+    fn test_start_issue_non_object_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("orchestrate.json");
+        fs::write(&state_path, "[1, 2, 3]").unwrap();
+
+        let result = start_issue(&state_path, 0);
+        assert_eq!(result["status"], "error");
+        assert!(result["message"].as_str().unwrap().contains("not a JSON object"));
+    }
+
     // --- record_outcome ---
 
     #[test]
@@ -638,6 +655,19 @@ mod tests {
         assert!(result["message"].as_str().unwrap().contains("not found"));
     }
 
+    #[test]
+    fn test_record_outcome_non_object_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("orchestrate.json");
+        fs::write(&state_path, "[1, 2, 3]").unwrap();
+
+        let result = record_outcome(&state_path, 0, "completed", None, None, None);
+        assert_eq!(result["status"], "error");
+        assert!(result["message"].as_str().unwrap().contains("not a JSON object"));
+    }
+
     // --- complete ---
 
     #[test]
@@ -661,6 +691,19 @@ mod tests {
         let result = complete_orchestration(&dir.path().join("missing.json"));
         assert_eq!(result["status"], "error");
         assert!(result["message"].as_str().unwrap().contains("not found"));
+    }
+
+    #[test]
+    fn test_complete_non_object_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("orchestrate.json");
+        fs::write(&state_path, "[1, 2, 3]").unwrap();
+
+        let result = complete_orchestration(&state_path);
+        assert_eq!(result["status"], "error");
+        assert!(result["message"].as_str().unwrap().contains("not a JSON object"));
     }
 
     // --- read_state ---
