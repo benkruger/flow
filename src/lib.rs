@@ -37,6 +37,7 @@ pub mod orchestrate_report;
 pub mod orchestrate_state;
 pub mod output;
 pub mod qa_mode;
+pub mod qa_verify;
 pub mod phase_config;
 pub mod phase_enter;
 pub mod phase_finalize;
