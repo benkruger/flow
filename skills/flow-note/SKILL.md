@@ -1,6 +1,6 @@
 ---
 name: flow-note
-description: "Capture a correction or learning to the FLOW state file. Invoke explicitly with /flow:flow-note or when directed by session context. Fast — captures and continues without interrupting flow."
+description: "Capture a correction or learning to the FLOW state file. Invoke explicitly with /flow:flow-note. Fast — captures and continues without interrupting flow."
 ---
 
 # FLOW Note

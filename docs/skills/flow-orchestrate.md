@@ -33,13 +33,13 @@ Processes decomposed issues sequentially overnight via `flow-start --auto`. Fetc
 The report is delivered in two ways:
 
 - **End of session:** Rendered inline after the last issue completes
-- **Next session start:** The session-start hook detects the completed orchestration, presents the report, and cleans up the state files
+- **Next session start:** Not currently available (session-start delivery was removed in PR #938)
 
 ---
 
 ## Compaction Survival
 
-The orchestrator state file (`.flow-states/orchestrate.json`) tracks the queue position and per-issue outcomes. Self-invocation after each feature keeps the working context bounded. The session-start hook detects in-progress orchestrations and injects resume instructions after compaction.
+The orchestrator state file (`.flow-states/orchestrate.json`) tracks the queue position and per-issue outcomes. Self-invocation after each feature keeps the working context bounded.
 
 ---
 
