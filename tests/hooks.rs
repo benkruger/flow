@@ -552,16 +552,10 @@ fn test_stop_continue_sets_blocked_when_idle() {
 }
 
 #[test]
-fn test_stop_continue_resolves_branch_via_state_scan() {
-    // Regression test for issue #886: when the shell sits on `main` but
-    // the active flow's state file is for a different branch, the hook
-    // must find the state file via `resolve_branch`'s state-file scan
-    // fallback — not just `current_branch()` which returns "main".
-    //
-    // This test does NOT set FLOW_SIMULATE_BRANCH, so the hook resolves
-    // the branch via real git + state-file scan. Before the fix (when
-    // run() used current_branch()), this test fails: the hook returns
-    // "main", finds no .flow-states/main.json, and exits without blocking.
+/// Tombstone: .flow-states/ scan removed from resolve_branch in PR #924.
+/// When on main with another branch's state file, the hook must NOT
+/// resolve to that branch — it silently exits without blocking.
+fn test_stop_continue_no_scan_on_main_tombstone() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo_on_branch(dir.path(), "main");
 
@@ -583,22 +577,16 @@ fn test_stop_continue_resolves_branch_via_state_scan() {
 
     assert_eq!(output.status.code().unwrap(), 0);
     let stdout = std::str::from_utf8(&output.stdout).unwrap().trim();
+    // No output — hook exits silently because main has no state file
     assert!(
-        !stdout.is_empty(),
-        "hook must produce block JSON when state-file scan finds the feature branch"
-    );
-    let parsed: Value = serde_json::from_str(stdout).unwrap();
-    assert_eq!(parsed["decision"], "block");
-    let reason = parsed["reason"].as_str().unwrap();
-    assert!(
-        reason.contains("flow-plan"),
-        "reason must name the pending skill, got: {}",
-        reason
+        stdout.is_empty(),
+        "hook must NOT block when on main with another branch's state file — scan removed in PR #924, got: {}",
+        stdout
     );
 
-    // State file for feature-xyz must have _continue_pending cleared.
+    // State file for feature-xyz must be UNTOUCHED — hook did not find or modify it.
     let on_disk = read_state(dir.path(), feature_branch);
-    assert_eq!(on_disk["_continue_pending"], "");
+    assert_eq!(on_disk["_continue_pending"], "flow-plan");
 }
 
 #[test]

@@ -381,27 +381,22 @@ describe the return value, not the caller's interpretation of it.
 
 ## Branch-Resolution Function Parity
 
-Python `flow_utils.resolve_branch()` scans `.flow-states/` for a
-unique state file when the current git HEAD does not match any
-branch-named state file. Python `flow_utils.current_branch()`
-returns only the exact git HEAD. When porting a hook or script
-from Python, check which function the Python original called
-and use the matching Rust equivalent — `git::resolve_branch()`
-or `git::current_branch()`. Mismatching silently loses state
-updates in worktree configurations where the shell's git HEAD
-differs from the active flow's branch.
+`resolve_branch` and `current_branch` both return the current git
+branch. The only difference: `resolve_branch` accepts an explicit
+`--branch` override and checks whether a matching state file exists
+(returning the branch either way). Rust's `resolve_branch` no longer
+scans `.flow-states/` for candidates — the scan was removed in
+PR #924. Python's `flow_utils.resolve_branch()` still has the scan
+until the Python layer is removed.
 
-Audit every Python `resolve_branch()` call during a port. Hooks
-that fire from any shell (Stop, StopFailure, PostCompact) must
-use `resolve_branch()` because the user's shell cwd may not match
-the active flow branch.
+Use `resolve_branch` when the caller accepts a `--branch` flag or
+needs the state-file existence check. Use `current_branch` when
+neither is needed.
 
-CLI subcommands that resolve a branch from an explicit cwd (e.g.
-`bin/flow ci` running in a worktree) must use `git::resolve_branch_in(
-override, cwd, root)` — the cwd-scoped variant — rather than
-`current_branch_in(cwd)`. The `_in` variant preserves the state-file
-scan fallback while reading the branch from the supplied directory
-instead of the process cwd.
+`resolve_branch_in(override, cwd, root)` is the cwd-scoped variant
+that reads the branch from the given directory instead of the
+process cwd — use it for CLI subcommands that run in a worktree
+(e.g. `bin/flow ci`).
 
 ## Upfront Guards Belong in run_impl
 
