@@ -632,6 +632,65 @@ mod tests {
         assert_eq!(result["pull_merged"], true);
     }
 
+    // --- Integration tests for run_impl CI enforcement ---
+
+    /// Set up a bare remote + clone with a configurable bin/ci script and .flow-states dir.
+    ///
+    /// The bin/ci script checks `.ci-should-fail` in the project root:
+    /// - If the file exists and contains "1", bin/ci exits 1 (CI fails).
+    /// - Otherwise, bin/ci exits 0 (CI passes).
+    ///
+    /// Additionally, each invocation appends a line to `.ci-invocation-marker`
+    /// so tests can verify whether CI actually ran (vs. being skipped by sentinel).
+    ///
+    /// Returns (clone_dir, bare_dir) as TempDirs that must be kept alive.
+    fn setup_integration_repo_with_ci() -> (tempfile::TempDir, tempfile::TempDir) {
+        let (clone_dir, bare_dir) = setup_integration_repo();
+        let clone_str = clone_dir.path().to_str().unwrap();
+
+        // Create bin/ci script with pass/fail control and invocation marker
+        let bin_dir = clone_dir.path().join("bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        let bin_ci = bin_dir.join("ci");
+        let script = r#"#!/usr/bin/env bash
+# Append to marker file so tests can count invocations
+echo "invoked" >> "$(dirname "$0")/../.ci-invocation-marker"
+# Check control file for pass/fail
+if [ -f "$(dirname "$0")/../.ci-should-fail" ] && [ "$(cat "$(dirname "$0")/../.ci-should-fail")" = "1" ]; then
+  exit 1
+fi
+exit 0
+"#;
+        fs::write(&bin_ci, script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&bin_ci, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        // Commit bin/ci so it's tracked (avoids untracked-file snapshot changes)
+        Command::new("git")
+            .args(["-C", clone_str, "add", "bin/ci"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone_str, "commit", "-m", "Add bin/ci"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone_str, "push"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        (clone_dir, bare_dir)
+    }
+
     // --- Integration tests for run_impl sentinel refresh ---
 
     /// Set up a bare remote + clone with a passing bin/ci script and .flow-states dir.
