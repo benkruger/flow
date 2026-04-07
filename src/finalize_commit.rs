@@ -217,12 +217,15 @@ fn run_git_in_dir(
     run_git_with_timeout(&cmd_args, timeout_secs)
 }
 
-/// Testable entry point: runs finalize-commit, then refreshes the CI sentinel
-/// when pull did not introduce new content (pull_merged == false).
+/// Testable entry point: enforces CI, runs finalize-commit, then maintains
+/// the CI sentinel (refresh on clean pull, delete on merge-pull).
 ///
 /// `cwd` and `root` are passed explicitly so integration tests can avoid
 /// `set_current_dir` (which is process-wide and races with parallel tests).
-/// Returns Ok(result_json) on success, Err(message) on infrastructure errors.
+///
+/// Returns `Result<Value, String>` where `Ok` carries any JSON response
+/// including status-error payloads (CI failure, commit failure, etc.) and
+/// `Err` carries only infrastructure errors (empty arguments).
 pub fn run_impl(
     args: &Args,
     cwd: &std::path::Path,
