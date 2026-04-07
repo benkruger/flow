@@ -480,3 +480,18 @@ def test_checksum_version_invariant():
 
     claude_md = (REPO_ROOT / "CLAUDE.md").read_text()
     assert "Checksum → Version Invariant" in claude_md, "CLAUDE.md must document the checksum → version invariant"
+
+
+def test_no_private_bin_flow_path_in_complete_modules():
+    """Tombstone: private bin_flow_path() hoisted to utils.rs in PR #926. Must not return."""
+    modules = [
+        "src/complete_preflight.rs",
+        "src/complete_merge.rs",
+        "src/complete_post_merge.rs",
+        "src/complete_fast.rs",
+    ]
+    for module in modules:
+        content = (REPO_ROOT / module).read_text()
+        assert "fn bin_flow_path()" not in content, (
+            f"{module} still contains a private bin_flow_path() — use crate::utils::bin_flow_path instead"
+        )
