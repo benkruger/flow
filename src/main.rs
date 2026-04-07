@@ -35,7 +35,11 @@ use flow_rs::label_issues;
 use flow_rs::notify_slack;
 use flow_rs::orchestrate_report;
 use flow_rs::orchestrate_state;
+use flow_rs::qa_mode;
+use flow_rs::qa_reset;
+use flow_rs::qa_verify;
 use flow_rs::render_pr_body;
+use flow_rs::scaffold_qa;
 use flow_rs::update_pr_body;
 use flow_rs::git::{project_root, resolve_branch};
 use flow_rs::issue;
@@ -375,6 +379,22 @@ enum Commands {
     #[command(name = "upgrade-check")]
     UpgradeCheck(upgrade_check::Args),
 
+    /// Manage dev-mode plugin_root redirection in .flow.json.
+    #[command(name = "qa-mode")]
+    QaMode(qa_mode::Args),
+
+    /// Reset a QA repo to seed state.
+    #[command(name = "qa-reset")]
+    QaReset(qa_reset::Args),
+
+    /// Verify QA assertions after a completed flow.
+    #[command(name = "qa-verify")]
+    QaVerify(qa_verify::Args),
+
+    /// Create a QA repo from per-framework templates.
+    #[command(name = "scaffold-qa")]
+    ScaffoldQa(scaffold_qa::Args),
+
     /// Run a Claude Code hook handler.
     Hook {
         #[command(subcommand)]
@@ -586,6 +606,10 @@ fn main() {
         Some(Commands::OrchestrateReport(args)) => orchestrate_report::run(args),
         Some(Commands::OrchestrateState(args)) => orchestrate_state::run(args),
         Some(Commands::UpgradeCheck(args)) => upgrade_check::run(args),
+        Some(Commands::QaMode(args)) => qa_mode::run(args),
+        Some(Commands::QaReset(args)) => qa_reset::run(args),
+        Some(Commands::QaVerify(args)) => qa_verify::run(args),
+        Some(Commands::ScaffoldQa(args)) => scaffold_qa::run(args),
         Some(Commands::Hook { hook }) => match hook {
             HookCommands::ValidatePretool => hooks::validate_pretool::run(),
             HookCommands::ValidateClaudePaths => hooks::validate_claude_paths::run(),
