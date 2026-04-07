@@ -6,8 +6,9 @@ If a Code Review finding is in a file that appears in
 `git diff origin/main...HEAD`, it is **in-scope** — fix it during
 Step 4. No exceptions.
 
-Out-of-scope means the finding is in a file the PR did not touch.
-The problem pre-dates this PR. Only then may it be filed as an issue.
+Out-of-scope means the finding is in a file the PR did not touch
+AND the PR did not cause the problem. Only then may it be filed
+as an issue.
 
 ## Why
 
@@ -25,12 +26,17 @@ as "real":
 
 1. Check whether the file appears in the PR diff
 2. If yes → in-scope, route to Step 4
-3. If no → out-of-scope, file an issue
+3. If no → did this PR's changes make the finding true?
+   Read the finding's claim, then check whether the PR's
+   code changes are what caused it. If removing the PR
+   would make the finding go away, it is in-scope — fix
+   it regardless of which file it is in.
+4. If no to both → out-of-scope, file an issue
 
 This applies to all finding types: bugs, structural issues,
-duplicate code, missing abstractions, naming problems. "Low
-severity" and "simplicity" findings in PR-touched files are still
-in-scope.
+duplicate code, missing abstractions, naming problems, documentation
+drift. "Low severity" and "simplicity" findings in PR-touched files
+are still in-scope.
 
 ## In-Scope Means Fix, Not File
 
