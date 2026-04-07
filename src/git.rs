@@ -177,6 +177,32 @@ fn resolve_branch_impl(
     (branch, vec![])
 }
 
+/// Check if the resolved branch is "foreign" — resolved via singleton
+/// fallback and doesn't match the current git HEAD.
+///
+/// Returns true when: (1) no override was passed, and (2) the current
+/// branch is either None (detached HEAD) or differs from the resolved
+/// branch. Interactive commands use this to reject writes to state files
+/// belonging to a different feature. Hooks must NOT use this — they
+/// intentionally rely on the singleton fallback.
+pub fn is_foreign_branch(resolved: &str, override_branch: Option<&str>) -> bool {
+    is_foreign_branch_impl(resolved, override_branch, current_branch())
+}
+
+fn is_foreign_branch_impl(
+    resolved: &str,
+    override_branch: Option<&str>,
+    current: Option<String>,
+) -> bool {
+    if override_branch.is_some() {
+        return false;
+    }
+    match current {
+        None => true,
+        Some(ref b) => b != resolved,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -373,6 +399,49 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let branch = current_branch_in(dir.path());
         assert_eq!(branch, None);
+    }
+
+    // --- is_foreign_branch_impl() ---
+
+    #[test]
+    fn foreign_branch_different_branch_no_override() {
+        assert!(is_foreign_branch_impl(
+            "feature-a",
+            None,
+            Some("feature-b".to_string())
+        ));
+    }
+
+    #[test]
+    fn foreign_branch_matching_branch_no_override() {
+        assert!(!is_foreign_branch_impl(
+            "feature-a",
+            None,
+            Some("feature-a".to_string())
+        ));
+    }
+
+    #[test]
+    fn foreign_branch_override_bypasses_check() {
+        assert!(!is_foreign_branch_impl(
+            "feature-a",
+            Some("feature-a"),
+            Some("feature-b".to_string())
+        ));
+    }
+
+    #[test]
+    fn foreign_branch_detached_head_no_override() {
+        assert!(is_foreign_branch_impl("feature-a", None, None));
+    }
+
+    #[test]
+    fn foreign_branch_detached_head_with_override() {
+        assert!(!is_foreign_branch_impl(
+            "feature-a",
+            Some("feature-a"),
+            None
+        ));
     }
 
     #[test]
