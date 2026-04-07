@@ -46,10 +46,12 @@ pub fn phase_enter(state: &mut Value, phase: &str, reason: Option<&str>) -> Valu
         .unwrap()
         .push(transition);
 
-    // Clear auto-continue and discussion-mode flags from previous phase
+    // Clear auto-continue, discussion-mode, and stale continuation flags from previous phase
     if let Some(obj) = state.as_object_mut() {
         obj.remove("_auto_continue");
         obj.remove("_stop_instructed");
+        obj.remove("_continue_pending");
+        obj.remove("_continue_context");
     }
 
     let first_visit = visit_count == 1;
@@ -393,6 +395,24 @@ mod tests {
         assert!(
             state.get("_stop_instructed").is_none(),
             "_stop_instructed must be removed by phase_enter"
+        );
+    }
+
+    #[test]
+    fn enter_clears_continue_pending() {
+        let mut state = make_state("flow-start", &[("flow-start", "complete")]);
+        state["_continue_pending"] = json!("commit");
+        state["_continue_context"] = json!("stale instructions");
+
+        phase_enter(&mut state, "flow-plan", None);
+
+        assert!(
+            state.get("_continue_pending").is_none(),
+            "_continue_pending must be removed by phase_enter"
+        );
+        assert!(
+            state.get("_continue_context").is_none(),
+            "_continue_context must be removed by phase_enter"
         );
     }
 
