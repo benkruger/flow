@@ -384,8 +384,10 @@ describe the return value, not the caller's interpretation of it.
 `resolve_branch` and `current_branch` both return the current git
 branch. The only difference: `resolve_branch` accepts an explicit
 `--branch` override and checks whether a matching state file exists
-(returning the branch either way). Neither function scans
-`.flow-states/` for candidates — the scan was removed in PR #924.
+(returning the branch either way). Rust's `resolve_branch` no longer
+scans `.flow-states/` for candidates — the scan was removed in
+PR #924. Python's `flow_utils.resolve_branch()` still has the scan
+until the Python layer is removed.
 
 Use `resolve_branch` when the caller accepts a `--branch` flag or
 needs the state-file existence check. Use `current_branch` when

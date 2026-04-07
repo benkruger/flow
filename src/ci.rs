@@ -313,8 +313,8 @@ pub fn run_with_retry(
 ///
 /// Dispatches to [`run_once`] when `args.retry == 0` and to
 /// [`run_with_retry`] otherwise. Resolves the branch from `args.branch`
-/// or falls back to [`crate::git::resolve_branch_in`] using the given
-/// `cwd`.
+/// or via [`crate::git::resolve_branch_in`] using the given `cwd`
+/// (does not scan `.flow-states/` — see PR #924).
 ///
 /// Also performs the `bin/ci not found` pre-check here (before
 /// dispatch) so both retry and non-retry paths return the same error

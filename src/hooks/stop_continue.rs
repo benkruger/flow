@@ -285,8 +285,8 @@ pub fn format_block_output(skill: &str, context: Option<&str>) -> Value {
 
 /// Run the stop-continue hook (entry point).
 ///
-/// Uses `resolve_branch` for the `--branch` override support and state
-/// file existence check. Falls back to `current_branch()` internally.
+/// Uses `resolve_branch` for `--branch` override support. Calls
+/// `current_branch()` internally — does not scan `.flow-states/`.
 pub fn run() {
     let mut stdin_buf = String::new();
     let _ = std::io::stdin().read_to_string(&mut stdin_buf);
