@@ -31,6 +31,7 @@ use flow_rs::format_status;
 use flow_rs::hooks;
 use flow_rs::label_issues;
 use flow_rs::notify_slack;
+use flow_rs::orchestrate_state;
 use flow_rs::render_pr_body;
 use flow_rs::update_pr_body;
 use flow_rs::git::{project_root, resolve_branch};
@@ -341,6 +342,10 @@ enum Commands {
     #[command(name = "update-pr-body")]
     UpdatePrBody(update_pr_body::Args),
 
+    /// Manage orchestration queue state
+    #[command(name = "orchestrate-state")]
+    OrchestrateState(orchestrate_state::Args),
+
     /// Check GitHub for newer FLOW releases.
     #[command(name = "upgrade-check")]
     UpgradeCheck(upgrade_check::Args),
@@ -545,6 +550,7 @@ fn main() {
         Some(Commands::UpdatePrBody(args)) => {
             update_pr_body::run(args);
         }
+        Some(Commands::OrchestrateState(args)) => orchestrate_state::run(args),
         Some(Commands::UpgradeCheck(args)) => upgrade_check::run(args),
         Some(Commands::Hook { hook }) => match hook {
             HookCommands::ValidatePretool => hooks::validate_pretool::run(),
