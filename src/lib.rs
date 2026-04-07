@@ -36,6 +36,7 @@ pub mod notify_slack;
 pub mod output;
 pub mod phase_config;
 pub mod phase_enter;
+pub mod phase_finalize;
 pub mod phase_transition;
 pub mod plan_extract;
 pub mod prime_check;

@@ -40,6 +40,7 @@ use flow_rs::lock::mutate_state;
 use flow_rs::output::json_error;
 use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
 use flow_rs::phase_enter;
+use flow_rs::phase_finalize;
 use flow_rs::phase_transition::{phase_complete, phase_enter as phase_enter_fn};
 use flow_rs::plan_extract;
 use flow_rs::prime_check;
@@ -334,6 +335,10 @@ enum Commands {
     #[command(name = "phase-enter")]
     PhaseEnter(phase_enter::Args),
 
+    /// Generic phase exit: complete + Slack + notification.
+    #[command(name = "phase-finalize")]
+    PhaseFinalize(phase_finalize::Args),
+
     /// Extract pre-decomposed plan or prepare state for model-driven planning.
     #[command(name = "plan-extract")]
     PlanExtract(plan_extract::Args),
@@ -543,6 +548,9 @@ fn main() {
         }
         Some(Commands::PhaseEnter(args)) => {
             phase_enter::run(args);
+        }
+        Some(Commands::PhaseFinalize(args)) => {
+            phase_finalize::run(args);
         }
         Some(Commands::PlanExtract(args)) => {
             plan_extract::run(args);
