@@ -1,4 +1,5 @@
 pub mod add_issue;
+pub mod bump_version;
 pub mod finalize_commit;
 pub mod analyze_issues;
 pub mod add_notification;
@@ -21,6 +22,7 @@ pub mod create_milestone;
 pub mod create_sub_issue;
 pub mod detect_framework;
 pub mod error;
+pub mod extract_release_notes;
 pub mod format_complete_summary;
 pub mod format_issues_summary;
 pub mod format_pr_timings;
