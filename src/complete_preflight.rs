@@ -14,7 +14,7 @@
 //!   Inferred: {"status": "ok", "inferred": true, ...}
 //!   Error:    {"status": "error", "message": "..."}
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -23,7 +23,7 @@ use serde_json::{json, Value};
 
 use crate::git::{current_branch, project_root};
 use crate::lock::mutate_state;
-use crate::utils::{derive_worktree, parse_conflict_files};
+use crate::utils::{bin_flow_path, derive_worktree, parse_conflict_files};
 
 const LOCAL_TIMEOUT: u64 = 30;
 const NETWORK_TIMEOUT: u64 = 60;
@@ -46,16 +46,6 @@ pub struct Args {
     /// Force manual mode
     #[arg(long)]
     pub manual: bool,
-}
-
-/// Locate bin/flow via current_exe traversal, falling back to "bin/flow".
-fn bin_flow_path() -> String {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent()?.parent()?.parent().map(|d| d.to_path_buf()))
-        .map(|d: PathBuf| d.join("bin").join("flow"))
-        .and_then(|p| p.to_str().map(String::from))
-        .unwrap_or_else(|| "bin/flow".to_string())
 }
 
 /// Run a subprocess command with a timeout. `args[0]` is the program.
