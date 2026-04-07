@@ -65,7 +65,7 @@ CI will fail if these are missing:
 - `flow-phases.json` — state machine: phase names, commands, valid back-transitions
 - `skills/<name>/SKILL.md` — each skill's Markdown instructions
 - `hooks/hooks.json` — hook registration (SessionStart, PreToolUse, PermissionRequest, PostToolUse, PostCompact, Stop, StopFailure)
-- `hooks/session-start.sh` — detects in-progress features, injects awareness context
+- `hooks/session-start.sh` — writes terminal tab colors
 - `.claude/settings.json` — project permissions (git rebase denied)
 - `.github/workflows/ci.yml` — GitHub Actions CI (runs `bin/ci` on push/PR to main)
 - `.github/workflows/autoupdate.yml` — auto-updates PR branches when main advances
@@ -94,7 +94,7 @@ This repo is the plugin source. When installed, skills and hooks run in the targ
 
 ### Skills Are Markdown, Not Code
 
-Skills are pure Markdown instructions (`skills/<name>/SKILL.md`). The only executable code is `bin/flow` (dispatcher), `lib/*.py` (utility scripts), `hooks/session-start.sh` (with embedded Python), `bin/ci`, and `bin/test`. Everything else is instructions that Claude reads and follows.
+Skills are pure Markdown instructions (`skills/<name>/SKILL.md`). The only executable code is `bin/flow` (dispatcher), `lib/*.py` (utility scripts), `bin/ci`, and `bin/test`. Everything else is instructions that Claude reads and follows.
 
 ### State File
 
@@ -117,7 +117,7 @@ Agent `maxTurns` budgets are set in each agent's frontmatter. When adding or mod
 
 ### Orchestration
 
-`/flow:flow-orchestrate` is a meta-skill that processes decomposed issues overnight. It fetches open issues labeled "Decomposed", filters out "Flow In-Progress" issues, and runs each sequentially via `flow-start --auto`. State is tracked in `.flow-states/orchestrate.json` (a machine-level singleton, not branch-scoped). The session-start hook detects orchestrator state for both in-progress resume and completed morning report delivery. Only one orchestration runs per machine at a time.
+`/flow:flow-orchestrate` is a meta-skill that processes decomposed issues overnight. It fetches open issues labeled "Decomposed", filters out "Flow In-Progress" issues, and runs each sequentially via `flow-start --auto`. State is tracked in `.flow-states/orchestrate.json` (a machine-level singleton, not branch-scoped). Only one orchestration runs per machine at a time.
 
 ### Memory and Learning System
 
