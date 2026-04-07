@@ -35,20 +35,13 @@ pub struct Args {
 
 pub fn run(args: Args) {
     let root = project_root();
-    let (branch, candidates) = resolve_branch(args.branch.as_deref(), &root);
-
-    if branch.is_none() {
-        // add-issue silently returns no_state on ambiguity (unlike append-note)
-        if !candidates.is_empty() {
-            println!(r#"{{"status":"no_state"}}"#);
-            process::exit(0);
-        } else {
+    let branch = match resolve_branch(args.branch.as_deref(), &root) {
+        Some(b) => b,
+        None => {
             json_error("Could not determine current branch", &[]);
             process::exit(1);
         }
-    }
-
-    let branch = branch.unwrap();
+    };
     let state_path = root.join(".flow-states").join(format!("{}.json", branch));
 
     if !state_path.exists() {

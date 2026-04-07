@@ -62,17 +62,10 @@ pub fn run(args: Args) {
 /// be resolved or state file does not exist.
 fn resolve_state(args: &Args) -> Result<(PathBuf, String, PathBuf), Value> {
     let root = project_root();
-    let (branch, candidates) = resolve_branch(args.branch.as_deref(), &root);
-
-    let branch = match branch {
+    let branch = match resolve_branch(args.branch.as_deref(), &root) {
         Some(b) => b,
         None => {
-            let msg = if !candidates.is_empty() {
-                "Multiple active features. Pass --branch."
-            } else {
-                "Could not determine current branch"
-            };
-            return Err(json!({"status": "error", "message": msg}));
+            return Err(json!({"status": "error", "message": "Could not determine current branch"}));
         }
     };
 

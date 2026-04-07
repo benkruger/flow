@@ -397,8 +397,8 @@ pub fn fast_inner(
 /// Err(string) only for infrastructure failures.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
-    let (resolved, _) = resolve_branch(args.branch.as_deref(), &root);
-    let branch = resolved.ok_or("Could not determine current branch")?;
+    let branch = resolve_branch(args.branch.as_deref(), &root)
+        .ok_or("Could not determine current branch")?;
 
     // Read state file
     let (state, state_path) = read_state(&root, &branch)?;

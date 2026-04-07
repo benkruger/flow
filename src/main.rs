@@ -41,7 +41,9 @@ use flow_rs::link_blocked_by;
 use flow_rs::lock::mutate_state;
 use flow_rs::output::json_error;
 use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
-use flow_rs::phase_transition::{phase_complete, phase_enter};
+use flow_rs::phase_enter;
+use flow_rs::phase_finalize;
+use flow_rs::phase_transition::{phase_complete, phase_enter as phase_enter_fn};
 use flow_rs::plan_extract;
 use flow_rs::prime_check;
 use flow_rs::prime_project;
@@ -331,6 +333,14 @@ enum Commands {
     #[command(name = "write-rule")]
     WriteRule(write_rule::Args),
 
+    /// Generic phase entry: gate + enter + step counters + return state data.
+    #[command(name = "phase-enter")]
+    PhaseEnter(phase_enter::Args),
+
+    /// Generic phase exit: complete + Slack + notification.
+    #[command(name = "phase-finalize")]
+    PhaseFinalize(phase_finalize::Args),
+
     /// Extract pre-decomposed plan or prepare state for model-driven planning.
     #[command(name = "plan-extract")]
     PlanExtract(plan_extract::Args),
@@ -546,6 +556,12 @@ fn main() {
         Some(Commands::WriteRule(args)) => {
             write_rule::run(args);
         }
+        Some(Commands::PhaseEnter(args)) => {
+            phase_enter::run(args);
+        }
+        Some(Commands::PhaseFinalize(args)) => {
+            phase_finalize::run(args);
+        }
         Some(Commands::PlanExtract(args)) => {
             plan_extract::run(args);
         }
@@ -580,17 +596,7 @@ fn run_check_phase(phase: &str, branch_override: Option<&str>) {
     }
 
     let root = project_root();
-    let (branch, candidates) = resolve_branch(branch_override, &root);
-
-    if branch.is_none() && !candidates.is_empty() {
-        println!("BLOCKED: Multiple active features. Pass --branch.");
-        for c in &candidates {
-            println!("  - {}", c);
-        }
-        process::exit(1);
-    }
-
-    let branch = match branch {
+    let branch = match resolve_branch(branch_override, &root) {
         Some(b) => b,
         None => {
             println!("BLOCKED: Could not determine current git branch.");
@@ -676,26 +682,13 @@ fn run_phase_transition(
     }
 
     let root = project_root();
-    let (branch, candidates) = resolve_branch(branch_override, &root);
-
-    if branch.is_none() {
-        if !candidates.is_empty() {
-            println!(
-                "{}",
-                serde_json::to_string(&json!({
-                    "status": "error",
-                    "message": "Multiple active features. Pass --branch.",
-                    "candidates": candidates,
-                }))
-                .unwrap()
-            );
-        } else {
+    let branch = match resolve_branch(branch_override, &root) {
+        Some(b) => b,
+        None => {
             json_error("Could not determine current branch", &[]);
+            process::exit(1);
         }
-        process::exit(1);
-    }
-
-    let branch = branch.unwrap();
+    };
     let state_path = root.join(".flow-states").join(format!("{}.json", branch));
 
     if !state_path.exists() {
@@ -750,7 +743,7 @@ fn run_phase_transition(
 
     let mutate_result = mutate_state(&state_path, |state| {
         let result = if action == "enter" {
-            phase_enter(state, phase, reason)
+            phase_enter_fn(state, phase, reason)
         } else {
             phase_complete(
                 state,
@@ -777,22 +770,7 @@ fn run_phase_transition(
 
 fn run_format_status(branch_override: Option<&str>) {
     let root = project_root();
-    let (branch, candidates) = resolve_branch(branch_override, &root);
-
-    if branch.is_none() && !candidates.is_empty() {
-        // Ambiguous — show all candidates via find_state_files
-        let results = find_state_files(&root, "");
-        if results.is_empty() {
-            process::exit(1);
-        }
-        let version = read_version();
-        let dev_mode = detect_dev_mode(&root);
-        let panel = format_status::format_multi_panel(&results, &version, dev_mode);
-        println!("{}", panel);
-        process::exit(0);
-    }
-
-    let branch = match branch {
+    let branch = match resolve_branch(branch_override, &root) {
         Some(b) => b,
         None => {
             eprintln!("Could not determine current branch");
@@ -801,9 +779,16 @@ fn run_format_status(branch_override: Option<&str>) {
     };
 
     let results = find_state_files(&root, &branch);
-    if results.is_empty() {
-        process::exit(1);
-    }
+    // No state file for this branch — show all active flows instead
+    let results = if results.is_empty() {
+        let all = find_state_files(&root, "");
+        if all.is_empty() {
+            process::exit(1);
+        }
+        all
+    } else {
+        results
+    };
 
     let version = read_version();
     let dev_mode = detect_dev_mode(&root);

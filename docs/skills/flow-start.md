@@ -26,7 +26,7 @@ Begins a new feature. This is always the first command run for any piece of work
 2. **start-gate** — pulls latest main, runs `bin/flow ci` baseline with retry (3 attempts), updates dependencies, runs post-deps CI with retry if deps changed. Falls back to ci-fixer sub-agent for dep-induced breakage
 3. **start-workspace** — creates worktree, opens PR, backfills state file with PR fields, releases the start lock as its final action (lock release is after worktree creation, closing a race condition)
 4. Changes to the worktree directory
-5. **start-finalize** — completes the phase transition, sends Slack notification, returns timing and continue mode
+5. **phase-finalize** — completes the phase transition, sends Slack notification, returns timing and continue mode
 
 ---
 

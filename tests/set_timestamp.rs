@@ -305,8 +305,11 @@ fn test_cli_error_corrupt_json() {
     assert!(output["message"].as_str().unwrap().contains("Could not read"));
 }
 
+/// Tombstone: .flow-states/ scan removed from resolve_branch in PR #924.
+/// A non-matching branch with other state files returns "no state file",
+/// not "Multiple active features".
 #[test]
-fn test_cli_error_ambiguous_branches() {
+fn test_cli_no_scan_no_state_file_tombstone() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
     fs::create_dir_all(&state_dir).unwrap();
@@ -315,18 +318,13 @@ fn test_cli_error_ambiguous_branches() {
         r#"{"branch": "feat-a"}"#,
     )
     .unwrap();
-    fs::write(
-        state_dir.join("feat-b.json"),
-        r#"{"branch": "feat-b"}"#,
-    )
-    .unwrap();
 
     let _ = Command::new("git")
         .args(["init"])
         .current_dir(dir.path())
         .output();
 
-    // Use a branch that doesn't match any state file
+    // Use a branch that doesn't match any state file — no scan fallback
     let mut cmd = flow_rs();
     cmd.arg("set-timestamp")
         .arg("--set")
@@ -339,34 +337,9 @@ fn test_cli_error_ambiguous_branches() {
     let parsed: Value =
         serde_json::from_str(&String::from_utf8_lossy(&output.stdout).trim()).unwrap();
     assert_eq!(parsed["status"], "error");
-    assert!(parsed["message"].as_str().unwrap().contains("Multiple"));
-    let candidates = parsed["candidates"].as_array().unwrap();
-    assert_eq!(candidates.len(), 2);
-}
-
-#[test]
-fn test_cli_single_state_file_auto_resolves() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut state = make_state();
-    state["design"] = json!({"status": "pending"});
-    setup_state(dir.path(), "test-feature", &state);
-
-    let _ = Command::new("git")
-        .args(["init"])
-        .current_dir(dir.path())
-        .output();
-
-    // Use a non-matching branch name — single state file should auto-resolve
-    let mut cmd = flow_rs();
-    cmd.arg("set-timestamp")
-        .arg("--set")
-        .arg("design.status=approved")
-        .env("FLOW_SIMULATE_BRANCH", "no-match")
-        .current_dir(dir.path());
-
-    let output = cmd.output().unwrap();
-    assert!(output.status.success());
-    let parsed: Value =
-        serde_json::from_str(&String::from_utf8_lossy(&output.stdout).trim()).unwrap();
-    assert_eq!(parsed["status"], "ok");
+    assert!(
+        parsed["message"].as_str().unwrap().contains("No state file"),
+        "Expected 'No state file' error without scan fallback, got: {}",
+        parsed["message"]
+    );
 }
