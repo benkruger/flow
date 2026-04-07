@@ -41,16 +41,18 @@ shared state must be idempotent.
 
 Run this entry check as your very first action.
 
-1. Find the project root: run `git worktree list --porcelain` and note the
-   path on the first `worktree` line.
-2. Get the current branch: run `git branch --show-current`.
-3. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
+1. Run `git worktree list --porcelain`. Note the path on the first
+   `worktree` line (this is the project root). Find the `worktree` entry
+   whose path matches your current working directory — the
+   `branch refs/heads/<name>` line in that entry is the current branch
+   (strip the `refs/heads/` prefix).
+2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file exists: extract `feature`, `branch`, `worktree`,
      `pr_number`, and `pr_url`. Print the feature name, branch, PR URL,
      and current phase.
    - If the file does not exist: infer what you can from git state:
-     - `branch` from `git branch --show-current` (already known)
-     - Detect worktree path from `git worktree list`
+     - `branch` from the porcelain output (already known)
+     - Detect worktree path from the porcelain output
      - Use the branch name as the feature name
      - `pr_number` unknown — skip PR close step later
      - Print "WARNING: No state file found for branch '<branch>'. Will
