@@ -303,7 +303,6 @@ mod integration {
     }
 
     /// Create a gh stub script. Returns the stub directory.
-    #[allow(dead_code)]
     fn create_gh_stub(dir: &std::path::Path, script: &str) -> std::path::PathBuf {
         use std::os::unix::fs::PermissionsExt;
         let stub_dir = dir.join(".stub-bin");
