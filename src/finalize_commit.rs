@@ -657,13 +657,19 @@ mod tests {
             .output()
             .unwrap();
 
-        // Configure git user in clone
+        // Configure git user and merge behavior in clone
+        let clone_str = clone_dir.path().to_str().unwrap();
         Command::new("git")
-            .args(["-C", clone_dir.path().to_str().unwrap(), "config", "user.email", "test@test.com"])
+            .args(["-C", clone_str, "config", "user.email", "test@test.com"])
             .output()
             .unwrap();
         Command::new("git")
-            .args(["-C", clone_dir.path().to_str().unwrap(), "config", "user.name", "Test"])
+            .args(["-C", clone_str, "config", "user.name", "Test"])
+            .output()
+            .unwrap();
+        // Force merge on pull (not rebase) so divergent pulls always create merge commits
+        Command::new("git")
+            .args(["-C", clone_str, "config", "pull.rebase", "false"])
             .output()
             .unwrap();
 
