@@ -666,6 +666,43 @@ fn test_stop_continue_no_scan_on_main_tombstone() {
 }
 
 #[test]
+fn test_stop_continue_no_block_after_cleared_continue_pending() {
+    // Integration test for the finalize-commit → stop-continue contract:
+    // when finalize-commit clears _continue_pending and _continue_context
+    // on error (setting both to ""), the stop-continue hook must NOT block.
+    // This verifies the E2E path from issue #943.
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "test-feature";
+    // State represents what finalize-commit writes on error:
+    // both flags set to empty string (not absent — mutate_state writes "").
+    let state = json!({
+        "branch": branch,
+        "current_phase": "flow-code",
+        "_continue_pending": "",
+        "_continue_context": "",
+        // Bypass discussion-mode block — this test exercises the cleared-flags path.
+        "_stop_instructed": true
+    });
+    setup_git_and_state(dir.path(), branch, &state);
+
+    let output = run_hook("stop-continue", dir.path(), branch, b"{}");
+
+    assert_eq!(output.status.code().unwrap(), 0);
+    assert!(
+        output.stdout.is_empty(),
+        "hook must not block when _continue_pending was cleared by finalize-commit"
+    );
+
+    // _blocked should be set — the hook took the idle path
+    let on_disk = read_state(dir.path(), branch);
+    let blocked = on_disk["_blocked"].as_str();
+    assert!(
+        blocked.map(|s| !s.is_empty()).unwrap_or(false),
+        "_blocked must be set on the idle path after cleared flags"
+    );
+}
+
+#[test]
 fn test_stop_continue_no_state_no_simulate_exits_cleanly() {
     // Complementary test: git repo on main, no state files at all.
     // resolve_branch returns (Some("main"), []), state_path for main
