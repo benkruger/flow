@@ -99,6 +99,13 @@ Every plan must include test tasks — even for pure-markdown skills,
 add contract tests in `test_skill_contracts.py`. TDD means the test
 task comes before the implementation task it validates.
 
+When a plan removes a command, pattern, or feature from skill files,
+include a tombstone test task before the removal tasks. The tombstone
+test asserts the removed identifier does NOT appear in the modified
+files. Without this, the removal has no CI-visible protection —
+Code Review catches the gap, but the Plan phase should have prevented
+it. See `.claude/rules/tombstone-tests.md` for the test pattern.
+
 ## Decompose Completeness
 
 When the user makes a material correction to the approach after the
