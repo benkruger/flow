@@ -377,4 +377,86 @@ mod integration {
             json["message"]
         );
     }
+
+    // --- Standard path tests ---
+
+    #[test]
+    fn test_standard_no_issue_refs() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("build a feature", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "standard");
+        assert!(json["issue_body"].is_null(), "issue_body should be null for no issue refs");
+        assert!(json["issue_number"].is_null(), "issue_number should be null for no issue refs");
+        assert_eq!(json["dag_mode"], "auto");
+    }
+
+    #[test]
+    fn test_standard_dag_mode_from_state() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("build a feature", |s| {
+            s["skills"]["flow-plan"]["dag"] = serde_json::json!("never");
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["path"], "standard");
+        assert_eq!(
+            json["dag_mode"], "never",
+            "dag_mode should reflect the state file's skills.flow-plan.dag value"
+        );
+    }
+
+    // --- Resumed path test ---
+
+    #[test]
+    fn test_resumed_plan_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let plan_content = "## Context\n\nTest plan.\n\n## Tasks\n\n### Task 1: Do something\n";
+        let plan_rel = ".flow-states/test-feature-plan.md";
+
+        // State with files.plan set (creates .flow-states/ directory)
+        let state = make_plan_state("build a feature", |s| {
+            s["files"]["plan"] = serde_json::json!(plan_rel);
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        // Write the plan file (after .flow-states/ exists)
+        let plan_abs = dir.path().join(plan_rel);
+        fs::write(&plan_abs, plan_content).unwrap();
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "resumed");
+        assert_eq!(
+            json["plan_content"].as_str().unwrap(),
+            plan_content,
+            "plan_content should match the file on disk"
+        );
+        assert_eq!(json["plan_file"], plan_rel);
+        assert!(json["formatted_time"].is_string(), "formatted_time must be present");
+        assert!(json["continue_action"].is_string(), "continue_action must be present");
+
+        // Verify state file was updated: flow-plan should be complete
+        let updated_state: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            updated_state["phases"]["flow-plan"]["status"], "complete",
+            "flow-plan should be marked complete after resumed path"
+        );
+    }
 }
