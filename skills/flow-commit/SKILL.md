@@ -19,10 +19,11 @@ shared state must be idempotent.
 
 ## Round 1 — Setup
 
-Run all of these in parallel (one response, multiple tool calls):
-
-1. `git worktree list --porcelain` — note the path on the first `worktree` line (this is the project root).
-2. `git branch --show-current` — this is the current branch.
+Run `git worktree list --porcelain`. Note the path on the first
+`worktree` line (this is the project root). Find the `worktree` entry
+whose path matches your current working directory — the
+`branch refs/heads/<name>` line in that entry is the current branch
+(strip the `refs/heads/` prefix).
 
 Keep the project root and branch in context for the rest of this skill.
 
