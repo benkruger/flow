@@ -39,7 +39,8 @@ use flow_rs::link_blocked_by;
 use flow_rs::lock::mutate_state;
 use flow_rs::output::json_error;
 use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
-use flow_rs::phase_transition::{phase_complete, phase_enter};
+use flow_rs::phase_enter;
+use flow_rs::phase_transition::{phase_complete, phase_enter as phase_enter_fn};
 use flow_rs::plan_extract;
 use flow_rs::prime_check;
 use flow_rs::prime_project;
@@ -329,6 +330,10 @@ enum Commands {
     #[command(name = "write-rule")]
     WriteRule(write_rule::Args),
 
+    /// Generic phase entry: gate + enter + step counters + return state data.
+    #[command(name = "phase-enter")]
+    PhaseEnter(phase_enter::Args),
+
     /// Extract pre-decomposed plan or prepare state for model-driven planning.
     #[command(name = "plan-extract")]
     PlanExtract(plan_extract::Args),
@@ -536,6 +541,9 @@ fn main() {
         Some(Commands::WriteRule(args)) => {
             write_rule::run(args);
         }
+        Some(Commands::PhaseEnter(args)) => {
+            phase_enter::run(args);
+        }
         Some(Commands::PlanExtract(args)) => {
             plan_extract::run(args);
         }
@@ -738,7 +746,7 @@ fn run_phase_transition(
 
     let mutate_result = mutate_state(&state_path, |state| {
         let result = if action == "enter" {
-            phase_enter(state, phase, reason)
+            phase_enter_fn(state, phase, reason)
         } else {
             phase_complete(
                 state,
