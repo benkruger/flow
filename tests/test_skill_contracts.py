@@ -1094,6 +1094,24 @@ def test_start_references_phase_finalize():
     assert "phase-finalize" in content, "flow-start/SKILL.md must reference phase-finalize"
 
 
+def test_start_no_start_finalize():
+    """Tombstone: start-finalize replaced by phase-finalize in PR #925. Must not return."""
+    content = _read_skill("flow-start")
+    assert "start-finalize" not in content, (
+        "flow-start/SKILL.md must not reference start-finalize — replaced by phase-finalize in PR #925"
+    )
+
+
+def test_phase_enter_skills_no_action_enter():
+    """Tombstone: --action enter replaced by phase-enter in PR #925. Must not return."""
+    phase_enter_skills = ["flow-code", "flow-code-review", "flow-learn"]
+    for name in phase_enter_skills:
+        content = _read_skill(name)
+        assert "--action enter" not in content, (
+            f"skills/{name}/SKILL.md must not reference --action enter — replaced by phase-enter in PR #925"
+        )
+
+
 # --- Release skill (maintainer) ---
 
 

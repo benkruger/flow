@@ -1,4 +1,4 @@
-//! Generic phase-finalize: phase_complete() + Slack notification + add-notification.
+//! Generic phase-finalize: phase_complete() + Slack notification + notification state record.
 //!
 //! Replaces the per-skill exit ceremony with a single command parameterized by `--phase`.
 //! Handles both thread creation (Start phase, no --thread-ts) and thread replies
@@ -176,15 +176,15 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
                     state["slack_thread_ts"] = json!(ts_clone);
                 }
 
-                // Append to notifications array
+                // Append to slack_notifications array
                 if !state
-                    .get("notifications")
+                    .get("slack_notifications")
                     .map(|v| v.is_array())
                     .unwrap_or(false)
                 {
-                    state["notifications"] = json!([]);
+                    state["slack_notifications"] = json!([]);
                 }
-                if let Some(arr) = state["notifications"].as_array_mut() {
+                if let Some(arr) = state["slack_notifications"].as_array_mut() {
                     arr.push(json!({
                         "phase": phase_name,
                         "ts": ts_clone,

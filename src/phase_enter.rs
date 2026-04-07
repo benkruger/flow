@@ -135,6 +135,11 @@ fn resolve_mode(state: &Value, phase: &str) -> (String, String) {
                 .to_string();
             (commit, cont)
         }
+        // Simple string config (e.g. "flow-abort": "auto") — applies to both axes
+        Some(cfg) if cfg.is_string() => {
+            let mode = cfg.as_str().unwrap_or(default_commit).to_string();
+            (mode.clone(), mode)
+        }
         _ => (default_commit.to_string(), default_continue.to_string()),
     }
 }
