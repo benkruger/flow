@@ -23,7 +23,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v2.0.0 — flow:flow-doc-sync — STARTING
+  FLOW v1.1.0 — flow:flow-doc-sync — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -125,7 +125,7 @@ After the report, output the following banner in your response (not via Bash) in
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v2.0.0 — flow:flow-doc-sync — COMPLETE
+  ✓ FLOW v1.1.0 — flow:flow-doc-sync — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
