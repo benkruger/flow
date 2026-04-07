@@ -103,6 +103,18 @@ pub fn finalize_commit_inner(
         }
     }
 
+    // Capture post-commit SHA for pull_merged detection.
+    // If this fails, default to pull_merged=true (safe: don't refresh sentinel).
+    let post_commit_sha = git(&["rev-parse", "HEAD"], LOCAL_TIMEOUT)
+        .ok()
+        .and_then(|(code, stdout, _)| {
+            if code == 0 {
+                Some(stdout.trim().to_string())
+            } else {
+                None
+            }
+        });
+
     // Step 2: git pull origin <branch>
     match git(&["pull", "origin", branch], NETWORK_TIMEOUT) {
         Err(e) => {
@@ -162,14 +174,22 @@ pub fn finalize_commit_inner(
         Err(_) => json!({
             "status": "ok",
             "sha": "",
+            "pull_merged": true,
             "warning": "commit succeeded but SHA retrieval timed out"
         }),
         Ok((code, _, _)) if code != 0 => json!({
             "status": "ok",
             "sha": "",
+            "pull_merged": true,
             "warning": "commit succeeded but SHA retrieval failed"
         }),
-        Ok((_, stdout, _)) => json!({"status": "ok", "sha": stdout.trim()}),
+        Ok((_, stdout, _)) => {
+            let final_sha = stdout.trim();
+            let pull_merged = post_commit_sha
+                .as_deref()
+                .map_or(true, |post| post != final_sha);
+            json!({"status": "ok", "sha": final_sha, "pull_merged": pull_merged})
+        }
     }
 }
 
@@ -231,14 +251,16 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                // git commit
+            ok("abc123\n"),        // git rev-parse HEAD (post-commit)
             ok(""),                // git pull
             ok(""),                // git push
-            ok("abc123\n"),        // git rev-parse HEAD
+            ok("abc123\n"),        // git rev-parse HEAD (final)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
         assert_eq!(result["status"], "ok");
         assert_eq!(result["sha"], "abc123");
+        assert_eq!(result["pull_merged"], false);
         assert!(!msg.exists());
     }
 
@@ -265,6 +287,7 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                                  // git commit
+            ok("commit_sha\n"),                      // git rev-parse HEAD (post-commit)
             fail("CONFLICT"),                        // git pull
             Ok((0, "UU file1.py\nAA file2.py\n".to_string(), String::new())), // git status
         ]);
@@ -288,6 +311,7 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                          // git commit
+            ok("commit_sha\n"),              // git rev-parse HEAD (post-commit)
             fail("Could not resolve host"),  // git pull
             ok(""),                          // git status (clean)
         ]);
@@ -306,6 +330,7 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                       // git commit
+            ok("commit_sha\n"),           // git rev-parse HEAD (post-commit)
             ok(""),                       // git pull
             fail("permission denied"),    // git push
         ]);
@@ -324,13 +349,15 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                // git commit
+            ok("def456\n"),        // git rev-parse HEAD (post-commit)
             ok(""),                // git pull
             ok(""),                // git push
-            ok("def456\n"),        // git rev-parse HEAD
+            ok("def456\n"),        // git rev-parse HEAD (final)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
         assert_eq!(result["status"], "ok");
+        assert_eq!(result["pull_merged"], false);
     }
 
     #[test]
@@ -341,14 +368,16 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),               // git commit
+            ok("commit_sha\n"),   // git rev-parse HEAD (post-commit)
             ok(""),               // git pull
             ok(""),               // git push
-            fail("bad HEAD"),     // git rev-parse HEAD
+            fail("bad HEAD"),     // git rev-parse HEAD (final)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
         assert_eq!(result["status"], "ok");
         assert_eq!(result["sha"], "");
+        assert_eq!(result["pull_merged"], true);
         assert_eq!(
             result["warning"],
             "commit succeeded but SHA retrieval failed"
@@ -378,6 +407,7 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                                // git commit
+            ok("commit_sha\n"),                    // git rev-parse HEAD (post-commit)
             timeout("timed out after 60s"),        // git pull
         ]);
 
@@ -395,6 +425,7 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                                // git commit
+            ok("commit_sha\n"),                    // git rev-parse HEAD (post-commit)
             ok(""),                                // git pull
             timeout("timed out after 60s"),        // git push
         ]);
@@ -413,14 +444,16 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                                // git commit
+            ok("commit_sha\n"),                    // git rev-parse HEAD (post-commit)
             ok(""),                                // git pull
             ok(""),                                // git push
-            timeout("timed out after 30s"),        // git rev-parse HEAD
+            timeout("timed out after 30s"),        // git rev-parse HEAD (final)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
         assert_eq!(result["status"], "ok");
         assert_eq!(result["sha"], "");
+        assert_eq!(result["pull_merged"], true);
         assert_eq!(
             result["warning"],
             "commit succeeded but SHA retrieval timed out"
@@ -435,6 +468,7 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                                       // git commit
+            ok("commit_sha\n"),                           // git rev-parse HEAD (post-commit)
             fail("Could not resolve host"),               // git pull
             timeout("timed out after 30s"),               // git status --porcelain
         ]);
@@ -453,6 +487,7 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                                                    // git commit
+            ok("commit_sha\n"),                                        // git rev-parse HEAD (post-commit)
             fail("CONFLICT"),                                          // git pull
             Ok((0, "DD deleted.py\n".to_string(), String::new())),     // git status
         ]);
@@ -466,5 +501,85 @@ mod tests {
             .map(|v| v.as_str().unwrap().to_string())
             .collect();
         assert_eq!(files, vec!["deleted.py"]);
+    }
+
+    #[test]
+    fn pull_merged_false_when_shas_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let msg = dir.path().join(".flow-commit-msg");
+        std::fs::write(&msg, "Test commit.").unwrap();
+
+        let git = mock_git(vec![
+            ok(""),                // git commit
+            ok("same_sha\n"),     // git rev-parse HEAD (post-commit)
+            ok(""),                // git pull (no new content)
+            ok(""),                // git push
+            ok("same_sha\n"),     // git rev-parse HEAD (final — unchanged)
+        ]);
+
+        let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["sha"], "same_sha");
+        assert_eq!(result["pull_merged"], false);
+    }
+
+    #[test]
+    fn pull_merged_true_when_shas_differ() {
+        let dir = tempfile::tempdir().unwrap();
+        let msg = dir.path().join(".flow-commit-msg");
+        std::fs::write(&msg, "Test commit.").unwrap();
+
+        let git = mock_git(vec![
+            ok(""),                // git commit
+            ok("aaa\n"),           // git rev-parse HEAD (post-commit)
+            ok(""),                // git pull (merged remote changes)
+            ok(""),                // git push
+            ok("bbb\n"),           // git rev-parse HEAD (final — changed by pull)
+        ]);
+
+        let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["sha"], "bbb");
+        assert_eq!(result["pull_merged"], true);
+    }
+
+    #[test]
+    fn pull_merged_true_when_post_commit_revparse_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let msg = dir.path().join(".flow-commit-msg");
+        std::fs::write(&msg, "Test commit.").unwrap();
+
+        let git = mock_git(vec![
+            ok(""),                // git commit
+            fail("bad HEAD"),      // git rev-parse HEAD (post-commit — fails)
+            ok(""),                // git pull
+            ok(""),                // git push
+            ok("final_sha\n"),    // git rev-parse HEAD (final)
+        ]);
+
+        let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["sha"], "final_sha");
+        assert_eq!(result["pull_merged"], true);
+    }
+
+    #[test]
+    fn pull_merged_true_when_final_revparse_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let msg = dir.path().join(".flow-commit-msg");
+        std::fs::write(&msg, "Test commit.").unwrap();
+
+        let git = mock_git(vec![
+            ok(""),                // git commit
+            ok("post_sha\n"),      // git rev-parse HEAD (post-commit)
+            ok(""),                // git pull
+            ok(""),                // git push
+            fail("bad HEAD"),      // git rev-parse HEAD (final — fails)
+        ]);
+
+        let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["sha"], "");
+        assert_eq!(result["pull_merged"], true);
     }
 }
