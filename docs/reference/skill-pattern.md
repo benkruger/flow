@@ -113,13 +113,15 @@ bin/flow set-timestamp --set <path>=NOW
 
 Replace `PREV` with the previous phase number and `PREV_NAME` with its name:
 
-1. Find the project root: run `git worktree list --porcelain` and note the
-   path on the first `worktree` line.
-2. Get the current branch: run `git branch --show-current`.
-3. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
+1. Run `git worktree list --porcelain`. Note the path on the first
+   `worktree` line (this is the project root). Find the `worktree` entry
+   whose path matches your current working directory — the
+   `branch refs/heads/<name>` line in that entry is the current branch
+   (strip the `refs/heads/` prefix).
+2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
      Run /flow-start first."
-4. Check `phases.PREV.status` in the JSON.
+3. Check `phases.PREV.status` in the JSON.
    - If not `"complete"`: STOP. "BLOCKED: Phase PREV: PREV_NAME must be
      complete first."
 
