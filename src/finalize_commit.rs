@@ -696,6 +696,16 @@ exit 0
             fs::set_permissions(&bin_ci, fs::Permissions::from_mode(0o755)).unwrap();
         }
 
+        // Exclude CI control/marker files from git so they don't affect
+        // the tree snapshot used for sentinel matching in tests.
+        let exclude_file = clone_dir.path().join(".git").join("info").join("exclude");
+        let existing = fs::read_to_string(&exclude_file).unwrap_or_default();
+        fs::write(
+            &exclude_file,
+            format!("{}.ci-invocation-marker\n.ci-should-fail\n", existing),
+        )
+        .unwrap();
+
         // Commit bin/ci so it's tracked (avoids untracked-file snapshot changes)
         Command::new("git")
             .args(["-C", clone_str, "add", "bin/ci"])
@@ -771,6 +781,62 @@ exit 0
             .lines()
             .count();
         assert_eq!(commits_before, commits_after, "no commit should have been created when CI fails");
+    }
+
+    #[test]
+    fn test_ci_sentinel_fresh_skips_ci() {
+        let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+        let clone_path = clone_dir.path();
+
+        // Stage a file to commit first — this changes the tree snapshot,
+        // so the sentinel must be created AFTER staging.
+        fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+        Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "add", "feature.rs"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        // Write commit message (must exist before CI so the untracked-file
+        // list is the same when run_impl re-checks the snapshot)
+        let msg_path = clone_path.join(".flow-commit-msg");
+        fs::write(&msg_path, "Add feature.rs").unwrap();
+
+        // Run CI once to create a passing sentinel for THIS tree state
+        let bin_ci = clone_path.join("bin").join("ci");
+        let (_ci_result, ci_code) =
+            crate::ci::run_once(clone_path, clone_path, &bin_ci, Some("main"), false, None);
+        assert_eq!(ci_code, 0, "initial CI run should pass");
+
+        // Marker should have exactly 1 line from the CI invocation
+        let marker = clone_path.join(".ci-invocation-marker");
+        let lines_before = fs::read_to_string(&marker)
+            .unwrap()
+            .lines()
+            .count();
+        assert_eq!(lines_before, 1, "CI should have been invoked once");
+
+        // Now call run_impl — sentinel matches the current tree state,
+        // so ci::run_once inside run_impl should skip without invoking bin/ci.
+        let args = Args {
+            message_file: msg_path.to_str().unwrap().to_string(),
+            branch: "main".to_string(),
+        };
+
+        let result = run_impl(&args, clone_path, clone_path).unwrap();
+        assert_eq!(result["status"], "ok", "commit should succeed");
+        assert!(!result["sha"].as_str().unwrap().is_empty(), "should have a commit SHA");
+
+        // Marker should still have only 1 line — CI was skipped via sentinel
+        let lines_after = fs::read_to_string(&marker)
+            .unwrap()
+            .lines()
+            .count();
+        assert_eq!(
+            lines_after, 1,
+            "CI should not have been invoked again (sentinel was fresh)"
+        );
     }
 
     // --- Integration tests for run_impl sentinel refresh ---
