@@ -18,6 +18,19 @@ discards the user's intent. Only propose removal after demonstrating
 that the feature cannot be fixed or after the user explicitly asks
 for it.
 
+## Never Offer to Skip Workflow Steps
+
+When a hook blocks an action or the user is frustrated with a
+workflow step, never offer to skip the step as an option. Every
+step in the lifecycle exists for a reason — offering to skip it
+signals that the step is optional, which undermines the process.
+Fix the blocked action and retry. If the action cannot be fixed,
+report why and wait for direction.
+
+This applies especially to review steps (Simplify, Review,
+Security, Agent Reviews) where skipping silently weakens the
+quality gate.
+
 ## Imprecise Rule-File Mechanism Descriptions
 
 When a rule file's Enforcement section describes what a hook or
