@@ -12,11 +12,11 @@ the commit skill shows the diff, writes the message, and finalizes
 the commit before CI has finished. The gate is defeated. Bugs that
 CI would have caught land on main.
 
-This applies in every mode:
+This applies everywhere CI runs:
 
 - FLOW phases (Code, Code Review)
-- FLOW-enabled projects (`/flow:flow-commit` with `.flow.json` — runs CI before every commit)
-- Standalone mode (direct CI runs)
+- `/flow:flow-commit` (always runs `bin/flow ci` before committing)
+- Direct `bin/ci` invocations
 
 ## Enforcement
 

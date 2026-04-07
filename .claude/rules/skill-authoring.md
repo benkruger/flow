@@ -263,7 +263,10 @@ users to non-existent commands.
 ## Config Chain Integrity
 
 The autonomy config chain is: prime presets → `.flow.json` → state file → skill reads.
-Phase skills must read mode resolution from the state file only — never `.flow.json`.
+`/flow-prime` writes defaults to `.flow.json`. The user customizes `.flow.json`.
+`/flow-start` copies settings (`skills`, `commit_format`) from `.flow.json` into
+the state file. Phase skills read only from the state file — never `.flow.json`
+(which lives at the project root and is inaccessible from worktrees).
 When a phase skill's config is missing at runtime, the fix is always at the source
 (add the skill to the prime presets in `flow-prime/SKILL.md`), never at the consumer
 (adding `.flow.json` fallback reads to the skill). Every skill in `CONFIGURABLE_SKILLS`

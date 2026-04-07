@@ -247,6 +247,7 @@ pub fn create_state_file(
     framework: &str,
     skills: Option<&IndexMap<String, SkillConfig>>,
     prompt: &str,
+    commit_format: Option<&str>,
     repo: Option<&str>,
 ) -> Result<Value, SetupError> {
     let current_time = now();
@@ -288,6 +289,9 @@ pub fn create_state_file(
             message: e.to_string(),
         })?;
         state["skills"] = sk_value;
+    }
+    if let Some(f) = commit_format {
+        state["commit_format"] = json!(f);
     }
 
     let state_dir = project_root.join(".flow-states");
@@ -402,6 +406,11 @@ pub fn run(args: Args) {
         .and_then(|v| v.as_str())
         .unwrap_or("rails")
         .to_string();
+
+    let commit_format = init_data
+        .get("commit_format")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     let skills: Option<IndexMap<String, SkillConfig>> = if args.auto {
         Some(auto_skills())
@@ -519,6 +528,7 @@ pub fn run(args: Args) {
             &framework,
             skills.as_ref(),
             &raw_prompt,
+            commit_format.as_deref(),
             repo.as_deref(),
         ) {
             Ok(_) => {}

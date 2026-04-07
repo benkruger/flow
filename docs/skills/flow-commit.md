@@ -16,7 +16,7 @@ Reviews all pending changes before committing. You see the full diff and propose
 
 ## What It Does
 
-1. Runs CI (FLOW-enabled mode) and stages changes in parallel
+1. Runs CI and stages changes in parallel
 2. Shows `git status` and `git diff --cached` in parallel
 3. Proposes a commit message in the `tl;dr` format
 4. Commits, pulls, and pushes via `bin/flow finalize-commit`
@@ -25,7 +25,7 @@ Reviews all pending changes before committing. You see the full diff and propose
 
 ## Commit Message Format
 
-The format is determined by the `commit_format` setting in `.flow.json`, chosen during `/flow-prime`.
+The format is determined by the `commit_format` setting, copied from `.flow.json` into the state file by `/flow-start`. Defaults to `"full"` when no state file exists.
 
 **Full format** (`"full"`):
 
@@ -53,16 +53,11 @@ Subject starts with an imperative verb — Add, Fix, Update, Remove, Refactor. I
 
 ---
 
-## Modes
+## CI
 
-Commit auto-detects its context:
+`bin/flow ci` and `git add -A` run in parallel. CI handles all run/skip/error logic internally — the commit skill calls it unconditionally.
 
-| Mode | When | CI | Banner |
-|------|------|----|--------|
-| FLOW-enabled | `.flow.json` exists | Runs `bin/flow ci` | Versioned if state file exists, plain otherwise |
-| Standalone | No `.flow.json` | Skips CI | Plain (`Commit`) |
-
-Both modes share the same diff/message/push process.
+The banner is versioned (`FLOW v1.1.0`) when a `.flow-states/*.json` state file exists, plain (`Commit`) otherwise.
 
 ---
 
@@ -70,5 +65,4 @@ Both modes share the same diff/message/push process.
 
 - Never commits without showing the diff first
 - Never uses `--no-verify`
-- FLOW-enabled mode: Runs `bin/flow ci` before the diff — skipped in Standalone mode
-- FLOW mode: Warns if `bin/flow ci` has not been run since the last code change
+- Always runs `bin/flow ci` before the diff

@@ -125,7 +125,7 @@ Auto-memory is shared across git worktrees of the same repository (since Claude 
 
 Learn routes learnings to project CLAUDE.md and `.claude/rules/`. Also files GitHub issues for process gaps. All filed issues recorded via `bin/flow add-issue`.
 
-Commit is dual-mode (FLOW-enabled, Standalone). FLOW-enabled mode (`.flow.json` exists) runs CI before committing; Standalone mode skips CI. Both modes share the same diff/message/push process.
+Commit always runs `bin/flow ci` before committing — CI handles all run/skip/error logic internally. The `commit_format` preference is copied from `.flow.json` into the state file by `/flow-start`; the commit skill reads it from the state file.
 
 ### Logging
 
