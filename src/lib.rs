@@ -39,6 +39,7 @@ pub mod output;
 pub mod qa_mode;
 pub mod qa_reset;
 pub mod qa_verify;
+pub mod scaffold_qa;
 pub mod phase_config;
 pub mod phase_enter;
 pub mod phase_finalize;
