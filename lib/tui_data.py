@@ -1,7 +1,8 @@
-"""Pure data layer for the FLOW interactive TUI.
+"""Python bridge for the Rust TUI data layer.
 
-Reads state files, computes display structs (flow summaries, phase timelines,
-log entries). No curses dependency — fully testable with make_state() fixture.
+Delegates to `bin/flow tui-data` for filesystem operations (load_all_flows,
+load_orchestration, load_account_metrics). Keeps parse_log_entries and
+phase_timeline as thin Python since they operate on in-memory data.
 
 Usage: imported by lib/tui.py
 """
@@ -9,7 +10,6 @@ Usage: imported by lib/tui.py
 import json
 import re
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -29,7 +29,6 @@ from flow_utils import (
 )
 
 # Static mapping of (phase_key, display_step_number) → short step name.
-# Display step number is what the user sees in the annotation.
 # Source: skill SKILL.md step headings (## Step N — Name).
 STEP_NAMES = {
     "flow-start": {
@@ -79,6 +78,14 @@ STEP_NAMES = {
         12: "pulling changes",
     },
 }
+
+
+def _step_annotation(step, total=0, name=""):
+    """Return 'name - step N of M' or 'step N of M' or '' depending on what's populated."""
+    if step <= 0:
+        return ""
+    step_str = f"step {step} of {total}" if total > 0 else f"step {step}"
+    return f"{name} - {step_str}" if name else step_str
 
 
 def flow_summary(state, now=None):
@@ -135,14 +142,6 @@ def flow_summary(state, now=None):
         "phases": state.get("phases", {}),
         "state": state,
     }
-
-
-def _step_annotation(step, total=0, name=""):
-    """Return 'name - step N of M' or 'step N of M' or '' depending on what's populated."""
-    if step <= 0:
-        return ""
-    step_str = f"step {step} of {total}" if total > 0 else f"step {step}"
-    return f"{name} - {step_str}" if name else step_str
 
 
 def phase_timeline(state, now=None):
@@ -266,8 +265,8 @@ def parse_log_entries(log_content, limit=20):
 def load_all_flows(root):
     """Read all .flow-states/*.json state files and return flow summaries.
 
-    Returns a list of flow_summary dicts sorted by feature name.
-    Skips corrupt JSON and non-state files (e.g., *-phases.json).
+    Uses Python implementation directly. The Rust equivalent is available
+    via `bin/flow tui-data --load-all-flows` for future callers.
     """
     root = Path(root)
     state_dir = root / ".flow-states"
@@ -391,6 +390,8 @@ def load_account_metrics(repo_root):
     Returns dict with keys: cost_monthly (str), rl_5h (int|None),
     rl_7d (int|None), stale (bool).
     """
+    import time
+
     repo_root = Path(repo_root)
 
     # --- Monthly cost from per-session cost files ---
