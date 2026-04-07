@@ -1279,13 +1279,12 @@ def test_commit_no_auto_manual_flags():
     assert "--manual" not in content, "flow-commit must not contain --manual flag (removed in PR #898)"
 
 
-def test_commit_two_mode_detection():
-    """Commit SKILL.md must have two-mode detection (FLOW-enabled/Standalone)."""
+def test_commit_no_mode_detection():
+    """Tombstone: dual-mode detection removed in PR #922. Must not return."""
     content = _read_skill("flow-commit")
-    assert "FLOW-enabled" in content, "skills/flow-commit/SKILL.md missing 'FLOW-enabled' mode"
-    assert "Standalone" in content, "skills/flow-commit/SKILL.md missing 'Standalone' mode"
+    assert "FLOW-enabled" not in content, "FLOW-enabled mode detection was removed — CI runs unconditionally now"
+    assert "Standalone" not in content, "Standalone mode detection was removed — CI runs unconditionally now"
     assert ".flow-states" in content, "skills/flow-commit/SKILL.md missing '.flow-states' for banner detection"
-    assert ".flow.json" in content, "skills/flow-commit/SKILL.md missing '.flow.json' for CI gating"
 
 
 def test_commit_no_flow_phases_json():

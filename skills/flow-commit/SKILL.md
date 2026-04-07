@@ -26,18 +26,16 @@ Run all of these in parallel (one response, multiple tool calls):
 
 Keep the project root and branch in context for the rest of this skill.
 
-## Round 2 — Mode and Format Detection
+## Round 2 — Banner and Format Detection
 
 Run all of these in parallel (one response, all use the project root from Round 1):
 
 1. Use the Glob tool: pattern `*.json`, path `<project_root>/.flow-states` — if any results, a FLOW phase is active (used for banner selection only).
-2. Use the Read tool: read `<project_root>/.flow.json`.
-   - If `.flow.json` exists → **FLOW-enabled** mode (run CI before committing).
-   - If `.flow.json` does not exist → **Standalone** mode (skip CI).
-   - Parse the `commit_format` value: `"title-only"` or `"full"`.
-   - If `.flow.json` does not exist or has no `commit_format` key → use `"full"`.
+2. If any `.flow-states/*.json` results exist, use the Read tool to read the state file for the current branch at `<project_root>/.flow-states/<branch>.json`.
+   - Parse `commit_format`: `"title-only"` or `"full"`.
+   - If no state file exists or the state file has no `commit_format` key → use `"full"`.
 
-Keep the detected mode and `commit_format` in context.
+Keep `commit_format` in context.
 
 ## Announce
 
@@ -97,7 +95,7 @@ On completion (whether nothing to commit or committed successfully), print the s
 
 ### Round 3 — Test and stage
 
-**FLOW-enabled mode:** run both in parallel (one response, two Bash calls):
+Run both in parallel (one response, two Bash calls):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
@@ -109,8 +107,6 @@ git add -A
 
 CI and staging are independent — CI tests the working tree, staging indexes it. If CI
 fails, stop and report the failure. Staged files are harmless if CI fails — nothing commits.
-
-**Standalone mode:** run only `git add -A` (skip CI).
 
 ### Round 4 — Show the diff
 
@@ -262,7 +258,3 @@ The script returns JSON:
 - Always pull before pushing — other sessions may have merged changes
 - **Never rebase — ever.** Always merge. `git rebase` is forbidden.
 - Never discard uncommitted or staged changes — if unexpected changes exist, show `git diff` to the user and ask how to proceed before taking any action
-
-## Additional Rules
-
-- **FLOW mode only:** If `bin/flow ci` has not been run since the last code change, warn the user before committing
