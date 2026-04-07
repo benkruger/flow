@@ -104,6 +104,9 @@ impl TuiApp {
     }
 
     /// Run the TUI event loop with a real terminal.
+    ///
+    /// Terminal cleanup (raw mode + alternate screen) is guaranteed even
+    /// on error via an explicit cleanup call before returning.
     pub fn run_terminal(&mut self) -> io::Result<()> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
@@ -111,16 +114,30 @@ impl TuiApp {
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
+        let result = self.run_event_loop(&mut terminal);
+
+        // Guaranteed cleanup: restore terminal even on error
+        let _ = disable_raw_mode();
+        let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+
+        result
+    }
+
+    /// Inner event loop — separated so run_terminal can guarantee cleanup.
+    fn run_event_loop(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    ) -> io::Result<()> {
         self.refresh_data();
 
         while self.running {
             terminal.draw(|f| self.render(f))?;
 
             if event::poll(Duration::from_millis(REFRESH_MS))? {
-                if let Event::Key(key) = event::read()? {
-                    self.handle_key(key);
-                } else if let Event::Resize(_, _) = event::read().unwrap_or(Event::FocusGained) {
-                    self.refresh_data();
+                match event::read()? {
+                    Event::Key(key) => self.handle_key(key),
+                    Event::Resize(_, _) => self.refresh_data(),
+                    _ => {}
                 }
             } else {
                 // Timeout — refresh data
@@ -128,8 +145,6 @@ impl TuiApp {
             }
         }
 
-        disable_raw_mode()?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
         Ok(())
     }
 
@@ -177,9 +192,13 @@ impl TuiApp {
             return;
         }
         match key.code {
-            KeyCode::Up => self.selected = self.selected.saturating_sub(1),
+            KeyCode::Up => {
+                self.selected = self.selected.saturating_sub(1);
+                self.issue_selected = 0;
+            }
             KeyCode::Down => {
                 self.selected = (self.selected + 1).min(self.flows.len().saturating_sub(1));
+                self.issue_selected = 0;
             }
             KeyCode::Enter => self.open_worktree(),
             KeyCode::Char('p') => self.open_pr(),
@@ -614,11 +633,9 @@ impl TuiApp {
             let (ref phase_info, ref elapsed_display, ref phase_elapsed, ref issue_info, ref pr_info) =
                 col_data[i];
 
-            let feature_display = if flow.feature.len() > feature_width {
-                format!(
-                    "{}...",
-                    &flow.feature[..feature_width.saturating_sub(3)]
-                )
+            let feature_display = if flow.feature.chars().count() > feature_width {
+                let truncated: String = flow.feature.chars().take(feature_width.saturating_sub(3)).collect();
+                format!("{}...", truncated)
             } else {
                 flow.feature.clone()
             };
@@ -841,8 +858,9 @@ impl TuiApp {
                 .map(|n| format!("#{}", n))
                 .unwrap_or_default();
 
-            let title = if item.title.len() > orch_title_width {
-                format!("{}...", &item.title[..orch_title_width.saturating_sub(3)])
+            let title = if item.title.chars().count() > orch_title_width {
+                let truncated: String = item.title.chars().take(orch_title_width.saturating_sub(3)).collect();
+                format!("{}...", truncated)
             } else {
                 format!("{:width$}", item.title, width = orch_title_width)
             };
@@ -1005,9 +1023,9 @@ impl TuiApp {
                 let line_text = format!(
                     "  {}{:18} {:8} {:14} {}",
                     marker,
-                    &issue.label[..18.min(issue.label.len())],
+                    &issue.label.chars().take(18).collect::<String>(),
                     &issue.ref_str,
-                    &issue.phase_name[..14.min(issue.phase_name.len())],
+                    &issue.phase_name.chars().take(14).collect::<String>(),
                     &issue.title,
                 );
                 let line = Paragraph::new(Line::from(Span::styled(line_text, style)));
@@ -1174,8 +1192,12 @@ pub fn run(root: PathBuf, version: String, repo: Option<String>) -> io::Result<(
     app.run_terminal()
 }
 
-/// Check if stdout is a terminal (simple check via crossterm).
+/// Check if stdout is a terminal using libc::isatty.
+///
+/// Uses libc directly rather than crossterm's terminal detection to avoid
+/// importing crossterm APIs beyond event handling and alternate screen.
 fn atty_check() -> bool {
-    // crossterm can detect this, but a simple isatty check suffices
+    // SAFETY: STDOUT_FILENO (1) is always a valid open file descriptor
+    // in a normal Unix process.
     unsafe { libc::isatty(libc::STDOUT_FILENO) != 0 }
 }
