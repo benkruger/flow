@@ -57,5 +57,6 @@ pub mod render_pr_body;
 pub mod update_deps;
 pub mod update_pr_body;
 pub mod upgrade_check;
+pub mod tui_data;
 pub mod utils;
 pub mod write_rule;
