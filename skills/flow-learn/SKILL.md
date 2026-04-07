@@ -22,30 +22,25 @@ description: "Phase 5: Learn — audit rule compliance and identify process gaps
 - `/flow:flow-learn --continue-step` — self-invocation: skip Announce and Update State, dispatch to the next step via Resume Check
 
 <HARD-GATE>
-Run this entry check as your very first action. If any check fails,
-stop immediately and show the error to the user.
+Run `phase-enter` as your very first action. If it returns an error, stop
+immediately and show the error to the user.
 
-1. Run both commands in parallel (two Bash calls in one response):
-   - `git worktree list --porcelain` — note the path on the first `worktree` line (this is the project root).
-   - `git branch --show-current` — this is the current branch.
-2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
-3. If the state file does not exist → STOP. "BLOCKED: Learn requires an
-   active FLOW feature with Code Review complete. No state file found."
-4. If `phases.flow-code-review.status` is not `"complete"` → STOP.
-   "BLOCKED: Phase 4: Code Review must be complete. Run
-   /flow:flow-code-review first."
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-enter --phase flow-learn --steps-total 7
+```
+
+Parse the JSON output. If `"status": "error"`, STOP and show the error.
+
+If `"status": "ok"`, capture the returned fields:
+`project_root`, `branch`, `worktree_path`, `pr_number`, `pr_url`,
+`feature`, `slack_thread_ts`, `plan_file`, and `mode` (commit + continue).
 
 </HARD-GATE>
 
-Keep the project root, branch, and state data in context. Use the
-project root to build state file paths (e.g.
-`<project_root>/.flow-states/<branch>.json`). Do not re-read the state
-file or re-run git commands to gather the same information. Do not `cd`
-to the project root — `bin/flow` commands find paths internally.
-
-Compute `<worktree_path>` for repo-destination edits:
-`<worktree_path>` = `<project_root>/<state.worktree>` (from the state
-file's `worktree` field, e.g. `<project_root>/.worktrees/<branch>`)
+Use the returned fields for all downstream references. Do not re-read
+the state file or re-run git commands to gather the same information.
+Do not `cd` to the project root — `bin/flow` commands find paths
+internally.
 
 Use `<worktree_path>` for CLAUDE.md and `.claude/rules/` edits.
 Use `<project_root>` for `.flow-states/` paths only.
@@ -88,15 +83,15 @@ shared state must be idempotent.
 
 1. If `--auto` was passed → commit=auto, continue=auto
 2. If `--manual` was passed → commit=manual, continue=manual
-3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-learn.commit` and `skills.flow-learn.continue`.
-4. If the state file has no `skills` key → use built-in defaults: commit=auto, continue=auto
+3. Otherwise, use `mode.commit` and `mode.continue` from the `phase-enter` response.
+4. If `phase-enter` was skipped (self-invocation), use the mode from the flag that was passed.
 
 ## Self-Invocation Check
 
 If `--continue-step` was passed, this is a self-invocation from a
-previous step. Skip the Announce banner and the Update State section
-(do not call `phase-transition --action enter` again). Proceed directly
-to the Resume Check section.
+previous step. Skip the Announce banner and the `phase-enter` call
+(do not enter the phase again). Proceed directly to the Resume Check
+section.
 
 ## Announce
 
@@ -109,23 +104,6 @@ At the very start, output the following banner in your response (not via Bash) i
 ──────────────────────────────────────────────────
 ```
 ````
-
-## Update State
-
-Update state for phase entry:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-learn --action enter
-```
-
-Parse the JSON output to confirm `"status": "ok"`.
-If `"status": "error"`, report the error and stop.
-
-Set the step tracking fields for TUI progress display:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_steps_total=7
-```
 
 ## Logging
 
@@ -144,10 +122,6 @@ Read `learn_step` from the state file (default `0` if absent).
 ---
 
 ## Step 1 — Gather and launch agent
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=0
-```
 
 Gather all artifacts, then launch the learn-analyst agent for
 cognitively isolated analysis. The agent receives only persisted
@@ -550,11 +524,13 @@ brackets: `[Process gap]` for Tenant 1, `[Escalation]` for Tenant 2.
 
 ## Done
 
-Complete the phase:
+Finalize the phase (complete + Slack notification in one call):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow phase-transition --phase flow-learn --action complete
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-finalize --phase flow-learn --branch <branch> --thread-ts <slack_thread_ts>
 ```
+
+Omit `--thread-ts` if `slack_thread_ts` was not returned by `phase-enter`.
 
 Parse the JSON output. If `"status": "error"`, report the error and stop.
 Use the `formatted_time` field in the COMPLETE banner below. Do not print
@@ -571,29 +547,13 @@ Output in your response (not via Bash) inside a fenced code block:
 ```
 ````
 
-### Slack Notification
-
-Read `slack_thread_ts` from the state file. If present, post a thread reply. Best-effort — skip silently on failure.
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow notify-slack --phase flow-learn --message "<message_text>" --thread-ts <thread_ts>
-```
-
-If `"status": "ok"`, record the notification:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-notification --phase flow-learn --ts <ts> --thread-ts <thread_ts> --message "<message_text>"
-```
-
-If `"status": "skipped"` or `"status": "error"`, continue without error.
-
 <HARD-GATE>
-STOP. Parse `continue_action` from the `phase-transition --action complete`
-output above to determine how to advance.
+STOP. Parse `continue_action` from the `phase-finalize` output above
+to determine how to advance.
 
 1. If `--auto` was passed to this skill invocation → continue=auto.
    If `--manual` was passed → continue=manual.
-   Otherwise, use `continue_action` from the phase-transition output.
+   Otherwise, use `continue_action` from the `phase-finalize` output.
    If `continue_action` is `"invoke"` → continue=auto.
    If `continue_action` is `"ask"` → continue=manual.
 2. If continue=auto → invoke `flow:flow-complete` directly using the Skill tool.

@@ -48,19 +48,28 @@ def _utility_skills():
 
 
 def test_phase_skills_2_through_5_have_hard_gate_checking_previous_phase():
-    """Phases 2-5 must have a HARD-GATE that checks phases.<prev>.status."""
+    """Phases 2-5 must have a HARD-GATE with a gate check.
+
+    Phases using phase-enter delegate the gate check to the command.
+    Phases with inline gate checks assert phases.<prev>.status directly."""
+    phase_enter_phases = {"flow-code", "flow-code-review", "flow-learn"}
     phase_skills = _phase_skills()
     for key in PHASE_ORDER[1:-1]:
         skill_name = phase_skills[key]
         content = _read_skill(skill_name)
-        prev_idx = PHASE_ORDER.index(key) - 1
-        prev_key = PHASE_ORDER[prev_idx]
 
         assert "<HARD-GATE>" in content, f"Phase {PHASE_NUMBER[key]} ({skill_name}) has no <HARD-GATE>"
-        pattern = rf"phases\.{prev_key}\.status"
-        assert re.search(pattern, content), (
-            f"Phase {PHASE_NUMBER[key]} ({skill_name}) HARD-GATE doesn't check phases.{prev_key}.status"
-        )
+        if key in phase_enter_phases:
+            assert "phase-enter" in content, (
+                f"Phase {PHASE_NUMBER[key]} ({skill_name}) HARD-GATE doesn't use phase-enter"
+            )
+        else:
+            prev_idx = PHASE_ORDER.index(key) - 1
+            prev_key = PHASE_ORDER[prev_idx]
+            pattern = rf"phases\.{prev_key}\.status"
+            assert re.search(pattern, content), (
+                f"Phase {PHASE_NUMBER[key]} ({skill_name}) HARD-GATE doesn't check phases.{prev_key}.status"
+            )
 
 
 def test_utility_skills_have_no_phase_gate():
@@ -644,36 +653,44 @@ def test_phase_skills_have_update_state_section():
 
 
 def test_phase_skills_use_phase_transition_for_entry():
-    """Phases 2-6 must use bin/flow phase-transition for state entry.
-    Phase 1 uses start-init (which calls init-state internally) to create the state file.
+    """Phases 2-6 must use a phase entry command.
+
+    Phases using phase-enter delegate entry to the generic command.
+    Phase 2 (Plan) uses plan-extract which handles entry internally.
     Phase 6 uses complete-fast (Rust) which calls phase-transition internally."""
+    phase_enter_phases = {"flow-code", "flow-code-review", "flow-learn"}
     phase_skills = _phase_skills()
-    # flow-complete delegates phase-transition to complete-fast (Rust)
-    skip_entry = {"flow-complete"}
     for key in PHASE_ORDER[1:]:
         skill_name = phase_skills[key]
         content = _read_skill(skill_name)
-        assert "phase-transition" in content, (
-            f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing 'phase-transition' command for entry"
-        )
-        if key not in skip_entry:
-            assert "--action enter" in content, (
-                f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing '--action enter' for phase entry"
+        if key in phase_enter_phases:
+            assert "phase-enter" in content, (
+                f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing 'phase-enter' command for entry"
+            )
+        else:
+            assert "phase-transition" in content or "plan-extract" in content or "complete-fast" in content, (
+                f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing phase entry command"
             )
 
 
 def test_phase_skills_use_phase_transition_for_completion():
-    """Phases 1-6 must use bin/flow phase-transition for state completion.
-    Phase 6 delegates phase-transition complete to complete-finalize (Rust)."""
+    """Phases 1-6 must use a phase completion command.
+
+    Phases using phase-finalize delegate completion to the generic command.
+    Phase 2 (Plan) uses plan-extract which handles completion internally.
+    Phase 6 delegates to complete-finalize (Rust)."""
+    phase_finalize_phases = {"flow-start", "flow-code", "flow-code-review", "flow-learn"}
     phase_skills = _phase_skills()
-    # flow-complete delegates phase-transition complete to complete-finalize (Rust)
-    skip_complete = {"flow-complete"}
     for key in PHASE_ORDER:
         skill_name = phase_skills[key]
         content = _read_skill(skill_name)
-        if key not in skip_complete:
-            assert "--action complete" in content, (
-                f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing '--action complete' for phase completion"
+        if key in phase_finalize_phases:
+            assert "phase-finalize" in content, (
+                f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing 'phase-finalize' command for completion"
+            )
+        else:
+            assert "--action complete" in content or "complete-finalize" in content or "plan-extract" in content, (
+                f"Phase {PHASE_NUMBER[key]} ({skill_name}) missing phase completion command"
             )
 
 
@@ -1071,10 +1088,10 @@ def test_start_references_start_workspace():
     assert "start-workspace" in content, "flow-start/SKILL.md must reference start-workspace"
 
 
-def test_start_references_start_finalize():
-    """flow-start must reference start-finalize for phase completion."""
+def test_start_references_phase_finalize():
+    """flow-start must reference phase-finalize for phase completion."""
     content = _read_skill("flow-start")
-    assert "start-finalize" in content, "flow-start/SKILL.md must reference start-finalize"
+    assert "phase-finalize" in content, "flow-start/SKILL.md must reference phase-finalize"
 
 
 # --- Release skill (maintainer) ---
@@ -1675,29 +1692,42 @@ UTILITY_SKILLS = ["flow-abort", "flow-complete"]
 
 
 def test_mode_resolution_references_config_source():
-    """All 7 configurable skills Mode Resolution must reference config source."""
+    """All 7 configurable skills Mode Resolution must reference config source.
+
+    Skills using phase-enter delegate config lookup to the command and
+    reference mode.commit / mode.continue from the phase-enter response.
+    Skills with inline config lookup reference .flow-states/ and skills.<name> directly."""
+    phase_enter_skills = {"flow-code", "flow-code-review", "flow-learn"}
     for name in CONFIGURABLE_SKILLS:
         content = _read_skill(name)
         resolution_match = re.search(r"## Mode Resolution\n(.*?)(?:\n## |\Z)", content, re.DOTALL)
         assert resolution_match, f"skills/{name}/SKILL.md has no Mode Resolution section"
         resolution_text = resolution_match.group(1)
-        assert ".flow-states/" in resolution_text, (
-            f"skills/{name}/SKILL.md Mode Resolution does not reference state file for config lookup"
-        )
-        assert f"skills.{name}" in resolution_text, (
-            f"skills/{name}/SKILL.md Mode Resolution does not reference 'skills.{name}' key"
-        )
-        if name in TWO_AXIS_SKILLS:
-            assert f"skills.{name}.commit" in resolution_text, (
-                f"skills/{name}/SKILL.md Mode Resolution does not reference 'skills.{name}.commit' key"
+        if name in phase_enter_skills:
+            assert "phase-enter" in resolution_text, (
+                f"skills/{name}/SKILL.md Mode Resolution does not reference phase-enter for config lookup"
             )
-            assert f"skills.{name}.continue" in resolution_text, (
-                f"skills/{name}/SKILL.md Mode Resolution does not reference 'skills.{name}.continue' key"
+            assert "mode.commit" in resolution_text or "mode.continue" in resolution_text, (
+                f"skills/{name}/SKILL.md Mode Resolution does not reference mode fields from phase-enter"
             )
-        elif name in CONTINUE_ONLY_SKILLS:
-            assert f"skills.{name}.continue" in resolution_text, (
-                f"skills/{name}/SKILL.md Mode Resolution does not reference 'skills.{name}.continue' key"
+        else:
+            assert ".flow-states/" in resolution_text, (
+                f"skills/{name}/SKILL.md Mode Resolution does not reference state file for config lookup"
             )
+            assert f"skills.{name}" in resolution_text, (
+                f"skills/{name}/SKILL.md Mode Resolution does not reference 'skills.{name}' key"
+            )
+            if name in TWO_AXIS_SKILLS:
+                assert f"skills.{name}.commit" in resolution_text, (
+                    f"skills/{name}/SKILL.md Mode Resolution does not reference 'skills.{name}.commit' key"
+                )
+                assert f"skills.{name}.continue" in resolution_text, (
+                    f"skills/{name}/SKILL.md Mode Resolution does not reference 'skills.{name}.continue' key"
+                )
+            elif name in CONTINUE_ONLY_SKILLS:
+                assert f"skills.{name}.continue" in resolution_text, (
+                    f"skills/{name}/SKILL.md Mode Resolution does not reference 'skills.{name}.continue' key"
+                )
 
 
 def test_prime_presets_cover_all_configurable_skills():
@@ -2479,20 +2509,21 @@ def test_learn_sets_continue_pending_before_child_skills():
 
 
 def test_learn_steps_record_completion():
-    """Each Learn step must record learn_step via set-timestamp for TUI display."""
+    """Each Learn step must record learn_step via set-timestamp for TUI display.
+
+    learn_step=0 is set by phase-enter --steps-total. Steps 1-6 are set
+    by the skill directly via set-timestamp."""
     content = _read_skill("flow-learn")
-    for step_val in range(7):
+    for step_val in range(1, 7):
         assert f"learn_step={step_val}" in content, (
             f"flow-learn/SKILL.md must contain 'learn_step={step_val}' for TUI step {step_val + 1} display"
         )
 
 
 def test_learn_skill_sets_steps_total():
-    """Learn Update State must set learn_steps_total=7 for TUI progress display."""
+    """Learn phase-enter call must set --steps-total 7 for TUI progress display."""
     content = _read_skill("flow-learn")
-    assert "learn_steps_total=7" in content, (
-        "flow-learn/SKILL.md must contain 'learn_steps_total=7' in the Update State section"
-    )
+    assert "--steps-total 7" in content, "flow-learn/SKILL.md must contain '--steps-total 7' in the phase-enter call"
 
 
 def test_plan_skill_does_not_reference_transcript_path():
