@@ -20,7 +20,7 @@ the fix.
 1. Re-run CI to verify:
 
 ```bash
-exec ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
 
 1. If still failing, repeat (max 3 attempts total)

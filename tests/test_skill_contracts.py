@@ -3371,3 +3371,62 @@ def test_skills_no_repo_tracked_files_at_project_root():
         "Skills must not direct Claude to check repo-tracked files 'at the project root' — "
         "use 'current working directory' or omit the path. Violations:\n" + "\n".join(violations)
     )
+
+
+def _extract_bash_blocks(content):
+    """Extract all fenced bash code blocks from markdown content."""
+    blocks = []
+    in_block = False
+    current = []
+    for line in content.splitlines():
+        if line.strip() == "```bash":
+            in_block = True
+            current = []
+        elif in_block and line.strip().startswith("```"):
+            blocks.append("\n".join(current))
+            in_block = False
+        elif in_block:
+            current.append(line)
+    return blocks
+
+
+def test_no_exec_in_bash_blocks():
+    """Bash blocks in skills and agents must not use exec.
+
+    exec replaces the shell process, which triggers Claude Code's built-in
+    'evaluates arguments as shell code' safety heuristic — causing a
+    permission prompt that breaks autonomous flows. Plain command invocation
+    is functionally identical and does not trigger the heuristic.
+
+    Bug introduced in PR #286, caught in PR #929.
+    """
+    violations = []
+
+    # Check all skill SKILL.md files
+    for skill_dir in sorted(SKILLS_DIR.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        skill_file = skill_dir / "SKILL.md"
+        if not skill_file.exists():
+            continue
+        for block in _extract_bash_blocks(skill_file.read_text()):
+            for line in block.splitlines():
+                first_word = line.strip().split()[0] if line.strip() else ""
+                if first_word == "exec":
+                    violations.append(f"skills/{skill_dir.name}/SKILL.md: {line.strip()}")
+
+    # Check all agent .md files
+    agents_dir = REPO_ROOT / "agents"
+    if agents_dir.exists():
+        for agent_file in sorted(agents_dir.glob("*.md")):
+            for block in _extract_bash_blocks(agent_file.read_text()):
+                for line in block.splitlines():
+                    first_word = line.strip().split()[0] if line.strip() else ""
+                    if first_word == "exec":
+                        violations.append(f"agents/{agent_file.name}: {line.strip()}")
+
+    assert not violations, (
+        "Bash blocks must not use 'exec' — it triggers Claude Code's shell-code-evaluation "
+        "safety heuristic, causing permission prompts that break autonomous flows. "
+        "Remove 'exec' and use the command directly. Violations:\n" + "\n".join(violations)
+    )

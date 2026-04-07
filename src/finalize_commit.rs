@@ -4,8 +4,8 @@
 //!   bin/flow finalize-commit <message-file> <branch>
 //!
 //! Output (JSON to stdout):
-//!   Success:   {"status": "ok", "sha": "<commit-hash>"}
-//!   Warning:   {"status": "ok", "sha": "", "warning": "..."}
+//!   Success:   {"status": "ok", "sha": "<commit-hash>", "pull_merged": <bool>}
+//!   Warning:   {"status": "ok", "sha": "", "pull_merged": true, "warning": "..."}
 //!   Conflict:  {"status": "conflict", "files": ["file1.py", ...]}
 //!   Error:     {"status": "error", "step": "commit|pull|push", "message": "..."}
 
@@ -103,6 +103,18 @@ pub fn finalize_commit_inner(
         }
     }
 
+    // Capture post-commit SHA for pull_merged detection.
+    // If this fails, default to pull_merged=true (safe: don't refresh sentinel).
+    let post_commit_sha = git(&["rev-parse", "HEAD"], LOCAL_TIMEOUT)
+        .ok()
+        .and_then(|(code, stdout, _)| {
+            if code == 0 {
+                Some(stdout.trim().to_string())
+            } else {
+                None
+            }
+        });
+
     // Step 2: git pull origin <branch>
     match git(&["pull", "origin", branch], NETWORK_TIMEOUT) {
         Err(e) => {
@@ -162,14 +174,22 @@ pub fn finalize_commit_inner(
         Err(_) => json!({
             "status": "ok",
             "sha": "",
+            "pull_merged": true,
             "warning": "commit succeeded but SHA retrieval timed out"
         }),
         Ok((code, _, _)) if code != 0 => json!({
             "status": "ok",
             "sha": "",
+            "pull_merged": true,
             "warning": "commit succeeded but SHA retrieval failed"
         }),
-        Ok((_, stdout, _)) => json!({"status": "ok", "sha": stdout.trim()}),
+        Ok((_, stdout, _)) => {
+            let final_sha = stdout.trim();
+            let pull_merged = post_commit_sha
+                .as_deref()
+                .map_or(true, |post| post != final_sha);
+            json!({"status": "ok", "sha": final_sha, "pull_merged": pull_merged})
+        }
     }
 }
 
@@ -178,18 +198,67 @@ pub fn finalize_commit(message_file: &str, branch: &str) -> Value {
     finalize_commit_inner(message_file, branch, &run_git_with_timeout)
 }
 
-pub fn run(args: Args) {
+/// Adapter: prepends `-C <cwd>` to git args so `run_impl` can target a
+/// specific directory without `set_current_dir` (which races in parallel tests).
+/// Wraps `run_git_with_timeout` to match the `(args, timeout)` closure shape
+/// expected by `finalize_commit_inner`.
+fn run_git_in_dir(
+    cwd: &std::path::Path,
+    args: &[&str],
+    timeout_secs: u64,
+) -> Result<(i32, String, String), String> {
+    let mut cmd_args = vec!["-C", cwd.to_str().unwrap_or(".")];
+    cmd_args.extend_from_slice(args);
+    run_git_with_timeout(&cmd_args, timeout_secs)
+}
+
+/// Testable entry point: runs finalize-commit, then refreshes the CI sentinel
+/// when pull did not introduce new content (pull_merged == false).
+///
+/// `cwd` and `root` are passed explicitly so integration tests can avoid
+/// `set_current_dir` (which is process-wide and races with parallel tests).
+/// Returns Ok(result_json) on success, Err(message) on infrastructure errors.
+pub fn run_impl(
+    args: &Args,
+    cwd: &std::path::Path,
+    root: &std::path::Path,
+) -> Result<Value, String> {
     if args.message_file.is_empty() || args.branch.is_empty() {
-        json_error(
-            "Usage: bin/flow finalize-commit <message-file> <branch>",
-            &[("step", json!("args"))],
-        );
-        std::process::exit(1);
+        return Err("Usage: bin/flow finalize-commit <message-file> <branch>".to_string());
     }
-    let result = finalize_commit(&args.message_file, &args.branch);
-    println!("{}", result);
-    if result["status"] != "ok" {
-        std::process::exit(1);
+
+    let cwd_owned = cwd.to_path_buf();
+    let git = |git_args: &[&str], timeout: u64| -> Result<(i32, String, String), String> {
+        run_git_in_dir(&cwd_owned, git_args, timeout)
+    };
+
+    let result = finalize_commit_inner(&args.message_file, &args.branch, &git);
+
+    // Refresh sentinel when commit succeeded and pull didn't merge new content.
+    if result["status"] == "ok" && result.get("pull_merged") == Some(&json!(false)) {
+        let snapshot = crate::ci::tree_snapshot(cwd, None);
+        let sentinel = crate::ci::sentinel_path(root, &args.branch);
+        // Best-effort write — sentinel refresh is informational, not gating.
+        let _ = fs::write(&sentinel, &snapshot);
+    }
+
+    Ok(result)
+}
+
+pub fn run(args: Args) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let root = crate::git::project_root();
+    match run_impl(&args, &cwd, &root) {
+        Err(msg) => {
+            json_error(&msg, &[("step", json!("args"))]);
+            std::process::exit(1);
+        }
+        Ok(result) => {
+            println!("{}", result);
+            if result["status"] != "ok" {
+                std::process::exit(1);
+            }
+        }
     }
 }
 
@@ -231,14 +300,16 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                // git commit
+            ok("abc123\n"),        // git rev-parse HEAD (post-commit)
             ok(""),                // git pull
             ok(""),                // git push
-            ok("abc123\n"),        // git rev-parse HEAD
+            ok("abc123\n"),        // git rev-parse HEAD (final)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
         assert_eq!(result["status"], "ok");
         assert_eq!(result["sha"], "abc123");
+        assert_eq!(result["pull_merged"], false);
         assert!(!msg.exists());
     }
 
@@ -265,6 +336,7 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                                  // git commit
+            ok("commit_sha\n"),                      // git rev-parse HEAD (post-commit)
             fail("CONFLICT"),                        // git pull
             Ok((0, "UU file1.py\nAA file2.py\n".to_string(), String::new())), // git status
         ]);
@@ -288,6 +360,7 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                          // git commit
+            ok("commit_sha\n"),              // git rev-parse HEAD (post-commit)
             fail("Could not resolve host"),  // git pull
             ok(""),                          // git status (clean)
         ]);
@@ -306,6 +379,7 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                       // git commit
+            ok("commit_sha\n"),           // git rev-parse HEAD (post-commit)
             ok(""),                       // git pull
             fail("permission denied"),    // git push
         ]);
@@ -324,13 +398,15 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                // git commit
+            ok("def456\n"),        // git rev-parse HEAD (post-commit)
             ok(""),                // git pull
             ok(""),                // git push
-            ok("def456\n"),        // git rev-parse HEAD
+            ok("def456\n"),        // git rev-parse HEAD (final)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
         assert_eq!(result["status"], "ok");
+        assert_eq!(result["pull_merged"], false);
     }
 
     #[test]
@@ -341,14 +417,16 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),               // git commit
+            ok("commit_sha\n"),   // git rev-parse HEAD (post-commit)
             ok(""),               // git pull
             ok(""),               // git push
-            fail("bad HEAD"),     // git rev-parse HEAD
+            fail("bad HEAD"),     // git rev-parse HEAD (final)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
         assert_eq!(result["status"], "ok");
         assert_eq!(result["sha"], "");
+        assert_eq!(result["pull_merged"], true);
         assert_eq!(
             result["warning"],
             "commit succeeded but SHA retrieval failed"
@@ -378,6 +456,7 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                                // git commit
+            ok("commit_sha\n"),                    // git rev-parse HEAD (post-commit)
             timeout("timed out after 60s"),        // git pull
         ]);
 
@@ -395,6 +474,7 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                                // git commit
+            ok("commit_sha\n"),                    // git rev-parse HEAD (post-commit)
             ok(""),                                // git pull
             timeout("timed out after 60s"),        // git push
         ]);
@@ -413,14 +493,16 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                                // git commit
+            ok("commit_sha\n"),                    // git rev-parse HEAD (post-commit)
             ok(""),                                // git pull
             ok(""),                                // git push
-            timeout("timed out after 30s"),        // git rev-parse HEAD
+            timeout("timed out after 30s"),        // git rev-parse HEAD (final)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
         assert_eq!(result["status"], "ok");
         assert_eq!(result["sha"], "");
+        assert_eq!(result["pull_merged"], true);
         assert_eq!(
             result["warning"],
             "commit succeeded but SHA retrieval timed out"
@@ -435,6 +517,7 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                                       // git commit
+            ok("commit_sha\n"),                           // git rev-parse HEAD (post-commit)
             fail("Could not resolve host"),               // git pull
             timeout("timed out after 30s"),               // git status --porcelain
         ]);
@@ -453,6 +536,7 @@ mod tests {
 
         let git = mock_git(vec![
             ok(""),                                                    // git commit
+            ok("commit_sha\n"),                                        // git rev-parse HEAD (post-commit)
             fail("CONFLICT"),                                          // git pull
             Ok((0, "DD deleted.py\n".to_string(), String::new())),     // git status
         ]);
@@ -466,5 +550,276 @@ mod tests {
             .map(|v| v.as_str().unwrap().to_string())
             .collect();
         assert_eq!(files, vec!["deleted.py"]);
+    }
+
+    #[test]
+    fn pull_merged_false_when_shas_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let msg = dir.path().join(".flow-commit-msg");
+        std::fs::write(&msg, "Test commit.").unwrap();
+
+        let git = mock_git(vec![
+            ok(""),                // git commit
+            ok("same_sha\n"),     // git rev-parse HEAD (post-commit)
+            ok(""),                // git pull (no new content)
+            ok(""),                // git push
+            ok("same_sha\n"),     // git rev-parse HEAD (final — unchanged)
+        ]);
+
+        let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["sha"], "same_sha");
+        assert_eq!(result["pull_merged"], false);
+    }
+
+    #[test]
+    fn pull_merged_true_when_shas_differ() {
+        let dir = tempfile::tempdir().unwrap();
+        let msg = dir.path().join(".flow-commit-msg");
+        std::fs::write(&msg, "Test commit.").unwrap();
+
+        let git = mock_git(vec![
+            ok(""),                // git commit
+            ok("aaa\n"),           // git rev-parse HEAD (post-commit)
+            ok(""),                // git pull (merged remote changes)
+            ok(""),                // git push
+            ok("bbb\n"),           // git rev-parse HEAD (final — changed by pull)
+        ]);
+
+        let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["sha"], "bbb");
+        assert_eq!(result["pull_merged"], true);
+    }
+
+    #[test]
+    fn pull_merged_true_when_post_commit_revparse_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let msg = dir.path().join(".flow-commit-msg");
+        std::fs::write(&msg, "Test commit.").unwrap();
+
+        let git = mock_git(vec![
+            ok(""),                // git commit
+            fail("bad HEAD"),      // git rev-parse HEAD (post-commit — fails)
+            ok(""),                // git pull
+            ok(""),                // git push
+            ok("final_sha\n"),    // git rev-parse HEAD (final)
+        ]);
+
+        let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["sha"], "final_sha");
+        assert_eq!(result["pull_merged"], true);
+    }
+
+    #[test]
+    fn pull_merged_true_when_final_revparse_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let msg = dir.path().join(".flow-commit-msg");
+        std::fs::write(&msg, "Test commit.").unwrap();
+
+        let git = mock_git(vec![
+            ok(""),                // git commit
+            ok("post_sha\n"),      // git rev-parse HEAD (post-commit)
+            ok(""),                // git pull
+            ok(""),                // git push
+            fail("bad HEAD"),      // git rev-parse HEAD (final — fails)
+        ]);
+
+        let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["sha"], "");
+        assert_eq!(result["pull_merged"], true);
+    }
+
+    // --- Integration tests for run_impl sentinel refresh ---
+
+    /// Set up a bare remote + clone with a passing bin/ci script and .flow-states dir.
+    /// Returns (clone_dir, bare_dir) as TempDirs that must be kept alive.
+    fn setup_integration_repo() -> (tempfile::TempDir, tempfile::TempDir) {
+        let bare_dir = tempfile::tempdir().unwrap();
+        let clone_dir = tempfile::tempdir().unwrap();
+
+        // Create bare remote with explicit branch name — without --initial-branch,
+        // the default branch depends on the system git config (master vs main),
+        // causing test failures on CI runners where the default is master.
+        Command::new("git")
+            .args(["init", "--bare", "--initial-branch", "main"])
+            .arg(bare_dir.path())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        // Clone it
+        Command::new("git")
+            .args(["clone"])
+            .arg(bare_dir.path())
+            .arg(clone_dir.path())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        // Configure git user and merge behavior in clone
+        let clone_str = clone_dir.path().to_str().unwrap();
+        Command::new("git")
+            .args(["-C", clone_str, "config", "user.email", "test@test.com"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone_str, "config", "user.name", "Test"])
+            .output()
+            .unwrap();
+        // Force merge on pull (not rebase) so divergent pulls always create merge commits
+        Command::new("git")
+            .args(["-C", clone_str, "config", "pull.rebase", "false"])
+            .output()
+            .unwrap();
+
+        // Create .flow-states dir (gitignored, as in real FLOW projects)
+        let flow_states = clone_dir.path().join(".flow-states");
+        fs::create_dir_all(&flow_states).unwrap();
+        let gitignore = clone_dir.path().join(".gitignore");
+        fs::write(&gitignore, ".flow-states/\n").unwrap();
+
+        // Create an initial commit so the branch exists
+        let readme = clone_dir.path().join("README.md");
+        fs::write(&readme, "# Test\n").unwrap();
+        Command::new("git")
+            .args(["-C", clone_dir.path().to_str().unwrap(), "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone_dir.path().to_str().unwrap(), "commit", "-m", "Initial commit"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone_dir.path().to_str().unwrap(), "push", "-u", "origin", "main"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        (clone_dir, bare_dir)
+    }
+
+    #[test]
+    fn run_impl_refreshes_sentinel_after_commit() {
+        let (clone_dir, _bare_dir) = setup_integration_repo();
+        let clone_path = clone_dir.path().to_str().unwrap().to_string();
+
+        // Create a file to commit
+        let src = clone_dir.path().join("src.rs");
+        fs::write(&src, "fn main() {}\n").unwrap();
+        Command::new("git")
+            .args(["-C", &clone_path, "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        // Write commit message file (absolute path since git runs via -C)
+        let msg_path = clone_dir.path().join(".flow-commit-msg");
+        fs::write(&msg_path, "Add src.rs").unwrap();
+
+        let args = Args {
+            message_file: msg_path.to_str().unwrap().to_string(),
+            branch: "main".to_string(),
+        };
+
+        // Pass clone_dir as both cwd and root (standalone repo, not a worktree)
+        let result = run_impl(&args, clone_dir.path(), clone_dir.path()).unwrap();
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["pull_merged"], false);
+
+        // Sentinel should exist and match tree_snapshot for new HEAD
+        let sentinel = crate::ci::sentinel_path(clone_dir.path(), "main");
+        assert!(sentinel.exists(), "sentinel file should exist after clean commit");
+
+        // Verify sentinel contains a valid SHA-256 hex string (structural check).
+        // Comparing against a live tree_snapshot() call would be tautological —
+        // both compute the same hash from the same post-commit state.
+        let sentinel_content = fs::read_to_string(&sentinel).unwrap();
+        assert_eq!(sentinel_content.len(), 64, "sentinel should be a SHA-256 hex string");
+        assert!(sentinel_content.chars().all(|c| c.is_ascii_hexdigit()),
+            "sentinel should contain only hex digits");
+    }
+
+    #[test]
+    fn run_impl_no_sentinel_refresh_when_pull_merges() {
+        let (clone_dir, bare_dir) = setup_integration_repo();
+        let clone_path = clone_dir.path().to_str().unwrap().to_string();
+
+        // Create a second clone to push a divergent commit
+        let clone2_dir = tempfile::tempdir().unwrap();
+        Command::new("git")
+            .args(["clone"])
+            .arg(bare_dir.path())
+            .arg(clone2_dir.path())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone2_dir.path().to_str().unwrap(), "config", "user.email", "other@test.com"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone2_dir.path().to_str().unwrap(), "config", "user.name", "Other"])
+            .output()
+            .unwrap();
+
+        // Push a different commit from clone2
+        let other_file = clone2_dir.path().join("other.txt");
+        fs::write(&other_file, "other content\n").unwrap();
+        Command::new("git")
+            .args(["-C", clone2_dir.path().to_str().unwrap(), "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone2_dir.path().to_str().unwrap(), "commit", "-m", "Other commit"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone2_dir.path().to_str().unwrap(), "push"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        // Now create a commit in clone1 (divergent from remote)
+        let src = clone_dir.path().join("local.txt");
+        fs::write(&src, "local content\n").unwrap();
+        Command::new("git")
+            .args(["-C", &clone_path, "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        let msg_path = clone_dir.path().join(".flow-commit-msg");
+        fs::write(&msg_path, "Add local.txt").unwrap();
+
+        let args = Args {
+            message_file: msg_path.to_str().unwrap().to_string(),
+            branch: "main".to_string(),
+        };
+
+        let result = run_impl(&args, clone_dir.path(), clone_dir.path()).unwrap();
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["pull_merged"], true);
+
+        // Sentinel should NOT exist — pull merged remote changes
+        let sentinel = crate::ci::sentinel_path(clone_dir.path(), "main");
+        assert!(!sentinel.exists(), "sentinel should not exist when pull merged");
     }
 }
