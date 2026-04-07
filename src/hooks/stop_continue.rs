@@ -289,7 +289,9 @@ pub fn format_block_output(skill: &str, context: Option<&str>) -> Value {
 /// active flow's state file even when Claude Code runs from a shell
 /// whose git HEAD points to a different branch than the active flow —
 /// the common worktree case where the shell sits on main while a flow
-/// runs in a feature worktree. Matches the original Python behavior.
+/// runs in a feature worktree. `project_root()` is called first because
+/// `resolve_branch` needs `&root` to scan `.flow-states/` for state
+/// files. Matches the original Python behavior.
 pub fn run() {
     let mut stdin_buf = String::new();
     let _ = std::io::stdin().read_to_string(&mut stdin_buf);

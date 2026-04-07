@@ -392,9 +392,9 @@ updates in worktree configurations where the shell's git HEAD
 differs from the active flow's branch.
 
 Audit every Python `resolve_branch()` call during a port. Hooks
-that fire from any shell (Stop, StopFailure, PostCompact) almost
-always need `resolve_branch()` because the user's shell cwd may
-not match the active flow branch.
+that fire from any shell (Stop, StopFailure, PostCompact) must
+use `resolve_branch()` because the user's shell cwd may not match
+the active flow branch.
 
 CLI subcommands that resolve a branch from an explicit cwd (e.g.
 `bin/flow ci` running in a worktree) must use `git::resolve_branch_in(
