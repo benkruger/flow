@@ -700,6 +700,7 @@ REQUIRED_DENY_ENTRIES = [
     "Bash(git stash *)",
     "Bash(git checkout *)",
     "Bash(git clean *)",
+    "Bash(git commit *)",
 ]
 
 # Commands that have dedicated tool alternatives (Read, Grep, Glob).

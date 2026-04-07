@@ -58,6 +58,7 @@
       "Bash(git stash *)",
       "Bash(git checkout *)",
       "Bash(git clean *)",
+      "Bash(git commit *)",
       "Bash(cat *)",
       "Bash(head *)",
       "Bash(tail *)",
