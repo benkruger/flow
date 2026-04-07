@@ -129,8 +129,11 @@ Then skip to "Done — Banner and transition", using `formatted_time` and
 ## Resume Check
 
 Establish context for the standard path: run `git worktree list
---porcelain` to get `<project_root>` (first worktree line) and `git
-branch --show-current` to get `<branch>`. Then read the state file at
+--porcelain`. Note the path on the first `worktree` line (this is the
+project root). Find the `worktree` entry whose path matches your current
+working directory — the `branch refs/heads/<name>` line in that entry is
+the current branch (strip the `refs/heads/` prefix). Then read the state
+file at
 `<project_root>/.flow-states/<branch>.json`. Note `pr_number`, `prompt`,
 and `branch` from the state file — you will need them for Steps 2–4.
 Keep the project root, branch, state data, and `pr_number` in context.
