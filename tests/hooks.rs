@@ -404,6 +404,7 @@ fn test_stop_continue_empty_pending_no_output() {
     let state = json!({
         "branch": branch,
         "_continue_pending": "",
+        // Bypass discussion-mode block — this test exercises the empty-pending idle path.
         "_stop_instructed": true
     });
     setup_git_and_state(dir.path(), branch, &state);
@@ -490,6 +491,7 @@ fn test_stop_continue_stale_session_clears_and_captures_new() {
         "session_id": "old-session",
         "_continue_pending": "simplify",
         "_continue_context": "stale",
+        // Bypass discussion-mode block — this test exercises the session-mismatch path.
         "_stop_instructed": true
     });
     setup_git_and_state(dir.path(), branch, &state);
@@ -533,6 +535,7 @@ fn test_stop_continue_sets_blocked_when_idle() {
     let state = json!({
         "branch": branch,
         "current_phase": "flow-code",
+        // Bypass discussion-mode block — this test exercises the idle/blocked path.
         "_stop_instructed": true
     });
     setup_git_and_state(dir.path(), branch, &state);
@@ -551,6 +554,76 @@ fn test_stop_continue_sets_blocked_when_idle() {
     assert!(
         blocked.map(|s| !s.is_empty()).unwrap_or(false),
         "_blocked must be a non-empty timestamp string after idle run"
+    );
+}
+
+#[test]
+fn test_stop_continue_discussion_mode_blocks_first_interrupt() {
+    // Integration test: state file exists with no _stop_instructed —
+    // discussion mode blocks, outputs block JSON with flow-note instruction,
+    // and sets _stop_instructed in the state file.
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "test-feature";
+    let state = json!({
+        "branch": branch,
+        "current_phase": "flow-code"
+    });
+    setup_git_and_state(dir.path(), branch, &state);
+
+    let output = run_hook("stop-continue", dir.path(), branch, b"{}");
+
+    assert_eq!(output.status.code().unwrap(), 0);
+    assert!(
+        !output.stdout.is_empty(),
+        "discussion mode must block the first interrupt"
+    );
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("stdout must be valid JSON");
+    assert_eq!(parsed["decision"], "block");
+    let reason = parsed["reason"].as_str().unwrap();
+    assert!(
+        reason.contains("flow:flow-note"),
+        "block reason must instruct model to invoke flow:flow-note"
+    );
+    assert!(
+        !reason.contains("child skill"),
+        "discussion mode must not use 'child skill returned' framing"
+    );
+
+    let on_disk = read_state(dir.path(), branch);
+    assert_eq!(
+        on_disk["_stop_instructed"], true,
+        "_stop_instructed must be set after first interrupt"
+    );
+}
+
+#[test]
+fn test_stop_continue_session_mismatch_preserves_stop_instructed() {
+    // Session mismatch does NOT clear _stop_instructed — clearing it would
+    // cause check_discussion_mode to re-fire in the same hook invocation
+    // (a non-user-initiated Stop). phase_enter() handles the reset when
+    // the new session enters its first phase.
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "test-feature";
+    let state = json!({
+        "branch": branch,
+        "session_id": "old-session",
+        "_continue_pending": "commit",
+        "_continue_context": "stale",
+        "_stop_instructed": true
+    });
+    setup_git_and_state(dir.path(), branch, &state);
+
+    let stdin = br#"{"session_id":"new-session"}"#;
+    let output = run_hook("stop-continue", dir.path(), branch, stdin);
+
+    assert_eq!(output.status.code().unwrap(), 0);
+    assert!(output.stdout.is_empty(), "session mismatch must not emit block output");
+
+    let on_disk = read_state(dir.path(), branch);
+    assert_eq!(
+        on_disk["_stop_instructed"], true,
+        "_stop_instructed must persist across session mismatch"
     );
 }
 

@@ -159,6 +159,10 @@ pub fn check_continue(hook_input: &Value, state_path: &Path) -> ContinueResult {
             if ssid != hsid {
                 state["_continue_pending"] = Value::String(String::new());
                 state["_continue_context"] = Value::String(String::new());
+                // Note: _stop_instructed is NOT cleared here. Clearing it
+                // would cause check_discussion_mode to re-fire in the same
+                // hook invocation (a non-user-initiated Stop). phase_enter()
+                // clears it when the new session enters its first phase.
                 decision = Some(format!(
                     "session mismatch (state={} hook={}), cleared pending={}",
                     ssid, hsid, pending
@@ -408,7 +412,14 @@ pub fn run() {
 
     if result.should_block {
         let skill_name = result.skill.as_deref().unwrap_or("");
-        let output = format_block_output(skill_name, result.context.as_deref());
+        // Discussion mode uses DISCUSSION_BLOCK_REASON directly as the
+        // reason — not the "child skill returned" framing from
+        // format_block_output, which is designed for _continue_pending.
+        let output = if skill_name == "discussion" {
+            json!({"decision": "block", "reason": result.context.as_deref().unwrap_or(DISCUSSION_BLOCK_REASON)})
+        } else {
+            format_block_output(skill_name, result.context.as_deref())
+        };
         println!("{}", serde_json::to_string(&output).unwrap());
     }
 }
