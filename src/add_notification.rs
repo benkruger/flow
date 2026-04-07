@@ -58,8 +58,8 @@ pub fn run(args: Args) {
 
     // Guard: reject singleton-fallback resolution for interactive commands
     if is_foreign_branch(&branch, args.branch.as_deref()) {
-        json_error("Resolved branch does not match current branch", &[]);
-        process::exit(1);
+        println!(r#"{{"status":"no_state"}}"#);
+        process::exit(0);
     }
 
     let state_path = root.join(".flow-states").join(format!("{}.json", branch));

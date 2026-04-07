@@ -177,12 +177,15 @@ fn resolve_branch_impl(
     (branch, vec![])
 }
 
-/// Check if the resolved branch is "foreign" — resolved via singleton
-/// fallback and doesn't match the current git HEAD.
+/// Check if the resolved branch is "foreign" — resolved via the
+/// singleton fallback (where `resolve_branch` finds exactly one state
+/// file in `.flow-states/` and returns it, even though the current git
+/// HEAD is on a different branch) rather than via exact match.
 ///
 /// Returns true when: (1) no override was passed, and (2) the current
 /// branch is either None (detached HEAD) or differs from the resolved
-/// branch. Interactive commands use this to reject writes to state files
+/// branch. Interactive commands (`append-note`, `add-issue`,
+/// `add-notification`) use this to reject writes to state files
 /// belonging to a different feature. Hooks must NOT use this — they
 /// intentionally rely on the singleton fallback.
 pub fn is_foreign_branch(resolved: &str, override_branch: Option<&str>) -> bool {
@@ -472,6 +475,17 @@ mod tests {
         assert!(!is_foreign_branch_impl(
             "feature-a",
             Some("feature-a"),
+            Some("feature-b".to_string())
+        ));
+    }
+
+    #[test]
+    fn foreign_branch_override_bypasses_even_when_mismatched() {
+        // Override value differs from resolved — still not foreign,
+        // because any explicit --branch bypasses the guard entirely.
+        assert!(!is_foreign_branch_impl(
+            "feature-a",
+            Some("other-branch"),
             Some("feature-b".to_string())
         ));
     }
