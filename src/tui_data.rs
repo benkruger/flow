@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use chrono::{DateTime, FixedOffset};
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::phase_config::{self, PHASE_ORDER};
@@ -107,7 +108,7 @@ pub fn step_annotation(step: i64, total: i64, name: &str) -> String {
 }
 
 /// A single entry in the phase timeline display.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct TimelineEntry {
     pub key: String,
     pub name: String,
@@ -319,7 +320,7 @@ pub fn phase_timeline(state: &Value, now: Option<DateTime<FixedOffset>>) -> Vec<
 }
 
 /// A parsed log entry for display.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct LogEntry {
     pub time: String,
     pub message: String,
@@ -364,17 +365,19 @@ pub fn parse_log_entries(log_content: &str, limit: usize) -> Vec<LogEntry> {
 }
 
 /// Display-ready issue entry.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct IssueSummary {
     pub label: String,
     pub title: String,
     pub url: String,
+    /// Serializes as "ref" for Python parity. `ref` is a Rust keyword.
+    #[serde(rename = "ref")]
     pub ref_str: String,
     pub phase_name: String,
 }
 
 /// Display-ready flow summary.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FlowSummary {
     pub feature: String,
     pub branch: String,
@@ -395,6 +398,8 @@ pub struct FlowSummary {
     pub annotation: String,
     pub phase_elapsed: String,
     pub timeline: Vec<TimelineEntry>,
+    /// Raw state dict — needed by tui.py for detail views.
+    pub state: Value,
 }
 
 /// Convert a state dict to a display-ready summary.
@@ -535,6 +540,7 @@ pub fn flow_summary(state: &Value, now: Option<DateTime<FixedOffset>>) -> FlowSu
         annotation,
         phase_elapsed,
         timeline,
+        state: state.clone(),
     }
 }
 
@@ -596,7 +602,7 @@ pub fn load_orchestration(root: &Path) -> Option<Value> {
 }
 
 /// Display-ready orchestration item.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct OrchestrationItem {
     pub icon: String,
     pub issue_number: Option<i64>,
@@ -608,7 +614,7 @@ pub struct OrchestrationItem {
 }
 
 /// Display-ready orchestration summary.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct OrchestrationSummary {
     pub elapsed: String,
     pub completed_count: usize,
@@ -721,7 +727,7 @@ pub fn orchestration_summary(
 }
 
 /// Account metrics for TUI header display.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AccountMetrics {
     pub cost_monthly: String,
     pub rl_5h: Option<i64>,

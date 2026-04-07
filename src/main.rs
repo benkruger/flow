@@ -36,6 +36,7 @@ use flow_rs::notify_slack;
 use flow_rs::orchestrate_report;
 use flow_rs::orchestrate_state;
 use flow_rs::render_pr_body;
+use flow_rs::tui_data;
 use flow_rs::update_pr_body;
 use flow_rs::git::{project_root, resolve_branch};
 use flow_rs::issue;
@@ -371,6 +372,20 @@ enum Commands {
     #[command(name = "orchestrate-state")]
     OrchestrateState(orchestrate_state::Args),
 
+    /// TUI data layer: load flows, orchestration, account metrics as JSON.
+    #[command(name = "tui-data")]
+    TuiData {
+        /// Load all flow summaries from .flow-states/*.json
+        #[arg(long)]
+        load_all_flows: bool,
+        /// Load orchestration state from .flow-states/orchestrate.json
+        #[arg(long)]
+        load_orchestration: bool,
+        /// Load account metrics (monthly cost, rate limits)
+        #[arg(long)]
+        load_account_metrics: bool,
+    },
+
     /// Check GitHub for newer FLOW releases.
     #[command(name = "upgrade-check")]
     UpgradeCheck(upgrade_check::Args),
@@ -585,6 +600,13 @@ fn main() {
         }
         Some(Commands::OrchestrateReport(args)) => orchestrate_report::run(args),
         Some(Commands::OrchestrateState(args)) => orchestrate_state::run(args),
+        Some(Commands::TuiData {
+            load_all_flows,
+            load_orchestration,
+            load_account_metrics,
+        }) => {
+            run_tui_data(load_all_flows, load_orchestration, load_account_metrics);
+        }
         Some(Commands::UpgradeCheck(args)) => upgrade_check::run(args),
         Some(Commands::Hook { hook }) => match hook {
             HookCommands::ValidatePretool => hooks::validate_pretool::run(),
@@ -831,5 +853,33 @@ fn run_format_status(branch_override: Option<&str>) {
         phase_config.as_ref(),
     );
     println!("{}", panel);
+}
+
+fn run_tui_data(load_all: bool, load_orch: bool, load_metrics: bool) {
+    let root = project_root();
+
+    if load_all {
+        let flows = tui_data::load_all_flows(&root);
+        println!("{}", serde_json::to_string(&flows).unwrap());
+    } else if load_orch {
+        let orch = tui_data::load_orchestration(&root);
+        match orch {
+            Some(state) => {
+                let summary = tui_data::orchestration_summary(Some(&state), None);
+                let result = json!({
+                    "state": state,
+                    "summary": summary,
+                });
+                println!("{}", serde_json::to_string(&result).unwrap());
+            }
+            None => println!("null"),
+        }
+    } else if load_metrics {
+        let metrics = tui_data::load_account_metrics(&root, None);
+        println!("{}", serde_json::to_string(&metrics).unwrap());
+    } else {
+        eprintln!("tui-data: specify one of --load-all-flows, --load-orchestration, --load-account-metrics");
+        process::exit(1);
+    }
 }
 
