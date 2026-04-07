@@ -125,7 +125,7 @@ Auto-memory is shared across git worktrees of the same repository (since Claude 
 
 Learn routes learnings to project CLAUDE.md and `.claude/rules/`. Also files GitHub issues for process gaps. All filed issues recorded via `bin/flow add-issue`.
 
-Commit always runs `bin/flow ci` before committing — CI handles all run/skip/error logic internally. The `commit_format` preference is copied from `.flow.json` into the state file by `/flow-start`; the commit skill reads it from the state file. After `finalize-commit` succeeds and `git pull` did not introduce new content (`pull_merged == false`), the CI sentinel is automatically refreshed so the next `bin/flow ci` run skips when the working tree hasn't changed.
+CI is enforced inside `finalize-commit` itself — `run_impl` calls `ci::run_once()` before `git commit`, so every commit path (including direct `bin/flow finalize-commit` calls) runs CI mechanically. The sentinel skip optimization means zero overhead when CI already passed. The `commit_format` preference is copied from `.flow.json` into the state file by `/flow-start`; the commit skill reads it from the state file. After `finalize-commit` succeeds and `git pull` did not introduce new content (`pull_merged == false`), the CI sentinel is automatically refreshed so the next `bin/flow ci` run skips when the working tree hasn't changed.
 
 ### Logging
 

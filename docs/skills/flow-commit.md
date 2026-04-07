@@ -16,10 +16,10 @@ Reviews all pending changes before committing. You see the full diff and propose
 
 ## What It Does
 
-1. Runs CI and stages changes in parallel
+1. Stages changes
 2. Shows `git status` and `git diff --cached` in parallel
 3. Proposes a commit message in the `tl;dr` format
-4. Commits, pulls, and pushes via `bin/flow finalize-commit`
+4. Commits, pulls, and pushes via `bin/flow finalize-commit` (which enforces CI internally)
 
 ---
 
@@ -55,7 +55,7 @@ Subject starts with an imperative verb — Add, Fix, Update, Remove, Refactor. I
 
 ## CI
 
-`bin/flow ci` and `git add -A` run in parallel. CI handles all run/skip/error logic internally — the commit skill calls it unconditionally.
+CI is enforced inside `finalize-commit` itself — every commit path runs CI mechanically before `git commit`. When the CI sentinel is fresh (CI already passed for the current tree state), the check noops instantly. There is no separate CI step in the commit skill.
 
 The banner is versioned (`FLOW v1.1.0`) when a `.flow-states/*.json` state file exists, plain (`Commit`) otherwise.
 
@@ -65,4 +65,4 @@ The banner is versioned (`FLOW v1.1.0`) when a `.flow-states/*.json` state file 
 
 - Never commits without showing the diff first
 - Never uses `--no-verify`
-- Always runs `bin/flow ci` before the diff
+- CI enforced inside `finalize-commit` before every commit

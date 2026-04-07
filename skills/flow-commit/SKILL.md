@@ -94,20 +94,11 @@ On completion (whether nothing to commit or committed successfully), print the s
 
 ## Process
 
-### Round 3 — Test and stage
-
-Run both in parallel (one response, two Bash calls):
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci
-```
+### Round 3 — Stage
 
 ```bash
 git add -A
 ```
-
-CI and staging are independent — CI tests the working tree, staging indexes it. If CI
-fails, stop and report the failure. Staged files are harmless if CI fails — nothing commits.
 
 ### Round 4 — Show the diff
 
