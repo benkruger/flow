@@ -209,8 +209,6 @@ Output the completion banner:
 ```
 ````
 
-The session-start hook will present the report again on the next session start if the terminal was closed before the user saw it.
-
 ---
 
 ## Hard Rules

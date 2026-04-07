@@ -77,7 +77,6 @@ best-effort call:
   sentinel deletion, and git pull
 
 Each cleanup step is best-effort — if one fails, the rest still run.
-This resets the SessionStart hook — the next session starts clean.
 
 ### 7. Cleanup results
 

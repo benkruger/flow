@@ -50,10 +50,9 @@ SOFT-GATE and dispatches via the Resume Check.
 
 ## Why State File Deletion Matters
 
-Deleting `.flow-states/<branch>.json` is what resets the
-SessionStart hook. Without it, every new session would detect a
-feature in progress that no longer exists. This is the clean exit
-from the FLOW workflow.
+Deleting `.flow-states/<branch>.json` is the clean exit from the
+FLOW workflow. It removes the branch-scoped state that other FLOW
+commands (phase gates, status, TUI) rely on to detect an active flow.
 
 ---
 
