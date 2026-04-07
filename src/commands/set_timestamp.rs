@@ -157,20 +157,10 @@ pub fn apply_updates(state: &mut Value, set_args: &[String]) -> Result<Vec<Updat
 /// Run the set-timestamp command.
 pub fn run(set_args: Vec<String>, branch_override: Option<String>) {
     let root = project_root();
-    let (branch, candidates) =
-        resolve_branch(branch_override.as_deref(), &root);
-
-    let branch = match branch {
+    let branch = match resolve_branch(branch_override.as_deref(), &root) {
         Some(b) => b,
         None => {
-            if !candidates.is_empty() {
-                json_error(
-                    "Multiple active features. Pass --branch.",
-                    &[("candidates", json!(candidates))],
-                );
-            } else {
-                json_error("Could not determine current branch", &[]);
-            }
+            json_error("Could not determine current branch", &[]);
             process::exit(1);
         }
     };

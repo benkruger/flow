@@ -285,13 +285,8 @@ pub fn format_block_output(skill: &str, context: Option<&str>) -> Value {
 
 /// Run the stop-continue hook (entry point).
 ///
-/// Uses `resolve_branch` (not `current_branch`) so the hook finds the
-/// active flow's state file even when Claude Code runs from a shell
-/// whose git HEAD points to a different branch than the active flow —
-/// the common worktree case where the shell sits on main while a flow
-/// runs in a feature worktree. `project_root()` is called first because
-/// `resolve_branch` needs `&root` to scan `.flow-states/` for state
-/// files. Matches the original Python behavior.
+/// Uses `resolve_branch` for the `--branch` override support and state
+/// file existence check. Falls back to `current_branch()` internally.
 pub fn run() {
     let mut stdin_buf = String::new();
     let _ = std::io::stdin().read_to_string(&mut stdin_buf);
@@ -299,7 +294,7 @@ pub fn run() {
     let hook_input: Value = serde_json::from_str(&stdin_buf).unwrap_or_else(|_| json!({}));
 
     let root: PathBuf = project_root();
-    let (branch, _candidates) = resolve_branch(None, &root);
+    let branch = resolve_branch(None, &root);
     let branch = match branch {
         Some(b) => b,
         None => return,

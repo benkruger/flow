@@ -314,9 +314,7 @@ pub fn run_with_retry(
 /// Dispatches to [`run_once`] when `args.retry == 0` and to
 /// [`run_with_retry`] otherwise. Resolves the branch from `args.branch`
 /// or falls back to [`crate::git::resolve_branch_in`] using the given
-/// `cwd` — matching Python `lib/ci.py` which called `resolve_branch()`
-/// so the state-file scan fallback fires when git HEAD is detached
-/// but `.flow-states/` contains exactly one feature.
+/// `cwd`.
 ///
 /// Also performs the `bin/ci not found` pre-check here (before
 /// dispatch) so both retry and non-retry paths return the same error
@@ -341,7 +339,7 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
         );
     }
 
-    let (resolved_branch, _candidates) = crate::git::resolve_branch_in(
+    let resolved_branch = crate::git::resolve_branch_in(
         args.branch.as_deref(),
         cwd,
         root,
