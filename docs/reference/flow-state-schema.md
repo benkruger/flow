@@ -19,7 +19,7 @@ State files live in `.flow-states/` at the project root, named after the branch:
 .flow-states/user-profile-redesign-ci-passed
 ```
 
-Each feature has up to four files: the state file (`.json`), the log file (`.log`), a frozen copy of `flow-phases.json` (`-phases.json`), and a CI sentinel (`-ci-passed`). The CI sentinel caches the last passing `bin/flow ci` snapshot so subsequent runs skip automatically when nothing changed (use `--force` to bypass). Multiple features can run simultaneously with no conflicts. The directory is added to `.git/info/exclude` by `/flow-start` (per-repo, not committed). Created by `/flow-start`, deleted by `/flow-complete`.
+Each feature has up to four files: the state file (`.json`), the log file (`.log`), a frozen copy of `flow-phases.json` (`-phases.json`), and a CI sentinel (`-ci-passed`). The CI sentinel caches the last passing `bin/flow ci` snapshot so subsequent runs skip automatically when nothing changed (use `--force` to bypass). The sentinel is also automatically refreshed after `finalize-commit` when `git pull` does not introduce new content, preserving the optimization across commits. Multiple features can run simultaneously with no conflicts. The directory is added to `.git/info/exclude` by `/flow-start` (per-repo, not committed). Created by `/flow-start`, deleted by `/flow-complete`.
 
 **State files are local to each machine.** In a multi-engineer team, each engineer's `.flow-states/` directory only contains their own features. GitHub (issues, PRs, labels) is the shared coordination layer visible to all engineers. The "Flow In-Progress" label on issues is the mechanism for cross-engineer WIP detection — see `/flow-issues`.
 

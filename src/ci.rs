@@ -50,7 +50,9 @@ pub struct Args {
 ///
 /// Centralizes the naming convention so [`run_once`], [`run_with_retry`], and the
 /// inline tests all agree on where sentinels live.
-fn sentinel_path(root: &Path, branch: &str) -> PathBuf {
+///
+/// Also used by [`finalize_commit::run_impl`] to refresh the sentinel after a clean commit.
+pub fn sentinel_path(root: &Path, branch: &str) -> PathBuf {
     root.join(".flow-states").join(format!("{}-ci-passed", branch))
 }
 

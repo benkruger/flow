@@ -503,9 +503,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         ci_failed_output = None;
     } else {
         let snapshot = ci::tree_snapshot(&cwd, None);
-        let sentinel = root
-            .join(".flow-states")
-            .join(format!("{}-ci-passed", branch));
+        let sentinel = ci::sentinel_path(&root, &branch);
 
         ci_skipped = if sentinel.exists() {
             std::fs::read_to_string(&sentinel)

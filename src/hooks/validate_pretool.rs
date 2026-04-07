@@ -18,10 +18,11 @@ use super::{
 ///
 /// Returns `(allowed, message)`. Message is empty if allowed.
 ///
-/// Layers 1-6 (compound commands, redirection, blanket restore, git diff
-/// with file args, deny list, file-read commands) are always enforced.
+/// Layers 1-8 (compound commands, redirection, exec prefix, blanket
+/// restore, git diff with file args, deny list, file-read commands)
+/// are always enforced.
 ///
-/// Layer 7 (whitelist enforcement) is only enforced when both settings
+/// Layer 9 (whitelist enforcement) is only enforced when both settings
 /// are provided AND `flow_active` is true.
 pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (bool, String) {
     // Layer 1: Block compound commands (&&, ;, |)
@@ -45,8 +46,22 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
         );
     }
 
-    // Layer 3: Block blanket restore (git restore . wipes all changes)
+    // Layer 3: Block exec prefix — triggers Claude Code's built-in
+    // "evaluates arguments as shell code" safety heuristic, causing
+    // permission prompts that break autonomous flows. Plain command
+    // invocation is functionally identical.
     let stripped = command.trim();
+    if stripped.starts_with("exec ") {
+        return (
+            false,
+            "BLOCKED: 'exec' prefix triggers a permission prompt. \
+             Remove 'exec' and run the command directly — \
+             the behavior is identical."
+                .to_string(),
+        );
+    }
+
+    // Layer 5: Block blanket restore (git restore . wipes all changes)
     if stripped == "git restore ." {
         return (
             false,
@@ -57,7 +72,7 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
         );
     }
 
-    // Layer 4: Block git diff with file-path arguments
+    // Layer 6: Block git diff with file-path arguments
     if stripped.starts_with("git diff") {
         // Check for " -- " followed by a non-space character
         let re = Regex::new(r" -- \S").unwrap();
@@ -72,7 +87,7 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
         }
     }
 
-    // Layer 5: Deny-list check — deny always wins over allow
+    // Layer 7: Deny-list check — deny always wins over allow
     if let Some(settings) = settings {
         let deny_regexes = build_permission_regexes(settings, "deny");
         for regex in &deny_regexes {
@@ -89,7 +104,7 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
         }
     }
 
-    // Layer 6: Block file-read commands
+    // Layer 8: Block file-read commands
     let first_word = stripped.split_whitespace().next().unwrap_or("");
     if FILE_READ_COMMANDS.contains(&first_word) {
         return (
@@ -104,7 +119,7 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
         );
     }
 
-    // Layer 7: Whitelist check — only during an active flow
+    // Layer 9: Whitelist check — only during an active flow
     if let Some(settings) = settings {
         if flow_active {
             let allow_regexes = build_permission_regexes(settings, "allow");
@@ -432,6 +447,30 @@ mod tests {
         let (allowed, msg) = validate("tail -f log.txt", None, true);
         assert!(!allowed);
         assert!(msg.contains("Read"));
+    }
+
+    // --- Exec prefix ---
+
+    #[test]
+    fn test_blocks_exec_prefix() {
+        let (allowed, msg) = validate("exec /Users/ben/code/flow/bin/flow ci", None, true);
+        assert!(!allowed);
+        assert!(msg.contains("exec"));
+        assert!(msg.contains("permission prompt"));
+    }
+
+    #[test]
+    fn test_blocks_exec_bare_command() {
+        let (allowed, msg) = validate("exec bin/flow ci", None, true);
+        assert!(!allowed);
+        assert!(msg.contains("exec"));
+    }
+
+    #[test]
+    fn test_allows_command_without_exec() {
+        let (allowed, msg) = validate("/Users/ben/code/flow/bin/flow ci", None, true);
+        assert!(allowed);
+        assert!(msg.is_empty());
     }
 
     // --- Blanket restore ---
