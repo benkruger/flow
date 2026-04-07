@@ -15,7 +15,7 @@ CI would have caught land on main.
 This applies everywhere CI runs:
 
 - FLOW phases (Code, Code Review)
-- `/flow:flow-commit` (always runs `bin/flow ci` before committing)
+- `finalize-commit` (runs `ci::run_once()` internally before `git commit`)
 - Direct `bin/ci` invocations
 
 ## Enforcement

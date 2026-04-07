@@ -1,5 +1,10 @@
 //! Port of lib/finalize-commit.py — commit, cleanup, pull, push.
 //!
+//! Enforces CI before committing: calls [`ci::run_once`] as the first step
+//! in [`run_impl`]. If CI fails, returns an error and commits nothing.
+//! When the CI sentinel is fresh (CI already passed for this tree state),
+//! the check noops instantly — no overhead on the happy path.
+//!
 //! Usage:
 //!   bin/flow finalize-commit <message-file> <branch>
 //!
@@ -7,7 +12,7 @@
 //!   Success:   {"status": "ok", "sha": "<commit-hash>", "pull_merged": <bool>}
 //!   Warning:   {"status": "ok", "sha": "", "pull_merged": true, "warning": "..."}
 //!   Conflict:  {"status": "conflict", "files": ["file1.py", ...]}
-//!   Error:     {"status": "error", "step": "commit|pull|push", "message": "..."}
+//!   Error:     {"status": "error", "step": "ci|commit|pull|push", "message": "..."}
 
 use std::fs;
 use std::process::{Command, Stdio};
@@ -212,12 +217,15 @@ fn run_git_in_dir(
     run_git_with_timeout(&cmd_args, timeout_secs)
 }
 
-/// Testable entry point: runs finalize-commit, then refreshes the CI sentinel
-/// when pull did not introduce new content (pull_merged == false).
+/// Testable entry point: enforces CI, runs finalize-commit, then maintains
+/// the CI sentinel (refresh on clean pull, delete on merge-pull).
 ///
 /// `cwd` and `root` are passed explicitly so integration tests can avoid
 /// `set_current_dir` (which is process-wide and races with parallel tests).
-/// Returns Ok(result_json) on success, Err(message) on infrastructure errors.
+///
+/// Returns `Result<Value, String>` where `Ok` carries any JSON response
+/// including status-error payloads (CI failure, commit failure, etc.) and
+/// `Err` carries only infrastructure errors (empty arguments).
 pub fn run_impl(
     args: &Args,
     cwd: &std::path::Path,
@@ -227,6 +235,22 @@ pub fn run_impl(
         return Err("Usage: bin/flow finalize-commit <message-file> <branch>".to_string());
     }
 
+    // Enforce CI before committing. run_once checks the sentinel first —
+    // if CI already passed for this tree state, it noops instantly.
+    let bin_ci = cwd.join("bin").join("ci");
+    let (ci_result, ci_code) =
+        crate::ci::run_once(cwd, root, &bin_ci, Some(&args.branch), false, None);
+    if ci_code != 0 {
+        let msg = ci_result["message"]
+            .as_str()
+            .unwrap_or("bin/flow ci failed");
+        return Ok(json!({
+            "status": "error",
+            "step": "ci",
+            "message": msg,
+        }));
+    }
+
     let cwd_owned = cwd.to_path_buf();
     let git = |git_args: &[&str], timeout: u64| -> Result<(i32, String, String), String> {
         run_git_in_dir(&cwd_owned, git_args, timeout)
@@ -234,12 +258,19 @@ pub fn run_impl(
 
     let result = finalize_commit_inner(&args.message_file, &args.branch, &git);
 
-    // Refresh sentinel when commit succeeded and pull didn't merge new content.
-    if result["status"] == "ok" && result.get("pull_merged") == Some(&json!(false)) {
-        let snapshot = crate::ci::tree_snapshot(cwd, None);
+    // Sentinel maintenance after commit:
+    // - pull_merged == false: tree unchanged by pull → refresh sentinel to current snapshot.
+    // - pull_merged == true: pull brought in new content → remove stale sentinel so the
+    //   next CI run re-tests. (CI's run_once created the sentinel before the commit;
+    //   the pull invalidated it.)
+    if result["status"] == "ok" {
         let sentinel = crate::ci::sentinel_path(root, &args.branch);
-        // Best-effort write — sentinel refresh is informational, not gating.
-        let _ = fs::write(&sentinel, &snapshot);
+        if result.get("pull_merged") == Some(&json!(false)) {
+            let snapshot = crate::ci::tree_snapshot(cwd, None);
+            let _ = fs::write(&sentinel, &snapshot);
+        } else {
+            let _ = fs::remove_file(&sentinel);
+        }
     }
 
     Ok(result)
@@ -632,6 +663,185 @@ mod tests {
         assert_eq!(result["pull_merged"], true);
     }
 
+    // --- Integration tests for run_impl CI enforcement ---
+
+    /// Set up a bare remote + clone with a configurable bin/ci script and .flow-states dir.
+    ///
+    /// The bin/ci script checks `.ci-should-fail` in the project root:
+    /// - If the file exists and contains "1", bin/ci exits 1 (CI fails).
+    /// - Otherwise, bin/ci exits 0 (CI passes).
+    ///
+    /// Additionally, each invocation appends a line to `.ci-invocation-marker`
+    /// so tests can verify whether CI actually ran (vs. being skipped by sentinel).
+    ///
+    /// Returns (clone_dir, bare_dir) as TempDirs that must be kept alive.
+    fn setup_integration_repo_with_ci() -> (tempfile::TempDir, tempfile::TempDir) {
+        let (clone_dir, bare_dir) = setup_integration_repo();
+        let clone_str = clone_dir.path().to_str().unwrap();
+
+        // Create bin/ci script with pass/fail control and invocation marker
+        let bin_dir = clone_dir.path().join("bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        let bin_ci = bin_dir.join("ci");
+        let script = r#"#!/usr/bin/env bash
+# Append to marker file so tests can count invocations
+echo "invoked" >> "$(dirname "$0")/../.ci-invocation-marker"
+# Check control file for pass/fail
+if [ -f "$(dirname "$0")/../.ci-should-fail" ] && [ "$(cat "$(dirname "$0")/../.ci-should-fail")" = "1" ]; then
+  exit 1
+fi
+exit 0
+"#;
+        fs::write(&bin_ci, script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&bin_ci, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        // Exclude CI control/marker files from git so they don't affect
+        // the tree snapshot used for sentinel matching in tests.
+        let exclude_file = clone_dir.path().join(".git").join("info").join("exclude");
+        let existing = fs::read_to_string(&exclude_file).unwrap_or_default();
+        fs::write(
+            &exclude_file,
+            format!("{}.ci-invocation-marker\n.ci-should-fail\n", existing),
+        )
+        .unwrap();
+
+        // Commit bin/ci so it's tracked (avoids untracked-file snapshot changes)
+        Command::new("git")
+            .args(["-C", clone_str, "add", "bin/ci"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone_str, "commit", "-m", "Add bin/ci"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone_str, "push"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        (clone_dir, bare_dir)
+    }
+
+    #[test]
+    fn test_ci_fails_blocks_commit() {
+        let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+        let clone_path = clone_dir.path();
+
+        // Configure bin/ci to fail
+        fs::write(clone_path.join(".ci-should-fail"), "1").unwrap();
+
+        // Create a file to commit
+        fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+        Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        // Write commit message file
+        let msg_path = clone_path.join(".flow-commit-msg");
+        fs::write(&msg_path, "Add feature.rs").unwrap();
+
+        // Count commits before
+        let before = Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "log", "--oneline"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        let commits_before = String::from_utf8_lossy(&before.stdout)
+            .lines()
+            .count();
+
+        let args = Args {
+            message_file: msg_path.to_str().unwrap().to_string(),
+            branch: "main".to_string(),
+        };
+
+        let result = run_impl(&args, clone_path, clone_path).unwrap();
+        assert_eq!(result["status"], "error");
+        assert_eq!(result["step"], "ci");
+
+        // Verify no new commit was created
+        let after = Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "log", "--oneline"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        let commits_after = String::from_utf8_lossy(&after.stdout)
+            .lines()
+            .count();
+        assert_eq!(commits_before, commits_after, "no commit should have been created when CI fails");
+    }
+
+    #[test]
+    fn test_ci_sentinel_fresh_skips_ci() {
+        let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+        let clone_path = clone_dir.path();
+
+        // Stage a file to commit first — this changes the tree snapshot,
+        // so the sentinel must be created AFTER staging.
+        fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+        Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "add", "feature.rs"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        // Write commit message (must exist before CI so the untracked-file
+        // list is the same when run_impl re-checks the snapshot)
+        let msg_path = clone_path.join(".flow-commit-msg");
+        fs::write(&msg_path, "Add feature.rs").unwrap();
+
+        // Run CI once to create a passing sentinel for THIS tree state
+        let bin_ci = clone_path.join("bin").join("ci");
+        let (_ci_result, ci_code) =
+            crate::ci::run_once(clone_path, clone_path, &bin_ci, Some("main"), false, None);
+        assert_eq!(ci_code, 0, "initial CI run should pass");
+
+        // Marker should have exactly 1 line from the CI invocation
+        let marker = clone_path.join(".ci-invocation-marker");
+        let lines_before = fs::read_to_string(&marker)
+            .unwrap()
+            .lines()
+            .count();
+        assert_eq!(lines_before, 1, "CI should have been invoked once");
+
+        // Now call run_impl — sentinel matches the current tree state,
+        // so ci::run_once inside run_impl should skip without invoking bin/ci.
+        let args = Args {
+            message_file: msg_path.to_str().unwrap().to_string(),
+            branch: "main".to_string(),
+        };
+
+        let result = run_impl(&args, clone_path, clone_path).unwrap();
+        assert_eq!(result["status"], "ok", "commit should succeed");
+        assert!(!result["sha"].as_str().unwrap().is_empty(), "should have a commit SHA");
+
+        // Marker should still have only 1 line — CI was skipped via sentinel
+        let lines_after = fs::read_to_string(&marker)
+            .unwrap()
+            .lines()
+            .count();
+        assert_eq!(
+            lines_after, 1,
+            "CI should not have been invoked again (sentinel was fresh)"
+        );
+    }
+
     // --- Integration tests for run_impl sentinel refresh ---
 
     /// Set up a bare remote + clone with a passing bin/ci script and .flow-states dir.
@@ -710,7 +920,7 @@ mod tests {
 
     #[test]
     fn run_impl_refreshes_sentinel_after_commit() {
-        let (clone_dir, _bare_dir) = setup_integration_repo();
+        let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
         let clone_path = clone_dir.path().to_str().unwrap().to_string();
 
         // Create a file to commit
@@ -752,7 +962,7 @@ mod tests {
 
     #[test]
     fn run_impl_no_sentinel_refresh_when_pull_merges() {
-        let (clone_dir, bare_dir) = setup_integration_repo();
+        let (clone_dir, bare_dir) = setup_integration_repo_with_ci();
         let clone_path = clone_dir.path().to_str().unwrap().to_string();
 
         // Create a second clone to push a divergent commit
