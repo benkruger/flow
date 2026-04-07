@@ -198,18 +198,65 @@ pub fn finalize_commit(message_file: &str, branch: &str) -> Value {
     finalize_commit_inner(message_file, branch, &run_git_with_timeout)
 }
 
-pub fn run(args: Args) {
+/// Run a git command in `cwd` with a timeout. Like `run_git_with_timeout`
+/// but targets a specific directory via `-C`.
+fn run_git_in_dir(
+    cwd: &std::path::Path,
+    args: &[&str],
+    timeout_secs: u64,
+) -> Result<(i32, String, String), String> {
+    let mut cmd_args = vec!["-C", cwd.to_str().unwrap_or(".")];
+    cmd_args.extend_from_slice(args);
+    run_git_with_timeout(&cmd_args, timeout_secs)
+}
+
+/// Testable entry point: runs finalize-commit, then refreshes the CI sentinel
+/// when pull did not introduce new content (pull_merged == false).
+///
+/// `cwd` and `root` are passed explicitly so integration tests can avoid
+/// `set_current_dir` (which is process-wide and races with parallel tests).
+/// Returns Ok(result_json) on success, Err(message) on infrastructure errors.
+pub fn run_impl(
+    args: &Args,
+    cwd: &std::path::Path,
+    root: &std::path::Path,
+) -> Result<Value, String> {
     if args.message_file.is_empty() || args.branch.is_empty() {
-        json_error(
-            "Usage: bin/flow finalize-commit <message-file> <branch>",
-            &[("step", json!("args"))],
-        );
-        std::process::exit(1);
+        return Err("Usage: bin/flow finalize-commit <message-file> <branch>".to_string());
     }
-    let result = finalize_commit(&args.message_file, &args.branch);
-    println!("{}", result);
-    if result["status"] != "ok" {
-        std::process::exit(1);
+
+    let cwd_owned = cwd.to_path_buf();
+    let git = |git_args: &[&str], timeout: u64| -> Result<(i32, String, String), String> {
+        run_git_in_dir(&cwd_owned, git_args, timeout)
+    };
+
+    let result = finalize_commit_inner(&args.message_file, &args.branch, &git);
+
+    // Refresh sentinel when commit succeeded and pull didn't merge new content.
+    if result["status"] == "ok" && result.get("pull_merged") == Some(&json!(false)) {
+        let snapshot = crate::ci::tree_snapshot(cwd, None);
+        let sentinel = crate::ci::sentinel_path(root, &args.branch);
+        // Best-effort write — sentinel refresh is informational, not gating.
+        let _ = fs::write(&sentinel, &snapshot);
+    }
+
+    Ok(result)
+}
+
+pub fn run(args: Args) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let root = crate::git::project_root();
+    match run_impl(&args, &cwd, &root) {
+        Err(msg) => {
+            json_error(&msg, &[("step", json!("args"))]);
+            std::process::exit(1);
+        }
+        Ok(result) => {
+            println!("{}", result);
+            if result["status"] != "ok" {
+                std::process::exit(1);
+            }
+        }
     }
 }
 
@@ -581,5 +628,184 @@ mod tests {
         assert_eq!(result["status"], "ok");
         assert_eq!(result["sha"], "");
         assert_eq!(result["pull_merged"], true);
+    }
+
+    // --- Integration tests for run_impl sentinel refresh ---
+
+    /// Set up a bare remote + clone with a passing bin/ci script and .flow-states dir.
+    /// Returns (clone_dir, bare_dir) as TempDirs that must be kept alive.
+    fn setup_integration_repo() -> (tempfile::TempDir, tempfile::TempDir) {
+        let bare_dir = tempfile::tempdir().unwrap();
+        let clone_dir = tempfile::tempdir().unwrap();
+
+        // Create bare remote
+        Command::new("git")
+            .args(["init", "--bare"])
+            .arg(bare_dir.path())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        // Clone it
+        Command::new("git")
+            .args(["clone"])
+            .arg(bare_dir.path())
+            .arg(clone_dir.path())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        // Configure git user in clone
+        Command::new("git")
+            .args(["-C", clone_dir.path().to_str().unwrap(), "config", "user.email", "test@test.com"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone_dir.path().to_str().unwrap(), "config", "user.name", "Test"])
+            .output()
+            .unwrap();
+
+        // Create .flow-states dir (gitignored, as in real FLOW projects)
+        let flow_states = clone_dir.path().join(".flow-states");
+        fs::create_dir_all(&flow_states).unwrap();
+        let gitignore = clone_dir.path().join(".gitignore");
+        fs::write(&gitignore, ".flow-states/\n").unwrap();
+
+        // Create an initial commit so the branch exists
+        let readme = clone_dir.path().join("README.md");
+        fs::write(&readme, "# Test\n").unwrap();
+        Command::new("git")
+            .args(["-C", clone_dir.path().to_str().unwrap(), "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone_dir.path().to_str().unwrap(), "commit", "-m", "Initial commit"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone_dir.path().to_str().unwrap(), "push", "-u", "origin", "main"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        (clone_dir, bare_dir)
+    }
+
+    #[test]
+    fn run_impl_refreshes_sentinel_after_commit() {
+        let (clone_dir, _bare_dir) = setup_integration_repo();
+        let clone_path = clone_dir.path().to_str().unwrap().to_string();
+
+        // Create a file to commit
+        let src = clone_dir.path().join("src.rs");
+        fs::write(&src, "fn main() {}\n").unwrap();
+        Command::new("git")
+            .args(["-C", &clone_path, "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        // Write commit message file (absolute path since git runs via -C)
+        let msg_path = clone_dir.path().join(".flow-commit-msg");
+        fs::write(&msg_path, "Add src.rs").unwrap();
+
+        let args = Args {
+            message_file: msg_path.to_str().unwrap().to_string(),
+            branch: "main".to_string(),
+        };
+
+        // Pass clone_dir as both cwd and root (standalone repo, not a worktree)
+        let result = run_impl(&args, clone_dir.path(), clone_dir.path()).unwrap();
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["pull_merged"], false);
+
+        // Sentinel should exist and match tree_snapshot for new HEAD
+        let sentinel = crate::ci::sentinel_path(clone_dir.path(), "main");
+        assert!(sentinel.exists(), "sentinel file should exist after clean commit");
+
+        let sentinel_content = fs::read_to_string(&sentinel).unwrap();
+        let expected_snapshot = crate::ci::tree_snapshot(clone_dir.path(), None);
+        assert_eq!(sentinel_content, expected_snapshot);
+    }
+
+    #[test]
+    fn run_impl_no_sentinel_refresh_when_pull_merges() {
+        let (clone_dir, bare_dir) = setup_integration_repo();
+        let clone_path = clone_dir.path().to_str().unwrap().to_string();
+
+        // Create a second clone to push a divergent commit
+        let clone2_dir = tempfile::tempdir().unwrap();
+        Command::new("git")
+            .args(["clone"])
+            .arg(bare_dir.path())
+            .arg(clone2_dir.path())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone2_dir.path().to_str().unwrap(), "config", "user.email", "other@test.com"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone2_dir.path().to_str().unwrap(), "config", "user.name", "Other"])
+            .output()
+            .unwrap();
+
+        // Push a different commit from clone2
+        let other_file = clone2_dir.path().join("other.txt");
+        fs::write(&other_file, "other content\n").unwrap();
+        Command::new("git")
+            .args(["-C", clone2_dir.path().to_str().unwrap(), "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone2_dir.path().to_str().unwrap(), "commit", "-m", "Other commit"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone2_dir.path().to_str().unwrap(), "push"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        // Now create a commit in clone1 (divergent from remote)
+        let src = clone_dir.path().join("local.txt");
+        fs::write(&src, "local content\n").unwrap();
+        Command::new("git")
+            .args(["-C", &clone_path, "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        let msg_path = clone_dir.path().join(".flow-commit-msg");
+        fs::write(&msg_path, "Add local.txt").unwrap();
+
+        let args = Args {
+            message_file: msg_path.to_str().unwrap().to_string(),
+            branch: "main".to_string(),
+        };
+
+        let result = run_impl(&args, clone_dir.path(), clone_dir.path()).unwrap();
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["pull_merged"], true);
+
+        // Sentinel should NOT exist — pull merged remote changes
+        let sentinel = crate::ci::sentinel_path(clone_dir.path(), "main");
+        assert!(!sentinel.exists(), "sentinel should not exist when pull merged");
     }
 }
