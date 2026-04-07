@@ -482,7 +482,7 @@ def test_checksum_version_invariant():
     assert "Checksum → Version Invariant" in claude_md, "CLAUDE.md must document the checksum → version invariant"
 
 
-def test_no_private_bin_flow_path_in_complete_modules():
+def test_complete_modules_no_private_bin_flow_path():
     """Tombstone: private bin_flow_path() hoisted to utils.rs in PR #926. Must not return."""
     modules = [
         "src/complete_preflight.rs",

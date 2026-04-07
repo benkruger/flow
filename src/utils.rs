@@ -78,7 +78,8 @@ pub fn plugin_root() -> Option<std::path::PathBuf> {
 /// Locate `bin/flow` via `current_exe` traversal, falling back to `"bin/flow"`.
 ///
 /// The binary lives at `<repo>/target/{release|debug}/flow-rs`, so three
-/// `.parent()` calls reach the repo root. Shared by complete_preflight,
+/// `.parent()` calls reach the repo root. Hoisted from four identical private
+/// copies to eliminate duplication. Shared by complete_preflight,
 /// complete_merge, complete_post_merge, and complete_fast.
 pub fn bin_flow_path() -> String {
     std::env::current_exe()
