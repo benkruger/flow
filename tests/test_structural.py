@@ -223,16 +223,25 @@ def test_conftest_phase_names_match_flow_phases():
 
 
 def test_every_script_has_a_test_file():
-    """Every shell script in hooks/ and executable in bin/ must have a test file."""
-    scripts = {}
+    """Every shell script in hooks/ and executable in bin/ must have a test file.
+
+    Accepts either Python (tests/test_<stem>.py) or Rust (tests/<stem>.rs) test files
+    to support incremental migration from Python to Rust.
+    """
+    missing = []
     for sh in sorted(HOOKS_DIR.glob("*.sh")):
         stem = sh.stem.replace("-", "_")
-        scripts[sh.relative_to(REPO_ROOT)] = REPO_ROOT / "tests" / f"test_{stem}.py"
+        py_test = REPO_ROOT / "tests" / f"test_{stem}.py"
+        rs_test = REPO_ROOT / "tests" / f"{stem}.rs"
+        if not py_test.exists() and not rs_test.exists():
+            missing.append(str(sh.relative_to(REPO_ROOT)))
     for f in sorted(BIN_DIR.iterdir()):
         if f.is_file() and os.access(f, os.X_OK):
             stem = f.stem.replace("-", "_")
-            scripts[f.relative_to(REPO_ROOT)] = REPO_ROOT / "tests" / f"test_bin_{stem}.py"
-    missing = [str(script) for script, test in scripts.items() if not test.exists()]
+            py_test = REPO_ROOT / "tests" / f"test_bin_{stem}.py"
+            rs_test = REPO_ROOT / "tests" / f"bin_{stem}.rs"
+            if not py_test.exists() and not rs_test.exists():
+                missing.append(str(f.relative_to(REPO_ROOT)))
     assert not missing, f"Scripts without test files: {', '.join(missing)}"
 
 
