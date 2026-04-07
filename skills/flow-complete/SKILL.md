@@ -44,8 +44,11 @@ If `--continue-step` was passed, this is a self-invocation from a
 previous step's commit. Skip the Announce banner and proceed directly
 to the Resume Check section.
 
-Run `git worktree list --porcelain` to find the project root (first
-`worktree` line) and `git branch --show-current` for the current branch.
+Run `git worktree list --porcelain`. Note the path on the first
+`worktree` line (this is the project root). Find the `worktree` entry
+whose path matches your current working directory — the
+`branch refs/heads/<name>` line in that entry is the current branch
+(strip the `refs/heads/` prefix).
 
 Use the Read tool to read `<project_root>/.flow-states/<branch>.json`
 to get the state data (`feature`, `branch`, `worktree`, `pr_number`,
@@ -55,10 +58,12 @@ to get the state data (`feature`, `branch`, `worktree`, `pr_number`,
 Run this entry check as your very first action. This gate never
 blocks — it records warnings for the confirmation step.
 
-1. Find the project root: run `git worktree list --porcelain` and note the
-   path on the first `worktree` line.
-2. Get the current branch: run `git branch --show-current`.
-3. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
+1. Run `git worktree list --porcelain`. Note the path on the first
+   `worktree` line (this is the project root). Find the `worktree` entry
+   whose path matches your current working directory — the
+   `branch refs/heads/<name>` line in that entry is the current branch
+   (strip the `refs/heads/` prefix).
+2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
    - If the file exists: extract `feature`, `branch`, `worktree`, `pr_number`,
      `pr_url`, and `cumulative_seconds`. Check `phases.flow-learn.status` — if
      not `"complete"`, record warning "Phase 5 not complete (status: <actual status>)."
