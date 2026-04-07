@@ -459,4 +459,131 @@ mod integration {
             "flow-plan should be marked complete after resumed path"
         );
     }
+
+    // --- gh-dependent tests ---
+
+    #[test]
+    fn test_standard_issue_not_decomposed() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("fix issue #42", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        // gh stub returns issue without Decomposed label
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r#"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":42,"title":"Fix the bug","body":"Something is broken.","labels":[]}'
+    exit 0
+fi
+exit 1
+"#,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "standard");
+        assert_eq!(json["issue_number"], 42);
+        assert_eq!(
+            json["issue_body"].as_str().unwrap(),
+            "Something is broken."
+        );
+    }
+
+    #[test]
+    fn test_standard_decomposed_no_plan_section() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("work on #99", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        // gh stub returns decomposed issue WITHOUT ## Implementation Plan
+        // Uses echo (not printf) so \n stays literal in JSON output
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":99,"title":"Refactor auth","body":"## Problem\n\nAuth is slow.","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(
+            json["path"], "standard",
+            "Decomposed issue without Implementation Plan should return standard path"
+        );
+        assert_eq!(json["issue_number"], 99);
+
+        // DAG file should have been created
+        let dag_path = dir.path().join(".flow-states/test-feature-dag.md");
+        assert!(
+            dag_path.exists(),
+            "DAG file should be created for decomposed issues"
+        );
+        let dag_content = fs::read_to_string(&dag_path).unwrap();
+        assert!(dag_content.contains("# Pre-Decomposed Analysis: Refactor auth"));
+    }
+
+    #[test]
+    fn test_extracted_decomposed_with_plan() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("work on #100", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        // gh stub returns decomposed issue WITH ## Implementation Plan and tasks
+        // Uses echo (not printf) so \n stays literal in JSON output
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":100,"title":"Add tests","body":"## Problem\n\nNeed tests.\n\n## Implementation Plan\n\n### Context\n\nWe need integration tests.\n\n### Tasks\n\n#### Task 1: Write helpers\n\nAdd test helpers.\n\n#### Task 2: Write tests\n\nAdd actual tests.\n\n## Files to Investigate\n\n- src/plan_extract.rs","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "extracted");
+        assert!(
+            json["plan_content"].as_str().unwrap().contains("Context"),
+            "plan_content should contain promoted headings"
+        );
+        assert_eq!(json["task_count"], 2);
+        assert!(json["formatted_time"].is_string());
+        assert!(json["continue_action"].is_string());
+
+        // Verify DAG and plan files created on disk
+        let dag_path = dir.path().join(".flow-states/test-feature-dag.md");
+        assert!(dag_path.exists(), "DAG file should exist");
+
+        let plan_path = dir.path().join(".flow-states/test-feature-plan.md");
+        assert!(plan_path.exists(), "Plan file should exist");
+
+        // Verify state file shows flow-plan complete
+        let updated_state: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            updated_state["phases"]["flow-plan"]["status"], "complete",
+            "flow-plan should be complete after extracted path"
+        );
+    }
 }
