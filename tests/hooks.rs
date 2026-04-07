@@ -403,7 +403,8 @@ fn test_stop_continue_empty_pending_no_output() {
     let branch = "test-feature";
     let state = json!({
         "branch": branch,
-        "_continue_pending": ""
+        "_continue_pending": "",
+        "_stop_instructed": true
     });
     setup_git_and_state(dir.path(), branch, &state);
 
@@ -488,7 +489,8 @@ fn test_stop_continue_stale_session_clears_and_captures_new() {
         "branch": branch,
         "session_id": "old-session",
         "_continue_pending": "simplify",
-        "_continue_context": "stale"
+        "_continue_context": "stale",
+        "_stop_instructed": true
     });
     setup_git_and_state(dir.path(), branch, &state);
 
@@ -530,7 +532,8 @@ fn test_stop_continue_sets_blocked_when_idle() {
     let branch = "test-feature";
     let state = json!({
         "branch": branch,
-        "current_phase": "flow-code"
+        "current_phase": "flow-code",
+        "_stop_instructed": true
     });
     setup_git_and_state(dir.path(), branch, &state);
 
