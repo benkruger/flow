@@ -33,7 +33,7 @@ Creates a git worktree at `.worktrees/<branch>`, makes an empty commit, pushes t
 
 Changes the working directory to the new worktree so all subsequent phases run in the isolated workspace.
 
-### 5. Finalize (`start-finalize`)
+### 5. Finalize (`phase-finalize`)
 
 Completes the phase transition, sends the initial Slack notification (if configured), and returns the formatted time and continue mode for the transition to Phase 2.
 

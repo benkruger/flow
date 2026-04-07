@@ -14,19 +14,20 @@ to write the same updates you could write now.
 - New CLI subcommand or changed state mutations → `CLAUDE.md`
   architecture sections, `docs/reference/flow-state-schema.md`
 
-## Scope Enumeration for Drift Fixes
+## Scope Enumeration
 
-When fixing documentation drift by replacing stale command or script
-names, grep all files for the old identifier before writing the plan:
+When renaming a command, replacing a subcommand, or fixing
+documentation drift, grep all files for the old identifier before
+writing the plan:
 
 ```text
 grep -r "<old-name>" docs/ skills/ tests/ CLAUDE.md .claude/rules/
 ```
 
 Every matching file is in-scope regardless of what the issue body
-names. Issues identify where the reporter noticed the drift — not
-every location where it exists. The Plan phase must enumerate the
-full scope, not echo the issue's file list.
+or plan names. This applies both reactively (fixing drift) and
+proactively (renaming a command as part of a feature). The Plan
+phase must enumerate the full scope, not echo the issue's file list.
 
 ## How to Apply
 

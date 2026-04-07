@@ -73,21 +73,33 @@ CI will fail if a skill directory does not start with `flow-`.
 
 ## State File Updates
 
-**On phase entry:**
+**On phase entry (Code, Code Review, Learn):**
+
+```bash
+bin/flow phase-enter --phase <name> --steps-total <n>
+```
+
+**On phase entry (Plan, Complete — legacy pattern):**
 
 ```bash
 bin/flow phase-transition --phase <name> --action enter
 ```
 
-**On phase exit:**
+**On phase exit (Start, Code, Code Review, Learn):**
+
+```bash
+bin/flow phase-finalize --phase <name> --branch <branch> --thread-ts <ts>
+```
+
+**On phase exit (Plan, Complete — legacy pattern):**
 
 ```bash
 bin/flow phase-transition --phase <name> --action complete
 ```
 
-The `phase-transition` script handles all timing, counters, and status
-fields. Skills must never compute timestamps, time differences, or
-counter increments — all computation goes through `bin/flow` commands.
+These commands handle all timing, counters, and status fields. Skills
+must never compute timestamps, time differences, or counter increments
+— all computation goes through `bin/flow` commands.
 
 For mid-phase timestamp fields (`scanned_at`, plan file path), use:
 
