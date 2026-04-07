@@ -29,12 +29,11 @@ tokenization. A mismatch between the rule prose and the code's
 matching logic misleads future readers trying to predict hook
 behavior without reading the source.
 
-When a rule references project-specific mode names ("FLOW-enabled",
-"Standalone mode", "FLOW phase"), either define the term
-parenthetically on first use or cite the skill file that defines
-it (e.g. "see `skills/flow-commit/SKILL.md` Round 2"). A rule
-file must stand alone for a reader who has not yet memorized the
-project vocabulary.
+When a rule references project-specific vocabulary ("FLOW phase",
+"phase gate", "state file"), either define the term parenthetically
+on first use or cite the file that defines it (e.g. "see
+`docs/reference/flow-state-schema.md`"). A rule file must stand
+alone for a reader who has not yet memorized the project vocabulary.
 
 When a rule explains a non-obvious design choice (e.g. "the
 suffix match is intentional"), the explanation should cover
