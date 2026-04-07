@@ -57,6 +57,7 @@ pub mod start_init;
 pub mod start_setup;
 pub mod start_workspace;
 pub mod state;
+pub mod tui;
 pub mod tui_data;
 pub mod render_pr_body;
 pub mod update_deps;
