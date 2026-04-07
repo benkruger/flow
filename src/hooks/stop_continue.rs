@@ -159,6 +159,10 @@ pub fn check_continue(hook_input: &Value, state_path: &Path) -> ContinueResult {
             if ssid != hsid {
                 state["_continue_pending"] = Value::String(String::new());
                 state["_continue_context"] = Value::String(String::new());
+                // Note: _stop_instructed is NOT cleared here. Clearing it
+                // would cause check_discussion_mode to re-fire in the same
+                // hook invocation (a non-user-initiated Stop). phase_enter()
+                // clears it when the new session enters its first phase.
                 decision = Some(format!(
                     "session mismatch (state={} hook={}), cleared pending={}",
                     ssid, hsid, pending
@@ -175,6 +179,11 @@ pub fn check_continue(hook_input: &Value, state_path: &Path) -> ContinueResult {
 
         state["_continue_pending"] = Value::String(String::new());
         state["_continue_context"] = Value::String(String::new());
+        // Clear discussion-mode flag so the next user interruption
+        // re-triggers the flow-note instruction.
+        if let Some(obj) = state.as_object_mut() {
+            obj.remove("_stop_instructed");
+        }
         should_block = true;
         skill = Some(pending.clone());
         context = ctx;
@@ -262,6 +271,71 @@ pub fn set_tab_color(root: &Path, branch: &str, state_path: &Path) {
     }
 }
 
+/// Block reason for discussion mode — instructs the model to invoke
+/// flow:flow-note before continuing and to wait for the user to finish.
+pub const DISCUSSION_BLOCK_REASON: &str = "\
+The user interrupted the session. Before continuing any work:
+
+1. Invoke /flow:flow-note to capture any correction or learning the user expressed.
+2. After the note is captured, respond to the user's message directly.
+3. Do NOT resume the previous skill or task until the user explicitly says to continue.
+
+Wait for the user — they are not done talking.";
+
+/// Check if this is the first user interruption during an active flow.
+///
+/// On the first Stop event where `_stop_instructed` is not already set
+/// (bool `true`), sets the flag and returns a blocking `ContinueResult`
+/// with `DISCUSSION_BLOCK_REASON` as context. On subsequent stops
+/// (flag already `true`), allows the stop through.
+///
+/// Non-bool values for `_stop_instructed` (e.g. string `"true"`) are
+/// treated as not-set — the hook re-blocks and corrects the flag to
+/// bool `true` (self-healing).
+///
+/// Returns a non-blocking result when the state file does not exist
+/// (no active flow).
+pub fn check_discussion_mode(state_path: &Path) -> ContinueResult {
+    if !state_path.exists() {
+        return ContinueResult {
+            should_block: false,
+            skill: None,
+            context: None,
+        };
+    }
+
+    let mut should_block = false;
+
+    let _ = mutate_state(state_path, |state| {
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
+        let already_instructed = state
+            .get("_stop_instructed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if already_instructed {
+            return;
+        }
+        state["_stop_instructed"] = json!(true);
+        should_block = true;
+    });
+
+    if should_block {
+        ContinueResult {
+            should_block: true,
+            skill: Some("discussion".to_string()),
+            context: Some(DISCUSSION_BLOCK_REASON.to_string()),
+        }
+    } else {
+        ContinueResult {
+            should_block: false,
+            skill: None,
+            context: None,
+        }
+    }
+}
+
 /// Format the Stop-hook block output JSON.
 ///
 /// Returns `{"decision": "block", "reason": "..."}` where `reason`
@@ -316,6 +390,16 @@ pub fn run() {
         }
     }
 
+    // Discussion mode: on the first user interruption during an active
+    // flow, block the stop and instruct the model to capture corrections
+    // via flow-note before continuing.
+    if !result.should_block {
+        let disc = check_discussion_mode(&state_path);
+        if disc.should_block {
+            result = disc;
+        }
+    }
+
     // Blocked flag: CLEAR when session is continuing (blocking),
     // SET when session is going idle (not blocking).
     if result.should_block {
@@ -328,7 +412,14 @@ pub fn run() {
 
     if result.should_block {
         let skill_name = result.skill.as_deref().unwrap_or("");
-        let output = format_block_output(skill_name, result.context.as_deref());
+        // Discussion mode uses DISCUSSION_BLOCK_REASON directly as the
+        // reason — not the "child skill returned" framing from
+        // format_block_output, which is designed for _continue_pending.
+        let output = if skill_name == "discussion" {
+            json!({"decision": "block", "reason": result.context.as_deref().unwrap_or(DISCUSSION_BLOCK_REASON)})
+        } else {
+            format_block_output(skill_name, result.context.as_deref())
+        };
         println!("{}", serde_json::to_string(&output).unwrap());
     }
 }
@@ -868,5 +959,128 @@ mod tests {
 
         let result = check_continue(&json!({"session_id": "abc"}), &path);
         assert!(result.should_block);
+    }
+
+    // --- check_discussion_mode ---
+
+    #[test]
+    fn test_discussion_mode_blocks_first_interrupt() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({"branch": "test", "current_phase": "flow-code"});
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_discussion_mode(&path);
+        assert!(result.should_block);
+    }
+
+    #[test]
+    fn test_discussion_mode_allows_second_interrupt() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({"branch": "test", "_stop_instructed": true});
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_discussion_mode(&path);
+        assert!(!result.should_block);
+    }
+
+    #[test]
+    fn test_discussion_mode_skips_no_state_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent.json");
+
+        let result = check_discussion_mode(&path);
+        assert!(!result.should_block);
+    }
+
+    #[test]
+    fn test_discussion_mode_block_reason_contains_flow_note() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({"branch": "test"});
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_discussion_mode(&path);
+        assert!(result.should_block);
+        let reason = DISCUSSION_BLOCK_REASON;
+        assert!(reason.contains("flow:flow-note"), "block reason must mention flow:flow-note");
+    }
+
+    #[test]
+    fn test_discussion_mode_sets_flag_in_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({"branch": "test"});
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_discussion_mode(&path);
+        assert!(result.should_block);
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(state["_stop_instructed"], json!(true));
+    }
+
+    #[test]
+    fn test_discussion_mode_non_bool_flag_self_heals() {
+        // String "true" is not a bool — as_bool() returns None,
+        // so the hook treats it as not-set and re-blocks, setting
+        // the flag to the correct bool true.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({"branch": "test", "_stop_instructed": "true"});
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_discussion_mode(&path);
+        assert!(result.should_block, "non-bool flag must be treated as not-set");
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(state["_stop_instructed"], json!(true), "flag must be corrected to bool");
+    }
+
+    #[test]
+    fn test_discussion_mode_clears_blocked() {
+        // When discussion mode blocks, the run() control flow hits
+        // clear_blocked (not set_blocked_idle). Verify by simulating
+        // the sequence: set _blocked, then run check_discussion_mode
+        // followed by clear_blocked — _blocked must be absent.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({"branch": "test", "_blocked": "2024-01-01T00:00:00"});
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let disc = check_discussion_mode(&path);
+        assert!(disc.should_block);
+
+        // Simulate run()'s blocked flag branch
+        clear_blocked(&path);
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(state.get("_blocked").is_none(), "_blocked must be cleared when discussion mode blocks");
+    }
+
+    #[test]
+    fn test_discussion_mode_cleared_on_continue_pending() {
+        // When check_continue consumes _continue_pending, it must also
+        // clear _stop_instructed so the next user interruption re-triggers
+        // discussion mode.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({
+            "branch": "test",
+            "_continue_pending": "commit",
+            "_continue_context": "Do the thing",
+            "_stop_instructed": true
+        });
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_continue(&json!({}), &path);
+        assert!(result.should_block);
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(
+            state.get("_stop_instructed").is_none(),
+            "_stop_instructed must be cleared when _continue_pending is consumed"
+        );
     }
 }
