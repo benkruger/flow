@@ -396,6 +396,14 @@ that fire from any shell (Stop, StopFailure, PostCompact) must
 use `resolve_branch()` because the user's shell cwd may not match
 the active flow branch.
 
+Interactive commands that mutate state files (`append-note`,
+`add-issue`, `add-notification`) must call `is_foreign_branch()`
+after `resolve_branch()` to reject writes when the resolved branch
+was obtained via singleton fallback and doesn't match the current
+git HEAD. This prevents cross-feature state corruption when multiple
+flows are active. Hooks must NOT use this guard — they intentionally
+rely on the singleton fallback to find the active flow from any shell.
+
 CLI subcommands that resolve a branch from an explicit cwd (e.g.
 `bin/flow ci` running in a worktree) must use `git::resolve_branch_in(
 override, cwd, root)` — the cwd-scoped variant — rather than
