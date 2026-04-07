@@ -482,6 +482,32 @@ def test_checksum_version_invariant():
     assert "Checksum → Version Invariant" in claude_md, "CLAUDE.md must document the checksum → version invariant"
 
 
+def test_no_bump_version_py():
+    """Tombstone: ported to Rust in PR #930. Must not return."""
+    assert not (REPO_ROOT / "lib" / "bump-version.py").exists(), "lib/bump-version.py was ported to src/bump_version.rs"
+
+
+def test_no_extract_release_notes_py():
+    """Tombstone: ported to Rust in PR #930. Must not return."""
+    assert not (REPO_ROOT / "lib" / "extract-release-notes.py").exists(), (
+        "lib/extract-release-notes.py was ported to src/extract_release_notes.rs"
+    )
+
+
+def test_no_test_bump_version_py():
+    """Tombstone: ported to Rust in PR #930. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_bump_version.py").exists(), (
+        "tests/test_bump_version.py was ported to tests/bump_version.rs"
+    )
+
+
+def test_no_test_extract_release_py():
+    """Tombstone: ported to Rust in PR #930. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_extract_release.py").exists(), (
+        "tests/test_extract_release.py was ported to tests/extract_release_notes.rs"
+    )
+
+
 def test_no_orchestrate_state_python():
     """Tombstone: ported to Rust in PR #928. Must not return."""
     assert not (REPO_ROOT / "lib" / "orchestrate-state.py").exists(), (

@@ -7,6 +7,7 @@ use flow_rs::add_notification;
 use flow_rs::analyze_issues;
 use flow_rs::append_note;
 use flow_rs::auto_close_parent;
+use flow_rs::bump_version;
 use flow_rs::check_freshness;
 use flow_rs::check_phase::check_phase;
 use flow_rs::ci;
@@ -23,6 +24,7 @@ use flow_rs::create_dependencies;
 use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
 use flow_rs::detect_framework;
+use flow_rs::extract_release_notes;
 use flow_rs::finalize_commit;
 use flow_rs::format_complete_summary;
 use flow_rs::format_issues_summary;
@@ -68,6 +70,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Bump the FLOW plugin version across all files.
+    #[command(name = "bump-version")]
+    BumpVersion(bump_version::Args),
+
     /// Pre-merge freshness check: fetch main, verify branch is up-to-date.
     #[command(name = "check-freshness")]
     CheckFreshness(check_freshness::Args),
@@ -149,6 +155,10 @@ enum Commands {
     /// Detect supported frameworks in a project directory.
     #[command(name = "detect-framework")]
     DetectFramework(detect_framework::Args),
+
+    /// Extract release notes for a specific version from RELEASE-NOTES.md.
+    #[command(name = "extract-release-notes")]
+    ExtractReleaseNotes(extract_release_notes::Args),
 
     /// Verify /flow:flow-prime has been run with a matching version.
     #[command(name = "prime-check")]
@@ -409,6 +419,7 @@ fn main() {
             eprintln!("flow-rs: no command specified. Use --help for usage.");
             process::exit(1);
         }
+        Some(Commands::BumpVersion(args)) => bump_version::run(args),
         Some(Commands::CheckFreshness(args)) => check_freshness::run(args),
         Some(Commands::CheckPhase { required, branch }) => {
             run_check_phase(&required, branch.as_deref());
@@ -443,6 +454,7 @@ fn main() {
         Some(Commands::CreateMilestone(args)) => create_milestone::run(args),
         Some(Commands::CreateDependencies(args)) => create_dependencies::run(args),
         Some(Commands::DetectFramework(args)) => detect_framework::run(args),
+        Some(Commands::ExtractReleaseNotes(args)) => extract_release_notes::run(args),
         Some(Commands::PrimeCheck(args)) => prime_check::run(args),
         Some(Commands::PrimeProject(args)) => prime_project::run(args),
         Some(Commands::PrimeSetup(args)) => prime_setup::run(args),
