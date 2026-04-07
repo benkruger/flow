@@ -522,6 +522,20 @@ def test_no_orchestrate_report_python():
     )
 
 
+def test_no_python_tui():
+    """Tombstone: ported to Rust (src/tui.rs) in PR #941. Must not return."""
+    assert not (REPO_ROOT / "lib" / "tui.py").exists(), (
+        "lib/tui.py was ported to Rust (src/tui.rs) and must not be re-added"
+    )
+
+
+def test_no_python_test_tui():
+    """Tombstone: ported to Rust (tests/tui.rs) in PR #941. Must not return."""
+    assert not (REPO_ROOT / "tests" / "test_tui.py").exists(), (
+        "tests/test_tui.py was ported to Rust (tests/tui.rs) and must not be re-added"
+    )
+
+
 def test_complete_modules_no_private_bin_flow_path():
     """Tombstone: private bin_flow_path() hoisted to utils.rs in PR #926. Must not return."""
     modules = [
