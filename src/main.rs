@@ -376,6 +376,10 @@ enum Commands {
     #[command(name = "orchestrate-state")]
     OrchestrateState(orchestrate_state::Args),
 
+    /// Interactive TUI for viewing and managing active FLOW features.
+    #[command(name = "tui")]
+    Tui,
+
     /// TUI data layer: load flows, orchestration, account metrics as JSON.
     #[command(name = "tui-data")]
     TuiData {
@@ -620,6 +624,15 @@ fn main() {
         }
         Some(Commands::OrchestrateReport(args)) => orchestrate_report::run(args),
         Some(Commands::OrchestrateState(args)) => orchestrate_state::run(args),
+        Some(Commands::Tui) => {
+            let root = project_root();
+            let version = flow_rs::utils::read_version();
+            let repo = flow_rs::github::detect_repo(Some(&root));
+            if let Err(e) = flow_rs::tui::run(root, version, repo) {
+                eprintln!("TUI error: {}", e);
+                process::exit(1);
+            }
+        }
         Some(Commands::TuiData {
             load_all_flows,
             load_orchestration,

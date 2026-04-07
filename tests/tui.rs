@@ -1,0 +1,705 @@
+//! Tests for the interactive TUI (src/tui.rs).
+//!
+//! Uses ratatui's TestBackend for rendering assertions and
+//! direct state manipulation for input handling tests.
+
+use std::path::PathBuf;
+
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+use ratatui::backend::TestBackend;
+use ratatui::Terminal;
+
+use flow_rs::tui::{TuiApp, View};
+use flow_rs::tui_data::{
+    AccountMetrics, FlowSummary, IssueSummary, OrchestrationItem, OrchestrationSummary,
+    TimelineEntry,
+};
+
+// --- Helpers ---
+
+fn make_app() -> TuiApp {
+    TuiApp::new(
+        PathBuf::from("/tmp/test"),
+        "1.0.0".to_string(),
+        Some("test/repo".to_string()),
+    )
+}
+
+fn key(code: KeyCode) -> KeyEvent {
+    KeyEvent {
+        code,
+        modifiers: KeyModifiers::NONE,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    }
+}
+
+fn make_flow(feature: &str, phase: &str, phase_num: usize) -> FlowSummary {
+    FlowSummary {
+        feature: feature.to_string(),
+        branch: feature.to_lowercase().replace(' ', "-"),
+        worktree: format!(".worktrees/{}", feature.to_lowercase().replace(' ', "-")),
+        pr_number: Some(100),
+        pr_url: Some("https://github.com/test/repo/pull/100".to_string()),
+        phase_number: phase_num,
+        phase_name: phase.to_string(),
+        elapsed: "5m".to_string(),
+        code_task: 0,
+        diff_stats: None,
+        notes_count: 0,
+        issues_count: 0,
+        issues: vec![],
+        blocked: false,
+        issue_numbers: vec![42],
+        plan_path: None,
+        annotation: String::new(),
+        phase_elapsed: "2m".to_string(),
+        timeline: vec![
+            TimelineEntry {
+                key: "flow-start".to_string(),
+                name: "Start".to_string(),
+                number: 1,
+                status: "complete".to_string(),
+                time: "1m".to_string(),
+                annotation: String::new(),
+            },
+            TimelineEntry {
+                key: "flow-plan".to_string(),
+                name: "Plan".to_string(),
+                number: 2,
+                status: "in_progress".to_string(),
+                time: "2m".to_string(),
+                annotation: "step 3 of 4".to_string(),
+            },
+            TimelineEntry {
+                key: "flow-code".to_string(),
+                name: "Code".to_string(),
+                number: 3,
+                status: "pending".to_string(),
+                time: String::new(),
+                annotation: String::new(),
+            },
+        ],
+        state: serde_json::json!({"branch": feature.to_lowercase().replace(' ', "-"), "repo": "test/repo"}),
+    }
+}
+
+fn render_to_string(app: &TuiApp, width: u16, height: u16) -> String {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| app.render(f))
+        .unwrap();
+    let buffer = terminal.backend().buffer().clone();
+    let mut lines = Vec::new();
+    for y in 0..height {
+        let mut line = String::new();
+        for x in 0..width {
+            let cell = &buffer[(x, y)];
+            line.push_str(cell.symbol());
+        }
+        lines.push(line.trim_end().to_string());
+    }
+    lines.join("\n")
+}
+
+// --- TuiApp initialization ---
+
+#[test]
+fn test_tui_app_default_state() {
+    let app = make_app();
+    assert_eq!(app.selected, 0);
+    assert_eq!(app.view, View::List);
+    assert!(app.running);
+    assert!(!app.confirming_abort);
+    assert_eq!(app.active_tab, 0);
+    assert_eq!(app.orch_selected, 0);
+    assert_eq!(app.issue_selected, 0);
+}
+
+#[test]
+fn test_tui_app_repo_name_extracted() {
+    let app = make_app();
+    assert_eq!(app.repo_name.as_deref(), Some("repo"));
+}
+
+#[test]
+fn test_tui_app_repo_name_none() {
+    let app = TuiApp::new(PathBuf::from("/tmp"), "1.0.0".to_string(), None);
+    assert!(app.repo_name.is_none());
+}
+
+// --- List view rendering ---
+
+#[test]
+fn test_render_empty_list() {
+    let app = make_app();
+    let output = render_to_string(&app, 80, 40);
+    assert!(output.contains("No active flows."));
+    assert!(output.contains("/flow:flow-start"));
+}
+
+#[test]
+fn test_render_header_shows_version() {
+    let app = make_app();
+    let output = render_to_string(&app, 80, 40);
+    assert!(output.contains("FLOW v1.0.0"));
+}
+
+#[test]
+fn test_render_header_shows_repo() {
+    let app = make_app();
+    let output = render_to_string(&app, 80, 40);
+    assert!(output.contains("REPO"));
+}
+
+#[test]
+fn test_render_tab_bar() {
+    let app = make_app();
+    let output = render_to_string(&app, 80, 40);
+    assert!(output.contains("Active Flows (0)"));
+    assert!(output.contains("Orchestration"));
+}
+
+#[test]
+fn test_render_list_with_flows() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("Invoice Export", "Code", 3)];
+    let output = render_to_string(&app, 120, 40);
+    assert!(output.contains("Invoice Export"));
+    assert!(output.contains("Code"));
+    assert!(output.contains("5m"));
+}
+
+#[test]
+fn test_render_list_selected_marker() {
+    let mut app = make_app();
+    app.flows = vec![
+        make_flow("Feature A", "Code", 3),
+        make_flow("Feature B", "Plan", 2),
+    ];
+    app.selected = 0;
+    let output = render_to_string(&app, 120, 40);
+    assert!(output.contains("\u{25b8}"));
+}
+
+#[test]
+fn test_render_list_blocked_shows_blocked() {
+    let mut app = make_app();
+    let mut flow = make_flow("Blocked Feature", "Code", 3);
+    flow.blocked = true;
+    app.flows = vec![flow];
+    let output = render_to_string(&app, 120, 40);
+    assert!(output.contains("Blocked"));
+}
+
+#[test]
+fn test_render_detail_panel_phases() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("Test Feature", "Plan", 2)];
+    let output = render_to_string(&app, 80, 40);
+    assert!(output.contains("[x]"));
+    assert!(output.contains("[>]"));
+    assert!(output.contains("[ ]"));
+}
+
+#[test]
+fn test_render_detail_panel_with_issues() {
+    let mut app = make_app();
+    let mut flow = make_flow("Test Feature", "Code", 3);
+    flow.issues = vec![IssueSummary {
+        label: "Bug".to_string(),
+        title: "Fix login".to_string(),
+        url: "https://github.com/test/repo/issues/1".to_string(),
+        ref_str: "#1".to_string(),
+        phase_name: "Code".to_string(),
+    }];
+    flow.issues_count = 1;
+    app.flows = vec![flow];
+    let output = render_to_string(&app, 80, 40);
+    assert!(output.contains("#1"));
+    assert!(output.contains("Fix login"));
+}
+
+#[test]
+fn test_render_footer_keybindings() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("Test", "Code", 3)];
+    // Footer is very wide — use 160 cols to fit all keybindings
+    let output = render_to_string(&app, 160, 40);
+    assert!(output.contains("[q] Quit"));
+    assert!(output.contains("[p] PR"));
+}
+
+#[test]
+fn test_render_header_metrics() {
+    let mut app = make_app();
+    app.metrics = AccountMetrics {
+        cost_monthly: "12.50".to_string(),
+        rl_5h: Some(45),
+        rl_7d: Some(20),
+        stale: false,
+    };
+    let output = render_to_string(&app, 120, 40);
+    assert!(output.contains("$12.50/mo"));
+    assert!(output.contains("5h:45%"));
+    assert!(output.contains("7d:20%"));
+}
+
+#[test]
+fn test_render_column_headers() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("Test", "Code", 3)];
+    let output = render_to_string(&app, 120, 40);
+    assert!(output.contains("Feature"));
+    assert!(output.contains("Phase"));
+    assert!(output.contains("Total"));
+}
+
+// --- Orchestration view ---
+
+#[test]
+fn test_render_orch_no_state() {
+    let mut app = make_app();
+    app.active_tab = 1;
+    let output = render_to_string(&app, 80, 40);
+    assert!(output.contains("No orchestration running."));
+}
+
+#[test]
+fn test_render_orch_with_queue() {
+    let mut app = make_app();
+    app.active_tab = 1;
+    app.orch_data = Some(OrchestrationSummary {
+        elapsed: "10m".to_string(),
+        completed_count: 1,
+        failed_count: 0,
+        total: 3,
+        is_running: true,
+        items: vec![
+            OrchestrationItem {
+                icon: "\u{2713}".to_string(),
+                issue_number: Some(10),
+                title: "First task".to_string(),
+                elapsed: "3m".to_string(),
+                pr_url: Some("https://github.com/test/repo/pull/50".to_string()),
+                reason: None,
+                status: "completed".to_string(),
+            },
+            OrchestrationItem {
+                icon: "\u{25b6}".to_string(),
+                issue_number: Some(11),
+                title: "Second task".to_string(),
+                elapsed: "2m".to_string(),
+                pr_url: None,
+                reason: None,
+                status: "in_progress".to_string(),
+            },
+        ],
+    });
+    let output = render_to_string(&app, 120, 40);
+    assert!(output.contains("Elapsed: 10m"));
+    assert!(output.contains("#10"));
+    assert!(output.contains("First task"));
+    assert!(output.contains("#11"));
+}
+
+#[test]
+fn test_render_orch_tab_count() {
+    let mut app = make_app();
+    app.orch_data = Some(OrchestrationSummary {
+        elapsed: "5m".to_string(),
+        completed_count: 2,
+        failed_count: 1,
+        total: 5,
+        is_running: true,
+        items: vec![],
+    });
+    let output = render_to_string(&app, 120, 40);
+    assert!(output.contains("Orchestration (3/5)"));
+}
+
+// --- Sub-views ---
+
+#[test]
+fn test_render_log_view_empty() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("Test", "Code", 3)];
+    app.view = View::Log;
+    let output = render_to_string(&app, 80, 40);
+    assert!(output.contains("No log entries."));
+    assert!(output.contains("[Esc] Back"));
+}
+
+#[test]
+fn test_render_issues_view_empty() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("Test", "Code", 3)];
+    app.view = View::Issues;
+    let output = render_to_string(&app, 80, 40);
+    assert!(output.contains("No issues filed."));
+}
+
+#[test]
+fn test_render_issues_view_with_entries() {
+    let mut app = make_app();
+    let mut flow = make_flow("Test", "Code", 3);
+    flow.issues = vec![IssueSummary {
+        label: "Tech Debt".to_string(),
+        title: "Refactor auth".to_string(),
+        url: "https://github.com/test/repo/issues/5".to_string(),
+        ref_str: "#5".to_string(),
+        phase_name: "Code Review".to_string(),
+    }];
+    app.flows = vec![flow];
+    app.view = View::Issues;
+    let output = render_to_string(&app, 120, 40);
+    assert!(output.contains("Tech Debt"));
+    assert!(output.contains("#5"));
+    assert!(output.contains("Refactor auth"));
+}
+
+#[test]
+fn test_render_tasks_view_no_plan() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("Test", "Code", 3)];
+    app.view = View::Tasks;
+    let output = render_to_string(&app, 80, 40);
+    assert!(output.contains("No plan file."));
+}
+
+// --- Input handling ---
+
+#[test]
+fn test_input_quit() {
+    let mut app = make_app();
+    app.handle_key(key(KeyCode::Char('q')));
+    assert!(!app.running);
+}
+
+#[test]
+fn test_input_navigate_up_down() {
+    let mut app = make_app();
+    app.flows = vec![
+        make_flow("A", "Code", 3),
+        make_flow("B", "Plan", 2),
+        make_flow("C", "Start", 1),
+    ];
+    assert_eq!(app.selected, 0);
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(app.selected, 1);
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(app.selected, 2);
+    app.handle_key(key(KeyCode::Up));
+    assert_eq!(app.selected, 1);
+}
+
+#[test]
+fn test_input_navigate_bounds() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.handle_key(key(KeyCode::Up));
+    assert_eq!(app.selected, 0);
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(app.selected, 0); // only 1 flow, can't go past
+}
+
+#[test]
+fn test_input_tab_switch() {
+    let mut app = make_app();
+    assert_eq!(app.active_tab, 0);
+    app.handle_key(key(KeyCode::Right));
+    assert_eq!(app.active_tab, 1);
+    app.handle_key(key(KeyCode::Left));
+    assert_eq!(app.active_tab, 0);
+}
+
+#[test]
+fn test_input_tab_bounds() {
+    let mut app = make_app();
+    app.handle_key(key(KeyCode::Left));
+    assert_eq!(app.active_tab, 0); // can't go below 0
+    app.handle_key(key(KeyCode::Right));
+    app.handle_key(key(KeyCode::Right));
+    assert_eq!(app.active_tab, 1); // can't go above 1
+}
+
+#[test]
+fn test_input_log_key() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.handle_key(key(KeyCode::Char('l')));
+    assert_eq!(app.view, View::Log);
+}
+
+#[test]
+fn test_input_issues_key() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.handle_key(key(KeyCode::Char('i')));
+    assert_eq!(app.view, View::Issues);
+}
+
+#[test]
+fn test_input_tasks_key() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.handle_key(key(KeyCode::Char('t')));
+    assert_eq!(app.view, View::Tasks);
+}
+
+#[test]
+fn test_input_escape_returns_to_list() {
+    let mut app = make_app();
+    app.view = View::Log;
+    app.handle_key(key(KeyCode::Esc));
+    assert_eq!(app.view, View::List);
+
+    app.view = View::Issues;
+    app.handle_key(key(KeyCode::Esc));
+    assert_eq!(app.view, View::List);
+
+    app.view = View::Tasks;
+    app.handle_key(key(KeyCode::Esc));
+    assert_eq!(app.view, View::List);
+}
+
+#[test]
+fn test_input_abort_start() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.handle_key(key(KeyCode::Char('a')));
+    assert!(app.confirming_abort);
+}
+
+#[test]
+fn test_input_abort_confirm_no() {
+    let mut app = make_app();
+    app.confirming_abort = true;
+    app.handle_key(key(KeyCode::Char('n')));
+    assert!(!app.confirming_abort);
+}
+
+#[test]
+fn test_input_orch_navigate() {
+    let mut app = make_app();
+    app.active_tab = 1;
+    app.orch_data = Some(OrchestrationSummary {
+        elapsed: "5m".to_string(),
+        completed_count: 0,
+        failed_count: 0,
+        total: 3,
+        is_running: true,
+        items: vec![
+            OrchestrationItem {
+                icon: "\u{00b7}".to_string(),
+                issue_number: Some(1),
+                title: "A".to_string(),
+                elapsed: String::new(),
+                pr_url: None,
+                reason: None,
+                status: "pending".to_string(),
+            },
+            OrchestrationItem {
+                icon: "\u{00b7}".to_string(),
+                issue_number: Some(2),
+                title: "B".to_string(),
+                elapsed: String::new(),
+                pr_url: None,
+                reason: None,
+                status: "pending".to_string(),
+            },
+        ],
+    });
+    assert_eq!(app.orch_selected, 0);
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(app.orch_selected, 1);
+    app.handle_key(key(KeyCode::Up));
+    assert_eq!(app.orch_selected, 0);
+}
+
+#[test]
+fn test_input_issues_navigate() {
+    let mut app = make_app();
+    let mut flow = make_flow("A", "Code", 3);
+    flow.issues = vec![
+        IssueSummary {
+            label: "Bug".to_string(),
+            title: "Fix A".to_string(),
+            url: String::new(),
+            ref_str: "#1".to_string(),
+            phase_name: "Code".to_string(),
+        },
+        IssueSummary {
+            label: "Bug".to_string(),
+            title: "Fix B".to_string(),
+            url: String::new(),
+            ref_str: "#2".to_string(),
+            phase_name: "Code".to_string(),
+        },
+    ];
+    app.flows = vec![flow];
+    app.view = View::Issues;
+    assert_eq!(app.issue_selected, 0);
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(app.issue_selected, 1);
+    app.handle_key(key(KeyCode::Up));
+    assert_eq!(app.issue_selected, 0);
+}
+
+#[test]
+fn test_render_list_no_annotation_when_empty() {
+    let mut app = make_app();
+    let mut flow = make_flow("Test", "Code", 3);
+    flow.annotation = String::new();
+    app.flows = vec![flow];
+    let output = render_to_string(&app, 120, 40);
+    // Phase column should show "3: Code" without parentheses
+    assert!(output.contains("3: Code"));
+    assert!(!output.contains("3: Code ("));
+}
+
+#[test]
+fn test_render_list_with_annotation() {
+    let mut app = make_app();
+    let mut flow = make_flow("Test", "Code", 3);
+    flow.annotation = "task 2 of 5".to_string();
+    app.flows = vec![flow];
+    let output = render_to_string(&app, 120, 40);
+    assert!(output.contains("3: Code (task 2 of 5)"));
+}
+
+#[test]
+fn test_render_detail_panel_blocked_uses_red_marker() {
+    let mut app = make_app();
+    let mut flow = make_flow("Test", "Code", 3);
+    flow.blocked = true;
+    // Set the in-progress phase timeline entry
+    flow.timeline[1].status = "in_progress".to_string();
+    app.flows = vec![flow];
+    // We can't easily check color in text output, but we can check the [>] marker exists
+    let output = render_to_string(&app, 80, 40);
+    assert!(output.contains("[>]"));
+}
+
+#[test]
+fn test_render_header_metrics_stale() {
+    let mut app = make_app();
+    app.metrics = AccountMetrics {
+        cost_monthly: "8.00".to_string(),
+        rl_5h: None,
+        rl_7d: None,
+        stale: true,
+    };
+    let output = render_to_string(&app, 120, 40);
+    assert!(output.contains("$8.00/mo"));
+    assert!(output.contains("5h:--  7d:--"));
+}
+
+#[test]
+fn test_render_orch_detail_failed_reason() {
+    let mut app = make_app();
+    app.active_tab = 1;
+    app.orch_data = Some(OrchestrationSummary {
+        elapsed: "5m".to_string(),
+        completed_count: 0,
+        failed_count: 1,
+        total: 1,
+        is_running: false,
+        items: vec![OrchestrationItem {
+            icon: "\u{2717}".to_string(),
+            issue_number: Some(10),
+            title: "Failed task".to_string(),
+            elapsed: "1m".to_string(),
+            pr_url: None,
+            reason: Some("CI failed".to_string()),
+            status: "failed".to_string(),
+        }],
+    });
+    let output = render_to_string(&app, 120, 40);
+    assert!(output.contains("Reason: CI failed"));
+}
+
+#[test]
+fn test_render_orch_detail_completed_pr() {
+    let mut app = make_app();
+    app.active_tab = 1;
+    app.orch_data = Some(OrchestrationSummary {
+        elapsed: "5m".to_string(),
+        completed_count: 1,
+        failed_count: 0,
+        total: 1,
+        is_running: false,
+        items: vec![OrchestrationItem {
+            icon: "\u{2713}".to_string(),
+            issue_number: Some(10),
+            title: "Done task".to_string(),
+            elapsed: "3m".to_string(),
+            pr_url: Some("https://github.com/test/repo/pull/99".to_string()),
+            reason: None,
+            status: "completed".to_string(),
+        }],
+    });
+    let output = render_to_string(&app, 120, 40);
+    assert!(output.contains("PR: https://github.com/test/repo/pull/99"));
+}
+
+#[test]
+fn test_render_issues_view_selected_marker() {
+    let mut app = make_app();
+    let mut flow = make_flow("Test", "Code", 3);
+    flow.issues = vec![
+        IssueSummary {
+            label: "Bug".to_string(),
+            title: "Issue Alpha".to_string(),
+            url: String::new(),
+            ref_str: "#1".to_string(),
+            phase_name: "Code".to_string(),
+        },
+        IssueSummary {
+            label: "Bug".to_string(),
+            title: "Issue Beta".to_string(),
+            url: String::new(),
+            ref_str: "#2".to_string(),
+            phase_name: "Code".to_string(),
+        },
+    ];
+    app.flows = vec![flow];
+    app.view = View::Issues;
+    app.issue_selected = 1;
+    let output = render_to_string(&app, 120, 40);
+    // The selected marker ▸ should appear on the line with Issue Beta
+    let lines: Vec<&str> = output.lines().collect();
+    let beta_line = lines.iter().find(|l| l.contains("Issue Beta"));
+    assert!(beta_line.is_some(), "Should find Issue Beta line");
+    assert!(
+        beta_line.unwrap().contains("\u{25b8}"),
+        "Selected issue should have ▸ marker"
+    );
+    // First issue should NOT have the marker
+    let alpha_line = lines.iter().find(|l| l.contains("Issue Alpha"));
+    assert!(alpha_line.is_some(), "Should find Issue Alpha line");
+    assert!(
+        !alpha_line.unwrap().contains("\u{25b8}"),
+        "Non-selected issue should not have ▸ marker"
+    );
+}
+
+#[test]
+fn test_input_no_flows_list_noop() {
+    let mut app = make_app();
+    // With no flows, list input should be a no-op
+    app.handle_key(key(KeyCode::Up));
+    app.handle_key(key(KeyCode::Down));
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(app.selected, 0);
+    assert_eq!(app.view, View::List);
+}
+
+#[test]
+fn test_render_tab_bar_with_flows_count() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3), make_flow("B", "Plan", 2)];
+    let output = render_to_string(&app, 120, 40);
+    assert!(output.contains("Active Flows (2)"));
+}
