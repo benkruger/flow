@@ -640,9 +640,11 @@ mod tests {
         let bare_dir = tempfile::tempdir().unwrap();
         let clone_dir = tempfile::tempdir().unwrap();
 
-        // Create bare remote
+        // Create bare remote with explicit branch name — without --initial-branch,
+        // the default branch depends on the system git config (master vs main),
+        // causing test failures on CI runners where the default is master.
         Command::new("git")
-            .args(["init", "--bare"])
+            .args(["init", "--bare", "--initial-branch", "main"])
             .arg(bare_dir.path())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
