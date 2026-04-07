@@ -175,6 +175,11 @@ pub fn check_continue(hook_input: &Value, state_path: &Path) -> ContinueResult {
 
         state["_continue_pending"] = Value::String(String::new());
         state["_continue_context"] = Value::String(String::new());
+        // Clear discussion-mode flag so the next user interruption
+        // re-triggers the flow-note instruction.
+        if let Some(obj) = state.as_object_mut() {
+            obj.remove("_stop_instructed");
+        }
         should_block = true;
         skill = Some(pending.clone());
         context = ctx;
@@ -1041,5 +1046,30 @@ mod tests {
 
         let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert!(state.get("_blocked").is_none(), "_blocked must be cleared when discussion mode blocks");
+    }
+
+    #[test]
+    fn test_discussion_mode_cleared_on_continue_pending() {
+        // When check_continue consumes _continue_pending, it must also
+        // clear _stop_instructed so the next user interruption re-triggers
+        // discussion mode.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({
+            "branch": "test",
+            "_continue_pending": "commit",
+            "_continue_context": "Do the thing",
+            "_stop_instructed": true
+        });
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_continue(&json!({}), &path);
+        assert!(result.should_block);
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(
+            state.get("_stop_instructed").is_none(),
+            "_stop_instructed must be cleared when _continue_pending is consumed"
+        );
     }
 }

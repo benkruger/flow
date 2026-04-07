@@ -46,9 +46,10 @@ pub fn phase_enter(state: &mut Value, phase: &str, reason: Option<&str>) -> Valu
         .unwrap()
         .push(transition);
 
-    // Clear auto-continue flag from previous phase
+    // Clear auto-continue and discussion-mode flags from previous phase
     if let Some(obj) = state.as_object_mut() {
         obj.remove("_auto_continue");
+        obj.remove("_stop_instructed");
     }
 
     let first_visit = visit_count == 1;
@@ -379,6 +380,19 @@ mod tests {
 
         assert!(
             state.get("_auto_continue").is_none() || state["_auto_continue"].is_null()
+        );
+    }
+
+    #[test]
+    fn enter_clears_stop_instructed() {
+        let mut state = make_state("flow-start", &[("flow-start", "complete")]);
+        state["_stop_instructed"] = json!(true);
+
+        phase_enter(&mut state, "flow-plan", None);
+
+        assert!(
+            state.get("_stop_instructed").is_none(),
+            "_stop_instructed must be removed by phase_enter"
         );
     }
 
