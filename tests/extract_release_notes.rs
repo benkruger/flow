@@ -78,6 +78,28 @@ fn test_version_in_body_text_not_matched() {
     assert_eq!(result, "");
 }
 
+#[test]
+fn test_substring_version_not_matched() {
+    let notes = "\
+# Release Notes
+
+## v0.10.0 — Tenth release
+
+- Feature X
+
+---
+
+## v0.1.0 — First release
+
+- Feature A
+";
+    // v0.1.0 must NOT match v0.10.0 header (substring match bug)
+    let result = extract("v0.1.0", notes);
+    assert!(result.starts_with("## v0.1.0"), "Expected v0.1.0 section, got: {}", result);
+    assert!(result.contains("Feature A"));
+    assert!(!result.contains("Feature X"));
+}
+
 // --- CLI integration tests via run_impl ---
 
 #[test]

@@ -25,17 +25,39 @@ pub struct Args {
     pub version: Option<String>,
 }
 
+/// Check whether a `## ` header line contains the version as a complete token.
+///
+/// After the version substring, the next character must be whitespace, an
+/// em-dash, end-of-string, or another non-alphanumeric/non-dot character.
+/// This prevents `v0.1.0` from matching a `v0.10.0` header.
+fn header_matches_version(line: &str, version: &str) -> bool {
+    if let Some(pos) = line.find(version) {
+        let after = pos + version.len();
+        if after >= line.len() {
+            return true;
+        }
+        let next_char = line.as_bytes()[after];
+        // Version token ends at whitespace, dash, or end of line — not
+        // at another digit or dot which would mean a longer version.
+        !next_char.is_ascii_digit() && next_char != b'.'
+    } else {
+        false
+    }
+}
+
 /// Extract the release notes section for a given version from content.
 ///
-/// Finds the `## ` header line containing the version string, collects
-/// all lines until the next `## ` header, and returns the trimmed result.
-/// Returns an empty string if the version is not found as a header.
+/// Finds the `## ` header line where the version appears as a complete
+/// token (not a substring of a longer version — e.g. `v0.1.0` does not
+/// match a `v0.10.0` header). Collects all lines until the next `## `
+/// header and returns the trimmed result. Returns an empty string if
+/// the version is not found.
 pub fn extract(version: &str, content: &str) -> String {
     let mut section: Vec<&str> = Vec::new();
     let mut in_section = false;
 
     for line in content.lines() {
-        if line.starts_with("## ") && line.contains(version) {
+        if line.starts_with("## ") && header_matches_version(line, version) {
             in_section = true;
             section.push(line);
         } else if line.starts_with("## ") && in_section {
