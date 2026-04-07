@@ -28,12 +28,12 @@ Keep the project root and branch in context for the rest of this skill.
 
 ## Round 2 — Banner and Format Detection
 
-Run all of these in parallel (one response, all use the project root from Round 1):
+**Step 1.** Use the Glob tool: pattern `*.json`, path `<project_root>/.flow-states` — if any results, a FLOW phase is active (used for banner selection only).
 
-1. Use the Glob tool: pattern `*.json`, path `<project_root>/.flow-states` — if any results, a FLOW phase is active (used for banner selection only).
-2. If any `.flow-states/*.json` results exist, use the Read tool to read the state file for the current branch at `<project_root>/.flow-states/<branch>.json`.
-   - Parse `commit_format`: `"title-only"` or `"full"`.
-   - If no state file exists or the state file has no `commit_format` key → use `"full"`.
+**Step 2.** If any `.flow-states/*.json` results exist, use the Read tool to read the state file for the current branch at `<project_root>/.flow-states/<branch>.json`.
+
+- Parse `commit_format`: `"title-only"` or `"full"`.
+- If no state file exists or the state file has no `commit_format` key → use `"full"`.
 
 Keep `commit_format` in context.
 

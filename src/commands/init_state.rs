@@ -18,6 +18,10 @@ use crate::utils::{branch_name, check_duplicate_issue, detect_tty, extract_issue
 ///
 /// Builds the state as a serde_json::Value to match Python key ordering
 /// exactly. Writes to `.flow-states/<branch>.json`.
+///
+/// `commit_format` — optional commit message format (`"full"` or `"title-only"`)
+/// extracted from `.flow.json` during prime. Written to state file when present;
+/// the commit skill reads it at runtime.
 pub fn create_state(
     project_root: &Path,
     branch: &str,

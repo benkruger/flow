@@ -55,7 +55,7 @@ Subject starts with an imperative verb — Add, Fix, Update, Remove, Refactor. I
 
 ## CI
 
-`bin/flow ci` always runs before staging. It handles all run/skip/error logic internally — the commit skill calls it unconditionally.
+`bin/flow ci` and `git add -A` run in parallel. CI handles all run/skip/error logic internally — the commit skill calls it unconditionally.
 
 The banner is versioned (`FLOW v1.1.0`) when a `.flow-states/*.json` state file exists, plain (`Commit`) otherwise.
 
