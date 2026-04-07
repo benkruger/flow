@@ -12,7 +12,7 @@
 //!   Max retry:  {"status": "max_retries", "pr_number": N}
 //!   Error:      {"status": "error", "message": "...", "pr_number": N}
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -20,6 +20,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::lock::mutate_state;
+use crate::utils::bin_flow_path;
 
 const NETWORK_TIMEOUT: u64 = 60;
 const MERGE_STEP: i64 = 5;
@@ -35,16 +36,6 @@ pub struct Args {
     /// Path to state file
     #[arg(long = "state-file", required = true)]
     pub state_file: String,
-}
-
-/// Locate bin/flow via current_exe traversal, falling back to "bin/flow".
-fn bin_flow_path() -> String {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent()?.parent()?.parent().map(|d| d.to_path_buf()))
-        .map(|d: PathBuf| d.join("bin").join("flow"))
-        .and_then(|p| p.to_str().map(String::from))
-        .unwrap_or_else(|| "bin/flow".to_string())
 }
 
 /// Run a subprocess command with a timeout. `args[0]` is the program.

@@ -177,10 +177,12 @@ fn branch_flag_uses_specified_state_file() {
 }
 
 #[test]
-fn multiple_state_files_returns_ambiguity() {
+fn no_state_file_for_current_branch() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "main");
 
+    // Create state files for OTHER branches — resolve_branch no longer
+    // scans for these, so check-phase reports no feature on "main".
     for name in ["feat-a", "feat-b"] {
         let state = make_state("flow-plan", &[("flow-start", "complete")]);
         setup_state(dir.path(), name, &state);
@@ -194,9 +196,11 @@ fn multiple_state_files_returns_ambiguity() {
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Multiple active features"));
-    assert!(stdout.contains("feat-a"));
-    assert!(stdout.contains("feat-b"));
+    assert!(
+        stdout.contains("No FLOW feature in progress on branch"),
+        "Expected 'No FLOW feature in progress' but got: {}",
+        stdout
+    );
 }
 
 #[test]

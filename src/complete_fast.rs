@@ -29,7 +29,7 @@ use crate::complete_preflight::{
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
 use crate::phase_transition::phase_enter;
-use crate::utils::derive_worktree;
+use crate::utils::{bin_flow_path, derive_worktree};
 
 /// Step counter total for complete-fast. Set to 5 because complete-fast
 /// consolidates the old 7-step flow into fewer skill-visible steps.
@@ -37,16 +37,6 @@ use crate::utils::derive_worktree;
 /// backward compatibility when called as a standalone subcommand.
 const COMPLETE_STEPS_TOTAL: i64 = 5;
 const NETWORK_TIMEOUT: u64 = 60;
-
-/// Locate bin/flow via current_exe traversal, falling back to "bin/flow".
-fn bin_flow_path() -> String {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent()?.parent()?.parent().map(|d| d.to_path_buf()))
-        .map(|d: PathBuf| d.join("bin").join("flow"))
-        .and_then(|p| p.to_str().map(String::from))
-        .unwrap_or_else(|| "bin/flow".to_string())
-}
 
 #[derive(Parser, Debug)]
 #[command(name = "complete-fast", about = "FLOW Complete phase fast path")]
@@ -407,8 +397,8 @@ pub fn fast_inner(
 /// Err(string) only for infrastructure failures.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
-    let (resolved, _) = resolve_branch(args.branch.as_deref(), &root);
-    let branch = resolved.ok_or("Could not determine current branch")?;
+    let branch = resolve_branch(args.branch.as_deref(), &root)
+        .ok_or("Could not determine current branch")?;
 
     // Read state file
     let (state, state_path) = read_state(&root, &branch)?;

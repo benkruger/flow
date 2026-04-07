@@ -90,17 +90,14 @@ pub fn current_branch_in(cwd: &Path) -> Option<String> {
 /// Resolution order:
 /// 1. If override provided, return it immediately
 /// 2. If current_branch() matches a state file, return it
-/// 3. Scan .flow-states/*.json (skip *-phases.json):
-///    - 1 file → return that branch (auto-resolve)
-///    - 2+ files → return (None, candidates) (ambiguous)
-///    - 0 files → return current_branch() (no features active)
+/// 3. Return current_branch() anyway (callers check state file existence)
 ///
-/// Returns (branch, candidates) where candidates is empty on success
-/// or a list of branch names when ambiguous.
+/// Never scans `.flow-states/` for candidates — each caller targets only
+/// its own branch. Removed in PR #924.
 pub fn resolve_branch(
     override_branch: Option<&str>,
     root: &Path,
-) -> (Option<String>, Vec<String>) {
+) -> Option<String> {
     resolve_branch_impl(override_branch, root, current_branch())
 }
 
@@ -115,7 +112,7 @@ pub fn resolve_branch_in(
     override_branch: Option<&str>,
     cwd: &Path,
     root: &Path,
-) -> (Option<String>, Vec<String>) {
+) -> Option<String> {
     resolve_branch_impl(override_branch, root, current_branch_in(cwd))
 }
 
@@ -123,9 +120,9 @@ fn resolve_branch_impl(
     override_branch: Option<&str>,
     root: &Path,
     branch: Option<String>,
-) -> (Option<String>, Vec<String>) {
+) -> Option<String> {
     if let Some(b) = override_branch {
-        return (Some(b.to_string()), vec![]);
+        return Some(b.to_string());
     }
 
     let state_dir = root.join(".flow-states");
@@ -133,48 +130,13 @@ fn resolve_branch_impl(
     // Exact match — current branch has a state file
     if let Some(ref b) = branch {
         if state_dir.join(format!("{}.json", b)).exists() {
-            return (Some(b.clone()), vec![]);
+            return Some(b.clone());
         }
     }
 
-    // Scan for state files
-    if !state_dir.is_dir() {
-        return (branch, vec![]);
-    }
-
-    let mut candidates = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&state_dir) {
-        let mut paths: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-        paths.sort_by_key(|e| e.file_name());
-
-        for entry in paths {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if !name_str.ends_with(".json") {
-                continue;
-            }
-            if name_str.ends_with("-phases.json") {
-                continue;
-            }
-            // Try to parse as valid JSON
-            if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                if serde_json::from_str::<serde_json::Value>(&content).is_ok() {
-                    let stem = name_str.trim_end_matches(".json").to_string();
-                    candidates.push(stem);
-                }
-            }
-        }
-    }
-
-    if candidates.len() == 1 {
-        return (Some(candidates.remove(0)), vec![]);
-    }
-    if candidates.len() > 1 {
-        return (None, candidates);
-    }
-
-    // No state files found — return current branch (for new features)
-    (branch, vec![])
+    // No state file for current branch — return it anyway
+    // (callers check state file existence separately)
+    branch
 }
 
 #[cfg(test)]
@@ -226,42 +188,27 @@ mod tests {
     #[test]
     fn resolve_branch_override_wins() {
         let dir = tempfile::tempdir().unwrap();
-        let (branch, candidates) = resolve_branch(Some("explicit-branch"), dir.path());
+        let branch = resolve_branch(Some("explicit-branch"), dir.path());
         assert_eq!(branch, Some("explicit-branch".to_string()));
-        assert!(candidates.is_empty());
     }
 
     #[test]
     fn resolve_branch_no_state_dir() {
         let dir = tempfile::tempdir().unwrap();
-        let (branch, candidates) = resolve_branch(None, dir.path());
+        let branch = resolve_branch(None, dir.path());
         // No .flow-states dir — returns current_branch() fallback
-        assert!(candidates.is_empty());
         // branch may be Some or None depending on git context
         let _ = branch;
     }
 
     #[test]
-    fn resolve_branch_single_state_file() {
+    fn resolve_branch_no_match_returns_current_branch() {
+        // When current branch has no state file, resolve_branch returns
+        // the branch anyway — it never scans for other state files.
         let dir = tempfile::tempdir().unwrap();
         let state_dir = dir.path().join(".flow-states");
         fs::create_dir(&state_dir).unwrap();
-        fs::write(
-            state_dir.join("feature-xyz.json"),
-            r#"{"branch": "feature-xyz"}"#,
-        )
-        .unwrap();
-
-        let (branch, candidates) = resolve_branch(None, dir.path());
-        assert_eq!(branch, Some("feature-xyz".to_string()));
-        assert!(candidates.is_empty());
-    }
-
-    #[test]
-    fn resolve_branch_multiple_state_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir(&state_dir).unwrap();
+        // Create state files for OTHER branches
         fs::write(
             state_dir.join("feature-a.json"),
             r#"{"branch": "feature-a"}"#,
@@ -273,49 +220,28 @@ mod tests {
         )
         .unwrap();
 
-        let (branch, candidates) = resolve_branch(None, dir.path());
-        assert!(branch.is_none());
-        assert_eq!(candidates.len(), 2);
-        assert!(candidates.contains(&"feature-a".to_string()));
-        assert!(candidates.contains(&"feature-b".to_string()));
+        // Call resolve_branch_impl directly with a branch that has no state file
+        let result = resolve_branch_impl(None, dir.path(), Some("main".to_string()));
+        // Returns "main" — does NOT resolve to feature-a or feature-b
+        assert_eq!(result, Some("main".to_string()));
     }
 
+    /// Tombstone: .flow-states/ scan removed in PR #924. Must not return.
     #[test]
-    fn resolve_branch_skips_phases_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir(&state_dir).unwrap();
-        fs::write(
-            state_dir.join("feature-x.json"),
-            r#"{"branch": "feature-x"}"#,
-        )
-        .unwrap();
-        fs::write(
-            state_dir.join("feature-x-phases.json"),
-            r#"{"order": []}"#,
-        )
-        .unwrap();
-
-        let (branch, candidates) = resolve_branch(None, dir.path());
-        assert_eq!(branch, Some("feature-x".to_string()));
-        assert!(candidates.is_empty());
-    }
-
-    #[test]
-    fn resolve_branch_skips_corrupt_json() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir(&state_dir).unwrap();
-        fs::write(state_dir.join("bad.json"), "{corrupt").unwrap();
-        fs::write(
-            state_dir.join("good.json"),
-            r#"{"branch": "good"}"#,
-        )
-        .unwrap();
-
-        let (branch, candidates) = resolve_branch(None, dir.path());
-        assert_eq!(branch, Some("good".to_string()));
-        assert!(candidates.is_empty());
+    fn resolve_branch_no_scan_tombstone() {
+        let source = include_str!("git.rs");
+        // Find the resolve_branch_impl function body
+        let start = source.find("fn resolve_branch_impl(").unwrap();
+        let end = source[start..].find("\n}\n").unwrap() + start;
+        let func_body = &source[start..end];
+        assert!(
+            !func_body.contains("read_dir"),
+            "resolve_branch_impl must not scan .flow-states/ via read_dir — removed in PR #924"
+        );
+        assert!(
+            !func_body.contains("candidates"),
+            "resolve_branch_impl must not collect candidates — removed in PR #924"
+        );
     }
 
     // --- current_branch_in() ---
