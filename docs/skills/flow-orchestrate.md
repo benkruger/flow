@@ -33,7 +33,7 @@ Processes decomposed issues sequentially overnight via `flow-start --auto`. Fetc
 The report is delivered in two ways:
 
 - **End of session:** Rendered inline after the last issue completes
-- **Next session start:** Morning report delivery is planned for a future release
+- **Next session start:** Not currently available (session-start delivery was removed in PR #938)
 
 ---
 
