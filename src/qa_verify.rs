@@ -44,7 +44,10 @@ pub fn find_state_files(project_root: &Path) -> Vec<PathBuf> {
         for entry in entries.flatten() {
             let path = entry.path();
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                // Filter dot-prefixed entries to match Python's glob("*.json")
+                // behavior where * does not match leading dots.
                 if name.ends_with(".json")
+                    && !name.starts_with('.')
                     && !name.starts_with("orchestrate")
                     && !name.ends_with("-phases.json")
                 {
@@ -329,6 +332,29 @@ mod tests {
         let state_dir = dir.path().join(".flow-states");
         fs::create_dir(&state_dir).unwrap();
         fs::write(state_dir.join("feature-phases.json"), "{}").unwrap();
+
+        let result = verify_impl(Some("python"), "owner/repo", dir.path(), &|_| mock_ok_pr());
+
+        let checks = result["checks"].as_array().unwrap();
+        let state_check: Vec<&Value> = checks
+            .iter()
+            .filter(|c| {
+                c["name"]
+                    .as_str()
+                    .unwrap()
+                    .to_lowercase()
+                    .contains("state")
+            })
+            .collect();
+        assert_eq!(state_check[0]["passed"], true);
+    }
+
+    #[test]
+    fn test_verify_excludes_dot_prefixed_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir(&state_dir).unwrap();
+        fs::write(state_dir.join(".hidden-state.json"), "{}").unwrap();
 
         let result = verify_impl(Some("python"), "owner/repo", dir.path(), &|_| mock_ok_pr());
 

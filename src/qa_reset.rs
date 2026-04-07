@@ -12,10 +12,35 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 /// Result of a subprocess invocation for the injectable runner.
+/// Shared with scaffold_qa via pub import — do not modify signature
+/// without checking all callers.
 pub struct CmdResult {
     pub success: bool,
     pub stdout: String,
     pub stderr: String,
+}
+
+/// Production subprocess runner. Captures stdout/stderr and returns
+/// a CmdResult. Shared by qa_reset and scaffold_qa run_impl functions.
+pub fn default_runner(cmd_args: &[&str], cwd: Option<&Path>) -> CmdResult {
+    let mut command = Command::new(cmd_args[0]);
+    command.args(&cmd_args[1..]);
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    if let Some(dir) = cwd {
+        command.current_dir(dir);
+    }
+    match command.output() {
+        Ok(output) => CmdResult {
+            success: output.status.success(),
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        },
+        Err(e) => CmdResult {
+            success: false,
+            stdout: String::new(),
+            stderr: e.to_string(),
+        },
+    }
 }
 
 #[derive(Parser, Debug)]
@@ -139,6 +164,9 @@ pub fn load_issue_template(
 }
 
 /// Decode base64 string (standard encoding with optional whitespace).
+/// Custom implementation to avoid adding a crate dependency — consistent
+/// with FLOW's zero-dependency philosophy. Ports Python's base64.b64decode
+/// behavior used in the original qa-reset.py.
 fn base64_decode(input: &str) -> Option<String> {
     // Strip whitespace that GitHub API may include
     let clean: String = input.chars().filter(|c| !c.is_whitespace()).collect();
@@ -277,32 +305,16 @@ pub fn reset_impl(
 }
 
 /// CLI entry point.
+///
+/// Returns Ok(Value) for both success and status-error responses.
+/// Returns Err(String) only for infrastructure failures.
+/// The run() wrapper prints the result and exits 1 on status-error,
+/// matching Python's sys.exit(1) behavior.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
-    let runner = |cmd_args: &[&str], cwd: Option<&Path>| -> CmdResult {
-        let mut command = Command::new(cmd_args[0]);
-        command.args(&cmd_args[1..]);
-        command.stdout(Stdio::piped()).stderr(Stdio::piped());
-        if let Some(dir) = cwd {
-            command.current_dir(dir);
-        }
-        match command.output() {
-            Ok(output) => CmdResult {
-                success: output.status.success(),
-                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            },
-            Err(e) => CmdResult {
-                success: false,
-                stdout: String::new(),
-                stderr: e.to_string(),
-            },
-        }
-    };
-
     Ok(reset_impl(
         &args.repo,
         args.local_path.as_deref(),
-        &runner,
+        &default_runner,
     ))
 }
 

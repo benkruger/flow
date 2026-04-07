@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::process::{self, Command, Stdio};
+use std::process;
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -221,34 +221,18 @@ pub fn scaffold_impl(
 }
 
 /// CLI entry point.
+///
+/// Returns Ok(Value) for both success and status-error responses.
+/// Returns Err(String) only for infrastructure failures.
+/// The run() wrapper prints the result and exits 1 on status-error,
+/// matching Python's sys.exit(1) behavior.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
-    let runner = |cmd_args: &[&str], cwd: Option<&Path>| -> CmdResult {
-        let mut command = Command::new(cmd_args[0]);
-        command.args(&cmd_args[1..]);
-        command.stdout(Stdio::piped()).stderr(Stdio::piped());
-        if let Some(dir) = cwd {
-            command.current_dir(dir);
-        }
-        match command.output() {
-            Ok(output) => CmdResult {
-                success: output.status.success(),
-                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            },
-            Err(e) => CmdResult {
-                success: false,
-                stdout: String::new(),
-                stderr: e.to_string(),
-            },
-        }
-    };
-
     Ok(scaffold_impl(
         &args.framework,
         &args.repo,
         None,
         None,
-        &runner,
+        &crate::qa_reset::default_runner,
     ))
 }
 
