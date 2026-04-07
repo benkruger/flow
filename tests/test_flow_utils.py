@@ -93,6 +93,12 @@ def test_project_root_falls_back_on_git_failure(monkeypatch):
 # --- current_branch ---
 
 
+def test_current_branch_simulate_env_var(monkeypatch):
+    """FLOW_SIMULATE_BRANCH overrides git branch detection."""
+    monkeypatch.setenv("FLOW_SIMULATE_BRANCH", "main")
+    assert _mod.current_branch() == "main"
+
+
 def test_current_branch_returns_none_on_git_failure(monkeypatch):
     monkeypatch.delenv("FLOW_SIMULATE_BRANCH", raising=False)
 
