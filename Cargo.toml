@@ -22,8 +22,12 @@ regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
+ratatui = "0.29"
 thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
+
+[dependencies.crossterm]
+version = "0.28"
 
 [dev-dependencies]
 filetime = "0.2"
