@@ -2109,6 +2109,41 @@ def test_documentation_agent_no_two_dot_diff():
     )
 
 
+def test_plan_no_branch_show_current():
+    """Tombstone: git branch --show-current consolidated into porcelain output in PR #935. Must not return."""
+    content = _read_skill("flow-plan")
+    assert "git branch --show-current" not in content, (
+        "flow-plan must NOT use git branch --show-current — branch is derived from git worktree list --porcelain output"
+    )
+
+
+def test_complete_no_branch_show_current():
+    """Tombstone: git branch --show-current consolidated into porcelain output in PR #935. Must not return."""
+    content = _read_skill("flow-complete")
+    assert "git branch --show-current" not in content, (
+        "flow-complete must NOT use git branch --show-current — "
+        "branch is derived from git worktree list --porcelain output"
+    )
+
+
+def test_commit_no_branch_show_current():
+    """Tombstone: git branch --show-current consolidated into porcelain output in PR #935. Must not return."""
+    content = _read_skill("flow-commit")
+    assert "git branch --show-current" not in content, (
+        "flow-commit must NOT use git branch --show-current — "
+        "branch is derived from git worktree list --porcelain output"
+    )
+
+
+def test_abort_no_branch_show_current():
+    """Tombstone: git branch --show-current consolidated into porcelain output in PR #935. Must not return."""
+    content = _read_skill("flow-abort")
+    assert "git branch --show-current" not in content, (
+        "flow-abort must NOT use git branch --show-current — "
+        "branch is derived from git worktree list --porcelain output"
+    )
+
+
 def test_code_review_uses_documentation_subagent():
     """Code Review skill must reference the documentation sub-agent."""
     content = _read_skill("flow-code-review")
