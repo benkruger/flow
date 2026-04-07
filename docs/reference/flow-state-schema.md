@@ -129,14 +129,14 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `_continue_pending` | string | Child skill or action currently executing. Phase skills set this before invoking a child skill so the Stop hook (`stop-continue.py`) blocks the turn from ending and forces continuation. Values are either a child skill name (e.g. `decompose`) or the action `commit` (used by flow-code, flow-code-review, flow-learn, and flow-complete when invoking `/flow:flow-commit`). Cleared by the Stop hook after forcing continuation. Empty string or absent means no continuation pending. |
 | `_continue_context` | string | Specific next-step instructions for the model after a child skill returns. Written by phase skills before `_continue_pending`, read and cleared by the Stop hook. Included in the block reason so the model knows what to do after the turn boundary. Empty string or absent means use the generic fallback message. |
 | `_blocked` | ISO 8601 / null | Timestamp when the flow was blocked on AskUserQuestion. Set by PreToolUse hook (`bin/flow hook validate-ask-user`) when allowing a prompt through. Cleared by PostToolUse hook (`bin/flow clear-blocked`) after user responds and by Stop hook (`bin/flow hook stop-continue`) as a safety net for crashed sessions. Transient. |
-| `_last_failure` | object / null | API error context from the last StopFailure event. Contains `type` (string — error category, e.g. `rate_limit`, `auth_failure`, `network_timeout`), `message` (string — error details), and `timestamp` (ISO 8601 — when the failure occurred). Written by StopFailure hook (`bin/flow hook stop-failure`), consumed and cleared by SessionStart hook. Transient. |
+| `_last_failure` | object / null | API error context from the last StopFailure event. Contains `type` (string — error category, e.g. `rate_limit`, `auth_failure`, `network_timeout`), `message` (string — error details), and `timestamp` (ISO 8601 — when the failure occurred). Written by StopFailure hook (`bin/flow hook stop-failure`). Currently has no consumer (session-start consumer removed in PR #938). Transient. |
 | `_auto_continue` | string | Command to invoke next (e.g. `/flow:flow-plan`). Set by `phase_complete()` when `skills.<phase>.continue` is `"auto"`. Cleared by `phase_enter()` when the next phase starts. A PreToolUse hook on AskUserQuestion automatically answers prompts via `updatedInput` while this flag is set. |
 | `prompt` | string | The full text passed to `/flow-start` — used by Plan as feature description and by Complete to extract `#N` issue references for auto-closing |
 | `notes` | array | Corrections captured via `/flow-note` — see [Notes Array](#notes-array) |
 | `phase_transitions` | array | Phase entry log recording every `phase_enter()` call with from/to/timestamp and optional reason — see [Phase Transitions Array](#phase-transitions-array) |
 | `issues_filed` | array | GitHub issues filed during the feature — see [Issues Filed Array](#issues-filed-array) |
-| `compact_summary` | string / null | Conversation summary from last compaction. Written by PostCompact hook, consumed and cleared by SessionStart hook. Transient. |
-| `compact_cwd` | string / null | CWD at last compaction time. Written by PostCompact hook, consumed and cleared by SessionStart hook. Transient. |
+| `compact_summary` | string / null | Conversation summary from last compaction. Written by PostCompact hook. Currently has no consumer (session-start consumer removed in PR #938). Transient. |
+| `compact_cwd` | string / null | CWD at last compaction time. Written by PostCompact hook. Currently has no consumer (session-start consumer removed in PR #938). Transient. |
 | `compact_count` | integer | Total number of context compactions during this feature. Incremented by PostCompact hook. Permanent. |
 | `slack_thread_ts` | string / null | Slack message timestamp of the initial thread message. Set by Start phase after first `notify-slack` call. Used by subsequent phases as `thread_ts` to reply in the same thread. Null or absent if Slack is not configured. |
 | `slack_notifications` | array | Slack notifications sent during the feature — see [Slack Notifications Array](#slack-notifications-array) |
@@ -164,7 +164,6 @@ Each phase entry has identical fields regardless of status.
 - `started_at` is set on first entry and **never changed again**
 - `completed_at` is set on every exit — reflects the most recent completion
 - `session_started_at` is set on entry and cleared to `null` on exit
-- On session resume, if `session_started_at` is not null, elapsed time is accumulated into `cumulative_seconds` and `session_started_at` is reset to `now()` to continue timing
 - `cumulative_seconds` increments by `(exit_time - session_started_at)` on each clean exit
 
 ---
