@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 use clap::Parser;
 use serde_json::{json, Value};
 
+use crate::lock::mutate_state;
 use crate::output::json_error;
 use crate::utils::parse_conflict_files;
 
@@ -240,23 +241,41 @@ pub fn run_impl(
     let bin_ci = cwd.join("bin").join("ci");
     let (ci_result, ci_code) =
         crate::ci::run_once(cwd, root, &bin_ci, Some(&args.branch), false, None);
-    if ci_code != 0 {
+
+    let result = if ci_code != 0 {
         let msg = ci_result["message"]
             .as_str()
             .unwrap_or("bin/flow ci failed");
-        return Ok(json!({
+        json!({
             "status": "error",
             "step": "ci",
             "message": msg,
-        }));
-    }
-
-    let cwd_owned = cwd.to_path_buf();
-    let git = |git_args: &[&str], timeout: u64| -> Result<(i32, String, String), String> {
-        run_git_in_dir(&cwd_owned, git_args, timeout)
+        })
+    } else {
+        let cwd_owned = cwd.to_path_buf();
+        let git = |git_args: &[&str], timeout: u64| -> Result<(i32, String, String), String> {
+            run_git_in_dir(&cwd_owned, git_args, timeout)
+        };
+        finalize_commit_inner(&args.message_file, &args.branch, &git)
     };
 
-    let result = finalize_commit_inner(&args.message_file, &args.branch, &git);
+    // Clear continuation flags on error so the stop-continue hook
+    // does not force-advance the parent phase after a failed commit.
+    // Conflict is NOT cleared — the commit skill retries after resolving.
+    if result["status"] == "error" {
+        let state_path = root
+            .join(".flow-states")
+            .join(format!("{}.json", args.branch));
+        if state_path.exists() {
+            let _ = mutate_state(&state_path, |state| {
+                if !(state.is_object() || state.is_null()) {
+                    return;
+                }
+                state["_continue_pending"] = Value::String(String::new());
+                state["_continue_context"] = Value::String(String::new());
+            });
+        }
+    }
 
     // Sentinel maintenance after commit:
     // - pull_merged == false: tree unchanged by pull → refresh sentinel to current snapshot.
@@ -916,6 +935,204 @@ exit 0
             .unwrap();
 
         (clone_dir, bare_dir)
+    }
+
+    /// Helper: write a state file with _continue_pending and _continue_context set.
+    fn write_state_with_continue_pending(clone_path: &std::path::Path, branch: &str) {
+        let flow_states = clone_path.join(".flow-states");
+        fs::create_dir_all(&flow_states).unwrap();
+        let state_file = flow_states.join(format!("{}.json", branch));
+        let state = json!({
+            "branch": branch,
+            "current_phase": "flow-code",
+            "_continue_pending": "commit",
+            "_continue_context": "Self-invoke flow:flow-code --continue-step --auto."
+        });
+        fs::write(&state_file, serde_json::to_string_pretty(&state).unwrap()).unwrap();
+    }
+
+    /// Read the state file and return the parsed JSON.
+    fn read_state(clone_path: &std::path::Path, branch: &str) -> Value {
+        let state_file = clone_path
+            .join(".flow-states")
+            .join(format!("{}.json", branch));
+        let content = fs::read_to_string(&state_file).unwrap();
+        serde_json::from_str(&content).unwrap()
+    }
+
+    #[test]
+    fn run_impl_error_clears_continue_pending() {
+        let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+        let clone_path = clone_dir.path();
+
+        // Write state file with _continue_pending set
+        write_state_with_continue_pending(clone_path, "main");
+
+        // Configure bin/ci to fail
+        fs::write(clone_path.join(".ci-should-fail"), "1").unwrap();
+
+        // Stage a file to commit
+        fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+        Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        let msg_path = clone_path.join(".flow-commit-msg");
+        fs::write(&msg_path, "Add feature.rs").unwrap();
+
+        let args = Args {
+            message_file: msg_path.to_str().unwrap().to_string(),
+            branch: "main".to_string(),
+        };
+
+        let result = run_impl(&args, clone_path, clone_path).unwrap();
+        assert_eq!(result["status"], "error");
+        assert_eq!(result["step"], "ci");
+
+        // _continue_pending and _continue_context should be cleared
+        let state = read_state(clone_path, "main");
+        let pending = state
+            .get("_continue_pending")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(
+            pending.is_empty(),
+            "_continue_pending should be cleared after error, got: {:?}",
+            pending
+        );
+        let ctx = state
+            .get("_continue_context")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(
+            ctx.is_empty(),
+            "_continue_context should be cleared after error, got: {:?}",
+            ctx
+        );
+    }
+
+    #[test]
+    fn run_impl_ok_preserves_continue_pending() {
+        let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+        let clone_path = clone_dir.path();
+
+        // Write state file with _continue_pending set
+        write_state_with_continue_pending(clone_path, "main");
+
+        // Stage a file to commit
+        fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+        Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        let msg_path = clone_path.join(".flow-commit-msg");
+        fs::write(&msg_path, "Add feature.rs").unwrap();
+
+        let args = Args {
+            message_file: msg_path.to_str().unwrap().to_string(),
+            branch: "main".to_string(),
+        };
+
+        let result = run_impl(&args, clone_path, clone_path).unwrap();
+        assert_eq!(result["status"], "ok");
+
+        // _continue_pending should still be set — the hook clears it, not finalize-commit
+        let state = read_state(clone_path, "main");
+        assert_eq!(
+            state["_continue_pending"], "commit",
+            "_continue_pending should be preserved on success"
+        );
+        assert_eq!(
+            state["_continue_context"],
+            "Self-invoke flow:flow-code --continue-step --auto.",
+            "_continue_context should be preserved on success"
+        );
+    }
+
+    #[test]
+    fn run_impl_conflict_preserves_continue_pending() {
+        let (clone_dir, bare_dir) = setup_integration_repo_with_ci();
+        let clone_path = clone_dir.path();
+
+        // Write state file with _continue_pending set
+        write_state_with_continue_pending(clone_path, "main");
+
+        // Create a second clone to push a conflicting commit
+        let clone2_dir = tempfile::tempdir().unwrap();
+        Command::new("git")
+            .args(["clone"])
+            .arg(bare_dir.path())
+            .arg(clone2_dir.path())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        for (key, val) in [("user.email", "other@test.com"), ("user.name", "Other")] {
+            Command::new("git")
+                .args(["-C", clone2_dir.path().to_str().unwrap(), "config", key, val])
+                .output()
+                .unwrap();
+        }
+
+        // Push a conflicting change to README.md from clone2
+        fs::write(clone2_dir.path().join("README.md"), "# Conflicting content\n").unwrap();
+        Command::new("git")
+            .args(["-C", clone2_dir.path().to_str().unwrap(), "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone2_dir.path().to_str().unwrap(), "commit", "-m", "Conflicting commit"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", clone2_dir.path().to_str().unwrap(), "push"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        // Now modify README.md locally in clone1 (will conflict with remote)
+        fs::write(clone_path.join("README.md"), "# Local conflicting content\n").unwrap();
+        Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+
+        let msg_path = clone_path.join(".flow-commit-msg");
+        fs::write(&msg_path, "Local change to README").unwrap();
+
+        // Force merge on pull (not rebase)
+        Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "config", "pull.rebase", "false"])
+            .output()
+            .unwrap();
+
+        let args = Args {
+            message_file: msg_path.to_str().unwrap().to_string(),
+            branch: "main".to_string(),
+        };
+
+        let result = run_impl(&args, clone_path, clone_path).unwrap();
+        assert_eq!(result["status"], "conflict");
+
+        // _continue_pending should still be set — conflict needs retry, not clearing
+        let state = read_state(clone_path, "main");
+        assert_eq!(
+            state["_continue_pending"], "commit",
+            "_continue_pending should be preserved on conflict"
+        );
     }
 
     #[test]
