@@ -96,7 +96,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ## Logging
 
 All four consolidated commands (`start-init`, `start-gate`, `start-workspace`,
-`start-finalize`) handle logging internally via `append_log()` to
+`phase-finalize`) handle logging internally via `append_log()` to
 `.flow-states/<branch>.log`. No model-level logging calls are needed.
 
 ```bash
@@ -271,18 +271,18 @@ even on error (main is untouched by worktree operations).
 ### Step 4 — Change to worktree
 
 This step is the `cd` from Step 3. The TUI shows Step 4 while the
-worktree directory is active and start-finalize runs in Step 5.
+worktree directory is active and phase-finalize runs in Step 5.
 
 ### Step 5 — Update state and finalize (complete phase, notify)
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-finalize --branch <branch> --pr-url <pr_url>
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-finalize --phase flow-start --branch <branch> --pr-url <pr_url>
 ```
 
-The command runs `phase-transition --action complete` internally, updates
-the state file, and sends Slack notifications. Parse the JSON output.
-Use the `formatted_time` field in the COMPLETE banner below. Do not print
-the timing calculation. Use the `continue_action` field for the transition
+The command runs `phase_complete()` internally, updates the state file,
+and sends Slack notifications. Parse the JSON output. Use the
+`formatted_time` field in the COMPLETE banner below. Do not print the
+timing calculation. Use the `continue_action` field for the transition
 HARD-GATE.
 
 ### Done — Banner and transition
@@ -298,12 +298,12 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ````
 
 <HARD-GATE>
-STOP. Parse `continue_action` from the `start-finalize` output above
+STOP. Parse `continue_action` from the `phase-finalize` output above
 to determine how to advance.
 
 1. If `--auto` was passed to this skill invocation → continue=auto.
    If `--manual` was passed → continue=manual.
-   Otherwise, use `continue_action` from the start-finalize output.
+   Otherwise, use `continue_action` from the `phase-finalize` output.
    If `continue_action` is `"invoke"` → continue=auto.
    If `continue_action` is `"ask"` → continue=manual.
 2. If continue=auto → invoke `flow:flow-plan` directly using the Skill tool.

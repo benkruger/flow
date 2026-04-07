@@ -482,6 +482,20 @@ def test_checksum_version_invariant():
     assert "Checksum → Version Invariant" in claude_md, "CLAUDE.md must document the checksum → version invariant"
 
 
+def test_no_orchestrate_state_python():
+    """Tombstone: ported to Rust in PR #928. Must not return."""
+    assert not (REPO_ROOT / "lib" / "orchestrate-state.py").exists(), (
+        "lib/orchestrate-state.py was ported to Rust (src/orchestrate_state.rs) and must not be re-added"
+    )
+
+
+def test_no_orchestrate_report_python():
+    """Tombstone: ported to Rust in PR #928. Must not return."""
+    assert not (REPO_ROOT / "lib" / "orchestrate-report.py").exists(), (
+        "lib/orchestrate-report.py was ported to Rust (src/orchestrate_report.rs) and must not be re-added"
+    )
+
+
 def test_complete_modules_no_private_bin_flow_path():
     """Tombstone: private bin_flow_path() hoisted to utils.rs in PR #926. Must not return."""
     modules = [

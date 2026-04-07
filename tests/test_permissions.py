@@ -162,6 +162,7 @@ PLACEHOLDER_SUBS = {
     "<dep_number>": "3",
     "<topic>": "testing-gotchas",
     "<description>": "Update contract tests",
+    "<slack_thread_ts>": "1234567890.123456",
 }
 
 

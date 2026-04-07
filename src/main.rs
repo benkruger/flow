@@ -31,6 +31,8 @@ use flow_rs::format_status;
 use flow_rs::hooks;
 use flow_rs::label_issues;
 use flow_rs::notify_slack;
+use flow_rs::orchestrate_report;
+use flow_rs::orchestrate_state;
 use flow_rs::render_pr_body;
 use flow_rs::update_pr_body;
 use flow_rs::git::{project_root, resolve_branch};
@@ -39,7 +41,9 @@ use flow_rs::link_blocked_by;
 use flow_rs::lock::mutate_state;
 use flow_rs::output::json_error;
 use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
-use flow_rs::phase_transition::{phase_complete, phase_enter};
+use flow_rs::phase_enter;
+use flow_rs::phase_finalize;
+use flow_rs::phase_transition::{phase_complete, phase_enter as phase_enter_fn};
 use flow_rs::plan_extract;
 use flow_rs::prime_check;
 use flow_rs::prime_project;
@@ -329,6 +333,14 @@ enum Commands {
     #[command(name = "write-rule")]
     WriteRule(write_rule::Args),
 
+    /// Generic phase entry: gate + enter + step counters + return state data.
+    #[command(name = "phase-enter")]
+    PhaseEnter(phase_enter::Args),
+
+    /// Generic phase exit: complete + Slack + notification.
+    #[command(name = "phase-finalize")]
+    PhaseFinalize(phase_finalize::Args),
+
     /// Extract pre-decomposed plan or prepare state for model-driven planning.
     #[command(name = "plan-extract")]
     PlanExtract(plan_extract::Args),
@@ -340,6 +352,14 @@ enum Commands {
     /// Update PR body with artifacts
     #[command(name = "update-pr-body")]
     UpdatePrBody(update_pr_body::Args),
+
+    /// Generate orchestration morning report
+    #[command(name = "orchestrate-report")]
+    OrchestrateReport(orchestrate_report::Args),
+
+    /// Manage orchestration queue state
+    #[command(name = "orchestrate-state")]
+    OrchestrateState(orchestrate_state::Args),
 
     /// Check GitHub for newer FLOW releases.
     #[command(name = "upgrade-check")]
@@ -536,6 +556,12 @@ fn main() {
         Some(Commands::WriteRule(args)) => {
             write_rule::run(args);
         }
+        Some(Commands::PhaseEnter(args)) => {
+            phase_enter::run(args);
+        }
+        Some(Commands::PhaseFinalize(args)) => {
+            phase_finalize::run(args);
+        }
         Some(Commands::PlanExtract(args)) => {
             plan_extract::run(args);
         }
@@ -545,6 +571,8 @@ fn main() {
         Some(Commands::UpdatePrBody(args)) => {
             update_pr_body::run(args);
         }
+        Some(Commands::OrchestrateReport(args)) => orchestrate_report::run(args),
+        Some(Commands::OrchestrateState(args)) => orchestrate_state::run(args),
         Some(Commands::UpgradeCheck(args)) => upgrade_check::run(args),
         Some(Commands::Hook { hook }) => match hook {
             HookCommands::ValidatePretool => hooks::validate_pretool::run(),
@@ -715,7 +743,7 @@ fn run_phase_transition(
 
     let mutate_result = mutate_state(&state_path, |state| {
         let result = if action == "enter" {
-            phase_enter(state, phase, reason)
+            phase_enter_fn(state, phase, reason)
         } else {
             phase_complete(
                 state,
