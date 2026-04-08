@@ -7,4 +7,4 @@ if [ "${1:-}" = "--rust" ]; then
   shift
 fi
 
-exec cargo test "$@"
+exec cargo nextest run "$@"

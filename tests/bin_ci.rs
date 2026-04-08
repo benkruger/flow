@@ -6,10 +6,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
-/// Creates a minimal Rust project layout that bin/ci can run against.
-///
-/// bin/ci computes REPO_ROOT from $(dirname "$0")/.., so placing it at
-/// <tmp>/bin/ci makes it resolve Cargo.toml at <tmp>/Cargo.toml.
+/// Creates a minimal project layout that bin/ci can run against.
 /// Uses mock cargo to avoid real compilation.
 fn setup_ci_project(dir: &std::path::Path) {
     let bin_dir = dir.join("bin");
@@ -22,13 +19,6 @@ fn setup_ci_project(dir: &std::path::Path) {
     let mut perms = fs::metadata(bin_dir.join("ci")).unwrap().permissions();
     perms.set_mode(0o755);
     fs::set_permissions(bin_dir.join("ci"), perms).unwrap();
-
-    // Create Cargo.toml for cargo build detection
-    fs::write(
-        dir.join("Cargo.toml"),
-        "[package]\nname = \"test\"\nversion = \"0.1.0\"\n",
-    )
-    .unwrap();
 }
 
 fn run_ci(project_dir: &std::path::Path, extra_path: Option<&str>) -> std::process::Output {
@@ -61,7 +51,7 @@ fn setup_mock_cargo(dir: &std::path::Path) -> std::path::PathBuf {
     mock_bin
 }
 
-/// bin/ci runs cargo build, cargo test, cargo clippy, and cargo fmt.
+/// bin/ci runs cargo fmt, cargo clippy, and cargo nextest.
 #[test]
 fn runs_all_cargo_commands() {
     let dir = tempfile::tempdir().unwrap();
@@ -77,38 +67,33 @@ fn runs_all_cargo_commands() {
 
     let log = fs::read_to_string(dir.path().join("cargo_log")).unwrap();
     assert!(
-        log.contains("build --quiet"),
-        "Should run cargo build, got: {}",
-        log
-    );
-    assert!(
-        log.contains("test --quiet"),
-        "Should run cargo test, got: {}",
-        log
-    );
-    assert!(
-        log.contains("clippy --quiet"),
-        "Should run cargo clippy, got: {}",
-        log
-    );
-    assert!(
         log.contains("fmt --check"),
         "Should run cargo fmt --check, got: {}",
         log
     );
+    assert!(
+        log.contains("clippy --all-targets --quiet"),
+        "Should run cargo clippy --all-targets, got: {}",
+        log
+    );
+    assert!(
+        log.contains("nextest run"),
+        "Should run cargo nextest run, got: {}",
+        log
+    );
 }
 
-/// bin/ci exits non-zero when cargo test fails.
+/// bin/ci exits non-zero when cargo nextest fails.
 #[test]
-fn exits_nonzero_when_cargo_test_fails() {
+fn exits_nonzero_when_cargo_nextest_fails() {
     let dir = tempfile::tempdir().unwrap();
     setup_ci_project(dir.path());
     let mock_bin = dir.path().join("mock_bin");
     fs::create_dir_all(&mock_bin).unwrap();
-    // Mock cargo that fails on "test" subcommand
+    // Mock cargo that fails on "nextest" subcommand
     fs::write(
         mock_bin.join("cargo"),
-        "#!/usr/bin/env bash\nif [[ \"$1\" == \"test\" ]]; then exit 1; fi\nexit 0\n",
+        "#!/usr/bin/env bash\nif [[ \"$1\" == \"nextest\" ]]; then exit 1; fi\nexit 0\n",
     )
     .unwrap();
     let mut perms = fs::metadata(mock_bin.join("cargo")).unwrap().permissions();
@@ -119,7 +104,7 @@ fn exits_nonzero_when_cargo_test_fails() {
     let output = run_ci(dir.path(), Some(&path));
     assert!(
         !output.status.success(),
-        "Expected non-zero exit code when cargo test fails"
+        "Expected non-zero exit code when cargo nextest fails"
     );
 }
 
@@ -173,31 +158,14 @@ fn exits_nonzero_when_cargo_fmt_fails() {
     );
 }
 
-/// bin/ci skips cargo build when no Cargo.toml exists.
+/// Tombstone: cargo build step removed in CI speedup PR.
+/// bin/ci no longer runs a standalone cargo build — clippy --all-targets
+/// compiles everything, and nextest reuses those artifacts.
 #[test]
-fn skips_build_when_no_cargo_toml() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_ci_project(dir.path());
-    // Remove Cargo.toml
-    fs::remove_file(dir.path().join("Cargo.toml")).unwrap();
-    let mock_bin = setup_mock_cargo(dir.path());
-    let path = format!("{}:{}", mock_bin.display(), std::env::var("PATH").unwrap());
-    let output = run_ci(dir.path(), Some(&path));
+fn no_standalone_cargo_build() {
+    let script = fs::read_to_string(common::bin_dir().join("ci")).unwrap();
     assert!(
-        output.status.success(),
-        "Expected exit 0\nstderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let log = fs::read_to_string(dir.path().join("cargo_log")).unwrap();
-    assert!(
-        !log.contains("build"),
-        "Should not run cargo build without Cargo.toml, got: {}",
-        log
-    );
-    assert!(
-        log.contains("test"),
-        "Should still run cargo test, got: {}",
-        log
+        !script.contains("cargo build"),
+        "cargo build should not appear in bin/ci — clippy --all-targets replaces it"
     );
 }

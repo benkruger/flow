@@ -140,7 +140,7 @@ fn test_cli_branch_flag() {
     let output = cmd.output().unwrap();
     assert!(output.status.success());
     let parsed: Value =
-        serde_json::from_str(&String::from_utf8_lossy(&output.stdout).trim()).unwrap();
+        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
     assert_eq!(parsed["status"], "ok");
     assert_eq!(parsed["updates"][0]["value"], "approved");
 }
@@ -248,7 +248,7 @@ fn test_cli_error_no_state_file() {
     let output = cmd.output().unwrap();
     assert_eq!(output.status.code().unwrap(), 1);
     let parsed: Value =
-        serde_json::from_str(&String::from_utf8_lossy(&output.stdout).trim()).unwrap();
+        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
     assert_eq!(parsed["status"], "error");
     assert!(parsed["message"]
         .as_str()
@@ -339,7 +339,7 @@ fn test_cli_no_scan_no_state_file_tombstone() {
     let output = cmd.output().unwrap();
     assert_eq!(output.status.code().unwrap(), 1);
     let parsed: Value =
-        serde_json::from_str(&String::from_utf8_lossy(&output.stdout).trim()).unwrap();
+        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
     assert_eq!(parsed["status"], "error");
     assert!(
         parsed["message"]

@@ -85,11 +85,11 @@ fn extract_bash_blocks_from_content(content: &str) -> Vec<String> {
 fn extract_prime_permissions_block() -> Value {
     let content = common::read_skill("flow-prime");
     let re = Regex::new(r"```json\s*\n([\s\S]*?)```").unwrap();
+    let placeholder_cleaner = Regex::new(r"<[^>]+>").unwrap();
     for cap in re.captures_iter(&content) {
         let block = &cap[1];
         if block.contains("\"permissions\"") && block.contains("\"allow\"") {
-            let cleaned = Regex::new(r"<[^>]+>")
-                .unwrap()
+            let cleaned = placeholder_cleaner
                 .replace_all(block, "placeholder")
                 .to_string();
             if let Ok(parsed) = serde_json::from_str::<Value>(&cleaned) {
@@ -709,9 +709,9 @@ fn no_unrecognized_placeholders_in_bash_blocks() {
     let placeholder_re = Regex::new(r"<[a-zA-Z_/-]+>").unwrap();
     let mut errors = Vec::new();
 
+    let blockquote_re = Regex::new(r"^>\s*").unwrap();
     for (filepath, content) in all_check_files() {
         for block in extract_bash_blocks_from_content(&content) {
-            let blockquote_re = Regex::new(r"^>\s*").unwrap();
             let lines: Vec<String> = block
                 .lines()
                 .map(|l| blockquote_re.replace(l, "").to_string())

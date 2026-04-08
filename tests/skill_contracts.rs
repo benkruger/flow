@@ -140,9 +140,9 @@ fn phase_1_has_no_previous_phase_gate() {
 fn phase_skills_1_through_5_have_done_section_hard_gate() {
     let ps = phase_skills_map();
     let nums = phase_number();
+    let re = Regex::new(r"(?s)<HARD-GATE>(.*?)</HARD-GATE>").unwrap();
     for (key, skill) in &ps[..ps.len() - 1] {
         let content = common::read_skill(skill);
-        let re = Regex::new(r"(?s)<HARD-GATE>(.*?)</HARD-GATE>").unwrap();
         let gates: Vec<String> = re
             .captures_iter(&content)
             .map(|c| c[1].to_string())
@@ -323,7 +323,7 @@ fn assert_agent_exists(filename: &str, required_keys: &[&str]) {
     let map = fm.as_mapping().unwrap();
     for key in required_keys {
         assert!(
-            map.contains_key(&serde_yaml::Value::String(key.to_string())),
+            map.contains_key(serde_yaml::Value::String(key.to_string())),
             "{} missing '{}' in frontmatter",
             filename,
             key
@@ -567,13 +567,13 @@ fn code_review_hard_rules_require_step_continuation() {
 #[test]
 fn phase_skills_have_tool_restriction_in_hard_rules() {
     let ps = phase_skills_map();
+    let re_hr = Regex::new(r"(?s)## Hard Rules\n(.*)").unwrap();
     for (_, skill) in &ps {
         let content = common::read_skill(skill);
         if !content.contains("## Hard Rules") {
             continue;
         }
-        let re = Regex::new(r"(?s)## Hard Rules\n(.*)").unwrap();
-        if let Some(cap) = re.captures(&content) {
+        if let Some(cap) = re_hr.captures(&content) {
             let rules = &cap[1];
             assert!(
                 rules.contains("Bash") || rules.contains("bash"),
@@ -1583,10 +1583,10 @@ fn start_logging_uses_safe_pattern() {
 #[test]
 fn logged_phases_use_bin_flow_log() {
     let ps = phase_skills_map();
+    let re_log = Regex::new(r"(?s)## Logging\n(.*?)(?:\n## |\n---|\z)").unwrap();
     for (_, skill) in &ps[1..4] {
         let content = common::read_skill(skill);
-        let re = Regex::new(r"(?s)## Logging\n(.*?)(?:\n## |\n---|\z)").unwrap();
-        if let Some(cap) = re.captures(&content) {
+        if let Some(cap) = re_log.captures(&content) {
             let section = &cap[1];
             assert!(
                 section.contains("bin/flow log"),
@@ -2954,7 +2954,7 @@ fn no_exec_in_bash_blocks() {
         let content = common::read_skill(&name);
         for block in common::extract_bash_blocks(&content) {
             for line in block.lines() {
-                let first = line.trim().split_whitespace().next().unwrap_or("");
+                let first = line.split_whitespace().next().unwrap_or("");
                 if first == "exec" {
                     violations.push(format!("skills/{}/SKILL.md: {}", name, line.trim()));
                 }
@@ -2966,7 +2966,7 @@ fn no_exec_in_bash_blocks() {
         let content = common::read_agent(&agent);
         for block in common::extract_bash_blocks(&content) {
             for line in block.lines() {
-                let first = line.trim().split_whitespace().next().unwrap_or("");
+                let first = line.split_whitespace().next().unwrap_or("");
                 if first == "exec" {
                     violations.push(format!("agents/{}: {}", agent, line.trim()));
                 }
@@ -3002,9 +3002,9 @@ fn prime_presets_keys_match_phase_order() {
 
 #[test]
 fn quadruple_fenced_blocks_use_markdown_and_text() {
+    let re = Regex::new(r"````(\w+)").unwrap();
     for name in common::all_skill_names() {
         let content = common::read_skill(&name);
-        let re = Regex::new(r"````(\w+)").unwrap();
         for cap in re.captures_iter(&content) {
             let lang = &cap[1];
             assert!(

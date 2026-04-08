@@ -299,6 +299,7 @@ All permissions (universal + all framework sets) for reference:
       "Bash(go mod *)",
       "Bash(go fmt *)",
       "Bash(cargo test *)",
+      "Bash(cargo nextest *)",
       "Bash(cargo build *)",
       "Bash(cargo clippy *)",
       "Bash(cargo fmt *)",

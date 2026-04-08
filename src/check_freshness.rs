@@ -538,7 +538,7 @@ mod tests {
         assert_eq!(recorded.len(), 2);
         assert_eq!(
             recorded[0].0,
-            vec!["git", "fetch", "origin", "main"]
+            ["git", "fetch", "origin", "main"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect::<Vec<_>>()
@@ -546,7 +546,7 @@ mod tests {
         assert_eq!(recorded[0].1, 60);
         assert_eq!(
             recorded[1].0,
-            vec!["git", "merge-base", "--is-ancestor", "origin/main", "HEAD"]
+            ["git", "merge-base", "--is-ancestor", "origin/main", "HEAD"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect::<Vec<_>>()
@@ -569,7 +569,7 @@ mod tests {
         assert_eq!(recorded.len(), 3);
         assert_eq!(
             recorded[2].0,
-            vec!["git", "merge", "origin/main"]
+            ["git", "merge", "origin/main"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect::<Vec<_>>()

@@ -215,7 +215,7 @@ mod tests {
         set_blocked(&path);
         let updated: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert!(updated.get("_blocked").is_some());
-        assert!(updated["_blocked"].as_str().unwrap().len() > 0);
+        assert!(!updated["_blocked"].as_str().unwrap().is_empty());
     }
 
     #[test]

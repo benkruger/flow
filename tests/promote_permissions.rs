@@ -19,8 +19,7 @@ fn parse_stdout(stdout: &[u8]) -> Value {
     let text = String::from_utf8_lossy(stdout);
     let last_line = text
         .lines()
-        .filter(|l| !l.trim().is_empty())
-        .next_back()
+        .rfind(|l| !l.trim().is_empty())
         .unwrap_or_else(|| panic!("no stdout lines: {:?}", text));
     serde_json::from_str(last_line.trim())
         .unwrap_or_else(|e| panic!("JSON parse failed: {} (line: {:?})", e, last_line))

@@ -615,8 +615,6 @@ mod tests {
         let runner = |args: &[&str], _cwd: Option<&Path>| -> CmdResult {
             if args.contains(&"list") {
                 ok_result("[]")
-            } else if args.contains(&"api") {
-                ok_result("")
             } else {
                 ok_result("")
             }

@@ -1,0 +1,12 @@
+[profile.default]
+# Concurrency tests spawn multiple subprocesses that acquire filesystem
+# locks with polling intervals. Under full parallelism, system load
+# delays subprocess startup enough to cause lock timeouts. Run them
+# with limited parallelism to avoid flaky failures.
+
+[[profile.default.overrides]]
+filter = "binary_id(flow-rs::concurrency)"
+test-group = "serial-concurrency"
+
+[test-groups.serial-concurrency]
+max-threads = 1

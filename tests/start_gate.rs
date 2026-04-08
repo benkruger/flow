@@ -218,7 +218,7 @@ fn test_deps_ci_failed() {
         counter_path.to_string_lossy()
     );
     fs::write(bin_dir.join("ci"), script).unwrap();
-    fs::set_permissions(&bin_dir.join("ci"), fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(bin_dir.join("ci"), fs::Permissions::from_mode(0o755)).unwrap();
 
     let output = run_start_gate(&repo, "deps-ci-fail-branch");
     let data = parse_output(&output);
@@ -252,7 +252,7 @@ fn test_deps_ci_flaky() {
         counter_path.to_string_lossy()
     );
     fs::write(bin_dir.join("ci"), script).unwrap();
-    fs::set_permissions(&bin_dir.join("ci"), fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(bin_dir.join("ci"), fs::Permissions::from_mode(0o755)).unwrap();
 
     let output = run_start_gate(&repo, "deps-flaky-branch");
     let data = parse_output(&output);

@@ -794,7 +794,7 @@ mod tests {
 
         let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert!(state.get("_blocked").is_some());
-        assert!(state["_blocked"].as_str().unwrap().len() > 0);
+        assert!(!state["_blocked"].as_str().unwrap().is_empty());
     }
 
     #[test]

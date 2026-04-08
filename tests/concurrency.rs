@@ -201,7 +201,7 @@ fn start_lock_serialization() {
         .map(|id| {
             let repo = Arc::clone(&repo);
             let timings = Arc::clone(&timings);
-            let baseline = baseline;
+
             thread::spawn(move || {
                 // Stagger starts by 100ms intervals
                 thread::sleep(Duration::from_millis(id as u64 * 100));
@@ -315,7 +315,7 @@ fn thundering_herd_zero_delay() {
             let repo = Arc::clone(&repo);
             let timings = Arc::clone(&timings);
             let barrier = Arc::clone(&barrier);
-            let baseline = baseline;
+
             thread::spawn(move || {
                 barrier.wait();
 
@@ -540,9 +540,8 @@ fn cleanup_isolation() {
     // branch-b state file should have the mutation
     let content = fs::read_to_string(&state_b).expect("Failed to read branch-b state");
     let data: Value = serde_json::from_str(&content).expect("Failed to parse branch-b state");
-    assert_eq!(
+    assert!(
         data["mutated"].as_bool().unwrap(),
-        true,
         "branch-b should have mutated=true"
     );
     assert_eq!(

@@ -149,7 +149,7 @@ mod tests {
     fn project_root_returns_path() {
         // In a git repo, should return a valid path
         let root = project_root();
-        assert!(root.exists() || root == PathBuf::from("."));
+        assert!(root.exists() || root == Path::new("."));
     }
 
     // --- current_branch() ---

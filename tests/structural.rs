@@ -13,7 +13,6 @@ use std::path::PathBuf;
 
 use regex::Regex;
 use serde_json::Value;
-use serde_yaml;
 
 // --- Phase structure tests ---
 
@@ -253,7 +252,7 @@ fn test_hooks_json_has_pretooluse_bash_validator() {
     let matchers = hook_map["PreToolUse"].as_array().unwrap();
     let bash_matchers: Vec<&Value> = matchers
         .iter()
-        .filter(|m| m["matcher"].as_str().map_or(false, |s| s.contains("Bash")))
+        .filter(|m| m["matcher"].as_str().is_some_and(|s| s.contains("Bash")))
         .collect();
     assert_eq!(
         bash_matchers.len(),
@@ -325,15 +324,15 @@ fn test_hooks_json_read_glob_grep_consolidated() {
     let matchers = hooks["hooks"]["PreToolUse"].as_array().unwrap();
     let read_matchers: Vec<&Value> = matchers
         .iter()
-        .filter(|m| m["matcher"].as_str().map_or(false, |s| s == "Read"))
+        .filter(|m| m["matcher"].as_str() == Some("Read"))
         .collect();
     let glob_matchers: Vec<&Value> = matchers
         .iter()
-        .filter(|m| m["matcher"].as_str().map_or(false, |s| s == "Glob"))
+        .filter(|m| m["matcher"].as_str() == Some("Glob"))
         .collect();
     let grep_matchers: Vec<&Value> = matchers
         .iter()
-        .filter(|m| m["matcher"].as_str().map_or(false, |s| s == "Grep"))
+        .filter(|m| m["matcher"].as_str() == Some("Grep"))
         .collect();
     assert!(
         read_matchers.is_empty(),
@@ -350,9 +349,9 @@ fn test_hooks_json_read_glob_grep_consolidated() {
     let combined: Vec<&Value> = matchers
         .iter()
         .filter(|m| {
-            m["matcher"].as_str().map_or(false, |s| {
-                s.contains("Read") && s.contains("Glob") && s.contains("Grep")
-            })
+            m["matcher"]
+                .as_str()
+                .is_some_and(|s| s.contains("Read") && s.contains("Glob") && s.contains("Grep"))
         })
         .collect();
     assert_eq!(
@@ -370,7 +369,7 @@ fn test_hooks_json_has_no_exit_plan_validator() {
     let matchers = hooks["hooks"]["PreToolUse"].as_array().unwrap();
     let exit_plan_matchers: Vec<&Value> = matchers
         .iter()
-        .filter(|m| m["matcher"].as_str().map_or(false, |s| s == "ExitPlanMode"))
+        .filter(|m| m["matcher"].as_str() == Some("ExitPlanMode"))
         .collect();
     assert!(
         exit_plan_matchers.is_empty(),
@@ -469,7 +468,7 @@ fn test_every_script_has_a_test_file() {
     let mut sh_files: Vec<_> = fs::read_dir(&hooks)
         .unwrap()
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |ext| ext == "sh"))
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "sh"))
         .collect();
     sh_files.sort_by_key(|e| e.file_name());
     for sh in &sh_files {
@@ -732,7 +731,7 @@ fn agent_md_files() -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = fs::read_dir(&agents)
         .unwrap()
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |ext| ext == "md"))
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
         .map(|e| e.path())
         .collect();
     files.sort();
@@ -795,12 +794,12 @@ fn test_all_agents_specify_model() {
         let frontmatter = parse_agent_frontmatter(&agent_file);
         let mapping = frontmatter.as_mapping().unwrap();
         assert!(
-            mapping.contains_key(&serde_yaml::Value::String("model".to_string())),
+            mapping.contains_key(serde_yaml::Value::String("model".to_string())),
             "{} missing 'model' key in frontmatter -- agents without an explicit model inherit from the parent session",
             file_name
         );
         let model = mapping
-            .get(&serde_yaml::Value::String("model".to_string()))
+            .get(serde_yaml::Value::String("model".to_string()))
             .unwrap()
             .as_str()
             .unwrap();

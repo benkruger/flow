@@ -59,8 +59,7 @@ fn cli_current_version_smoke() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let last_line = stdout
         .lines()
-        .filter(|l| !l.trim().is_empty())
-        .next_back()
+        .rfind(|l| !l.trim().is_empty())
         .unwrap_or_else(|| panic!("no stdout lines: {}", stdout));
     let data: Value = serde_json::from_str(last_line.trim())
         .unwrap_or_else(|e| panic!("JSON parse failed: {} (line: {:?})", e, last_line));

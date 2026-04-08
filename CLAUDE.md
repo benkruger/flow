@@ -79,7 +79,7 @@ CI will fail if these are missing:
 ## Development Environment
 
 - Run tests with `bin/ci` only — never invoke cargo directly
-- `bin/ci` runs `cargo build`, `cargo test`, `cargo clippy`, and `cargo fmt --check`
+- `bin/ci` runs `cargo fmt --check`, `cargo clippy --all-targets`, and `cargo nextest run`
 - **Use `bin/test <filter>` for targeted test runs during development** — `bin/ci` runs the full suite and is the gate before committing. `bin/test hooks` runs every test in `tests/hooks.rs`. `bin/test --rust <filter>` is accepted for backwards compatibility (equivalent to `bin/test <filter>`). Never call cargo directly — always use `bin/test` or `bin/ci`.
 - Dependencies managed via `bin/dependencies` (runs `cargo update`)
 

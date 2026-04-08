@@ -208,8 +208,8 @@ pub fn extract_bash_blocks(content: &str) -> Vec<String> {
                 blocks.push(current_block.trim().to_string());
             }
         } else if in_block {
-            let stripped = if line.starts_with("> ") {
-                &line[2..]
+            let stripped = if let Some(s) = line.strip_prefix("> ") {
+                s
             } else {
                 line
             };

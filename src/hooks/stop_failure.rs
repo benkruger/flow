@@ -96,7 +96,7 @@ mod tests {
         assert_eq!(failure["type"], "rate_limit");
         assert_eq!(failure["message"], "429 Too Many Requests");
         assert!(failure.get("timestamp").is_some());
-        assert!(failure["timestamp"].as_str().unwrap().len() > 0);
+        assert!(!failure["timestamp"].as_str().unwrap().is_empty());
     }
 
     #[test]

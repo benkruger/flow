@@ -1,6 +1,7 @@
 {
   "allow": [
     "Bash(cargo test *)",
+    "Bash(cargo nextest *)",
     "Bash(cargo build *)",
     "Bash(cargo clippy *)",
     "Bash(cargo fmt *)",

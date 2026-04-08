@@ -35,9 +35,9 @@ fn run_test_with_env(
         .unwrap()
 }
 
-/// bin/test runs cargo test.
+/// bin/test runs cargo nextest run.
 #[test]
-fn runs_cargo_test() {
+fn runs_cargo_nextest() {
     let dir = tempfile::tempdir().unwrap();
     setup_test_project(dir.path());
 
@@ -58,13 +58,13 @@ fn runs_cargo_test() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(
-        stdout.contains("CARGO_MARKER: test"),
-        "Expected cargo test invocation, got: {}",
+        stdout.contains("CARGO_MARKER: nextest run"),
+        "Expected cargo nextest run invocation, got: {}",
         stdout
     );
 }
 
-/// bin/test passes arguments through to cargo test.
+/// bin/test passes arguments through to cargo nextest run.
 #[test]
 fn passes_arguments_through() {
     let dir = tempfile::tempdir().unwrap();
@@ -86,7 +86,7 @@ fn passes_arguments_through() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(
-        stdout.contains("CARGO_ARGS: test my_test -- --nocapture"),
+        stdout.contains("CARGO_ARGS: nextest run my_test -- --nocapture"),
         "Expected full args, got: {}",
         stdout
     );
@@ -94,7 +94,7 @@ fn passes_arguments_through() {
 
 /// bin/test --rust flag is accepted (backwards compat no-op).
 #[test]
-fn rust_flag_runs_cargo_test() {
+fn rust_flag_runs_cargo_nextest() {
     let dir = tempfile::tempdir().unwrap();
     setup_test_project(dir.path());
 
@@ -114,13 +114,13 @@ fn rust_flag_runs_cargo_test() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(
-        stdout.contains("CARGO_MARKER: test"),
-        "Expected cargo test invocation with --rust flag, got: {}",
+        stdout.contains("CARGO_MARKER: nextest run"),
+        "Expected cargo nextest run invocation with --rust flag, got: {}",
         stdout
     );
 }
 
-/// bin/test --rust passes remaining args to cargo test.
+/// bin/test --rust passes remaining args to cargo nextest run.
 #[test]
 fn rust_flag_passes_extra_args() {
     let dir = tempfile::tempdir().unwrap();
@@ -147,7 +147,7 @@ fn rust_flag_passes_extra_args() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(
-        stdout.contains("CARGO_ARGS: test my_test_name -- --nocapture"),
+        stdout.contains("CARGO_ARGS: nextest run my_test_name -- --nocapture"),
         "Expected full args, got: {}",
         stdout
     );

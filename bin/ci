@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-
-# Build Rust binary before running tests
-if [ -f "$REPO_ROOT/Cargo.toml" ]; then
-  cargo build --quiet
-fi
-
-cargo test --quiet
-cargo clippy --quiet -- -D warnings
+# Fast fail: formatting check is instant
 cargo fmt --check
+
+# Clippy with all targets — compiles everything including tests
+cargo clippy --all-targets --quiet -- -D warnings
+
+# Tests reuse clippy's compilation artifacts; nextest runs binaries in parallel
+cargo nextest run
