@@ -107,7 +107,10 @@ pub fn detect(project: &Path, fw_dir: &Path) -> Vec<Value> {
 
 /// Return the list of all available frameworks from `fw_dir`.
 pub fn available_frameworks(fw_dir: &Path) -> Vec<Value> {
-    load_detect_configs(fw_dir).iter().map(framework_summary).collect()
+    load_detect_configs(fw_dir)
+        .iter()
+        .map(framework_summary)
+        .collect()
 }
 
 /// Build the CLI result as a JSON value.

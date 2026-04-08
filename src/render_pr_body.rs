@@ -33,11 +33,13 @@ fn resolve_path(path_str: Option<&str>, project_dir: &Path) -> Option<PathBuf> {
 /// Falls back to legacy top-level plan_file/dag_file for old state files.
 fn build_artifacts(state: &serde_json::Value) -> Vec<String> {
     if let Some(files) = state.get("files").and_then(|v| v.as_object()) {
-        let mut rows = vec![
-            "| File | Path |".to_string(),
-            "|------|------|".to_string(),
+        let mut rows = vec!["| File | Path |".to_string(), "|------|------|".to_string()];
+        let labels = [
+            ("Plan", "plan"),
+            ("DAG", "dag"),
+            ("Log", "log"),
+            ("State", "state"),
         ];
-        let labels = [("Plan", "plan"), ("DAG", "dag"), ("Log", "log"), ("State", "state")];
         for (label, key) in &labels {
             if let Some(path) = files.get(*key).and_then(|v| v.as_str()) {
                 if !path.is_empty() {
@@ -138,7 +140,12 @@ pub fn render_body(state: &serde_json::Value, project_dir: &Path) -> Result<Stri
                 .map_err(|e| e.to_string())?
                 .trim_end_matches('\n')
                 .to_string();
-            sections.push(build_details_block("Plan", "Implementation plan", &content, "text"));
+            sections.push(build_details_block(
+                "Plan",
+                "Implementation plan",
+                &content,
+                "text",
+            ));
             section_names.push("Plan".to_string());
         }
     }
@@ -196,7 +203,12 @@ pub fn render_body(state: &serde_json::Value, project_dir: &Path) -> Result<Stri
                 .map_err(|e| e.to_string())?
                 .trim_end_matches('\n')
                 .to_string();
-            sections.push(build_details_block("Session Log", log_rel, &content, "text"));
+            sections.push(build_details_block(
+                "Session Log",
+                log_rel,
+                &content,
+                "text",
+            ));
             section_names.push("Session Log".to_string());
         }
     }
@@ -260,7 +272,10 @@ pub fn run(args: Args) {
         }
     };
 
-    let project_dir = state_path.parent().and_then(|p| p.parent()).unwrap_or(Path::new("."));
+    let project_dir = state_path
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap_or(Path::new("."));
 
     let body = match render_body(&state, project_dir) {
         Ok(b) => b,
@@ -690,7 +705,11 @@ mod tests {
     fn missing_plan_file() {
         let mut state = make_test_state();
         let dir = tempfile::tempdir().unwrap();
-        state["plan_file"] = json!(dir.path().join("nonexistent-plan.md").to_string_lossy().to_string());
+        state["plan_file"] = json!(dir
+            .path()
+            .join("nonexistent-plan.md")
+            .to_string_lossy()
+            .to_string());
 
         let body = render_body(&state, dir.path()).unwrap();
         // Plan heading only appears in a details block, not standalone
@@ -703,7 +722,11 @@ mod tests {
     fn missing_dag_file() {
         let mut state = make_test_state();
         let dir = tempfile::tempdir().unwrap();
-        state["dag_file"] = json!(dir.path().join("nonexistent-dag.md").to_string_lossy().to_string());
+        state["dag_file"] = json!(dir
+            .path()
+            .join("nonexistent-dag.md")
+            .to_string_lossy()
+            .to_string());
 
         let body = render_body(&state, dir.path()).unwrap();
         assert!(!body.contains("## DAG Analysis"));

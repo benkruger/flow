@@ -22,7 +22,10 @@ use serde_json::json;
 use crate::utils::frameworks_dir;
 
 #[derive(Parser, Debug)]
-#[command(name = "create-dependencies", about = "Copy framework dependency template")]
+#[command(
+    name = "create-dependencies",
+    about = "Copy framework dependency template"
+)]
 pub struct Args {
     /// Project root directory
     pub project_root: String,
@@ -110,7 +113,10 @@ pub fn create(project_root: &str, framework: &str, fw_dir: Option<&Path>) -> ser
 pub fn run(args: Args) {
     let result = create(&args.project_root, &args.framework, None);
 
-    let status = result.get("status").and_then(|v| v.as_str()).unwrap_or("error");
+    let status = result
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("error");
     println!("{}", result);
 
     if status == "error" {
@@ -134,7 +140,8 @@ mod tests {
         let args = Args::try_parse_from([
             "create-dependencies",
             "/tmp/project",
-            "--framework", "rails",
+            "--framework",
+            "rails",
         ]);
         assert!(args.is_ok());
         let args = args.unwrap();
@@ -144,19 +151,13 @@ mod tests {
 
     #[test]
     fn args_missing_project_root_fails() {
-        let args = Args::try_parse_from([
-            "create-dependencies",
-            "--framework", "rails",
-        ]);
+        let args = Args::try_parse_from(["create-dependencies", "--framework", "rails"]);
         assert!(args.is_err());
     }
 
     #[test]
     fn args_missing_framework_fails() {
-        let args = Args::try_parse_from([
-            "create-dependencies",
-            "/tmp/project",
-        ]);
+        let args = Args::try_parse_from(["create-dependencies", "/tmp/project"]);
         assert!(args.is_err());
     }
 
@@ -187,7 +188,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bin_dir = dir.path().join("bin");
         fs::create_dir_all(&bin_dir).unwrap();
-        fs::write(bin_dir.join("dependencies"), "#!/usr/bin/env bash\n# custom\n").unwrap();
+        fs::write(
+            bin_dir.join("dependencies"),
+            "#!/usr/bin/env bash\n# custom\n",
+        )
+        .unwrap();
         let fw = frameworks_test_dir();
         let result = create(dir.path().to_str().unwrap(), "rails", Some(&fw));
         assert_eq!(result["status"], "skipped");

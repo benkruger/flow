@@ -94,10 +94,7 @@ pub fn parse_issue_number(url: &str) -> Option<i64> {
 pub fn fetch_database_id(repo: &str, number: i64) -> (Option<i64>, Option<String>) {
     let timeout = Duration::from_secs(LOCAL_TIMEOUT);
     let api_path = format!("repos/{}/issues/{}", repo, number);
-    match run_gh_cmd(
-        &["gh", "api", &api_path, "--jq", ".id"],
-        Some(timeout),
-    ) {
+    match run_gh_cmd(&["gh", "api", &api_path, "--jq", ".id"], Some(timeout)) {
         Ok(stdout) => match stdout.trim().parse::<i64>() {
             Ok(id) => (Some(id), None),
             Err(_) => (
@@ -227,24 +224,17 @@ pub fn run_gh_cmd(args: &[&str], timeout: Option<Duration>) -> Result<String, St
                 Ok(Some(_status)) => {
                     let output = child.wait_with_output().map_err(|e| e.to_string())?;
                     if !output.status.success() {
-                        let stderr =
-                            String::from_utf8_lossy(&output.stderr).trim().to_string();
-                        let stdout =
-                            String::from_utf8_lossy(&output.stdout).trim().to_string();
+                        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
                         return Err(extract_error(&stderr, &stdout));
                     }
-                    return Ok(String::from_utf8_lossy(&output.stdout)
-                        .trim()
-                        .to_string());
+                    return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
                 }
                 Ok(None) => {
                     if start.elapsed() >= dur {
                         let _ = child.kill();
                         let _ = child.wait();
-                        return Err(format!(
-                            "Command timed out after {}s",
-                            dur.as_secs()
-                        ));
+                        return Err(format!("Command timed out after {}s", dur.as_secs()));
                     }
                     std::thread::sleep(poll_interval.min(dur - start.elapsed()));
                 }
@@ -486,11 +476,7 @@ mod tests {
     fn resolve_repo_from_valid_state() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("state.json");
-        fs::write(
-            &file,
-            r#"{"repo": "cached/repo", "branch": "test"}"#,
-        )
-        .unwrap();
+        fs::write(&file, r#"{"repo": "cached/repo", "branch": "test"}"#).unwrap();
 
         assert_eq!(
             resolve_repo_from_state(file.to_str().unwrap()),
@@ -518,9 +504,6 @@ mod tests {
 
     #[test]
     fn resolve_repo_from_missing_state() {
-        assert_eq!(
-            resolve_repo_from_state("/nonexistent/state.json"),
-            None
-        );
+        assert_eq!(resolve_repo_from_state("/nonexistent/state.json"), None);
     }
 }

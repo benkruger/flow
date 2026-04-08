@@ -59,7 +59,10 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let _ = append_log(
         &root,
         &args.feature_name,
-        &format!("[Phase 1] start-init — lock acquire ({})", lock_result["status"]),
+        &format!(
+            "[Phase 1] start-init — lock acquire ({})",
+            lock_result["status"]
+        ),
     );
 
     if lock_result["status"] == "locked" {
@@ -85,7 +88,14 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let prime_result = match prime_check::run_impl(&cwd, &plug_root) {
         Ok(v) => v,
         Err(e) => {
-            let _ = append_log(&root, &args.feature_name, &format!("[Phase 1] start-init — prime-check infrastructure error: {}", e));
+            let _ = append_log(
+                &root,
+                &args.feature_name,
+                &format!(
+                    "[Phase 1] start-init — prime-check infrastructure error: {}",
+                    e
+                ),
+            );
             return Ok(release_and_error(&e, "prime_check"));
         }
     };
@@ -93,16 +103,25 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let _ = append_log(
         &root,
         &args.feature_name,
-        &format!("[Phase 1] start-init — prime-check ({})", prime_result["status"]),
+        &format!(
+            "[Phase 1] start-init — prime-check ({})",
+            prime_result["status"]
+        ),
     );
 
     if prime_result["status"] == "error" {
-        let msg = prime_result["message"].as_str().unwrap_or("Prime check failed").to_string();
+        let msg = prime_result["message"]
+            .as_str()
+            .unwrap_or("Prime check failed")
+            .to_string();
         return Ok(release_and_error(&msg, "prime_check"));
     }
 
     // Capture version info for response
-    let auto_upgraded = prime_result.get("auto_upgraded").and_then(|v| v.as_bool()).unwrap_or(false);
+    let auto_upgraded = prime_result
+        .get("auto_upgraded")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let mut version_info = json!({});
     if auto_upgraded {
         version_info["auto_upgraded"] = json!(true);
@@ -123,7 +142,10 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let _ = append_log(
         &root,
         &args.feature_name,
-        &format!("[Phase 1] start-init — upgrade-check ({})", upgrade_result["status"]),
+        &format!(
+            "[Phase 1] start-init — upgrade-check ({})",
+            upgrade_result["status"]
+        ),
     );
 
     // Step 4: Call init-state as subprocess
@@ -162,17 +184,28 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         .lines()
         .last()
         .and_then(|line| serde_json::from_str(line).ok())
-        .unwrap_or_else(|| json!({"status": "error", "message": "Could not parse init-state output"}));
+        .unwrap_or_else(
+            || json!({"status": "error", "message": "Could not parse init-state output"}),
+        );
 
     let _ = append_log(
         &root,
         &args.feature_name,
-        &format!("[Phase 1] start-init — init-state ({})", init_json["status"]),
+        &format!(
+            "[Phase 1] start-init — init-state ({})",
+            init_json["status"]
+        ),
     );
 
     if init_json["status"] == "error" {
-        let msg = init_json["message"].as_str().unwrap_or("init-state failed").to_string();
-        let step = init_json["step"].as_str().unwrap_or("init_state").to_string();
+        let msg = init_json["message"]
+            .as_str()
+            .unwrap_or("init-state failed")
+            .to_string();
+        let step = init_json["step"]
+            .as_str()
+            .unwrap_or("init_state")
+            .to_string();
         return Ok(release_and_error(&msg, &step));
     }
 
@@ -191,13 +224,11 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         .as_str()
         .map(String::from)
         .or_else(|| {
-            fs::read_to_string(&state_path)
-                .ok()
-                .and_then(|content| {
-                    serde_json::from_str::<Value>(&content)
-                        .ok()
-                        .and_then(|state| state["prompt"].as_str().map(String::from))
-                })
+            fs::read_to_string(&state_path).ok().and_then(|content| {
+                serde_json::from_str::<Value>(&content)
+                    .ok()
+                    .and_then(|state| state["prompt"].as_str().map(String::from))
+            })
         })
         .unwrap_or_default();
     let prompt = prompt_owned.as_str();

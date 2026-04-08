@@ -24,13 +24,21 @@ pub fn check_phase(
         &IndexMap<String, String>,
     ) = match phase_config {
         Some(cfg) => (&cfg.order, &cfg.names, &cfg.numbers, &cfg.commands),
-        None => (&default_order, &default_names, &default_numbers, &default_commands),
+        None => (
+            &default_order,
+            &default_names,
+            &default_numbers,
+            &default_commands,
+        ),
     };
 
-    let phase_idx = order
-        .iter()
-        .position(|p| p == phase)
-        .ok_or_else(|| format!("Invalid phase: {}. Must be one of: {}", phase, order.join(", ")))?;
+    let phase_idx = order.iter().position(|p| p == phase).ok_or_else(|| {
+        format!(
+            "Invalid phase: {}. Must be one of: {}",
+            phase,
+            order.join(", ")
+        )
+    })?;
 
     // First phase has no prerequisites
     if phase_idx == 0 {
@@ -46,14 +54,20 @@ pub fn check_phase(
         .and_then(|s| s.as_str())
         .unwrap_or("pending");
 
-    let prev_name = names.get(prev.as_str()).cloned().unwrap_or_else(|| prev.clone());
+    let prev_name = names
+        .get(prev.as_str())
+        .cloned()
+        .unwrap_or_else(|| prev.clone());
     let prev_num = numbers.get(prev.as_str()).copied().unwrap_or(0);
     let prev_cmd = commands
         .get(prev.as_str())
         .cloned()
         .unwrap_or_else(|| format!("/flow:{}", prev));
 
-    let phase_name = names.get(phase).cloned().unwrap_or_else(|| phase.to_string());
+    let phase_name = names
+        .get(phase)
+        .cloned()
+        .unwrap_or_else(|| phase.to_string());
     let phase_num = numbers.get(phase).copied().unwrap_or(0);
 
     if prev_status != "complete" {
@@ -96,10 +110,7 @@ mod tests {
     use serde_json::json;
 
     /// Build a minimal state Value matching conftest.py make_state().
-    fn make_state(
-        current_phase: &str,
-        phase_statuses: &[(&str, &str)],
-    ) -> Value {
+    fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
         let phase_names = phase_config::phase_names();
         let mut phases = serde_json::Map::new();
         for &p in PHASE_ORDER {
@@ -304,11 +315,7 @@ mod tests {
     fn check_phase_frozen_config_uses_correct_predecessor() {
         // Custom order: start, code, plan — so plan's predecessor is code
         let config = PhaseConfig {
-            order: vec![
-                "flow-start".into(),
-                "flow-code".into(),
-                "flow-plan".into(),
-            ],
+            order: vec!["flow-start".into(), "flow-code".into(), "flow-plan".into()],
             names: {
                 let mut m = IndexMap::new();
                 m.insert("flow-start".into(), "Start".into());

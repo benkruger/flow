@@ -95,7 +95,11 @@ fn test_substring_version_not_matched() {
 ";
     // v0.1.0 must NOT match v0.10.0 header (substring match bug)
     let result = extract("v0.1.0", notes);
-    assert!(result.starts_with("## v0.1.0"), "Expected v0.1.0 section, got: {}", result);
+    assert!(
+        result.starts_with("## v0.1.0"),
+        "Expected v0.1.0 section, got: {}",
+        result
+    );
     assert!(result.contains("Feature A"));
     assert!(!result.contains("Feature X"));
 }

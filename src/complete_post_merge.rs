@@ -24,7 +24,10 @@ const POST_MERGE_STEP: i64 = 6;
 type CmdResult = Result<(i32, String, String), String>;
 
 #[derive(Parser, Debug)]
-#[command(name = "complete-post-merge", about = "FLOW Complete phase post-merge operations")]
+#[command(
+    name = "complete-post-merge",
+    about = "FLOW Complete phase post-merge operations"
+)]
 pub struct Args {
     /// PR number
     #[arg(long, required = true)]
@@ -278,7 +281,8 @@ pub fn post_merge_inner(
         let closed_path = root
             .join(".flow-states")
             .join(format!("{}-closed-issues.json", branch));
-        let closed_json = serde_json::to_string(&closed_issues).unwrap_or_else(|_| "[]".to_string());
+        let closed_json =
+            serde_json::to_string(&closed_issues).unwrap_or_else(|_| "[]".to_string());
         if let Err(e) = std::fs::write(&closed_path, closed_json) {
             failures.insert("closed_issues_file".to_string(), json!(e.to_string()));
         }
@@ -405,8 +409,8 @@ pub fn post_merge_inner(
                 match parsed {
                     Some(slack_data) => {
                         // Record notification if successful
-                        let status_ok = slack_data.get("status").and_then(|v| v.as_str())
-                            == Some("ok");
+                        let status_ok =
+                            slack_data.get("status").and_then(|v| v.as_str()) == Some("ok");
                         let ts_opt = slack_data
                             .get("ts")
                             .and_then(|v| v.as_str())
@@ -477,13 +481,16 @@ mod tests {
 
     const PT_COMPLETE_OK: &str = r#"{"status": "ok", "phase": "flow-complete", "action": "complete", "cumulative_seconds": 45, "formatted_time": "<1m", "next_phase": "flow-complete", "continue_action": "invoke"}"#;
     const RENDER_PR_OK: &str = r#"{"status": "ok", "sections": ["What"]}"#;
-    const ISSUES_SUMMARY_NO_ISSUES: &str = r#"{"status": "ok", "has_issues": false, "banner_line": "", "table": ""}"#;
+    const ISSUES_SUMMARY_NO_ISSUES: &str =
+        r#"{"status": "ok", "has_issues": false, "banner_line": "", "table": ""}"#;
     const ISSUES_SUMMARY_WITH_ISSUES: &str = r#"{"status": "ok", "has_issues": true, "banner_line": "Issues filed: 1 (Flaky Test: 1)", "table": "| Label | Title |"}"#;
     const CLOSE_ISSUES_EMPTY: &str = r#"{"status": "ok", "closed": [], "failed": []}"#;
     const CLOSE_ISSUES_WITH_CLOSED: &str = r#"{"status": "ok", "closed": [{"number": 100, "url": "https://github.com/test/test/issues/100"}], "failed": []}"#;
-    const SUMMARY_OK: &str = r#"{"status": "ok", "summary": "test summary", "total_seconds": 300, "issues_links": ""}"#;
+    const SUMMARY_OK: &str =
+        r#"{"status": "ok", "summary": "test summary", "total_seconds": 300, "issues_links": ""}"#;
     const LABEL_OK: &str = r#"{"status": "ok", "labeled": [100], "failed": []}"#;
-    const AUTO_CLOSE_OK: &str = r#"{"status": "ok", "parent_closed": false, "milestone_closed": false}"#;
+    const AUTO_CLOSE_OK: &str =
+        r#"{"status": "ok", "parent_closed": false, "milestone_closed": false}"#;
     const SLACK_OK: &str = r#"{"status": "ok", "ts": "1234567890.123456"}"#;
     const ADD_NOTIFICATION_OK: &str = r#"{"status": "ok", "notification_count": 1}"#;
 
@@ -526,7 +533,12 @@ mod tests {
     }
 
     /// Setup fixture: create root/.flow-states/ and write state file there.
-    fn setup(dir: &Path, branch: &str, slack_thread_ts: Option<&str>, repo: Option<&str>) -> PathBuf {
+    fn setup(
+        dir: &Path,
+        branch: &str,
+        slack_thread_ts: Option<&str>,
+        repo: Option<&str>,
+    ) -> PathBuf {
         let state_dir = dir.join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
         let mut state = json!({

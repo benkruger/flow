@@ -55,7 +55,6 @@ CI will fail if these are missing:
 
 ### Test requirements
 
-- New `lib/*.py` script — corresponding `tests/test_*.py` with 100% coverage
 - New skills auto-covered by `tests/skill_contracts.rs` (glob-based discovery)
 - Any new executable code needs tests — skills are Markdown and don't need tests beyond contracts
 
@@ -72,19 +71,17 @@ CI will fail if these are missing:
 - `docs/` — GitHub Pages site (static HTML); `docs/reference/flow-state-schema.md` for state file schema
 - `frameworks/<name>/` — per-framework data: `detect.json`, `permissions.json`, `dependencies`, `priming.md`
 - `agents/*.md` — six custom plugin sub-agents: ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, documentation
-- `lib/flow_utils.py` — shared utilities (timestamps, branch detection, state mutation, repo detection)
-- `lib/*.py` — utility scripts invoked by `bin/flow` subcommands (read individual files for details)
-- `bin/flow` — hybrid dispatcher: tries Rust binary first (`target/release/flow-rs` or `target/debug/flow-rs`), auto-rebuilds when source is newer than binary, falls back to `lib/*.py` on exit 127
+- `src/*.rs` — Rust source implementing all `bin/flow` subcommands
+- `bin/flow` — Rust dispatcher: resolves the Rust binary (`target/release/flow-rs` or `target/debug/flow-rs`), auto-rebuilds when source is newer than binary
 - `qa/templates/<framework>/` — per-framework QA repo templates (rails, python, ios, go, rust)
 - `.claude-plugin/marketplace.json` — marketplace registry (version must match plugin.json)
 
 ## Development Environment
 
-- Python virtualenv at `.venv/` — `bin/ci` uses `.venv/bin/python3` automatically
-- Run tests with `bin/ci` only — never invoke pytest directly
-- **Use `bin/test <path>` for targeted test runs during development** — `bin/ci` runs the full suite and is the gate before committing. `bin/test tests/test_specific.py` runs a subset of Python tests via the same venv; `bin/test --rust <filter>` runs a subset of Rust tests via `cargo test <filter>` (e.g. `bin/test --rust hooks` runs every test in `tests/hooks.rs`). Never call pytest or cargo directly — always use one of the two `bin/test` forms.
-- `ruff` enforces Python linting (E+F+W+I rules) and formatting at `line-length = 120` — configured in `ruff.toml`, runs inside `bin/ci`
-- Dependencies managed in the venv, not system Python
+- Run tests with `bin/ci` only — never invoke cargo directly
+- `bin/ci` runs `cargo build`, `cargo test`, `cargo clippy`, and `cargo fmt --check`
+- **Use `bin/test <filter>` for targeted test runs during development** — `bin/ci` runs the full suite and is the gate before committing. `bin/test hooks` runs every test in `tests/hooks.rs`. `bin/test --rust <filter>` is accepted for backwards compatibility (equivalent to `bin/test <filter>`). Never call cargo directly — always use `bin/test` or `bin/ci`.
+- Dependencies managed via `bin/dependencies` (runs `cargo update`)
 
 ## Architecture
 
@@ -94,11 +91,11 @@ This repo is the plugin source. When installed, skills and hooks run in the targ
 
 ### Skills Are Markdown, Not Code
 
-Skills are pure Markdown instructions (`skills/<name>/SKILL.md`). The only executable code is `bin/flow` (dispatcher), `lib/*.py` (utility scripts), `bin/ci`, and `bin/test`. Everything else is instructions that Claude reads and follows.
+Skills are pure Markdown instructions (`skills/<name>/SKILL.md`). The only executable code is `bin/flow` (dispatcher), `src/*.rs` (Rust source), `bin/ci`, and `bin/test`. Everything else is instructions that Claude reads and follows.
 
 ### State File
 
-The state file (`.flow-states/<branch>.json`) is the backbone. Schema reference: `docs/reference/flow-state-schema.md`. Test fixture: `tests/conftest.py:make_state()`.
+The state file (`.flow-states/<branch>.json`) is the backbone. Schema reference: `docs/reference/flow-state-schema.md`. Test fixtures: `tests/common/mod.rs` helpers (`create_git_repo_with_remote`, state JSON builders).
 
 ### Local vs Shared State
 
@@ -153,9 +150,9 @@ Every bash block in every skill must run without triggering a permission prompt.
 
 ## Test Architecture
 
-Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_project` (git repo with non-bash `bin/ci` and no `bin/flow` — simulates a Rails/non-Python target project), `state_dir` (flow-states dir inside git repo), `make_state()` (build state dicts), `write_state()` (write state JSON files). Integration tests for lib scripts that run in target projects must use `target_project`, not `git_repo`.
+All tests are Rust integration tests in `tests/*.rs`. Shared helpers in `tests/common/mod.rs` provide `repo_root()`, `bin_dir()`, `hooks_dir()`, `skills_dir()`, `docs_dir()`, `frameworks_dir()`, `agents_dir()`, `load_phases()`, `load_hooks()`, `plugin_version()`, `phase_order()`, `utility_skills()`, `read_skill()`, `collect_md_files()`, and `create_git_repo_with_remote()`.
 
-Key test files: `tests/structural.rs` (config invariants, version consistency), `tests/skill_contracts.rs` (SKILL.md content via glob-based discovery — new skills auto-covered), `tests/permissions.rs` (allow/deny simulation, placeholder validation), `tests/docs_sync.rs` (docs completeness), `tests/concurrency.rs` (real-process concurrency). Shared Rust test helpers in `tests/common/mod.rs`. Each `tests/test_*.py` corresponds to a `lib/*.py` script with 100% coverage.
+Key test files: `tests/structural.rs` (config invariants, version consistency), `tests/skill_contracts.rs` (SKILL.md content via glob-based discovery — new skills auto-covered), `tests/permissions.rs` (allow/deny simulation, placeholder validation), `tests/docs_sync.rs` (docs completeness), `tests/concurrency.rs` (real-process concurrency).
 
 ## Maintainer Skills (private to this repo)
 
@@ -171,49 +168,10 @@ Key test files: `tests/structural.rs` (config invariants, version consistency), 
 - New skills are automatically covered by `tests/skill_contracts.rs` (glob-based discovery)
 - Namespace is `flow:` — plugin.json name is `"flow"`
 - Never rebase — merge only (denied in `.claude/settings.json`)
-- **Never add pymarkdown exclusions** — The `.pymarkdown.yml` disables MD013 (line length), MD025 (multiple H1 with frontmatter), MD033 (inline HTML), and MD036 (emphasis as heading) because those conflict with this repo's intentional patterns. No further rule disablements or path exclusions may be added. If a markdown file triggers a lint error, fix the file — do not suppress the rule. If a rule genuinely cannot be satisfied, surface it to the user for a decision.
 - **Skills must never instruct Claude to compute values** — no timestamp generation, no time arithmetic, no counter increments, no `date -u`. All computation goes through `bin/flow` subcommands. Skills say "run this command", never "calculate this value". `tests/skill_contracts.rs` enforces this: `phase_skills_no_inline_time_computation` fails if any phase skill contains computational instruction patterns.
-- **All timestamps use Pacific Time** — `lib/flow_utils.py` provides `now()` which returns `datetime.now(ZoneInfo("America/Los_Angeles")).isoformat(timespec="seconds")`. All scripts import `now` from `flow_utils` — never generate timestamps locally. Existing state files with UTC timestamps (`Z` suffix) are handled by `datetime.fromisoformat()` which parses both formats.
+- **All timestamps use Pacific Time** — `src/utils.rs` provides `now_pacific()` which returns Pacific Time ISO 8601 timestamps. All Rust code uses this function — never generate timestamps via other means.
 - **Prefer dedicated tools over Bash** — see `.claude/rules/worktree-commands.md`
 - **Issue filing** — see `.claude/rules/filing-issues.md`
 - **Repo-level targets only** — see `.claude/rules/repo-level-only.md`
 - **No `run_in_background` during FLOW phases**; `bin/flow` (any subcommand) and `bin/ci` are never allowed in the background regardless of mode — see `.claude/rules/ci-is-a-gate.md`. Enforced by `bin/flow hook validate-pretool`.
 - **User evidence is ground truth** — when a user provides screenshots, error output, or logs that contradict your code analysis, trust the evidence. Your code reading is a hypothesis; the user's evidence is an observation. Never explain away evidence to preserve your analysis.
-
-<!-- FLOW:BEGIN -->
-
-# Python Conventions
-
-## Architecture Patterns
-
-- **Module structure** — Read the full module and its imports before modifying.
-  Check for circular import risks and module-level state.
-- **Function signatures** — If modifying a function signature, grep for all
-  callers to ensure compatibility.
-- **Scripts** — Check argument parsing, error handling, and exit codes. Verify
-  the script is registered in any entry points or `bin/` wrappers.
-
-## Test Conventions
-
-- Check `conftest.py` for existing fixtures before creating new ones.
-- Never duplicate fixture logic — reuse existing fixtures.
-- Follow existing test patterns in the project.
-- Targeted test command: `bin/test <tests/path/to/test_file.py>`
-
-## CI Failure Fix Order
-
-1. Lint violations — read the lint output carefully, fix the code
-2. Test failures — understand the root cause, fix the code not the test
-3. Coverage gaps — write the missing test
-
-## Hard Rules
-
-- Always read module imports before modifying any module.
-- Always check `conftest.py` for existing fixtures before creating new ones.
-- Never add lint exclusions — fix the code, not the linter configuration.
-
-## Dependency Management
-
-- Run `bin/dependencies` to update packages.
-
-<!-- FLOW:END -->

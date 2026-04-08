@@ -242,10 +242,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
         fs::write(&path, r#"{"branch": "test"}"#).unwrap();
-        assert_eq!(
-            read_current_phase(&path),
-            Some("flow-start".to_string())
-        );
+        assert_eq!(read_current_phase(&path), Some("flow-start".to_string()));
     }
 
     #[test]

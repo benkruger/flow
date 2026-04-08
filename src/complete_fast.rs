@@ -326,10 +326,7 @@ pub fn fast_inner(
         "up_to_date" => {
             // Proceed to squash merge
             let pr_str = pr_number.unwrap_or(0).to_string();
-            match runner(
-                &["gh", "pr", "merge", &pr_str, "--squash"],
-                NETWORK_TIMEOUT,
-            ) {
+            match runner(&["gh", "pr", "merge", &pr_str, "--squash"], NETWORK_TIMEOUT) {
                 Err(e) => {
                     json!({
                         "status": "error",
@@ -537,10 +534,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let pr_number = state.get("pr_number").and_then(|v| v.as_i64());
     let gh_ci_status = if let Some(pr_num) = pr_number {
         let pr_str = pr_num.to_string();
-        match run_cmd_with_timeout(
-            &["gh", "pr", "checks", &pr_str],
-            NETWORK_TIMEOUT,
-        ) {
+        match run_cmd_with_timeout(&["gh", "pr", "checks", &pr_str], NETWORK_TIMEOUT) {
             Ok((_, stdout, _)) => parse_gh_checks_output(&stdout),
             Err(_) => "none".to_string(),
         }
@@ -644,7 +638,7 @@ mod tests {
 
         let runner = mock_runner(vec![
             ok(r#"{"status": "up_to_date"}"#), // check-freshness
-            ok("merged"),                       // gh pr merge --squash
+            ok("merged"),                      // gh pr merge --squash
         ]);
 
         let result = fast_inner(
@@ -655,10 +649,10 @@ mod tests {
             true,
             false,
             "/fake/bin/flow",
-            false,       // tree_changed
-            true,        // ci_skipped
-            None,        // ci_failed_output
-            "pass",      // gh_ci_status
+            false,  // tree_changed
+            true,   // ci_skipped
+            None,   // ci_failed_output
+            "pass", // gh_ci_status
             &runner,
         );
 
@@ -686,7 +680,7 @@ mod tests {
             true,
             false,
             "/fake/bin/flow",
-            true,        // tree_changed — main was merged in
+            true, // tree_changed — main was merged in
             false,
             None,
             "pass",
@@ -717,14 +711,17 @@ mod tests {
             "/fake/bin/flow",
             false,
             false,
-            Some("test_foo assertion failed"),  // ci_failed_output
+            Some("test_foo assertion failed"), // ci_failed_output
             "pass",
             &runner,
         );
 
         assert_eq!(result["status"], "ok");
         assert_eq!(result["path"], "ci_failed");
-        assert!(result["output"].as_str().unwrap().contains("assertion failed"));
+        assert!(result["output"]
+            .as_str()
+            .unwrap()
+            .contains("assertion failed"));
     }
 
     // --- GitHub CI pending ---
@@ -748,7 +745,7 @@ mod tests {
             false,
             true,
             None,
-            "pending",   // gh_ci_status
+            "pending", // gh_ci_status
             &runner,
         );
 
@@ -764,9 +761,9 @@ mod tests {
         let state = make_state("complete", None);
         let state_path = setup_state_file(dir.path(), "test-feature", &state);
 
-        let runner = mock_runner(vec![
-            ok(r#"{"status": "conflict", "files": ["lib/foo.py"]}"#),
-        ]);
+        let runner = mock_runner(vec![ok(
+            r#"{"status": "conflict", "files": ["lib/foo.py"]}"#,
+        )]);
 
         let result = fast_inner(
             "test-feature",
@@ -803,9 +800,7 @@ mod tests {
         let state = make_state("complete", None);
         // Verify the state has the expected structure
         assert_eq!(
-            state["phases"]["flow-learn"]["status"]
-                .as_str()
-                .unwrap(),
+            state["phases"]["flow-learn"]["status"].as_str().unwrap(),
             "complete"
         );
         assert_eq!(state["pr_number"], 42);
@@ -827,7 +822,7 @@ mod tests {
             &state,
             &state_path,
             false,
-            true,        // manual mode
+            true, // manual mode
             "/fake/bin/flow",
             false,
             true,
@@ -846,9 +841,7 @@ mod tests {
     #[test]
     fn test_gate_failure_learn_not_complete() {
         let state = make_state("pending", None);
-        let learn_status = state["phases"]["flow-learn"]["status"]
-            .as_str()
-            .unwrap();
+        let learn_status = state["phases"]["flow-learn"]["status"].as_str().unwrap();
         assert_eq!(learn_status, "pending");
         // The gate check in run_impl catches this before fast_inner is called.
         // Verify the state we'd check:
@@ -873,9 +866,7 @@ mod tests {
         let state = make_state("complete", None);
         let state_path = setup_state_file(dir.path(), "test-feature", &state);
 
-        let runner = mock_runner(vec![
-            ok(r#"{"status": "max_retries", "retries": 3}"#),
-        ]);
+        let runner = mock_runner(vec![ok(r#"{"status": "max_retries", "retries": 3}"#)]);
 
         let result = fast_inner(
             "test-feature",
@@ -907,7 +898,7 @@ mod tests {
 
         let runner = mock_runner(vec![
             ok(r#"{"status": "up_to_date"}"#), // check-freshness
-            ok("merged"),                       // gh pr merge
+            ok("merged"),                      // gh pr merge
         ]);
 
         let result = fast_inner(
@@ -919,7 +910,7 @@ mod tests {
             false,
             "/fake/bin/flow",
             false,
-            true,        // ci_skipped — sentinel matched, no CI run needed
+            true, // ci_skipped — sentinel matched, no CI run needed
             None,
             "pass",
             &runner,
@@ -968,10 +959,7 @@ mod tests {
         let state = make_state("complete", None);
         let state_path = setup_state_file(dir.path(), "test-feature", &state);
 
-        let runner = mock_runner(vec![
-            ok(r#"{"status": "up_to_date"}"#),
-            ok("merged"),
-        ]);
+        let runner = mock_runner(vec![ok(r#"{"status": "up_to_date"}"#), ok("merged")]);
 
         fast_inner(
             "test-feature",

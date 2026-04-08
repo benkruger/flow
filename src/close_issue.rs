@@ -70,10 +70,7 @@ pub fn close_issue_by_number(repo: &str, number: i64) -> Option<String> {
                 if start.elapsed() >= timeout {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Some(format!(
-                        "Command timed out after {} seconds",
-                        LOCAL_TIMEOUT
-                    ));
+                    return Some(format!("Command timed out after {} seconds", LOCAL_TIMEOUT));
                 }
                 std::thread::sleep(poll_interval.min(timeout - start.elapsed()));
             }
@@ -96,9 +93,7 @@ fn detect_repo_or_fail(cwd: Option<&Path>) -> String {
 }
 
 pub fn run(args: Args) {
-    let repo = args
-        .repo
-        .unwrap_or_else(|| detect_repo_or_fail(None));
+    let repo = args.repo.unwrap_or_else(|| detect_repo_or_fail(None));
 
     let error = close_issue_by_number(&repo, args.number);
 

@@ -201,10 +201,7 @@ mod tests {
 
         let content = fs::read_to_string(&path).unwrap();
         let on_disk: Value = serde_json::from_str(&content).unwrap();
-        assert_eq!(
-            on_disk["slack_notifications"].as_array().unwrap().len(),
-            1
-        );
+        assert_eq!(on_disk["slack_notifications"].as_array().unwrap().len(), 1);
     }
 
     #[test]

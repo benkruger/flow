@@ -29,7 +29,10 @@ const LOCAL_TIMEOUT: u64 = 30;
 const NETWORK_TIMEOUT: u64 = 60;
 
 #[derive(Parser, Debug)]
-#[command(name = "finalize-commit", about = "Finalize a commit: commit, cleanup, pull, push")]
+#[command(
+    name = "finalize-commit",
+    about = "Finalize a commit: commit, cleanup, pull, push"
+)]
 pub struct Args {
     /// Path to the commit message file
     pub message_file: String,
@@ -43,10 +46,7 @@ fn remove_message_file(path: &str) {
 }
 
 /// Run a git command with a timeout. Returns (exit_code, stdout, stderr).
-fn run_git_with_timeout(
-    args: &[&str],
-    timeout_secs: u64,
-) -> Result<(i32, String, String), String> {
+fn run_git_with_timeout(args: &[&str], timeout_secs: u64) -> Result<(i32, String, String), String> {
     let mut child = Command::new("git")
         .args(args)
         .stdout(Stdio::piped())
@@ -111,15 +111,16 @@ pub fn finalize_commit_inner(
 
     // Capture post-commit SHA for pull_merged detection.
     // If this fails, default to pull_merged=true (safe: don't refresh sentinel).
-    let post_commit_sha = git(&["rev-parse", "HEAD"], LOCAL_TIMEOUT)
-        .ok()
-        .and_then(|(code, stdout, _)| {
-            if code == 0 {
-                Some(stdout.trim().to_string())
-            } else {
-                None
-            }
-        });
+    let post_commit_sha =
+        git(&["rev-parse", "HEAD"], LOCAL_TIMEOUT)
+            .ok()
+            .and_then(|(code, stdout, _)| {
+                if code == 0 {
+                    Some(stdout.trim().to_string())
+                } else {
+                    None
+                }
+            });
 
     // Step 2: git pull origin <branch>
     match git(&["pull", "origin", branch], NETWORK_TIMEOUT) {
@@ -359,11 +360,11 @@ mod tests {
         std::fs::write(&msg, "Test commit.").unwrap();
 
         let git = mock_git(vec![
-            ok(""),                // git commit
-            ok("abc123\n"),        // git rev-parse HEAD (post-commit)
-            ok(""),                // git pull
-            ok(""),                // git push
-            ok("abc123\n"),        // git rev-parse HEAD (final)
+            ok(""),         // git commit
+            ok("abc123\n"), // git rev-parse HEAD (post-commit)
+            ok(""),         // git pull
+            ok(""),         // git push
+            ok("abc123\n"), // git rev-parse HEAD (final)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
@@ -395,9 +396,9 @@ mod tests {
         std::fs::write(&msg, "Test commit.").unwrap();
 
         let git = mock_git(vec![
-            ok(""),                                  // git commit
-            ok("commit_sha\n"),                      // git rev-parse HEAD (post-commit)
-            fail("CONFLICT"),                        // git pull
+            ok(""),                                                           // git commit
+            ok("commit_sha\n"), // git rev-parse HEAD (post-commit)
+            fail("CONFLICT"),   // git pull
             Ok((0, "UU file1.py\nAA file2.py\n".to_string(), String::new())), // git status
         ]);
 
@@ -419,10 +420,10 @@ mod tests {
         std::fs::write(&msg, "Test commit.").unwrap();
 
         let git = mock_git(vec![
-            ok(""),                          // git commit
-            ok("commit_sha\n"),              // git rev-parse HEAD (post-commit)
-            fail("Could not resolve host"),  // git pull
-            ok(""),                          // git status (clean)
+            ok(""),                         // git commit
+            ok("commit_sha\n"),             // git rev-parse HEAD (post-commit)
+            fail("Could not resolve host"), // git pull
+            ok(""),                         // git status (clean)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
@@ -438,10 +439,10 @@ mod tests {
         std::fs::write(&msg, "Test commit.").unwrap();
 
         let git = mock_git(vec![
-            ok(""),                       // git commit
-            ok("commit_sha\n"),           // git rev-parse HEAD (post-commit)
-            ok(""),                       // git pull
-            fail("permission denied"),    // git push
+            ok(""),                    // git commit
+            ok("commit_sha\n"),        // git rev-parse HEAD (post-commit)
+            ok(""),                    // git pull
+            fail("permission denied"), // git push
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
@@ -457,11 +458,11 @@ mod tests {
         // Don't create the file — simulate it already being gone
 
         let git = mock_git(vec![
-            ok(""),                // git commit
-            ok("def456\n"),        // git rev-parse HEAD (post-commit)
-            ok(""),                // git pull
-            ok(""),                // git push
-            ok("def456\n"),        // git rev-parse HEAD (final)
+            ok(""),         // git commit
+            ok("def456\n"), // git rev-parse HEAD (post-commit)
+            ok(""),         // git pull
+            ok(""),         // git push
+            ok("def456\n"), // git rev-parse HEAD (final)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
@@ -476,11 +477,11 @@ mod tests {
         std::fs::write(&msg, "Test commit.").unwrap();
 
         let git = mock_git(vec![
-            ok(""),               // git commit
-            ok("commit_sha\n"),   // git rev-parse HEAD (post-commit)
-            ok(""),               // git pull
-            ok(""),               // git push
-            fail("bad HEAD"),     // git rev-parse HEAD (final)
+            ok(""),             // git commit
+            ok("commit_sha\n"), // git rev-parse HEAD (post-commit)
+            ok(""),             // git pull
+            ok(""),             // git push
+            fail("bad HEAD"),   // git rev-parse HEAD (final)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
@@ -515,9 +516,9 @@ mod tests {
         std::fs::write(&msg, "Test commit.").unwrap();
 
         let git = mock_git(vec![
-            ok(""),                                // git commit
-            ok("commit_sha\n"),                    // git rev-parse HEAD (post-commit)
-            timeout("timed out after 60s"),        // git pull
+            ok(""),                         // git commit
+            ok("commit_sha\n"),             // git rev-parse HEAD (post-commit)
+            timeout("timed out after 60s"), // git pull
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
@@ -533,10 +534,10 @@ mod tests {
         std::fs::write(&msg, "Test commit.").unwrap();
 
         let git = mock_git(vec![
-            ok(""),                                // git commit
-            ok("commit_sha\n"),                    // git rev-parse HEAD (post-commit)
-            ok(""),                                // git pull
-            timeout("timed out after 60s"),        // git push
+            ok(""),                         // git commit
+            ok("commit_sha\n"),             // git rev-parse HEAD (post-commit)
+            ok(""),                         // git pull
+            timeout("timed out after 60s"), // git push
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
@@ -552,11 +553,11 @@ mod tests {
         std::fs::write(&msg, "Test commit.").unwrap();
 
         let git = mock_git(vec![
-            ok(""),                                // git commit
-            ok("commit_sha\n"),                    // git rev-parse HEAD (post-commit)
-            ok(""),                                // git pull
-            ok(""),                                // git push
-            timeout("timed out after 30s"),        // git rev-parse HEAD (final)
+            ok(""),                         // git commit
+            ok("commit_sha\n"),             // git rev-parse HEAD (post-commit)
+            ok(""),                         // git pull
+            ok(""),                         // git push
+            timeout("timed out after 30s"), // git rev-parse HEAD (final)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
@@ -576,10 +577,10 @@ mod tests {
         std::fs::write(&msg, "Test commit.").unwrap();
 
         let git = mock_git(vec![
-            ok(""),                                       // git commit
-            ok("commit_sha\n"),                           // git rev-parse HEAD (post-commit)
-            fail("Could not resolve host"),               // git pull
-            timeout("timed out after 30s"),               // git status --porcelain
+            ok(""),                         // git commit
+            ok("commit_sha\n"),             // git rev-parse HEAD (post-commit)
+            fail("Could not resolve host"), // git pull
+            timeout("timed out after 30s"), // git status --porcelain
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
@@ -595,10 +596,10 @@ mod tests {
         std::fs::write(&msg, "Test commit.").unwrap();
 
         let git = mock_git(vec![
-            ok(""),                                                    // git commit
-            ok("commit_sha\n"),                                        // git rev-parse HEAD (post-commit)
-            fail("CONFLICT"),                                          // git pull
-            Ok((0, "DD deleted.py\n".to_string(), String::new())),     // git status
+            ok(""),                                                // git commit
+            ok("commit_sha\n"), // git rev-parse HEAD (post-commit)
+            fail("CONFLICT"),   // git pull
+            Ok((0, "DD deleted.py\n".to_string(), String::new())), // git status
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
@@ -619,11 +620,11 @@ mod tests {
         std::fs::write(&msg, "Test commit.").unwrap();
 
         let git = mock_git(vec![
-            ok(""),                // git commit
-            ok("same_sha\n"),     // git rev-parse HEAD (post-commit)
-            ok(""),                // git pull (no new content)
-            ok(""),                // git push
-            ok("same_sha\n"),     // git rev-parse HEAD (final — unchanged)
+            ok(""),           // git commit
+            ok("same_sha\n"), // git rev-parse HEAD (post-commit)
+            ok(""),           // git pull (no new content)
+            ok(""),           // git push
+            ok("same_sha\n"), // git rev-parse HEAD (final — unchanged)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
@@ -639,11 +640,11 @@ mod tests {
         std::fs::write(&msg, "Test commit.").unwrap();
 
         let git = mock_git(vec![
-            ok(""),                // git commit
-            ok("aaa\n"),           // git rev-parse HEAD (post-commit)
-            ok(""),                // git pull (merged remote changes)
-            ok(""),                // git push
-            ok("bbb\n"),           // git rev-parse HEAD (final — changed by pull)
+            ok(""),      // git commit
+            ok("aaa\n"), // git rev-parse HEAD (post-commit)
+            ok(""),      // git pull (merged remote changes)
+            ok(""),      // git push
+            ok("bbb\n"), // git rev-parse HEAD (final — changed by pull)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
@@ -659,11 +660,11 @@ mod tests {
         std::fs::write(&msg, "Test commit.").unwrap();
 
         let git = mock_git(vec![
-            ok(""),                // git commit
-            fail("bad HEAD"),      // git rev-parse HEAD (post-commit — fails)
-            ok(""),                // git pull
-            ok(""),                // git push
-            ok("final_sha\n"),    // git rev-parse HEAD (final)
+            ok(""),            // git commit
+            fail("bad HEAD"),  // git rev-parse HEAD (post-commit — fails)
+            ok(""),            // git pull
+            ok(""),            // git push
+            ok("final_sha\n"), // git rev-parse HEAD (final)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
@@ -679,11 +680,11 @@ mod tests {
         std::fs::write(&msg, "Test commit.").unwrap();
 
         let git = mock_git(vec![
-            ok(""),                // git commit
-            ok("post_sha\n"),      // git rev-parse HEAD (post-commit)
-            ok(""),                // git pull
-            ok(""),                // git push
-            fail("bad HEAD"),      // git rev-parse HEAD (final — fails)
+            ok(""),           // git commit
+            ok("post_sha\n"), // git rev-parse HEAD (post-commit)
+            ok(""),           // git pull
+            ok(""),           // git push
+            fail("bad HEAD"), // git rev-parse HEAD (final — fails)
         ]);
 
         let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
@@ -739,24 +740,24 @@ exit 0
         .unwrap();
 
         // Commit bin/ci so it's tracked (avoids untracked-file snapshot changes)
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone_str, "add", "bin/ci"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
                 .unwrap(),
         );
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone_str, "commit", "-m", "Add bin/ci"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
                 .unwrap(),
         );
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone_str, "push"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -777,8 +778,8 @@ exit 0
 
         // Create a file to commit
         fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -798,9 +799,7 @@ exit 0
             .output()
             .unwrap();
         git_assert_ok(&before);
-        let commits_before = String::from_utf8_lossy(&before.stdout)
-            .lines()
-            .count();
+        let commits_before = String::from_utf8_lossy(&before.stdout).lines().count();
 
         let args = Args {
             message_file: msg_path.to_str().unwrap().to_string(),
@@ -819,10 +818,11 @@ exit 0
             .output()
             .unwrap();
         git_assert_ok(&after);
-        let commits_after = String::from_utf8_lossy(&after.stdout)
-            .lines()
-            .count();
-        assert_eq!(commits_before, commits_after, "no commit should have been created when CI fails");
+        let commits_after = String::from_utf8_lossy(&after.stdout).lines().count();
+        assert_eq!(
+            commits_before, commits_after,
+            "no commit should have been created when CI fails"
+        );
     }
 
     #[test]
@@ -833,8 +833,8 @@ exit 0
         // Stage a file to commit first — this changes the tree snapshot,
         // so the sentinel must be created AFTER staging.
         fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone_path.to_str().unwrap(), "add", "feature.rs"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -855,10 +855,7 @@ exit 0
 
         // Marker should have exactly 1 line from the CI invocation
         let marker = clone_path.join(".ci-invocation-marker");
-        let lines_before = fs::read_to_string(&marker)
-            .unwrap()
-            .lines()
-            .count();
+        let lines_before = fs::read_to_string(&marker).unwrap().lines().count();
         assert_eq!(lines_before, 1, "CI should have been invoked once");
 
         // Now call run_impl — sentinel matches the current tree state,
@@ -870,13 +867,13 @@ exit 0
 
         let result = run_impl(&args, clone_path, clone_path).unwrap();
         assert_eq!(result["status"], "ok", "commit should succeed: {}", result);
-        assert!(!result["sha"].as_str().unwrap().is_empty(), "should have a commit SHA");
+        assert!(
+            !result["sha"].as_str().unwrap().is_empty(),
+            "should have a commit SHA"
+        );
 
         // Marker should still have only 1 line — CI was skipped via sentinel
-        let lines_after = fs::read_to_string(&marker)
-            .unwrap()
-            .lines()
-            .count();
+        let lines_after = fs::read_to_string(&marker).unwrap().lines().count();
         assert_eq!(
             lines_after, 1,
             "CI should not have been invoked again (sentinel was fresh)"
@@ -894,8 +891,8 @@ exit 0
         // Create bare remote with explicit branch name — without --initial-branch,
         // the default branch depends on the system git config (master vs main),
         // causing test failures on CI runners where the default is master.
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["init", "--bare", "--initial-branch", "main"])
                 .arg(bare_dir.path())
                 .stdout(Stdio::piped())
@@ -905,8 +902,8 @@ exit 0
         );
 
         // Clone it
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["clone"])
                 .arg(bare_dir.path())
                 .arg(clone_dir.path())
@@ -918,29 +915,29 @@ exit 0
 
         // Configure git user and merge behavior in clone
         let clone_str = clone_dir.path().to_str().unwrap();
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone_str, "config", "user.email", "test@test.com"])
                 .output()
                 .unwrap(),
         );
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone_str, "config", "user.name", "Test"])
                 .output()
                 .unwrap(),
         );
         // Force merge on pull (not rebase) so divergent pulls always create merge commits
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone_str, "config", "pull.rebase", "false"])
                 .output()
                 .unwrap(),
         );
         // Disable GPG signing — the user's global config may enable it,
         // but tests have no TTY for pinentry, causing intermittent failures.
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone_str, "config", "commit.gpgSign", "false"])
                 .output()
                 .unwrap(),
@@ -955,25 +952,38 @@ exit 0
         // Create an initial commit so the branch exists
         let readme = clone_dir.path().join("README.md");
         fs::write(&readme, "# Test\n").unwrap();
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone_dir.path().to_str().unwrap(), "add", "-A"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
                 .unwrap(),
         );
-        git_assert_ok(&
-            Command::new("git")
-                .args(["-C", clone_dir.path().to_str().unwrap(), "commit", "-m", "Initial commit"])
+        git_assert_ok(
+            &Command::new("git")
+                .args([
+                    "-C",
+                    clone_dir.path().to_str().unwrap(),
+                    "commit",
+                    "-m",
+                    "Initial commit",
+                ])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
                 .unwrap(),
         );
-        git_assert_ok(&
-            Command::new("git")
-                .args(["-C", clone_dir.path().to_str().unwrap(), "push", "-u", "origin", "main"])
+        git_assert_ok(
+            &Command::new("git")
+                .args([
+                    "-C",
+                    clone_dir.path().to_str().unwrap(),
+                    "push",
+                    "-u",
+                    "origin",
+                    "main",
+                ])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
@@ -1019,8 +1029,8 @@ exit 0
 
         // Stage a file to commit
         fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -1072,8 +1082,8 @@ exit 0
 
         // Stage a file to commit
         fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -1099,8 +1109,7 @@ exit 0
             "_continue_pending should be preserved on success"
         );
         assert_eq!(
-            state["_continue_context"],
-            "Self-invoke flow:flow-code --continue-step --auto.",
+            state["_continue_context"], "Self-invoke flow:flow-code --continue-step --auto.",
             "_continue_context should be preserved on success"
         );
     }
@@ -1115,8 +1124,8 @@ exit 0
 
         // Create a second clone to push a conflicting commit
         let clone2_dir = tempfile::tempdir().unwrap();
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["clone"])
                 .arg(bare_dir.path())
                 .arg(clone2_dir.path())
@@ -1126,34 +1135,50 @@ exit 0
                 .unwrap(),
         );
         for (key, val) in [("user.email", "other@test.com"), ("user.name", "Other")] {
-            git_assert_ok(&
-                Command::new("git")
-                    .args(["-C", clone2_dir.path().to_str().unwrap(), "config", key, val])
+            git_assert_ok(
+                &Command::new("git")
+                    .args([
+                        "-C",
+                        clone2_dir.path().to_str().unwrap(),
+                        "config",
+                        key,
+                        val,
+                    ])
                     .output()
                     .unwrap(),
             );
         }
 
         // Push a conflicting change to README.md from clone2
-        fs::write(clone2_dir.path().join("README.md"), "# Conflicting content\n").unwrap();
-        git_assert_ok(&
-            Command::new("git")
+        fs::write(
+            clone2_dir.path().join("README.md"),
+            "# Conflicting content\n",
+        )
+        .unwrap();
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone2_dir.path().to_str().unwrap(), "add", "-A"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
                 .unwrap(),
         );
-        git_assert_ok(&
-            Command::new("git")
-                .args(["-C", clone2_dir.path().to_str().unwrap(), "commit", "-m", "Conflicting commit"])
+        git_assert_ok(
+            &Command::new("git")
+                .args([
+                    "-C",
+                    clone2_dir.path().to_str().unwrap(),
+                    "commit",
+                    "-m",
+                    "Conflicting commit",
+                ])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
                 .unwrap(),
         );
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone2_dir.path().to_str().unwrap(), "push"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -1162,9 +1187,13 @@ exit 0
         );
 
         // Now modify README.md locally in clone1 (will conflict with remote)
-        fs::write(clone_path.join("README.md"), "# Local conflicting content\n").unwrap();
-        git_assert_ok(&
-            Command::new("git")
+        fs::write(
+            clone_path.join("README.md"),
+            "# Local conflicting content\n",
+        )
+        .unwrap();
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -1176,9 +1205,15 @@ exit 0
         fs::write(&msg_path, "Local change to README").unwrap();
 
         // Force merge on pull (not rebase)
-        git_assert_ok(&
-            Command::new("git")
-                .args(["-C", clone_path.to_str().unwrap(), "config", "pull.rebase", "false"])
+        git_assert_ok(
+            &Command::new("git")
+                .args([
+                    "-C",
+                    clone_path.to_str().unwrap(),
+                    "config",
+                    "pull.rebase",
+                    "false",
+                ])
                 .output()
                 .unwrap(),
         );
@@ -1189,7 +1224,11 @@ exit 0
         };
 
         let result = run_impl(&args, clone_path, clone_path).unwrap();
-        assert_eq!(result["status"], "conflict", "expected conflict: {}", result);
+        assert_eq!(
+            result["status"], "conflict",
+            "expected conflict: {}",
+            result
+        );
 
         // _continue_pending should still be set — conflict needs retry, not clearing
         let state = read_state(clone_path, "main");
@@ -1207,8 +1246,8 @@ exit 0
         // Create a file to commit
         let src = clone_dir.path().join("src.rs");
         fs::write(&src, "fn main() {}\n").unwrap();
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", &clone_path, "add", "-A"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -1232,15 +1271,24 @@ exit 0
 
         // Sentinel should exist and match tree_snapshot for new HEAD
         let sentinel = crate::ci::sentinel_path(clone_dir.path(), "main");
-        assert!(sentinel.exists(), "sentinel file should exist after clean commit");
+        assert!(
+            sentinel.exists(),
+            "sentinel file should exist after clean commit"
+        );
 
         // Verify sentinel contains a valid SHA-256 hex string (structural check).
         // Comparing against a live tree_snapshot() call would be tautological —
         // both compute the same hash from the same post-commit state.
         let sentinel_content = fs::read_to_string(&sentinel).unwrap();
-        assert_eq!(sentinel_content.len(), 64, "sentinel should be a SHA-256 hex string");
-        assert!(sentinel_content.chars().all(|c| c.is_ascii_hexdigit()),
-            "sentinel should contain only hex digits");
+        assert_eq!(
+            sentinel_content.len(),
+            64,
+            "sentinel should be a SHA-256 hex string"
+        );
+        assert!(
+            sentinel_content.chars().all(|c| c.is_ascii_hexdigit()),
+            "sentinel should contain only hex digits"
+        );
     }
 
     #[test]
@@ -1250,8 +1298,8 @@ exit 0
 
         // Create a second clone to push a divergent commit
         let clone2_dir = tempfile::tempdir().unwrap();
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["clone"])
                 .arg(bare_dir.path())
                 .arg(clone2_dir.path())
@@ -1260,15 +1308,27 @@ exit 0
                 .output()
                 .unwrap(),
         );
-        git_assert_ok(&
-            Command::new("git")
-                .args(["-C", clone2_dir.path().to_str().unwrap(), "config", "user.email", "other@test.com"])
+        git_assert_ok(
+            &Command::new("git")
+                .args([
+                    "-C",
+                    clone2_dir.path().to_str().unwrap(),
+                    "config",
+                    "user.email",
+                    "other@test.com",
+                ])
                 .output()
                 .unwrap(),
         );
-        git_assert_ok(&
-            Command::new("git")
-                .args(["-C", clone2_dir.path().to_str().unwrap(), "config", "user.name", "Other"])
+        git_assert_ok(
+            &Command::new("git")
+                .args([
+                    "-C",
+                    clone2_dir.path().to_str().unwrap(),
+                    "config",
+                    "user.name",
+                    "Other",
+                ])
                 .output()
                 .unwrap(),
         );
@@ -1276,24 +1336,30 @@ exit 0
         // Push a different commit from clone2
         let other_file = clone2_dir.path().join("other.txt");
         fs::write(&other_file, "other content\n").unwrap();
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone2_dir.path().to_str().unwrap(), "add", "-A"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
                 .unwrap(),
         );
-        git_assert_ok(&
-            Command::new("git")
-                .args(["-C", clone2_dir.path().to_str().unwrap(), "commit", "-m", "Other commit"])
+        git_assert_ok(
+            &Command::new("git")
+                .args([
+                    "-C",
+                    clone2_dir.path().to_str().unwrap(),
+                    "commit",
+                    "-m",
+                    "Other commit",
+                ])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
                 .unwrap(),
         );
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", clone2_dir.path().to_str().unwrap(), "push"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -1304,8 +1370,8 @@ exit 0
         // Now create a commit in clone1 (divergent from remote)
         let src = clone_dir.path().join("local.txt");
         fs::write(&src, "local content\n").unwrap();
-        git_assert_ok(&
-            Command::new("git")
+        git_assert_ok(
+            &Command::new("git")
                 .args(["-C", &clone_path, "add", "-A"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -1327,6 +1393,9 @@ exit 0
 
         // Sentinel should NOT exist — pull merged remote changes
         let sentinel = crate::ci::sentinel_path(clone_dir.path(), "main");
-        assert!(!sentinel.exists(), "sentinel should not exist when pull merged");
+        assert!(
+            !sentinel.exists(),
+            "sentinel should not exist when pull merged"
+        );
     }
 }

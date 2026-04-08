@@ -16,7 +16,10 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 #[derive(Parser, Debug)]
-#[command(name = "qa-verify", about = "Verify QA assertions after a completed flow")]
+#[command(
+    name = "qa-verify",
+    about = "Verify QA assertions after a completed flow"
+)]
 pub struct Args {
     /// Framework name (reserved for future use)
     #[arg(long)]
@@ -104,18 +107,14 @@ pub fn verify_impl(
 
     // At least one PR should be merged
     let pr_args = [
-        "gh", "pr", "list", "--repo", repo,
-        "--state", "merged", "--limit", "1", "--json", "number",
+        "gh", "pr", "list", "--repo", repo, "--state", "merged", "--limit", "1", "--json", "number",
     ];
     match runner(&pr_args) {
         Some(stdout) => {
             let pr_list: Vec<Value> = serde_json::from_str(&stdout).unwrap_or_default();
             let has_merged = !pr_list.is_empty();
             let detail = if has_merged {
-                format!(
-                    "PR #{} merged",
-                    pr_list[0]["number"].as_i64().unwrap_or(0)
-                )
+                format!("PR #{} merged", pr_list[0]["number"].as_i64().unwrap_or(0))
             } else {
                 "No merged PRs found".to_string()
             };
@@ -215,13 +214,7 @@ mod tests {
         let checks = result["checks"].as_array().unwrap();
         let state_check: Vec<&Value> = checks
             .iter()
-            .filter(|c| {
-                c["name"]
-                    .as_str()
-                    .unwrap()
-                    .to_lowercase()
-                    .contains("state")
-            })
+            .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
             .collect();
         assert!(!state_check.is_empty());
         assert_eq!(state_check[0]["passed"], false);
@@ -254,8 +247,9 @@ mod tests {
     fn test_verify_no_merged_pr() {
         let dir = tempfile::tempdir().unwrap();
 
-        let result =
-            verify_impl(Some("python"), "owner/repo", dir.path(), &|_| mock_empty_list());
+        let result = verify_impl(Some("python"), "owner/repo", dir.path(), &|_| {
+            mock_empty_list()
+        });
 
         let checks = result["checks"].as_array().unwrap();
         let pr_check: Vec<&Value> = checks
@@ -291,13 +285,7 @@ mod tests {
         let checks = result["checks"].as_array().unwrap();
         let state_check: Vec<&Value> = checks
             .iter()
-            .filter(|c| {
-                c["name"]
-                    .as_str()
-                    .unwrap()
-                    .to_lowercase()
-                    .contains("state")
-            })
+            .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
             .collect();
         assert!(!state_check.is_empty());
         assert_eq!(state_check[0]["passed"], true);
@@ -315,13 +303,7 @@ mod tests {
         let checks = result["checks"].as_array().unwrap();
         let state_check: Vec<&Value> = checks
             .iter()
-            .filter(|c| {
-                c["name"]
-                    .as_str()
-                    .unwrap()
-                    .to_lowercase()
-                    .contains("state")
-            })
+            .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
             .collect();
         assert_eq!(state_check[0]["passed"], true);
     }
@@ -338,13 +320,7 @@ mod tests {
         let checks = result["checks"].as_array().unwrap();
         let state_check: Vec<&Value> = checks
             .iter()
-            .filter(|c| {
-                c["name"]
-                    .as_str()
-                    .unwrap()
-                    .to_lowercase()
-                    .contains("state")
-            })
+            .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
             .collect();
         assert_eq!(state_check[0]["passed"], true);
     }
@@ -361,13 +337,7 @@ mod tests {
         let checks = result["checks"].as_array().unwrap();
         let state_check: Vec<&Value> = checks
             .iter()
-            .filter(|c| {
-                c["name"]
-                    .as_str()
-                    .unwrap()
-                    .to_lowercase()
-                    .contains("state")
-            })
+            .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
             .collect();
         assert_eq!(state_check[0]["passed"], true);
     }

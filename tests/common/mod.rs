@@ -56,8 +56,7 @@ pub fn agents_dir() -> PathBuf {
 /// Reads and returns the content of `skills/{name}/SKILL.md`.
 pub fn read_skill(name: &str) -> String {
     let path = skills_dir().join(name).join("SKILL.md");
-    fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e))
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e))
 }
 
 /// Reads and parses `flow-phases.json` from the repo root.
@@ -138,8 +137,7 @@ pub fn utility_skills() -> Vec<String> {
 /// Reads and returns the content of an agent file at `agents/{name}`.
 pub fn read_agent(name: &str) -> String {
     let path = agents_dir().join(name);
-    fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e))
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e))
 }
 
 /// Reads and parses `hooks/hooks.json` from the repo root.

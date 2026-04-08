@@ -94,10 +94,7 @@ pub fn current_branch_in(cwd: &Path) -> Option<String> {
 ///
 /// Never scans `.flow-states/` for candidates — each caller targets only
 /// its own branch. Removed in PR #924.
-pub fn resolve_branch(
-    override_branch: Option<&str>,
-    root: &Path,
-) -> Option<String> {
+pub fn resolve_branch(override_branch: Option<&str>, root: &Path) -> Option<String> {
     resolve_branch_impl(override_branch, root, current_branch())
 }
 
@@ -108,11 +105,7 @@ pub fn resolve_branch(
 /// from an explicit working directory (e.g., the `ci` subcommand running
 /// in a worktree) where the branch must be read from the given cwd, not
 /// the process's cwd.
-pub fn resolve_branch_in(
-    override_branch: Option<&str>,
-    cwd: &Path,
-    root: &Path,
-) -> Option<String> {
+pub fn resolve_branch_in(override_branch: Option<&str>, cwd: &Path, root: &Path) -> Option<String> {
     resolve_branch_impl(override_branch, root, current_branch_in(cwd))
 }
 

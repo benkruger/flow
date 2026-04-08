@@ -211,15 +211,31 @@ pub struct FlowState {
     pub complete_steps_total: Option<i64>,
 
     // Transient fields (underscore-prefixed in JSON)
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "_auto_continue")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "_auto_continue"
+    )]
     pub auto_continue: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "_continue_pending")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "_continue_pending"
+    )]
     pub continue_pending: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "_continue_context")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "_continue_context"
+    )]
     pub continue_context: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "_blocked")]
     pub blocked: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "_last_failure")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "_last_failure"
+    )]
     pub last_failure: Option<FailureInfo>,
 
     // Compaction fields

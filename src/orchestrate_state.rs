@@ -104,7 +104,8 @@ pub fn start_issue(state_path: &Path, index: i64) -> Value {
 
     match mutate_state(state_path, |state| {
         if !(state.is_object() || state.is_null()) {
-            error_result = Some(json!({"status": "error", "message": "State file is not a JSON object"}));
+            error_result =
+                Some(json!({"status": "error", "message": "State file is not a JSON object"}));
             return;
         }
         let queue_len = state
@@ -120,7 +121,8 @@ pub fn start_issue(state_path: &Path, index: i64) -> Value {
         }
         let idx = index as usize;
         if !state["queue"][idx].is_object() {
-            error_result = Some(json!({"status": "error", "message": "Queue item is not a JSON object"}));
+            error_result =
+                Some(json!({"status": "error", "message": "Queue item is not a JSON object"}));
             return;
         }
         state["current_index"] = json!(index);
@@ -156,7 +158,8 @@ pub fn record_outcome(
 
     match mutate_state(state_path, |state| {
         if !(state.is_object() || state.is_null()) {
-            error_result = Some(json!({"status": "error", "message": "State file is not a JSON object"}));
+            error_result =
+                Some(json!({"status": "error", "message": "State file is not a JSON object"}));
             return;
         }
         let queue_len = state
@@ -172,7 +175,8 @@ pub fn record_outcome(
         }
         let idx = index as usize;
         if !state["queue"][idx].is_object() {
-            error_result = Some(json!({"status": "error", "message": "Queue item is not a JSON object"}));
+            error_result =
+                Some(json!({"status": "error", "message": "Queue item is not a JSON object"}));
             return;
         }
         state["queue"][idx]["status"] = json!(outcome);
@@ -206,7 +210,8 @@ pub fn complete_orchestration(state_path: &Path) -> Value {
 
     match mutate_state(state_path, |state| {
         if !(state.is_object() || state.is_null()) {
-            error_result = Some(json!({"status": "error", "message": "State file is not a JSON object"}));
+            error_result =
+                Some(json!({"status": "error", "message": "State file is not a JSON object"}));
             return;
         }
         state["completed_at"] = json!(now());
@@ -368,9 +373,9 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
                     args.branch.as_deref(),
                     args.reason.as_deref(),
                 )),
-                None => {
-                    Ok(json!({"status": "error", "message": "--outcome required with --record-outcome"}))
-                }
+                None => Ok(
+                    json!({"status": "error", "message": "--outcome required with --record-outcome"}),
+                ),
             },
             None => Ok(json!({"status": "error", "message": "--state-file required"})),
         }
@@ -400,10 +405,7 @@ pub fn run(args: Args) {
             println!("{}", value);
         }
         Err(msg) => {
-            println!(
-                "{}",
-                json!({"status": "error", "message": msg})
-            );
+            println!("{}", json!({"status": "error", "message": msg}));
         }
     }
 }
@@ -483,7 +485,10 @@ mod tests {
 
         let result = create_state(&sample_queue(), &state_dir);
         assert_eq!(result["status"], "error");
-        assert!(result["message"].as_str().unwrap().contains("already in progress"));
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("already in progress"));
     }
 
     #[test]
@@ -540,7 +545,10 @@ mod tests {
         let state: Value = serde_json::from_str(&content).unwrap();
         assert_eq!(state["current_index"], 0);
         assert_eq!(state["queue"][0]["status"], "in_progress");
-        assert!(state["queue"][0]["started_at"].as_str().unwrap().contains("T"));
+        assert!(state["queue"][0]["started_at"]
+            .as_str()
+            .unwrap()
+            .contains("T"));
     }
 
     #[test]
@@ -573,7 +581,10 @@ mod tests {
 
         let result = start_issue(&state_path, 0);
         assert_eq!(result["status"], "error");
-        assert!(result["message"].as_str().unwrap().contains("not a JSON object"));
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("not a JSON object"));
     }
 
     // --- record_outcome ---
@@ -601,7 +612,10 @@ mod tests {
         let state: Value = serde_json::from_str(&content).unwrap();
         assert_eq!(state["queue"][0]["status"], "completed");
         assert_eq!(state["queue"][0]["outcome"], "completed");
-        assert!(state["queue"][0]["completed_at"].as_str().unwrap().contains("T"));
+        assert!(state["queue"][0]["completed_at"]
+            .as_str()
+            .unwrap()
+            .contains("T"));
         assert_eq!(
             state["queue"][0]["pr_url"],
             "https://github.com/test/test/pull/100"
@@ -650,7 +664,14 @@ mod tests {
     #[test]
     fn test_record_outcome_missing_state() {
         let dir = tempfile::tempdir().unwrap();
-        let result = record_outcome(&dir.path().join("missing.json"), 0, "completed", None, None, None);
+        let result = record_outcome(
+            &dir.path().join("missing.json"),
+            0,
+            "completed",
+            None,
+            None,
+            None,
+        );
         assert_eq!(result["status"], "error");
         assert!(result["message"].as_str().unwrap().contains("not found"));
     }
@@ -665,7 +686,10 @@ mod tests {
 
         let result = record_outcome(&state_path, 0, "completed", None, None, None);
         assert_eq!(result["status"], "error");
-        assert!(result["message"].as_str().unwrap().contains("not a JSON object"));
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("not a JSON object"));
     }
 
     // --- complete ---
@@ -703,7 +727,10 @@ mod tests {
 
         let result = complete_orchestration(&state_path);
         assert_eq!(result["status"], "error");
-        assert!(result["message"].as_str().unwrap().contains("not a JSON object"));
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("not a JSON object"));
     }
 
     // --- read_state ---
@@ -717,7 +744,10 @@ mod tests {
         let state_path = state_dir.join("orchestrate.json");
         let result = read_state(&state_path);
         assert_eq!(result["status"], "ok");
-        assert!(result["state"]["started_at"].as_str().unwrap().contains("T"));
+        assert!(result["state"]["started_at"]
+            .as_str()
+            .unwrap()
+            .contains("T"));
         assert_eq!(result["state"]["queue"].as_array().unwrap().len(), 3);
     }
 
@@ -795,11 +825,7 @@ mod tests {
         fs::create_dir_all(&state_dir).unwrap();
 
         let queue_file = dir.path().join("queue.json");
-        fs::write(
-            &queue_file,
-            serde_json::to_string(&sample_queue()).unwrap(),
-        )
-        .unwrap();
+        fs::write(&queue_file, serde_json::to_string(&sample_queue()).unwrap()).unwrap();
 
         let args = Args {
             create: true,
@@ -1140,7 +1166,12 @@ mod tests {
             next: false,
             queue_file: None,
             state_dir: None,
-            state_file: Some(dir.path().join("missing.json").to_string_lossy().to_string()),
+            state_file: Some(
+                dir.path()
+                    .join("missing.json")
+                    .to_string_lossy()
+                    .to_string(),
+            ),
             outcome: None,
             pr_url: None,
             branch: None,

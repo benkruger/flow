@@ -44,16 +44,11 @@ pub fn write_rule(target_path: &str, content: &str) -> Result<(), String> {
     let path = Path::new(target_path);
 
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| {
-            format!(
-                "Could not create directories for '{}': {}",
-                target_path, e
-            )
-        })?;
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Could not create directories for '{}': {}", target_path, e))?;
     }
 
-    fs::write(path, content)
-        .map_err(|e| format!("Could not write to '{}': {}", target_path, e))?;
+    fs::write(path, content).map_err(|e| format!("Could not write to '{}': {}", target_path, e))?;
 
     Ok(())
 }
@@ -112,13 +107,21 @@ mod tests {
 
         let result = write_rule(target.to_str().unwrap(), "# Topic\n\nRule text.\n");
         assert!(result.is_ok());
-        assert_eq!(fs::read_to_string(&target).unwrap(), "# Topic\n\nRule text.\n");
+        assert_eq!(
+            fs::read_to_string(&target).unwrap(),
+            "# Topic\n\nRule text.\n"
+        );
     }
 
     #[test]
     fn write_rule_creates_parent_dirs() {
         let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("deep").join("nested").join("dir").join("rule.md");
+        let target = dir
+            .path()
+            .join("deep")
+            .join("nested")
+            .join("dir")
+            .join("rule.md");
 
         let result = write_rule(target.to_str().unwrap(), "content");
         assert!(result.is_ok());

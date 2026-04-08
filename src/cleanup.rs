@@ -71,11 +71,17 @@ fn run_cmd(args: &[&str], cwd: &Path) -> (bool, String) {
                     Err(e) => return (false, e.to_string()),
                 };
                 if output.status.success() {
-                    return (true, String::from_utf8_lossy(&output.stdout).trim().to_string());
+                    return (
+                        true,
+                        String::from_utf8_lossy(&output.stdout).trim().to_string(),
+                    );
                 }
                 let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
                 if error.is_empty() {
-                    return (false, String::from_utf8_lossy(&output.stdout).trim().to_string());
+                    return (
+                        false,
+                        String::from_utf8_lossy(&output.stdout).trim().to_string(),
+                    );
                 }
                 return (false, error);
             }
@@ -139,10 +145,7 @@ pub fn cleanup(
                 steps.insert("worktree_tmp".to_string(), "removed".to_string());
             }
             Err(e) => {
-                steps.insert(
-                    "worktree_tmp".to_string(),
-                    format!("failed: {}", e),
-                );
+                steps.insert("worktree_tmp".to_string(), format!("failed: {}", e));
             }
         }
     } else {
@@ -153,8 +156,10 @@ pub fn cleanup(
     let wt_path = project_root.join(worktree);
     if wt_path.exists() {
         let wt_str = wt_path.to_string_lossy().to_string();
-        let (ok, output) =
-            run_cmd(&["git", "worktree", "remove", &wt_str, "--force"], project_root);
+        let (ok, output) = run_cmd(
+            &["git", "worktree", "remove", &wt_str, "--force"],
+            project_root,
+        );
         steps.insert(
             "worktree".to_string(),
             if ok {
@@ -168,10 +173,7 @@ pub fn cleanup(
     }
 
     // Delete remote branch
-    let (ok, output) = run_cmd(
-        &["git", "push", "origin", "--delete", branch],
-        project_root,
-    );
+    let (ok, output) = run_cmd(&["git", "push", "origin", "--delete", branch], project_root);
     steps.insert(
         "remote_branch".to_string(),
         if ok {
@@ -507,7 +509,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         setup_git_repo(dir.path());
         let wt_rel = setup_feature(dir.path(), "test-feature");
-        let closed = dir.path().join(".flow-states/test-feature-closed-issues.json");
+        let closed = dir
+            .path()
+            .join(".flow-states/test-feature-closed-issues.json");
         fs::write(&closed, r#"[{"number": 42}]"#).unwrap();
 
         let steps = cleanup(dir.path(), "test-feature", &wt_rel, None, false);

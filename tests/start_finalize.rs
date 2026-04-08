@@ -179,13 +179,18 @@ fn test_happy_path_no_slack() {
     );
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
-    assert!(data["formatted_time"].is_string(), "Must include formatted_time");
-    assert!(data["continue_action"].is_string(), "Must include continue_action");
+    assert!(
+        data["formatted_time"].is_string(),
+        "Must include formatted_time"
+    );
+    assert!(
+        data["continue_action"].is_string(),
+        "Must include continue_action"
+    );
 
     // State should be updated
     let state_path = repo.join(".flow-states").join("finalize-branch.json");
-    let state: Value =
-        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-start"]["status"], "complete");
     assert_eq!(state["current_phase"], "flow-plan");
 }

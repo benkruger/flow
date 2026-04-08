@@ -394,7 +394,10 @@ mod tests {
         // status + Value assembly path.
         let dir = tempfile::tempdir().unwrap();
         init_git_repo(dir.path());
-        write_deps_script(dir.path(), "echo 'Installing dependencies...' > /dev/null 2>&1");
+        write_deps_script(
+            dir.path(),
+            "echo 'Installing dependencies...' > /dev/null 2>&1",
+        );
         commit_all(dir.path(), "add deps");
 
         let (out, code) = run_update_deps(dir.path(), 300);

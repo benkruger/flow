@@ -15,10 +15,10 @@ use flow_rs::cleanup;
 use flow_rs::close_issue;
 use flow_rs::close_issues;
 use flow_rs::commands;
-use flow_rs::complete_merge;
-use flow_rs::complete_post_merge;
 use flow_rs::complete_fast;
 use flow_rs::complete_finalize;
+use flow_rs::complete_merge;
+use flow_rs::complete_post_merge;
 use flow_rs::complete_preflight;
 use flow_rs::create_dependencies;
 use flow_rs::create_milestone;
@@ -30,22 +30,15 @@ use flow_rs::format_complete_summary;
 use flow_rs::format_issues_summary;
 use flow_rs::format_pr_timings;
 use flow_rs::format_status;
+use flow_rs::git::{project_root, resolve_branch};
 use flow_rs::hooks;
+use flow_rs::issue;
 use flow_rs::label_issues;
+use flow_rs::link_blocked_by;
+use flow_rs::lock::mutate_state;
 use flow_rs::notify_slack;
 use flow_rs::orchestrate_report;
 use flow_rs::orchestrate_state;
-use flow_rs::qa_mode;
-use flow_rs::qa_reset;
-use flow_rs::qa_verify;
-use flow_rs::render_pr_body;
-use flow_rs::scaffold_qa;
-use flow_rs::tui_data;
-use flow_rs::update_pr_body;
-use flow_rs::git::{project_root, resolve_branch};
-use flow_rs::issue;
-use flow_rs::link_blocked_by;
-use flow_rs::lock::mutate_state;
 use flow_rs::output::json_error;
 use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
 use flow_rs::phase_enter;
@@ -56,12 +49,19 @@ use flow_rs::prime_check;
 use flow_rs::prime_project;
 use flow_rs::prime_setup;
 use flow_rs::promote_permissions;
+use flow_rs::qa_mode;
+use flow_rs::qa_reset;
+use flow_rs::qa_verify;
+use flow_rs::render_pr_body;
+use flow_rs::scaffold_qa;
 use flow_rs::start_finalize;
 use flow_rs::start_gate;
 use flow_rs::start_init;
 use flow_rs::start_setup;
 use flow_rs::start_workspace;
+use flow_rs::tui_data;
 use flow_rs::update_deps;
+use flow_rs::update_pr_body;
 use flow_rs::upgrade_check;
 use flow_rs::utils::{detect_dev_mode, read_version};
 use flow_rs::write_rule;
@@ -789,10 +789,7 @@ fn run_phase_transition(
 
     // Validate phase key exists in state
     if state.get("phases").is_none() || state["phases"].get(phase).is_none() {
-        json_error(
-            &format!("Phase {} not found in state file", phase),
-            &[],
-        );
+        json_error(&format!("Phase {} not found in state file", phase), &[]);
         process::exit(1);
     }
 
@@ -882,13 +879,7 @@ fn run_format_status(branch_override: Option<&str>) {
         None
     };
 
-    let panel = format_status::format_panel(
-        state,
-        &version,
-        None,
-        dev_mode,
-        phase_config.as_ref(),
-    );
+    let panel = format_status::format_panel(state, &version, None, dev_mode, phase_config.as_ref());
     println!("{}", panel);
 }
 
@@ -919,4 +910,3 @@ fn run_tui_data(load_all: bool, load_orch: bool, load_metrics: bool) {
         process::exit(1);
     }
 }
-

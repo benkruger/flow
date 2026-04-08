@@ -87,9 +87,7 @@ fn make_flow(feature: &str, phase: &str, phase_num: usize) -> FlowSummary {
 fn render_to_string(app: &TuiApp, width: u16, height: u16) -> String {
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal
-        .draw(|f| app.render(f))
-        .unwrap();
+    terminal.draw(|f| app.render(f)).unwrap();
     let buffer = terminal.backend().buffer().clone();
     let mut lines = Vec::new();
     for y in 0..height {

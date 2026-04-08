@@ -225,10 +225,7 @@ pub fn run(args: Args) {
             }
         }
         Err(e) => {
-            println!(
-                "{}",
-                json!({"status": "error", "message": e})
-            );
+            println!("{}", json!({"status": "error", "message": e}));
             process::exit(1);
         }
     }
@@ -277,10 +274,7 @@ mod tests {
         assert_eq!(result["backup"], "/original/cache/path");
 
         let data = read_flow_json(&flow_json);
-        assert_eq!(
-            data["plugin_root"],
-            local_source.to_string_lossy().as_ref()
-        );
+        assert_eq!(data["plugin_root"], local_source.to_string_lossy().as_ref());
         assert_eq!(data["plugin_root_backup"], "/original/cache/path");
     }
 
@@ -414,10 +408,7 @@ mod tests {
         assert_eq!(data["setup_hash"], "def456");
         assert_eq!(data["commit_format"], "conventional");
         assert_eq!(data["skills"]["flow-start"]["continue"], "auto");
-        assert_eq!(
-            data["plugin_root"],
-            local_source.to_string_lossy().as_ref()
-        );
+        assert_eq!(data["plugin_root"], local_source.to_string_lossy().as_ref());
         assert_eq!(data["plugin_root_backup"], "/original/cache/path");
     }
 

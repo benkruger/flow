@@ -21,10 +21,10 @@ use serde_json::{json, Value};
 
 use std::process::Command;
 
+use crate::commands::log::append_log;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
 use crate::output::json_error;
-use crate::commands::log::append_log;
 use crate::phase_config::load_phase_config;
 use crate::phase_transition::{phase_complete, phase_enter};
 use crate::render_pr_body::render_body;
@@ -65,7 +65,9 @@ fn resolve_state(args: &Args) -> Result<(PathBuf, String, PathBuf), Value> {
     let branch = match resolve_branch(args.branch.as_deref(), &root) {
         Some(b) => b,
         None => {
-            return Err(json!({"status": "error", "message": "Could not determine current branch"}));
+            return Err(
+                json!({"status": "error", "message": "Could not determine current branch"}),
+            );
         }
     };
 
@@ -99,7 +101,13 @@ fn gate_check(state: &Value) -> Result<(), Value> {
 }
 
 /// Load frozen phase config if available, for phase_complete.
-fn load_frozen_config(root: &PathBuf, branch: &str) -> (Option<Vec<String>>, Option<indexmap::IndexMap<String, String>>) {
+fn load_frozen_config(
+    root: &PathBuf,
+    branch: &str,
+) -> (
+    Option<Vec<String>>,
+    Option<indexmap::IndexMap<String, String>>,
+) {
     let frozen_path = root
         .join(".flow-states")
         .join(format!("{}-phases.json", branch));
@@ -260,7 +268,11 @@ pub fn count_tasks(content: &str) -> usize {
 }
 
 /// Run phase_complete via mutate_state and return the result JSON.
-fn complete_plan_phase(state_path: &PathBuf, root: &PathBuf, branch: &str) -> Result<Value, String> {
+fn complete_plan_phase(
+    state_path: &PathBuf,
+    root: &PathBuf,
+    branch: &str,
+) -> Result<Value, String> {
     let (frozen_order, frozen_commands) = load_frozen_config(root, branch);
     let result_holder = std::cell::RefCell::new(Value::Null);
 
@@ -315,7 +327,9 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 
         // Enter the phase (idempotent if already in_progress)
         mutate_state(&state_path, |state| {
-            if !(state.is_object() || state.is_null()) { return; }
+            if !(state.is_object() || state.is_null()) {
+                return;
+            }
             phase_enter(state, "flow-plan", None);
         })
         .map_err(|e| format!("Failed to enter phase: {}", e))?;
@@ -352,7 +366,9 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 
     // --- Phase enter ---
     mutate_state(&state_path, |state| {
-        if !(state.is_object() || state.is_null()) { return; }
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
         phase_enter(state, "flow-plan", None);
         // Set step tracking for TUI
         state["plan_steps_total"] = json!(4);
@@ -361,10 +377,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     .map_err(|e| format!("Failed to enter phase: {}", e))?;
 
     // --- Issue fetch + decomposed detection ---
-    let prompt = state
-        .get("prompt")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let prompt = state.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
 
     let issue_numbers = extract_issue_numbers(prompt);
     let dag_mode = read_dag_mode(&state);
@@ -501,19 +514,35 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     .map_err(|e| format!("Failed to update state: {}", e))?;
 
     // --- Logging ---
-    let _ = append_log(&root, &branch, "[Phase 2] plan-extract — gate check passed (exit 0)");
-    let _ = append_log(&root, &branch, &format!(
-        "[Phase 2] plan-extract — issue #{} fetched, decomposed label detected (exit 0)",
-        issue_number
-    ));
-    let _ = append_log(&root, &branch, &format!(
-        "[Phase 2] plan-extract — DAG file written: {} (exit 0)",
-        dag_rel
-    ));
-    let _ = append_log(&root, &branch, &format!(
-        "[Phase 2] plan-extract — plan extracted, {} tasks, written: {} (exit 0)",
-        task_count, plan_rel
-    ));
+    let _ = append_log(
+        &root,
+        &branch,
+        "[Phase 2] plan-extract — gate check passed (exit 0)",
+    );
+    let _ = append_log(
+        &root,
+        &branch,
+        &format!(
+            "[Phase 2] plan-extract — issue #{} fetched, decomposed label detected (exit 0)",
+            issue_number
+        ),
+    );
+    let _ = append_log(
+        &root,
+        &branch,
+        &format!(
+            "[Phase 2] plan-extract — DAG file written: {} (exit 0)",
+            dag_rel
+        ),
+    );
+    let _ = append_log(
+        &root,
+        &branch,
+        &format!(
+            "[Phase 2] plan-extract — plan extracted, {} tasks, written: {} (exit 0)",
+            task_count, plan_rel
+        ),
+    );
 
     // --- Update plan_step to 4 before PR render ---
     mutate_state(&state_path, |state| {
@@ -541,7 +570,11 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }
     }
 
-    let _ = append_log(&root, &branch, "[Phase 2] plan-extract — PR body rendered (exit 0)");
+    let _ = append_log(
+        &root,
+        &branch,
+        "[Phase 2] plan-extract — PR body rendered (exit 0)",
+    );
 
     // --- Phase complete ---
     let complete_result = complete_plan_phase(&state_path, &root, &branch)?;
@@ -557,10 +590,14 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         .unwrap_or("ask")
         .to_string();
 
-    let _ = append_log(&root, &branch, &format!(
-        "[Phase 2] plan-extract — phase complete ({}) (exit 0)",
-        formatted_time
-    ));
+    let _ = append_log(
+        &root,
+        &branch,
+        &format!(
+            "[Phase 2] plan-extract — phase complete ({}) (exit 0)",
+            formatted_time
+        ),
+    );
 
     Ok(json!({
         "status": "ok",

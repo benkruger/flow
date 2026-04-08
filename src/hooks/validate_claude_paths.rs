@@ -170,7 +170,9 @@ mod tests {
 
     #[test]
     fn test_is_protected_path_nested_skills() {
-        assert!(is_protected_path("/project/.claude/skills/subdir/deep/SKILL.md"));
+        assert!(is_protected_path(
+            "/project/.claude/skills/subdir/deep/SKILL.md"
+        ));
     }
 
     #[test]
@@ -240,8 +242,7 @@ mod tests {
 
     #[test]
     fn test_allows_flow_states_path() {
-        let (allowed, msg) =
-            validate("/project/.flow-states/branch-rule-content.md", true);
+        let (allowed, msg) = validate("/project/.flow-states/branch-rule-content.md", true);
         assert!(allowed);
         assert!(msg.is_empty());
     }
@@ -262,8 +263,7 @@ mod tests {
 
     #[test]
     fn test_blocks_worktree_claude_rules() {
-        let (allowed, msg) =
-            validate("/project/.worktrees/feat/.claude/rules/foo.md", true);
+        let (allowed, msg) = validate("/project/.worktrees/feat/.claude/rules/foo.md", true);
         assert!(!allowed);
         assert!(msg.contains("BLOCKED"));
     }
@@ -285,18 +285,14 @@ mod tests {
 
     #[test]
     fn test_blocks_nested_claude_skills() {
-        let (allowed, msg) =
-            validate("/project/.claude/skills/subdir/deep/SKILL.md", true);
+        let (allowed, msg) = validate("/project/.claude/skills/subdir/deep/SKILL.md", true);
         assert!(!allowed);
         assert!(msg.contains("BLOCKED"));
     }
 
     #[test]
     fn test_blocks_worktree_claude_skills() {
-        let (allowed, msg) = validate(
-            "/project/.worktrees/feat/.claude/skills/foo/SKILL.md",
-            true,
-        );
+        let (allowed, msg) = validate("/project/.worktrees/feat/.claude/skills/foo/SKILL.md", true);
         assert!(!allowed);
         assert!(msg.contains("BLOCKED"));
     }

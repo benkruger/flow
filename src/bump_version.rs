@@ -34,8 +34,8 @@ pub fn validate_version(version: &str) -> bool {
 pub fn read_current_version(plugin_json: &Path) -> Result<String, String> {
     let text = fs::read_to_string(plugin_json)
         .map_err(|e| format!("Failed to read {}: {}", plugin_json.display(), e))?;
-    let data: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| format!("Invalid JSON in {}: {}", plugin_json.display(), e))?;
+    let data: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("Invalid JSON in {}: {}", plugin_json.display(), e))?;
     data["version"]
         .as_str()
         .map(|s| s.to_string())
@@ -45,7 +45,8 @@ pub fn read_current_version(plugin_json: &Path) -> Result<String, String> {
 /// Replace `"version": "old"` with `"version": "new"` in a JSON file.
 /// Returns true if any replacement was made.
 pub fn bump_json(path: &Path, old: &str, new: &str) -> Result<bool, String> {
-    let text = fs::read_to_string(path).map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+    let text = fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
     let old_pattern = format!("\"version\": \"{}\"", old);
     let new_pattern = format!("\"version\": \"{}\"", new);
     let updated = text.replace(&old_pattern, &new_pattern);
@@ -59,7 +60,8 @@ pub fn bump_json(path: &Path, old: &str, new: &str) -> Result<bool, String> {
 /// Replace `FLOW vOLD` with `FLOW vNEW` in a skill file.
 /// Returns true if any replacement was made.
 pub fn bump_skill(path: &Path, old: &str, new: &str) -> Result<bool, String> {
-    let text = fs::read_to_string(path).map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+    let text = fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
     let old_pattern = format!("FLOW v{}", old);
     let new_pattern = format!("FLOW v{}", new);
     let updated = text.replace(&old_pattern, &new_pattern);

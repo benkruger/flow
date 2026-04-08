@@ -19,7 +19,8 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> String {
         ("flow-complete", "Complete"),
     ];
     let name_map: std::collections::HashMap<&str, &str> = names.into_iter().collect();
-    let status_map: std::collections::HashMap<&str, &str> = phase_statuses.iter().copied().collect();
+    let status_map: std::collections::HashMap<&str, &str> =
+        phase_statuses.iter().copied().collect();
 
     let mut phases = String::from("{");
     for (i, &p) in order.iter().enumerate() {
@@ -282,10 +283,7 @@ fn non_code_phase_no_diff_stats() {
     assert_eq!(code, 0);
 
     // Read state file to verify no diff_stats
-    let state_path = dir
-        .path()
-        .join(".flow-states")
-        .join("test-feature.json");
+    let state_path = dir.path().join(".flow-states").join("test-feature.json");
     let content = fs::read_to_string(state_path).unwrap();
     let state: serde_json::Value = serde_json::from_str(&content).unwrap();
     assert!(
@@ -357,10 +355,7 @@ fn code_phase_completion_captures_diff_stats() {
     assert_eq!(json["status"], "ok");
 
     // Read state file to verify diff_stats
-    let state_path = dir
-        .path()
-        .join(".flow-states")
-        .join("my-feature.json");
+    let state_path = dir.path().join(".flow-states").join("my-feature.json");
     let content = fs::read_to_string(state_path).unwrap();
     let updated: serde_json::Value = serde_json::from_str(&content).unwrap();
     assert!(

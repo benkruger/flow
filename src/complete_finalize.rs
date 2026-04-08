@@ -21,7 +21,10 @@ use crate::complete_post_merge;
 use crate::git::project_root;
 
 #[derive(Parser, Debug)]
-#[command(name = "complete-finalize", about = "FLOW Complete phase post-merge + cleanup")]
+#[command(
+    name = "complete-finalize",
+    about = "FLOW Complete phase post-merge + cleanup"
+)]
 pub struct Args {
     /// PR number
     #[arg(long, required = true)]

@@ -8,7 +8,10 @@ use std::process::{Command, Output};
 
 use serde_json::{json, Value};
 
-use common::{create_gh_stub, create_git_repo_with_remote, current_plugin_version, parse_output, write_flow_json};
+use common::{
+    create_gh_stub, create_git_repo_with_remote, current_plugin_version, parse_output,
+    write_flow_json,
+};
 
 // --- Test helpers ---
 
@@ -24,7 +27,12 @@ fn create_default_gh_stub(repo: &Path) -> PathBuf {
 }
 
 /// Run flow-rs start-setup with the given arguments in a test repo.
-fn run_start_setup(repo: &Path, feature_name: &str, extra_args: &[&str], stub_dir: &Path) -> Output {
+fn run_start_setup(
+    repo: &Path,
+    feature_name: &str,
+    extra_args: &[&str],
+    stub_dir: &Path,
+) -> Output {
     let mut args = vec!["start-setup", feature_name];
     args.extend_from_slice(extra_args);
 
@@ -53,7 +61,12 @@ fn happy_path_returns_ok_json() {
     let stub_dir = create_default_gh_stub(&repo);
 
     let output = run_start_setup(&repo, "test feature", &["--skip-pull"], &stub_dir);
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
     assert_eq!(data["worktree"], ".worktrees/test-feature");
@@ -71,7 +84,12 @@ fn worktree_created() {
     let stub_dir = create_default_gh_stub(&repo);
 
     let output = run_start_setup(&repo, "wt test", &["--skip-pull"], &stub_dir);
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(repo.join(".worktrees").join("wt-test").is_dir());
 }
 
@@ -83,7 +101,12 @@ fn state_file_created_with_all_phases() {
     let stub_dir = create_default_gh_stub(&repo);
 
     let output = run_start_setup(&repo, "state test", &["--skip-pull"], &stub_dir);
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let state_path = repo.join(".flow-states").join("state-test.json");
     assert!(state_path.exists());
@@ -98,7 +121,13 @@ fn state_file_created_with_all_phases() {
     let phases = state["phases"].as_object().unwrap();
     assert_eq!(phases.len(), 6);
     assert_eq!(phases["flow-start"]["status"], "in_progress");
-    for key in ["flow-plan", "flow-code", "flow-code-review", "flow-learn", "flow-complete"] {
+    for key in [
+        "flow-plan",
+        "flow-code",
+        "flow-code-review",
+        "flow-learn",
+        "flow-complete",
+    ] {
         assert_eq!(phases[key]["status"], "pending");
     }
 }
@@ -189,7 +218,12 @@ fn venv_symlink_created() {
     fs::write(venv_dir.join("bin").join("python3"), "fake").unwrap();
 
     let output = run_start_setup(&repo, "venv test", &["--skip-pull"], &stub_dir);
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let wt_venv = repo.join(".worktrees").join("venv-test").join(".venv");
     assert!(wt_venv.is_symlink());
@@ -219,7 +253,12 @@ fn auto_flag_overrides_skills() {
     let stub_dir = create_default_gh_stub(&repo);
 
     let output = run_start_setup(&repo, "auto test", &["--skip-pull", "--auto"], &stub_dir);
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let state_path = repo.join(".flow-states").join("auto-test.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
@@ -237,15 +276,28 @@ fn prompt_file_stores_content_in_state() {
     let stub_dir = create_default_gh_stub(&repo);
 
     let prompt_path = repo.join(".flow-start-prompt");
-    fs::write(&prompt_path, "fix issue #228 with URLs https://github.com/org/repo").unwrap();
+    fs::write(
+        &prompt_path,
+        "fix issue #228 with URLs https://github.com/org/repo",
+    )
+    .unwrap();
 
     let output = run_start_setup(
         &repo,
         "prompt file test",
-        &["--skip-pull", "--prompt-file", &prompt_path.to_string_lossy()],
+        &[
+            "--skip-pull",
+            "--prompt-file",
+            &prompt_path.to_string_lossy(),
+        ],
         &stub_dir,
     );
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let state_path = repo.join(".flow-states").join("prompt-file-test.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
@@ -268,7 +320,12 @@ fn skills_from_flow_json_propagated() {
     let stub_dir = create_default_gh_stub(&repo);
 
     let output = run_start_setup(&repo, "skills test", &["--skip-pull"], &stub_dir);
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let state_path = repo.join(".flow-states").join("skills-test.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
@@ -284,7 +341,12 @@ fn no_skills_in_flow_json_omits_from_state() {
     let stub_dir = create_default_gh_stub(&repo);
 
     let output = run_start_setup(&repo, "no skills", &["--skip-pull"], &stub_dir);
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let state_path = repo.join(".flow-states").join("no-skills.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
@@ -330,7 +392,12 @@ fn issue_title_used_for_branch_naming() {
         ],
         &stub_dir,
     );
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let data = parse_output(&output);
     // start_setup reads the canonical branch from the state file, not feature_name
     assert_eq!(data["branch"], "organize-settings-allow-list");
@@ -345,19 +412,22 @@ fn frozen_phases_file_created() {
     let stub_dir = create_default_gh_stub(&repo);
 
     let output = run_start_setup(&repo, "frozen test", &["--skip-pull"], &stub_dir);
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let frozen = repo.join(".flow-states").join("frozen-test-phases.json");
     assert!(frozen.exists(), "Frozen phases file not created");
 
     // Verify it matches source
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let source: Value = serde_json::from_str(
-        &fs::read_to_string(manifest_dir.join("flow-phases.json")).unwrap(),
-    )
-    .unwrap();
-    let frozen_data: Value =
-        serde_json::from_str(&fs::read_to_string(&frozen).unwrap()).unwrap();
+    let source: Value =
+        serde_json::from_str(&fs::read_to_string(manifest_dir.join("flow-phases.json")).unwrap())
+            .unwrap();
+    let frozen_data: Value = serde_json::from_str(&fs::read_to_string(&frozen).unwrap()).unwrap();
     assert_eq!(frozen_data, source);
 }
 
@@ -403,17 +473,18 @@ fn backfill_updates_pr_fields() {
     .unwrap();
 
     let output = run_start_setup(&repo, "backfill test", &["--skip-pull"], &stub_dir);
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
-
-    let post_state: Value = serde_json::from_str(
-        &fs::read_to_string(state_dir.join("backfill-test.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(post_state["pr_number"], 42);
     assert_eq!(
-        post_state["pr_url"],
-        "https://github.com/test/repo/pull/42"
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
+
+    let post_state: Value =
+        serde_json::from_str(&fs::read_to_string(state_dir.join("backfill-test.json")).unwrap())
+            .unwrap();
+    assert_eq!(post_state["pr_number"], 42);
+    assert_eq!(post_state["pr_url"], "https://github.com/test/repo/pull/42");
     // Original fields preserved
     assert_eq!(post_state["started_at"], "2026-01-01T00:00:00-08:00");
 }
@@ -504,7 +575,12 @@ fn branch_flag_short_circuits_state_file_lookup() {
         &["--skip-pull", "--branch", "my-custom-branch"],
         &stub_dir,
     );
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let data = parse_output(&output);
     assert_eq!(data["branch"], "my-custom-branch");
     assert_eq!(data["feature"], "My Custom Branch");
@@ -544,7 +620,12 @@ fn branch_flag_with_issue_derived_name() {
         &["--skip-pull", "--branch", "organize-settings-allow-list"],
         &stub_dir,
     );
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let data = parse_output(&output);
     assert_eq!(data["branch"], "organize-settings-allow-list");
     assert_eq!(data["feature"], "Organize Settings Allow List");
@@ -598,13 +679,13 @@ fn multiple_state_files_without_branch_flag_picks_wrong_one() {
     .unwrap();
 
     // Feature name doesn't match either state file exactly
-    let output = run_start_setup(
-        &repo,
-        "work-on-issue-772",
-        &["--skip-pull"],
-        &stub_dir,
+    let output = run_start_setup(&repo, "work-on-issue-772", &["--skip-pull"], &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
     let data = parse_output(&output);
     // Bug: picks alpha-flow (first alphabetically) instead of port-issue-close
     assert_eq!(

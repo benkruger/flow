@@ -75,13 +75,23 @@ pub fn detect_labels(labels: &[Value]) -> LabelFlags {
 
     LabelFlags {
         in_progress: label_names.contains("Flow In-Progress"),
-        decomposed: label_names.iter().any(|n| n.eq_ignore_ascii_case("decomposed")),
-        blocked: label_names.iter().any(|n| n.eq_ignore_ascii_case("blocked")),
+        decomposed: label_names
+            .iter()
+            .any(|n| n.eq_ignore_ascii_case("decomposed")),
+        blocked: label_names
+            .iter()
+            .any(|n| n.eq_ignore_ascii_case("blocked")),
     }
 }
 
 /// Label categories checked in order.
-const LABEL_CATEGORIES: &[&str] = &["Rule", "Flow", "Flaky Test", "Tech Debt", "Documentation Drift"];
+const LABEL_CATEGORIES: &[&str] = &[
+    "Rule",
+    "Flow",
+    "Flaky Test",
+    "Tech Debt",
+    "Documentation Drift",
+];
 
 /// Assign a category based on label names first, then content fallback.
 pub fn categorize(label_names: &HashSet<String>, title: &str, body: &str) -> String {
@@ -120,7 +130,10 @@ pub fn check_stale(file_paths: &[String], age_days: i64) -> StaleInfo {
         };
     }
 
-    let missing = file_paths.iter().filter(|fp| !Path::new(fp).exists()).count();
+    let missing = file_paths
+        .iter()
+        .filter(|fp| !Path::new(fp).exists())
+        .count();
     StaleInfo {
         stale: missing > 0,
         stale_missing: missing,
@@ -171,9 +184,7 @@ pub fn parse_blocker_response(json_str: &str, issue_numbers: &[i64]) -> HashMap<
     };
 
     // Navigate: data.data.repository
-    let repo_data = data
-        .get("data")
-        .and_then(|d| d.get("repository"));
+    let repo_data = data.get("data").and_then(|d| d.get("repository"));
 
     // repo_data may be null or absent
     let repo_obj = match repo_data {
@@ -291,10 +302,7 @@ pub fn fetch_blockers(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<i64
 /// Separates in-progress issues from available issues and enriches
 /// each available issue with labels, category, age, stale info, etc.
 /// The `blocker_map` maps issue numbers to lists of open blocker issue numbers.
-pub fn analyze_issues(
-    issues: &[Value],
-    blocker_map: &HashMap<i64, Vec<i64>>,
-) -> Value {
+pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<i64>>) -> Value {
     if issues.is_empty() {
         return serde_json::json!({
             "status": "ok",
@@ -337,12 +345,9 @@ pub fn analyze_issues(
             .get("createdAt")
             .and_then(|c| c.as_str())
             .unwrap_or("");
-        let age_days = if let Ok(created) =
-            chrono::DateTime::parse_from_rfc3339(created_at_str)
-        {
+        let age_days = if let Ok(created) = chrono::DateTime::parse_from_rfc3339(created_at_str) {
             let now = chrono::Utc::now();
-            (now - created.with_timezone(&chrono::Utc))
-                .num_days()
+            (now - created.with_timezone(&chrono::Utc)).num_days()
         } else {
             // Try ISO format with Z suffix replaced
             let normalized = created_at_str.replace('Z', "+00:00");
@@ -396,8 +401,7 @@ pub fn filter_issues(issues: &[Value], filter_name: &str) -> Result<Vec<Value>, 
         "blocked" => Box::new(|i: &Value| i["blocked"].as_bool().unwrap_or(false)),
         "decomposed" => Box::new(|i: &Value| i["decomposed"].as_bool().unwrap_or(false)),
         "quick-start" => Box::new(|i: &Value| {
-            i["decomposed"].as_bool().unwrap_or(false)
-                && !i["blocked"].as_bool().unwrap_or(false)
+            i["decomposed"].as_bool().unwrap_or(false) && !i["blocked"].as_bool().unwrap_or(false)
         }),
         _ => return Err(format!("Unknown filter: {}", filter_name)),
     };
@@ -435,10 +439,7 @@ pub fn run(args: Args) {
         match std::fs::read_to_string(path) {
             Ok(content) => content,
             Err(e) => {
-                crate::output::json_error(
-                    &format!("Could not read issues file: {}", e),
-                    &[],
-                );
+                crate::output::json_error(&format!("Could not read issues file: {}", e), &[]);
                 std::process::exit(1);
             }
         }
@@ -461,10 +462,7 @@ pub fn run(args: Args) {
         {
             Ok(c) => c,
             Err(e) => {
-                crate::output::json_error(
-                    &format!("gh issue list failed: {}", e),
-                    &[],
-                );
+                crate::output::json_error(&format!("gh issue list failed: {}", e), &[]);
                 std::process::exit(1);
             }
         };
@@ -505,10 +503,7 @@ pub fn run(args: Args) {
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
                 Err(e) => {
-                    crate::output::json_error(
-                        &format!("gh issue list failed: {}", e),
-                        &[],
-                    );
+                    crate::output::json_error(&format!("gh issue list failed: {}", e), &[]);
                     std::process::exit(1);
                 }
             }
@@ -540,10 +535,8 @@ pub fn run(args: Args) {
     // Fetch native blocker details via GraphQL (best-effort)
     let blocker_map = match crate::github::detect_repo(None) {
         Some(repo) => {
-            let all_numbers: Vec<i64> = issues
-                .iter()
-                .filter_map(|i| i["number"].as_i64())
-                .collect();
+            let all_numbers: Vec<i64> =
+                issues.iter().filter_map(|i| i["number"].as_i64()).collect();
             fetch_blockers(&repo, &all_numbers)
         }
         None => HashMap::new(),
@@ -738,13 +731,19 @@ mod tests {
     #[test]
     fn categorize_bug_by_content() {
         let labels: HashSet<String> = HashSet::new();
-        assert_eq!(categorize(&labels, "Fix crash on login", "error when"), "Bug");
+        assert_eq!(
+            categorize(&labels, "Fix crash on login", "error when"),
+            "Bug"
+        );
     }
 
     #[test]
     fn categorize_enhancement_by_content() {
         let labels: HashSet<String> = HashSet::new();
-        assert_eq!(categorize(&labels, "Add dark mode", "new feature"), "Enhancement");
+        assert_eq!(
+            categorize(&labels, "Add dark mode", "new feature"),
+            "Enhancement"
+        );
     }
 
     #[test]
@@ -875,18 +874,14 @@ mod tests {
 
     #[test]
     fn parse_blocker_response_filters_closed() {
-        let response = graphql_response(&[
-            (10, vec![(100, "OPEN"), (101, "CLOSED")]),
-        ]);
+        let response = graphql_response(&[(10, vec![(100, "OPEN"), (101, "CLOSED")])]);
         let result = parse_blocker_response(&response, &[10]);
         assert_eq!(result[&10], vec![100]);
     }
 
     #[test]
     fn parse_blocker_response_all_closed_returns_empty() {
-        let response = graphql_response(&[
-            (10, vec![(100, "CLOSED"), (101, "CLOSED")]),
-        ]);
+        let response = graphql_response(&[(10, vec![(100, "CLOSED"), (101, "CLOSED")])]);
         let result = parse_blocker_response(&response, &[10]);
         assert!(result[&10].is_empty());
     }
@@ -906,16 +901,14 @@ mod tests {
 
     #[test]
     fn parse_blocker_response_null_blocked_by() {
-        let response =
-            r#"{"data":{"repository":{"issue_10":{"blockedBy":null}}}}"#;
+        let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":null}}}}"#;
         let result = parse_blocker_response(response, &[10]);
         assert!(result[&10].is_empty());
     }
 
     #[test]
     fn parse_blocker_response_null_nodes() {
-        let response =
-            r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":null}}}}}"#;
+        let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":null}}}}}"#;
         let result = parse_blocker_response(response, &[10]);
         assert!(result[&10].is_empty());
     }
@@ -936,7 +929,13 @@ mod tests {
 
     // --- analyze_issues helpers ---
 
-    fn make_issue(number: i64, title: &str, body: &str, labels: &[&str], created_at: &str) -> Value {
+    fn make_issue(
+        number: i64,
+        title: &str,
+        body: &str,
+        labels: &[&str],
+        created_at: &str,
+    ) -> Value {
         let label_arr: Vec<Value> = labels
             .iter()
             .map(|n| serde_json::json!({"name": n}))
@@ -981,7 +980,13 @@ mod tests {
 
     #[test]
     fn analyze_issue_fields() {
-        let issues = vec![make_issue(1, "Test", "Check lib/foo.py", &["decomposed"], &now_iso())];
+        let issues = vec![make_issue(
+            1,
+            "Test",
+            "Check lib/foo.py",
+            &["decomposed"],
+            &now_iso(),
+        )];
         let result = analyze_issues(&issues, &HashMap::new());
         let issue = &result["issues"][0];
         assert_eq!(issue["number"], 1);
@@ -1079,7 +1084,10 @@ mod tests {
             serde_json::json!({"number": 3, "blocked": false, "decomposed": true}),
         ];
         let result = filter_issues(&issues, "ready").unwrap();
-        let numbers: Vec<i64> = result.iter().map(|i| i["number"].as_i64().unwrap()).collect();
+        let numbers: Vec<i64> = result
+            .iter()
+            .map(|i| i["number"].as_i64().unwrap())
+            .collect();
         assert_eq!(numbers, vec![1, 3]);
     }
 
@@ -1091,7 +1099,10 @@ mod tests {
             serde_json::json!({"number": 3, "blocked": true, "decomposed": true}),
         ];
         let result = filter_issues(&issues, "blocked").unwrap();
-        let numbers: Vec<i64> = result.iter().map(|i| i["number"].as_i64().unwrap()).collect();
+        let numbers: Vec<i64> = result
+            .iter()
+            .map(|i| i["number"].as_i64().unwrap())
+            .collect();
         assert_eq!(numbers, vec![2, 3]);
     }
 
@@ -1103,7 +1114,10 @@ mod tests {
             serde_json::json!({"number": 3, "blocked": false, "decomposed": true}),
         ];
         let result = filter_issues(&issues, "decomposed").unwrap();
-        let numbers: Vec<i64> = result.iter().map(|i| i["number"].as_i64().unwrap()).collect();
+        let numbers: Vec<i64> = result
+            .iter()
+            .map(|i| i["number"].as_i64().unwrap())
+            .collect();
         assert_eq!(numbers, vec![2, 3]);
     }
 
@@ -1115,7 +1129,10 @@ mod tests {
             serde_json::json!({"number": 3, "blocked": false, "decomposed": true}),
         ];
         let result = filter_issues(&issues, "quick-start").unwrap();
-        let numbers: Vec<i64> = result.iter().map(|i| i["number"].as_i64().unwrap()).collect();
+        let numbers: Vec<i64> = result
+            .iter()
+            .map(|i| i["number"].as_i64().unwrap())
+            .collect();
         assert_eq!(numbers, vec![3]);
     }
 
@@ -1160,7 +1177,14 @@ mod tests {
 
     #[test]
     fn cli_with_issues_json_file() {
-        let issues = serde_json::to_string(&vec![make_issue(1, "Test issue", "Check lib/foo.py", &[], &now_iso())]).unwrap();
+        let issues = serde_json::to_string(&vec![make_issue(
+            1,
+            "Test issue",
+            "Check lib/foo.py",
+            &[],
+            &now_iso(),
+        )])
+        .unwrap();
         let (code, stdout) = run_with_file(&issues, &[]);
         assert_eq!(code, 0, "stdout: {}", stdout);
         let output: Value = serde_json::from_str(&stdout).unwrap();

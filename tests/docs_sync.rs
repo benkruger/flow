@@ -82,7 +82,9 @@ fn assert_covers_key_features(content: &str, source_label: &str) {
 #[test]
 fn every_skill_has_a_docs_page() {
     for name in common::all_skill_names() {
-        let doc = common::docs_dir().join("skills").join(format!("{}.md", name));
+        let doc = common::docs_dir()
+            .join("skills")
+            .join(format!("{}.md", name));
         assert!(
             doc.exists(),
             "skills/{}/ exists but docs/skills/{}.md is missing",
@@ -98,7 +100,9 @@ fn every_docs_skill_page_has_a_skill_dir() {
     let skills_docs = common::docs_dir().join("skills");
     for entry in fs::read_dir(&skills_docs).unwrap().flatten() {
         let path = entry.path();
-        if path.file_name().unwrap() == "index.md" || path.extension().and_then(|e| e.to_str()) != Some("md") {
+        if path.file_name().unwrap() == "index.md"
+            || path.extension().and_then(|e| e.to_str()) != Some("md")
+        {
             continue;
         }
         let skill_name = path.file_stem().unwrap().to_string_lossy().to_string();
@@ -120,7 +124,11 @@ fn every_phase_has_a_docs_page() {
     let numbers = phase_number();
     for (key, phase) in phases["phases"].as_object().unwrap() {
         let num = numbers[key];
-        let name = phase["name"].as_str().unwrap().to_lowercase().replace(' ', "-");
+        let name = phase["name"]
+            .as_str()
+            .unwrap()
+            .to_lowercase()
+            .replace(' ', "-");
         let doc = common::docs_dir()
             .join("phases")
             .join(format!("phase-{}-{}.md", num, name));
@@ -142,16 +150,17 @@ fn phase_docs_contain_correct_command() {
     let numbers = phase_number();
     for (key, phase) in phases["phases"].as_object().unwrap() {
         let num = numbers[key];
-        let name = phase["name"].as_str().unwrap().to_lowercase().replace(' ', "-");
+        let name = phase["name"]
+            .as_str()
+            .unwrap()
+            .to_lowercase()
+            .replace(' ', "-");
         let doc_path = common::docs_dir()
             .join("phases")
             .join(format!("phase-{}-{}.md", num, name));
         let content = fs::read_to_string(&doc_path).unwrap();
         // Docs use /flow-start, not /flow:flow-start
-        let user_command = phase["command"]
-            .as_str()
-            .unwrap()
-            .replace("/flow:", "/");
+        let user_command = phase["command"].as_str().unwrap().replace("/flow:", "/");
         assert!(
             content.contains(&user_command),
             "docs/phases/phase-{}-{}.md does not mention command '{}'",
@@ -235,10 +244,7 @@ fn readme_mentions_all_phase_commands() {
     for (key, phase) in phases["phases"].as_object().unwrap() {
         let num = numbers[key];
         let phase_name = phase["name"].as_str().unwrap();
-        let user_command = phase["command"]
-            .as_str()
-            .unwrap()
-            .replace("/flow:", "/");
+        let user_command = phase["command"].as_str().unwrap().replace("/flow:", "/");
         assert!(
             readme.contains(&user_command),
             "README.md does not mention phase command '{}'",

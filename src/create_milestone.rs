@@ -43,18 +43,30 @@ pub fn create_milestone(repo: &str, title: &str, due_date: &str) -> Result<(i64,
     let timeout = Duration::from_secs(LOCAL_TIMEOUT);
 
     let stdout = run_gh_cmd(
-        &["gh", "api", &api_path, "--method", "POST", "-f", &title_field, "-f", &due_on_field],
+        &[
+            "gh",
+            "api",
+            &api_path,
+            "--method",
+            "POST",
+            "-f",
+            &title_field,
+            "-f",
+            &due_on_field,
+        ],
         Some(timeout),
     )?;
 
-    let data: serde_json::Value = serde_json::from_str(&stdout)
-        .map_err(|_| format!("Invalid JSON response: {}", stdout))?;
+    let data: serde_json::Value =
+        serde_json::from_str(&stdout).map_err(|_| format!("Invalid JSON response: {}", stdout))?;
 
-    let number = data.get("number")
+    let number = data
+        .get("number")
         .and_then(|v| v.as_i64())
         .ok_or("API response missing 'number' field")?;
 
-    let url = data.get("html_url")
+    let url = data
+        .get("html_url")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
@@ -65,10 +77,7 @@ pub fn create_milestone(repo: &str, title: &str, due_date: &str) -> Result<(i64,
 pub fn run(args: Args) {
     match create_milestone(&args.repo, &args.title, &args.due_date) {
         Ok((number, url)) => {
-            json_ok(&[
-                ("number", json!(number)),
-                ("url", json!(url)),
-            ]);
+            json_ok(&[("number", json!(number)), ("url", json!(url))]);
         }
         Err(e) => {
             json_error(&e, &[]);
@@ -85,9 +94,12 @@ mod tests {
     fn args_parse_all_required() {
         let args = Args::try_parse_from([
             "create-milestone",
-            "--repo", "owner/repo",
-            "--title", "v1.0 Release",
-            "--due-date", "2026-06-01",
+            "--repo",
+            "owner/repo",
+            "--title",
+            "v1.0 Release",
+            "--due-date",
+            "2026-06-01",
         ]);
         assert!(args.is_ok());
         let args = args.unwrap();
@@ -100,8 +112,10 @@ mod tests {
     fn args_missing_repo_fails() {
         let args = Args::try_parse_from([
             "create-milestone",
-            "--title", "v1.0",
-            "--due-date", "2026-06-01",
+            "--title",
+            "v1.0",
+            "--due-date",
+            "2026-06-01",
         ]);
         assert!(args.is_err());
     }
@@ -110,8 +124,10 @@ mod tests {
     fn args_missing_title_fails() {
         let args = Args::try_parse_from([
             "create-milestone",
-            "--repo", "owner/repo",
-            "--due-date", "2026-06-01",
+            "--repo",
+            "owner/repo",
+            "--due-date",
+            "2026-06-01",
         ]);
         assert!(args.is_err());
     }
@@ -120,8 +136,10 @@ mod tests {
     fn args_missing_due_date_fails() {
         let args = Args::try_parse_from([
             "create-milestone",
-            "--repo", "owner/repo",
-            "--title", "v1.0",
+            "--repo",
+            "owner/repo",
+            "--title",
+            "v1.0",
         ]);
         assert!(args.is_err());
     }

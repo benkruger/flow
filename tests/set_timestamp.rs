@@ -53,10 +53,7 @@ fn run_set_timestamp(dir: &std::path::Path, args: &[&str]) -> (i32, Value) {
     cmd.current_dir(dir);
 
     // Init a git repo so project_root works
-    let _ = Command::new("git")
-        .args(["init"])
-        .current_dir(dir)
-        .output();
+    let _ = Command::new("git").args(["init"]).current_dir(dir).output();
 
     let output = cmd.output().unwrap();
     let exit_code = output.status.code().unwrap_or(-1);
@@ -211,7 +208,10 @@ fn test_cli_code_task_jump_blocked() {
     let (code, output) = run_set_timestamp(dir.path(), &["--set", "code_task=5"]);
     assert_eq!(code, 1);
     assert_eq!(output["status"], "error");
-    assert!(output["message"].as_str().unwrap().contains("increment by 1"));
+    assert!(output["message"]
+        .as_str()
+        .unwrap()
+        .contains("increment by 1"));
 }
 
 #[test]
@@ -250,7 +250,10 @@ fn test_cli_error_no_state_file() {
     let parsed: Value =
         serde_json::from_str(&String::from_utf8_lossy(&output.stdout).trim()).unwrap();
     assert_eq!(parsed["status"], "error");
-    assert!(parsed["message"].as_str().unwrap().contains("No state file"));
+    assert!(parsed["message"]
+        .as_str()
+        .unwrap()
+        .contains("No state file"));
 }
 
 #[test]
@@ -288,7 +291,10 @@ fn test_cli_error_invalid_format() {
     let (code, output) = run_set_timestamp(dir.path(), &["--set", "design.approved_at"]);
     assert_eq!(code, 1);
     assert_eq!(output["status"], "error");
-    assert!(output["message"].as_str().unwrap().contains("Invalid format"));
+    assert!(output["message"]
+        .as_str()
+        .unwrap()
+        .contains("Invalid format"));
 }
 
 #[test]
@@ -298,11 +304,13 @@ fn test_cli_error_corrupt_json() {
     fs::create_dir_all(&state_dir).unwrap();
     fs::write(state_dir.join("test-feature.json"), "{bad json").unwrap();
 
-    let (code, output) =
-        run_set_timestamp(dir.path(), &["--set", "design.approved_at=NOW"]);
+    let (code, output) = run_set_timestamp(dir.path(), &["--set", "design.approved_at=NOW"]);
     assert_eq!(code, 1);
     assert_eq!(output["status"], "error");
-    assert!(output["message"].as_str().unwrap().contains("Could not read"));
+    assert!(output["message"]
+        .as_str()
+        .unwrap()
+        .contains("Could not read"));
 }
 
 /// Tombstone: .flow-states/ scan removed from resolve_branch in PR #924.
@@ -313,11 +321,7 @@ fn test_cli_no_scan_no_state_file_tombstone() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
     fs::create_dir_all(&state_dir).unwrap();
-    fs::write(
-        state_dir.join("feat-a.json"),
-        r#"{"branch": "feat-a"}"#,
-    )
-    .unwrap();
+    fs::write(state_dir.join("feat-a.json"), r#"{"branch": "feat-a"}"#).unwrap();
 
     let _ = Command::new("git")
         .args(["init"])
@@ -338,7 +342,10 @@ fn test_cli_no_scan_no_state_file_tombstone() {
         serde_json::from_str(&String::from_utf8_lossy(&output.stdout).trim()).unwrap();
     assert_eq!(parsed["status"], "error");
     assert!(
-        parsed["message"].as_str().unwrap().contains("No state file"),
+        parsed["message"]
+            .as_str()
+            .unwrap()
+            .contains("No state file"),
         "Expected 'No state file' error without scan fallback, got: {}",
         parsed["message"]
     );

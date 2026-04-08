@@ -96,7 +96,7 @@ describe the fix. Do not silently expand the scope.
 ## Plan Task Ordering
 
 Every plan must include test tasks — even for pure-markdown skills,
-add contract tests in `test_skill_contracts.py`. TDD means the test
+add contract tests in `tests/skill_contracts.rs`. TDD means the test
 task comes before the implementation task it validates.
 
 When a plan removes a command, pattern, or feature from skill files,
@@ -137,13 +137,13 @@ analysis. Missed CLAUDE.md references cause user-visible doc drift.
 
 When reordering skill listings (presets, questions, tables), audit
 every location where skill order is encoded — including programmatic
-dicts like `AUTO_SKILLS` in `flow_utils.py`, not just Markdown
-content in SKILL.md files. Python dict key order is preserved and
-written to state files and `.flow.json`, making it load-bearing.
+maps like `AUTO_SKILLS` in Rust source, not just Markdown content in
+SKILL.md files. Rust `IndexMap` key order is preserved and written to
+state files and `.flow.json`, making it load-bearing.
 
 ## Cleanup Script Step Ordering
 
-When adding a new step to `lib/cleanup.py` that operates on files
+When adding a new step to `src/cleanup.rs` that operates on files
 inside the worktree, place it BEFORE the worktree removal step.
 The `git worktree remove` call deletes the entire directory tree —
 any step that reads or removes worktree-internal files must precede
@@ -158,7 +158,7 @@ command that reads it will fail.
 ## Numbered Lists With Fenced Code Blocks
 
 Never use numbered lists (1. 2. 3.) when fenced code blocks appear
-between items. pymarkdown MD029 treats each code block as a list
+between items. Markdown linters treat each code block as a list
 interruption, resetting the expected prefix. Use bold paragraph
 headers (**Step name.**) instead of numbered items when steps
 contain code blocks.
@@ -167,7 +167,7 @@ contain code blocks.
 
 When a bash block ends immediately before a closing XML-like tag
 (`</SOFT-GATE>`, `</HARD-GATE>`), add a blank line between the
-closing ` ``` ` and the tag. pymarkdown MD031 requires a blank line
+closing ` ``` ` and the tag. Markdown lint rules require a blank line
 after every fenced code block, including when the next line is a
 closing tag rather than prose.
 
@@ -210,7 +210,7 @@ tasks as atomically dependent — they must be in the same commit. Otherwise
 CI fails in the intermediate state when the content is absent.
 
 Before finalizing the dependency graph, check every removal task against
-`test_skill_contracts.py` assertions. If any assertion validates the
+`tests/skill_contracts.rs` assertions. If any assertion validates the
 presence of the removed content, pair the removal with the re-addition
 task.
 
@@ -277,7 +277,7 @@ the state file. Phase skills read only from the state file — never `.flow.json
 When a phase skill's config is missing at runtime, the fix is always at the source
 (add the skill to the prime presets in `flow-prime/SKILL.md`), never at the consumer
 (adding `.flow.json` fallback reads to the skill). Every skill in `CONFIGURABLE_SKILLS`
-(`test_skill_contracts.py`) must have an entry in all 4 prime presets — CI enforces this.
+(`tests/skill_contracts.rs`) must have an entry in all 4 prime presets — CI enforces this.
 
 ## Mid-Phase Self-Invocation
 
@@ -294,12 +294,12 @@ is the last action, never a mid-response call.
 ## Target Project Mindset
 
 Every bash block, subprocess call, and file path in a plugin skill
-or lib script runs in a target project, not this repo. Before
+or Rust module runs in a target project, not this repo. Before
 adding any command, ask: "Does this work in a Rails project with
-no `bin/flow`, no `.venv/`, and non-bash `bin/` scripts?" The FLOW
-repo is Python with bash scripts — it is the worst possible test
-environment for a multi-framework plugin. Integration tests for
-lib scripts must use the `target_project` fixture, not `git_repo`.
+no `bin/flow` and non-bash `bin/` scripts?" Integration tests for
+Rust modules that run in target projects should simulate a target
+project layout (git repo with a non-bash `bin/ci`, no `bin/flow`)
+using `create_git_repo_with_remote()` and manual fixture setup.
 
 ## Plugin User Reachability
 
@@ -362,14 +362,11 @@ CI enforces this via
 
 ## Last-Line JSON Parsing for Child-Inheriting Scripts
 
-When a lib script runs a child process without capturing its stdout
-(e.g. `subprocess.Popen` without `stdout=PIPE`), the child's output
-goes to the same stdout as the script's JSON. SKILL.md instructions
-that parse this script's output must say "parse the last line" — not
-"parse the JSON output." The `ci.py` test helper established this
-convention: `_parse` reads `result.stdout.strip().splitlines()[-1]`.
-New lib scripts that inherit child stdout must follow the same pattern
-in their test helpers.
+When a Rust module runs a child process without capturing its stdout
+(e.g. `Command::new(...).status()` without `stdout(Stdio::piped())`),
+the child's output goes to the same stdout as the module's JSON.
+SKILL.md instructions that parse this module's output must say "parse
+the last line" — not "parse the JSON output."
 
 ## Truncation Detection Marker Contracts
 
@@ -382,11 +379,11 @@ near the marker list citing the source agent file and section.
 
 ## Delegation Path Tests Need No Migration
 
-When a plan migrates logic from one implementation to another (e.g.
-Python to Rust) but keeps the same public entry point (e.g. a bash
-shim that now delegates to the new implementation), check whether
-existing tests that drive the entry point automatically cover the new
-path before planning a test migration task.
+When a plan migrates logic from one implementation to another but
+keeps the same public entry point (e.g. a bash shim that now
+delegates to a new implementation), check whether existing tests
+that drive the entry point automatically cover the new path before
+planning a test migration task.
 
 Why: integration tests that invoke the entry point (e.g. `bash
 SCRIPT`) are implementation-agnostic — they exercise whatever code

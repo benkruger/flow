@@ -207,7 +207,10 @@ fn state_files_not_mutated() {
     run_session_context(dir.path());
 
     let after = fs::read_to_string(state_dir.join("test-feature.json")).unwrap();
-    assert_eq!(original, after, "State file must not be mutated by session-context");
+    assert_eq!(
+        original, after,
+        "State file must not be mutated by session-context"
+    );
 }
 
 #[test]

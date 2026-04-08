@@ -93,10 +93,10 @@ pub fn auto_skills() -> IndexMap<String, SkillConfig> {
 ///
 /// Works with both the canonical flow-phases.json and frozen per-branch copies.
 pub fn load_phase_config(path: &Path) -> Result<PhaseConfig, String> {
-    let content =
-        std::fs::read_to_string(path).map_err(|e| format!("Cannot read {}: {}", path.display(), e))?;
-    let data: Value =
-        serde_json::from_str(&content).map_err(|e| format!("Invalid JSON in {}: {}", path.display(), e))?;
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("Cannot read {}: {}", path.display(), e))?;
+    let data: Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Invalid JSON in {}: {}", path.display(), e))?;
 
     let order: Vec<String> = data
         .get("order")
@@ -106,7 +106,10 @@ pub fn load_phase_config(path: &Path) -> Result<PhaseConfig, String> {
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
 
-    let phases = data.get("phases").and_then(|v| v.as_object()).ok_or("Missing 'phases' object")?;
+    let phases = data
+        .get("phases")
+        .and_then(|v| v.as_object())
+        .ok_or("Missing 'phases' object")?;
 
     let mut names = IndexMap::new();
     let mut cmds = IndexMap::new();
@@ -133,7 +136,11 @@ pub fn load_phase_config(path: &Path) -> Result<PhaseConfig, String> {
 }
 
 /// Copy flow-phases.json to .flow-states/<branch>-phases.json.
-pub fn freeze_phases(phases_json_path: &Path, project_root: &Path, branch: &str) -> std::io::Result<()> {
+pub fn freeze_phases(
+    phases_json_path: &Path,
+    project_root: &Path,
+    branch: &str,
+) -> std::io::Result<()> {
     let dest_dir = project_root.join(".flow-states");
     std::fs::create_dir_all(&dest_dir)?;
     let dest = dest_dir.join(format!("{}-phases.json", branch));
@@ -488,11 +495,7 @@ mod tests {
             r#"{"branch": "feature-x"}"#,
         )
         .unwrap();
-        fs::write(
-            state_dir.join("feature-x-phases.json"),
-            r#"{"order": []}"#,
-        )
-        .unwrap();
+        fs::write(state_dir.join("feature-x-phases.json"), r#"{"order": []}"#).unwrap();
 
         let results = find_state_files(dir.path(), "main");
         assert_eq!(results.len(), 1);
@@ -526,11 +529,7 @@ mod tests {
         let state_dir = dir.path().join(".flow-states");
         fs::create_dir(&state_dir).unwrap();
         fs::write(state_dir.join("bad.json"), "{corrupt").unwrap();
-        fs::write(
-            state_dir.join("good.json"),
-            r#"{"branch": "good"}"#,
-        )
-        .unwrap();
+        fs::write(state_dir.join("good.json"), r#"{"branch": "good"}"#).unwrap();
 
         let results = find_state_files(dir.path(), "main");
         assert_eq!(results.len(), 1);
@@ -543,11 +542,7 @@ mod tests {
         let state_dir = dir.path().join(".flow-states");
         fs::create_dir(&state_dir).unwrap();
         fs::write(state_dir.join("main.json"), "{corrupt").unwrap();
-        fs::write(
-            state_dir.join("other.json"),
-            r#"{"branch": "other"}"#,
-        )
-        .unwrap();
+        fs::write(state_dir.join("other.json"), r#"{"branch": "other"}"#).unwrap();
 
         let results = find_state_files(dir.path(), "main");
         assert!(results.is_empty());

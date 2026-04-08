@@ -10,7 +10,7 @@ where the code runs.
    at all if a different code path runs first.
 2. **Verify runtime behavior.** Write a small diagnostic script
    that runs through the same call chain (Claude Code → bash →
-   bin/flow → python) and print the actual values. Unit test
+   bin/flow → flow-rs) and print the actual values. Unit test
    mocks do not catch environment issues like missing ttys,
    wrong parents, or piped stdin.
 3. **Check one layer deeper.** When a subprocess returns an

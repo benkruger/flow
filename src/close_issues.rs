@@ -61,11 +61,7 @@ pub fn close_issues(
     (closed, failed)
 }
 
-fn close_single_issue(
-    number: i64,
-    repo: Option<&str>,
-    timeout: Duration,
-) -> Result<(), String> {
+fn close_single_issue(number: i64, repo: Option<&str>, timeout: Duration) -> Result<(), String> {
     let mut cmd_args = vec!["gh", "issue", "close"];
     let num_str = number.to_string();
     cmd_args.push(&num_str);
@@ -110,10 +106,7 @@ pub fn run(args: Args) {
     let content = match fs::read_to_string(&args.state_file) {
         Ok(c) => c,
         Err(e) => {
-            json_error(
-                &format!("Could not read state file: {}", e),
-                &[],
-            );
+            json_error(&format!("Could not read state file: {}", e), &[]);
             std::process::exit(1);
         }
     };
@@ -121,18 +114,12 @@ pub fn run(args: Args) {
     let state: serde_json::Value = match serde_json::from_str(&content) {
         Ok(v) => v,
         Err(e) => {
-            json_error(
-                &format!("Could not read state file: {}", e),
-                &[],
-            );
+            json_error(&format!("Could not read state file: {}", e), &[]);
             std::process::exit(1);
         }
     };
 
-    let prompt = state
-        .get("prompt")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let prompt = state.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
     let repo = state.get("repo").and_then(|v| v.as_str());
     let issue_numbers = extract_issue_numbers(prompt);
 
@@ -155,11 +142,7 @@ mod tests {
     fn run_no_prompt_outputs_empty_lists() {
         let dir = tempfile::tempdir().unwrap();
         let state_file = dir.path().join("state.json");
-        fs::write(
-            &state_file,
-            r#"{"branch": "test"}"#,
-        )
-        .unwrap();
+        fs::write(&state_file, r#"{"branch": "test"}"#).unwrap();
 
         // Can't easily test run() because it calls process::exit and json_ok prints to stdout.
         // Verify the logic path instead: extract_issue_numbers on empty prompt.

@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
-# FLOW dispatcher — routes subcommands to Rust (if available) or lib/*.py.
+# FLOW dispatcher — routes subcommands to the Rust binary.
 #
 # Usage: bin/flow <subcommand> [args...]
 # Example: bin/flow start-setup "Invoice Pdf Export"
 #
-# Hybrid dispatch: tries the Rust binary first. If it exits 127
-# (unknown subcommand), falls back to Python. Any other exit code
-# from Rust is passed through directly.
+# Dispatch: tries the Rust binary first. If it exits 127
+# (unknown subcommand), returns an error. Auto-rebuilds when
+# source is newer than the binary.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-LIB_DIR="$SCRIPT_DIR/../lib"
 
 if [ $# -eq 0 ]; then
   echo '{"status":"error","message":"Usage: bin/flow <subcommand> [args...]"}'
@@ -21,7 +20,7 @@ fi
 subcmd="$1"
 shift
 
-# Try Rust binary first (hybrid dispatcher)
+# Find Rust binary
 RUST_BIN=""
 if [ -x "$SCRIPT_DIR/../target/release/flow-rs" ]; then
   RUST_BIN="$SCRIPT_DIR/../target/release/flow-rs"
@@ -59,23 +58,13 @@ if [ -n "$RUST_BIN" ]; then
   if [ $rc -ne 127 ]; then
     exit $rc
   fi
-  # Exit 127 = unknown subcommand, fall through to Python
+  # Exit 127 = unknown subcommand in Rust, fall through to error
 fi
 
-# Python fallback
-script="$LIB_DIR/$subcmd.py"
-
-if [ ! -f "$script" ]; then
-  # For hook subcommands, fail closed (exit 2 = block) instead of exit 1
-  # (hook error = fail open) when no handler is available. This prevents
-  # silent bypass of PreToolUse validators if the Rust binary is absent
-  # and cargo is unavailable to build it. See PR #856.
-  if [ "$subcmd" = "hook" ]; then
-    echo "BLOCKED: FLOW hook validator unavailable. The Rust binary is missing and cargo is not available to build it. Install cargo or run 'cargo build --release' in the plugin directory." >&2
-    exit 2
-  fi
-  echo "{\"status\":\"error\",\"message\":\"Unknown subcommand: $subcmd\"}"
-  exit 1
+# No handler available — fail closed for hooks, error for everything else
+if [ "$subcmd" = "hook" ]; then
+  echo "BLOCKED: FLOW hook validator unavailable. The Rust binary is missing and cargo is not available to build it. Install cargo or run 'cargo build --release' in the plugin directory." >&2
+  exit 2
 fi
-
-exec python3 "$script" "$@"
+echo "{\"status\":\"error\",\"message\":\"Unknown subcommand: $subcmd\"}"
+exit 1

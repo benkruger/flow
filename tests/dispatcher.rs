@@ -20,7 +20,9 @@ fn generate_id_stdout_is_8_char_hex() {
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     assert_eq!(stdout.len(), 8, "Expected 8 chars, got: {}", stdout);
     assert!(
-        stdout.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        stdout
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
         "Not valid lowercase hex: {}",
         stdout
     );
@@ -106,11 +108,7 @@ fn no_subcommand_exits_1() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .output()
         .unwrap();
-    assert_eq!(
-        output.status.code(),
-        Some(1),
-        "No subcommand should exit 1"
-    );
+    assert_eq!(output.status.code(), Some(1), "No subcommand should exit 1");
 }
 
 // --- format-status ---
@@ -164,7 +162,9 @@ fn format_status_valid_state_exits_0() {
         .current_dir(dir.path())
         .output()
         .unwrap();
-    let branch = String::from_utf8_lossy(&branch_out.stdout).trim().to_string();
+    let branch = String::from_utf8_lossy(&branch_out.stdout)
+        .trim()
+        .to_string();
 
     let state_dir = dir.path().join(".flow-states");
     std::fs::create_dir(&state_dir).unwrap();
@@ -201,9 +201,21 @@ fn format_status_valid_state_exits_0() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("FLOW v"), "Panel should contain version. Got: {}", stdout);
-    assert!(stdout.contains("Phase 1:"), "Panel should contain phases. Got: {}", stdout);
-    assert!(stdout.contains("YOU ARE HERE"), "Panel should mark current phase. Got: {}", stdout);
+    assert!(
+        stdout.contains("FLOW v"),
+        "Panel should contain version. Got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("Phase 1:"),
+        "Panel should contain phases. Got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("YOU ARE HERE"),
+        "Panel should mark current phase. Got: {}",
+        stdout
+    );
 }
 
 #[test]
@@ -248,7 +260,11 @@ fn format_status_branch_flag() {
         .current_dir(dir.path())
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(0), "Should exit 0 with --branch flag");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "Should exit 0 with --branch flag"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("FLOW v"), "Panel should contain version");
 }
@@ -272,7 +288,9 @@ fn format_status_corrupt_json_exits_1() {
         .current_dir(dir.path())
         .output()
         .unwrap();
-    let branch = String::from_utf8_lossy(&branch_out.stdout).trim().to_string();
+    let branch = String::from_utf8_lossy(&branch_out.stdout)
+        .trim()
+        .to_string();
 
     let state_dir = dir.path().join(".flow-states");
     std::fs::create_dir(&state_dir).unwrap();
@@ -283,11 +301,7 @@ fn format_status_corrupt_json_exits_1() {
         .current_dir(dir.path())
         .output()
         .unwrap();
-    assert_eq!(
-        output.status.code(),
-        Some(1),
-        "Corrupt JSON should exit 1"
-    );
+    assert_eq!(output.status.code(), Some(1), "Corrupt JSON should exit 1");
 }
 
 #[test]
@@ -296,11 +310,7 @@ fn help_flag_exits_0() {
         .arg("--help")
         .output()
         .unwrap();
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "--help should exit 0"
-    );
+    assert_eq!(output.status.code(), Some(0), "--help should exit 0");
 }
 
 // --- tombstone tests: Python files ported to Rust in PR #833 ---
@@ -331,9 +341,8 @@ fn tombstone_no_python_test_label_issues() {
     );
 }
 
-// Note: format-issues-summary.py and test_format_issues_summary.py are retained
-// as a Python bridge — render-pr-body.py imports format_issues_summary() in-process.
-// The CLI entry point dispatches to Rust via bin/flow; the bridge serves Python callers.
+// Note: format-issues-summary.py and test_format_issues_summary.py were removed in PR #953
+// (Python artifacts cleanup). The Rust port handles all dispatch paths.
 
 // --- tombstone tests: Python files ported to Rust in PR #852 ---
 

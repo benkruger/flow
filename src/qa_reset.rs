@@ -76,7 +76,9 @@ pub fn reset_git(local_path: &Path, runner: &dyn Fn(&[&str], Option<&Path>) -> C
 /// Close all open PRs in the repo. Returns count closed.
 pub fn close_prs(repo: &str, runner: &dyn Fn(&[&str], Option<&Path>) -> CmdResult) -> usize {
     let result = runner(
-        &["gh", "pr", "list", "--repo", repo, "--state", "open", "--json", "number"],
+        &[
+            "gh", "pr", "list", "--repo", repo, "--state", "open", "--json", "number",
+        ],
         None,
     );
     if !result.success {
@@ -88,10 +90,7 @@ pub fn close_prs(repo: &str, runner: &dyn Fn(&[&str], Option<&Path>) -> CmdResul
     for pr in &prs {
         if let Some(num) = pr["number"].as_i64() {
             let num_str = num.to_string();
-            let r = runner(
-                &["gh", "pr", "close", &num_str, "--repo", repo],
-                None,
-            );
+            let r = runner(&["gh", "pr", "close", &num_str, "--repo", repo], None);
             if r.success {
                 closed += 1;
             }
@@ -148,10 +147,7 @@ pub fn load_issue_template(
     runner: &dyn Fn(&[&str], Option<&Path>) -> CmdResult,
 ) -> Vec<Value> {
     let api_path = format!("repos/{}/contents/.qa/issues.json", repo);
-    let result = runner(
-        &["gh", "api", &api_path, "--jq", ".content"],
-        None,
-    );
+    let result = runner(&["gh", "api", &api_path, "--jq", ".content"], None);
     if !result.success {
         return Vec::new();
     }
@@ -210,7 +206,9 @@ pub fn reset_issues(
 ) -> usize {
     // Close existing issues
     let result = runner(
-        &["gh", "issue", "list", "--repo", repo, "--state", "all", "--json", "number"],
+        &[
+            "gh", "issue", "list", "--repo", repo, "--state", "all", "--json", "number",
+        ],
         None,
     );
     if result.success && !result.stdout.trim().is_empty() {
@@ -218,10 +216,7 @@ pub fn reset_issues(
             for issue in &issues {
                 if let Some(num) = issue["number"].as_i64() {
                     let num_str = num.to_string();
-                    runner(
-                        &["gh", "issue", "close", &num_str, "--repo", repo],
-                        None,
-                    );
+                    runner(&["gh", "issue", "close", &num_str, "--repo", repo], None);
                 }
             }
         }
@@ -238,8 +233,7 @@ pub fn reset_issues(
             .unwrap_or_default();
 
         let mut cmd: Vec<&str> = vec![
-            "gh", "issue", "create", "--repo", repo,
-            "--title", title, "--body", body,
+            "gh", "issue", "create", "--repo", repo, "--title", title, "--body", body,
         ];
         for label in &labels {
             cmd.push("--label");
@@ -361,7 +355,8 @@ mod tests {
     fn test_reset_git_runs_correct_commands() {
         let cmds = RefCell::new(Vec::new());
         let runner = |args: &[&str], _cwd: Option<&Path>| -> CmdResult {
-            cmds.borrow_mut().push(args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+            cmds.borrow_mut()
+                .push(args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
             ok_result("")
         };
 
@@ -375,9 +370,8 @@ mod tests {
 
     #[test]
     fn test_reset_git_failure() {
-        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult {
-            err_result("fatal: not a repo")
-        };
+        let runner =
+            |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { err_result("fatal: not a repo") };
 
         let result = reset_git(Path::new("/tmp/repo"), &runner);
         assert_eq!(result["status"], "error");
@@ -402,9 +396,7 @@ mod tests {
 
     #[test]
     fn test_close_prs_no_open() {
-        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult {
-            ok_result("[]")
-        };
+        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { ok_result("[]") };
 
         let result = close_prs("owner/repo", &runner);
         assert_eq!(result, 0);
@@ -412,9 +404,7 @@ mod tests {
 
     #[test]
     fn test_close_prs_gh_failure() {
-        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult {
-            err_result("error")
-        };
+        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { err_result("error") };
 
         let result = close_prs("owner/repo", &runner);
         assert_eq!(result, 0);
@@ -439,9 +429,8 @@ mod tests {
 
     #[test]
     fn test_delete_remote_branches_only_main() {
-        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult {
-            ok_result("  origin/main\n")
-        };
+        let runner =
+            |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { ok_result("  origin/main\n") };
 
         let result = delete_remote_branches("owner/repo", Path::new("/tmp/repo"), &runner);
         assert_eq!(result, 0);
@@ -449,9 +438,7 @@ mod tests {
 
     #[test]
     fn test_delete_remote_branches_git_failure() {
-        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult {
-            err_result("error")
-        };
+        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { err_result("error") };
 
         let result = delete_remote_branches("owner/repo", Path::new("/tmp/repo"), &runner);
         assert_eq!(result, 0);
@@ -476,11 +463,11 @@ mod tests {
 
     #[test]
     fn test_load_issue_template_success() {
-        let content = serde_json::to_string(&json!([{"title": "Test", "body": "Body", "labels": []}])).unwrap();
+        let content =
+            serde_json::to_string(&json!([{"title": "Test", "body": "Body", "labels": []}]))
+                .unwrap();
         let encoded = simple_base64_encode(content.as_bytes());
-        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult {
-            ok_result(&encoded)
-        };
+        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { ok_result(&encoded) };
 
         let result = load_issue_template("owner/repo", &runner);
         assert_eq!(result.len(), 1);
@@ -489,9 +476,7 @@ mod tests {
 
     #[test]
     fn test_load_issue_template_failure() {
-        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult {
-            err_result("not found")
-        };
+        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { err_result("not found") };
 
         let result = load_issue_template("owner/repo", &runner);
         assert!(result.is_empty());
@@ -499,9 +484,8 @@ mod tests {
 
     #[test]
     fn test_load_issue_template_corrupt() {
-        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult {
-            ok_result("not-base64!!!")
-        };
+        let runner =
+            |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { ok_result("not-base64!!!") };
 
         let result = load_issue_template("owner/repo", &runner);
         assert!(result.is_empty());
@@ -541,7 +525,9 @@ mod tests {
     fn test_reset_issues_with_labels() {
         let calls = RefCell::new(Vec::new());
         let runner = |args: &[&str], _cwd: Option<&Path>| -> CmdResult {
-            calls.borrow_mut().push(args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+            calls
+                .borrow_mut()
+                .push(args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
             if args.contains(&"list") {
                 ok_result("[]")
             } else {
@@ -554,7 +540,10 @@ mod tests {
 
         assert_eq!(result, 1);
         let captured = calls.borrow();
-        let create_call = captured.iter().find(|c| c.contains(&"create".to_string())).unwrap();
+        let create_call = captured
+            .iter()
+            .find(|c| c.contains(&"create".to_string()))
+            .unwrap();
         assert!(create_call.contains(&"--label".to_string()));
         assert!(create_call.contains(&"bug".to_string()));
         assert!(create_call.contains(&"urgent".to_string()));
@@ -598,10 +587,14 @@ mod tests {
                 ok_result("[]")
             } else if args.contains(&"-r") {
                 // branch -r
-                ok_result("  origin/main\n  origin/feature-1\n  origin/feature-2\n  origin/feature-3\n")
+                ok_result(
+                    "  origin/main\n  origin/feature-1\n  origin/feature-2\n  origin/feature-3\n",
+                )
             } else if args.contains(&"api") {
                 // load_issue_template
-                let content = serde_json::to_string(&json!([{"title": "T", "body": "B", "labels": []}])).unwrap();
+                let content =
+                    serde_json::to_string(&json!([{"title": "T", "body": "B", "labels": []}]))
+                        .unwrap();
                 ok_result(&simple_base64_encode(content.as_bytes()))
             } else {
                 ok_result("")
@@ -637,9 +630,8 @@ mod tests {
 
     #[test]
     fn test_reset_git_failure_stops_early() {
-        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult {
-            err_result("not a repo")
-        };
+        let runner =
+            |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { err_result("not a repo") };
 
         let result = reset_impl("owner/repo", Some("/tmp/repo"), &runner);
         assert_eq!(result["status"], "error");

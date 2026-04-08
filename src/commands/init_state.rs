@@ -6,13 +6,14 @@ use serde_json::{json, Value};
 
 use crate::commands::log::append_log;
 use crate::git::project_root;
-use crate::output::{json_error, json_ok};
-use crate::phase_config::{
-    auto_skills, build_initial_phases, freeze_phases, read_flow_json,
-};
-use crate::state::{Framework, SkillConfig};
 use crate::label_issues::LABEL;
-use crate::utils::{branch_name, check_duplicate_issue, detect_tty, extract_issue_numbers, fetch_issue_info, now, plugin_root, read_prompt_file};
+use crate::output::{json_error, json_ok};
+use crate::phase_config::{auto_skills, build_initial_phases, freeze_phases, read_flow_json};
+use crate::state::{Framework, SkillConfig};
+use crate::utils::{
+    branch_name, check_duplicate_issue, detect_tty, extract_issue_numbers, fetch_issue_info, now,
+    plugin_root, read_prompt_file,
+};
 
 /// Create the initial FLOW state file with null PR fields.
 ///
@@ -90,13 +91,11 @@ pub fn create_state(
     }
 
     let state_dir = project_root.join(".flow-states");
-    fs::create_dir_all(&state_dir)
-        .map_err(|e| format!("Cannot create .flow-states: {}", e))?;
+    fs::create_dir_all(&state_dir).map_err(|e| format!("Cannot create .flow-states: {}", e))?;
     let state_path = state_dir.join(format!("{}.json", branch));
     let output = serde_json::to_string_pretty(&Value::Object(state))
         .map_err(|e| format!("JSON serialize error: {}", e))?;
-    fs::write(&state_path, output)
-        .map_err(|e| format!("Cannot write state file: {}", e))?;
+    fs::write(&state_path, output).map_err(|e| format!("Cannot write state file: {}", e))?;
 
     Ok(())
 }
@@ -288,7 +287,17 @@ mod tests {
     #[test]
     fn create_state_writes_valid_json() {
         let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "test-feature", Framework::Rails, None, "test prompt", None, None, None).unwrap();
+        create_state(
+            dir.path(),
+            "test-feature",
+            Framework::Rails,
+            None,
+            "test prompt",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "test-feature");
         assert_eq!(state["schema_version"], 1);
         assert_eq!(state["branch"], "test-feature");
@@ -300,7 +309,17 @@ mod tests {
     #[test]
     fn create_state_null_pr_fields() {
         let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "pr-null-test", Framework::Rails, None, "", None, None, None).unwrap();
+        create_state(
+            dir.path(),
+            "pr-null-test",
+            Framework::Rails,
+            None,
+            "",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "pr-null-test");
         assert!(state["pr_number"].is_null());
         assert!(state["pr_url"].is_null());
@@ -312,7 +331,17 @@ mod tests {
     #[test]
     fn create_state_has_six_phases() {
         let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "six-phases", Framework::Rails, None, "", None, None, None).unwrap();
+        create_state(
+            dir.path(),
+            "six-phases",
+            Framework::Rails,
+            None,
+            "",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "six-phases");
         let phases = state["phases"].as_object().unwrap();
         assert_eq!(phases.len(), 6);
@@ -327,7 +356,17 @@ mod tests {
     #[test]
     fn create_state_first_phase_in_progress() {
         let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "phase-status", Framework::Rails, None, "", None, None, None).unwrap();
+        create_state(
+            dir.path(),
+            "phase-status",
+            Framework::Rails,
+            None,
+            "",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "phase-status");
         let start = &state["phases"]["flow-start"];
         assert_eq!(start["status"], "in_progress");
@@ -339,13 +378,41 @@ mod tests {
     #[test]
     fn create_state_other_phases_pending() {
         let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "pending-test", Framework::Rails, None, "", None, None, None).unwrap();
+        create_state(
+            dir.path(),
+            "pending-test",
+            Framework::Rails,
+            None,
+            "",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "pending-test");
-        for key in ["flow-plan", "flow-code", "flow-code-review", "flow-learn", "flow-complete"] {
+        for key in [
+            "flow-plan",
+            "flow-code",
+            "flow-code-review",
+            "flow-learn",
+            "flow-complete",
+        ] {
             let phase = &state["phases"][key];
-            assert_eq!(phase["status"], "pending", "Phase {} should be pending", key);
-            assert!(phase["started_at"].is_null(), "Phase {} started_at should be null", key);
-            assert_eq!(phase["visit_count"], 0, "Phase {} visit_count should be 0", key);
+            assert_eq!(
+                phase["status"], "pending",
+                "Phase {} should be pending",
+                key
+            );
+            assert!(
+                phase["started_at"].is_null(),
+                "Phase {} started_at should be null",
+                key
+            );
+            assert_eq!(
+                phase["visit_count"], 0,
+                "Phase {} visit_count should be 0",
+                key
+            );
         }
     }
 
@@ -354,7 +421,17 @@ mod tests {
     #[test]
     fn create_state_framework_propagation() {
         let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "fw-test", Framework::Python, None, "", None, None, None).unwrap();
+        create_state(
+            dir.path(),
+            "fw-test",
+            Framework::Python,
+            None,
+            "",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "fw-test");
         assert_eq!(state["framework"], "python");
     }
@@ -362,7 +439,17 @@ mod tests {
     #[test]
     fn create_state_framework_defaults_to_rails() {
         let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "fw-default", Framework::Rails, None, "", None, None, None).unwrap();
+        create_state(
+            dir.path(),
+            "fw-default",
+            Framework::Rails,
+            None,
+            "",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "fw-default");
         assert_eq!(state["framework"], "rails");
     }
@@ -375,8 +462,21 @@ mod tests {
         let mut skills = IndexMap::new();
         let mut start_config = IndexMap::new();
         start_config.insert("continue".to_string(), "manual".to_string());
-        skills.insert("flow-start".to_string(), SkillConfig::Detailed(start_config));
-        create_state(dir.path(), "skills-test", Framework::Rails, Some(&skills), "", None, None, None).unwrap();
+        skills.insert(
+            "flow-start".to_string(),
+            SkillConfig::Detailed(start_config),
+        );
+        create_state(
+            dir.path(),
+            "skills-test",
+            Framework::Rails,
+            Some(&skills),
+            "",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "skills-test");
         assert_eq!(state["skills"]["flow-start"]["continue"], "manual");
     }
@@ -384,7 +484,17 @@ mod tests {
     #[test]
     fn create_state_skills_omitted_when_none() {
         let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "no-skills", Framework::Rails, None, "", None, None, None).unwrap();
+        create_state(
+            dir.path(),
+            "no-skills",
+            Framework::Rails,
+            None,
+            "",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "no-skills");
         assert!(state.get("skills").is_none());
     }
@@ -393,7 +503,17 @@ mod tests {
     fn create_state_auto_skills_values() {
         let dir = tempfile::tempdir().unwrap();
         let skills = auto_skills();
-        create_state(dir.path(), "auto-test", Framework::Rails, Some(&skills), "", None, None, None).unwrap();
+        create_state(
+            dir.path(),
+            "auto-test",
+            Framework::Rails,
+            Some(&skills),
+            "",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "auto-test");
         assert_eq!(state["skills"]["flow-start"]["continue"], "auto");
         assert_eq!(state["skills"]["flow-code"]["commit"], "auto");
@@ -407,7 +527,17 @@ mod tests {
     #[test]
     fn create_state_prompt_stored() {
         let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "prompt-test", Framework::Rails, None, "fix issue #42 with special chars: && | ;", None, None, None).unwrap();
+        create_state(
+            dir.path(),
+            "prompt-test",
+            Framework::Rails,
+            None,
+            "fix issue #42 with special chars: && | ;",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "prompt-test");
         assert_eq!(state["prompt"], "fix issue #42 with special chars: && | ;");
     }
@@ -417,7 +547,17 @@ mod tests {
     #[test]
     fn create_state_start_step_fields() {
         let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "step-test", Framework::Rails, None, "", None, Some(3), Some(11)).unwrap();
+        create_state(
+            dir.path(),
+            "step-test",
+            Framework::Rails,
+            None,
+            "",
+            None,
+            Some(3),
+            Some(11),
+        )
+        .unwrap();
         let state = read_state(dir.path(), "step-test");
         assert_eq!(state["start_step"], 3);
         assert_eq!(state["start_steps_total"], 11);
@@ -426,7 +566,17 @@ mod tests {
     #[test]
     fn create_state_start_step_absent_when_none() {
         let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "no-step", Framework::Rails, None, "", None, None, None).unwrap();
+        create_state(
+            dir.path(),
+            "no-step",
+            Framework::Rails,
+            None,
+            "",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "no-step");
         assert!(state.get("start_step").is_none());
         assert!(state.get("start_steps_total").is_none());
@@ -437,7 +587,17 @@ mod tests {
     #[test]
     fn create_state_files_block() {
         let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "files-test", Framework::Rails, None, "", None, None, None).unwrap();
+        create_state(
+            dir.path(),
+            "files-test",
+            Framework::Rails,
+            None,
+            "",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "files-test");
         let files = &state["files"];
         assert!(files["plan"].is_null());
@@ -451,7 +611,17 @@ mod tests {
     #[test]
     fn create_state_required_fields() {
         let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "fields-test", Framework::Rails, None, "my prompt", None, None, None).unwrap();
+        create_state(
+            dir.path(),
+            "fields-test",
+            Framework::Rails,
+            None,
+            "my prompt",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "fields-test");
         assert_eq!(state["schema_version"], 1);
         assert_eq!(state["branch"], "fields-test");
@@ -470,16 +640,41 @@ mod tests {
     fn create_state_key_order_matches_python() {
         let dir = tempfile::tempdir().unwrap();
         let skills = auto_skills();
-        create_state(dir.path(), "order-test", Framework::Rails, Some(&skills), "test", Some("full"), Some(3), Some(11)).unwrap();
+        create_state(
+            dir.path(),
+            "order-test",
+            Framework::Rails,
+            Some(&skills),
+            "test",
+            Some("full"),
+            Some(3),
+            Some(11),
+        )
+        .unwrap();
         let content = fs::read_to_string(dir.path().join(".flow-states/order-test.json")).unwrap();
         let state: Value = serde_json::from_str(&content).unwrap();
         let keys: Vec<&String> = state.as_object().unwrap().keys().collect();
         let expected = vec![
-            "schema_version", "branch", "repo", "pr_number", "pr_url",
-            "started_at", "current_phase", "framework", "files",
-            "session_tty", "session_id", "transcript_path", "notes",
-            "prompt", "phases", "phase_transitions", "skills",
-            "commit_format", "start_step", "start_steps_total",
+            "schema_version",
+            "branch",
+            "repo",
+            "pr_number",
+            "pr_url",
+            "started_at",
+            "current_phase",
+            "framework",
+            "files",
+            "session_tty",
+            "session_id",
+            "transcript_path",
+            "notes",
+            "prompt",
+            "phases",
+            "phase_transitions",
+            "skills",
+            "commit_format",
+            "start_step",
+            "start_steps_total",
         ];
         assert_eq!(keys, expected, "Key order must match Python output");
     }
@@ -490,7 +685,17 @@ mod tests {
     fn create_state_creates_flow_states_dir() {
         let dir = tempfile::tempdir().unwrap();
         assert!(!dir.path().join(".flow-states").exists());
-        create_state(dir.path(), "dir-test", Framework::Rails, None, "", None, None, None).unwrap();
+        create_state(
+            dir.path(),
+            "dir-test",
+            Framework::Rails,
+            None,
+            "",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         assert!(dir.path().join(".flow-states").is_dir());
         assert!(dir.path().join(".flow-states/dir-test.json").exists());
     }
@@ -500,7 +705,17 @@ mod tests {
     #[test]
     fn create_state_commit_format_propagation() {
         let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "cf-test", Framework::Rails, None, "", Some("title-only"), None, None).unwrap();
+        create_state(
+            dir.path(),
+            "cf-test",
+            Framework::Rails,
+            None,
+            "",
+            Some("title-only"),
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "cf-test");
         assert_eq!(state["commit_format"], "title-only");
     }
@@ -508,7 +723,17 @@ mod tests {
     #[test]
     fn create_state_commit_format_absent_when_none() {
         let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "cf-none", Framework::Rails, None, "", None, None, None).unwrap();
+        create_state(
+            dir.path(),
+            "cf-none",
+            Framework::Rails,
+            None,
+            "",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let state = read_state(dir.path(), "cf-none");
         assert!(state.get("commit_format").is_none());
     }

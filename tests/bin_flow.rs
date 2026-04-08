@@ -1,7 +1,6 @@
 //! Tests for bin/flow — the subcommand dispatcher.
 //!
-//! Ports tests/test_bin_flow.py to Rust integration tests.
-//! Each test validates the same invariant as its Python counterpart.
+//! Validates the Rust-only dispatcher (Python fallback removed in PR #953).
 
 mod common;
 
@@ -45,15 +44,13 @@ fn unknown_subcommand_returns_error_json() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let data: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     assert_eq!(data["status"], "error");
-    assert!(
-        data["message"]
-            .as_str()
-            .unwrap()
-            .contains("nonexistent-command"),
-    );
+    assert!(data["message"]
+        .as_str()
+        .unwrap()
+        .contains("nonexistent-command"),);
 }
 
-/// Known subcommand dispatches to the matching .py file in lib/.
+/// Known subcommand dispatches to the Rust binary.
 #[test]
 fn dispatches_to_correct_script() {
     // extract-release-notes with no args exits 1 with usage message
@@ -63,7 +60,7 @@ fn dispatches_to_correct_script() {
     assert!(stdout.contains("Usage"), "Expected 'Usage' in stdout");
 }
 
-/// Arguments after the subcommand are passed to the Python script.
+/// Arguments after the subcommand are passed through.
 #[test]
 fn passes_arguments_through() {
     let output = run_flow(&["extract-release-notes", "../../etc/passwd"], None);
@@ -75,7 +72,7 @@ fn passes_arguments_through() {
     );
 }
 
-/// Exit code from the Python script is preserved.
+/// Exit code from the Rust binary is preserved.
 #[test]
 fn exit_code_passes_through() {
     let dir = tempfile::tempdir().unwrap();
@@ -86,24 +83,24 @@ fn exit_code_passes_through() {
     assert_ne!(output.status.code(), Some(0));
 }
 
-// --- Hybrid dispatcher tests ---
+// --- Dispatcher tests with fixture projects ---
 
-/// Creates a self-contained project for hybrid dispatcher tests.
-fn setup_hybrid_project(dir: &std::path::Path) {
+/// Creates a self-contained project for dispatcher tests.
+fn setup_project(dir: &std::path::Path) {
     let bin_dir = dir.join("bin");
     fs::create_dir_all(&bin_dir).unwrap();
     let real_script = common::bin_dir().join("flow");
-    fs::write(bin_dir.join("flow"), fs::read_to_string(&real_script).unwrap()).unwrap();
+    fs::write(
+        bin_dir.join("flow"),
+        fs::read_to_string(&real_script).unwrap(),
+    )
+    .unwrap();
     let mut perms = fs::metadata(bin_dir.join("flow")).unwrap().permissions();
     perms.set_mode(0o755);
     fs::set_permissions(bin_dir.join("flow"), perms).unwrap();
-
-    let lib_dir = dir.join("lib");
-    fs::create_dir_all(&lib_dir).unwrap();
-    fs::write(lib_dir.join("test-cmd.py"), "print(\"python-handled\")\n").unwrap();
 }
 
-fn run_hybrid(
+fn run_dispatcher(
     project_dir: &std::path::Path,
     args: &[&str],
     extra_path: Option<&str>,
@@ -118,29 +115,40 @@ fn run_hybrid(
     cmd.output().unwrap()
 }
 
-/// When Rust binary exists but exits 127, dispatcher falls back to Python.
+/// When Rust binary exits 127, dispatcher returns error JSON (no Python fallback).
 #[test]
-fn hybrid_falls_back_when_rust_exits_127() {
+fn rust_exit_127_returns_error_json() {
     let dir = tempfile::tempdir().unwrap();
-    setup_hybrid_project(dir.path());
+    setup_project(dir.path());
     let target_dir = dir.path().join("target").join("debug");
     fs::create_dir_all(&target_dir).unwrap();
-    fs::write(target_dir.join("flow-rs"), "#!/usr/bin/env bash\nexit 127\n").unwrap();
-    let mut perms = fs::metadata(target_dir.join("flow-rs")).unwrap().permissions();
+    fs::write(
+        target_dir.join("flow-rs"),
+        "#!/usr/bin/env bash\nexit 127\n",
+    )
+    .unwrap();
+    let mut perms = fs::metadata(target_dir.join("flow-rs"))
+        .unwrap()
+        .permissions();
     perms.set_mode(0o755);
     fs::set_permissions(target_dir.join("flow-rs"), perms).unwrap();
 
-    let output = run_hybrid(dir.path(), &["test-cmd"], None);
+    let output = run_dispatcher(dir.path(), &["test-cmd"], None);
+    assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success());
-    assert!(stdout.contains("python-handled"));
+    let data: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(data["status"], "error");
+    assert!(
+        data["message"].as_str().unwrap().contains("test-cmd"),
+        "Error message should name the unknown subcommand"
+    );
 }
 
 /// When Rust binary handles the command (exit != 127), use its result.
 #[test]
-fn hybrid_passes_through_rust_exit_code() {
+fn rust_passes_through_exit_code() {
     let dir = tempfile::tempdir().unwrap();
-    setup_hybrid_project(dir.path());
+    setup_project(dir.path());
     let target_dir = dir.path().join("target").join("debug");
     fs::create_dir_all(&target_dir).unwrap();
     fs::write(
@@ -148,22 +156,23 @@ fn hybrid_passes_through_rust_exit_code() {
         "#!/usr/bin/env bash\necho \"rust-handled\"\nexit 0\n",
     )
     .unwrap();
-    let mut perms = fs::metadata(target_dir.join("flow-rs")).unwrap().permissions();
+    let mut perms = fs::metadata(target_dir.join("flow-rs"))
+        .unwrap()
+        .permissions();
     perms.set_mode(0o755);
     fs::set_permissions(target_dir.join("flow-rs"), perms).unwrap();
 
-    let output = run_hybrid(dir.path(), &["test-cmd"], None);
+    let output = run_dispatcher(dir.path(), &["test-cmd"], None);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(stdout.contains("rust-handled"));
-    assert!(!stdout.contains("python-handled"));
 }
 
-/// Non-127 non-zero Rust exit code passes through without Python fallback.
+/// Non-127 non-zero Rust exit code passes through.
 #[test]
-fn hybrid_passes_through_nonzero_rust_exit() {
+fn rust_passes_through_nonzero_exit() {
     let dir = tempfile::tempdir().unwrap();
-    setup_hybrid_project(dir.path());
+    setup_project(dir.path());
     let target_dir = dir.path().join("target").join("debug");
     fs::create_dir_all(&target_dir).unwrap();
     fs::write(
@@ -171,33 +180,35 @@ fn hybrid_passes_through_nonzero_rust_exit() {
         "#!/usr/bin/env bash\necho \"rust-error\"\nexit 42\n",
     )
     .unwrap();
-    let mut perms = fs::metadata(target_dir.join("flow-rs")).unwrap().permissions();
+    let mut perms = fs::metadata(target_dir.join("flow-rs"))
+        .unwrap()
+        .permissions();
     perms.set_mode(0o755);
     fs::set_permissions(target_dir.join("flow-rs"), perms).unwrap();
 
-    let output = run_hybrid(dir.path(), &["test-cmd"], None);
+    let output = run_dispatcher(dir.path(), &["test-cmd"], None);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(output.status.code(), Some(42));
     assert!(stdout.contains("rust-error"));
-    assert!(!stdout.contains("python-handled"));
 }
 
-/// When no Rust binary exists, commands route to Python.
+/// When no Rust binary exists and no Cargo.toml, returns error JSON.
 #[test]
-fn dispatcher_works_without_rust_binary() {
+fn no_binary_returns_error_json() {
     let dir = tempfile::tempdir().unwrap();
-    setup_hybrid_project(dir.path());
-    let output = run_hybrid(dir.path(), &["test-cmd"], None);
+    setup_project(dir.path());
+    let output = run_dispatcher(dir.path(), &["test-cmd"], None);
+    assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success());
-    assert!(stdout.contains("python-handled"));
+    let data: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(data["status"], "error");
 }
 
 /// When both release and debug binaries exist, release is preferred.
 #[test]
-fn hybrid_prefers_release_over_debug() {
+fn prefers_release_over_debug() {
     let dir = tempfile::tempdir().unwrap();
-    setup_hybrid_project(dir.path());
+    setup_project(dir.path());
     for variant in &["debug", "release"] {
         let target_dir = dir.path().join("target").join(variant);
         fs::create_dir_all(&target_dir).unwrap();
@@ -209,26 +220,38 @@ fn hybrid_prefers_release_over_debug() {
             ),
         )
         .unwrap();
-        let mut perms = fs::metadata(target_dir.join("flow-rs")).unwrap().permissions();
+        let mut perms = fs::metadata(target_dir.join("flow-rs"))
+            .unwrap()
+            .permissions();
         perms.set_mode(0o755);
         fs::set_permissions(target_dir.join("flow-rs"), perms).unwrap();
     }
 
-    let output = run_hybrid(dir.path(), &["test-cmd"], None);
+    let output = run_dispatcher(dir.path(), &["test-cmd"], None);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(stdout.contains("release-handled"));
 }
 
+/// Hook subcommand fails closed (exit 2) when no Rust binary available.
+#[test]
+fn hook_subcommand_fails_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path());
+    let output = run_dispatcher(dir.path(), &["hook", "validate-pretool"], None);
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("BLOCKED"),
+        "Hook failure should output BLOCKED message"
+    );
+}
+
 // --- Auto-rebuild tests ---
 
 fn setup_cargo_project(dir: &std::path::Path) -> std::path::PathBuf {
-    setup_hybrid_project(dir);
-    fs::write(
-        dir.join("Cargo.toml"),
-        "[package]\nname = \"flow-rs\"\n",
-    )
-    .unwrap();
+    setup_project(dir);
+    fs::write(dir.join("Cargo.toml"), "[package]\nname = \"flow-rs\"\n").unwrap();
     let src_dir = dir.join("src");
     fs::create_dir_all(&src_dir).unwrap();
     fs::write(src_dir.join("main.rs"), "fn main() {}\n").unwrap();
@@ -270,7 +293,9 @@ fn auto_rebuild_stale_binary() {
         "#!/usr/bin/env bash\necho \"stale-handled\"\nexit 0\n",
     )
     .unwrap();
-    let mut perms = fs::metadata(target_dir.join("flow-rs")).unwrap().permissions();
+    let mut perms = fs::metadata(target_dir.join("flow-rs"))
+        .unwrap()
+        .permissions();
     perms.set_mode(0o755);
     fs::set_permissions(target_dir.join("flow-rs"), perms).unwrap();
 
@@ -287,7 +312,7 @@ fn auto_rebuild_stale_binary() {
         mock_bin_dir.display(),
         std::env::var("PATH").unwrap()
     );
-    let output = run_hybrid(dir.path(), &["test-cmd"], Some(&path));
+    let output = run_dispatcher(dir.path(), &["test-cmd"], Some(&path));
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(stdout.contains("rebuilt-handled"));
@@ -310,7 +335,9 @@ fn auto_rebuild_skips_fresh_binary() {
         "#!/usr/bin/env bash\necho \"fresh-handled\"\nexit 0\n",
     )
     .unwrap();
-    let mut perms = fs::metadata(target_dir.join("flow-rs")).unwrap().permissions();
+    let mut perms = fs::metadata(target_dir.join("flow-rs"))
+        .unwrap()
+        .permissions();
     perms.set_mode(0o755);
     fs::set_permissions(target_dir.join("flow-rs"), perms).unwrap();
 
@@ -318,10 +345,7 @@ fn auto_rebuild_skips_fresh_binary() {
     let sentinel = dir.path().join("cargo_was_called");
     fs::write(
         mock_bin_dir.join("cargo"),
-        format!(
-            "#!/usr/bin/env bash\ntouch \"{}\"\n",
-            sentinel.display()
-        ),
+        format!("#!/usr/bin/env bash\ntouch \"{}\"\n", sentinel.display()),
     )
     .unwrap();
 
@@ -330,7 +354,7 @@ fn auto_rebuild_skips_fresh_binary() {
         mock_bin_dir.display(),
         std::env::var("PATH").unwrap()
     );
-    let output = run_hybrid(dir.path(), &["test-cmd"], Some(&path));
+    let output = run_dispatcher(dir.path(), &["test-cmd"], Some(&path));
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(stdout.contains("fresh-handled"));
@@ -351,71 +375,29 @@ fn auto_rebuild_first_build() {
         mock_bin_dir.display(),
         std::env::var("PATH").unwrap()
     );
-    let output = run_hybrid(dir.path(), &["test-cmd"], Some(&path));
+    let output = run_dispatcher(dir.path(), &["test-cmd"], Some(&path));
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(stdout.contains("rebuilt-handled"));
 }
 
-/// When cargo build fails, script falls back to Python without crashing.
+/// When cargo build fails and no binary exists, returns error JSON.
 #[test]
-fn auto_rebuild_failure_falls_back_to_python() {
+fn auto_rebuild_failure_returns_error() {
     let dir = tempfile::tempdir().unwrap();
     let mock_bin_dir = setup_cargo_project(dir.path());
 
     // Mock cargo that fails
-    fs::write(
-        mock_bin_dir.join("cargo"),
-        "#!/usr/bin/env bash\nexit 1\n",
-    )
-    .unwrap();
+    fs::write(mock_bin_dir.join("cargo"), "#!/usr/bin/env bash\nexit 1\n").unwrap();
 
     let path = format!(
         "{}:{}",
         mock_bin_dir.display(),
         std::env::var("PATH").unwrap()
     );
-    let output = run_hybrid(dir.path(), &["test-cmd"], Some(&path));
+    let output = run_dispatcher(dir.path(), &["test-cmd"], Some(&path));
+    assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success());
-    assert!(stdout.contains("python-handled"));
-}
-
-/// When no Cargo.toml exists, auto-rebuild block is skipped entirely.
-#[test]
-fn auto_rebuild_skips_without_cargo_toml() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_hybrid_project(dir.path());
-    // No Cargo.toml — should use Python directly
-    let output = run_hybrid(dir.path(), &["test-cmd"], None);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success());
-    assert!(stdout.contains("python-handled"));
-}
-
-/// Every .py file in lib/ (except flow_utils.py) is reachable as a subcommand.
-#[test]
-fn every_lib_script_is_reachable() {
-    let lib_dir = common::repo_root().join("lib");
-    let mut scripts = Vec::new();
-    for entry in fs::read_dir(&lib_dir).unwrap().flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("py") {
-            let name = path.file_name().unwrap().to_string_lossy().to_string();
-            if name != "flow_utils.py" {
-                scripts.push(name);
-            }
-        }
-    }
-    assert!(!scripts.is_empty(), "Expected at least one lib/*.py script");
-    for script in &scripts {
-        let subcmd = script.trim_end_matches(".py");
-        let resolved = lib_dir.join(format!("{}.py", subcmd));
-        assert!(
-            resolved.is_file(),
-            "bin/flow cannot find subcommand '{}' — expected {} to exist",
-            subcmd,
-            resolved.display()
-        );
-    }
+    let data: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(data["status"], "error");
 }

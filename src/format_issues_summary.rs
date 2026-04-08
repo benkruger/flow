@@ -33,10 +33,7 @@ pub fn format_issues_summary(state: &serde_json::Value) -> SummaryResult {
     // Build label counts in encounter order using IndexMap
     let mut label_counts: IndexMap<String, usize> = IndexMap::new();
     for issue in issues {
-        let label = issue
-            .get("label")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let label = issue.get("label").and_then(|v| v.as_str()).unwrap_or("");
         *label_counts.entry(label.to_string()).or_insert(0) += 1;
     }
 
@@ -53,25 +50,19 @@ pub fn format_issues_summary(state: &serde_json::Value) -> SummaryResult {
         "|-------|-------|-------|-----|".to_string(),
     ];
     for issue in issues {
-        let label = issue
-            .get("label")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let title = issue
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let label = issue.get("label").and_then(|v| v.as_str()).unwrap_or("");
+        let title = issue.get("title").and_then(|v| v.as_str()).unwrap_or("");
         let phase = issue
             .get("phase_name")
             .and_then(|v| v.as_str())
             .or_else(|| issue.get("phase").and_then(|v| v.as_str()))
             .unwrap_or("");
-        let url = issue
-            .get("url")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let url = issue.get("url").and_then(|v| v.as_str()).unwrap_or("");
         let short_url = short_issue_ref(url);
-        lines.push(format!("| {} | {} | {} | {} |", label, title, phase, short_url));
+        lines.push(format!(
+            "| {} | {} | {} | {} |",
+            label, title, phase, short_url
+        ));
     }
 
     let table = lines.join("\n");
@@ -84,7 +75,10 @@ pub fn format_issues_summary(state: &serde_json::Value) -> SummaryResult {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "format-issues-summary", about = "Format issues summary for Complete phase")]
+#[command(
+    name = "format-issues-summary",
+    about = "Format issues summary for Complete phase"
+)]
 pub struct Args {
     /// Path to state JSON file
     #[arg(long)]
@@ -98,10 +92,7 @@ pub struct Args {
 pub fn run(args: Args) {
     let state_path = Path::new(&args.state_file);
     if !state_path.exists() {
-        json_error(
-            &format!("State file not found: {}", args.state_file),
-            &[],
-        );
+        json_error(&format!("State file not found: {}", args.state_file), &[]);
         process::exit(1);
     }
 
@@ -192,7 +183,8 @@ mod tests {
 
     #[test]
     fn multiple_labels_grouped() {
-        let state = json!({"issues_filed": make_issues(&["Rule", "Flaky Test", "Rule", "Tech Debt"])});
+        let state =
+            json!({"issues_filed": make_issues(&["Rule", "Flaky Test", "Rule", "Tech Debt"])});
         let result = format_issues_summary(&state);
         assert!(result.has_issues);
         assert_eq!(

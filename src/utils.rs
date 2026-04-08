@@ -43,7 +43,11 @@ pub fn read_version() -> String {
     };
     // Binary is at <plugin_root>/target/{release|debug}/flow-rs
     // Go up 3 levels: flow-rs -> {release|debug} -> target -> plugin_root
-    let plugin_root = match exe.parent().and_then(|p| p.parent()).and_then(|p| p.parent()) {
+    let plugin_root = match exe
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
+    {
         Some(r) => r,
         None => return "?".to_string(),
     };
@@ -102,18 +106,18 @@ pub fn frameworks_dir() -> Option<std::path::PathBuf> {
 /// Terminal tab colors (firebrick, teal, indigo, dark goldenrod, dark green,
 /// maroon, steel blue, saddle brown, dark slate blue, dark cyan, sienna, midnight blue).
 pub const TAB_COLORS: [(u8, u8, u8); 12] = [
-    (178, 34, 34),   // firebrick
-    (0, 128, 128),   // teal
-    (75, 0, 130),    // indigo
-    (184, 134, 11),  // dark goldenrod
-    (0, 100, 0),     // dark green
-    (128, 0, 0),     // maroon
-    (70, 130, 180),  // steel blue
-    (139, 69, 19),   // saddle brown
-    (72, 61, 139),   // dark slate blue
-    (0, 139, 139),   // dark cyan
-    (160, 82, 45),   // sienna
-    (25, 25, 112),   // midnight blue
+    (178, 34, 34),  // firebrick
+    (0, 128, 128),  // teal
+    (75, 0, 130),   // indigo
+    (184, 134, 11), // dark goldenrod
+    (0, 100, 0),    // dark green
+    (128, 0, 0),    // maroon
+    (70, 130, 180), // steel blue
+    (139, 69, 19),  // saddle brown
+    (72, 61, 139),  // dark slate blue
+    (0, 139, 139),  // dark cyan
+    (160, 82, 45),  // sienna
+    (25, 25, 112),  // midnight blue
 ];
 
 /// Pinned colors for specific repos.
@@ -185,7 +189,11 @@ pub fn elapsed_since(started_at: Option<&str>, now_override: Option<DateTime<Fix
     };
 
     let elapsed = (now_dt - start).num_seconds();
-    if elapsed < 0 { 0 } else { elapsed }
+    if elapsed < 0 {
+        0
+    } else {
+        elapsed
+    }
 }
 
 // --- Branch and feature name functions ---
@@ -248,7 +256,10 @@ pub fn extract_issue_numbers(prompt: &str) -> Vec<i64> {
     let mut seen = std::collections::HashSet::new();
     let mut result = Vec::new();
 
-    for cap in hash_re.captures_iter(prompt).chain(url_re.captures_iter(prompt)) {
+    for cap in hash_re
+        .captures_iter(prompt)
+        .chain(url_re.captures_iter(prompt))
+    {
         if let Ok(num) = cap[1].parse::<i64>() {
             if seen.insert(num) {
                 result.push(num);
@@ -369,10 +380,7 @@ pub fn check_duplicate_issue(
             Err(_) => continue,
         };
 
-        let prompt = state
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let prompt = state.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
         let existing_issues: std::collections::HashSet<i64> =
             extract_issue_numbers(prompt).into_iter().collect();
 
@@ -530,10 +538,7 @@ pub fn format_tab_color(
 ///
 /// Reads .flow.json for tab_color override, computes color,
 /// builds iTerm2 OSC escape sequences, and writes them to /dev/tty.
-pub fn write_tab_sequences(
-    repo: Option<&str>,
-    root: Option<&Path>,
-) -> Result<(), io::Error> {
+pub fn write_tab_sequences(repo: Option<&str>, root: Option<&Path>) -> Result<(), io::Error> {
     // Read .flow.json for override
     let override_color = read_flow_json_tab_color(root);
 
@@ -698,10 +703,7 @@ mod tests {
 
     #[test]
     fn branch_name_special_chars() {
-        assert_eq!(
-            branch_name("fix login timeout!"),
-            "fix-login-timeout"
-        );
+        assert_eq!(branch_name("fix login timeout!"), "fix-login-timeout");
     }
 
     #[test]
@@ -750,10 +752,7 @@ mod tests {
 
     #[test]
     fn derive_worktree_basic() {
-        assert_eq!(
-            derive_worktree("my-feature"),
-            ".worktrees/my-feature"
-        );
+        assert_eq!(derive_worktree("my-feature"), ".worktrees/my-feature");
     }
 
     // --- extract_issue_numbers() ---
@@ -939,7 +938,10 @@ mod tests {
     #[test]
     fn pinned_color_known_repos() {
         assert_eq!(pinned_color("HipaaHealth/mono-repo"), Some((50, 120, 220)));
-        assert_eq!(pinned_color("benkruger/salted-kitchen"), Some((220, 130, 20)));
+        assert_eq!(
+            pinned_color("benkruger/salted-kitchen"),
+            Some((220, 130, 20))
+        );
         assert_eq!(pinned_color("benkruger/flow"), Some((40, 180, 70)));
     }
 
@@ -1092,7 +1094,10 @@ mod tests {
         let json = r#"{"title": "Some Issue", "labels": ["bug", "Flow In-Progress"]}"#;
         let info: IssueInfo = serde_json::from_str(json).unwrap();
         assert_eq!(info.title, "Some Issue");
-        assert_eq!(info.labels, vec!["bug".to_string(), "Flow In-Progress".to_string()]);
+        assert_eq!(
+            info.labels,
+            vec!["bug".to_string(), "Flow In-Progress".to_string()]
+        );
     }
 
     #[test]

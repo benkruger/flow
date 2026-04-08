@@ -19,7 +19,10 @@ use crate::phase_config;
 use crate::phase_transition::phase_complete;
 
 #[derive(Parser, Debug)]
-#[command(name = "start-finalize", about = "Complete Start phase and send notifications")]
+#[command(
+    name = "start-finalize",
+    about = "Complete Start phase and send notifications"
+)]
 pub struct Args {
     /// Branch name for state file lookup
     #[arg(long)]
@@ -38,9 +41,7 @@ pub struct Args {
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
     let branch = &args.branch;
-    let state_path = root
-        .join(".flow-states")
-        .join(format!("{}.json", branch));
+    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
 
     if !state_path.exists() {
         return Ok(json!({
@@ -118,10 +119,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     // Step 2: Slack notification (best-effort)
     let mut slack_result = json!({"status": "skipped"});
     if let Some(ref pr_url) = args.pr_url {
-        let message = format!(
-            "Phase 1: Start complete — PR created for {}",
-            branch
-        );
+        let message = format!("Phase 1: Start complete — PR created for {}", branch);
         let slack_args = notify_slack::Args {
             phase: "flow-start".to_string(),
             message: message.clone(),
@@ -133,10 +131,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 
         if slack_result["status"] == "ok" {
             // Store thread_ts and notification in state
-            let ts = slack_result["ts"]
-                .as_str()
-                .unwrap_or("")
-                .to_string();
+            let ts = slack_result["ts"].as_str().unwrap_or("").to_string();
             let msg_clone = message.clone();
             let ts_clone = ts.clone();
 
@@ -147,7 +142,11 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
                 state["slack_thread_ts"] = json!(ts_clone);
 
                 // Append to notifications array
-                if !state.get("notifications").map(|v| v.is_array()).unwrap_or(false) {
+                if !state
+                    .get("notifications")
+                    .map(|v| v.is_array())
+                    .unwrap_or(false)
+                {
                     state["notifications"] = json!([]);
                 }
                 if let Some(arr) = state["notifications"].as_array_mut() {

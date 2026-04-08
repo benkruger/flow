@@ -53,7 +53,8 @@ pub struct Args {
 ///
 /// Also used by [`finalize_commit::run_impl`] to refresh the sentinel after a clean commit.
 pub fn sentinel_path(root: &Path, branch: &str) -> PathBuf {
-    root.join(".flow-states").join(format!("{}-ci-passed", branch))
+    root.join(".flow-states")
+        .join(format!("{}-ci-passed", branch))
 }
 
 /// Run a git command in `cwd`, returning its stdout as a lossy UTF-8 string.
@@ -163,10 +164,7 @@ pub fn run_once(
     simulate_branch: Option<&str>,
 ) -> (Value, i32) {
     if !bin_ci.exists() {
-        return (
-            json!({"status": "error", "message": "bin/ci not found"}),
-            1,
-        );
+        return (json!({"status": "error", "message": "bin/ci not found"}), 1);
     }
 
     let sentinel = branch.map(|b| sentinel_path(root, b));
@@ -223,10 +221,7 @@ pub fn run_once(
         if let Some(ref path) = sentinel {
             let _ = fs::remove_file(path);
         }
-        (
-            json!({"status": "error", "message": "bin/ci failed"}),
-            1,
-        )
+        (json!({"status": "error", "message": "bin/ci failed"}), 1)
     }
 }
 
@@ -341,17 +336,10 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
 
     let bin_ci = cwd.join("bin").join("ci");
     if !bin_ci.exists() {
-        return (
-            json!({"status": "error", "message": "bin/ci not found"}),
-            1,
-        );
+        return (json!({"status": "error", "message": "bin/ci not found"}), 1);
     }
 
-    let resolved_branch = crate::git::resolve_branch_in(
-        args.branch.as_deref(),
-        cwd,
-        root,
-    );
+    let resolved_branch = crate::git::resolve_branch_in(args.branch.as_deref(), cwd, root);
 
     if args.retry > 0 {
         run_with_retry(
@@ -776,20 +764,14 @@ mod tests {
         );
         assert_eq!(code, 0);
         assert_eq!(out["status"], "ok");
-        let sentinel = f
-            .path
-            .join(".flow-states")
-            .join("other-feature-ci-passed");
+        let sentinel = f.path.join(".flow-states").join("other-feature-ci-passed");
         assert!(sentinel.exists());
     }
 
     #[test]
     fn run_once_non_bash_ci_script() {
         // Python shebang to ensure we don't force bash
-        let f = make_ci_project_with(
-            "#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n",
-            true,
-        );
+        let f = make_ci_project_with("#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n", true);
         let (out, code) = run_once(&f.path, &f.path, &f.bin_ci, Some(&f.branch), false, None);
         assert_eq!(code, 0);
         assert_eq!(out["status"], "ok");
@@ -916,11 +898,7 @@ mod tests {
             .join(".flow-states")
             .join("my-feature-ci-passed")
             .exists());
-        assert!(!f
-            .path
-            .join(".flow-states")
-            .join("main-ci-passed")
-            .exists());
+        assert!(!f.path.join(".flow-states").join("main-ci-passed").exists());
     }
 
     #[test]
@@ -1089,11 +1067,7 @@ exit 0
         assert!(fixture_sentinel(&f).exists());
 
         // Swap to failing bin/ci
-        fs::write(
-            &f.bin_ci,
-            "#!/usr/bin/env bash\necho 'FAIL' >&2\nexit 1\n",
-        )
-        .unwrap();
+        fs::write(&f.bin_ci, "#!/usr/bin/env bash\necho 'FAIL' >&2\nexit 1\n").unwrap();
 
         let (out, code) = run_with_retry(&f.path, &f.path, &f.bin_ci, Some(&f.branch), 2, None);
         assert_eq!(code, 1);
@@ -1108,8 +1082,7 @@ exit 0
         let (first, _) = run_once(&f.path, &f.path, &f.bin_ci, Some(&f.branch), false, None);
         assert_eq!(first["skipped"], false);
         // Retry must NOT skip even though sentinel matches
-        let (second, code) =
-            run_with_retry(&f.path, &f.path, &f.bin_ci, Some(&f.branch), 3, None);
+        let (second, code) = run_with_retry(&f.path, &f.path, &f.bin_ci, Some(&f.branch), 3, None);
         assert_eq!(code, 0);
         assert_eq!(second["attempts"], 1);
         assert!(second.get("skipped").is_none());
@@ -1180,10 +1153,7 @@ exit 0
         };
         let (_out, code) = run_impl(&args, &f.path, &f.path, false);
         assert_eq!(code, 0);
-        let sentinel = f
-            .path
-            .join(".flow-states")
-            .join("other-feature-ci-passed");
+        let sentinel = f.path.join(".flow-states").join("other-feature-ci-passed");
         assert!(sentinel.exists());
     }
 

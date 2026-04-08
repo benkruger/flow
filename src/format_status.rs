@@ -20,15 +20,9 @@ pub fn format_panel(
     let default_numbers = phase_config::phase_numbers();
     let default_commands = phase_config::commands();
 
-    let order = phase_config
-        .map(|c| &c.order)
-        .unwrap_or(&default_order);
-    let names = phase_config
-        .map(|c| &c.names)
-        .unwrap_or(&default_names);
-    let numbers = phase_config
-        .map(|c| &c.numbers)
-        .unwrap_or(&default_numbers);
+    let order = phase_config.map(|c| &c.order).unwrap_or(&default_order);
+    let names = phase_config.map(|c| &c.names).unwrap_or(&default_names);
+    let numbers = phase_config.map(|c| &c.numbers).unwrap_or(&default_numbers);
     let commands = phase_config
         .map(|c| &c.commands)
         .unwrap_or(&default_commands);
@@ -55,17 +49,11 @@ pub fn format_panel(
     let dev_label = if dev_mode { " [DEV MODE]" } else { "" };
     let mut lines = Vec::new();
     lines.push("────────────────────────────────────────────".to_string());
-    lines.push(format!(
-        "  FLOW v{} — Current Status{}",
-        version, dev_label
-    ));
+    lines.push(format!("  FLOW v{} — Current Status{}", version, dev_label));
     lines.push("────────────────────────────────────────────".to_string());
     lines.push(String::new());
 
-    let branch = state
-        .get("branch")
-        .and_then(|b| b.as_str())
-        .unwrap_or("");
+    let branch = state.get("branch").and_then(|b| b.as_str()).unwrap_or("");
     lines.push(format!("  Feature : {}", derive_feature(branch)));
     lines.push(format!("  Branch  : {}", branch));
     lines.push(format!(
@@ -139,18 +127,13 @@ pub fn format_panel(
             .get("cumulative_seconds")
             .and_then(|s| s.as_i64())
             .unwrap_or(0);
-        let session_started = cpd
-            .get("session_started_at")
-            .and_then(|s| s.as_str());
+        let session_started = cpd.get("session_started_at").and_then(|s| s.as_str());
         if let Some(ss) = session_started {
             if !ss.is_empty() {
                 seconds += elapsed_since(Some(ss), now);
             }
         }
-        let visits = cpd
-            .get("visit_count")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        let visits = cpd.get("visit_count").and_then(|v| v.as_i64()).unwrap_or(0);
         lines.push(format!(
             "  Time in current phase : {}",
             format_time(seconds)
@@ -200,15 +183,9 @@ pub fn format_all_complete(
     let default_names = phase_config::phase_names();
     let default_numbers = phase_config::phase_numbers();
 
-    let order = phase_config
-        .map(|c| &c.order)
-        .unwrap_or(&default_order);
-    let names = phase_config
-        .map(|c| &c.names)
-        .unwrap_or(&default_names);
-    let numbers = phase_config
-        .map(|c| &c.numbers)
-        .unwrap_or(&default_numbers);
+    let order = phase_config.map(|c| &c.order).unwrap_or(&default_order);
+    let names = phase_config.map(|c| &c.names).unwrap_or(&default_names);
+    let numbers = phase_config.map(|c| &c.numbers).unwrap_or(&default_numbers);
 
     let phases = state.get("phases").and_then(|p| p.as_object());
     let phases = match phases {
@@ -226,10 +203,7 @@ pub fn format_all_complete(
     lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".to_string());
     lines.push(String::new());
 
-    let branch = state
-        .get("branch")
-        .and_then(|b| b.as_str())
-        .unwrap_or("");
+    let branch = state.get("branch").and_then(|b| b.as_str()).unwrap_or("");
     lines.push(format!("  Feature : {}", derive_feature(branch)));
     lines.push(format!(
         "  PR      : {}",
@@ -328,11 +302,7 @@ pub fn format_multi_panel(
             .get(phase_key)
             .map(|s| s.as_str())
             .unwrap_or(&default_cmd);
-        lines.push(format!(
-            "  {}. {}",
-            i + 1,
-            derive_feature(matched_branch)
-        ));
+        lines.push(format!("  {}. {}", i + 1, derive_feature(matched_branch)));
         lines.push(format!("     Branch : {}", matched_branch));
         lines.push(format!(
             "     Phase  : {} — {} ({})",
@@ -420,8 +390,16 @@ mod tests {
     fn panel_includes_feature_and_branch() {
         let state = make_state("flow-start", &[("flow-start", "in_progress")]);
         let panel = format_panel(&state, VERSION, None, false, None);
-        assert!(panel.contains("Feature : Test Feature"), "Panel:\n{}", panel);
-        assert!(panel.contains("Branch  : test-feature"), "Panel:\n{}", panel);
+        assert!(
+            panel.contains("Feature : Test Feature"),
+            "Panel:\n{}",
+            panel
+        );
+        assert!(
+            panel.contains("Branch  : test-feature"),
+            "Panel:\n{}",
+            panel
+        );
     }
 
     #[test]
@@ -501,8 +479,7 @@ mod tests {
             &[("flow-start", "complete"), ("flow-plan", "in_progress")],
         );
         state["phases"]["flow-plan"]["cumulative_seconds"] = json!(0);
-        state["phases"]["flow-plan"]["session_started_at"] =
-            json!("2026-01-01T00:00:00Z");
+        state["phases"]["flow-plan"]["session_started_at"] = json!("2026-01-01T00:00:00Z");
         let now = FixedOffset::east_opt(0)
             .unwrap()
             .with_ymd_and_hms(2026, 1, 1, 0, 10, 0)
@@ -522,8 +499,7 @@ mod tests {
             &[("flow-start", "complete"), ("flow-plan", "in_progress")],
         );
         state["phases"]["flow-plan"]["cumulative_seconds"] = json!(600);
-        state["phases"]["flow-plan"]["session_started_at"] =
-            json!("2026-01-01T00:00:00Z");
+        state["phases"]["flow-plan"]["session_started_at"] = json!("2026-01-01T00:00:00Z");
         let now = FixedOffset::east_opt(0)
             .unwrap()
             .with_ymd_and_hms(2026, 1, 1, 0, 5, 0)
@@ -598,11 +574,7 @@ mod tests {
             &[("flow-start", "complete"), ("flow-plan", "complete")],
         );
         let panel = format_panel(&state, VERSION, None, false, None);
-        assert!(
-            panel.contains("Next: /flow:flow-code"),
-            "Panel:\n{}",
-            panel
-        );
+        assert!(panel.contains("Next: /flow:flow-code"), "Panel:\n{}", panel);
         assert!(!panel.contains("Continue:"), "Panel:\n{}", panel);
     }
 
@@ -610,11 +582,7 @@ mod tests {
     fn panel_next_label_when_phase_pending() {
         let state = make_state("flow-plan", &[("flow-start", "complete")]);
         let panel = format_panel(&state, VERSION, None, false, None);
-        assert!(
-            panel.contains("Next: /flow:flow-plan"),
-            "Panel:\n{}",
-            panel
-        );
+        assert!(panel.contains("Next: /flow:flow-plan"), "Panel:\n{}", panel);
         assert!(!panel.contains("Continue:"), "Panel:\n{}", panel);
     }
 
@@ -644,7 +612,11 @@ mod tests {
             "Panel:\n{}",
             panel
         );
-        assert!(panel.contains("Feature : Test Feature"), "Panel:\n{}", panel);
+        assert!(
+            panel.contains("Feature : Test Feature"),
+            "Panel:\n{}",
+            panel
+        );
         assert!(
             panel.contains("PR      : https://github.com/test/test/pull/1"),
             "Panel:\n{}",
@@ -748,7 +720,11 @@ mod tests {
         let panel = format_panel(&state, VERSION, None, false, Some(&config));
         assert!(panel.contains("Begin"), "Panel:\n{}", panel);
         assert!(panel.contains("Design"), "Panel:\n{}", panel);
-        assert!(!panel.contains("Code"), "Panel should not contain default phase names:\n{}", panel);
+        assert!(
+            !panel.contains("Code"),
+            "Panel should not contain default phase names:\n{}",
+            panel
+        );
     }
 
     #[test]
@@ -825,6 +801,10 @@ mod tests {
         assert!(panel.contains("1. Test Feature"), "Panel:\n{}", panel);
         assert!(panel.contains("2. Other Feature"), "Panel:\n{}", panel);
         assert!(panel.contains("Branch : test-feature"), "Panel:\n{}", panel);
-        assert!(panel.contains("Branch : other-feature"), "Panel:\n{}", panel);
+        assert!(
+            panel.contains("Branch : other-feature"),
+            "Panel:\n{}",
+            panel
+        );
     }
 }

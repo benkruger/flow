@@ -14,7 +14,10 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::phase_config::{self, PHASE_ORDER};
-use crate::utils::{derive_feature, derive_worktree, elapsed_since, extract_issue_numbers, format_time, short_issue_ref};
+use crate::utils::{
+    derive_feature, derive_worktree, elapsed_since, extract_issue_numbers, format_time,
+    short_issue_ref,
+};
 
 /// Static mapping of (phase_key, display_step_number) → short step name.
 ///
@@ -144,18 +147,12 @@ pub fn phase_timeline(state: &Value, now: Option<DateTime<FixedOffset>>) -> Vec<
         .get("start_steps_total")
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
-    let plan_step = state
-        .get("plan_step")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+    let plan_step = state.get("plan_step").and_then(|v| v.as_i64()).unwrap_or(0);
     let plan_steps_total = state
         .get("plan_steps_total")
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
-    let code_task = state
-        .get("code_task")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+    let code_task = state.get("code_task").and_then(|v| v.as_i64()).unwrap_or(0);
     let code_tasks_total = state
         .get("code_tasks_total")
         .and_then(|v| v.as_i64())
@@ -410,19 +407,14 @@ pub fn flow_summary(state: &Value, now: Option<DateTime<FixedOffset>>) -> FlowSu
         Utc::now().with_timezone(&Los_Angeles).fixed_offset()
     });
 
-    let branch = state
-        .get("branch")
-        .and_then(|b| b.as_str())
-        .unwrap_or("");
+    let branch = state.get("branch").and_then(|b| b.as_str()).unwrap_or("");
     let current_phase = state
         .get("current_phase")
         .and_then(|p| p.as_str())
         .unwrap_or("flow-start");
 
-    let elapsed_seconds = elapsed_since(
-        state.get("started_at").and_then(|s| s.as_str()),
-        Some(now),
-    );
+    let elapsed_seconds =
+        elapsed_since(state.get("started_at").and_then(|s| s.as_str()), Some(now));
 
     let issues_filed = state
         .get("issues_filed")
@@ -433,10 +425,7 @@ pub fn flow_summary(state: &Value, now: Option<DateTime<FixedOffset>>) -> FlowSu
     let issues: Vec<IssueSummary> = issues_filed
         .iter()
         .map(|entry| {
-            let url = entry
-                .get("url")
-                .and_then(|u| u.as_str())
-                .unwrap_or("");
+            let url = entry.get("url").and_then(|u| u.as_str()).unwrap_or("");
             IssueSummary {
                 label: entry
                     .get("label")
@@ -506,10 +495,7 @@ pub fn flow_summary(state: &Value, now: Option<DateTime<FixedOffset>>) -> FlowSu
         })
         .unwrap_or(false);
 
-    let prompt = state
-        .get("prompt")
-        .and_then(|p| p.as_str())
-        .unwrap_or("");
+    let prompt = state.get("prompt").and_then(|p| p.as_str()).unwrap_or("");
 
     FlowSummary {
         feature: derive_feature(branch),
@@ -526,10 +512,7 @@ pub fn flow_summary(state: &Value, now: Option<DateTime<FixedOffset>>) -> FlowSu
             .cloned()
             .unwrap_or_else(|| current_phase.to_string()),
         elapsed: format_time(elapsed_seconds),
-        code_task: state
-            .get("code_task")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0),
+        code_task: state.get("code_task").and_then(|v| v.as_i64()).unwrap_or(0),
         diff_stats: state.get("diff_stats").cloned(),
         notes_count: notes,
         issues_count: issues_filed.len(),
@@ -813,10 +796,7 @@ mod tests {
 
     // --- Test helper: make_state (mirrors Python conftest.make_state) ---
 
-    fn make_state(
-        current_phase: &str,
-        phase_statuses: &[(&str, &str)],
-    ) -> Value {
+    fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
         let mut phases = serde_json::Map::new();
         let names_map = phase_config::phase_names();
 
@@ -904,7 +884,11 @@ mod tests {
         let names = step_names();
         let start = names.get("flow-start").unwrap();
         for key in 3..=11 {
-            assert!(start.contains_key(&key), "missing key {} in flow-start", key);
+            assert!(
+                start.contains_key(&key),
+                "missing key {} in flow-start",
+                key
+            );
         }
         assert_eq!(start.len(), 9);
     }
@@ -938,7 +922,11 @@ mod tests {
         let names = step_names();
         let learn = names.get("flow-learn").unwrap();
         for key in 1..=7 {
-            assert!(learn.contains_key(&key), "missing key {} in flow-learn", key);
+            assert!(
+                learn.contains_key(&key),
+                "missing key {} in flow-learn",
+                key
+            );
         }
         assert_eq!(learn.len(), 7);
     }
@@ -1011,8 +999,7 @@ mod tests {
         );
         state["phases"]["flow-start"]["cumulative_seconds"] = json!(120);
         state["phases"]["flow-plan"]["cumulative_seconds"] = json!(480);
-        state["phases"]["flow-code"]["session_started_at"] =
-            json!("2026-01-01T00:00:00-08:00");
+        state["phases"]["flow-code"]["session_started_at"] = json!("2026-01-01T00:00:00-08:00");
 
         let timeline = phase_timeline(&state, Some(now));
 
@@ -1316,11 +1303,7 @@ mod tests {
             json!("Implement the very long task description that exceeds limit");
 
         let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-        let name_part = timeline[2]
-            .annotation
-            .split(" - task ")
-            .next()
-            .unwrap();
+        let name_part = timeline[2].annotation.split(" - task ").next().unwrap();
         assert_eq!(name_part.chars().count(), 30);
         assert!(name_part.ends_with("..."));
     }
@@ -1475,10 +1458,7 @@ mod tests {
         state["complete_step"] = json!(5);
         state["complete_steps_total"] = json!(12);
         let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-        assert_eq!(
-            timeline[5].annotation,
-            "checking GitHub CI - step 5 of 12"
-        );
+        assert_eq!(timeline[5].annotation, "checking GitHub CI - step 5 of 12");
     }
 
     #[test]
@@ -1531,8 +1511,7 @@ mod tests {
                 ("flow-code", "in_progress"),
             ],
         );
-        state["phases"]["flow-code"]["session_started_at"] =
-            json!("2026-01-01T00:00:00-08:00");
+        state["phases"]["flow-code"]["session_started_at"] = json!("2026-01-01T00:00:00-08:00");
 
         let timeline = phase_timeline(&state, Some(now));
         let code_entry = timeline.iter().find(|e| e.key == "flow-code").unwrap();
@@ -1550,8 +1529,7 @@ mod tests {
                 ("flow-code", "in_progress"),
             ],
         );
-        state["phases"]["flow-code"]["session_started_at"] =
-            json!("2026-01-01T00:00:00-08:00");
+        state["phases"]["flow-code"]["session_started_at"] = json!("2026-01-01T00:00:00-08:00");
         state["phases"]["flow-code"]["cumulative_seconds"] = json!(120);
 
         let timeline = phase_timeline(&state, Some(now));
@@ -1587,10 +1565,7 @@ mod tests {
         let entries = parse_log_entries(log, 20);
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].time, "10:15");
-        assert_eq!(
-            entries[0].message,
-            "[Phase 1] git worktree add (exit 0)"
-        );
+        assert_eq!(entries[0].message, "[Phase 1] git worktree add (exit 0)");
         assert_eq!(entries[1].time, "10:20");
     }
 
@@ -1785,10 +1760,7 @@ mod tests {
             "phase_name": "Learn",
         }]);
         let summary = flow_summary(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-        assert_eq!(
-            summary.issues[0].ref_str,
-            "https://example.com/custom/path"
-        );
+        assert_eq!(summary.issues[0].ref_str, "https://example.com/custom/path");
     }
 
     #[test]
@@ -1864,8 +1836,7 @@ mod tests {
                 ("flow-code", "in_progress"),
             ],
         );
-        state["phases"]["flow-code"]["session_started_at"] =
-            json!("2026-01-01T00:00:00-08:00");
+        state["phases"]["flow-code"]["session_started_at"] = json!("2026-01-01T00:00:00-08:00");
         let summary = flow_summary(&state, Some(now));
         assert_eq!(summary.phase_elapsed, "5m");
     }
@@ -1963,7 +1934,10 @@ mod tests {
         let result = load_all_flows(dir.path());
         assert_eq!(result.len(), 3);
         let names: Vec<&str> = result.iter().map(|f| f.branch.as_str()).collect();
-        assert_eq!(names, vec!["alpha-feature", "bravo-feature", "charlie-feature"]);
+        assert_eq!(
+            names,
+            vec!["alpha-feature", "bravo-feature", "charlie-feature"]
+        );
     }
 
     #[test]
@@ -1994,11 +1968,7 @@ mod tests {
             serde_json::to_string(&state).unwrap(),
         )
         .unwrap();
-        std::fs::write(
-            state_dir.join("my-feature-phases.json"),
-            r#"{"order": []}"#,
-        )
-        .unwrap();
+        std::fs::write(state_dir.join("my-feature-phases.json"), r#"{"order": []}"#).unwrap();
         let result = load_all_flows(dir.path());
         assert_eq!(result.len(), 1);
     }
@@ -2015,11 +1985,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let state_dir = dir.path().join(".flow-states");
         std::fs::create_dir(&state_dir).unwrap();
-        std::fs::write(
-            state_dir.join("no-branch.json"),
-            r#"{"some": "data"}"#,
-        )
-        .unwrap();
+        std::fs::write(state_dir.join("no-branch.json"), r#"{"some": "data"}"#).unwrap();
         let state = make_state("flow-start", &[]);
         std::fs::write(
             state_dir.join("real-feature.json"),
@@ -2222,10 +2188,7 @@ mod tests {
         std::fs::create_dir(&repo_root).unwrap();
 
         let year_month = chrono::Local::now().format("%Y-%m").to_string();
-        let cost_dir = repo_root
-            .join(".claude")
-            .join("cost")
-            .join(&year_month);
+        let cost_dir = repo_root.join(".claude").join("cost").join(&year_month);
         std::fs::create_dir_all(&cost_dir).unwrap();
         std::fs::write(cost_dir.join("session-a"), "1.50").unwrap();
         std::fs::write(cost_dir.join("session-b"), "2.75").unwrap();
@@ -2292,13 +2255,8 @@ mod tests {
         let rl_path = claude_dir.join("rate-limits.json");
         std::fs::write(&rl_path, r#"{"five_hour_pct": 55, "seven_day_pct": 40}"#).unwrap();
         // Set mtime to 15 minutes ago
-        let old_time = std::time::SystemTime::now()
-            - std::time::Duration::from_secs(900);
-        filetime::set_file_mtime(
-            &rl_path,
-            filetime::FileTime::from_system_time(old_time),
-        )
-        .unwrap();
+        let old_time = std::time::SystemTime::now() - std::time::Duration::from_secs(900);
+        filetime::set_file_mtime(&rl_path, filetime::FileTime::from_system_time(old_time)).unwrap();
 
         let result = load_account_metrics(&repo_root, Some(&home_dir));
         assert!(result.stale);
@@ -2313,10 +2271,7 @@ mod tests {
         std::fs::create_dir(&repo_root).unwrap();
 
         let year_month = chrono::Local::now().format("%Y-%m").to_string();
-        let cost_dir = repo_root
-            .join(".claude")
-            .join("cost")
-            .join(&year_month);
+        let cost_dir = repo_root.join(".claude").join("cost").join(&year_month);
         std::fs::create_dir_all(&cost_dir).unwrap();
         std::fs::write(cost_dir.join("good-session"), "3.00").unwrap();
         std::fs::write(cost_dir.join("bad-session"), "not-a-number").unwrap();
