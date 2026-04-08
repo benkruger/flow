@@ -75,5 +75,8 @@
   "attribution": {
     "commit": "",
     "pr": ""
+  },
+  "env": {
+    "CLAUDE_AUTO_BACKGROUND_TASKS": "false"
   }
 }

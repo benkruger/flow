@@ -291,6 +291,14 @@ pub fn merge_settings(
     settings["permissions"]["deny"] = Value::Array(deny_array);
     settings["permissions"]["defaultMode"] = json!("acceptEdits");
 
+    // Disable auto-backgrounding — CI gates must run in foreground to
+    // enforce the gate. Without this, Claude Code may auto-background
+    // long-running commands, letting the caller advance before CI finishes.
+    if !matches!(settings.get("env"), Some(v) if v.is_object()) {
+        settings["env"] = json!({});
+    }
+    settings["env"]["CLAUDE_AUTO_BACKGROUND_TASKS"] = json!("false");
+
     // Write back
     fs::create_dir_all(&settings_dir)
         .map_err(|e| format!("Could not create .claude directory: {}", e))?;
