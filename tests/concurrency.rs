@@ -274,8 +274,10 @@ fn start_lock_serialization() {
 
 #[test]
 fn thundering_herd_zero_delay() {
-    //5 threads start simultaneously (no stagger) using a Barrier.
-    //All must acquire the lock, and intervals must not overlap.
+    // 3 threads start simultaneously (barrier). All acquire lock, no overlaps.
+    // Uses 3 workers (not 5) with 100ms hold time (not 300ms) to keep wall time
+    // under 5 seconds. The lock polling interval is 1 second (integer-only),
+    // so fewer workers and shorter holds reduce total wait time.
     let tmp = tempfile::tempdir().expect("Failed to create tempdir");
     let repo = tmp.path().to_path_buf();
     init_git_repo(&repo);
@@ -283,10 +285,10 @@ fn thundering_herd_zero_delay() {
 
     let repo = Arc::new(repo);
     let timings: Arc<Mutex<Vec<Timing>>> = Arc::new(Mutex::new(Vec::new()));
-    let barrier = Arc::new(Barrier::new(5));
+    let barrier = Arc::new(Barrier::new(3));
     let baseline = Instant::now();
 
-    let handles: Vec<_> = (0..5)
+    let handles: Vec<_> = (0..3)
         .map(|id| {
             let repo = Arc::clone(&repo);
             let timings = Arc::clone(&timings);
@@ -331,7 +333,7 @@ fn thundering_herd_zero_delay() {
                 );
 
                 let acquired_at = baseline.elapsed().as_secs_f64();
-                thread::sleep(Duration::from_millis(300));
+                thread::sleep(Duration::from_millis(100));
                 let released_at = baseline.elapsed().as_secs_f64();
 
                 let output = Command::new(FLOW_RS)
@@ -355,19 +357,19 @@ fn thundering_herd_zero_delay() {
         })
         .collect();
 
-    // Join with a reasonable timeout check — threads should complete within 60s
-    let join_deadline = Instant::now() + Duration::from_secs(60);
+    // Join with a reasonable timeout check
+    let join_deadline = Instant::now() + Duration::from_secs(30);
     for handle in handles {
         let remaining = join_deadline.saturating_duration_since(Instant::now());
         assert!(
             !remaining.is_zero(),
-            "Thundering herd test exceeded 60s deadline"
+            "Thundering herd test exceeded 30s deadline"
         );
         handle.join().expect("Worker thread panicked");
     }
 
     let mut timings = timings.lock().unwrap();
-    assert_eq!(timings.len(), 5, "Expected 5 timing records");
+    assert_eq!(timings.len(), 3, "Expected 3 timing records");
     timings.sort_by(|a, b| a.acquired_at.partial_cmp(&b.acquired_at).unwrap());
 
     for i in 1..timings.len() {
