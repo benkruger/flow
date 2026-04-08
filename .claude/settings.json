@@ -65,6 +65,8 @@
       "Bash(rg *)",
       "Bash(find *)",
       "Bash(ls *)",
+      "Bash(gh pr merge * --admin*)",
+      "Bash(gh * --admin*)",
       "Bash(* && *)",
       "Bash(* ; *)",
       "Bash(* | *)"

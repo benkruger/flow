@@ -718,6 +718,60 @@ fn test_stop_continue_no_block_after_cleared_continue_pending() {
 }
 
 #[test]
+fn test_stop_continue_pending_with_first_stop_uses_conditional_message() {
+    // When _continue_pending is set and _stop_instructed is NOT set (first stop),
+    // check_first_stop fires and produces a conditional message that tells the
+    // model to check for user messages before auto-continuing. This is the fix
+    // for issue #950: _continue_pending no longer tramples user conversations.
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "test-feature";
+    let state = json!({
+        "branch": branch,
+        "_continue_pending": "commit",
+        "_continue_context": "Do the thing"
+    });
+    setup_git_and_state(dir.path(), branch, &state);
+
+    let output = run_hook("stop-continue", dir.path(), branch, b"{}");
+
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stdout = std::str::from_utf8(&output.stdout).unwrap().trim();
+    assert!(!stdout.is_empty(), "first stop with pending must block");
+    let parsed: Value = serde_json::from_str(stdout).unwrap();
+    assert_eq!(parsed["decision"], "block");
+    let reason = parsed["reason"].as_str().unwrap();
+
+    // Must use the conditional message, NOT the old "Continue parent phase" framing
+    assert!(
+        reason.contains("Check the conversation context"),
+        "reason must contain conditional user-check instructions, got: {}",
+        reason
+    );
+    assert!(
+        reason.contains("flow:flow-note"),
+        "reason must mention flow:flow-note for capturing corrections"
+    );
+    assert!(
+        !reason.contains("Continue parent phase"),
+        "reason must NOT use the old unconditional framing"
+    );
+    assert!(
+        reason.contains("Do the thing"),
+        "reason must include the continuation context"
+    );
+
+    // _stop_instructed must be set and preserved (not removed like check_continue does)
+    let on_disk = read_state(dir.path(), branch);
+    assert_eq!(
+        on_disk["_stop_instructed"], true,
+        "_stop_instructed must be set after first stop with pending"
+    );
+    // Pending must be consumed
+    assert_eq!(on_disk["_continue_pending"], "");
+    assert_eq!(on_disk["_continue_context"], "");
+}
+
+#[test]
 fn test_stop_continue_no_state_no_simulate_exits_cleanly() {
     // Complementary test: git repo on main, no state files at all.
     // resolve_branch returns (Some("main"), []), state_path for main
