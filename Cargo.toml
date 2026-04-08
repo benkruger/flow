@@ -31,4 +31,5 @@ version = "0.28"
 
 [dev-dependencies]
 filetime = "0.2"
+serde_yaml = "0.9"
 tempfile = "3"

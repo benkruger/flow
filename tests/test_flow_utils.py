@@ -13,6 +13,7 @@ from flow_utils import (
     PINNED_COLORS,
     TAB_COLORS,
     format_tab_color,
+    permission_to_regex,
     read_flow_json,
     write_tab_sequences,
 )
@@ -90,7 +91,30 @@ def test_project_root_falls_back_on_git_failure(monkeypatch):
     assert _mod.project_root() == Path(".")
 
 
+# --- permission_to_regex ---
+
+
+def test_permission_to_regex_basic():
+    """permission_to_regex converts Bash(pattern) to a compiled regex."""
+    r = permission_to_regex("Bash(git push)")
+    assert r is not None
+    assert r.match("git push")
+    assert not r.match("git push origin")
+
+    r = permission_to_regex("Bash(git push *)")
+    assert r is not None
+    assert r.match("git push origin main")
+
+    assert permission_to_regex("Write(*)") is None
+
+
 # --- current_branch ---
+
+
+def test_current_branch_simulate_env_var(monkeypatch):
+    """FLOW_SIMULATE_BRANCH overrides git branch detection."""
+    monkeypatch.setenv("FLOW_SIMULATE_BRANCH", "main")
+    assert _mod.current_branch() == "main"
 
 
 def test_current_branch_returns_none_on_git_failure(monkeypatch):
