@@ -31,11 +31,9 @@ use crate::lock::mutate_state;
 use crate::phase_transition::phase_enter;
 use crate::utils::{bin_flow_path, derive_worktree};
 
-/// Step counter total for complete-fast. Set to 5 because complete-fast
-/// consolidates the old 7-step flow into fewer skill-visible steps.
-/// Note: complete_preflight.rs retains COMPLETE_STEPS_TOTAL=7 for
-/// backward compatibility when called as a standalone subcommand.
-const COMPLETE_STEPS_TOTAL: i64 = 5;
+/// Step counter total for complete phase: 6 steps (running checks, local CI,
+/// GitHub CI, confirming, merging PR, finalizing).
+const COMPLETE_STEPS_TOTAL: i64 = 6;
 const NETWORK_TIMEOUT: u64 = 60;
 
 #[derive(Parser, Debug)]

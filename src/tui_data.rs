@@ -27,15 +27,11 @@ pub fn step_names() -> HashMap<&'static str, HashMap<i64, &'static str>> {
     let mut map = HashMap::new();
 
     let mut start = HashMap::new();
-    start.insert(3, "creating state");
-    start.insert(4, "labeling issues");
-    start.insert(5, "pulling main");
-    start.insert(6, "running CI");
-    start.insert(7, "updating deps");
-    start.insert(8, "CI after deps");
-    start.insert(9, "committing");
-    start.insert(10, "releasing lock");
-    start.insert(11, "setting up workspace");
+    start.insert(1, "initializing");
+    start.insert(2, "CI gate");
+    start.insert(3, "creating workspace");
+    start.insert(4, "entering worktree");
+    start.insert(5, "finalizing");
     map.insert("flow-start", start);
 
     let mut plan = HashMap::new();
@@ -63,18 +59,12 @@ pub fn step_names() -> HashMap<&'static str, HashMap<i64, &'static str>> {
     map.insert("flow-learn", learn);
 
     let mut complete = HashMap::new();
-    complete.insert(1, "checking state");
-    complete.insert(2, "checking PR");
-    complete.insert(3, "merging main");
-    complete.insert(4, "running CI");
-    complete.insert(5, "checking GitHub CI");
-    complete.insert(6, "confirming merge");
-    complete.insert(7, "archiving to PR");
-    complete.insert(8, "merging PR");
-    complete.insert(9, "closing issues");
-    complete.insert(10, "post-merge ops");
-    complete.insert(11, "cleaning up");
-    complete.insert(12, "pulling changes");
+    complete.insert(1, "running checks");
+    complete.insert(2, "local CI");
+    complete.insert(3, "GitHub CI");
+    complete.insert(4, "confirming");
+    complete.insert(5, "merging PR");
+    complete.insert(6, "finalizing");
     map.insert("flow-complete", complete);
 
     map
@@ -872,16 +862,16 @@ mod tests {
     #[test]
     fn test_step_annotation_with_name() {
         assert_eq!(
-            step_annotation(5, 11, "pulling main"),
-            "pulling main - step 5 of 11"
+            step_annotation(5, 5, "finalizing"),
+            "finalizing - step 5 of 5"
         );
     }
 
     #[test]
     fn test_step_annotation_with_name_no_total() {
         assert_eq!(
-            step_annotation(3, 0, "creating state"),
-            "creating state - step 3"
+            step_annotation(3, 0, "creating workspace"),
+            "creating workspace - step 3"
         );
     }
 
@@ -891,14 +881,14 @@ mod tests {
     fn test_step_names_start_has_entries() {
         let names = step_names();
         let start = names.get("flow-start").unwrap();
-        for key in 3..=11 {
+        for key in 1..=5 {
             assert!(
                 start.contains_key(&key),
                 "missing key {} in flow-start",
                 key
             );
         }
-        assert_eq!(start.len(), 9);
+        assert_eq!(start.len(), 5);
     }
 
     #[test]
@@ -943,14 +933,14 @@ mod tests {
     fn test_step_names_complete_has_entries() {
         let names = step_names();
         let complete = names.get("flow-complete").unwrap();
-        for key in 1..=12 {
+        for key in 1..=6 {
             assert!(
                 complete.contains_key(&key),
                 "missing key {} in flow-complete",
                 key
             );
         }
-        assert_eq!(complete.len(), 12);
+        assert_eq!(complete.len(), 6);
     }
 
     // --- status_icon ---
@@ -1028,11 +1018,11 @@ mod tests {
     fn test_phase_timeline_start_annotation() {
         let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
         state["start_step"] = json!(3);
-        state["start_steps_total"] = json!(11);
+        state["start_steps_total"] = json!(5);
 
         let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
         let start_entry = &timeline[0];
-        assert_eq!(start_entry.annotation, "creating state - step 3 of 11");
+        assert_eq!(start_entry.annotation, "creating workspace - step 3 of 5");
         assert_eq!(start_entry.name, "Start");
     }
 
@@ -1049,7 +1039,7 @@ mod tests {
         state["start_step"] = json!(3);
 
         let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-        assert_eq!(timeline[0].annotation, "creating state - step 3");
+        assert_eq!(timeline[0].annotation, "creating workspace - step 3");
     }
 
     // --- phase_timeline: Plan ---
@@ -1404,11 +1394,11 @@ mod tests {
     #[test]
     fn test_phase_timeline_unknown_step_falls_back() {
         let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
-        state["start_step"] = json!(1);
-        state["start_steps_total"] = json!(11);
+        state["start_step"] = json!(99);
+        state["start_steps_total"] = json!(5);
 
         let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-        assert_eq!(timeline[0].annotation, "step 1 of 11");
+        assert_eq!(timeline[0].annotation, "step 99 of 5");
     }
 
     // --- phase_timeline: Learn ---
@@ -1464,9 +1454,9 @@ mod tests {
             ],
         );
         state["complete_step"] = json!(5);
-        state["complete_steps_total"] = json!(12);
+        state["complete_steps_total"] = json!(6);
         let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-        assert_eq!(timeline[5].annotation, "checking GitHub CI - step 5 of 12");
+        assert_eq!(timeline[5].annotation, "merging PR - step 5 of 6");
     }
 
     #[test]
@@ -1482,7 +1472,7 @@ mod tests {
                 ("flow-complete", "in_progress"),
             ],
         );
-        state["complete_steps_total"] = json!(12);
+        state["complete_steps_total"] = json!(6);
         let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
         assert_eq!(timeline[5].annotation, "");
     }
@@ -1501,9 +1491,9 @@ mod tests {
             ],
         );
         state["complete_step"] = json!(1);
-        state["complete_steps_total"] = json!(12);
+        state["complete_steps_total"] = json!(6);
         let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-        assert_eq!(timeline[5].annotation, "checking state - step 1 of 12");
+        assert_eq!(timeline[5].annotation, "running checks - step 1 of 6");
     }
 
     // --- phase_timeline: live elapsed for in-progress ---
@@ -1887,9 +1877,9 @@ mod tests {
     fn test_flow_summary_annotation_start_phase() {
         let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
         state["start_step"] = json!(5);
-        state["start_steps_total"] = json!(11);
+        state["start_steps_total"] = json!(5);
         let summary = flow_summary(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-        assert_eq!(summary.annotation, "pulling main - step 5 of 11");
+        assert_eq!(summary.annotation, "finalizing - step 5 of 5");
     }
 
     // --- load_all_flows ---

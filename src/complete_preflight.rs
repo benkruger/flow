@@ -27,10 +27,9 @@ use crate::utils::{bin_flow_path, derive_worktree, parse_conflict_files};
 
 const LOCAL_TIMEOUT: u64 = 30;
 const NETWORK_TIMEOUT: u64 = 60;
-/// Legacy step count — retained for backward compatibility when
-/// complete-preflight is called as a standalone subcommand.
-/// complete_fast.rs uses COMPLETE_STEPS_TOTAL=5 (the new reduced count).
-const COMPLETE_STEPS_TOTAL: i64 = 7;
+/// Step counter total for complete phase: 6 steps (running checks, local CI,
+/// GitHub CI, confirming, merging PR, finalizing).
+const COMPLETE_STEPS_TOTAL: i64 = 6;
 
 pub type CmdResult = Result<(i32, String, String), String>;
 
@@ -1044,7 +1043,7 @@ mod tests {
         let state_content =
             fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap();
         let state: Value = serde_json::from_str(&state_content).unwrap();
-        assert_eq!(state["complete_steps_total"], json!(7));
+        assert_eq!(state["complete_steps_total"], json!(6));
         assert_eq!(state["complete_step"], json!(1));
     }
 
