@@ -20,7 +20,7 @@ use clap::Parser;
 use serde_json::json;
 
 use crate::output::json_ok;
-use crate::start_setup::run_cmd;
+use crate::utils::run_cmd;
 
 /// Timeout for local subprocess calls (matches Python LOCAL_TIMEOUT = 30).
 const LOCAL_TIMEOUT: Duration = Duration::from_secs(30);

@@ -85,13 +85,13 @@ pub fn render_body(state: &serde_json::Value, project_dir: &Path) -> Result<Stri
     let mut sections = Vec::new();
     let mut section_names = Vec::new();
 
-    // 1. What (always) — requires prompt field from start-setup
+    // 1. What (always) — requires prompt field from init-state
     let what_text = state
         .get("prompt")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .ok_or_else(|| {
-            "State file missing 'prompt' field — start-setup.py should always set this".to_string()
+            "State file missing 'prompt' field — init-state should always set this".to_string()
         })?;
 
     let mut what_section = if what_text.ends_with('.') {

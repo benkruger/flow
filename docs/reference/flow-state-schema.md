@@ -103,8 +103,8 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `schema_version` | integer | Schema version marker — currently `1` |
 | `branch` | string | Git branch name — slug format. Canonical identity field. Feature name and worktree path are derived from this at read time |
 | `repo` | string / null | GitHub repo in `owner/repo` format, cached during `/flow-start`. Used by `bin/flow issue` to avoid repeated `git remote` calls. Null if detection fails |
-| `pr_number` | integer / null | GitHub PR number. Null during early Start (before PR creation) when created by `init-state` — backfilled by `start-setup` after PR creation |
-| `pr_url` | string / null | Full GitHub PR URL. Null during early Start — backfilled by `start-setup` after PR creation |
+| `pr_number` | integer / null | GitHub PR number. Null during early Start (before PR creation) when created by `init-state` — backfilled by `start-workspace` after PR creation |
+| `pr_url` | string / null | Full GitHub PR URL. Null during early Start — backfilled by `start-workspace` after PR creation |
 | `started_at` | ISO 8601 | When the feature was started (Phase 1 entry) |
 | `current_phase` | string | The currently active phase key (e.g. `"flow-code"`) |
 | `framework` | string | `"rails"`, `"python"`, `"ios"`, `"go"`, or `"rust"` — set during `/flow-prime`, copied to state by `/flow-start` |
