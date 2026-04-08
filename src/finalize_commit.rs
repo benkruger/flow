@@ -320,6 +320,16 @@ mod tests {
 
     type GitResult = Result<(i32, String, String), String>;
 
+    /// Assert a git command succeeded. Panics with stderr on failure.
+    fn git_assert_ok(output: &std::process::Output) {
+        assert!(
+            output.status.success(),
+            "git failed (exit {}): {}",
+            output.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
     fn mock_git(responses: Vec<GitResult>) -> impl Fn(&[&str], u64) -> GitResult {
         let queue = RefCell::new(VecDeque::from(responses));
         move |_args: &[&str], _timeout: u64| -> GitResult {
@@ -729,24 +739,30 @@ exit 0
         .unwrap();
 
         // Commit bin/ci so it's tracked (avoids untracked-file snapshot changes)
-        Command::new("git")
-            .args(["-C", clone_str, "add", "bin/ci"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["-C", clone_str, "commit", "-m", "Add bin/ci"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["-C", clone_str, "push"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_str, "add", "bin/ci"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_str, "commit", "-m", "Add bin/ci"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_str, "push"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
 
         (clone_dir, bare_dir)
     }
@@ -761,12 +777,14 @@ exit 0
 
         // Create a file to commit
         fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
-        Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
 
         // Write commit message file
         let msg_path = clone_path.join(".flow-commit-msg");
@@ -779,6 +797,7 @@ exit 0
             .stderr(Stdio::piped())
             .output()
             .unwrap();
+        git_assert_ok(&before);
         let commits_before = String::from_utf8_lossy(&before.stdout)
             .lines()
             .count();
@@ -789,7 +808,7 @@ exit 0
         };
 
         let result = run_impl(&args, clone_path, clone_path).unwrap();
-        assert_eq!(result["status"], "error");
+        assert_eq!(result["status"], "error", "expected CI failure: {}", result);
         assert_eq!(result["step"], "ci");
 
         // Verify no new commit was created
@@ -799,6 +818,7 @@ exit 0
             .stderr(Stdio::piped())
             .output()
             .unwrap();
+        git_assert_ok(&after);
         let commits_after = String::from_utf8_lossy(&after.stdout)
             .lines()
             .count();
@@ -813,12 +833,14 @@ exit 0
         // Stage a file to commit first — this changes the tree snapshot,
         // so the sentinel must be created AFTER staging.
         fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
-        Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "feature.rs"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_path.to_str().unwrap(), "add", "feature.rs"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
 
         // Write commit message (must exist before CI so the untracked-file
         // list is the same when run_impl re-checks the snapshot)
@@ -847,7 +869,7 @@ exit 0
         };
 
         let result = run_impl(&args, clone_path, clone_path).unwrap();
-        assert_eq!(result["status"], "ok", "commit should succeed");
+        assert_eq!(result["status"], "ok", "commit should succeed: {}", result);
         assert!(!result["sha"].as_str().unwrap().is_empty(), "should have a commit SHA");
 
         // Marker should still have only 1 line — CI was skipped via sentinel
@@ -872,39 +894,57 @@ exit 0
         // Create bare remote with explicit branch name — without --initial-branch,
         // the default branch depends on the system git config (master vs main),
         // causing test failures on CI runners where the default is master.
-        Command::new("git")
-            .args(["init", "--bare", "--initial-branch", "main"])
-            .arg(bare_dir.path())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["init", "--bare", "--initial-branch", "main"])
+                .arg(bare_dir.path())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
 
         // Clone it
-        Command::new("git")
-            .args(["clone"])
-            .arg(bare_dir.path())
-            .arg(clone_dir.path())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["clone"])
+                .arg(bare_dir.path())
+                .arg(clone_dir.path())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
 
         // Configure git user and merge behavior in clone
         let clone_str = clone_dir.path().to_str().unwrap();
-        Command::new("git")
-            .args(["-C", clone_str, "config", "user.email", "test@test.com"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["-C", clone_str, "config", "user.name", "Test"])
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_str, "config", "user.email", "test@test.com"])
+                .output()
+                .unwrap(),
+        );
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_str, "config", "user.name", "Test"])
+                .output()
+                .unwrap(),
+        );
         // Force merge on pull (not rebase) so divergent pulls always create merge commits
-        Command::new("git")
-            .args(["-C", clone_str, "config", "pull.rebase", "false"])
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_str, "config", "pull.rebase", "false"])
+                .output()
+                .unwrap(),
+        );
+        // Disable GPG signing — the user's global config may enable it,
+        // but tests have no TTY for pinentry, causing intermittent failures.
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_str, "config", "commit.gpgSign", "false"])
+                .output()
+                .unwrap(),
+        );
 
         // Create .flow-states dir (gitignored, as in real FLOW projects)
         let flow_states = clone_dir.path().join(".flow-states");
@@ -915,24 +955,30 @@ exit 0
         // Create an initial commit so the branch exists
         let readme = clone_dir.path().join("README.md");
         fs::write(&readme, "# Test\n").unwrap();
-        Command::new("git")
-            .args(["-C", clone_dir.path().to_str().unwrap(), "add", "-A"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["-C", clone_dir.path().to_str().unwrap(), "commit", "-m", "Initial commit"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["-C", clone_dir.path().to_str().unwrap(), "push", "-u", "origin", "main"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_dir.path().to_str().unwrap(), "add", "-A"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_dir.path().to_str().unwrap(), "commit", "-m", "Initial commit"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_dir.path().to_str().unwrap(), "push", "-u", "origin", "main"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
 
         (clone_dir, bare_dir)
     }
@@ -973,12 +1019,14 @@ exit 0
 
         // Stage a file to commit
         fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
-        Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
 
         let msg_path = clone_path.join(".flow-commit-msg");
         fs::write(&msg_path, "Add feature.rs").unwrap();
@@ -989,7 +1037,7 @@ exit 0
         };
 
         let result = run_impl(&args, clone_path, clone_path).unwrap();
-        assert_eq!(result["status"], "error");
+        assert_eq!(result["status"], "error", "expected CI failure: {}", result);
         assert_eq!(result["step"], "ci");
 
         // _continue_pending and _continue_context should be cleared
@@ -1024,12 +1072,14 @@ exit 0
 
         // Stage a file to commit
         fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
-        Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
 
         let msg_path = clone_path.join(".flow-commit-msg");
         fs::write(&msg_path, "Add feature.rs").unwrap();
@@ -1040,7 +1090,7 @@ exit 0
         };
 
         let result = run_impl(&args, clone_path, clone_path).unwrap();
-        assert_eq!(result["status"], "ok");
+        assert_eq!(result["status"], "ok", "commit should succeed: {}", result);
 
         // _continue_pending should still be set — the hook clears it, not finalize-commit
         let state = read_state(clone_path, "main");
@@ -1065,59 +1115,73 @@ exit 0
 
         // Create a second clone to push a conflicting commit
         let clone2_dir = tempfile::tempdir().unwrap();
-        Command::new("git")
-            .args(["clone"])
-            .arg(bare_dir.path())
-            .arg(clone2_dir.path())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
-        for (key, val) in [("user.email", "other@test.com"), ("user.name", "Other")] {
+        git_assert_ok(&
             Command::new("git")
-                .args(["-C", clone2_dir.path().to_str().unwrap(), "config", key, val])
+                .args(["clone"])
+                .arg(bare_dir.path())
+                .arg(clone2_dir.path())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
                 .output()
-                .unwrap();
+                .unwrap(),
+        );
+        for (key, val) in [("user.email", "other@test.com"), ("user.name", "Other")] {
+            git_assert_ok(&
+                Command::new("git")
+                    .args(["-C", clone2_dir.path().to_str().unwrap(), "config", key, val])
+                    .output()
+                    .unwrap(),
+            );
         }
 
         // Push a conflicting change to README.md from clone2
         fs::write(clone2_dir.path().join("README.md"), "# Conflicting content\n").unwrap();
-        Command::new("git")
-            .args(["-C", clone2_dir.path().to_str().unwrap(), "add", "-A"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["-C", clone2_dir.path().to_str().unwrap(), "commit", "-m", "Conflicting commit"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["-C", clone2_dir.path().to_str().unwrap(), "push"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone2_dir.path().to_str().unwrap(), "add", "-A"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone2_dir.path().to_str().unwrap(), "commit", "-m", "Conflicting commit"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone2_dir.path().to_str().unwrap(), "push"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
 
         // Now modify README.md locally in clone1 (will conflict with remote)
         fs::write(clone_path.join("README.md"), "# Local conflicting content\n").unwrap();
-        Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
 
         let msg_path = clone_path.join(".flow-commit-msg");
         fs::write(&msg_path, "Local change to README").unwrap();
 
         // Force merge on pull (not rebase)
-        Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "config", "pull.rebase", "false"])
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone_path.to_str().unwrap(), "config", "pull.rebase", "false"])
+                .output()
+                .unwrap(),
+        );
 
         let args = Args {
             message_file: msg_path.to_str().unwrap().to_string(),
@@ -1125,7 +1189,7 @@ exit 0
         };
 
         let result = run_impl(&args, clone_path, clone_path).unwrap();
-        assert_eq!(result["status"], "conflict");
+        assert_eq!(result["status"], "conflict", "expected conflict: {}", result);
 
         // _continue_pending should still be set — conflict needs retry, not clearing
         let state = read_state(clone_path, "main");
@@ -1143,12 +1207,14 @@ exit 0
         // Create a file to commit
         let src = clone_dir.path().join("src.rs");
         fs::write(&src, "fn main() {}\n").unwrap();
-        Command::new("git")
-            .args(["-C", &clone_path, "add", "-A"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", &clone_path, "add", "-A"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
 
         // Write commit message file (absolute path since git runs via -C)
         let msg_path = clone_dir.path().join(".flow-commit-msg");
@@ -1161,7 +1227,7 @@ exit 0
 
         // Pass clone_dir as both cwd and root (standalone repo, not a worktree)
         let result = run_impl(&args, clone_dir.path(), clone_dir.path()).unwrap();
-        assert_eq!(result["status"], "ok");
+        assert_eq!(result["status"], "ok", "commit should succeed: {}", result);
         assert_eq!(result["pull_merged"], false);
 
         // Sentinel should exist and match tree_snapshot for new HEAD
@@ -1184,54 +1250,68 @@ exit 0
 
         // Create a second clone to push a divergent commit
         let clone2_dir = tempfile::tempdir().unwrap();
-        Command::new("git")
-            .args(["clone"])
-            .arg(bare_dir.path())
-            .arg(clone2_dir.path())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["-C", clone2_dir.path().to_str().unwrap(), "config", "user.email", "other@test.com"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["-C", clone2_dir.path().to_str().unwrap(), "config", "user.name", "Other"])
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["clone"])
+                .arg(bare_dir.path())
+                .arg(clone2_dir.path())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone2_dir.path().to_str().unwrap(), "config", "user.email", "other@test.com"])
+                .output()
+                .unwrap(),
+        );
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone2_dir.path().to_str().unwrap(), "config", "user.name", "Other"])
+                .output()
+                .unwrap(),
+        );
 
         // Push a different commit from clone2
         let other_file = clone2_dir.path().join("other.txt");
         fs::write(&other_file, "other content\n").unwrap();
-        Command::new("git")
-            .args(["-C", clone2_dir.path().to_str().unwrap(), "add", "-A"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["-C", clone2_dir.path().to_str().unwrap(), "commit", "-m", "Other commit"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["-C", clone2_dir.path().to_str().unwrap(), "push"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone2_dir.path().to_str().unwrap(), "add", "-A"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone2_dir.path().to_str().unwrap(), "commit", "-m", "Other commit"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", clone2_dir.path().to_str().unwrap(), "push"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
 
         // Now create a commit in clone1 (divergent from remote)
         let src = clone_dir.path().join("local.txt");
         fs::write(&src, "local content\n").unwrap();
-        Command::new("git")
-            .args(["-C", &clone_path, "add", "-A"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
+        git_assert_ok(&
+            Command::new("git")
+                .args(["-C", &clone_path, "add", "-A"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .unwrap(),
+        );
 
         let msg_path = clone_dir.path().join(".flow-commit-msg");
         fs::write(&msg_path, "Add local.txt").unwrap();
@@ -1242,7 +1322,7 @@ exit 0
         };
 
         let result = run_impl(&args, clone_dir.path(), clone_dir.path()).unwrap();
-        assert_eq!(result["status"], "ok");
+        assert_eq!(result["status"], "ok", "commit should succeed: {}", result);
         assert_eq!(result["pull_merged"], true);
 
         // Sentinel should NOT exist — pull merged remote changes
