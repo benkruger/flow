@@ -169,12 +169,24 @@ fn test_init_state_error() {
     let data = parse_output(&output);
     assert_eq!(data["status"], "error");
 
-    // Lock must be released on init-state error
+    // Issue fetch fails before lock acquisition — no lock was ever acquired
     let queue_dir = repo.join(".flow-states").join("start-queue");
+    // No lock under the feature name
     assert!(
         !queue_dir.join("init-error").exists(),
-        "Lock must be released on init-state error"
+        "No lock should exist — fetch failed before lock acquisition"
     );
+    // No lock under any name (queue dir should be empty or not exist)
+    if queue_dir.exists() {
+        let entries: Vec<_> = fs::read_dir(&queue_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .collect();
+        assert!(
+            entries.is_empty(),
+            "No lock entry should exist for any name when issue fetch fails pre-lock"
+        );
+    }
 }
 
 #[test]
@@ -273,10 +285,83 @@ fn test_no_flow_json_returns_error() {
         "Error should suggest running flow-prime"
     );
 
-    // Lock must be released
+    // Lock must be released (under canonical branch name)
     let queue_dir = repo.join(".flow-states").join("start-queue");
     assert!(
         !queue_dir.join("no-flow-json").exists(),
         "Lock must be released on prime-check error"
+    );
+}
+
+// --- Regression tests ---
+
+#[test]
+fn test_lock_uses_canonical_branch_not_feature_name() {
+    // Regression: when an issue prompt yields a different branch name than the
+    // feature name, the lock must be under the canonical (issue-derived) name.
+    // Before the fix in PR #968, the lock was acquired under args.feature_name
+    // but released under the canonical name, causing a lock leak.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), "python", None);
+
+    // gh stub: issue view returns a title different from feature_name,
+    // pr create returns a fake URL
+    let stub_dir = create_gh_stub(
+        &repo,
+        "#!/bin/bash\n\
+         if [[ \"$1\" == \"issue\" && \"$2\" == \"view\" ]]; then\n\
+           echo '{\"title\": \"Add Dark Mode Toggle\", \"labels\": []}'\n\
+           exit 0\n\
+         fi\n\
+         if [[ \"$1\" == \"issue\" && \"$2\" == \"edit\" ]]; then exit 0; fi\n\
+         echo \"https://github.com/test/repo/pull/42\"\n",
+    );
+
+    // Prompt references issue #42
+    let prompt_path = repo.join(".flow-states").join("regression-start-prompt");
+    fs::create_dir_all(repo.join(".flow-states")).unwrap();
+    fs::write(&prompt_path, "work on issue #42").unwrap();
+
+    let output = run_start_init(
+        &repo,
+        "my-feature",
+        &["--prompt-file", &prompt_path.to_string_lossy()],
+        &stub_dir,
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ready", "Should succeed");
+    assert_eq!(
+        data["branch"].as_str().unwrap(),
+        "add-dark-mode-toggle",
+        "Branch should be derived from issue title, not feature name"
+    );
+
+    // Lock must be under the canonical branch name
+    let queue_dir = repo.join(".flow-states").join("start-queue");
+    assert!(
+        queue_dir.join("add-dark-mode-toggle").exists(),
+        "Lock must be under canonical branch name (issue-derived)"
+    );
+    assert!(
+        !queue_dir.join("my-feature").exists(),
+        "Lock must NOT be under the raw feature name"
+    );
+}
+
+// --- Tombstone tests ---
+
+#[test]
+fn test_start_init_no_acquire_feature_name() {
+    // Tombstone: removed in PR #968. The lock must never be acquired under
+    // args.feature_name — always under the canonical branch name.
+    let content =
+        fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/start_init.rs"))
+            .unwrap();
+    assert!(
+        !content.contains("acquire(&args.feature_name"),
+        "start_init.rs must not acquire lock under args.feature_name — \
+         lock must use canonical branch name (PR #968)"
     );
 }
