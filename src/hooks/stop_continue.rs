@@ -530,7 +530,16 @@ pub fn run() {
     };
     let state_path = root.join(".flow-states").join(format!("{}.json", branch));
 
-    let mut result = check_continue(&hook_input, &state_path);
+    // First stop handler: on the first Stop event (no _stop_instructed),
+    // handles both pending continuations (with conditional user-awareness)
+    // and pure discussion mode. Subsequent stops fall through to check_continue.
+    let mut result = check_first_stop(&hook_input, &state_path);
+
+    // Multi-child-skill chains: after the first stop set _stop_instructed,
+    // subsequent child skill completions need check_continue to fire.
+    if !result.should_block {
+        result = check_continue(&hook_input, &state_path);
+    }
 
     capture_session_id(&hook_input, &state_path);
 
@@ -542,16 +551,6 @@ pub fn run() {
             result.should_block = true;
             result.skill = Some("flow-complete".to_string());
             result.context = qa_context;
-        }
-    }
-
-    // Discussion mode: on the first user interruption during an active
-    // flow, block the stop and instruct the model to capture corrections
-    // via flow-note before continuing.
-    if !result.should_block {
-        let disc = check_discussion_mode(&state_path);
-        if disc.should_block {
-            result = disc;
         }
     }
 
@@ -567,10 +566,11 @@ pub fn run() {
 
     if result.should_block {
         let skill_name = result.skill.as_deref().unwrap_or("");
-        // Discussion mode uses DISCUSSION_BLOCK_REASON directly as the
-        // reason — not the "child skill returned" framing from
-        // format_block_output, which is designed for _continue_pending.
-        let output = if skill_name == "discussion" {
+        // Discussion mode and discussion-with-pending both use their context
+        // directly as the reason — not the "child skill returned" framing
+        // from format_block_output, which is designed for multi-child-skill
+        // check_continue continuations.
+        let output = if skill_name == "discussion" || skill_name == "discussion-with-pending" {
             json!({"decision": "block", "reason": result.context.as_deref().unwrap_or(DISCUSSION_BLOCK_REASON)})
         } else {
             format_block_output(skill_name, result.context.as_deref())
