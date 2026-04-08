@@ -10,7 +10,118 @@ use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::start_setup::run_cmd;
+// --- SetupError + run_cmd (relocated from start_setup.rs) ---
+
+/// Error during setup with step identification.
+#[derive(Debug)]
+pub struct SetupError {
+    pub step: String,
+    pub message: String,
+}
+
+impl std::fmt::Display for SetupError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.step, self.message)
+    }
+}
+
+/// Polling-based wait_timeout for child processes.
+trait WaitTimeout {
+    fn wait_timeout(&mut self, dur: Duration) -> std::io::Result<Option<std::process::ExitStatus>>;
+}
+
+impl WaitTimeout for std::process::Child {
+    fn wait_timeout(&mut self, dur: Duration) -> std::io::Result<Option<std::process::ExitStatus>> {
+        use std::thread;
+
+        let start = std::time::Instant::now();
+        let poll_interval = Duration::from_millis(50);
+        loop {
+            match self.try_wait()? {
+                Some(status) => {
+                    return Ok(Some(status));
+                }
+                None => {
+                    if start.elapsed() >= dur {
+                        return Ok(None);
+                    }
+                    thread::sleep(poll_interval.min(dur - start.elapsed()));
+                }
+            }
+        }
+    }
+}
+
+/// Run a shell command, returning (stdout, stderr). Returns Err on failure.
+pub fn run_cmd(
+    args: &[&str],
+    cwd: &Path,
+    step_name: &str,
+    timeout: Option<Duration>,
+) -> Result<(String, String), SetupError> {
+    let mut child = std::process::Command::new(args[0])
+        .args(&args[1..])
+        .current_dir(cwd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| SetupError {
+            step: step_name.to_string(),
+            message: format!("Failed to spawn: {}", e),
+        })?;
+
+    if let Some(dur) = timeout {
+        match child.wait_timeout(dur) {
+            Ok(Some(status)) => {
+                let output = child.wait_with_output().map_err(|e| SetupError {
+                    step: step_name.to_string(),
+                    message: e.to_string(),
+                })?;
+                if !status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    return Err(SetupError {
+                        step: step_name.to_string(),
+                        message: if stderr.is_empty() { stdout } else { stderr },
+                    });
+                }
+                Ok((
+                    String::from_utf8_lossy(&output.stdout).trim().to_string(),
+                    String::from_utf8_lossy(&output.stderr).trim().to_string(),
+                ))
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                Err(SetupError {
+                    step: step_name.to_string(),
+                    message: format!("Timed out after {}s", dur.as_secs()),
+                })
+            }
+            Err(e) => Err(SetupError {
+                step: step_name.to_string(),
+                message: e.to_string(),
+            }),
+        }
+    } else {
+        let output = child.wait_with_output().map_err(|e| SetupError {
+            step: step_name.to_string(),
+            message: e.to_string(),
+        })?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            return Err(SetupError {
+                step: step_name.to_string(),
+                message: if stderr.is_empty() { stdout } else { stderr },
+            });
+        }
+        Ok((
+            String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ))
+    }
+}
 
 // --- Version reading ---
 

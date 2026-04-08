@@ -4,7 +4,6 @@
 //! state file, and logs all operations.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Duration;
 
 use clap::Parser;
@@ -17,7 +16,9 @@ use crate::lock::mutate_state;
 use crate::phase_config::find_state_files;
 use crate::phase_config::{auto_skills, build_initial_phases, freeze_phases, read_flow_json};
 use crate::state::SkillConfig;
-use crate::utils::{branch_name, derive_feature, detect_tty, now, read_prompt_file};
+use crate::utils::{
+    branch_name, derive_feature, detect_tty, now, read_prompt_file, run_cmd, SetupError,
+};
 
 #[derive(Parser, Debug)]
 #[command(name = "start-setup", about = "FLOW Start phase setup")]
@@ -44,90 +45,6 @@ pub struct Args {
     /// Canonical branch name (from init-state). Skips state file lookup.
     #[arg(long)]
     pub branch: Option<String>,
-}
-
-/// Error during setup with step identification.
-#[derive(Debug)]
-pub struct SetupError {
-    pub step: String,
-    pub message: String,
-}
-
-impl std::fmt::Display for SetupError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.step, self.message)
-    }
-}
-
-/// Run a shell command, returning (stdout, stderr). Returns Err on failure.
-pub fn run_cmd(
-    args: &[&str],
-    cwd: &Path,
-    step_name: &str,
-    timeout: Option<Duration>,
-) -> Result<(String, String), SetupError> {
-    let mut child = Command::new(args[0])
-        .args(&args[1..])
-        .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| SetupError {
-            step: step_name.to_string(),
-            message: format!("Failed to spawn: {}", e),
-        })?;
-
-    if let Some(dur) = timeout {
-        match child.wait_timeout(dur) {
-            Ok(Some(status)) => {
-                let output = child.wait_with_output().map_err(|e| SetupError {
-                    step: step_name.to_string(),
-                    message: e.to_string(),
-                })?;
-                if !status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    return Err(SetupError {
-                        step: step_name.to_string(),
-                        message: if stderr.is_empty() { stdout } else { stderr },
-                    });
-                }
-                Ok((
-                    String::from_utf8_lossy(&output.stdout).trim().to_string(),
-                    String::from_utf8_lossy(&output.stderr).trim().to_string(),
-                ))
-            }
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                Err(SetupError {
-                    step: step_name.to_string(),
-                    message: format!("Timed out after {}s", dur.as_secs()),
-                })
-            }
-            Err(e) => Err(SetupError {
-                step: step_name.to_string(),
-                message: e.to_string(),
-            }),
-        }
-    } else {
-        let output = child.wait_with_output().map_err(|e| SetupError {
-            step: step_name.to_string(),
-            message: e.to_string(),
-        })?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            return Err(SetupError {
-                step: step_name.to_string(),
-                message: if stderr.is_empty() { stdout } else { stderr },
-            });
-        }
-        Ok((
-            String::from_utf8_lossy(&output.stdout).trim().to_string(),
-            String::from_utf8_lossy(&output.stderr).trim().to_string(),
-        ))
-    }
 }
 
 /// Extract PR number from URL like https://github.com/org/repo/pull/123.
@@ -585,33 +502,6 @@ pub fn run(args: Args) {
             "branch": branch,
         })
     );
-}
-
-// --- wait_timeout helper for child processes ---
-trait WaitTimeout {
-    fn wait_timeout(&mut self, dur: Duration) -> std::io::Result<Option<std::process::ExitStatus>>;
-}
-
-impl WaitTimeout for std::process::Child {
-    fn wait_timeout(&mut self, dur: Duration) -> std::io::Result<Option<std::process::ExitStatus>> {
-        use std::thread;
-
-        let start = std::time::Instant::now();
-        let poll_interval = Duration::from_millis(50);
-        loop {
-            match self.try_wait()? {
-                Some(status) => {
-                    return Ok(Some(status));
-                }
-                None => {
-                    if start.elapsed() >= dur {
-                        return Ok(None);
-                    }
-                    thread::sleep(poll_interval.min(dur - start.elapsed()));
-                }
-            }
-        }
-    }
 }
 
 #[cfg(test)]
