@@ -336,6 +336,133 @@ pub fn check_discussion_mode(state_path: &Path) -> ContinueResult {
     }
 }
 
+/// Handle the first stop event during an active flow.
+///
+/// Runs BEFORE `check_continue()` in `run()`. On the first Stop event
+/// (when `_stop_instructed` is not already set), this function handles
+/// both cases:
+///
+/// 1. `_continue_pending` is set: consume it, set `_stop_instructed=true`,
+///    and block with a conditional message that tells the model to check
+///    for user messages before auto-continuing. This prevents pending
+///    continuations from trampling user conversations.
+///
+/// 2. No `_continue_pending`: set `_stop_instructed=true` and block with
+///    `DISCUSSION_BLOCK_REASON` (pure discussion mode).
+///
+/// On subsequent stops (`_stop_instructed` already true), returns
+/// non-blocking so `check_continue()` can handle multi-child-skill chains.
+///
+/// Key difference from `check_continue()`: does NOT remove
+/// `_stop_instructed` after consuming pending. This ensures discussion
+/// mode does not re-fire on every subsequent stop.
+pub fn check_first_stop(hook_input: &Value, state_path: &Path) -> ContinueResult {
+    if !state_path.exists() {
+        return ContinueResult {
+            should_block: false,
+            skill: None,
+            context: None,
+        };
+    }
+
+    let hook_sid = hook_input
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let mut should_block = false;
+    let mut skill: Option<String> = None;
+    let mut context: Option<String> = None;
+    let mut decision: Option<String> = None;
+
+    let _ = mutate_state(state_path, |state| {
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
+
+        // If already instructed, let check_continue handle subsequent stops
+        let already_instructed = state
+            .get("_stop_instructed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if already_instructed {
+            return;
+        }
+
+        // First stop — always set _stop_instructed
+        state["_stop_instructed"] = json!(true);
+
+        // Check for pending continuation
+        let pending = state
+            .get("_continue_pending")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        if pending.is_empty() {
+            // No pending — pure discussion mode
+            should_block = true;
+            skill = Some("discussion".to_string());
+            context = Some(DISCUSSION_BLOCK_REASON.to_string());
+            decision = Some("first stop, no pending — discussion mode".to_string());
+            return;
+        }
+
+        // Session isolation check
+        let state_sid = state
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
+        if let (Some(ssid), Some(hsid)) = (state_sid.as_ref(), hook_sid.as_ref()) {
+            if ssid != hsid {
+                // Stale pending from previous session — clear and fall through to discussion
+                state["_continue_pending"] = Value::String(String::new());
+                state["_continue_context"] = Value::String(String::new());
+                should_block = true;
+                skill = Some("discussion".to_string());
+                context = Some(DISCUSSION_BLOCK_REASON.to_string());
+                decision = Some(format!(
+                    "first stop, session mismatch (state={} hook={}), cleared pending={} — discussion mode",
+                    ssid, hsid, pending
+                ));
+                return;
+            }
+        }
+
+        // Valid pending — consume and block with conditional message
+        let ctx = state
+            .get("_continue_context")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
+        state["_continue_pending"] = Value::String(String::new());
+        state["_continue_context"] = Value::String(String::new());
+        // NOTE: do NOT remove _stop_instructed here (unlike check_continue)
+        // This ensures discussion mode does not re-fire on subsequent stops
+
+        let reason = format_conditional_continue_reason(&pending, ctx.as_deref());
+        should_block = true;
+        skill = Some("discussion-with-pending".to_string());
+        context = Some(reason);
+        decision = Some(format!("first stop, conditional continue: pending={}", pending));
+    });
+
+    if let Some(msg) = decision {
+        let (root, branch) = derive_root_branch(state_path);
+        log_diag(root, branch, &msg);
+    }
+
+    ContinueResult {
+        should_block,
+        skill,
+        context,
+    }
+}
+
 /// Format the Stop-hook block output JSON.
 ///
 /// Returns `{"decision": "block", "reason": "..."}` where `reason`
@@ -355,6 +482,34 @@ pub fn format_block_output(skill: &str, context: Option<&str>) -> Value {
         ),
     };
     json!({"decision": "block", "reason": reason})
+}
+
+/// Format a conditional continue message for the first stop event when
+/// `_continue_pending` is set.
+///
+/// Unlike `format_block_output` which unconditionally says "Continue parent
+/// phase", this message instructs the model to check whether the user sent
+/// a message during the interrupt. If so, the model should answer the user
+/// and invoke flow:flow-note before resuming. If not, the model should
+/// continue the parent phase automatically.
+///
+/// This prevents `_continue_pending` from trampling user conversations on
+/// the first interrupt — the user's message gets priority over auto-continue.
+pub fn format_conditional_continue_reason(skill: &str, context: Option<&str>) -> String {
+    let next_steps = match context {
+        Some(ctx) if !ctx.is_empty() => format!("Next steps:\n{}", ctx),
+        _ => "Resume the parent skill instructions.".to_string(),
+    };
+    format!(
+        "A child skill '{}' has completed.\n\n\
+         Check the conversation context:\n\
+         - If the user sent a message since the last skill action, answer their message first. \
+         Invoke /flow:flow-note to capture any correction or learning. \
+         Do NOT resume the flow until the user explicitly says to continue.\n\
+         - If no new user message was sent, continue the parent phase.\n\n\
+         {}",
+        skill, next_steps
+    )
 }
 
 /// Run the stop-continue hook (entry point).
@@ -1057,6 +1212,152 @@ mod tests {
 
         let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert!(state.get("_blocked").is_none(), "_blocked must be cleared when discussion mode blocks");
+    }
+
+    // --- format_conditional_continue_reason ---
+
+    #[test]
+    fn test_format_conditional_with_context() {
+        let result = format_conditional_continue_reason("commit", Some("Do the thing next"));
+        assert!(result.contains("Next steps:"));
+        assert!(result.contains("Do the thing next"));
+    }
+
+    #[test]
+    fn test_format_conditional_without_context() {
+        let result = format_conditional_continue_reason("commit", None);
+        assert!(result.contains("Resume the parent skill instructions"));
+    }
+
+    #[test]
+    fn test_format_conditional_mentions_flow_note() {
+        let result = format_conditional_continue_reason("commit", Some("ctx"));
+        assert!(result.contains("flow:flow-note"));
+    }
+
+    #[test]
+    fn test_format_conditional_contains_skill_name() {
+        let result = format_conditional_continue_reason("my-skill", Some("ctx"));
+        assert!(result.contains("my-skill"));
+    }
+
+    // --- check_first_stop ---
+
+    #[test]
+    fn test_first_stop_with_pending_blocks_conditionally() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({
+            "branch": "test",
+            "_continue_pending": "commit",
+            "_continue_context": "Do the thing"
+        });
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_first_stop(&json!({}), &path);
+        assert!(result.should_block);
+        assert!(result.context.as_ref().unwrap().contains("commit"));
+    }
+
+    #[test]
+    fn test_first_stop_without_pending_blocks_discussion() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({"branch": "test"});
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_first_stop(&json!({}), &path);
+        assert!(result.should_block);
+        assert_eq!(result.context.as_ref().unwrap(), DISCUSSION_BLOCK_REASON);
+    }
+
+    #[test]
+    fn test_first_stop_already_instructed_allows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({"branch": "test", "_stop_instructed": true});
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_first_stop(&json!({}), &path);
+        assert!(!result.should_block);
+    }
+
+    #[test]
+    fn test_first_stop_consumes_pending() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({
+            "branch": "test",
+            "_continue_pending": "commit",
+            "_continue_context": "Do the thing"
+        });
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_first_stop(&json!({}), &path);
+        assert!(result.should_block);
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(state["_continue_pending"], "");
+        assert_eq!(state["_continue_context"], "");
+    }
+
+    #[test]
+    fn test_first_stop_preserves_stop_instructed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({
+            "branch": "test",
+            "_continue_pending": "commit",
+            "_continue_context": "ctx"
+        });
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        check_first_stop(&json!({}), &path);
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(state["_stop_instructed"], json!(true),
+            "_stop_instructed must remain true after consuming pending");
+    }
+
+    #[test]
+    fn test_first_stop_session_mismatch_clears_pending() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({
+            "branch": "test",
+            "_continue_pending": "commit",
+            "_continue_context": "stale",
+            "session_id": "old-session"
+        });
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let result = check_first_stop(&json!({"session_id": "new-session"}), &path);
+        assert!(result.should_block);
+        // Session mismatch clears pending, falls through to pure discussion mode
+        assert_eq!(result.context.as_ref().unwrap(), DISCUSSION_BLOCK_REASON);
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(state["_continue_pending"], "");
+        assert_eq!(state["_continue_context"], "");
+    }
+
+    #[test]
+    fn test_first_stop_no_state_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent.json");
+
+        let result = check_first_stop(&json!({}), &path);
+        assert!(!result.should_block);
+    }
+
+    #[test]
+    fn test_first_stop_array_state_does_not_crash() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, r#"["not", "an", "object"]"#).unwrap();
+
+        let result = check_first_stop(&json!({}), &path);
+        assert!(!result.should_block);
     }
 
     #[test]
