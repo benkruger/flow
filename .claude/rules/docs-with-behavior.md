@@ -13,6 +13,10 @@ to write the same updates you could write now.
 - Changed phase behavior → `docs/phases/phase-<N>-<name>.md`
 - New CLI subcommand or changed state mutations → `CLAUDE.md`
   architecture sections, `docs/reference/flow-state-schema.md`
+- Changed state field ranges, totals, or display names →
+  `docs/reference/flow-state-schema.md` (field descriptions
+  include hardcoded values like step ranges and totals that
+  must match the Rust constants)
 
 ## Scope Enumeration
 
