@@ -297,8 +297,9 @@ Every bash block, subprocess call, and file path in a plugin skill
 or Rust module runs in a target project, not this repo. Before
 adding any command, ask: "Does this work in a Rails project with
 no `bin/flow` and non-bash `bin/` scripts?" Integration tests for
-Rust modules that run in target projects must use the `target_project`
-fixture pattern, not `git_repo`.
+Rust modules that run in target projects should simulate a target
+project layout (git repo with a non-bash `bin/ci`, no `bin/flow`)
+using `create_git_repo_with_remote()` and manual fixture setup.
 
 ## Plugin User Reachability
 

@@ -266,7 +266,7 @@ destination:
 | Finding | Route to | Reason |
 |---|---|---|
 | "Never use `replace_all=True` on JSON state files when the old_string appears in multiple contexts" | `.claude/rules/state-files.md` | Domain-specific — only relevant when editing state files |
-| "All timestamps use Pacific Time via `flow_utils.now()`" | `CLAUDE.md` | Every session needs this — any phase could generate timestamps |
+| "All timestamps use Pacific Time via `now_pacific()` in `src/utils.rs`" | `CLAUDE.md` | Every session needs this — any phase could generate timestamps |
 
 **Merge clustered findings.** If multiple findings target the same
 file, merge them into a single edit rather than separate writes.
