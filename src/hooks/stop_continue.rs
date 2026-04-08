@@ -470,7 +470,10 @@ pub fn check_first_stop(hook_input: &Value, state_path: &Path) -> ContinueResult
         // diagnostic logging (log_diag can distinguish the two paths).
         skill = Some("discussion-with-pending".to_string());
         context = Some(reason);
-        decision = Some(format!("first stop, conditional continue: pending={}", pending));
+        decision = Some(format!(
+            "first stop, conditional continue: pending={}",
+            pending
+        ));
     });
 
     if let Some(msg) = decision {
@@ -1355,8 +1358,11 @@ mod tests {
         check_first_stop(&json!({}), &path);
 
         let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(state["_stop_instructed"], json!(true),
-            "_stop_instructed must remain true after consuming pending");
+        assert_eq!(
+            state["_stop_instructed"],
+            json!(true),
+            "_stop_instructed must remain true after consuming pending"
+        );
     }
 
     #[test]
