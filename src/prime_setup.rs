@@ -303,6 +303,7 @@ pub fn merge_settings(
 }
 
 /// Write `.flow.json` with the plugin version, framework, and optional fields.
+#[allow(clippy::too_many_arguments)]
 pub fn write_version_marker(
     project_root: &Path,
     version: &str,

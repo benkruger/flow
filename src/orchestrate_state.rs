@@ -52,22 +52,19 @@ pub fn create_state(queue: &[Value], state_dir: &Path) -> Value {
     let state_path = state_dir.join("orchestrate.json");
 
     if state_path.exists() {
-        match std::fs::read_to_string(&state_path) {
-            Ok(content) => {
-                if let Ok(existing) = serde_json::from_str::<Value>(&content) {
-                    if existing.get("completed_at").map_or(true, |v| v.is_null()) {
-                        return json!({
-                            "status": "error",
-                            "message": "Orchestration already in progress. Complete or abort the current run first."
-                        });
-                    }
+        if let Ok(content) = std::fs::read_to_string(&state_path) {
+            if let Ok(existing) = serde_json::from_str::<Value>(&content) {
+                if existing.get("completed_at").is_none_or(|v| v.is_null()) {
+                    return json!({
+                        "status": "error",
+                        "message": "Orchestration already in progress. Complete or abort the current run first."
+                    });
                 }
             }
-            Err(_) => {} // File unreadable — overwrite it
         }
     }
 
-    let queue_items: Vec<Value> = queue.iter().map(|issue| build_queue_item(issue)).collect();
+    let queue_items: Vec<Value> = queue.iter().map(build_queue_item).collect();
 
     let state = json!({
         "started_at": now(),

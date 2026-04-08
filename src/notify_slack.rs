@@ -87,6 +87,7 @@ pub fn format_message(
 }
 
 /// Post a message to Slack via curl with injectable runner for testing.
+#[allow(clippy::type_complexity)]
 pub fn post_message_inner(
     bot_token: &str,
     channel: &str,

@@ -14,7 +14,7 @@
 //! receives structured JSON on stdout. Infrastructure errors (file I/O, lock
 //! failures) return `Err(String)` for `run()` to wrap in `json_error`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -102,7 +102,7 @@ fn gate_check(state: &Value) -> Result<(), Value> {
 
 /// Load frozen phase config if available, for phase_complete.
 fn load_frozen_config(
-    root: &PathBuf,
+    root: &Path,
     branch: &str,
 ) -> (
     Option<Vec<String>>,
@@ -268,11 +268,7 @@ pub fn count_tasks(content: &str) -> usize {
 }
 
 /// Run phase_complete via mutate_state and return the result JSON.
-fn complete_plan_phase(
-    state_path: &PathBuf,
-    root: &PathBuf,
-    branch: &str,
-) -> Result<Value, String> {
+fn complete_plan_phase(state_path: &Path, root: &Path, branch: &str) -> Result<Value, String> {
     let (frozen_order, frozen_commands) = load_frozen_config(root, branch);
     let result_holder = std::cell::RefCell::new(Value::Null);
 

@@ -719,7 +719,7 @@ fn run_check_phase(phase: &str, branch_override: Option<&str>) {
             process::exit(if allowed { 0 } else { 1 });
         }
         Err(msg) => {
-            let _ = json_error(&msg, &[]);
+            json_error(&msg, &[]);
             process::exit(1);
         }
     }

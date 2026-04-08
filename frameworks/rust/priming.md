@@ -25,15 +25,15 @@
 ## CI Failure Fix Order
 
 1. Compilation errors — fix build errors first (`cargo build`)
-2. Clippy warnings — fix lint issues (`cargo clippy`)
+2. Clippy warnings — fix lint issues (`cargo clippy -- -D warnings`)
 3. Format violations — fix formatting (`cargo fmt`)
 4. Test failures — understand the root cause, fix the code not the test
 5. Coverage gaps — write the missing test
 
 ## Hard Rules
 
-- Always run `cargo clippy` before committing — it catches common mistakes.
-- Never allow clippy warnings — fix them or explicitly document exceptions.
+- Always run `cargo clippy -- -D warnings` before committing — warnings fail the build.
+- Never allow clippy warnings — fix them or explicitly document exceptions with `#[allow(...)]`.
 - Always read the full trait and its implementations before modifying.
 
 ## Dependency Management

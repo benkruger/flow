@@ -243,6 +243,7 @@ pub fn initial_commit_push_pr(
 }
 
 /// Create the FLOW state file (fallback when init-state didn't create one).
+#[allow(clippy::too_many_arguments)]
 pub fn create_state_file(
     project_root: &Path,
     branch: &str,

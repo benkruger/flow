@@ -82,6 +82,7 @@ fn run_git_with_timeout(args: &[&str], timeout_secs: u64) -> Result<(i32, String
 }
 
 /// Core finalize-commit logic with injectable git runner for testing.
+#[allow(clippy::type_complexity)]
 pub fn finalize_commit_inner(
     message_file: &str,
     branch: &str,
@@ -192,9 +193,7 @@ pub fn finalize_commit_inner(
         }),
         Ok((_, stdout, _)) => {
             let final_sha = stdout.trim();
-            let pull_merged = post_commit_sha
-                .as_deref()
-                .map_or(true, |post| post != final_sha);
+            let pull_merged = post_commit_sha.as_deref() != Some(final_sha);
             json!({"status": "ok", "sha": final_sha, "pull_merged": pull_merged})
         }
     }

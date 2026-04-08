@@ -238,7 +238,7 @@ fn hex_prefix(bytes: &[u8], n: usize) -> String {
     use std::fmt::Write;
     // (n + 1) / 2 bytes provide enough hex chars to cover n output
     // characters; `truncate` trims the final char when n is odd.
-    let take = (n + 1) / 2;
+    let take = n.div_ceil(2);
     let mut s = String::with_capacity(take * 2);
     for b in bytes.iter().take(take) {
         write!(&mut s, "{:02x}", b).unwrap();

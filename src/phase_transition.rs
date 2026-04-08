@@ -38,10 +38,7 @@ pub fn phase_enter(state: &mut Value, phase: &str, reason: Option<&str>) -> Valu
         transition["reason"] = json!(r);
     }
 
-    if !state
-        .get("phase_transitions")
-        .map_or(false, |v| v.is_array())
-    {
+    if !state.get("phase_transitions").is_some_and(|v| v.is_array()) {
         state["phase_transitions"] = json!([]);
     }
     state["phase_transitions"]

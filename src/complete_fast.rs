@@ -113,6 +113,7 @@ fn parse_gh_checks_output(stdout: &str) -> String {
 /// Returns Ok(json) for all path outcomes (including unhappy paths the
 /// skill handles interactively), Err(string) only for infrastructure
 /// failures that prevent any path determination.
+#[allow(clippy::too_many_arguments)]
 pub fn fast_inner(
     branch: &str,
     _root: &Path,

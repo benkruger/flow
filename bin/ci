@@ -9,5 +9,5 @@ if [ -f "$REPO_ROOT/Cargo.toml" ]; then
 fi
 
 cargo test --quiet
-cargo clippy --quiet
+cargo clippy --quiet -- -D warnings
 cargo fmt --check

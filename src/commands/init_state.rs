@@ -23,6 +23,7 @@ use crate::utils::{
 /// `commit_format` — optional commit message format (`"full"` or `"title-only"`)
 /// extracted from `.flow.json` during prime. Written to state file when present;
 /// the commit skill reads it at runtime.
+#[allow(clippy::too_many_arguments)]
 pub fn create_state(
     project_root: &Path,
     branch: &str,
@@ -46,7 +47,7 @@ pub fn create_state(
     state.insert("current_phase".into(), json!("flow-start"));
     state.insert(
         "framework".into(),
-        serde_json::to_value(&framework).map_err(|e| e.to_string())?,
+        serde_json::to_value(framework).map_err(|e| e.to_string())?,
     );
     state.insert(
         "files".into(),

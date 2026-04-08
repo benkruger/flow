@@ -17,6 +17,7 @@ pub fn check_phase(
     let default_numbers: IndexMap<String, usize> = phase_config::phase_numbers();
     let default_commands: IndexMap<String, String> = phase_config::commands();
 
+    #[allow(clippy::type_complexity)]
     let (order, names, numbers, commands): (
         &Vec<String>,
         &IndexMap<String, String>,

@@ -597,8 +597,7 @@ impl TuiApp {
         frame.render_widget(hdr_line, Rect::new(area.x, area.y + 3, area.width, 1));
 
         // Flow rows
-        for i in 0..list_end {
-            let flow = &self.flows[i];
+        for (i, flow) in self.flows.iter().enumerate().take(list_end) {
             let row = 4 + i;
             if row >= max_y.saturating_sub(1) {
                 break;
@@ -606,7 +605,7 @@ impl TuiApp {
 
             let marker = if i == self.selected {
                 "\u{25b8} "
-            } else if orch_issue.map_or(false, |n| flow.issue_numbers.contains(&n)) {
+            } else if orch_issue.is_some_and(|n| flow.issue_numbers.contains(&n)) {
                 "\u{25c6} "
             } else {
                 "  "

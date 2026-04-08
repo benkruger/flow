@@ -118,11 +118,10 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 
     let deps_skipped = deps_result["status"] == "skipped";
     let deps_no_changes = deps_result["status"] == "ok"
-        && deps_result
+        && !deps_result
             .get("changes")
             .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-            == false;
+            .unwrap_or(false);
     let deps_changed = deps_result["status"] == "ok"
         && deps_result
             .get("changes")

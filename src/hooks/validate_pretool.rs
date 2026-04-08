@@ -143,10 +143,8 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
 fn has_unescaped_semicolon(command: &str) -> bool {
     let bytes = command.as_bytes();
     for (i, &b) in bytes.iter().enumerate() {
-        if b == b';' {
-            if i == 0 || bytes[i - 1] != b'\\' {
-                return true;
-            }
+        if b == b';' && (i == 0 || bytes[i - 1] != b'\\') {
+            return true;
         }
     }
     false

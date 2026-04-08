@@ -438,10 +438,8 @@ pub fn parse_conflict_files(porcelain_output: &str) -> Vec<String> {
             continue;
         }
         let xy = &line[..2.min(line.len())];
-        if xy.contains('U') || xy == "DD" || xy == "AA" {
-            if line.len() > 3 {
-                files.push(line[3..].trim().to_string());
-            }
+        if (xy.contains('U') || xy == "DD" || xy == "AA") && line.len() > 3 {
+            files.push(line[3..].trim().to_string());
         }
     }
     files
@@ -484,7 +482,7 @@ pub fn detect_tty() -> Option<String> {
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let parts: Vec<&str> = stdout.trim().split_whitespace().collect();
+        let parts: Vec<&str> = stdout.split_whitespace().collect();
         if parts.len() < 2 {
             break;
         }
