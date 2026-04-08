@@ -104,6 +104,8 @@ pub const FLOW_DENY: &[&str] = &[
     "Bash(git checkout *)",
     "Bash(git clean *)",
     "Bash(git commit *)",
+    "Bash(gh pr merge * --admin*)",
+    "Bash(gh * --admin*)",
     "Bash(* && *)",
     "Bash(* ; *)",
     "Bash(* | *)",

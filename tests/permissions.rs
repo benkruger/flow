@@ -553,6 +553,8 @@ const REQUIRED_DENY_ENTRIES: &[&str] = &[
     "Bash(git checkout *)",
     "Bash(git clean *)",
     "Bash(git commit *)",
+    "Bash(gh pr merge * --admin*)",
+    "Bash(gh * --admin*)",
 ];
 
 const REQUIRED_TOOL_ALTERNATIVE_DENIES: &[&str] = &[
