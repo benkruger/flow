@@ -3,11 +3,15 @@
 //! start-finalize consolidates: phase-transition complete + notify-slack +
 //! set-timestamp + add-notification into a single command.
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use serde_json::{json, Value};
+
+use common::parse_output;
 
 // --- Test helpers ---
 
@@ -156,13 +160,6 @@ fn run_start_finalize(repo: &Path, branch: &str, extra_args: &[&str]) -> Output 
         .env_remove("SLACK_CHANNEL")
         .output()
         .unwrap()
-}
-
-/// Parse JSON from the last line of stdout.
-fn parse_output(output: &Output) -> Value {
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let last_line = stdout.trim().lines().last().unwrap_or("");
-    serde_json::from_str(last_line).unwrap_or_else(|_| json!({"raw": stdout.trim()}))
 }
 
 // --- Tests ---

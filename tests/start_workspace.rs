@@ -3,87 +3,17 @@
 //! start-workspace consolidates: worktree creation + PR creation + state
 //! backfill + lock release into a single command.
 
+mod common;
+
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use serde_json::{json, Value};
 
+use common::{create_gh_stub, create_git_repo_with_remote, current_plugin_version, parse_output, write_flow_json};
+
 // --- Test helpers ---
-
-/// Read current plugin version from .claude-plugin/plugin.json.
-fn current_plugin_version() -> String {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let plugin_path = manifest_dir.join(".claude-plugin").join("plugin.json");
-    let content = fs::read_to_string(&plugin_path).expect("plugin.json must exist");
-    let data: Value = serde_json::from_str(&content).expect("plugin.json must be valid JSON");
-    data["version"]
-        .as_str()
-        .expect("plugin.json must have version")
-        .to_string()
-}
-
-/// Create a bare+clone git repo pair for testing.
-fn create_git_repo_with_remote(parent: &Path) -> PathBuf {
-    let bare = parent.join("bare.git");
-    let repo = parent.join("repo");
-
-    Command::new("git")
-        .args(["init", "--bare", "-b", "main", &bare.to_string_lossy()])
-        .output()
-        .unwrap();
-
-    Command::new("git")
-        .args(["clone", &bare.to_string_lossy(), &repo.to_string_lossy()])
-        .output()
-        .unwrap();
-
-    for (key, val) in [
-        ("user.email", "test@test.com"),
-        ("user.name", "Test"),
-        ("commit.gpgsign", "false"),
-    ] {
-        Command::new("git")
-            .args(["config", key, val])
-            .current_dir(&repo)
-            .output()
-            .unwrap();
-    }
-
-    Command::new("git")
-        .args(["commit", "--allow-empty", "-m", "init"])
-        .current_dir(&repo)
-        .output()
-        .unwrap();
-
-    Command::new("git")
-        .args(["push", "-u", "origin", "main"])
-        .current_dir(&repo)
-        .output()
-        .unwrap();
-
-    repo
-}
-
-/// Write .flow.json with version and framework.
-fn write_flow_json(repo: &Path, version: &str, framework: &str) {
-    let data = json!({
-        "flow_version": version,
-        "framework": framework,
-    });
-    fs::write(repo.join(".flow.json"), data.to_string()).unwrap();
-}
-
-/// Create a gh stub script.
-fn create_gh_stub(repo: &Path, script: &str) -> PathBuf {
-    let stub_dir = repo.join(".stub-bin");
-    fs::create_dir_all(&stub_dir).unwrap();
-    let gh_stub = stub_dir.join("gh");
-    fs::write(&gh_stub, script).unwrap();
-    fs::set_permissions(&gh_stub, fs::Permissions::from_mode(0o755)).unwrap();
-    stub_dir
-}
 
 /// Create a default gh stub (PR create returns fake URL).
 fn create_default_gh_stub(repo: &Path) -> PathBuf {
@@ -168,20 +98,13 @@ fn run_start_workspace(
         .unwrap()
 }
 
-/// Parse JSON from the last line of stdout.
-fn parse_output(output: &Output) -> Value {
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let last_line = stdout.trim().lines().last().unwrap_or("");
-    serde_json::from_str(last_line).unwrap_or_else(|_| json!({"raw": stdout.trim()}))
-}
-
 // --- Tests ---
 
 #[test]
 fn test_happy_path() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python");
+    write_flow_json(&repo, &current_plugin_version(), "python", None);
     let stub_dir = create_default_gh_stub(&repo);
     create_state_file(&repo, "test-branch");
     create_lock_entry(&repo, "test-feature");
@@ -221,7 +144,7 @@ fn test_happy_path() {
 fn test_worktree_failure_releases_lock() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python");
+    write_flow_json(&repo, &current_plugin_version(), "python", None);
     let stub_dir = create_default_gh_stub(&repo);
     create_state_file(&repo, "test-branch");
     create_lock_entry(&repo, "fail-feature");
@@ -252,7 +175,7 @@ fn test_worktree_failure_releases_lock() {
 fn test_pr_creation_failure_releases_lock() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python");
+    write_flow_json(&repo, &current_plugin_version(), "python", None);
     // gh stub that fails on pr create
     let stub_dir = create_gh_stub(
         &repo,
@@ -277,7 +200,7 @@ fn test_pr_creation_failure_releases_lock() {
 fn test_venv_symlinked() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python");
+    write_flow_json(&repo, &current_plugin_version(), "python", None);
     let stub_dir = create_default_gh_stub(&repo);
     create_state_file(&repo, "venv-branch");
     create_lock_entry(&repo, "venv-feature");
@@ -303,7 +226,7 @@ fn test_venv_symlinked() {
 fn test_state_backfill_preserves_existing_fields() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python");
+    write_flow_json(&repo, &current_plugin_version(), "python", None);
     let stub_dir = create_default_gh_stub(&repo);
     create_state_file(&repo, "backfill-branch");
     create_lock_entry(&repo, "backfill-feature");

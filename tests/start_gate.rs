@@ -3,56 +3,18 @@
 //! start-gate consolidates: git pull + CI baseline (retry 3) + update-deps +
 //! post-deps CI (retry 3 if deps changed) into a single command.
 
+mod common;
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output};
 
-use serde_json::{json, Value};
+use serde_json::json;
+
+use common::{create_git_repo_with_remote, parse_output};
 
 // --- Test helpers ---
-
-/// Create a bare+clone git repo pair for testing.
-fn create_git_repo_with_remote(parent: &Path) -> PathBuf {
-    let bare = parent.join("bare.git");
-    let repo = parent.join("repo");
-
-    Command::new("git")
-        .args(["init", "--bare", "-b", "main", &bare.to_string_lossy()])
-        .output()
-        .unwrap();
-
-    Command::new("git")
-        .args(["clone", &bare.to_string_lossy(), &repo.to_string_lossy()])
-        .output()
-        .unwrap();
-
-    for (key, val) in [
-        ("user.email", "test@test.com"),
-        ("user.name", "Test"),
-        ("commit.gpgsign", "false"),
-    ] {
-        Command::new("git")
-            .args(["config", key, val])
-            .current_dir(&repo)
-            .output()
-            .unwrap();
-    }
-
-    Command::new("git")
-        .args(["commit", "--allow-empty", "-m", "init"])
-        .current_dir(&repo)
-        .output()
-        .unwrap();
-
-    Command::new("git")
-        .args(["push", "-u", "origin", "main"])
-        .current_dir(&repo)
-        .output()
-        .unwrap();
-
-    repo
-}
 
 /// Create a bin/ci script that exits with a given code.
 fn create_bin_ci(repo: &Path, exit_code: i32) {
@@ -127,13 +89,6 @@ fn run_start_gate(repo: &Path, branch: &str) -> Output {
         .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap()
-}
-
-/// Parse JSON from the last line of stdout.
-fn parse_output(output: &Output) -> Value {
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let last_line = stdout.trim().lines().last().unwrap_or("");
-    serde_json::from_str(last_line).unwrap_or_else(|_| json!({"raw": stdout.trim()}))
 }
 
 // --- Tests ---
