@@ -20,11 +20,13 @@ use crate::commands::log::append_log;
 use crate::commands::start_lock::{acquire, queue_path, release};
 use crate::commands::start_step::update_step;
 use crate::git::project_root;
-use crate::label_issues::label_issues;
+use crate::label_issues::{label_issues, LABEL};
 use crate::output::json_error;
 use crate::prime_check;
 use crate::upgrade_check::{self, GhResult};
-use crate::utils::{extract_issue_numbers, plugin_root};
+use crate::utils::{
+    branch_name, check_duplicate_issue, extract_issue_numbers, fetch_issue_info, plugin_root,
+};
 
 #[derive(Parser, Debug)]
 #[command(name = "start-init", about = "Consolidated start initialization")]
@@ -54,11 +56,63 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let plug_root = plugin_root()
         .ok_or_else(|| "CLAUDE_PLUGIN_ROOT not set and could not detect plugin root".to_string())?;
 
-    // Step 1: Acquire lock
-    let lock_result = acquire(&args.feature_name, &queue_dir);
+    // --- Pre-lock: derive canonical branch name ---
+    // Read prompt non-destructively (init-state will read+delete via --prompt-file later)
+    let prompt_text = args
+        .prompt_file
+        .as_ref()
+        .and_then(|pf| fs::read_to_string(pf).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| args.feature_name.clone());
+
+    let issue_numbers = extract_issue_numbers(&prompt_text);
+    let branch = if !issue_numbers.is_empty() {
+        match fetch_issue_info(issue_numbers[0]) {
+            Some(info) => {
+                // Flow In-Progress label guard (cross-machine WIP detection)
+                if info.labels.iter().any(|l| l == LABEL) {
+                    return Ok(json!({
+                        "status": "error",
+                        "message": format!(
+                            "Issue #{} already carries the '{}' label — another flow is in progress. Resume the existing flow in its worktree, or reference a different issue.",
+                            issue_numbers[0], LABEL
+                        ),
+                        "step": "flow_in_progress_label",
+                    }));
+                }
+                branch_name(&info.title)
+            }
+            None => {
+                return Ok(json!({
+                    "status": "error",
+                    "message": format!("Could not fetch title for issue #{}", issue_numbers[0]),
+                    "step": "fetch_issue_title",
+                }));
+            }
+        }
+    } else {
+        branch_name(&args.feature_name)
+    };
+
+    // Duplicate issue guard (before lock — no lock to leak)
+    if !issue_numbers.is_empty() {
+        if let Some(dup) = check_duplicate_issue(&root, &issue_numbers, &branch) {
+            return Ok(json!({
+                "status": "error",
+                "message": format!(
+                    "Issue already has an active flow on branch '{}' (phase: {}, PR: {}). Resume the existing flow instead.",
+                    dup.branch, dup.phase, dup.pr_url
+                ),
+                "step": "duplicate_issue",
+            }));
+        }
+    }
+
+    // Step 1: Acquire lock (on canonical branch name)
+    let lock_result = acquire(&branch, &queue_dir);
     let _ = append_log(
         &root,
-        &args.feature_name,
+        &branch,
         &format!(
             "[Phase 1] start-init — lock acquire ({})",
             lock_result["status"]
@@ -75,7 +129,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 
     // Helper: release lock on error and return error JSON
     let release_and_error = |msg: &str, step: &str| -> Value {
-        release(&args.feature_name, &queue_dir);
+        release(&branch, &queue_dir);
         json!({
             "status": "error",
             "message": msg,
@@ -90,7 +144,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         Err(e) => {
             let _ = append_log(
                 &root,
-                &args.feature_name,
+                &branch,
                 &format!(
                     "[Phase 1] start-init — prime-check infrastructure error: {}",
                     e
@@ -102,7 +156,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 
     let _ = append_log(
         &root,
-        &args.feature_name,
+        &branch,
         &format!(
             "[Phase 1] start-init — prime-check ({})",
             prime_result["status"]
@@ -141,7 +195,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let upgrade_result = upgrade_check::upgrade_check_impl(&plugin_json, 10, &mut gh_cmd);
     let _ = append_log(
         &root,
-        &args.feature_name,
+        &branch,
         &format!(
             "[Phase 1] start-init — upgrade-check ({})",
             upgrade_result["status"]
@@ -190,7 +244,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 
     let _ = append_log(
         &root,
-        &args.feature_name,
+        &branch,
         &format!(
             "[Phase 1] start-init — init-state ({})",
             init_json["status"]
@@ -209,31 +263,12 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         return Ok(release_and_error(&msg, &step));
     }
 
-    let branch = init_json["branch"]
-        .as_str()
-        .unwrap_or(&args.feature_name)
-        .to_string();
-
     // Update step counter for TUI (step 1 = init)
     let state_path = state_dir.join(format!("{}.json", branch));
     update_step(&state_path, 1);
 
     // Step 5: Label issues (best-effort)
-    // Read the prompt from init-state JSON or fall back to the state file
-    let prompt_owned: String = init_json["prompt"]
-        .as_str()
-        .map(String::from)
-        .or_else(|| {
-            fs::read_to_string(&state_path).ok().and_then(|content| {
-                serde_json::from_str::<Value>(&content)
-                    .ok()
-                    .and_then(|state| state["prompt"].as_str().map(String::from))
-            })
-        })
-        .unwrap_or_default();
-    let prompt = prompt_owned.as_str();
-
-    let issue_numbers = extract_issue_numbers(prompt);
+    // issue_numbers already derived in the pre-lock section
     let mut labels_result = json!({});
     if !issue_numbers.is_empty() {
         let result = label_issues(&issue_numbers, "add");
