@@ -5,6 +5,7 @@
 //! were previously duplicated across start_init, start_gate, start_workspace,
 //! start_finalize, and start_setup test files.
 
+// Not every consumer uses every helper. Each test file imports only what it needs.
 #![allow(dead_code)]
 
 use std::fs;
@@ -68,7 +69,8 @@ pub fn create_git_repo_with_remote(parent: &Path) -> PathBuf {
     repo
 }
 
-/// Write .flow.json with version, framework, and optional skills.
+/// Write .flow.json with version, framework, and optional skills config.
+/// Pass `Some(&skills)` to test skill config propagation; pass `None` for default behavior.
 pub fn write_flow_json(repo: &Path, version: &str, framework: &str, skills: Option<&Value>) {
     let mut data = json!({
         "flow_version": version,
@@ -90,7 +92,8 @@ pub fn create_gh_stub(repo: &Path, script: &str) -> PathBuf {
     stub_dir
 }
 
-/// Parse JSON from the last line of stdout (child-inheriting pattern).
+/// Parse JSON from the last line of stdout. Uses last-line extraction to
+/// filter out child process output (git messages, etc.) that precedes the JSON.
 pub fn parse_output(output: &Output) -> Value {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let last_line = stdout.trim().lines().last().unwrap_or("");
