@@ -90,7 +90,13 @@ pub fn tree_snapshot(cwd: &Path, simulate_branch: Option<&str>) -> String {
     let diff_raw = git_stdout(cwd, &["diff", "HEAD"]);
     let untracked_files = git_stdout(cwd, &["ls-files", "--others", "--exclude-standard"])
         .trim()
-        .to_string();
+        .lines()
+        // .flow-commit-msg is ephemeral (written by commit skill, deleted by
+        // finalize-commit). Including it poisons the sentinel — CI re-runs on
+        // every commit even when nothing meaningful changed.
+        .filter(|l| *l != ".flow-commit-msg")
+        .collect::<Vec<_>>()
+        .join("\n");
 
     let untracked_hash = if !untracked_files.is_empty() {
         match Command::new("git")
