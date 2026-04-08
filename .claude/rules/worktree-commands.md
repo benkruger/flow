@@ -44,6 +44,18 @@ When a linter or formatter needs to be invoked outside `bin/ci`, use
 the standalone venv binary directly (e.g. `.venv/bin/ruff`), not
 `python3 -m <tool>`.
 
+## Never invoke cargo directly
+
+Never run `cargo test`, `cargo build`, or any `cargo` subcommand
+directly via the Bash tool. Use `bin/test --rust <filter>` for Rust
+test execution and `bin/ci` for full builds. These wrappers match
+existing permission patterns in `.claude/settings.json`.
+
+Direct cargo invocations bypass the permission whitelist, which causes
+RTK to intercept the command and prompt the user. This is especially
+dangerous inside sub-agents, where the prompt appears in an unexpected
+context and the sub-agent cannot handle it.
+
 ## Use `ruff --fix` when ruff reports a fixable error
 
 When `bin/flow ci` fails with a ruff lint error marked `[*]` (fixable),
