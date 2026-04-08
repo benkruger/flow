@@ -39,13 +39,13 @@ Phase gates are enforced by `bin/flow check-phase` (`src/check_phase.rs`) — th
 
 "Marketing docs" refers to `docs/index.html` — the GitHub Pages landing page.
 
-### Structural sync (CI-enforced by `test_docs_sync.py`)
+### Structural sync (CI-enforced by `tests/docs_sync.rs`)
 
 CI will fail if these are missing:
 
 - New/renamed skill — `docs/skills/<name>.md`, `docs/skills/index.md`, `README.md`
 - New/renamed phase — `docs/phases/phase-<N>-<name>.md`, `docs/skills/index.md`, `README.md`, `docs/index.html`
-- New feature/capability — `README.md` and `docs/index.html` must mention required keywords (see `REQUIRED_FEATURES` in `test_docs_sync.py`)
+- New feature/capability — `README.md` and `docs/index.html` must mention required keywords (see `required_features()` in `tests/docs_sync.rs`)
 
 ### Content sync (convention-enforced — no test catches this)
 
@@ -56,7 +56,7 @@ CI will fail if these are missing:
 ### Test requirements
 
 - New `lib/*.py` script — corresponding `tests/test_*.py` with 100% coverage
-- New skills auto-covered by `test_skill_contracts.py` (glob-based discovery)
+- New skills auto-covered by `tests/skill_contracts.rs` (glob-based discovery)
 - Any new executable code needs tests — skills are Markdown and don't need tests beyond contracts
 
 ## Key Files
@@ -133,7 +133,7 @@ Phase skills log completion events to `.flow-states/<branch>.log` using a comman
 
 ### Version Locations
 
-The version lives in 3 places (across 2 files), all must match: `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (top-level metadata), `.claude-plugin/marketplace.json` (plugins array entry). `test_structural.py` enforces consistency.
+The version lives in 3 places (across 2 files), all must match: `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (top-level metadata), `.claude-plugin/marketplace.json` (plugins array entry). `tests/structural.rs` enforces consistency.
 
 ### Checksum → Version Invariant
 
@@ -145,17 +145,17 @@ Claude never computes timestamps, time differences, or counter increments. All s
 
 ### Auto-Advance Architecture
 
-Phase auto-advance uses two layers. Layer 1: the phase completion command (`phase-finalize` for phases 1, 3, 4, 5; `phase-transition --action complete` for phase 2; `complete-finalize` for phase 6) returns `continue_action` (`"invoke"` or `"ask"`) and optionally `continue_target` (the next phase command) in its JSON output. Skill HARD-GATEs parse `continue_action` to decide whether to auto-invoke the next phase or prompt the user. Layer 2: `phase_complete()` writes `_auto_continue` to the state file when `continue_action` is `"invoke"`. The `bin/flow hook validate-ask-user` PreToolUse hook reads `_auto_continue` and auto-answers any `AskUserQuestion` that fires — this is a safety net for cases where the model ignores the HARD-GATE and prompts anyway. `phase_enter()` clears `_auto_continue` when the next phase starts. The `continue_target` field is provided for diagnostic consumers; skills use hardcoded successor commands for reliability.
+Phase auto-advance uses two layers. Layer 1: the phase completion command (`phase-finalize` for phases 1, 3, 4, 5; `phase-transition --action complete` for phase 2; `complete-finalize` for phase 6) returns `continue_action` (`"invoke"` or `"ask"`) and optionally `continue_target` (the next phase command) in its JSON output. Skill HARD-GATEs parse `continue_action` to decide whether to auto-invoke the next phase or prompt the user. Layer 2: `phase_complete()` writes `_auto_continue` to the state file when `continue_action` is `"invoke"`. The `bin/flow hook validate-ask-user` PreToolUse hook reads `_auto_continue` and auto-answers any `AskUserQuestion` that fires — this is a safety net for cases where the model ignores the HARD-GATE and prompts anyway. `phase_enter()` clears `_auto_continue`, `_continue_pending`, and `_continue_context` when the next phase starts. The `continue_target` field is provided for diagnostic consumers; skills use hardcoded successor commands for reliability.
 
 ### Permission Invariant
 
-Every bash block in every skill must run without triggering a permission prompt. `test_permissions.py` enforces at test time (placeholder substitution, allow/deny matching); `bin/flow hook validate-pretool` enforces at runtime via global PreToolUse hook (compound commands, redirection, file-read commands blocked; whitelist enforced when a flow is active). See `.claude/rules/permissions.md` for the pattern-adding protocol.
+Every bash block in every skill must run without triggering a permission prompt. `tests/permissions.rs` enforces at test time (placeholder substitution, allow/deny matching); `bin/flow hook validate-pretool` enforces at runtime via global PreToolUse hook (compound commands, redirection, file-read commands blocked; whitelist enforced when a flow is active). See `.claude/rules/permissions.md` for the pattern-adding protocol.
 
 ## Test Architecture
 
 Shared fixtures in `tests/conftest.py`: `git_repo` (minimal git repo), `target_project` (git repo with non-bash `bin/ci` and no `bin/flow` — simulates a Rails/non-Python target project), `state_dir` (flow-states dir inside git repo), `make_state()` (build state dicts), `write_state()` (write state JSON files). Integration tests for lib scripts that run in target projects must use `target_project`, not `git_repo`.
 
-Key test files: `test_structural.py` (config invariants, version consistency), `test_skill_contracts.py` (SKILL.md content via glob-based discovery — new skills auto-covered), `test_permissions.py` (allow/deny simulation, placeholder validation), `test_docs_sync.py` (docs completeness), `test_concurrency.py` (real-process concurrency). Each `tests/test_*.py` corresponds to a `lib/*.py` script with 100% coverage.
+Key test files: `tests/structural.rs` (config invariants, version consistency), `tests/skill_contracts.rs` (SKILL.md content via glob-based discovery — new skills auto-covered), `tests/permissions.rs` (allow/deny simulation, placeholder validation), `tests/docs_sync.rs` (docs completeness), `tests/concurrency.rs` (real-process concurrency). Shared Rust test helpers in `tests/common/mod.rs`. Each `tests/test_*.py` corresponds to a `lib/*.py` script with 100% coverage.
 
 ## Maintainer Skills (private to this repo)
 
@@ -168,11 +168,11 @@ Key test files: `test_structural.py` (config invariants, version consistency), `
 - **Never invoke `/flow-release` unless the user explicitly runs it** — fixing a bug does not authorize a release. Committing a fix and releasing it are separate decisions. The user decides when to ship.
 - All commits via `/flow:flow-commit` skill — no exceptions, no shortcuts, no "just this once"
 - All changes require `bin/flow ci` green before committing — tests are the gate
-- New skills are automatically covered by test_skill_contracts.py (glob-based discovery)
+- New skills are automatically covered by `tests/skill_contracts.rs` (glob-based discovery)
 - Namespace is `flow:` — plugin.json name is `"flow"`
 - Never rebase — merge only (denied in `.claude/settings.json`)
 - **Never add pymarkdown exclusions** — The `.pymarkdown.yml` disables MD013 (line length), MD025 (multiple H1 with frontmatter), MD033 (inline HTML), and MD036 (emphasis as heading) because those conflict with this repo's intentional patterns. No further rule disablements or path exclusions may be added. If a markdown file triggers a lint error, fix the file — do not suppress the rule. If a rule genuinely cannot be satisfied, surface it to the user for a decision.
-- **Skills must never instruct Claude to compute values** — no timestamp generation, no time arithmetic, no counter increments, no `date -u`. All computation goes through `bin/flow` subcommands. Skills say "run this command", never "calculate this value". `test_skill_contracts.py` enforces this: `test_phase_skills_no_inline_time_computation` fails if any phase skill contains computational instruction patterns.
+- **Skills must never instruct Claude to compute values** — no timestamp generation, no time arithmetic, no counter increments, no `date -u`. All computation goes through `bin/flow` subcommands. Skills say "run this command", never "calculate this value". `tests/skill_contracts.rs` enforces this: `phase_skills_no_inline_time_computation` fails if any phase skill contains computational instruction patterns.
 - **All timestamps use Pacific Time** — `lib/flow_utils.py` provides `now()` which returns `datetime.now(ZoneInfo("America/Los_Angeles")).isoformat(timespec="seconds")`. All scripts import `now` from `flow_utils` — never generate timestamps locally. Existing state files with UTC timestamps (`Z` suffix) are handled by `datetime.fromisoformat()` which parses both formats.
 - **Prefer dedicated tools over Bash** — see `.claude/rules/worktree-commands.md`
 - **Issue filing** — see `.claude/rules/filing-issues.md`
