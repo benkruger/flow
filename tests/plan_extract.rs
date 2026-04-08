@@ -2,6 +2,8 @@ use flow_rs::plan_extract::{count_tasks, extract_implementation_plan, promote_he
 
 // --- Unit tests for pure functions ---
 
+// (Unit tests are below, integration tests at end of file)
+
 #[test]
 fn extract_plan_basic() {
     let body = "## Problem\n\nSomething.\n\n## Implementation Plan\n\n### Context\n\nStuff.\n\n### Tasks\n\n#### Task 1: Do thing\n\n## Files to Investigate\n\n- foo.rs\n";
@@ -127,4 +129,460 @@ fn count_tasks_ten() {
         content.push_str(&format!("#### Task {}: Description {}\n\nBody.\n\n", i, i));
     }
     assert_eq!(count_tasks(&content), 10);
+}
+
+// --- Integration tests for run_impl (via subprocess) ---
+
+mod integration {
+    use std::fs;
+    use std::process::Command;
+
+    fn setup_git_repo(dir: &std::path::Path, branch: &str) {
+        Command::new("git")
+            .args(["-c", "init.defaultBranch=main", "init"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "commit.gpgsign", "false"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "--allow-empty", "-m", "init"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["checkout", "-b", branch])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+    }
+
+    fn setup_state(dir: &std::path::Path, branch: &str, state_json: &str) {
+        let state_dir = dir.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(state_dir.join(format!("{}.json", branch)), state_json).unwrap();
+    }
+
+    /// Build a plan-extract-ready state JSON with flow-start complete.
+    /// `prompt` controls the prompt field (determines issue detection).
+    /// `extra` is a closure that can mutate the state Value before serialization.
+    fn make_plan_state(prompt: &str, extra: impl FnOnce(&mut serde_json::Value)) -> String {
+        let mut state = serde_json::json!({
+            "branch": "test-feature",
+            "current_phase": "flow-start",
+            "prompt": prompt,
+            "files": {
+                "plan": serde_json::Value::Null,
+                "dag": serde_json::Value::Null,
+            },
+            "skills": {
+                "flow-plan": {
+                    "continue": "auto",
+                    "dag": "auto",
+                }
+            },
+            "phases": {
+                "flow-start": {
+                    "name": "Start",
+                    "status": "complete",
+                    "started_at": "2026-01-01T00:00:00-08:00",
+                    "completed_at": "2026-01-01T00:01:00-08:00",
+                    "session_started_at": serde_json::Value::Null,
+                    "cumulative_seconds": 60,
+                    "visit_count": 1
+                },
+                "flow-plan": {
+                    "name": "Plan",
+                    "status": "pending",
+                    "started_at": serde_json::Value::Null,
+                    "completed_at": serde_json::Value::Null,
+                    "session_started_at": serde_json::Value::Null,
+                    "cumulative_seconds": 0,
+                    "visit_count": 0
+                },
+                "flow-code": {
+                    "name": "Code",
+                    "status": "pending",
+                    "started_at": serde_json::Value::Null,
+                    "completed_at": serde_json::Value::Null,
+                    "session_started_at": serde_json::Value::Null,
+                    "cumulative_seconds": 0,
+                    "visit_count": 0
+                },
+                "flow-code-review": {
+                    "name": "Code Review",
+                    "status": "pending",
+                    "started_at": serde_json::Value::Null,
+                    "completed_at": serde_json::Value::Null,
+                    "session_started_at": serde_json::Value::Null,
+                    "cumulative_seconds": 0,
+                    "visit_count": 0
+                },
+                "flow-learn": {
+                    "name": "Learn",
+                    "status": "pending",
+                    "started_at": serde_json::Value::Null,
+                    "completed_at": serde_json::Value::Null,
+                    "session_started_at": serde_json::Value::Null,
+                    "cumulative_seconds": 0,
+                    "visit_count": 0
+                },
+                "flow-complete": {
+                    "name": "Complete",
+                    "status": "pending",
+                    "started_at": serde_json::Value::Null,
+                    "completed_at": serde_json::Value::Null,
+                    "session_started_at": serde_json::Value::Null,
+                    "cumulative_seconds": 0,
+                    "visit_count": 0
+                }
+            },
+            "phase_transitions": []
+        });
+        extra(&mut state);
+        state.to_string()
+    }
+
+    /// Run `flow-rs plan-extract` in the given directory.
+    /// Returns (exit_code, parsed_json).
+    fn run_plan_extract(
+        dir: &std::path::Path,
+        extra_args: &[&str],
+    ) -> (i32, serde_json::Value) {
+        run_plan_extract_inner(dir, extra_args, None)
+    }
+
+    /// Run `flow-rs plan-extract` with a gh stub on PATH.
+    fn run_plan_extract_with_gh(
+        dir: &std::path::Path,
+        extra_args: &[&str],
+        stub_dir: &std::path::Path,
+    ) -> (i32, serde_json::Value) {
+        run_plan_extract_inner(dir, extra_args, Some(stub_dir))
+    }
+
+    fn run_plan_extract_inner(
+        dir: &std::path::Path,
+        extra_args: &[&str],
+        stub_dir: Option<&std::path::Path>,
+    ) -> (i32, serde_json::Value) {
+        let mut args = vec!["plan-extract"];
+        args.extend_from_slice(extra_args);
+
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+        cmd.args(&args).current_dir(dir);
+
+        if let Some(sd) = stub_dir {
+            let path_env = format!(
+                "{}:{}",
+                sd.to_string_lossy(),
+                std::env::var("PATH").unwrap_or_default()
+            );
+            cmd.env("PATH", &path_env);
+        }
+
+        let output = cmd.output().unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let code = output.status.code().unwrap_or(-1);
+        let json: serde_json::Value = serde_json::from_str(stdout.trim())
+            .unwrap_or(serde_json::json!({"raw": stdout.trim()}));
+        (code, json)
+    }
+
+    /// Create a gh stub script. Returns the stub directory.
+    fn create_gh_stub(dir: &std::path::Path, script: &str) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let stub_dir = dir.join(".stub-bin");
+        fs::create_dir_all(&stub_dir).unwrap();
+        let gh_stub = stub_dir.join("gh");
+        fs::write(&gh_stub, script).unwrap();
+        fs::set_permissions(&gh_stub, fs::Permissions::from_mode(0o755)).unwrap();
+        stub_dir
+    }
+
+    // --- Error path tests ---
+
+    #[test]
+    fn test_error_no_state_file() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        // No state file created
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"].as_str().unwrap().contains("No state file"),
+            "Expected 'No state file' error, got: {}",
+            json["message"]
+        );
+    }
+
+    #[test]
+    fn test_error_corrupt_json() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(state_dir.join("test-feature.json"), "{bad json").unwrap();
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 1);
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("Invalid JSON"),
+            "Expected 'Invalid JSON' error, got: {}",
+            json["message"]
+        );
+    }
+
+    #[test]
+    fn test_error_gate_start_not_complete() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        // State with flow-start still pending
+        let state = make_plan_state("build a thing", |s| {
+            s["phases"]["flow-start"]["status"] = serde_json::json!("pending");
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("Phase 1: Start must be complete"),
+            "Expected gate failure message, got: {}",
+            json["message"]
+        );
+    }
+
+    // --- Standard path tests ---
+
+    #[test]
+    fn test_standard_no_issue_refs() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("build a feature", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "standard");
+        assert!(json["issue_body"].is_null(), "issue_body should be null for no issue refs");
+        assert!(json["issue_number"].is_null(), "issue_number should be null for no issue refs");
+        assert_eq!(json["dag_mode"], "auto");
+    }
+
+    #[test]
+    fn test_standard_dag_mode_from_state() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("build a feature", |s| {
+            s["skills"]["flow-plan"]["dag"] = serde_json::json!("never");
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["path"], "standard");
+        assert_eq!(
+            json["dag_mode"], "never",
+            "dag_mode should reflect the state file's skills.flow-plan.dag value"
+        );
+    }
+
+    // --- Resumed path test ---
+
+    #[test]
+    fn test_resumed_plan_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let plan_content = "## Context\n\nTest plan.\n\n## Tasks\n\n### Task 1: Do something\n";
+        let plan_rel = ".flow-states/test-feature-plan.md";
+
+        // State with files.plan set (creates .flow-states/ directory)
+        let state = make_plan_state("build a feature", |s| {
+            s["files"]["plan"] = serde_json::json!(plan_rel);
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        // Write the plan file (after .flow-states/ exists)
+        let plan_abs = dir.path().join(plan_rel);
+        fs::write(&plan_abs, plan_content).unwrap();
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "resumed");
+        assert_eq!(
+            json["plan_content"].as_str().unwrap(),
+            plan_content,
+            "plan_content should match the file on disk"
+        );
+        assert_eq!(json["plan_file"], plan_rel);
+        assert!(json["formatted_time"].is_string(), "formatted_time must be present");
+        assert!(json["continue_action"].is_string(), "continue_action must be present");
+
+        // Verify state file was updated: flow-plan should be complete
+        let updated_state: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            updated_state["phases"]["flow-plan"]["status"], "complete",
+            "flow-plan should be marked complete after resumed path"
+        );
+    }
+
+    // --- gh-dependent tests ---
+
+    #[test]
+    fn test_standard_issue_not_decomposed() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("fix issue #42", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        // gh stub returns issue without Decomposed label
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r#"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":42,"title":"Fix the bug","body":"Something is broken.","labels":[]}'
+    exit 0
+fi
+exit 1
+"#,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "standard");
+        assert_eq!(json["issue_number"], 42);
+        assert_eq!(
+            json["issue_body"].as_str().unwrap(),
+            "Something is broken."
+        );
+    }
+
+    #[test]
+    fn test_standard_decomposed_no_plan_section() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("work on #99", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        // gh stub returns decomposed issue WITHOUT ## Implementation Plan
+        // Uses echo (not printf) so \n stays literal in JSON output
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":99,"title":"Refactor auth","body":"## Problem\n\nAuth is slow.","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(
+            json["path"], "standard",
+            "Decomposed issue without Implementation Plan should return standard path"
+        );
+        assert_eq!(json["issue_number"], 99);
+
+        // DAG file should have been created
+        let dag_path = dir.path().join(".flow-states/test-feature-dag.md");
+        assert!(
+            dag_path.exists(),
+            "DAG file should be created for decomposed issues"
+        );
+        let dag_content = fs::read_to_string(&dag_path).unwrap();
+        assert!(dag_content.contains("# Pre-Decomposed Analysis: Refactor auth"));
+    }
+
+    #[test]
+    fn test_extracted_decomposed_with_plan() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("work on #100", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        // gh stub returns decomposed issue WITH ## Implementation Plan and tasks
+        // Uses echo (not printf) so \n stays literal in JSON output
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":100,"title":"Add tests","body":"## Problem\n\nNeed tests.\n\n## Implementation Plan\n\n### Context\n\nWe need integration tests.\n\n### Tasks\n\n#### Task 1: Write helpers\n\nAdd test helpers.\n\n#### Task 2: Write tests\n\nAdd actual tests.\n\n## Files to Investigate\n\n- src/plan_extract.rs","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "extracted");
+        assert!(
+            json["plan_content"].as_str().unwrap().contains("Context"),
+            "plan_content should contain promoted headings"
+        );
+        assert_eq!(json["task_count"], 2);
+        assert!(json["formatted_time"].is_string());
+        assert!(json["continue_action"].is_string());
+
+        // Verify DAG and plan files created on disk
+        let dag_path = dir.path().join(".flow-states/test-feature-dag.md");
+        assert!(dag_path.exists(), "DAG file should exist");
+
+        let plan_path = dir.path().join(".flow-states/test-feature-plan.md");
+        assert!(plan_path.exists(), "Plan file should exist");
+
+        // Verify state file shows flow-plan complete
+        let updated_state: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            updated_state["phases"]["flow-plan"]["status"], "complete",
+            "flow-plan should be complete after extracted path"
+        );
+    }
 }
