@@ -180,6 +180,9 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         "[Phase 1] start-workspace — lock released (ok)",
     );
 
+    // Advance TUI display to step 4 ("entering worktree") before returning
+    update_step(&state_path, 4);
+
     let wt_relative = format!(".worktrees/{}", branch);
     Ok(json!({
         "status": "ok",

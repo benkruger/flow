@@ -371,6 +371,10 @@ If still failing after 3 attempts, stop and report.
 
 Skip this step if mode is **auto** — proceed directly to Step 5.
 
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+```
+
 <HARD-GATE>
 If mode is **manual**, use AskUserQuestion. If the preflight recorded
 warnings, include them:
