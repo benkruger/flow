@@ -169,18 +169,20 @@ fn has_redirect(command: &str) -> bool {
 
 /// Determine whether a command should be blocked from run_in_background.
 ///
-/// `bin/flow ci` and `bin/ci` are always blocked — CI is a gate in every
-/// mode (FLOW-enabled, Standalone). Other commands are only
+/// `bin/flow` (any subcommand) and `bin/ci` are always blocked — every
+/// `bin/flow` subcommand is either a CI gate or a state mutation, and
+/// `bin/ci` is a CI gate by convention. Other commands are only
 /// blocked from background execution during an active FLOW phase.
 ///
 /// Returns `Some(error_message)` if the command should be blocked,
 /// `None` if the command is allowed to run in the background.
 pub fn should_block_background(command: &str, flow_active: bool) -> Option<String> {
-    if is_ci_command(command) {
+    if is_flow_command(command) {
         return Some(
-            "BLOCKED: bin/flow ci and bin/ci must never run in the background. \
-             CI is a gate — it must complete before any commit or phase \
-             transition proceeds. Run it in the foreground."
+            "BLOCKED: bin/flow and bin/ci must never run in the background. \
+             Every bin/flow subcommand is a gate or state mutation — it must \
+             complete before any downstream action proceeds. \
+             Run it in the foreground."
                 .to_string(),
         );
     }
@@ -194,27 +196,23 @@ pub fn should_block_background(command: &str, flow_active: bool) -> Option<Strin
     None
 }
 
-/// Check whether a command invokes FLOW CI (bin/flow ci or bin/ci).
+/// Check whether a command invokes bin/flow (any subcommand) or bin/ci.
 ///
 /// Matches by tokenizing on whitespace, so path prefixes and trailing
 /// arguments are handled. The suffix match on `/bin/ci` and `/bin/flow`
 /// is intentional: it covers both FLOW's own binary and target projects'
-/// `bin/ci` scripts — all of which are CI gates by convention. Rejects
+/// `bin/ci` scripts, which are CI gates by convention. Rejects
 /// substring-containing commands like `npm run ci` (first token is `npm`)
 /// and `git commit`.
-fn is_ci_command(command: &str) -> bool {
-    let mut tokens = command.split_whitespace();
-    let first = match tokens.next() {
+fn is_flow_command(command: &str) -> bool {
+    let first = match command.split_whitespace().next() {
         Some(t) => t,
         None => return false,
     };
     if first == "bin/ci" || first.ends_with("/bin/ci") {
         return true;
     }
-    if first == "bin/flow" || first.ends_with("/bin/flow") {
-        return tokens.next() == Some("ci");
-    }
-    false
+    first == "bin/flow" || first.ends_with("/bin/flow")
 }
 
 /// Check whether a JSON value represents a truthy `run_in_background` flag.
@@ -807,7 +805,7 @@ mod tests {
         let msg = should_block_background("bin/flow ci", false);
         assert!(msg.is_some());
         let text = msg.unwrap();
-        assert!(text.contains("bin/flow ci"));
+        assert!(text.contains("bin/flow"));
         assert!(text.contains("bin/ci"));
     }
 
@@ -821,8 +819,8 @@ mod tests {
     fn test_blocks_background_bin_ci_outside_flow() {
         let msg = should_block_background("bin/ci", false);
         assert!(msg.is_some());
-        // Error message must name both CI forms so callers that ran `bin/ci`
-        // don't get misled by a message that only names `bin/flow ci`.
+        // Error message must name both forms so callers that ran `bin/ci`
+        // don't get misled by a message that only names `bin/flow`.
         assert!(msg.unwrap().contains("bin/ci"));
     }
 
@@ -839,6 +837,31 @@ mod tests {
     }
 
     #[test]
+    fn test_blocks_background_bin_flow_finalize_commit() {
+        let msg = should_block_background("bin/flow finalize-commit .flow-commit-msg main", false);
+        assert!(msg.is_some());
+        assert!(msg.unwrap().contains("bin/flow"));
+    }
+
+    #[test]
+    fn test_blocks_background_bin_flow_phase_transition() {
+        let msg = should_block_background("bin/flow phase-transition --action complete", false);
+        assert!(msg.is_some());
+    }
+
+    #[test]
+    fn test_blocks_background_absolute_bin_flow_finalize_commit() {
+        let msg = should_block_background("/Users/ben/code/flow/bin/flow finalize-commit .flow-commit-msg main", false);
+        assert!(msg.is_some());
+    }
+
+    #[test]
+    fn test_blocks_background_bare_bin_flow() {
+        let msg = should_block_background("bin/flow", false);
+        assert!(msg.is_some());
+    }
+
+    #[test]
     fn test_blocks_background_any_command_inside_flow() {
         let msg = should_block_background("echo hi", true);
         assert!(msg.is_some());
@@ -846,17 +869,19 @@ mod tests {
     }
 
     #[test]
-    fn test_allows_background_non_ci_outside_flow() {
+    fn test_allows_background_non_flow_outside_flow() {
         let msg = should_block_background("echo hi", false);
         assert!(msg.is_none());
     }
 
     #[test]
-    fn test_does_not_false_positive_on_commands_containing_ci() {
-        // "npm run ci" first token is "npm" — not a FLOW CI command
+    fn test_does_not_false_positive_on_commands_containing_flow() {
+        // "npm run ci" first token is "npm" — not a FLOW command
         assert!(should_block_background("npm run ci", false).is_none());
-        // "git commit" has no relation to ci
+        // "git commit" has no relation to flow
         assert!(should_block_background("git commit", false).is_none());
+        // "npm run flow" first token is "npm"
+        assert!(should_block_background("npm run flow", false).is_none());
     }
 
     // --- is_bg_truthy: defensive JSON type handling ---

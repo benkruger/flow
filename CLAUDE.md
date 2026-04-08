@@ -177,7 +177,7 @@ Key test files: `tests/structural.rs` (config invariants, version consistency), 
 - **Prefer dedicated tools over Bash** — see `.claude/rules/worktree-commands.md`
 - **Issue filing** — see `.claude/rules/filing-issues.md`
 - **Repo-level targets only** — see `.claude/rules/repo-level-only.md`
-- **No `run_in_background` during FLOW phases**; `bin/flow ci` and `bin/ci` are never allowed in the background regardless of mode — see `.claude/rules/ci-is-a-gate.md`. Both enforced by `bin/flow hook validate-pretool`.
+- **No `run_in_background` during FLOW phases**; `bin/flow` (any subcommand) and `bin/ci` are never allowed in the background regardless of mode — see `.claude/rules/ci-is-a-gate.md`. Enforced by `bin/flow hook validate-pretool`.
 - **User evidence is ground truth** — when a user provides screenshots, error output, or logs that contradict your code analysis, trust the evidence. Your code reading is a hypothesis; the user's evidence is an observation. Never explain away evidence to preserve your analysis.
 
 <!-- FLOW:BEGIN -->

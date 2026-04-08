@@ -179,12 +179,12 @@ Pattern for every `ends_with(path)` callsite in production code:
 ```rust
 #[test]
 fn test_bare_form_matches() {
-    assert!(is_ci_command("bin/ci"));
+    assert!(is_flow_command("bin/ci"));
 }
 
 #[test]
 fn test_absolute_path_matches() {
-    assert!(is_ci_command("/Users/me/project/bin/ci"));
+    assert!(is_flow_command("/Users/me/project/bin/ci"));
 }
 ```
 

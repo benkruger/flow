@@ -1,12 +1,20 @@
 //! Shared test helpers for FLOW integration tests.
 //!
-//! Provides path resolution, file reading, and phase/skill enumeration
-//! used across structural, contract, permission, and docs-sync tests.
+//! Provides path resolution, file reading, phase/skill enumeration
+//! (used by structural, contract, permission, docs-sync tests),
+//! and start_* test helpers (git repo setup, flow.json, gh stubs).
+
+// Not every consumer uses every helper. Each test file imports only what it needs.
+#![allow(dead_code)]
 
 use std::fs;
-use std::path::PathBuf;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 
-use serde_json::Value;
+use serde_json::{json, Value};
+
+// --- Path helpers ---
 
 /// Returns the repository root (CARGO_MANIFEST_DIR at compile time).
 pub fn repo_root() -> PathBuf {
@@ -43,9 +51,9 @@ pub fn agents_dir() -> PathBuf {
     repo_root().join("agents")
 }
 
+// --- File reading helpers ---
+
 /// Reads and returns the content of `skills/{name}/SKILL.md`.
-///
-/// Panics if the file does not exist or cannot be read.
 pub fn read_skill(name: &str) -> String {
     let path = skills_dir().join(name).join("SKILL.md");
     fs::read_to_string(&path)
@@ -74,6 +82,14 @@ pub fn plugin_version() -> String {
         .to_string()
 }
 
+/// Read current plugin version from .claude-plugin/plugin.json.
+/// Alias for plugin_version() — used by start_* tests.
+pub fn current_plugin_version() -> String {
+    plugin_version()
+}
+
+// --- Skill/phase enumeration ---
+
 /// Returns sorted list of all skill directory names under `skills/`.
 pub fn all_skill_names() -> Vec<String> {
     let mut names: Vec<String> = fs::read_dir(skills_dir())
@@ -98,9 +114,6 @@ pub fn phase_order() -> Vec<String> {
 }
 
 /// Returns `(phase_key, skill_name)` pairs for all phases.
-///
-/// The skill name is derived from the phase key (e.g. "flow-start" → "flow-start").
-/// Phase keys are in canonical order from flow-phases.json.
 pub fn phase_skills() -> Vec<(String, String)> {
     phase_order()
         .into_iter()
@@ -123,8 +136,6 @@ pub fn utility_skills() -> Vec<String> {
 }
 
 /// Reads and returns the content of an agent file at `agents/{name}`.
-///
-/// Panics if the file does not exist or cannot be read.
 pub fn read_agent(name: &str) -> String {
     let path = agents_dir().join(name);
     fs::read_to_string(&path)
@@ -149,10 +160,9 @@ pub fn load_settings() -> Value {
         .unwrap_or_else(|e| panic!("Failed to parse {}: {}", path.display(), e))
 }
 
+// --- Markdown file collection ---
+
 /// Collects all `.md` files recursively under a directory.
-///
-/// Returns `(relative_path, content)` pairs where relative_path is
-/// relative to the given base directory.
 pub fn collect_md_files(dir: &PathBuf) -> Vec<(String, String)> {
     let mut results = Vec::new();
     collect_md_files_recursive(dir, dir, &mut results);
@@ -185,8 +195,6 @@ fn collect_md_files_recursive(
 }
 
 /// Extracts all fenced bash blocks from markdown content.
-///
-/// Returns the content inside each ```bash ... ``` block.
 pub fn extract_bash_blocks(content: &str) -> Vec<String> {
     let mut blocks = Vec::new();
     let mut in_block = false;
@@ -202,7 +210,6 @@ pub fn extract_bash_blocks(content: &str) -> Vec<String> {
                 blocks.push(current_block.trim().to_string());
             }
         } else if in_block {
-            // Strip blockquote markers
             let stripped = if line.starts_with("> ") {
                 &line[2..]
             } else {
@@ -214,4 +221,78 @@ pub fn extract_bash_blocks(content: &str) -> Vec<String> {
     }
 
     blocks
+}
+
+// --- Start test helpers (from main branch) ---
+
+/// Create a bare+clone git repo pair for testing.
+pub fn create_git_repo_with_remote(parent: &Path) -> PathBuf {
+    let bare = parent.join("bare.git");
+    let repo = parent.join("repo");
+
+    Command::new("git")
+        .args(["init", "--bare", "-b", "main", &bare.to_string_lossy()])
+        .output()
+        .unwrap();
+
+    Command::new("git")
+        .args(["clone", &bare.to_string_lossy(), &repo.to_string_lossy()])
+        .output()
+        .unwrap();
+
+    for (key, val) in [
+        ("user.email", "test@test.com"),
+        ("user.name", "Test"),
+        ("commit.gpgsign", "false"),
+    ] {
+        Command::new("git")
+            .args(["config", key, val])
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+    }
+
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+
+    Command::new("git")
+        .args(["push", "-u", "origin", "main"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+
+    repo
+}
+
+/// Write .flow.json with version, framework, and optional skills config.
+pub fn write_flow_json(repo: &Path, version: &str, framework: &str, skills: Option<&Value>) {
+    let mut data = json!({
+        "flow_version": version,
+        "framework": framework,
+    });
+    if let Some(sk) = skills {
+        data["skills"] = sk.clone();
+    }
+    fs::write(repo.join(".flow.json"), data.to_string()).unwrap();
+}
+
+/// Create a custom gh stub script. Returns the stub directory.
+pub fn create_gh_stub(repo: &Path, script: &str) -> PathBuf {
+    let stub_dir = repo.join(".stub-bin");
+    fs::create_dir_all(&stub_dir).unwrap();
+    let gh_stub = stub_dir.join("gh");
+    fs::write(&gh_stub, script).unwrap();
+    fs::set_permissions(&gh_stub, fs::Permissions::from_mode(0o755)).unwrap();
+    stub_dir
+}
+
+/// Parse JSON from the last line of stdout. Uses last-line extraction to
+/// filter out child process output (git messages, etc.) that precedes the JSON.
+pub fn parse_output(output: &Output) -> Value {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let last_line = stdout.trim().lines().last().unwrap_or("");
+    serde_json::from_str(last_line).unwrap_or_else(|_| json!({"raw": stdout.trim()}))
 }
