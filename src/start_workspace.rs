@@ -28,8 +28,8 @@ use crate::utils::derive_feature;
     about = "Create worktree, PR, backfill state, release lock"
 )]
 pub struct Args {
-    /// Feature name (for lock release)
-    pub feature_name: String,
+    /// Human-readable feature description (for fallback prompt text)
+    pub description: String,
 
     /// Canonical branch name (from init-state)
     #[arg(long)]
@@ -66,7 +66,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
                 content.trim().to_string()
             }
             Err(e) => {
-                release_lock(&args.feature_name);
+                release_lock(&args.branch);
                 return Ok(json!({
                     "status": "error",
                     "step": "prompt_file",
@@ -75,7 +75,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
             }
         }
     } else {
-        args.feature_name.clone()
+        args.description.clone()
     };
 
     // Step 1: Create worktree
@@ -87,7 +87,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
                 branch,
                 &format!("[Phase 1] start-workspace — worktree failed: {}", e.message),
             );
-            release_lock(&args.feature_name);
+            release_lock(&args.branch);
             return Ok(json!({
                 "status": "error",
                 "step": e.step,
@@ -117,7 +117,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
                         e.message
                     ),
                 );
-                release_lock(&args.feature_name);
+                release_lock(&args.branch);
                 return Ok(json!({
                     "status": "error",
                     "step": e.step,
@@ -157,7 +157,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
                     branch,
                     &format!("[Phase 1] start-workspace — backfill failed: {}", e),
                 );
-                release_lock(&args.feature_name);
+                release_lock(&args.branch);
                 return Ok(json!({
                     "status": "error",
                     "step": "backfill",
@@ -173,7 +173,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
 
     // Step 4: Release lock (final action)
-    release_lock(&args.feature_name);
+    release_lock(&args.branch);
     let _ = append_log(
         &root,
         branch,

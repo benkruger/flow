@@ -100,9 +100,11 @@ fn test_happy_path() {
     write_flow_json(&repo, &current_plugin_version(), "python", None);
     let stub_dir = create_default_gh_stub(&repo);
     create_state_file(&repo, "test-branch");
-    create_lock_entry(&repo, "test-feature");
+    // Lock entry uses branch name (what start-init creates).
+    // CLI description arg is a different string (what the skill passes).
+    create_lock_entry(&repo, "test-branch");
 
-    let output = run_start_workspace(&repo, "test-feature", "test-branch", &stub_dir);
+    let output = run_start_workspace(&repo, "Test Feature Title", "test-branch", &stub_dir);
     assert_eq!(
         output.status.code(),
         Some(0),
@@ -118,10 +120,10 @@ fn test_happy_path() {
     // Worktree should exist
     assert!(repo.join(".worktrees").join("test-branch").is_dir());
 
-    // Lock should be released
+    // Lock should be released (keyed by branch, not by description)
     let queue_dir = repo.join(".flow-states").join("start-queue");
     assert!(
-        !queue_dir.join("test-feature").exists(),
+        !queue_dir.join("test-branch").exists(),
         "Lock must be released after start-workspace"
     );
 
@@ -132,6 +134,51 @@ fn test_happy_path() {
     assert!(state["pr_url"].is_string());
 }
 
+/// Regression test for lock leak when description differs from branch name.
+/// Before the fix, release_lock used args.feature_name (the description)
+/// instead of args.branch, so the lock file was never deleted.
+/// Fixed in PR #964.
+#[test]
+fn test_lock_released_with_mismatched_description() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "mismatch-branch");
+    // Lock acquired under branch name (by start-init)
+    create_lock_entry(&repo, "mismatch-branch");
+
+    // CLI passes human-readable title as description, branch name as --branch
+    let output = run_start_workspace(
+        &repo,
+        "A Completely Different Human Readable Title",
+        "mismatch-branch",
+        &stub_dir,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+
+    // Lock must be released under the BRANCH name, not the description
+    let queue_dir = repo.join(".flow-states").join("start-queue");
+    assert!(
+        !queue_dir.join("mismatch-branch").exists(),
+        "Lock must be released using branch name, not description"
+    );
+    // Verify no stale lock under the description name either
+    assert!(
+        !queue_dir
+            .join("A Completely Different Human Readable Title")
+            .exists(),
+        "No lock file should exist under the description name"
+    );
+}
+
 #[test]
 fn test_worktree_failure_releases_lock() {
     let dir = tempfile::tempdir().unwrap();
@@ -139,7 +186,8 @@ fn test_worktree_failure_releases_lock() {
     write_flow_json(&repo, &current_plugin_version(), "python", None);
     let stub_dir = create_default_gh_stub(&repo);
     create_state_file(&repo, "test-branch");
-    create_lock_entry(&repo, "fail-feature");
+    // Lock under branch name (what start-init creates)
+    create_lock_entry(&repo, "test-branch");
 
     // Create the worktree dir to make git worktree add fail
     let wt_path = repo.join(".worktrees").join("test-branch");
@@ -151,14 +199,14 @@ fn test_worktree_failure_releases_lock() {
         .output()
         .unwrap();
 
-    let output = run_start_workspace(&repo, "fail-feature", "test-branch", &stub_dir);
+    let output = run_start_workspace(&repo, "Fail Feature Title", "test-branch", &stub_dir);
     let data = parse_output(&output);
     assert_eq!(data["status"], "error");
 
     // Lock MUST still be released on error
     let queue_dir = repo.join(".flow-states").join("start-queue");
     assert!(
-        !queue_dir.join("fail-feature").exists(),
+        !queue_dir.join("test-branch").exists(),
         "Lock must be released even on worktree failure"
     );
 }
@@ -171,16 +219,17 @@ fn test_pr_creation_failure_releases_lock() {
     // gh stub that fails on pr create
     let stub_dir = create_gh_stub(&repo, "#!/bin/bash\nexit 1\n");
     create_state_file(&repo, "pr-fail-branch");
-    create_lock_entry(&repo, "pr-fail-feature");
+    // Lock under branch name (what start-init creates)
+    create_lock_entry(&repo, "pr-fail-branch");
 
-    let output = run_start_workspace(&repo, "pr-fail-feature", "pr-fail-branch", &stub_dir);
+    let output = run_start_workspace(&repo, "PR Fail Feature Title", "pr-fail-branch", &stub_dir);
     let data = parse_output(&output);
     assert_eq!(data["status"], "error");
 
     // Lock must be released
     let queue_dir = repo.join(".flow-states").join("start-queue");
     assert!(
-        !queue_dir.join("pr-fail-feature").exists(),
+        !queue_dir.join("pr-fail-branch").exists(),
         "Lock must be released even on PR creation failure"
     );
 }
@@ -192,14 +241,14 @@ fn test_venv_symlinked() {
     write_flow_json(&repo, &current_plugin_version(), "python", None);
     let stub_dir = create_default_gh_stub(&repo);
     create_state_file(&repo, "venv-branch");
-    create_lock_entry(&repo, "venv-feature");
+    create_lock_entry(&repo, "venv-branch");
 
     // Create .venv dir
     let venv_dir = repo.join(".venv");
     fs::create_dir_all(venv_dir.join("bin")).unwrap();
     fs::write(venv_dir.join("bin").join("python3"), "fake").unwrap();
 
-    let output = run_start_workspace(&repo, "venv-feature", "venv-branch", &stub_dir);
+    let output = run_start_workspace(&repo, "Venv Feature Title", "venv-branch", &stub_dir);
     assert_eq!(
         output.status.code(),
         Some(0),
@@ -218,9 +267,14 @@ fn test_state_backfill_preserves_existing_fields() {
     write_flow_json(&repo, &current_plugin_version(), "python", None);
     let stub_dir = create_default_gh_stub(&repo);
     create_state_file(&repo, "backfill-branch");
-    create_lock_entry(&repo, "backfill-feature");
+    create_lock_entry(&repo, "backfill-branch");
 
-    let output = run_start_workspace(&repo, "backfill-feature", "backfill-branch", &stub_dir);
+    let output = run_start_workspace(
+        &repo,
+        "Backfill Feature Title",
+        "backfill-branch",
+        &stub_dir,
+    );
     assert_eq!(
         output.status.code(),
         Some(0),

@@ -188,9 +188,14 @@ where
 }
 
 /// Release the start lock by removing the queue entry.
+///
+/// Returns `was_present: true` if the file existed before removal,
+/// `false` if it was already absent. Status is `"released"` in both
+/// cases (idempotent). `"error"` only if the file persists after unlink.
 pub fn release(feature: &str, queue_dir: &Path) -> Value {
     let lock_path = queue_dir.display().to_string();
     let entry = queue_dir.join(feature);
+    let was_present = entry.exists();
     let _ = fs::remove_file(&entry);
 
     if entry.exists() {
@@ -198,10 +203,11 @@ pub fn release(feature: &str, queue_dir: &Path) -> Value {
             "status": "error",
             "message": "Queue entry persists after unlink",
             "lock_path": lock_path,
+            "was_present": true,
         });
     }
 
-    json!({"status": "released", "lock_path": lock_path})
+    json!({"status": "released", "lock_path": lock_path, "was_present": was_present})
 }
 
 /// Check lock status without modifying.
@@ -625,6 +631,7 @@ mod tests {
         let result = release("my-feature", queue_dir);
         assert_eq!(result["status"], "released");
         assert_eq!(result["lock_path"], queue_dir.display().to_string());
+        assert_eq!(result["was_present"], true);
         assert!(!queue_dir.join("my-feature").exists());
     }
 
@@ -648,6 +655,7 @@ mod tests {
 
         let result = release("nonexistent", queue_dir);
         assert_eq!(result["status"], "released");
+        assert_eq!(result["was_present"], false);
     }
 
     // --- check tests ---
