@@ -763,7 +763,92 @@ fn flow_in_progress_label_checked_before_duplicate_issue() {
     );
 }
 
+// --- --branch override tests ---
+
+#[test]
+fn branch_override_skips_derivation() {
+    // When --branch is provided, init-state uses it directly without
+    // running issue extraction or branch_name derivation.
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "python", None);
+
+    let output = run_init_state(
+        dir.path(),
+        &["ignored-feature-name", "--branch", "my-custom-branch"],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let data = parse_stdout(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(
+        data["branch"], "my-custom-branch",
+        "Branch must match --branch override, not derived from feature name"
+    );
+    assert_eq!(
+        data["state_file"], ".flow-states/my-custom-branch.json",
+        "State file path must use the overridden branch name"
+    );
+
+    // State file must exist under the overridden name
+    let state = read_state_file(dir.path(), "my-custom-branch");
+    assert_eq!(state["branch"], "my-custom-branch");
+}
+
+#[test]
+fn branch_override_does_not_call_fetch_issue_info() {
+    // When --branch is provided AND the prompt contains #N references,
+    // init-state must NOT call fetch_issue_info (which would fail without
+    // a gh stub). This verifies the skip path works end-to-end.
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "python", None);
+
+    // Write a prompt with issue reference — without --branch this would
+    // try to call `gh issue view` and fail (no gh stub in PATH)
+    let prompt_path = dir.path().join("prompt-with-issue");
+    fs::write(&prompt_path, "fix bug in #999").unwrap();
+
+    let output = run_init_state(
+        dir.path(),
+        &[
+            "ignored",
+            "--branch",
+            "pre-derived-branch",
+            "--prompt-file",
+            prompt_path.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "With --branch, issue references in prompt must be ignored.\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let data = parse_stdout(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["branch"], "pre-derived-branch");
+}
+
 // --- Tombstone tests ---
+
+#[test]
+fn tombstone_no_start_setup_rs() {
+    // Tombstone: removed in PR #968. start_setup.rs was the monolithic
+    // Start phase module; its functions were relocated to utils.rs and
+    // start_workspace.rs. Must not be re-added.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir).join("src/start_setup.rs");
+    assert!(
+        !path.exists(),
+        "src/start_setup.rs was deleted in PR #968 — functions relocated to utils.rs \
+         and start_workspace.rs"
+    );
+}
 
 #[test]
 fn tombstone_no_python_init_state() {
