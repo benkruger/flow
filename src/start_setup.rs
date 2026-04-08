@@ -15,6 +15,7 @@ use crate::github::detect_repo;
 use crate::lock::mutate_state;
 use crate::phase_config::find_state_files;
 use crate::phase_config::{auto_skills, build_initial_phases, freeze_phases, read_flow_json};
+use crate::start_workspace::{create_worktree, initial_commit_push_pr};
 use crate::state::SkillConfig;
 use crate::utils::{
     branch_name, derive_feature, detect_tty, now, read_prompt_file, run_cmd, SetupError,
@@ -47,19 +48,6 @@ pub struct Args {
     pub branch: Option<String>,
 }
 
-/// Extract PR number from URL like https://github.com/org/repo/pull/123.
-pub fn extract_pr_number(pr_url: &str) -> u32 {
-    let parts: Vec<&str> = pr_url.trim_end_matches('/').split('/').collect();
-    for (i, part) in parts.iter().enumerate() {
-        if *part == "pull" && i + 1 < parts.len() {
-            if let Ok(n) = parts[i + 1].parse::<u32>() {
-                return n;
-            }
-        }
-    }
-    0
-}
-
 /// Pull latest main.
 pub fn git_pull(cwd: &Path) -> Result<(), SetupError> {
     run_cmd(
@@ -69,94 +57,6 @@ pub fn git_pull(cwd: &Path) -> Result<(), SetupError> {
         Some(Duration::from_secs(60)),
     )?;
     Ok(())
-}
-
-/// Create a git worktree at .worktrees/<branch>.
-pub fn create_worktree(project_root: &Path, branch: &str) -> Result<PathBuf, SetupError> {
-    let wt_path = project_root.join(".worktrees").join(branch);
-    run_cmd(
-        &[
-            "git",
-            "worktree",
-            "add",
-            &wt_path.to_string_lossy(),
-            "-b",
-            branch,
-        ],
-        project_root,
-        "worktree",
-        None,
-    )?;
-
-    // Symlink .venv if it exists
-    let venv_dir = project_root.join(".venv");
-    if venv_dir.is_dir() {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::symlink;
-            let _ = symlink(
-                std::path::Path::new("../..").join(".venv"),
-                wt_path.join(".venv"),
-            );
-        }
-    }
-
-    Ok(wt_path)
-}
-
-/// Make empty commit, push, and create PR. Returns (pr_url, pr_number).
-pub fn initial_commit_push_pr(
-    wt_path: &Path,
-    branch: &str,
-    feature_title: &str,
-    prompt: &str,
-) -> Result<(String, u32), SetupError> {
-    let commit_msg_path = wt_path.join(".flow-commit-msg");
-    std::fs::write(&commit_msg_path, format!("Start {} branch", branch)).map_err(|e| {
-        SetupError {
-            step: "commit".to_string(),
-            message: e.to_string(),
-        }
-    })?;
-
-    let result = run_cmd(
-        &["git", "commit", "--allow-empty", "-F", ".flow-commit-msg"],
-        wt_path,
-        "commit",
-        None,
-    );
-    // Always clean up the commit message file
-    let _ = std::fs::remove_file(&commit_msg_path);
-    result?;
-
-    run_cmd(
-        &["git", "push", "-u", "origin", branch],
-        wt_path,
-        "push",
-        Some(Duration::from_secs(60)),
-    )?;
-
-    let pr_body = format!("## What\n\n{}.", prompt);
-    let (stdout, _) = run_cmd(
-        &[
-            "gh",
-            "pr",
-            "create",
-            "--title",
-            feature_title,
-            "--body",
-            &pr_body,
-            "--base",
-            "main",
-        ],
-        wt_path,
-        "pr_create",
-        Some(Duration::from_secs(60)),
-    )?;
-
-    let pr_url = stdout.trim().to_string();
-    let pr_number = extract_pr_number(&pr_url);
-    Ok((pr_url, pr_number))
 }
 
 /// Create the FLOW state file (fallback when init-state didn't create one).
@@ -507,32 +407,6 @@ pub fn run(args: Args) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn extract_pr_number_standard_url() {
-        assert_eq!(
-            extract_pr_number("https://github.com/org/repo/pull/123"),
-            123
-        );
-    }
-
-    #[test]
-    fn extract_pr_number_trailing_slash() {
-        assert_eq!(
-            extract_pr_number("https://github.com/org/repo/pull/42/"),
-            42
-        );
-    }
-
-    #[test]
-    fn extract_pr_number_malformed() {
-        assert_eq!(extract_pr_number("not-a-url"), 0);
-    }
-
-    #[test]
-    fn extract_pr_number_non_numeric() {
-        assert_eq!(extract_pr_number("https://github.com/org/repo/pull/abc"), 0);
-    }
 
     #[test]
     fn run_cmd_echo_succeeds() {

@@ -12,6 +12,8 @@ use std::process;
 use clap::Parser;
 use serde_json::{json, Value};
 
+use std::time::Duration;
+
 use crate::commands::log::append_log;
 use crate::commands::start_lock::{queue_path, release};
 use crate::commands::start_step::update_step;
@@ -19,8 +21,7 @@ use crate::git::project_root;
 use crate::github::detect_repo;
 use crate::lock::mutate_state;
 use crate::output::json_error;
-use crate::start_setup::{create_worktree, initial_commit_push_pr};
-use crate::utils::derive_feature;
+use crate::utils::{derive_feature, run_cmd, SetupError};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -38,6 +39,103 @@ pub struct Args {
     /// Path to file containing start prompt
     #[arg(long = "prompt-file")]
     pub prompt_file: Option<String>,
+}
+
+/// Extract PR number from URL like https://github.com/org/repo/pull/123.
+pub(crate) fn extract_pr_number(pr_url: &str) -> u32 {
+    let parts: Vec<&str> = pr_url.trim_end_matches('/').split('/').collect();
+    parts.last().and_then(|s| s.parse().ok()).unwrap_or(0)
+}
+
+/// Create a git worktree for the feature branch.
+pub(crate) fn create_worktree(
+    project_root: &std::path::Path,
+    branch: &str,
+) -> Result<PathBuf, SetupError> {
+    let wt_path = project_root.join(".worktrees").join(branch);
+    run_cmd(
+        &[
+            "git",
+            "worktree",
+            "add",
+            &wt_path.to_string_lossy(),
+            "-b",
+            branch,
+        ],
+        project_root,
+        "worktree",
+        None,
+    )?;
+
+    // Symlink .venv if it exists
+    let venv_dir = project_root.join(".venv");
+    if venv_dir.is_dir() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            let _ = symlink(
+                std::path::Path::new("../..").join(".venv"),
+                wt_path.join(".venv"),
+            );
+        }
+    }
+
+    Ok(wt_path)
+}
+
+/// Make empty commit, push, and create PR. Returns (pr_url, pr_number).
+pub(crate) fn initial_commit_push_pr(
+    wt_path: &std::path::Path,
+    branch: &str,
+    feature_title: &str,
+    prompt: &str,
+) -> Result<(String, u32), SetupError> {
+    let commit_msg_path = wt_path.join(".flow-commit-msg");
+    std::fs::write(&commit_msg_path, format!("Start {} branch", branch)).map_err(|e| {
+        SetupError {
+            step: "commit".to_string(),
+            message: e.to_string(),
+        }
+    })?;
+
+    let result = run_cmd(
+        &["git", "commit", "--allow-empty", "-F", ".flow-commit-msg"],
+        wt_path,
+        "commit",
+        None,
+    );
+    // Always clean up the commit message file
+    let _ = std::fs::remove_file(&commit_msg_path);
+    result?;
+
+    run_cmd(
+        &["git", "push", "-u", "origin", branch],
+        wt_path,
+        "push",
+        Some(Duration::from_secs(60)),
+    )?;
+
+    let pr_body = format!("## What\n\n{}.", prompt);
+    let (stdout, _) = run_cmd(
+        &[
+            "gh",
+            "pr",
+            "create",
+            "--title",
+            feature_title,
+            "--body",
+            &pr_body,
+            "--base",
+            "main",
+        ],
+        wt_path,
+        "pr_create",
+        Some(Duration::from_secs(60)),
+    )?;
+
+    let pr_url = stdout.trim().to_string();
+    let pr_number = extract_pr_number(&pr_url);
+    Ok((pr_url, pr_number))
 }
 
 /// Testable entry point.
@@ -201,5 +299,36 @@ pub fn run(args: Args) {
             json_error(&e, &[]);
             process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_pr_number_standard_url() {
+        assert_eq!(
+            extract_pr_number("https://github.com/org/repo/pull/123"),
+            123
+        );
+    }
+
+    #[test]
+    fn extract_pr_number_trailing_slash() {
+        assert_eq!(
+            extract_pr_number("https://github.com/org/repo/pull/42/"),
+            42
+        );
+    }
+
+    #[test]
+    fn extract_pr_number_malformed() {
+        assert_eq!(extract_pr_number("not-a-url"), 0);
+    }
+
+    #[test]
+    fn extract_pr_number_non_numeric() {
+        assert_eq!(extract_pr_number("https://github.com/org/repo/pull/abc"), 0);
     }
 }
