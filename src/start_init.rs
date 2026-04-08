@@ -208,6 +208,8 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let mut cmd_args = vec![
         "init-state".to_string(),
         args.feature_name.clone(),
+        "--branch".to_string(),
+        branch.clone(),
         "--start-step".to_string(),
         "1".to_string(),
         "--start-steps-total".to_string(),

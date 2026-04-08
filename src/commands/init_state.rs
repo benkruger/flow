@@ -102,12 +102,18 @@ pub fn create_state(
 }
 
 /// CLI entry point for `flow-rs init-state`.
+///
+/// When `branch_override` is `Some`, skip issue extraction, label guard,
+/// duplicate check, and branch derivation — use the provided branch directly.
+/// This is the normal path when called from `start-init`, which already
+/// derived the canonical branch before acquiring the lock.
 pub fn run(
     feature_name: &str,
     prompt_file: Option<&str>,
     auto: bool,
     start_step: Option<i64>,
     start_steps_total: Option<i64>,
+    branch_override: Option<&str>,
 ) {
     let root = project_root();
 
@@ -150,68 +156,57 @@ pub fn run(
         feature_name.to_string()
     };
 
-    // Issue-aware branch naming: fetch title AND labels in one call (issue #887).
-    // When the prompt references issues, fetch the first issue's metadata so we
-    // can (a) derive the branch name from the title and (b) enforce the
-    // Flow In-Progress label guard before any state file is created.
-    let issue_numbers = extract_issue_numbers(&prompt);
-    let branch = if !issue_numbers.is_empty() {
-        match fetch_issue_info(issue_numbers[0]) {
-            Some(info) => {
-                // Cross-machine WIP guard (issue #887): block if the issue is
-                // already being worked on. The Flow In-Progress label is the
-                // authoritative cross-tenant signal (.claude/rules/concurrency-model.md).
-                // Only the first referenced issue is checked — matches the existing
-                // single-issue title-derivation semantics above.
-                //
-                // This guard fires BEFORE check_duplicate_issue below because the
-                // label is a broader (cross-machine) signal than the local-only
-                // duplicate-state-file check.
-                if info.labels.iter().any(|l| l == LABEL) {
-                    // Message pattern mirrors check_duplicate_issue below — "resume
-                    // the existing flow instead" without naming a specific command.
-                    // flow-continue was removed in PR #868, so the message must
-                    // describe the action without referencing a non-existent skill.
+    // When --branch is provided (from start-init), skip all derivation — the
+    // canonical branch was already derived pre-lock. When absent (direct CLI
+    // usage), derive as before for backwards compatibility.
+    let branch = if let Some(b) = branch_override {
+        b.to_string()
+    } else {
+        // Issue-aware branch naming: fetch title AND labels in one call (issue #887).
+        let issue_numbers = extract_issue_numbers(&prompt);
+        let derived = if !issue_numbers.is_empty() {
+            match fetch_issue_info(issue_numbers[0]) {
+                Some(info) => {
+                    if info.labels.iter().any(|l| l == LABEL) {
+                        json_error(
+                            &format!(
+                                "Issue #{} already carries the '{}' label — another flow is in progress. Resume the existing flow in its worktree, or reference a different issue.",
+                                issue_numbers[0], LABEL
+                            ),
+                            &[("step", json!("flow_in_progress_label"))],
+                        );
+                        std::process::exit(1);
+                    }
+                    branch_name(&info.title)
+                }
+                None => {
                     json_error(
-                        &format!(
-                            "Issue #{} already carries the '{}' label — another flow is in progress. Resume the existing flow in its worktree, or reference a different issue.",
-                            issue_numbers[0], LABEL
-                        ),
-                        &[("step", json!("flow_in_progress_label"))],
+                        &format!("Could not fetch title for issue #{}", issue_numbers[0]),
+                        &[("step", json!("fetch_issue_title"))],
                     );
                     std::process::exit(1);
                 }
-                branch_name(&info.title)
             }
-            None => {
+        } else {
+            branch_name(feature_name)
+        };
+
+        // Duplicate issue guard: check before creating state file
+        if !issue_numbers.is_empty() {
+            if let Some(dup) = check_duplicate_issue(&root, &issue_numbers, &derived) {
                 json_error(
-                    &format!("Could not fetch title for issue #{}", issue_numbers[0]),
-                    // Step value preserved from the pre-refactor `fetch_issue_title`
-                    // name because it is an external contract documented in
-                    // skills/flow-start/SKILL.md Step 3. Changing the step value
-                    // would force a SKILL.md update with no user benefit.
-                    &[("step", json!("fetch_issue_title"))],
+                    &format!(
+                        "Issue already has an active flow on branch '{}' (phase: {}, PR: {}). Resume the existing flow instead.",
+                        dup.branch, dup.phase, dup.pr_url
+                    ),
+                    &[("step", json!("duplicate_issue"))],
                 );
                 std::process::exit(1);
             }
         }
-    } else {
-        branch_name(feature_name)
-    };
 
-    // Duplicate issue guard: check before creating state file
-    if !issue_numbers.is_empty() {
-        if let Some(dup) = check_duplicate_issue(&root, &issue_numbers, &branch) {
-            json_error(
-                &format!(
-                    "Issue already has an active flow on branch '{}' (phase: {}, PR: {}). Resume the existing flow instead.",
-                    dup.branch, dup.phase, dup.pr_url
-                ),
-                &[("step", json!("duplicate_issue"))],
-            );
-            std::process::exit(1);
-        }
-    }
+        derived
+    };
 
     let commit_format_owned = flow_json
         .get("commit_format")

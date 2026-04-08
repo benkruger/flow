@@ -242,6 +242,9 @@ enum Commands {
         /// Total start steps for TUI progress
         #[arg(long = "start-steps-total")]
         start_steps_total: Option<i64>,
+        /// Canonical branch name (from start-init). Skips branch derivation.
+        #[arg(long)]
+        branch: Option<String>,
     },
 
     /// Append a timestamped log entry to .flow-states/<branch>.log
@@ -519,6 +522,7 @@ fn main() {
             auto,
             start_step,
             start_steps_total,
+            branch,
         }) => {
             if feature_name.is_empty() {
                 json_error(
@@ -533,6 +537,7 @@ fn main() {
                 auto,
                 start_step,
                 start_steps_total,
+                branch.as_deref(),
             );
         }
         Some(Commands::Log { branch, message }) => {
