@@ -58,12 +58,9 @@ pub struct TuiApp {
 impl TuiApp {
     /// Create a new TuiApp with the given root directory.
     pub fn new(root: PathBuf, version: String, repo: Option<String>) -> Self {
-        let repo_name = repo.as_ref().map(|r| {
-            r.rsplit('/')
-                .next()
-                .unwrap_or(r.as_str())
-                .to_string()
-        });
+        let repo_name = repo
+            .as_ref()
+            .map(|r| r.rsplit('/').next().unwrap_or(r.as_str()).to_string());
         Self {
             root,
             version,
@@ -238,19 +235,14 @@ impl TuiApp {
     }
 
     fn handle_orch_input(&mut self, key: KeyEvent) {
-        let item_count = self
-            .orch_data
-            .as_ref()
-            .map(|o| o.items.len())
-            .unwrap_or(0);
+        let item_count = self.orch_data.as_ref().map(|o| o.items.len()).unwrap_or(0);
 
         match key.code {
             KeyCode::Up if item_count > 0 => {
                 self.orch_selected = self.orch_selected.saturating_sub(1);
             }
             KeyCode::Down if item_count > 0 => {
-                self.orch_selected =
-                    (self.orch_selected + 1).min(item_count.saturating_sub(1));
+                self.orch_selected = (self.orch_selected + 1).min(item_count.saturating_sub(1));
             }
             KeyCode::Char('i') => self.open_orch_issue(),
             KeyCode::Char('r') => self.refresh_data(),
@@ -272,10 +264,7 @@ impl TuiApp {
             return;
         }
         let flow = &self.flows[self.selected];
-        let session_tty = flow
-            .state
-            .get("session_tty")
-            .and_then(|v| v.as_str());
+        let session_tty = flow.state.get("session_tty").and_then(|v| v.as_str());
         if let Some(tty) = session_tty {
             activate_iterm_tab(tty);
         }
@@ -370,10 +359,7 @@ impl TuiApp {
         let version_text = format!(" FLOW v{} ", self.version);
         let prefix_border: String = "\u{2500}".repeat(2.min(width));
         let mut spans = vec![
-            Span::styled(
-                prefix_border,
-                Style::default().add_modifier(Modifier::DIM),
-            ),
+            Span::styled(prefix_border, Style::default().add_modifier(Modifier::DIM)),
             Span::styled(
                 version_text.clone(),
                 Style::default()
@@ -391,12 +377,8 @@ impl TuiApp {
             ));
         }
         // Fill remaining with border
-        let used: usize = 2 + version_text.len()
-            + self
-                .repo_name
-                .as_ref()
-                .map(|n| n.len() + 1)
-                .unwrap_or(0);
+        let used: usize =
+            2 + version_text.len() + self.repo_name.as_ref().map(|n| n.len() + 1).unwrap_or(0);
         if used < width {
             let suffix_border: String = "\u{2500}".repeat(width - used);
             spans.push(Span::styled(
@@ -549,7 +531,10 @@ impl TuiApp {
                 } else {
                     let mut nums: Vec<i64> = flow.issue_numbers.clone();
                     nums.sort();
-                    nums.iter().map(|n| format!("#{}", n)).collect::<Vec<_>>().join(" ")
+                    nums.iter()
+                        .map(|n| format!("#{}", n))
+                        .collect::<Vec<_>>()
+                        .join(" ")
                 };
                 let elapsed_display = if flow.blocked {
                     "Blocked".to_string()
@@ -561,7 +546,13 @@ impl TuiApp {
                 } else {
                     flow.phase_elapsed.clone()
                 };
-                (phase_info, elapsed_display, phase_elapsed_display, issue_info, pr_info)
+                (
+                    phase_info,
+                    elapsed_display,
+                    phase_elapsed_display,
+                    issue_info,
+                    pr_info,
+                )
             })
             .collect();
 
@@ -630,11 +621,20 @@ impl TuiApp {
                 style = style.fg(Color::Red);
             }
 
-            let (ref phase_info, ref elapsed_display, ref phase_elapsed, ref issue_info, ref pr_info) =
-                col_data[i];
+            let (
+                ref phase_info,
+                ref elapsed_display,
+                ref phase_elapsed,
+                ref issue_info,
+                ref pr_info,
+            ) = col_data[i];
 
             let feature_display = if flow.feature.chars().count() > feature_width {
-                let truncated: String = flow.feature.chars().take(feature_width.saturating_sub(3)).collect();
+                let truncated: String = flow
+                    .feature
+                    .chars()
+                    .take(feature_width.saturating_sub(3))
+                    .collect();
                 format!("{}...", truncated)
             } else {
                 flow.feature.clone()
@@ -691,16 +691,25 @@ impl TuiApp {
             format!("  {}", flow.feature),
             Style::default().add_modifier(Modifier::BOLD),
         )));
-        frame.render_widget(feat_line, Rect::new(area.x, area.y + row as u16, area.width, 1));
+        frame.render_widget(
+            feat_line,
+            Rect::new(area.x, area.y + row as u16, area.width, 1),
+        );
         row += 1;
 
         // Branch and worktree
         let branch_line = Paragraph::new(Line::from(format!("  Branch: {}", flow.branch)));
-        frame.render_widget(branch_line, Rect::new(area.x, area.y + row as u16, area.width, 1));
+        frame.render_widget(
+            branch_line,
+            Rect::new(area.x, area.y + row as u16, area.width, 1),
+        );
         row += 1;
 
         let wt_line = Paragraph::new(Line::from(format!("  Worktree: {}", flow.worktree)));
-        frame.render_widget(wt_line, Rect::new(area.x, area.y + row as u16, area.width, 1));
+        frame.render_widget(
+            wt_line,
+            Rect::new(area.x, area.y + row as u16, area.width, 1),
+        );
         row += 2;
 
         // Phase timeline
@@ -729,9 +738,7 @@ impl TuiApp {
                         format!("  ({})", entry.annotation)
                     };
                     let style = if flow.blocked {
-                        Style::default()
-                            .fg(Color::Red)
-                            .add_modifier(Modifier::BOLD)
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
                     } else {
                         Style::default()
                             .fg(Color::Yellow)
@@ -739,7 +746,11 @@ impl TuiApp {
                     };
                     ("[>]", format!("{}{}", time_part, ann_part), style)
                 }
-                _ => ("[ ]", String::new(), Style::default().add_modifier(Modifier::DIM)),
+                _ => (
+                    "[ ]",
+                    String::new(),
+                    Style::default().add_modifier(Modifier::DIM),
+                ),
             };
 
             let line_text = format!("  {} {}{}", marker, entry.name, suffix);
@@ -765,14 +776,9 @@ impl TuiApp {
                 if row >= max_y.saturating_sub(2) {
                     break;
                 }
-                let line = Paragraph::new(Line::from(format!(
-                    "    {} {}",
-                    issue.ref_str, issue.title
-                )));
-                frame.render_widget(
-                    line,
-                    Rect::new(area.x, area.y + row as u16, area.width, 1),
-                );
+                let line =
+                    Paragraph::new(Line::from(format!("    {} {}", issue.ref_str, issue.title)));
+                frame.render_widget(line, Rect::new(area.x, area.y + row as u16, area.width, 1));
                 row += 1;
             }
         }
@@ -797,8 +803,7 @@ impl TuiApp {
         if self.orch_data.is_none() {
             let msg = Paragraph::new(Line::from("  No orchestration running."));
             frame.render_widget(msg, Rect::new(area.x, area.y + 5, area.width, 1));
-            let footer_text =
-                " [\u{2190}\u{2192}] Tab  [r] Refresh  [q] Quit";
+            let footer_text = " [\u{2190}\u{2192}] Tab  [r] Refresh  [q] Quit";
             let footer = Paragraph::new(Line::from(Span::styled(
                 footer_text,
                 Style::default().add_modifier(Modifier::DIM),
@@ -847,7 +852,11 @@ impl TuiApp {
                 format!("  {}", item.elapsed)
             };
             let pr_str = if let Some(ref pr_url) = item.pr_url {
-                let num = pr_url.trim_end_matches('/').rsplit('/').next().unwrap_or("");
+                let num = pr_url
+                    .trim_end_matches('/')
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or("");
                 format!("  PR {}", num)
             } else {
                 String::new()
@@ -859,7 +868,11 @@ impl TuiApp {
                 .unwrap_or_default();
 
             let title = if item.title.chars().count() > orch_title_width {
-                let truncated: String = item.title.chars().take(orch_title_width.saturating_sub(3)).collect();
+                let truncated: String = item
+                    .title
+                    .chars()
+                    .take(orch_title_width.saturating_sub(3))
+                    .collect();
                 format!("{}...", truncated)
             } else {
                 format!("{:width$}", item.title, width = orch_title_width)
@@ -929,7 +942,10 @@ impl TuiApp {
             header_text,
             Style::default().add_modifier(Modifier::BOLD),
         )));
-        frame.render_widget(header, Rect::new(area.x + 2, area.y, area.width.saturating_sub(2), 1));
+        frame.render_widget(
+            header,
+            Rect::new(area.x + 2, area.y, area.width.saturating_sub(2), 1),
+        );
 
         // Read log file
         let log_path = self
@@ -951,10 +967,8 @@ impl TuiApp {
                 if row >= max_y.saturating_sub(2) {
                     break;
                 }
-                let line = Paragraph::new(Line::from(format!(
-                    "    {}  {}",
-                    entry.time, entry.message
-                )));
+                let line =
+                    Paragraph::new(Line::from(format!("    {}  {}", entry.time, entry.message)));
                 frame.render_widget(line, Rect::new(area.x, area.y + row as u16, area.width, 1));
             }
         }
@@ -991,7 +1005,10 @@ impl TuiApp {
             header_text,
             Style::default().add_modifier(Modifier::BOLD),
         )));
-        frame.render_widget(header, Rect::new(area.x + 2, area.y, area.width.saturating_sub(2), 1));
+        frame.render_widget(
+            header,
+            Rect::new(area.x + 2, area.y, area.width.saturating_sub(2), 1),
+        );
 
         if issues.is_empty() {
             let msg = Paragraph::new(Line::from("  No issues filed."));
@@ -1064,17 +1081,17 @@ impl TuiApp {
             header_text,
             Style::default().add_modifier(Modifier::BOLD),
         )));
-        frame.render_widget(header, Rect::new(area.x + 2, area.y, area.width.saturating_sub(2), 1));
+        frame.render_widget(
+            header,
+            Rect::new(area.x + 2, area.y, area.width.saturating_sub(2), 1),
+        );
 
         // Read plan file
-        let plan_content = flow
-            .plan_path
-            .as_ref()
-            .and_then(|p| {
-                std::fs::read_to_string(p)
-                    .ok()
-                    .or_else(|| std::fs::read_to_string(self.root.join(p)).ok())
-            });
+        let plan_content = flow.plan_path.as_ref().and_then(|p| {
+            std::fs::read_to_string(p)
+                .ok()
+                .or_else(|| std::fs::read_to_string(self.root.join(p)).ok())
+        });
 
         if let Some(content) = plan_content {
             for (i, line) in content.lines().enumerate() {
@@ -1159,8 +1176,7 @@ end tell"#,
         .output()
     {
         Ok(output) => {
-            output.status.success()
-                && String::from_utf8_lossy(&output.stdout).trim() == "activated"
+            output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "activated"
         }
         Err(_) => false,
     }
@@ -1171,7 +1187,11 @@ fn find_bin_flow() -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         // exe is in target/debug/ or target/release/
         // Go up 3 levels: binary → {debug|release} → target → root
-        if let Some(root) = exe.parent().and_then(|p| p.parent()).and_then(|p| p.parent()) {
+        if let Some(root) = exe
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+        {
             let bin_flow = root.join("bin").join("flow");
             if bin_flow.exists() {
                 return bin_flow;

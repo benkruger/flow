@@ -7,7 +7,9 @@
 use std::fs;
 use std::path::Path;
 
-use flow_rs::bump_version::{bump_json, bump_skill, read_current_version, run_impl, validate_version, Args};
+use flow_rs::bump_version::{
+    bump_json, bump_skill, read_current_version, run_impl, validate_version, Args,
+};
 
 // --- validate_version ---
 
@@ -167,16 +169,20 @@ fn test_cli_successful_bump() {
     for entry in fs::read_dir(dir.path().join("skills")).unwrap() {
         let skill_file = entry.unwrap().path().join("SKILL.md");
         let text = fs::read_to_string(&skill_file).unwrap();
-        assert!(text.contains("FLOW v2.0.0"), "Missing v2.0.0 in {:?}", skill_file);
-        assert!(!text.contains("FLOW v1.0.0"), "Stale v1.0.0 in {:?}", skill_file);
+        assert!(
+            text.contains("FLOW v2.0.0"),
+            "Missing v2.0.0 in {:?}",
+            skill_file
+        );
+        assert!(
+            !text.contains("FLOW v1.0.0"),
+            "Stale v1.0.0 in {:?}",
+            skill_file
+        );
     }
 
     // Check release skill
-    let text = fs::read_to_string(
-        dir.path()
-            .join(".claude/skills/flow-release/SKILL.md"),
-    )
-    .unwrap();
+    let text = fs::read_to_string(dir.path().join(".claude/skills/flow-release/SKILL.md")).unwrap();
     assert!(text.contains("FLOW v2.0.0"));
     assert!(!text.contains("FLOW v1.0.0"));
 }

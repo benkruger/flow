@@ -10,7 +10,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use common::{create_gh_stub, create_git_repo_with_remote, current_plugin_version, parse_output, write_flow_json};
+use common::{
+    create_gh_stub, create_git_repo_with_remote, current_plugin_version, parse_output,
+    write_flow_json,
+};
 
 // --- Test helpers ---
 
@@ -78,10 +81,11 @@ fn test_ready_path_happy() {
 
     // State file should be created by init-state subprocess
     let branch = data["branch"].as_str().unwrap();
-    let state_path = repo
-        .join(".flow-states")
-        .join(format!("{}.json", branch));
-    assert!(state_path.exists(), "State file must be created by init-state");
+    let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
+    assert!(
+        state_path.exists(),
+        "State file must be created by init-state"
+    );
 }
 
 #[test]
@@ -121,10 +125,7 @@ fn test_prime_check_failed() {
     let data = parse_output(&output);
     assert_eq!(data["status"], "error");
     assert!(
-        data["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("mismatch"),
+        data["message"].as_str().unwrap_or("").contains("mismatch"),
         "Error message should mention version mismatch"
     );
 
@@ -268,10 +269,7 @@ fn test_no_flow_json_returns_error() {
     let data = parse_output(&output);
     assert_eq!(data["status"], "error");
     assert!(
-        data["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("prime"),
+        data["message"].as_str().unwrap_or("").contains("prime"),
         "Error should suggest running flow-prime"
     );
 

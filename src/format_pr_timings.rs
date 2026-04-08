@@ -45,10 +45,7 @@ pub fn format_timings_table(state: &Value, started_only: bool) -> String {
             continue;
         }
 
-        let name = names
-            .get(key)
-            .map(|s| s.as_str())
-            .unwrap_or(key);
+        let name = names.get(key).map(|s| s.as_str()).unwrap_or(key);
         total_seconds += seconds;
         lines.push(format!("| {} | {} |", name, format_time(seconds)));
     }
@@ -91,8 +88,8 @@ pub fn run_impl(args: &Args) -> Result<String, String> {
     let content = std::fs::read_to_string(state_path)
         .map_err(|e| format!("Failed to read state file: {}", e))?;
 
-    let state: Value = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse state file: {}", e))?;
+    let state: Value =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse state file: {}", e))?;
 
     let table = format_timings_table(&state, args.started_only);
 
@@ -100,8 +97,7 @@ pub fn run_impl(args: &Args) -> Result<String, String> {
     if let Some(parent) = output_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    std::fs::write(output_path, &table)
-        .map_err(|e| format!("Failed to write output: {}", e))?;
+    std::fs::write(output_path, &table).map_err(|e| format!("Failed to write output: {}", e))?;
 
     Ok(table)
 }
@@ -109,10 +105,7 @@ pub fn run_impl(args: &Args) -> Result<String, String> {
 pub fn run(args: Args) {
     match run_impl(&args) {
         Ok(table) => {
-            json_ok(&[
-                ("output", json!(args.output)),
-                ("table", json!(table)),
-            ]);
+            json_ok(&[("output", json!(args.output)), ("table", json!(table))]);
         }
         Err(msg) => {
             json_error(&msg, &[]);
@@ -192,7 +185,11 @@ mod tests {
         state["phases"]["flow-complete"]["cumulative_seconds"] = json!(20);
 
         let result = format_timings_table(&state, false);
-        assert!(result.contains("| Phase | Duration |"), "Result:\n{}", result);
+        assert!(
+            result.contains("| Phase | Duration |"),
+            "Result:\n{}",
+            result
+        );
         assert!(result.contains("| Start |"), "Result:\n{}", result);
         assert!(result.contains("| Plan |"), "Result:\n{}", result);
         assert!(result.contains("| Code Review |"), "Result:\n{}", result);
@@ -297,7 +294,11 @@ mod tests {
     fn test_no_phases_key() {
         let state = json!({"branch": "test"});
         let result = format_timings_table(&state, false);
-        assert!(result.contains("| Phase | Duration |"), "Result:\n{}", result);
+        assert!(
+            result.contains("| Phase | Duration |"),
+            "Result:\n{}",
+            result
+        );
         assert!(result.contains("| **Total** |"), "Result:\n{}", result);
     }
 
@@ -305,7 +306,11 @@ mod tests {
     fn test_cli_missing_state_file() {
         let dir = tempfile::tempdir().unwrap();
         let args = Args {
-            state_file: dir.path().join("missing.json").to_string_lossy().to_string(),
+            state_file: dir
+                .path()
+                .join("missing.json")
+                .to_string_lossy()
+                .to_string(),
             output: dir.path().join("out.md").to_string_lossy().to_string(),
             started_only: false,
         };

@@ -258,10 +258,7 @@ mod integration {
 
     /// Run `flow-rs plan-extract` in the given directory.
     /// Returns (exit_code, parsed_json).
-    fn run_plan_extract(
-        dir: &std::path::Path,
-        extra_args: &[&str],
-    ) -> (i32, serde_json::Value) {
+    fn run_plan_extract(dir: &std::path::Path, extra_args: &[&str]) -> (i32, serde_json::Value) {
         run_plan_extract_inner(dir, extra_args, None)
     }
 
@@ -344,10 +341,7 @@ mod integration {
         assert_eq!(code, 1);
         assert_eq!(json["status"], "error");
         assert!(
-            json["message"]
-                .as_str()
-                .unwrap()
-                .contains("Invalid JSON"),
+            json["message"].as_str().unwrap().contains("Invalid JSON"),
             "Expected 'Invalid JSON' error, got: {}",
             json["message"]
         );
@@ -391,8 +385,14 @@ mod integration {
         assert_eq!(code, 0);
         assert_eq!(json["status"], "ok");
         assert_eq!(json["path"], "standard");
-        assert!(json["issue_body"].is_null(), "issue_body should be null for no issue refs");
-        assert!(json["issue_number"].is_null(), "issue_number should be null for no issue refs");
+        assert!(
+            json["issue_body"].is_null(),
+            "issue_body should be null for no issue refs"
+        );
+        assert!(
+            json["issue_number"].is_null(),
+            "issue_number should be null for no issue refs"
+        );
         assert_eq!(json["dag_mode"], "auto");
     }
 
@@ -445,8 +445,14 @@ mod integration {
             "plan_content should match the file on disk"
         );
         assert_eq!(json["plan_file"], plan_rel);
-        assert!(json["formatted_time"].is_string(), "formatted_time must be present");
-        assert!(json["continue_action"].is_string(), "continue_action must be present");
+        assert!(
+            json["formatted_time"].is_string(),
+            "formatted_time must be present"
+        );
+        assert!(
+            json["continue_action"].is_string(),
+            "continue_action must be present"
+        );
 
         // Verify state file was updated: flow-plan should be complete
         let updated_state: serde_json::Value = serde_json::from_str(
@@ -487,10 +493,7 @@ exit 1
         assert_eq!(json["status"], "ok");
         assert_eq!(json["path"], "standard");
         assert_eq!(json["issue_number"], 42);
-        assert_eq!(
-            json["issue_body"].as_str().unwrap(),
-            "Something is broken."
-        );
+        assert_eq!(json["issue_body"].as_str().unwrap(), "Something is broken.");
     }
 
     #[test]

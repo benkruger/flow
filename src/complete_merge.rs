@@ -206,10 +206,7 @@ pub fn complete_merge_inner(
         "up_to_date" => {
             // Proceed to squash merge
             let pr_str = pr_number.to_string();
-            match runner(
-                &["gh", "pr", "merge", &pr_str, "--squash"],
-                NETWORK_TIMEOUT,
-            ) {
+            match runner(&["gh", "pr", "merge", &pr_str, "--squash"], NETWORK_TIMEOUT) {
                 Err(e) => error_result(&e, pr_number),
                 Ok((code, _, stderr)) => {
                     if code == 0 {
@@ -306,17 +303,10 @@ mod tests {
         let state_path = dir.path().join("state.json");
         write_state(&state_path);
 
-        let runner = mock_runner(vec![
-            ok(r#"{"status": "up_to_date"}"#),
-            ok("merged"),
-        ]);
+        let runner = mock_runner(vec![ok(r#"{"status": "up_to_date"}"#), ok("merged")]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "merged");
         assert_eq!(result["pr_number"], 42);
@@ -333,12 +323,8 @@ mod tests {
             ok_empty(), // git push
         ]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "ci_rerun");
         assert_eq!(result["pushed"], true);
@@ -356,12 +342,8 @@ mod tests {
             "",
         )]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "conflict");
         let files: Vec<String> = result["conflict_files"]
@@ -385,12 +367,8 @@ mod tests {
             "",
         )]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "max_retries");
         assert_eq!(result["pr_number"], 42);
@@ -407,12 +385,8 @@ mod tests {
             fail_with_stdout_stderr("", "base branch policy prohibits the merge"),
         ]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "ci_pending");
         assert_eq!(result["pr_number"], 42);
@@ -429,12 +403,8 @@ mod tests {
             fail_with_stdout_stderr("", "unknown merge error"),
         ]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "error");
         assert!(result["message"]
@@ -454,12 +424,8 @@ mod tests {
             "",
         )]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "error");
         assert!(result["message"]
@@ -474,17 +440,9 @@ mod tests {
         let state_path = dir.path().join("state.json");
         write_state(&state_path);
 
-        let runner = mock_runner(vec![
-            ok(r#"{"status": "up_to_date"}"#),
-            ok("merged"),
-        ]);
+        let runner = mock_runner(vec![ok(r#"{"status": "up_to_date"}"#), ok("merged")]);
 
-        complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         let state_content = fs::read_to_string(&state_path).unwrap();
         let state: Value = serde_json::from_str(&state_content).unwrap();
@@ -502,12 +460,8 @@ mod tests {
             fail_with_stdout_stderr("", "remote rejected"),
         ]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "error");
         assert!(result["message"]
@@ -525,12 +479,8 @@ mod tests {
 
         let runner = mock_runner(vec![fail_with_stdout_stderr("not json at all", "")]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "error");
     }
@@ -543,12 +493,8 @@ mod tests {
 
         let runner = mock_runner(vec![err("Timed out after 60s")]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "error");
     }
@@ -561,12 +507,8 @@ mod tests {
 
         let runner = mock_runner(vec![ok(r#"{"status": "unexpected_value"}"#)]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "error");
         assert!(result["message"]
@@ -581,17 +523,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let state_path = dir.path().join("nonexistent.json");
 
-        let runner = mock_runner(vec![
-            ok(r#"{"status": "up_to_date"}"#),
-            ok("merged"),
-        ]);
+        let runner = mock_runner(vec![ok(r#"{"status": "up_to_date"}"#), ok("merged")]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         // Still succeeds — step counter is best-effort
         assert_eq!(result["status"], "merged");
@@ -604,17 +539,10 @@ mod tests {
         // Write an array instead of an object — mutate_state closure must not panic
         fs::write(&state_path, "[1, 2, 3]").unwrap();
 
-        let runner = mock_runner(vec![
-            ok(r#"{"status": "up_to_date"}"#),
-            ok("merged"),
-        ]);
+        let runner = mock_runner(vec![ok(r#"{"status": "up_to_date"}"#), ok("merged")]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         // Should not panic; returns merged
         assert_eq!(result["status"], "merged");
@@ -632,12 +560,8 @@ mod tests {
             "",
         )]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "conflict");
         assert_eq!(result["conflict_files"], json!([]));
@@ -651,18 +575,11 @@ mod tests {
 
         let runner = mock_runner(vec![err("spawn failed: no such binary")]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "error");
-        assert!(result["message"]
-            .as_str()
-            .unwrap()
-            .contains("spawn failed"));
+        assert!(result["message"].as_str().unwrap().contains("spawn failed"));
     }
 
     #[test]
@@ -676,12 +593,8 @@ mod tests {
             err("Timed out after 60s"),
         ]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "error");
     }
@@ -697,12 +610,8 @@ mod tests {
             err("Timed out after 60s"),
         ]);
 
-        let result = complete_merge_inner(
-            42,
-            state_path.to_str().unwrap(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result =
+            complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "error");
     }

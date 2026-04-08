@@ -368,8 +368,14 @@ fn test_stop_continue_context_included_in_block_reason() {
     let parsed: Value = serde_json::from_str(stdout).unwrap();
     assert_eq!(parsed["decision"], "block");
     let reason = parsed["reason"].as_str().unwrap();
-    assert!(reason.contains("Next steps:"), "reason must include 'Next steps:' header");
-    assert!(reason.contains("learn_step=5"), "reason must embed the context body");
+    assert!(
+        reason.contains("Next steps:"),
+        "reason must include 'Next steps:' header"
+    );
+    assert!(
+        reason.contains("learn_step=5"),
+        "reason must embed the context body"
+    );
 }
 
 #[test]
@@ -394,7 +400,10 @@ fn test_stop_continue_no_context_uses_generic_reason() {
         "reason must use generic wording when context is absent, got: {}",
         reason
     );
-    assert!(!reason.contains("Next steps:"), "no context → no 'Next steps:' header");
+    assert!(
+        !reason.contains("Next steps:"),
+        "no context → no 'Next steps:' header"
+    );
 }
 
 #[test]
@@ -506,7 +515,10 @@ fn test_stop_continue_stale_session_clears_and_captures_new() {
     let output = run_hook("stop-continue", dir.path(), branch, stdin);
 
     assert_eq!(output.status.code().unwrap(), 0);
-    assert!(output.stdout.is_empty(), "session mismatch must not emit block output");
+    assert!(
+        output.stdout.is_empty(),
+        "session mismatch must not emit block output"
+    );
 
     let on_disk = read_state(dir.path(), branch);
     assert_eq!(on_disk["_continue_pending"], "", "pending must be cleared");
@@ -618,7 +630,10 @@ fn test_stop_continue_session_mismatch_preserves_stop_instructed() {
     let output = run_hook("stop-continue", dir.path(), branch, stdin);
 
     assert_eq!(output.status.code().unwrap(), 0);
-    assert!(output.stdout.is_empty(), "session mismatch must not emit block output");
+    assert!(
+        output.stdout.is_empty(),
+        "session mismatch must not emit block output"
+    );
 
     let on_disk = read_state(dir.path(), branch);
     assert_eq!(
@@ -713,8 +728,5 @@ fn test_stop_continue_no_state_no_simulate_exits_cleanly() {
     let output = run_hook_no_simulate("stop-continue", dir.path(), b"{}");
 
     assert_eq!(output.status.code().unwrap(), 0);
-    assert!(
-        output.stdout.is_empty(),
-        "no state files → no block output"
-    );
+    assert!(output.stdout.is_empty(), "no state files → no block output");
 }

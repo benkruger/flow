@@ -134,7 +134,7 @@ pub fn derive_permissions(project_root: &Path, framework: &str, fw_dir: &Path) -
             .filter_map(|e| {
                 let name = e.file_name().to_string_lossy().into_owned();
                 // Python Path.glob("*.ext") skips dot-prefixed entries
-                if !name.starts_with('.')  {
+                if !name.starts_with('.') {
                     // strip_suffix is UTF-8 safe — no byte-index arithmetic
                     name.strip_suffix(suffix).map(|stem| stem.to_string())
                 } else {
@@ -238,10 +238,7 @@ pub fn merge_settings(
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
 
-    let mut allow_array: Vec<Value> = settings["permissions"]["allow"]
-        .as_array()
-        .unwrap()
-        .clone();
+    let mut allow_array: Vec<Value> = settings["permissions"]["allow"].as_array().unwrap().clone();
 
     for entry in allow_list(framework, fw_dir) {
         if !existing_allow.contains(&entry) && !is_subsumed(&entry, &existing_allow) {
@@ -265,10 +262,7 @@ pub fn merge_settings(
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
 
-    let mut deny_array: Vec<Value> = settings["permissions"]["deny"]
-        .as_array()
-        .unwrap()
-        .clone();
+    let mut deny_array: Vec<Value> = settings["permissions"]["deny"].as_array().unwrap().clone();
 
     for entry in FLOW_DENY {
         let e = entry.to_string();
@@ -544,8 +538,8 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
 
     let config_hash = compute_config_hash(&framework, &fw_dir)
         .map_err(|e| json!({"status": "error", "message": e}))?;
-    let setup_hash = compute_setup_hash(&p_root)
-        .map_err(|e| json!({"status": "error", "message": e}))?;
+    let setup_hash =
+        compute_setup_hash(&p_root).map_err(|e| json!({"status": "error", "message": e}))?;
 
     merge_settings(&project_root, &framework, &fw_dir)
         .map_err(|e| json!({"status": "error", "message": e}))?;
@@ -564,8 +558,7 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
 
     let exclude_updated = update_git_exclude(&project_root);
 
-    install_pre_commit_hook(&project_root)
-        .map_err(|e| json!({"status": "error", "message": e}))?;
+    install_pre_commit_hook(&project_root).map_err(|e| json!({"status": "error", "message": e}))?;
 
     let mut launcher_installed = false;
     if args.plugin_root.is_some() {
@@ -597,11 +590,7 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
     };
 
     // Call create-dependencies in-process
-    let deps_result = create_dependencies::create(
-        &args.project_root,
-        &framework,
-        Some(&fw_dir),
-    );
+    let deps_result = create_dependencies::create(&args.project_root, &framework, Some(&fw_dir));
     let deps_status = deps_result
         .get("status")
         .and_then(|s| s.as_str())

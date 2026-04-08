@@ -26,7 +26,10 @@ use crate::start_setup::run_cmd;
 const LOCAL_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Parser, Debug)]
-#[command(name = "auto-close-parent", about = "Auto-close parent issue and milestone")]
+#[command(
+    name = "auto-close-parent",
+    about = "Auto-close parent issue and milestone"
+)]
 pub struct Args {
     /// Repository (owner/name)
     #[arg(long)]
@@ -134,10 +137,7 @@ pub fn check_parent_closed(
         None => {
             // Standalone call — fetch the parent number
             let url = format!("repos/{}/issues/{}", repo, issue_number);
-            let stdout = match run_api(
-                &["gh", "api", &url, "--jq", ".parent_issue.number"],
-                cwd,
-            ) {
+            let stdout = match run_api(&["gh", "api", &url, "--jq", ".parent_issue.number"], cwd) {
                 Ok(s) => s,
                 Err(_) => return false,
             };
@@ -165,14 +165,7 @@ pub fn check_parent_closed(
 
     // All closed — close the parent
     run_api(
-        &[
-            "gh",
-            "issue",
-            "close",
-            &parent.to_string(),
-            "--repo",
-            repo,
-        ],
+        &["gh", "issue", "close", &parent.to_string(), "--repo", repo],
         cwd,
     )
     .is_ok()
@@ -194,10 +187,7 @@ pub fn check_milestone_closed(
         None => {
             // Standalone call — fetch the milestone number
             let url = format!("repos/{}/issues/{}", repo, issue_number);
-            let stdout = match run_api(
-                &["gh", "api", &url, "--jq", ".milestone.number"],
-                cwd,
-            ) {
+            let stdout = match run_api(&["gh", "api", &url, "--jq", ".milestone.number"], cwd) {
                 Ok(s) => s,
                 Err(_) => return false,
             };

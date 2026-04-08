@@ -89,7 +89,9 @@ fn replaces_content_when_switching_framework() {
     fs::write(&claude_md, "# My Project\n").unwrap();
 
     run_prime(&project, "rails");
-    assert!(fs::read_to_string(&claude_md).unwrap().contains("Rails Conventions"));
+    assert!(fs::read_to_string(&claude_md)
+        .unwrap()
+        .contains("Rails Conventions"));
 
     run_prime(&project, "python");
     let content = fs::read_to_string(&claude_md).unwrap();
@@ -122,7 +124,11 @@ fn preserves_content_before_and_after_markers() {
     let tmp = tempfile::tempdir().unwrap();
     let project = make_project(tmp.path());
     let claude_md = project.join("CLAUDE.md");
-    fs::write(&claude_md, "# My Project\n\nBefore.\n\nAfter marker stuff.\n").unwrap();
+    fs::write(
+        &claude_md,
+        "# My Project\n\nBefore.\n\nAfter marker stuff.\n",
+    )
+    .unwrap();
 
     run_prime(&project, "rails");
     let content = fs::read_to_string(&claude_md).unwrap();

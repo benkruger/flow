@@ -35,11 +35,7 @@ pub fn add_artifact_to_body(body: &str, label: &str, value: &str) -> String {
     let body = ensure_artifacts_section(body);
     let new_line = build_artifact_line(label, value);
 
-    let pattern = Regex::new(&format!(
-        r"(?m)^- \*\*{}\*\*:.*$",
-        regex::escape(label)
-    ))
-    .unwrap();
+    let pattern = Regex::new(&format!(r"(?m)^- \*\*{}\*\*:.*$", regex::escape(label))).unwrap();
     if pattern.is_match(&body) {
         return pattern.replace(&body, new_line.as_str()).to_string();
     }
@@ -57,10 +53,7 @@ pub fn add_artifact_to_body(body: &str, label: &str, value: &str) -> String {
 
 /// Build a plain markdown section with heading and end sentinel.
 pub fn build_plain_section(heading: &str, content: &str) -> String {
-    format!(
-        "## {}\n\n{}\n\n<!-- end:{} -->",
-        heading, content, heading
-    )
+    format!("## {}\n\n{}\n\n<!-- end:{} -->", heading, content, heading)
 }
 
 /// Append or replace a plain (non-collapsible) section in the body.
@@ -346,8 +339,7 @@ mod tests {
 
     #[test]
     fn add_artifact_to_body_replaces_existing_same_label() {
-        let body =
-            "## What\n\nFeature Title.\n\n## Artifacts\n\n- **Plan file**: `/old/path.md`";
+        let body = "## What\n\nFeature Title.\n\n## Artifacts\n\n- **Plan file**: `/old/path.md`";
         let result = add_artifact_to_body(body, "Plan file", "/new/path.md");
         assert!(result.contains("- **Plan file**: `/new/path.md`"));
         assert!(!result.contains("/old/path.md"));
@@ -423,8 +415,7 @@ mod tests {
 
     #[test]
     fn fence_for_content_mixed_lengths() {
-        let result =
-            fence_for_content("```python\ncode\n```\n\n````xml\ndata\n````");
+        let result = fence_for_content("```python\ncode\n```\n\n````xml\ndata\n````");
         assert_eq!(result, "`````");
     }
 
@@ -436,7 +427,11 @@ mod tests {
         let result = build_details_block("DAG Analysis", "dag.md", content, "text");
         let lines: Vec<&str> = result.split('\n').collect();
         let fence_lines: Vec<&&str> = lines.iter().filter(|l| l.starts_with("````")).collect();
-        assert_eq!(fence_lines.len(), 2, "Expected open and close 4+ backtick fences");
+        assert_eq!(
+            fence_lines.len(),
+            2,
+            "Expected open and close 4+ backtick fences"
+        );
         assert!(result.contains("```xml"));
         assert!(result.contains("```python"));
         assert!(result.starts_with("## DAG Analysis"));
@@ -459,8 +454,13 @@ mod tests {
     #[test]
     fn append_section_to_body_appends() {
         let body = "## What\n\nFeature Title.";
-        let result =
-            append_section_to_body(body, "State File", ".flow-states/b.json", r#"{"k": "v"}"#, "json");
+        let result = append_section_to_body(
+            body,
+            "State File",
+            ".flow-states/b.json",
+            r#"{"k": "v"}"#,
+            "json",
+        );
         assert!(result.contains(body));
         assert!(result.contains("## State File"));
         assert!(result.contains("<details>"));
@@ -499,10 +499,8 @@ mod tests {
     #[test]
     fn append_plain_section_idempotent() {
         let body = "## What\n\nFeature Title.";
-        let first =
-            append_plain_section_to_body(body, "Phase Timings", "| Phase | Duration |");
-        let second =
-            append_plain_section_to_body(&first, "Phase Timings", "| Phase | Duration |");
+        let first = append_plain_section_to_body(body, "Phase Timings", "| Phase | Duration |");
+        let second = append_plain_section_to_body(&first, "Phase Timings", "| Phase | Duration |");
         assert_eq!(first, second);
         assert_eq!(second.matches("## Phase Timings").count(), 1);
     }

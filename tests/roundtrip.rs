@@ -141,7 +141,10 @@ fn deserialize_real_state_file() {
     // Skills — mixed types
     let skills = state.skills.unwrap();
     assert!(matches!(skills.get("flow-abort").unwrap(), SkillConfig::Simple(s) if s == "auto"));
-    assert!(matches!(skills.get("flow-code").unwrap(), SkillConfig::Detailed(_)));
+    assert!(matches!(
+        skills.get("flow-code").unwrap(),
+        SkillConfig::Detailed(_)
+    ));
 
     // Files
     assert_eq!(

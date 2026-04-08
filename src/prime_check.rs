@@ -225,8 +225,7 @@ pub fn compute_config_hash(framework: &str, fw_dir: &Path) -> Result<String, Str
 /// correct for this major infrastructure change.
 pub fn compute_setup_hash(plugin_root: &Path) -> Result<String, String> {
     let path = plugin_root.join("src").join("prime_setup.rs");
-    let bytes =
-        fs::read(&path).map_err(|e| format!("Could not read {}: {}", path.display(), e))?;
+    let bytes = fs::read(&path).map_err(|e| format!("Could not read {}: {}", path.display(), e))?;
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
     let digest = hasher.finalize();
@@ -284,8 +283,8 @@ pub fn run_impl(cwd: &Path, plugin_root: &Path) -> Result<Value, String> {
     let plugin_json_path = plugin_root.join(".claude-plugin").join("plugin.json");
     let plugin_content = fs::read_to_string(&plugin_json_path)
         .map_err(|e| format!("Could not read {}: {}", plugin_json_path.display(), e))?;
-    let plugin_data: Value =
-        serde_json::from_str(&plugin_content).map_err(|e| format!("Could not parse plugin.json: {}", e))?;
+    let plugin_data: Value = serde_json::from_str(&plugin_content)
+        .map_err(|e| format!("Could not parse plugin.json: {}", e))?;
     let plugin_version = plugin_data
         .get("version")
         .and_then(|v| v.as_str())
@@ -306,12 +305,17 @@ pub fn run_impl(cwd: &Path, plugin_root: &Path) -> Result<Value, String> {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        let fw_dir = frameworks_dir().ok_or_else(|| "Frameworks directory not found".to_string())?;
+        let fw_dir =
+            frameworks_dir().ok_or_else(|| "Frameworks directory not found".to_string())?;
         let plugin_config_hash = compute_config_hash(framework, &fw_dir)?;
         let plugin_setup_hash = compute_setup_hash(plugin_root)?;
 
-        let config_match = stored_config.map(|s| s == plugin_config_hash).unwrap_or(false);
-        let setup_match = stored_setup.map(|s| s == plugin_setup_hash).unwrap_or(false);
+        let config_match = stored_config
+            .map(|s| s == plugin_config_hash)
+            .unwrap_or(false);
+        let setup_match = stored_setup
+            .map(|s| s == plugin_setup_hash)
+            .unwrap_or(false);
 
         if config_match && setup_match {
             let old_version = stored_display.clone();
@@ -341,13 +345,16 @@ pub fn run_impl(cwd: &Path, plugin_root: &Path) -> Result<Value, String> {
             "status": "error",
             "message": format!(
                 "FLOW version mismatch: initialized for v{}, plugin is v{}. \
-Run /flow:flow-prime --reprime to upgrade (keeps current config), or /flow:flow-prime to reconfigure.",
+        Run /flow:flow-prime --reprime to upgrade (keeps current config), or /flow:flow-prime to reconfigure.",
                 stored_display, plugin_version
             ),
         }));
     }
 
-    let framework = init_data.get("framework").and_then(|v| v.as_str()).unwrap_or("");
+    let framework = init_data
+        .get("framework")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     if !matches!(framework, "rails" | "python" | "ios" | "go" | "rust") {
         return Ok(json!({
             "status": "error",

@@ -18,7 +18,10 @@ use crate::phase_config;
 use crate::phase_transition::phase_complete;
 
 #[derive(Parser, Debug)]
-#[command(name = "phase-finalize", about = "Generic phase exit: complete + Slack + notification")]
+#[command(
+    name = "phase-finalize",
+    about = "Generic phase exit: complete + Slack + notification"
+)]
 pub struct Args {
     /// Phase name (e.g. flow-start, flow-code, flow-code-review, flow-learn)
     #[arg(long)]
@@ -44,9 +47,7 @@ pub struct Args {
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
     let branch = &args.branch;
-    let state_path = root
-        .join(".flow-states")
-        .join(format!("{}.json", branch));
+    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
 
     if !state_path.exists() {
         return Ok(json!({
@@ -102,8 +103,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         branch,
         &format!(
             "[Phase] phase-finalize --phase {} ({})",
-            args.phase,
-            phase_result["status"]
+            args.phase, phase_result["status"]
         ),
     );
 
@@ -152,10 +152,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         slack_result = notify_slack::notify(&slack_args);
 
         if slack_result["status"] == "ok" {
-            let ts = slack_result["ts"]
-                .as_str()
-                .unwrap_or("")
-                .to_string();
+            let ts = slack_result["ts"].as_str().unwrap_or("").to_string();
             let msg_clone = message.clone();
             let ts_clone = ts.clone();
             let thread_ts_for_state = if args.thread_ts.is_some() {
@@ -200,8 +197,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
             branch,
             &format!(
                 "[Phase] phase-finalize --phase {} — notify-slack ({})",
-                args.phase,
-                slack_result["status"]
+                args.phase, slack_result["status"]
             ),
         );
     }

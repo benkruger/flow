@@ -88,10 +88,7 @@ pub fn check_freshness_impl(
         &["git", "merge-base", "--is-ancestor", "origin/main", "HEAD"],
         LOCAL_TIMEOUT_SECS,
     );
-    if let CmdResult::Ok {
-        returncode: 0, ..
-    } = mb
-    {
+    if let CmdResult::Ok { returncode: 0, .. } = mb {
         return json!({"status": "up_to_date"});
     }
 
@@ -604,8 +601,7 @@ mod tests {
         let mut git = mock_runner(responses);
         let result = check_freshness_impl(Some(&state_file), &mut git);
         assert_eq!(result, json!({"status": "merged", "retries": 1}));
-        let state: Value =
-            serde_json::from_str(&fs::read_to_string(&state_file).unwrap()).unwrap();
+        let state: Value = serde_json::from_str(&fs::read_to_string(&state_file).unwrap()).unwrap();
         assert_eq!(state["freshness_retries"], 1);
     }
 
@@ -638,8 +634,7 @@ mod tests {
         let mut git = mock_runner(responses);
         let result = check_freshness_impl(Some(&state_file), &mut git);
         assert_eq!(result, json!({"status": "up_to_date"}));
-        let state: Value =
-            serde_json::from_str(&fs::read_to_string(&state_file).unwrap()).unwrap();
+        let state: Value = serde_json::from_str(&fs::read_to_string(&state_file).unwrap()).unwrap();
         assert_eq!(state["freshness_retries"], 1);
     }
 
@@ -657,8 +652,7 @@ mod tests {
         let result = check_freshness_impl(Some(&state_file), &mut git);
         assert_eq!(result["status"], "conflict");
         assert_eq!(result["retries"], 2);
-        let state: Value =
-            serde_json::from_str(&fs::read_to_string(&state_file).unwrap()).unwrap();
+        let state: Value = serde_json::from_str(&fs::read_to_string(&state_file).unwrap()).unwrap();
         assert_eq!(state["freshness_retries"], 2);
     }
 
@@ -686,11 +680,7 @@ mod tests {
         let path = dir.path().join("state.json");
         // Write freshness_retries as a float (e.g. from older Python code
         // that did float arithmetic on the counter).
-        fs::write(
-            &path,
-            r#"{"branch":"test","freshness_retries":1.0}"#,
-        )
-        .unwrap();
+        fs::write(&path, r#"{"branch":"test","freshness_retries":1.0}"#).unwrap();
         let responses = vec![ok(), err(1, ""), ok()];
         let mut git = mock_runner(responses);
         let result = check_freshness_impl(Some(&path), &mut git);
@@ -705,11 +695,7 @@ mod tests {
         let path = dir.path().join("state.json");
         // Write freshness_retries as a JSON string (e.g. from a hand-edited
         // state file or a corrupted write).
-        fs::write(
-            &path,
-            r#"{"branch":"test","freshness_retries":"2"}"#,
-        )
-        .unwrap();
+        fs::write(&path, r#"{"branch":"test","freshness_retries":"2"}"#).unwrap();
         let responses = vec![ok(), err(1, ""), ok()];
         let mut git = mock_runner(responses);
         let result = check_freshness_impl(Some(&path), &mut git);
@@ -722,11 +708,7 @@ mod tests {
     fn test_retry_value_as_unparseable_string_defaults_to_zero() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
-        fs::write(
-            &path,
-            r#"{"branch":"test","freshness_retries":"garbage"}"#,
-        )
-        .unwrap();
+        fs::write(&path, r#"{"branch":"test","freshness_retries":"garbage"}"#).unwrap();
         let responses = vec![ok(), err(1, ""), ok()];
         let mut git = mock_runner(responses);
         let result = check_freshness_impl(Some(&path), &mut git);

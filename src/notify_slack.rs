@@ -75,10 +75,7 @@ pub fn format_message(
     pr_url: Option<&str>,
 ) -> String {
     let names = phase_names();
-    let phase_name = names
-        .get(phase)
-        .map(|s| s.as_str())
-        .unwrap_or(phase);
+    let phase_name = names.get(phase).map(|s| s.as_str()).unwrap_or(phase);
     let mut parts = vec![format!("*{}*: {}", phase_name, message)];
     if let Some(f) = feature {
         parts.push(format!("Feature: {}", f));
@@ -107,11 +104,15 @@ pub fn post_message_inner(
     match curl(
         &[
             "-s",
-            "-X", "POST",
+            "-X",
+            "POST",
             SLACK_API_URL,
-            "-H", &auth_header,
-            "-H", "Content-Type: application/json; charset=utf-8",
-            "-d", &payload_str,
+            "-H",
+            &auth_header,
+            "-H",
+            "Content-Type: application/json; charset=utf-8",
+            "-d",
+            &payload_str,
         ],
         CURL_TIMEOUT,
     ) {
@@ -141,10 +142,7 @@ pub fn post_message_inner(
                 return json!({"status": "error", "message": format!("Slack API error: {}", error)});
             }
 
-            let ts = response
-                .get("ts")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let ts = response.get("ts").and_then(|v| v.as_str()).unwrap_or("");
             json!({"status": "ok", "ts": ts})
         }
     }
@@ -190,12 +188,7 @@ fn run_curl_with_timeout(
 }
 
 /// Post a message to Slack via real curl subprocess.
-pub fn post_message(
-    bot_token: &str,
-    channel: &str,
-    text: &str,
-    thread_ts: Option<&str>,
-) -> Value {
+pub fn post_message(bot_token: &str, channel: &str, text: &str, thread_ts: Option<&str>) -> Value {
     post_message_inner(bot_token, channel, text, thread_ts, &run_curl_with_timeout)
 }
 
@@ -299,11 +292,7 @@ mod tests {
     #[test]
     fn post_message_success() {
         let slack_response = json!({"ok": true, "ts": "1234567890.123456"});
-        let curl = mock_curl(vec![Ok((
-            0,
-            slack_response.to_string(),
-            String::new(),
-        ))]);
+        let curl = mock_curl(vec![Ok((0, slack_response.to_string(), String::new()))]);
 
         let result = post_message_inner("xoxb-token", "C12345", "Hello", None, &curl);
         assert_eq!(result["status"], "ok");
@@ -345,11 +334,7 @@ mod tests {
     #[test]
     fn post_message_slack_error() {
         let slack_response = json!({"ok": false, "error": "channel_not_found"});
-        let curl = mock_curl(vec![Ok((
-            0,
-            slack_response.to_string(),
-            String::new(),
-        ))]);
+        let curl = mock_curl(vec![Ok((0, slack_response.to_string(), String::new()))]);
 
         let result = post_message_inner("xoxb-token", "C12345", "Hello", None, &curl);
         assert_eq!(result["status"], "error");

@@ -38,9 +38,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let branch = &args.branch;
 
     // Update TUI step counter
-    let state_path = root
-        .join(".flow-states")
-        .join(format!("{}.json", branch));
+    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
     update_step(&state_path, 2);
 
     // Step 1: git pull origin main
@@ -63,8 +61,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 
     // Step 2: CI baseline with retry
     let bin_ci = resolve_bin_ci(&cwd);
-    let (ci_result, _ci_code) =
-        run_with_retry(&cwd, &root, &bin_ci, Some("main"), 3, None);
+    let (ci_result, _ci_code) = run_with_retry(&cwd, &root, &bin_ci, Some("main"), 3, None);
     let _ = append_log(
         &root,
         branch,
@@ -77,7 +74,11 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let mut flaky_info: Option<Value> = None;
 
     if ci_result["status"] == "error" {
-        if ci_result.get("consistent").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if ci_result
+            .get("consistent")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             return Ok(json!({
                 "status": "ci_failed",
                 "output": ci_result["output"],
@@ -92,7 +93,11 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
 
     // Check for flaky baseline
-    if ci_result.get("flaky").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if ci_result
+        .get("flaky")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         flaky_info = Some(json!({
             "first_failure_output": ci_result["first_failure_output"],
             "attempts": ci_result["attempts"],

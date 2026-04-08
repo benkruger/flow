@@ -1,6 +1,0 @@
-pymarkdownlnt
-pyyaml
-pytest
-pytest-cov
-pytest-xdist
-ruff

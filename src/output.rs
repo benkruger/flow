@@ -60,10 +60,7 @@ mod tests {
 
     #[test]
     fn json_ok_with_extra_fields() {
-        let result = json_ok_string(&[
-            ("branch", json!("my-feature")),
-            ("pr_number", json!(42)),
-        ]);
+        let result = json_ok_string(&[("branch", json!("my-feature")), ("pr_number", json!(42))]);
         let parsed: Value = serde_json::from_str(&result).unwrap();
         assert_eq!(parsed["status"], "ok");
         assert_eq!(parsed["branch"], "my-feature");

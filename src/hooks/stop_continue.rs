@@ -54,9 +54,13 @@ fn log_diag(root: Option<&Path>, branch: Option<&str>, message: &str) {
 /// write is skipped and only stderr is used.
 fn derive_root_branch(state_path: &Path) -> (Option<&Path>, Option<&str>) {
     let branch = state_path.file_stem().and_then(|s| s.to_str());
-    let root = state_path
-        .parent()
-        .and_then(|p| if p.file_name().and_then(|n| n.to_str()) == Some(".flow-states") { p.parent() } else { None });
+    let root = state_path.parent().and_then(|p| {
+        if p.file_name().and_then(|n| n.to_str()) == Some(".flow-states") {
+            p.parent()
+        } else {
+            None
+        }
+    });
     (root, branch)
 }
 
@@ -267,7 +271,11 @@ pub fn set_tab_color(root: &Path, branch: &str, state_path: &Path) {
         }
     };
     if let Err(e) = result {
-        log_diag(Some(root), Some(branch), &format!("set_tab_color error: {}", e));
+        log_diag(
+            Some(root),
+            Some(branch),
+            &format!("set_tab_color error: {}", e),
+        );
     }
 }
 
@@ -632,11 +640,7 @@ mod tests {
         let state_dir = dir.path().join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
         let qa_path = state_dir.join("qa-pending.json");
-        fs::write(
-            &qa_path,
-            r#"{"_continue_context": "finish QA tests"}"#,
-        )
-        .unwrap();
+        fs::write(&qa_path, r#"{"_continue_context": "finish QA tests"}"#).unwrap();
 
         let (should_block, context) = check_qa_pending(dir.path());
         assert!(should_block);
@@ -827,7 +831,10 @@ mod tests {
         assert!(result.should_block);
 
         let log_path = state_dir.join("test-branch.log");
-        assert!(log_path.exists(), "log file must be written after blocking decision");
+        assert!(
+            log_path.exists(),
+            "log file must be written after blocking decision"
+        );
         let log_content = fs::read_to_string(&log_path).unwrap();
         assert!(log_content.contains("[stop-continue]"));
         assert!(log_content.contains("blocking: pending=commit"));
@@ -869,7 +876,10 @@ mod tests {
         check_continue(&json!({}), &state_path);
 
         let log_path = state_dir.join("test-branch.log");
-        assert!(!log_path.exists(), "no log entry expected when no decision is made");
+        assert!(
+            !log_path.exists(),
+            "no log entry expected when no decision is made"
+        );
     }
 
     // --- capture_session_id error logging ---
@@ -939,7 +949,10 @@ mod tests {
         fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
 
         let result = check_continue(&json!({"session_id": ""}), &path);
-        assert!(result.should_block, "empty hook session_id must not trigger session mismatch");
+        assert!(
+            result.should_block,
+            "empty hook session_id must not trigger session mismatch"
+        );
         assert_eq!(result.skill.unwrap(), "flow-commit");
         assert_eq!(result.context.unwrap(), "Next: run tests");
     }
@@ -1004,7 +1017,10 @@ mod tests {
         let result = check_discussion_mode(&path);
         assert!(result.should_block);
         let reason = DISCUSSION_BLOCK_REASON;
-        assert!(reason.contains("flow:flow-note"), "block reason must mention flow:flow-note");
+        assert!(
+            reason.contains("flow:flow-note"),
+            "block reason must mention flow:flow-note"
+        );
     }
 
     #[test]
@@ -1032,10 +1048,17 @@ mod tests {
         fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
 
         let result = check_discussion_mode(&path);
-        assert!(result.should_block, "non-bool flag must be treated as not-set");
+        assert!(
+            result.should_block,
+            "non-bool flag must be treated as not-set"
+        );
 
         let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(state["_stop_instructed"], json!(true), "flag must be corrected to bool");
+        assert_eq!(
+            state["_stop_instructed"],
+            json!(true),
+            "flag must be corrected to bool"
+        );
     }
 
     #[test]
@@ -1056,7 +1079,10 @@ mod tests {
         clear_blocked(&path);
 
         let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert!(state.get("_blocked").is_none(), "_blocked must be cleared when discussion mode blocks");
+        assert!(
+            state.get("_blocked").is_none(),
+            "_blocked must be cleared when discussion mode blocks"
+        );
     }
 
     #[test]

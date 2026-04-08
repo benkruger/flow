@@ -98,7 +98,10 @@ mod tests {
         capture_compact_data(&input, &path);
 
         let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(state["compact_summary"], "User was writing tests for webhook handler.");
+        assert_eq!(
+            state["compact_summary"],
+            "User was writing tests for webhook handler."
+        );
         assert_eq!(state["compact_cwd"], "/Users/ben/code/myapp");
         assert_eq!(state["compact_count"], 1);
     }

@@ -84,7 +84,10 @@ pub fn label_issues(issue_numbers: &[i64], action: &str) -> LabelResult {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "label-issues", about = "Add or remove Flow In-Progress label on issues")]
+#[command(
+    name = "label-issues",
+    about = "Add or remove Flow In-Progress label on issues"
+)]
 #[command(group(clap::ArgGroup::new("action").args(["add", "remove"]).required(true)))]
 pub struct Args {
     /// Path to state JSON file
@@ -132,10 +135,7 @@ pub fn run(args: Args) {
         }
     };
 
-    let prompt = state
-        .get("prompt")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let prompt = state.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
     let issue_numbers = extract_issue_numbers(prompt);
     let action = if args.add { "add" } else { "remove" };
     let result = label_issues(&issue_numbers, action);
@@ -216,23 +216,28 @@ mod tests {
 
         let content = std::fs::read_to_string(&state_path).unwrap();
         let state: serde_json::Value = serde_json::from_str(&content).unwrap();
-        let prompt = state
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let prompt = state.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
         let issues = extract_issue_numbers(prompt);
         assert!(issues.is_empty());
     }
 
     #[test]
     fn add_flag_maps_to_add_label() {
-        let flag = if true { "--add-label" } else { "--remove-label" };
+        let flag = if true {
+            "--add-label"
+        } else {
+            "--remove-label"
+        };
         assert_eq!(flag, "--add-label");
     }
 
     #[test]
     fn remove_flag_maps_to_remove_label() {
-        let flag = if false { "--add-label" } else { "--remove-label" };
+        let flag = if false {
+            "--add-label"
+        } else {
+            "--remove-label"
+        };
         assert_eq!(flag, "--remove-label");
     }
 }

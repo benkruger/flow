@@ -39,8 +39,8 @@ pub fn find_templates(
         Some(d) => d.to_path_buf(),
         None => {
             // Resolve relative to this binary's repo root
-            let exe = std::env::current_exe()
-                .map_err(|e| format!("Cannot find current exe: {}", e))?;
+            let exe =
+                std::env::current_exe().map_err(|e| format!("Cannot find current exe: {}", e))?;
             // binary is at target/release/flow-rs or target/debug/flow-rs
             // repo root is 3 levels up
             let root = exe
@@ -199,8 +199,7 @@ pub fn scaffold_impl(
             .unwrap_or_default();
 
         let mut cmd: Vec<&str> = vec![
-            "gh", "issue", "create", "--repo", repo,
-            "--title", title, "--body", body,
+            "gh", "issue", "create", "--repo", repo, "--title", title, "--body", body,
         ];
         for label in &labels {
             cmd.push("--label");
@@ -346,10 +345,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let tpl_dir = dir.path().join("templates").join("rails");
         fs::create_dir_all(tpl_dir.join(".qa")).unwrap();
-        fs::write(
-            tpl_dir.join("Gemfile"),
-            "source 'https://rubygems.org'\n",
-        ).unwrap();
+        fs::write(tpl_dir.join("Gemfile"), "source 'https://rubygems.org'\n").unwrap();
         fs::write(tpl_dir.join("bin/ci"), "#!/usr/bin/env ruby\nexit 0\n").ok();
         fs::create_dir_all(tpl_dir.join("bin")).unwrap();
         fs::write(tpl_dir.join("bin/ci"), "#!/usr/bin/env ruby\nexit 0\n").unwrap();
@@ -360,11 +356,14 @@ mod tests {
         fs::write(
             tpl_dir.join(".qa/issues.json"),
             serde_json::to_string(&issues).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let calls = RefCell::new(Vec::new());
         let runner = |args: &[&str], _cwd: Option<&Path>| -> CmdResult {
-            calls.borrow_mut().push(args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+            calls
+                .borrow_mut()
+                .push(args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
             ok_result("")
         };
 
@@ -383,7 +382,9 @@ mod tests {
 
         let captured = calls.borrow();
         // Verify gh repo create was called
-        assert!(captured.iter().any(|c| c.contains(&"repo".to_string()) && c.contains(&"create".to_string())));
+        assert!(captured
+            .iter()
+            .any(|c| c.contains(&"repo".to_string()) && c.contains(&"create".to_string())));
         // Verify gh issue create was called for each issue
         let issue_creates: Vec<_> = captured
             .iter()
@@ -413,7 +414,10 @@ mod tests {
             &runner,
         );
 
-        assert_eq!(fs::read_to_string(clone_dir.join("Gemfile")).unwrap(), "gem content\n");
+        assert_eq!(
+            fs::read_to_string(clone_dir.join("Gemfile")).unwrap(),
+            "gem content\n"
+        );
         assert_eq!(
             fs::read_to_string(clone_dir.join("bin/ci")).unwrap(),
             "#!/usr/bin/env ruby\n"
@@ -427,9 +431,8 @@ mod tests {
         fs::create_dir_all(tpl_dir.join(".qa")).unwrap();
         fs::write(tpl_dir.join(".qa/issues.json"), "[]").unwrap();
 
-        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult {
-            err_result("already exists")
-        };
+        let runner =
+            |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { err_result("already exists") };
 
         let result = scaffold_impl(
             "rails",

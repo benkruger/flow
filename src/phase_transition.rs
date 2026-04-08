@@ -38,7 +38,10 @@ pub fn phase_enter(state: &mut Value, phase: &str, reason: Option<&str>) -> Valu
         transition["reason"] = json!(r);
     }
 
-    if !state.get("phase_transitions").map_or(false, |v| v.is_array()) {
+    if !state
+        .get("phase_transitions")
+        .map_or(false, |v| v.is_array())
+    {
         state["phase_transitions"] = json!([]);
     }
     state["phase_transitions"]
@@ -123,7 +126,10 @@ pub fn phase_complete(
             }
             // Dict config (e.g. {"continue": "auto"})
             if let Some(obj) = cfg.as_object() {
-                return obj.get("continue").and_then(|v| v.as_str()).map(String::from);
+                return obj
+                    .get("continue")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
             }
             None
         });
@@ -380,9 +386,7 @@ mod tests {
 
         phase_enter(&mut state, "flow-plan", None);
 
-        assert!(
-            state.get("_auto_continue").is_none() || state["_auto_continue"].is_null()
-        );
+        assert!(state.get("_auto_continue").is_none() || state["_auto_continue"].is_null());
     }
 
     #[test]
@@ -423,9 +427,7 @@ mod tests {
         let result = phase_enter(&mut state, "flow-plan", None);
 
         assert_eq!(result["status"], "ok");
-        assert!(
-            state.get("_auto_continue").is_none() || state["_auto_continue"].is_null()
-        );
+        assert!(state.get("_auto_continue").is_none() || state["_auto_continue"].is_null());
     }
 
     #[test]
@@ -627,13 +629,7 @@ mod tests {
             "flow-code-review".into(),
         ];
 
-        let result = phase_complete(
-            &mut state,
-            "flow-plan",
-            None,
-            Some(&custom_order),
-            None,
-        );
+        let result = phase_complete(&mut state, "flow-plan", None, Some(&custom_order), None);
 
         assert_eq!(result["next_phase"], "flow-code-review");
         assert_eq!(state["current_phase"], "flow-code-review");
@@ -718,9 +714,7 @@ mod tests {
 
         phase_complete(&mut state, "flow-start", None, None, None);
 
-        assert!(
-            state.get("_auto_continue").is_none() || state["_auto_continue"].is_null()
-        );
+        assert!(state.get("_auto_continue").is_none() || state["_auto_continue"].is_null());
     }
 
     #[test]
@@ -730,9 +724,7 @@ mod tests {
 
         phase_complete(&mut state, "flow-start", None, None, None);
 
-        assert!(
-            state.get("_auto_continue").is_none() || state["_auto_continue"].is_null()
-        );
+        assert!(state.get("_auto_continue").is_none() || state["_auto_continue"].is_null());
     }
 
     #[test]
@@ -746,9 +738,7 @@ mod tests {
 
         phase_complete(&mut state, "flow-plan", None, None, None);
 
-        assert!(
-            state.get("_auto_continue").is_none() || state["_auto_continue"].is_null()
-        );
+        assert!(state.get("_auto_continue").is_none() || state["_auto_continue"].is_null());
     }
 
     #[test]
@@ -758,9 +748,7 @@ mod tests {
 
         phase_complete(&mut state, "flow-start", None, None, None);
 
-        assert!(
-            state.get("_auto_continue").is_none() || state["_auto_continue"].is_null()
-        );
+        assert!(state.get("_auto_continue").is_none() || state["_auto_continue"].is_null());
     }
 
     #[test]
@@ -830,9 +818,7 @@ mod tests {
 
         assert_eq!(result["continue_action"], "ask");
         assert!(result.get("continue_target").is_none());
-        assert!(
-            state.get("_auto_continue").is_none() || state["_auto_continue"].is_null()
-        );
+        assert!(state.get("_auto_continue").is_none() || state["_auto_continue"].is_null());
     }
 
     #[test]

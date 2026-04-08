@@ -72,7 +72,12 @@ fn happy_path_returns_ok_json() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
     let output = run_init_state(dir.path(), &["test feature"]);
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let data = parse_stdout(&output);
     assert_eq!(data["status"], "ok");
     assert_eq!(data["branch"], "test-feature");
@@ -123,7 +128,13 @@ fn state_file_other_phases_pending() {
     setup_project(dir.path(), "rails", None);
     run_init_state(dir.path(), &["pending phases test"]);
     let state = read_state_file(dir.path(), "pending-phases-test");
-    for key in ["flow-plan", "flow-code", "flow-code-review", "flow-learn", "flow-complete"] {
+    for key in [
+        "flow-plan",
+        "flow-code",
+        "flow-code-review",
+        "flow-learn",
+        "flow-complete",
+    ] {
         let phase = &state["phases"][key];
         assert_eq!(phase["status"], "pending");
         assert!(phase["started_at"].is_null());
@@ -187,12 +198,27 @@ fn prompt_from_prompt_file() {
     fs::write(&prompt_file, "fix login timeout with special chars: && | ;").unwrap();
     let output = run_init_state(
         dir.path(),
-        &["prompt file test", "--prompt-file", prompt_file.to_str().unwrap()],
+        &[
+            "prompt file test",
+            "--prompt-file",
+            prompt_file.to_str().unwrap(),
+        ],
     );
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let state = read_state_file(dir.path(), "prompt-file-test");
-    assert_eq!(state["prompt"], "fix login timeout with special chars: && | ;");
-    assert!(!prompt_file.exists(), "Prompt file should be deleted after read");
+    assert_eq!(
+        state["prompt"],
+        "fix login timeout with special chars: && | ;"
+    );
+    assert!(
+        !prompt_file.exists(),
+        "Prompt file should be deleted after read"
+    );
 }
 
 #[test]
@@ -239,7 +265,12 @@ fn branch_name_derived_from_feature() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
     let output = run_init_state(dir.path(), &["Invoice Pdf Export"]);
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let data = parse_stdout(&output);
     assert_eq!(data["branch"], "invoice-pdf-export");
 }
@@ -248,11 +279,24 @@ fn branch_name_derived_from_feature() {
 fn branch_name_truncated_at_32() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
-    let output = run_init_state(dir.path(), &["this is a very long feature name that exceeds limit"]);
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let output = run_init_state(
+        dir.path(),
+        &["this is a very long feature name that exceeds limit"],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let data = parse_stdout(&output);
     let branch = data["branch"].as_str().unwrap();
-    assert!(branch.len() <= 32, "Branch too long: {} ({})", branch, branch.len());
+    assert!(
+        branch.len() <= 32,
+        "Branch too long: {} ({})",
+        branch,
+        branch.len()
+    );
     assert!(!branch.ends_with('-'));
 }
 
@@ -264,9 +308,20 @@ fn start_step_fields_set_when_flags_passed() {
     setup_project(dir.path(), "rails", None);
     let output = run_init_state(
         dir.path(),
-        &["step tracking test", "--start-step", "3", "--start-steps-total", "11"],
+        &[
+            "step tracking test",
+            "--start-step",
+            "3",
+            "--start-steps-total",
+            "11",
+        ],
     );
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let state = read_state_file(dir.path(), "step-tracking-test");
     assert_eq!(state["start_step"], 3);
     assert_eq!(state["start_steps_total"], 11);
@@ -302,7 +357,10 @@ fn frozen_phases_file_created() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
     run_init_state(dir.path(), &["frozen phases"]);
-    let frozen = dir.path().join(".flow-states").join("frozen-phases-phases.json");
+    let frozen = dir
+        .path()
+        .join(".flow-states")
+        .join("frozen-phases-phases.json");
     assert!(frozen.exists());
 }
 
@@ -311,10 +369,14 @@ fn frozen_phases_file_matches_source() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
     run_init_state(dir.path(), &["phases match"]);
-    let frozen = dir.path().join(".flow-states").join("phases-match-phases.json");
+    let frozen = dir
+        .path()
+        .join(".flow-states")
+        .join("phases-match-phases.json");
     let frozen_data: Value = serde_json::from_str(&fs::read_to_string(&frozen).unwrap()).unwrap();
     let source_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("flow-phases.json");
-    let source_data: Value = serde_json::from_str(&fs::read_to_string(&source_path).unwrap()).unwrap();
+    let source_data: Value =
+        serde_json::from_str(&fs::read_to_string(&source_path).unwrap()).unwrap();
     assert_eq!(frozen_data, source_data);
 }
 
@@ -368,20 +430,34 @@ fn fetch_issue_title_failure_returns_error() {
     // Run with empty PATH so gh cannot be found
     let output = flow_rs()
         .arg("init-state")
-        .args(["fetch failure test", "--prompt-file", prompt_file.to_str().unwrap()])
+        .args([
+            "fetch failure test",
+            "--prompt-file",
+            prompt_file.to_str().unwrap(),
+        ])
         .current_dir(dir.path())
         .env("PATH", "")
         .output()
         .unwrap();
 
-    assert_ne!(output.status.code(), Some(0), "Should fail when fetch_issue_title cannot reach GitHub");
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "Should fail when fetch_issue_title cannot reach GitHub"
+    );
     let data = parse_stdout(&output);
     assert_eq!(data["status"], "error");
     assert_eq!(data["step"], "fetch_issue_title");
 
     // No state file should be created
-    let state_path = dir.path().join(".flow-states").join("fetch-failure-test.json");
-    assert!(!state_path.exists(), "State file should not be created when fetch fails");
+    let state_path = dir
+        .path()
+        .join(".flow-states")
+        .join("fetch-failure-test.json");
+    assert!(
+        !state_path.exists(),
+        "State file should not be created when fetch fails"
+    );
 }
 
 #[test]
@@ -411,10 +487,7 @@ fn duplicate_issue_detected_before_state_creation() {
     // (issue #887): `{title, labels}`. An empty labels array bypasses the
     // Flow In-Progress guard so the test still reaches the duplicate-issue
     // guard, which is what this test is exercising.
-    let stub_dir = write_gh_stub(
-        dir.path(),
-        r#"{"title": "Some Issue Title", "labels": []}"#,
-    );
+    let stub_dir = write_gh_stub(dir.path(), r#"{"title": "Some Issue Title", "labels": []}"#);
     let prompt_file = write_prompt_file(&state_dir, "work on issue #777");
 
     let output = flow_rs()
@@ -425,12 +498,19 @@ fn duplicate_issue_detected_before_state_creation() {
         .output()
         .unwrap();
 
-    assert_ne!(output.status.code(), Some(0), "Should fail on duplicate issue");
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "Should fail on duplicate issue"
+    );
     let data = parse_stdout(&output);
     assert_eq!(data["status"], "error");
     assert_eq!(data["step"], "duplicate_issue");
     let msg = data["message"].as_str().unwrap();
-    assert!(msg.contains("existing-flow"), "Error should reference the existing branch");
+    assert!(
+        msg.contains("existing-flow"),
+        "Error should reference the existing branch"
+    );
 }
 
 // --- Flow In-Progress label guard (issue #887) ---
@@ -472,25 +552,34 @@ fn flow_in_progress_label_blocks_start() {
         dir.path(),
         r#"{"title": "Some Issue", "labels": ["Flow In-Progress"]}"#,
     );
-    let prompt_file = write_prompt_file(
-        &dir.path().join(".flow-states"),
-        "work on issue #100",
-    );
+    let prompt_file = write_prompt_file(&dir.path().join(".flow-states"), "work on issue #100");
 
     let output = flow_rs()
         .arg("init-state")
-        .args(["label blocks test", "--prompt-file", prompt_file.to_str().unwrap()])
+        .args([
+            "label blocks test",
+            "--prompt-file",
+            prompt_file.to_str().unwrap(),
+        ])
         .current_dir(dir.path())
         .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
         .output()
         .unwrap();
 
-    assert_ne!(output.status.code(), Some(0), "should fail when label is present");
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "should fail when label is present"
+    );
     let data = parse_stdout(&output);
     assert_eq!(data["status"], "error");
     assert_eq!(data["step"], "flow_in_progress_label");
     let msg = data["message"].as_str().unwrap();
-    assert!(msg.contains("#100"), "message should name the issue: {}", msg);
+    assert!(
+        msg.contains("#100"),
+        "message should name the issue: {}",
+        msg
+    );
     assert!(
         msg.contains("Flow In-Progress"),
         "message should name the label so users can search for it: {}",
@@ -518,18 +607,16 @@ fn flow_in_progress_label_absent_allows_start() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
 
-    let stub_dir = write_gh_stub(
-        dir.path(),
-        r#"{"title": "Some Issue", "labels": []}"#,
-    );
-    let prompt_file = write_prompt_file(
-        &dir.path().join(".flow-states"),
-        "work on issue #100",
-    );
+    let stub_dir = write_gh_stub(dir.path(), r#"{"title": "Some Issue", "labels": []}"#);
+    let prompt_file = write_prompt_file(&dir.path().join(".flow-states"), "work on issue #100");
 
     let output = flow_rs()
         .arg("init-state")
-        .args(["label absent test", "--prompt-file", prompt_file.to_str().unwrap()])
+        .args([
+            "label absent test",
+            "--prompt-file",
+            prompt_file.to_str().unwrap(),
+        ])
         .current_dir(dir.path())
         .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
         .output()
@@ -565,14 +652,15 @@ fn flow_in_progress_label_case_sensitive_match() {
         dir.path(),
         r#"{"title": "Some Issue", "labels": ["flow in-progress"]}"#,
     );
-    let prompt_file = write_prompt_file(
-        &dir.path().join(".flow-states"),
-        "work on issue #100",
-    );
+    let prompt_file = write_prompt_file(&dir.path().join(".flow-states"), "work on issue #100");
 
     let output = flow_rs()
         .arg("init-state")
-        .args(["case sensitive test", "--prompt-file", prompt_file.to_str().unwrap()])
+        .args([
+            "case sensitive test",
+            "--prompt-file",
+            prompt_file.to_str().unwrap(),
+        ])
         .current_dir(dir.path())
         .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
         .output()
@@ -599,20 +687,25 @@ fn flow_in_progress_label_with_other_labels() {
         dir.path(),
         r#"{"title": "Multi Label", "labels": ["bug", "Flow In-Progress", "decomposed"]}"#,
     );
-    let prompt_file = write_prompt_file(
-        &dir.path().join(".flow-states"),
-        "work on issue #100",
-    );
+    let prompt_file = write_prompt_file(&dir.path().join(".flow-states"), "work on issue #100");
 
     let output = flow_rs()
         .arg("init-state")
-        .args(["multi label test", "--prompt-file", prompt_file.to_str().unwrap()])
+        .args([
+            "multi label test",
+            "--prompt-file",
+            prompt_file.to_str().unwrap(),
+        ])
         .current_dir(dir.path())
         .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
         .output()
         .unwrap();
 
-    assert_ne!(output.status.code(), Some(0), "should block when label is among others");
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "should block when label is among others"
+    );
     let data = parse_stdout(&output);
     assert_eq!(data["status"], "error");
     assert_eq!(data["step"], "flow_in_progress_label");
@@ -652,7 +745,11 @@ fn flow_in_progress_label_checked_before_duplicate_issue() {
 
     let output = flow_rs()
         .arg("init-state")
-        .args(["ordering test", "--prompt-file", prompt_file.to_str().unwrap()])
+        .args([
+            "ordering test",
+            "--prompt-file",
+            prompt_file.to_str().unwrap(),
+        ])
         .current_dir(dir.path())
         .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
         .output()

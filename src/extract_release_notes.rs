@@ -19,7 +19,10 @@ use regex::Regex;
 use crate::utils::plugin_root;
 
 #[derive(Parser, Debug)]
-#[command(name = "extract-release-notes", about = "Extract release notes for a version")]
+#[command(
+    name = "extract-release-notes",
+    about = "Extract release notes for a version"
+)]
 pub struct Args {
     /// Version to extract (e.g. v0.2.0 or 0.2.0)
     pub version: Option<String>,
@@ -89,8 +92,8 @@ pub fn run_impl(args: &Args, repo_root: &Path) -> Result<String, String> {
         return Err(format!("Error: {} not found", notes_file.display()));
     }
 
-    let content =
-        fs::read_to_string(&notes_file).map_err(|e| format!("Error reading {}: {}", notes_file.display(), e))?;
+    let content = fs::read_to_string(&notes_file)
+        .map_err(|e| format!("Error reading {}: {}", notes_file.display(), e))?;
 
     let extracted = extract(version, &content);
     if extracted.is_empty() {

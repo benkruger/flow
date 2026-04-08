@@ -56,7 +56,10 @@ fn run_promote(worktree: &Path) -> (Value, i32) {
 #[test]
 fn no_local_file_returns_skipped() {
     let tmp = tempfile::tempdir().unwrap();
-    setup_settings(tmp.path(), json!({"permissions": {"allow": ["Bash(git *)"]}}));
+    setup_settings(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
     let (data, _code) = run_promote(tmp.path());
     assert_eq!(data["status"], "skipped");
     assert_eq!(data["reason"], "no_local_file");
@@ -65,7 +68,10 @@ fn no_local_file_returns_skipped() {
 #[test]
 fn empty_allow_list_returns_ok_and_deletes_local() {
     let tmp = tempfile::tempdir().unwrap();
-    setup_settings(tmp.path(), json!({"permissions": {"allow": ["Bash(git *)"]}}));
+    setup_settings(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
     let local = setup_local(tmp.path(), json!({"permissions": {"allow": []}}));
     let (data, _code) = run_promote(tmp.path());
     assert_eq!(data["status"], "ok");
@@ -77,7 +83,10 @@ fn empty_allow_list_returns_ok_and_deletes_local() {
 #[test]
 fn new_entries_promoted() {
     let tmp = tempfile::tempdir().unwrap();
-    let settings = setup_settings(tmp.path(), json!({"permissions": {"allow": ["Bash(git *)"]}}));
+    let settings = setup_settings(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
     let local = setup_local(
         tmp.path(),
         json!({"permissions": {"allow": ["Bash(npm run *)"], "deny": []}}),
@@ -115,7 +124,10 @@ fn all_duplicates_counted_without_promotion() {
 #[test]
 fn mixed_new_and_existing() {
     let tmp = tempfile::tempdir().unwrap();
-    let settings = setup_settings(tmp.path(), json!({"permissions": {"allow": ["Bash(git *)"]}}));
+    let settings = setup_settings(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
     let local = setup_local(
         tmp.path(),
         json!({"permissions": {"allow": ["Bash(git *)", "Bash(make *)", "Bash(curl *)"]}}),
@@ -147,7 +159,10 @@ fn preserves_existing_settings() {
             "attribution": {"commit": "", "pr": ""},
         }),
     );
-    setup_local(tmp.path(), json!({"permissions": {"allow": ["Bash(npm run *)"]}}));
+    setup_local(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(npm run *)"]}}),
+    );
     let (data, _code) = run_promote(tmp.path());
     assert_eq!(data["status"], "ok");
 
@@ -160,7 +175,10 @@ fn preserves_existing_settings() {
 fn deletion_verification() {
     let tmp = tempfile::tempdir().unwrap();
     setup_settings(tmp.path(), json!({"permissions": {"allow": []}}));
-    let local = setup_local(tmp.path(), json!({"permissions": {"allow": ["Bash(git *)"]}}));
+    let local = setup_local(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
     assert!(local.exists());
     run_promote(tmp.path());
     assert!(!local.exists());
@@ -175,7 +193,10 @@ fn malformed_local_json_returns_error() {
 
     let (data, code) = run_promote(tmp.path());
     assert_eq!(data["status"], "error");
-    assert!(data["message"].as_str().unwrap().contains("settings.local.json"));
+    assert!(data["message"]
+        .as_str()
+        .unwrap()
+        .contains("settings.local.json"));
     assert_eq!(code, 1);
 }
 
@@ -185,7 +206,10 @@ fn malformed_settings_json_returns_error() {
     let claude_dir = tmp.path().join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();
     fs::write(claude_dir.join("settings.json"), "{bad json").unwrap();
-    setup_local(tmp.path(), json!({"permissions": {"allow": ["Bash(git *)"]}}));
+    setup_local(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
 
     let (data, code) = run_promote(tmp.path());
     assert_eq!(data["status"], "error");
@@ -196,7 +220,10 @@ fn malformed_settings_json_returns_error() {
 #[test]
 fn missing_permissions_key_in_local() {
     let tmp = tempfile::tempdir().unwrap();
-    setup_settings(tmp.path(), json!({"permissions": {"allow": ["Bash(git *)"]}}));
+    setup_settings(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
     let local = setup_local(tmp.path(), json!({"attribution": {"commit": ""}}));
     let (data, _code) = run_promote(tmp.path());
     assert_eq!(data["status"], "ok");
@@ -208,7 +235,10 @@ fn missing_permissions_key_in_local() {
 #[test]
 fn missing_allow_key_in_local() {
     let tmp = tempfile::tempdir().unwrap();
-    setup_settings(tmp.path(), json!({"permissions": {"allow": ["Bash(git *)"]}}));
+    setup_settings(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
     let local = setup_local(tmp.path(), json!({"permissions": {"deny": ["Bash(rm *)"]}}));
     let (data, _code) = run_promote(tmp.path());
     assert_eq!(data["status"], "ok");
@@ -220,7 +250,10 @@ fn missing_allow_key_in_local() {
 #[test]
 fn settings_json_missing_returns_error() {
     let tmp = tempfile::tempdir().unwrap();
-    setup_local(tmp.path(), json!({"permissions": {"allow": ["Bash(git *)"]}}));
+    setup_local(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
     let (data, code) = run_promote(tmp.path());
     assert_eq!(data["status"], "error");
     assert!(data["message"].as_str().unwrap().contains("settings.json"));
@@ -231,7 +264,10 @@ fn settings_json_missing_returns_error() {
 fn settings_json_no_permissions_key() {
     let tmp = tempfile::tempdir().unwrap();
     let settings = setup_settings(tmp.path(), json!({"attribution": {"commit": ""}}));
-    setup_local(tmp.path(), json!({"permissions": {"allow": ["Bash(git *)"]}}));
+    setup_local(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
     let (data, _code) = run_promote(tmp.path());
     assert_eq!(data["status"], "ok");
     assert_eq!(data["promoted"], json!(["Bash(git *)"]));
@@ -248,7 +284,10 @@ fn settings_json_no_permissions_key() {
 fn write_error_on_readonly_settings() {
     let tmp = tempfile::tempdir().unwrap();
     let settings = setup_settings(tmp.path(), json!({"permissions": {"allow": []}}));
-    setup_local(tmp.path(), json!({"permissions": {"allow": ["Bash(git *)"]}}));
+    setup_local(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
 
     // Make settings.json read-only so the write fails.
     let mut perms = fs::metadata(&settings).unwrap().permissions();
@@ -274,7 +313,10 @@ fn write_error_on_readonly_settings() {
 fn local_delete_fails_silently() {
     let tmp = tempfile::tempdir().unwrap();
     let settings = setup_settings(tmp.path(), json!({"permissions": {"allow": []}}));
-    let local = setup_local(tmp.path(), json!({"permissions": {"allow": ["Bash(git *)"]}}));
+    let local = setup_local(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
 
     // Make .claude/ directory read+execute only (no write) so remove_file fails.
     let claude_dir = tmp.path().join(".claude");
@@ -291,7 +333,10 @@ fn local_delete_fails_silently() {
 
     assert_eq!(data["status"], "ok");
     assert_eq!(data["promoted"], json!(["Bash(git *)"]));
-    assert!(local.exists(), "settings.local.json still exists after failed delete");
+    assert!(
+        local.exists(),
+        "settings.local.json still exists after failed delete"
+    );
 
     let updated: Value = serde_json::from_str(&fs::read_to_string(&settings).unwrap()).unwrap();
     assert!(updated["permissions"]["allow"]
@@ -310,8 +355,14 @@ fn cli_missing_worktree_path_arg() {
 #[test]
 fn cli_happy_path() {
     let tmp = tempfile::tempdir().unwrap();
-    setup_settings(tmp.path(), json!({"permissions": {"allow": ["Bash(git *)"]}}));
-    setup_local(tmp.path(), json!({"permissions": {"allow": ["Bash(npm run *)"]}}));
+    setup_settings(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
+    setup_local(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(npm run *)"]}}),
+    );
     let (data, code) = run_promote(tmp.path());
     assert_eq!(data["status"], "ok");
     assert_eq!(data["promoted"], json!(["Bash(npm run *)"]));
@@ -344,7 +395,10 @@ fn settings_permissions_as_array_does_not_panic() {
         serde_json::to_string_pretty(&json!({"permissions": ["Bash(git *)"]})).unwrap(),
     )
     .unwrap();
-    setup_local(tmp.path(), json!({"permissions": {"allow": ["Bash(npm run *)"]}}));
+    setup_local(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(npm run *)"]}}),
+    );
 
     let output = flow_rs()
         .args(["promote-permissions", "--worktree-path"])
@@ -374,7 +428,10 @@ fn settings_permissions_as_string_does_not_panic() {
         serde_json::to_string_pretty(&json!({"permissions": "malformed"})).unwrap(),
     )
     .unwrap();
-    setup_local(tmp.path(), json!({"permissions": {"allow": ["Bash(git *)"]}}));
+    setup_local(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
 
     let output = flow_rs()
         .args(["promote-permissions", "--worktree-path"])

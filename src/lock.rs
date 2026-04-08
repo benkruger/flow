@@ -22,15 +22,17 @@ where
         .open(state_path)
         .map_err(|e| MutateError::Io(format!("{}: {}", state_path.display(), e)))?;
 
-    file.lock_exclusive()
-        .map_err(|e| MutateError::Lock(format!("Failed to lock {}: {}", state_path.display(), e)))?;
+    file.lock_exclusive().map_err(|e| {
+        MutateError::Lock(format!("Failed to lock {}: {}", state_path.display(), e))
+    })?;
 
     let mut content = String::new();
     file.read_to_string(&mut content)
         .map_err(|e| MutateError::Io(format!("Failed to read {}: {}", state_path.display(), e)))?;
 
-    let mut state: Value = serde_json::from_str(&content)
-        .map_err(|e| MutateError::Json(format!("Invalid JSON in {}: {}", state_path.display(), e)))?;
+    let mut state: Value = serde_json::from_str(&content).map_err(|e| {
+        MutateError::Json(format!("Invalid JSON in {}: {}", state_path.display(), e))
+    })?;
 
     transform_fn(&mut state);
 
@@ -176,11 +178,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
         // Keys in non-alphabetical order
-        fs::write(
-            &path,
-            r#"{"zebra": 1, "apple": 2, "mango": 3}"#,
-        )
-        .unwrap();
+        fs::write(&path, r#"{"zebra": 1, "apple": 2, "mango": 3}"#).unwrap();
 
         mutate_state(&path, |state| {
             state["mango"] = json!(99);

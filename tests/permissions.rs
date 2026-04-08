@@ -26,7 +26,11 @@ fn all_plugin_skill_files() -> Vec<(String, String)> {
         for md in fs::read_dir(entry.path()).unwrap().flatten() {
             let path = md.path();
             if path.extension().and_then(|e| e.to_str()) == Some("md") {
-                let rel = path.strip_prefix(&repo).unwrap().to_string_lossy().to_string();
+                let rel = path
+                    .strip_prefix(&repo)
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string();
                 let content = fs::read_to_string(&path).unwrap();
                 result.push((rel, content));
             }
@@ -148,12 +152,18 @@ const PLACEHOLDER_SUBS: &[(&str, &str)] = &[
     ("<plan_file_path>", ".flow-states/test-branch-plan.md"),
     ("<dag_file_path>", ".flow-states/test-branch-dag.md"),
     ("<issue_title>", "Test issue title"),
-    ("<transcript_path>", "~/.claude/projects/-tmp-test/abc123.jsonl"),
+    (
+        "<transcript_path>",
+        "~/.claude/projects/-tmp-test/abc123.jsonl",
+    ),
     ("<issue_number>", "107"),
     ("<issue_url>", "https://github.com/test/test/issues/1"),
     ("<n>", "3"),
     ("<file>", "lib/foo.py"),
-    ("<skills_dict_json>", r#"{"flow-start":{"continue":"manual"}}"#),
+    (
+        "<skills_dict_json>",
+        r#"{"flow-start":{"continue":"manual"}}"#,
+    ),
     ("<commit_format>", "full"),
     ("<index>", "0"),
     ("<outcome>", "completed"),
@@ -219,7 +229,11 @@ fn extract_primary_command(bash_block: &str) -> Option<String> {
         .to_string();
     // Take first line
     let line = line.lines().next().unwrap_or("").trim().to_string();
-    if line.is_empty() { None } else { Some(line) }
+    if line.is_empty() {
+        None
+    } else {
+        Some(line)
+    }
 }
 
 fn extract_full_command(bash_block: &str) -> Option<String> {
@@ -248,7 +262,11 @@ fn extract_full_command(bash_block: &str) -> Option<String> {
         .replace_all(&line, " ")
         .to_string();
     let line = line.lines().next().unwrap_or("").trim().to_string();
-    if line.is_empty() { None } else { Some(line) }
+    if line.is_empty() {
+        None
+    } else {
+        Some(line)
+    }
 }
 
 const AUTO_ALLOWED: &[&str] = &["cd"];
@@ -308,11 +326,19 @@ fn no_bash_commands_reference_tmp() {
         for block in extract_bash_blocks_from_content(&content) {
             if block.contains("/tmp/") {
                 let cmd = block.lines().next().unwrap_or("");
-                errors.push(format!("{}: bash block references /tmp/: '{}'", filepath, cmd));
+                errors.push(format!(
+                    "{}: bash block references /tmp/: '{}'",
+                    filepath, cmd
+                ));
             }
         }
     }
-    assert!(errors.is_empty(), "Found {} bash block(s) referencing /tmp/:\n{}", errors.len(), errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Found {} bash block(s) referencing /tmp/:\n{}",
+        errors.len(),
+        errors.join("\n  ")
+    );
 }
 
 #[test]
@@ -326,7 +352,12 @@ fn no_command_substitution_in_bash_blocks() {
             }
         }
     }
-    assert!(errors.is_empty(), "Found {} bash block(s) containing $():\n{}", errors.len(), errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Found {} bash block(s) containing $():\n{}",
+        errors.len(),
+        errors.join("\n  ")
+    );
 }
 
 #[test]
@@ -336,11 +367,19 @@ fn no_bash_redirects_to_dot_claude() {
         for block in extract_bash_blocks_from_content(&content) {
             if block.contains(">>") && block.contains(".claude/") {
                 let cmd = block.lines().next().unwrap_or("");
-                errors.push(format!("{}: bash block redirects to .claude/: '{}'", filepath, cmd));
+                errors.push(format!(
+                    "{}: bash block redirects to .claude/: '{}'",
+                    filepath, cmd
+                ));
             }
         }
     }
-    assert!(errors.is_empty(), "Found {} bash block(s) using >> to .claude/:\n{}", errors.len(), errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Found {} bash block(s) using >> to .claude/:\n{}",
+        errors.len(),
+        errors.join("\n  ")
+    );
 }
 
 #[test]
@@ -350,8 +389,16 @@ fn logging_uses_project_local_path() {
         let content = common::read_skill(&name);
         let cap = log_re.captures(&content).unwrap();
         let section = &cap[1];
-        assert!(!section.contains("/tmp/"), "skills/{}/SKILL.md ## Logging references /tmp/", name);
-        assert!(section.contains(".flow-states/"), "skills/{}/SKILL.md ## Logging missing .flow-states/", name);
+        assert!(
+            !section.contains("/tmp/"),
+            "skills/{}/SKILL.md ## Logging references /tmp/",
+            name
+        );
+        assert!(
+            section.contains(".flow-states/"),
+            "skills/{}/SKILL.md ## Logging missing .flow-states/",
+            name
+        );
     }
 }
 
@@ -383,12 +430,20 @@ fn plugin_skills_use_plugin_root_for_bin_flow() {
             for line in block.lines() {
                 let stripped = line.trim();
                 if stripped.starts_with("bin/flow") {
-                    errors.push(format!("{}: bare 'bin/flow' must use ${{CLAUDE_PLUGIN_ROOT}}/bin/flow — got: {}", rel, &stripped[..stripped.len().min(60)]));
+                    errors.push(format!(
+                        "{}: bare 'bin/flow' must use ${{CLAUDE_PLUGIN_ROOT}}/bin/flow — got: {}",
+                        rel,
+                        &stripped[..stripped.len().min(60)]
+                    ));
                 }
             }
         }
     }
-    assert!(errors.is_empty(), "Plugin skill bash blocks must not use bare bin/flow:\n{}", errors.join("\n"));
+    assert!(
+        errors.is_empty(),
+        "Plugin skill bash blocks must not use bare bin/flow:\n{}",
+        errors.join("\n")
+    );
 }
 
 #[test]
@@ -402,7 +457,12 @@ fn no_exit_in_bash_blocks() {
             }
         }
     }
-    assert!(errors.is_empty(), "Found {} bash block(s) containing exit:\n{}", errors.len(), errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Found {} bash block(s) containing exit:\n{}",
+        errors.len(),
+        errors.join("\n  ")
+    );
 }
 
 #[test]
@@ -412,11 +472,19 @@ fn no_heredoc_in_bash_blocks() {
         for block in extract_bash_blocks_from_content(&content) {
             if block.contains("<<") {
                 let cmd = block.lines().next().unwrap_or("");
-                errors.push(format!("{}: bash block contains heredoc (<<): '{}'", filepath, cmd));
+                errors.push(format!(
+                    "{}: bash block contains heredoc (<<): '{}'",
+                    filepath, cmd
+                ));
             }
         }
     }
-    assert!(errors.is_empty(), "Found {} bash block(s) containing heredoc:\n{}", errors.len(), errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Found {} bash block(s) containing heredoc:\n{}",
+        errors.len(),
+        errors.join("\n  ")
+    );
 }
 
 #[test]
@@ -427,11 +495,19 @@ fn no_cd_compound_in_bash_blocks() {
         for block in extract_bash_blocks_from_content(&content) {
             if cd_re.is_match(&block) {
                 let cmd = block.lines().next().unwrap_or("");
-                errors.push(format!("{}: bash block contains cd && compound: '{}'", filepath, cmd));
+                errors.push(format!(
+                    "{}: bash block contains cd && compound: '{}'",
+                    filepath, cmd
+                ));
             }
         }
     }
-    assert!(errors.is_empty(), "Found {} bash block(s) containing cd && compound:\n{}", errors.len(), errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Found {} bash block(s) containing cd && compound:\n{}",
+        errors.len(),
+        errors.join("\n  ")
+    );
 }
 
 #[test]
@@ -447,12 +523,20 @@ fn all_bash_commands_have_permission_coverage() {
                     continue;
                 }
                 if !regexes.iter().any(|r| r.is_match(&cmd)) {
-                    errors.push(format!("{}: command '{}' has no matching permission", filepath, cmd));
+                    errors.push(format!(
+                        "{}: command '{}' has no matching permission",
+                        filepath, cmd
+                    ));
                 }
             }
         }
     }
-    assert!(errors.is_empty(), "Found {} command(s) without permission coverage:\n{}", errors.len(), errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Found {} command(s) without permission coverage:\n{}",
+        errors.len(),
+        errors.join("\n  ")
+    );
 }
 
 #[test]
@@ -469,12 +553,20 @@ fn cd_prefixed_commands_have_full_permission_coverage() {
                     continue;
                 }
                 if !regexes.iter().any(|r| r.is_match(&full_cmd)) {
-                    errors.push(format!("{}: cd-prefixed command '{}' has no matching permission", filepath, full_cmd));
+                    errors.push(format!(
+                        "{}: cd-prefixed command '{}' has no matching permission",
+                        filepath, full_cmd
+                    ));
                 }
             }
         }
     }
-    assert!(errors.is_empty(), "Found {} cd-prefixed command(s) without coverage:\n{}", errors.len(), errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Found {} cd-prefixed command(s) without coverage:\n{}",
+        errors.len(),
+        errors.join("\n  ")
+    );
 }
 
 #[test]
@@ -516,8 +608,17 @@ fn worktree_cd_persists_no_repeated_cd() {
         }
     }
 
-    assert_eq!(bare_cd_count, 1, "Expected exactly 1 bare 'cd .worktrees/' block, found {}", bare_cd_count);
-    assert!(compound_cd_blocks.is_empty(), "Found {} compound 'cd .worktrees/ && ...' block(s):\n{}", compound_cd_blocks.len(), compound_cd_blocks.join("\n  "));
+    assert_eq!(
+        bare_cd_count, 1,
+        "Expected exactly 1 bare 'cd .worktrees/' block, found {}",
+        bare_cd_count
+    );
+    assert!(
+        compound_cd_blocks.is_empty(),
+        "Found {} compound 'cd .worktrees/ && ...' block(s):\n{}",
+        compound_cd_blocks.len(),
+        compound_cd_blocks.join("\n  ")
+    );
 }
 
 #[test]
@@ -536,12 +637,20 @@ fn maintainer_bash_commands_have_settings_coverage() {
                     continue;
                 }
                 if !regexes.iter().any(|r| r.is_match(&cmd)) {
-                    errors.push(format!("{}: command '{}' has no matching permission in settings.json", filepath, cmd));
+                    errors.push(format!(
+                        "{}: command '{}' has no matching permission in settings.json",
+                        filepath, cmd
+                    ));
                 }
             }
         }
     }
-    assert!(errors.is_empty(), "Found {} maintainer command(s) without settings.json coverage:\n{}", errors.len(), errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Found {} maintainer command(s) without settings.json coverage:\n{}",
+        errors.len(),
+        errors.join("\n  ")
+    );
 }
 
 const REQUIRED_DENY_ENTRIES: &[&str] = &[
@@ -573,7 +682,11 @@ fn plugin_permissions_deny_destructive_git() {
     let deny = perms["deny"].as_array().unwrap();
     let deny_strs: Vec<&str> = deny.iter().map(|v| v.as_str().unwrap()).collect();
     for entry in REQUIRED_DENY_ENTRIES {
-        assert!(deny_strs.contains(entry), "Missing deny entry in prime/SKILL.md: {}", entry);
+        assert!(
+            deny_strs.contains(entry),
+            "Missing deny entry in prime/SKILL.md: {}",
+            entry
+        );
     }
 }
 
@@ -581,7 +694,11 @@ fn plugin_permissions_deny_destructive_git() {
 fn maintainer_permissions_deny_destructive_git() {
     let deny = load_settings_deny();
     for entry in REQUIRED_DENY_ENTRIES {
-        assert!(deny.iter().any(|d| d == entry), "Missing deny entry in settings.json: {}", entry);
+        assert!(
+            deny.iter().any(|d| d == entry),
+            "Missing deny entry in settings.json: {}",
+            entry
+        );
     }
 }
 
@@ -593,7 +710,10 @@ fn no_unrecognized_placeholders_in_bash_blocks() {
     for (filepath, content) in all_check_files() {
         for block in extract_bash_blocks_from_content(&content) {
             let blockquote_re = Regex::new(r"^>\s*").unwrap();
-            let lines: Vec<String> = block.lines().map(|l| blockquote_re.replace(l, "").to_string()).collect();
+            let lines: Vec<String> = block
+                .lines()
+                .map(|l| blockquote_re.replace(l, "").to_string())
+                .collect();
             let mut line = lines.join("\n").trim().to_string();
 
             if line.contains("COMMAND") {
@@ -604,16 +724,27 @@ fn no_unrecognized_placeholders_in_bash_blocks() {
                 line = line.replace(placeholder, value);
             }
 
-            let remaining: Vec<String> = placeholder_re.find_iter(&line).map(|m| m.as_str().to_string()).collect();
+            let remaining: Vec<String> = placeholder_re
+                .find_iter(&line)
+                .map(|m| m.as_str().to_string())
+                .collect();
             if !remaining.is_empty() {
                 let unique: HashSet<_> = remaining.into_iter().collect();
                 let mut sorted: Vec<_> = unique.into_iter().collect();
                 sorted.sort();
-                errors.push(format!("{}: unrecognized placeholder(s) {:?}", filepath, sorted));
+                errors.push(format!(
+                    "{}: unrecognized placeholder(s) {:?}",
+                    filepath, sorted
+                ));
             }
         }
     }
-    assert!(errors.is_empty(), "Found {} bash block(s) with unrecognized placeholders:\n{}", errors.len(), errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Found {} bash block(s) with unrecognized placeholders:\n{}",
+        errors.len(),
+        errors.join("\n  ")
+    );
 }
 
 #[test]
@@ -662,14 +793,22 @@ fn no_skill_command_matches_deny() {
             if let Some(cmd) = extract_primary_command(&block) {
                 for (i, regex) in deny_regexes.iter().enumerate() {
                     if regex.is_match(&cmd) {
-                        errors.push(format!("{}: command '{}' matches deny entry '{}'", filepath, cmd, deny[i]));
+                        errors.push(format!(
+                            "{}: command '{}' matches deny entry '{}'",
+                            filepath, cmd, deny[i]
+                        ));
                         break;
                     }
                 }
             }
         }
     }
-    assert!(errors.is_empty(), "Found {} command(s) matching deny patterns:\n{}", errors.len(), errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Found {} command(s) matching deny patterns:\n{}",
+        errors.len(),
+        errors.join("\n  ")
+    );
 }
 
 #[test]
@@ -683,21 +822,39 @@ fn no_maintainer_command_matches_deny() {
             if let Some(cmd) = extract_primary_command(&block) {
                 for (i, regex) in deny_regexes.iter().enumerate() {
                     if regex.is_match(&cmd) {
-                        errors.push(format!("{}: command '{}' matches deny entry '{}'", filepath, cmd, deny[i]));
+                        errors.push(format!(
+                            "{}: command '{}' matches deny entry '{}'",
+                            filepath, cmd, deny[i]
+                        ));
                         break;
                     }
                 }
             }
         }
     }
-    assert!(errors.is_empty(), "Found {} maintainer command(s) matching deny:\n{}", errors.len(), errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Found {} maintainer command(s) matching deny:\n{}",
+        errors.len(),
+        errors.join("\n  ")
+    );
 }
 
 #[test]
 fn no_allow_deny_overlap_in_plugin_permissions() {
     let perms = extract_prime_permissions_block();
-    let allow: Vec<String> = perms["allow"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect();
-    let deny: Vec<String> = perms["deny"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect();
+    let allow: Vec<String> = perms["allow"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    let deny: Vec<String> = perms["deny"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
     let deny_regexes = build_regexes(&deny);
     let mut errors = Vec::new();
 
@@ -705,13 +862,21 @@ fn no_allow_deny_overlap_in_plugin_permissions() {
         if let Some(example) = concrete_example(entry) {
             for (i, regex) in deny_regexes.iter().enumerate() {
                 if regex.is_match(&example) {
-                    errors.push(format!("allow '{}' (example: '{}') matches deny '{}'", entry, example, deny[i]));
+                    errors.push(format!(
+                        "allow '{}' (example: '{}') matches deny '{}'",
+                        entry, example, deny[i]
+                    ));
                     break;
                 }
             }
         }
     }
-    assert!(errors.is_empty(), "Found {} allow/deny overlap(s) in prime/SKILL.md:\n{}", errors.len(), errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Found {} allow/deny overlap(s) in prime/SKILL.md:\n{}",
+        errors.len(),
+        errors.join("\n  ")
+    );
 }
 
 #[test]
@@ -725,26 +890,41 @@ fn no_allow_deny_overlap_in_maintainer_settings() {
         if let Some(example) = concrete_example(entry) {
             for (i, regex) in deny_regexes.iter().enumerate() {
                 if regex.is_match(&example) {
-                    errors.push(format!("allow '{}' (example: '{}') matches deny '{}'", entry, example, deny[i]));
+                    errors.push(format!(
+                        "allow '{}' (example: '{}') matches deny '{}'",
+                        entry, example, deny[i]
+                    ));
                     break;
                 }
             }
         }
     }
-    assert!(errors.is_empty(), "Found {} allow/deny overlap(s) in settings.json:\n{}", errors.len(), errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Found {} allow/deny overlap(s) in settings.json:\n{}",
+        errors.len(),
+        errors.join("\n  ")
+    );
 }
 
 #[test]
 fn tool_alternative_denies_in_project_settings() {
     let deny = load_settings_deny();
     for entry in REQUIRED_TOOL_ALTERNATIVE_DENIES {
-        assert!(deny.iter().any(|d| d == entry), "Missing deny entry in settings.json: {}", entry);
+        assert!(
+            deny.iter().any(|d| d == entry),
+            "Missing deny entry in settings.json: {}",
+            entry
+        );
     }
 }
 
 #[test]
 fn no_dedicated_tool_commands_in_bash_blocks() {
-    let denied_prefixes: HashSet<&str> = ["cat", "head", "tail", "grep", "rg", "find", "ls"].iter().copied().collect();
+    let denied_prefixes: HashSet<&str> = ["cat", "head", "tail", "grep", "rg", "find", "ls"]
+        .iter()
+        .copied()
+        .collect();
     let mut errors = Vec::new();
 
     for (filepath, content) in all_check_files_with_maintainer() {
@@ -752,26 +932,43 @@ fn no_dedicated_tool_commands_in_bash_blocks() {
             if let Some(cmd) = extract_primary_command(&block) {
                 let first_word = cmd.split_whitespace().next().unwrap_or("");
                 if denied_prefixes.contains(first_word) {
-                    errors.push(format!("{}: bash block starts with '{}': '{}'", filepath, first_word, cmd));
+                    errors.push(format!(
+                        "{}: bash block starts with '{}': '{}'",
+                        filepath, first_word, cmd
+                    ));
                 }
             }
         }
     }
-    assert!(errors.is_empty(), "Found {} bash block(s) using commands with dedicated tool alternatives:\n{}", errors.len(), errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Found {} bash block(s) using commands with dedicated tool alternatives:\n{}",
+        errors.len(),
+        errors.join("\n  ")
+    );
 }
 
 #[test]
 fn prime_setup_lists_match_skill_md_reference() {
     // Extract Rust constants from src/prime_check.rs
-    let prime_check = fs::read_to_string(common::repo_root().join("src").join("prime_check.rs")).unwrap();
+    let prime_check =
+        fs::read_to_string(common::repo_root().join("src").join("prime_check.rs")).unwrap();
 
     fn extract_const(content: &str, name: &str) -> Vec<String> {
-        let pattern = format!(r#"(?s)(?:pub\s+)?const {}:\s*&\[&str\]\s*=\s*&\[(.*?)\];"#, regex::escape(name));
+        let pattern = format!(
+            r#"(?s)(?:pub\s+)?const {}:\s*&\[&str\]\s*=\s*&\[(.*?)\];"#,
+            regex::escape(name)
+        );
         let re = Regex::new(&pattern).unwrap();
-        let cap = re.captures(content).unwrap_or_else(|| panic!("Could not find const {} in prime_check.rs", name));
+        let cap = re
+            .captures(content)
+            .unwrap_or_else(|| panic!("Could not find const {} in prime_check.rs", name));
         let body = &cap[1];
         let str_re = Regex::new(r#""((?:[^"\\]|\\.)*)""#).unwrap();
-        str_re.captures_iter(body).map(|c| c[1].to_string()).collect()
+        str_re
+            .captures_iter(body)
+            .map(|c| c[1].to_string())
+            .collect()
     }
 
     let universal_allow = extract_const(&prime_check, "UNIVERSAL_ALLOW");
@@ -784,7 +981,8 @@ fn prime_setup_lists_match_skill_md_reference() {
         if entry.path().is_dir() {
             let perms_file = entry.path().join("permissions.json");
             if perms_file.exists() {
-                let data: Value = serde_json::from_str(&fs::read_to_string(&perms_file).unwrap()).unwrap();
+                let data: Value =
+                    serde_json::from_str(&fs::read_to_string(&perms_file).unwrap()).unwrap();
                 if let Some(allow) = data["allow"].as_array() {
                     for v in allow {
                         all_framework_perms.push(v.as_str().unwrap().to_string());
@@ -794,31 +992,60 @@ fn prime_setup_lists_match_skill_md_reference() {
         }
     }
 
-    let code_allow: HashSet<String> = universal_allow.into_iter().chain(all_framework_perms).collect();
+    let code_allow: HashSet<String> = universal_allow
+        .into_iter()
+        .chain(all_framework_perms)
+        .collect();
     let code_deny: HashSet<String> = flow_deny.into_iter().collect();
 
     let perms = extract_prime_permissions_block();
-    let skill_allow: HashSet<String> = perms["allow"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect();
-    let skill_deny: HashSet<String> = perms["deny"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect();
+    let skill_allow: HashSet<String> = perms["allow"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    let skill_deny: HashSet<String> = perms["deny"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
 
     let mut errors = Vec::new();
     let only_code_allow: Vec<_> = code_allow.difference(&skill_allow).collect();
     if !only_code_allow.is_empty() {
-        errors.push(format!("In prime_check.rs allow but not prime/SKILL.md: {:?}", only_code_allow));
+        errors.push(format!(
+            "In prime_check.rs allow but not prime/SKILL.md: {:?}",
+            only_code_allow
+        ));
     }
     let only_skill_allow: Vec<_> = skill_allow.difference(&code_allow).collect();
     if !only_skill_allow.is_empty() {
-        errors.push(format!("In prime/SKILL.md allow but not prime_check.rs: {:?}", only_skill_allow));
+        errors.push(format!(
+            "In prime/SKILL.md allow but not prime_check.rs: {:?}",
+            only_skill_allow
+        ));
     }
     let only_code_deny: Vec<_> = code_deny.difference(&skill_deny).collect();
     if !only_code_deny.is_empty() {
-        errors.push(format!("In prime_check.rs deny but not prime/SKILL.md: {:?}", only_code_deny));
+        errors.push(format!(
+            "In prime_check.rs deny but not prime/SKILL.md: {:?}",
+            only_code_deny
+        ));
     }
     let only_skill_deny: Vec<_> = skill_deny.difference(&code_deny).collect();
     if !only_skill_deny.is_empty() {
-        errors.push(format!("In prime/SKILL.md deny but not prime_check.rs: {:?}", only_skill_deny));
+        errors.push(format!(
+            "In prime/SKILL.md deny but not prime_check.rs: {:?}",
+            only_skill_deny
+        ));
     }
-    assert!(errors.is_empty(), "Permission lists out of sync:\n{}", errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Permission lists out of sync:\n{}",
+        errors.join("\n  ")
+    );
 }
 
 #[test]
@@ -829,7 +1056,20 @@ fn settings_allow_list_ordered_by_category() {
         ("bin", vec!["Bash(*bin/"]),
         ("plugins", vec!["Bash(claude plugin"]),
         ("cleanup", vec!["Bash(rm "]),
-        ("build", vec!["Bash(cargo ", "Bash(cd ", "Bash(pwd)", "Bash(chmod ", "Bash(make ", "Bash(diff ", "Bash(.venv/", "Bash(curl ", "Bash(open:"]),
+        (
+            "build",
+            vec![
+                "Bash(cargo ",
+                "Bash(cd ",
+                "Bash(pwd)",
+                "Bash(chmod ",
+                "Bash(make ",
+                "Bash(diff ",
+                "Bash(.venv/",
+                "Bash(curl ",
+                "Bash(open:",
+            ],
+        ),
         ("read", vec!["Read("]),
         ("skills", vec!["Skill("]),
         ("agents", vec!["Agent("]),
@@ -846,7 +1086,11 @@ fn settings_allow_list_ordered_by_category() {
         None
     };
 
-    let category_index: std::collections::HashMap<&str, usize> = categories.iter().enumerate().map(|(i, (cat, _))| (*cat, i)).collect();
+    let category_index: std::collections::HashMap<&str, usize> = categories
+        .iter()
+        .enumerate()
+        .map(|(i, (cat, _))| (*cat, i))
+        .collect();
     let permissions = load_settings_allow();
     let mut errors = Vec::new();
     let mut last_index: i32 = -1;
@@ -854,11 +1098,17 @@ fn settings_allow_list_ordered_by_category() {
 
     for entry in &permissions {
         match categorize(entry) {
-            None => errors.push(format!("Entry '{}' does not match any known category", entry)),
+            None => errors.push(format!(
+                "Entry '{}' does not match any known category",
+                entry
+            )),
             Some(cat) => {
                 let idx = category_index[cat] as i32;
                 if idx < last_index {
-                    errors.push(format!("Entry '{}' (category: {}) appears after '{}' entries", entry, cat, last_cat));
+                    errors.push(format!(
+                        "Entry '{}' (category: {}) appears after '{}' entries",
+                        entry, cat, last_cat
+                    ));
                 } else {
                     last_index = idx;
                     last_cat = cat;
@@ -866,5 +1116,9 @@ fn settings_allow_list_ordered_by_category() {
             }
         }
     }
-    assert!(errors.is_empty(), "Allow list not ordered by category:\n{}", errors.join("\n  "));
+    assert!(
+        errors.is_empty(),
+        "Allow list not ordered by category:\n{}",
+        errors.join("\n  ")
+    );
 }

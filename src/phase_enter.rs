@@ -18,7 +18,10 @@ use crate::phase_config::PHASE_ORDER;
 use crate::phase_transition::phase_enter;
 
 #[derive(Parser, Debug)]
-#[command(name = "phase-enter", about = "Generic phase entry: gate + enter + state data")]
+#[command(
+    name = "phase-enter",
+    about = "Generic phase entry: gate + enter + state data"
+)]
 pub struct Args {
     /// Phase name (e.g. flow-code, flow-code-review, flow-learn)
     #[arg(long)]
@@ -57,9 +60,7 @@ fn resolve_state(args: &Args) -> Result<(PathBuf, String, PathBuf), Value> {
         }
     };
 
-    let state_path = root
-        .join(".flow-states")
-        .join(format!("{}.json", branch));
+    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
     if !state_path.exists() {
         return Err(json!({
             "status": "error",
@@ -113,9 +114,7 @@ fn resolve_mode(state: &Value, phase: &str) -> (String, String) {
         _ => ("manual", "manual"),
     };
 
-    let skill_config = state
-        .get("skills")
-        .and_then(|s| s.get(phase));
+    let skill_config = state.get("skills").and_then(|s| s.get(phase));
 
     match skill_config {
         Some(cfg) if cfg.is_object() => {
@@ -216,8 +215,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         &branch,
         &format!(
             "[Phase] phase-enter --phase {} ({})",
-            args.phase,
-            enter_result["status"]
+            args.phase, enter_result["status"]
         ),
     );
 
@@ -244,9 +242,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
 
     // Compute worktree path
-    let worktree_path = root
-        .join(".worktrees")
-        .join(&branch);
+    let worktree_path = root.join(".worktrees").join(&branch);
 
     // Build response with all state data the skill needs
     let mut response = json!({

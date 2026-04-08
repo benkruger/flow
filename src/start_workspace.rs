@@ -16,14 +16,17 @@ use crate::commands::log::append_log;
 use crate::commands::start_lock::{queue_path, release};
 use crate::commands::start_step::update_step;
 use crate::git::project_root;
+use crate::github::detect_repo;
 use crate::lock::mutate_state;
 use crate::output::json_error;
-use crate::github::detect_repo;
 use crate::start_setup::{create_worktree, initial_commit_push_pr};
 use crate::utils::derive_feature;
 
 #[derive(Parser, Debug)]
-#[command(name = "start-workspace", about = "Create worktree, PR, backfill state, release lock")]
+#[command(
+    name = "start-workspace",
+    about = "Create worktree, PR, backfill state, release lock"
+)]
 pub struct Args {
     /// Feature name (for lock release)
     pub feature_name: String,
@@ -45,9 +48,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let feature_title = derive_feature(branch);
 
     // Update TUI step counter
-    let state_path = root
-        .join(".flow-states")
-        .join(format!("{}.json", branch));
+    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
     update_step(&state_path, 3);
 
     let queue_dir = queue_path(&root);
@@ -97,26 +98,33 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let _ = append_log(
         &root,
         branch,
-        &format!("[Phase 1] start-workspace — worktree .worktrees/{} (ok)", branch),
+        &format!(
+            "[Phase 1] start-workspace — worktree .worktrees/{} (ok)",
+            branch
+        ),
     );
 
     // Step 2: Commit, push, create PR
-    let (pr_url, pr_number) = match initial_commit_push_pr(&wt_path, branch, &feature_title, &prompt) {
-        Ok(r) => r,
-        Err(e) => {
-            let _ = append_log(
-                &root,
-                branch,
-                &format!("[Phase 1] start-workspace — PR creation failed: {}", e.message),
-            );
-            release_lock(&args.feature_name);
-            return Ok(json!({
-                "status": "error",
-                "step": e.step,
-                "message": e.message,
-            }));
-        }
-    };
+    let (pr_url, pr_number) =
+        match initial_commit_push_pr(&wt_path, branch, &feature_title, &prompt) {
+            Ok(r) => r,
+            Err(e) => {
+                let _ = append_log(
+                    &root,
+                    branch,
+                    &format!(
+                        "[Phase 1] start-workspace — PR creation failed: {}",
+                        e.message
+                    ),
+                );
+                release_lock(&args.feature_name);
+                return Ok(json!({
+                    "status": "error",
+                    "step": e.step,
+                    "message": e.message,
+                }));
+            }
+        };
     let _ = append_log(
         &root,
         branch,

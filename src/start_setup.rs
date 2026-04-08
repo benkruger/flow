@@ -14,9 +14,9 @@ use serde_json::{json, Value};
 use crate::commands::log::append_log;
 use crate::github::detect_repo;
 use crate::lock::mutate_state;
+use crate::phase_config::find_state_files;
 use crate::phase_config::{auto_skills, build_initial_phases, freeze_phases, read_flow_json};
 use crate::state::SkillConfig;
-use crate::phase_config::find_state_files;
 use crate::utils::{branch_name, derive_feature, detect_tty, now, read_prompt_file};
 
 #[derive(Parser, Debug)]
@@ -143,10 +143,14 @@ pub fn extract_pr_number(pr_url: &str) -> u32 {
     0
 }
 
-
 /// Pull latest main.
 pub fn git_pull(cwd: &Path) -> Result<(), SetupError> {
-    run_cmd(&["git", "pull", "origin", "main"], cwd, "git_pull", Some(Duration::from_secs(60)))?;
+    run_cmd(
+        &["git", "pull", "origin", "main"],
+        cwd,
+        "git_pull",
+        Some(Duration::from_secs(60)),
+    )?;
     Ok(())
 }
 
@@ -300,13 +304,11 @@ pub fn create_state_file(
         message: e.to_string(),
     })?;
     let state_path = state_dir.join(format!("{}.json", branch));
-    std::fs::write(
-        &state_path,
-        serde_json::to_string_pretty(&state).unwrap(),
-    )
-    .map_err(|e| SetupError {
-        step: "state".to_string(),
-        message: e.to_string(),
+    std::fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).map_err(|e| {
+        SetupError {
+            step: "state".to_string(),
+            message: e.to_string(),
+        }
     })?;
 
     Ok(state)
@@ -415,9 +417,9 @@ pub fn run(args: Args) {
     let skills: Option<IndexMap<String, SkillConfig>> = if args.auto {
         Some(auto_skills())
     } else {
-        init_data.get("skills").and_then(|v| {
-            serde_json::from_value::<IndexMap<String, SkillConfig>>(v.clone()).ok()
-        })
+        init_data
+            .get("skills")
+            .and_then(|v| serde_json::from_value::<IndexMap<String, SkillConfig>>(v.clone()).ok())
     };
 
     // Git pull (skip when caller already pulled main)
@@ -433,7 +435,11 @@ pub fn run(args: Args) {
             );
             return;
         }
-        let _ = append_log(&project_root, &branch, "[Phase 1] git pull origin main (exit 0)");
+        let _ = append_log(
+            &project_root,
+            &branch,
+            "[Phase 1] git pull origin main (exit 0)",
+        );
     }
 
     // Create worktree
@@ -458,20 +464,21 @@ pub fn run(args: Args) {
     );
 
     // Commit, push, PR
-    let (pr_url, pr_number) = match initial_commit_push_pr(&wt_path, &branch, &feature_title, &raw_prompt) {
-        Ok(r) => r,
-        Err(e) => {
-            println!(
-                "{}",
-                json!({
-                    "status": "error",
-                    "step": e.step,
-                    "message": e.message,
-                })
-            );
-            return;
-        }
-    };
+    let (pr_url, pr_number) =
+        match initial_commit_push_pr(&wt_path, &branch, &feature_title, &raw_prompt) {
+            Ok(r) => r,
+            Err(e) => {
+                println!(
+                    "{}",
+                    json!({
+                        "status": "error",
+                        "step": e.step,
+                        "message": e.message,
+                    })
+                );
+                return;
+            }
+        };
     let _ = append_log(
         &project_root,
         &branch,
@@ -633,10 +640,7 @@ mod tests {
 
     #[test]
     fn extract_pr_number_non_numeric() {
-        assert_eq!(
-            extract_pr_number("https://github.com/org/repo/pull/abc"),
-            0
-        );
+        assert_eq!(extract_pr_number("https://github.com/org/repo/pull/abc"), 0);
     }
 
     #[test]

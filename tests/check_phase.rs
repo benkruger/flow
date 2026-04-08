@@ -19,7 +19,8 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> String {
         ("flow-complete", "Complete"),
     ];
     let name_map: std::collections::HashMap<&str, &str> = names.into_iter().collect();
-    let status_map: std::collections::HashMap<&str, &str> = phase_statuses.iter().copied().collect();
+    let status_map: std::collections::HashMap<&str, &str> =
+        phase_statuses.iter().copied().collect();
 
     let mut phases = String::from("{");
     for (i, &p) in order.iter().enumerate() {

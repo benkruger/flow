@@ -21,11 +21,20 @@ use serde_yaml;
 fn test_phases_has_1_through_6() {
     let data = common::load_phases();
     let order = data["order"].as_array().expect("missing 'order' array");
-    assert_eq!(order.len(), 6, "Expected 6 phases in order, got {}", order.len());
+    assert_eq!(
+        order.len(),
+        6,
+        "Expected 6 phases in order, got {}",
+        order.len()
+    );
     let phases = data["phases"].as_object().expect("missing 'phases' object");
     for key_val in order {
         let key = key_val.as_str().unwrap();
-        assert!(phases.contains_key(key), "Phase '{}' in order but missing from phases", key);
+        assert!(
+            phases.contains_key(key),
+            "Phase '{}' in order but missing from phases",
+            key
+        );
     }
     assert_eq!(phases.len(), 6);
 }
@@ -82,7 +91,10 @@ fn test_can_return_to_references_valid_lower_phases() {
 fn test_commands_are_unique() {
     let data = common::load_phases();
     let phases = data["phases"].as_object().unwrap();
-    let commands: Vec<&str> = phases.values().map(|p| p["command"].as_str().unwrap()).collect();
+    let commands: Vec<&str> = phases
+        .values()
+        .map(|p| p["command"].as_str().unwrap())
+        .collect();
     let unique: HashSet<&str> = commands.iter().copied().collect();
     assert_eq!(
         commands.len(),
@@ -100,10 +112,9 @@ fn test_commands_are_unique() {
 #[test]
 fn test_version_matches_across_files() {
     let root = common::repo_root();
-    let plugin: Value = serde_json::from_str(
-        &fs::read_to_string(root.join(".claude-plugin/plugin.json")).unwrap(),
-    )
-    .unwrap();
+    let plugin: Value =
+        serde_json::from_str(&fs::read_to_string(root.join(".claude-plugin/plugin.json")).unwrap())
+            .unwrap();
     let marketplace: Value = serde_json::from_str(
         &fs::read_to_string(root.join(".claude-plugin/marketplace.json")).unwrap(),
     )
@@ -163,61 +174,7 @@ fn test_every_skill_dir_starts_with_flow_prefix() {
     }
 }
 
-// --- flow_utils.py parity tests ---
-
-#[test]
-fn test_phase_names_in_flow_utils_match_flow_phases() {
-    // PHASE_NAMES in flow_utils.py must be derived from flow-phases.json.
-    // The Python dict is a comprehension: PHASE_NAMES = {key: _config["phases"][key]["name"] for key in PHASE_ORDER}
-    // We verify the structural contract: the comprehension pattern exists and references
-    // the canonical source (_config, which is loaded from flow-phases.json).
-    let root = common::repo_root();
-    let flow_utils = fs::read_to_string(root.join("lib/flow_utils.py")).unwrap();
-
-    // Verify PHASE_NAMES is built from _config (flow-phases.json)
-    assert!(
-        flow_utils.contains("PHASE_NAMES"),
-        "flow_utils.py must define PHASE_NAMES"
-    );
-    let re = Regex::new(r#"PHASE_NAMES\s*=\s*\{.*_config\[.phases.\]\[.*\]\[.name.\]"#).unwrap();
-    assert!(
-        re.is_match(&flow_utils),
-        "PHASE_NAMES must be derived from _config (flow-phases.json) phase names"
-    );
-
-    // Verify _config is loaded from flow-phases.json
-    assert!(
-        flow_utils.contains("flow-phases.json"),
-        "flow_utils.py must reference flow-phases.json as the canonical source"
-    );
-
-    // Verify PHASE_ORDER is used as the key source
-    assert!(
-        flow_utils.contains("PHASE_ORDER = _config[\"order\"]"),
-        "PHASE_ORDER must be derived from _config[\"order\"]"
-    );
-}
-
-#[test]
-fn test_check_phase_commands_match_flow_phases() {
-    // COMMANDS in flow_utils.py must be derived from flow-phases.json.
-    // The Python dict is a comprehension: COMMANDS = {key: _config["phases"][key]["command"] for key in PHASE_ORDER}
-    // We verify the structural contract: the comprehension pattern exists and references
-    // the canonical source (_config, which is loaded from flow-phases.json).
-    let root = common::repo_root();
-    let flow_utils = fs::read_to_string(root.join("lib/flow_utils.py")).unwrap();
-
-    // Verify COMMANDS is built from _config (flow-phases.json)
-    assert!(
-        flow_utils.contains("COMMANDS"),
-        "flow_utils.py must define COMMANDS"
-    );
-    let re = Regex::new(r#"COMMANDS\s*=\s*\{.*_config\[.phases.\]\[.*\]\[.command.\]"#).unwrap();
-    assert!(
-        re.is_match(&flow_utils),
-        "COMMANDS must be derived from _config (flow-phases.json) phase commands"
-    );
-}
+// --- flow_utils.py parity tests removed in PR #953 (Python artifacts removed) ---
 
 // --- Hook invariants ---
 
@@ -316,7 +273,9 @@ fn test_hooks_json_has_pretooluse_bash_validator() {
         .map(|h| h["command"].as_str().unwrap())
         .collect();
     assert!(
-        commands.iter().any(|cmd| cmd.contains("bin/flow hook validate-pretool")),
+        commands
+            .iter()
+            .any(|cmd| cmd.contains("bin/flow hook validate-pretool")),
         "PreToolUse Bash hook must reference bin/flow hook validate-pretool"
     );
 }
@@ -348,11 +307,9 @@ fn test_bin_flow_fails_closed_for_hook_subcommand() {
     let bin_flow = fs::read_to_string(root.join("bin/flow")).unwrap();
     assert!(
         bin_flow.contains(r#"if [ "$subcmd" = "hook" ]; then"#),
-        "bin/flow must have a hook-specific fail-closed branch in the Python fallback"
+        "bin/flow must have a hook-specific fail-closed branch"
     );
-    let hook_branch_start = bin_flow
-        .find(r#"if [ "$subcmd" = "hook" ]; then"#)
-        .unwrap();
+    let hook_branch_start = bin_flow.find(r#"if [ "$subcmd" = "hook" ]; then"#).unwrap();
     let hook_branch_end = bin_flow[hook_branch_start..].find("fi").unwrap() + hook_branch_start;
     let hook_branch = &bin_flow[hook_branch_start..hook_branch_end];
     assert!(
@@ -465,7 +422,9 @@ fn test_hooks_json_has_stop_continue_hook() {
         .map(|h| h["command"].as_str().unwrap())
         .collect();
     assert!(
-        commands.iter().any(|cmd| cmd.contains("hook stop-continue")),
+        commands
+            .iter()
+            .any(|cmd| cmd.contains("hook stop-continue")),
         "Stop hook must reference bin/flow hook stop-continue"
     );
 }
@@ -494,28 +453,7 @@ fn test_hooks_json_has_stop_failure_hook() {
     );
 }
 
-// --- conftest parity ---
-
-#[test]
-fn test_conftest_phase_names_match_flow_phases() {
-    // conftest.py must reference PHASE_NAMES and PHASE_ORDER from flow_utils
-    // so that make_state() phase names stay in sync with flow-phases.json.
-    let root = common::repo_root();
-    let conftest = fs::read_to_string(root.join("tests/conftest.py")).unwrap();
-    assert!(
-        conftest.contains("PHASE_NAMES"),
-        "conftest.py must reference PHASE_NAMES from flow_utils"
-    );
-    assert!(
-        conftest.contains("PHASE_ORDER"),
-        "conftest.py must reference PHASE_ORDER from flow_utils"
-    );
-    // Verify that conftest imports these from flow_utils (the canonical source)
-    assert!(
-        conftest.contains("from flow_utils import") && conftest.contains("PHASE_NAMES"),
-        "conftest.py must import PHASE_NAMES from flow_utils"
-    );
-}
+// --- conftest parity tests removed in PR #953 (Python artifacts removed) ---
 
 // --- Script test file coverage ---
 
@@ -531,11 +469,7 @@ fn test_every_script_has_a_test_file() {
     let mut sh_files: Vec<_> = fs::read_dir(&hooks)
         .unwrap()
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .map_or(false, |ext| ext == "sh")
-        })
+        .filter(|e| e.path().extension().map_or(false, |ext| ext == "sh"))
         .collect();
     sh_files.sort_by_key(|e| e.file_name());
     for sh in &sh_files {
@@ -545,9 +479,8 @@ fn test_every_script_has_a_test_file() {
             .unwrap()
             .to_string_lossy()
             .replace('-', "_");
-        let py_test = root.join(format!("tests/test_{}.py", stem));
         let rs_test = root.join(format!("tests/{}.rs", stem));
-        if !py_test.exists() && !rs_test.exists() {
+        if !rs_test.exists() {
             let rel = sh
                 .path()
                 .strip_prefix(&root)
@@ -577,9 +510,8 @@ fn test_every_script_has_a_test_file() {
             .unwrap()
             .to_string_lossy()
             .replace('-', "_");
-        let py_test = root.join(format!("tests/test_bin_{}.py", stem));
         let rs_test = root.join(format!("tests/bin_{}.rs", stem));
-        if !py_test.exists() && !rs_test.exists() {
+        if !rs_test.exists() {
             let rel = f
                 .path()
                 .strip_prefix(&root)
@@ -597,45 +529,7 @@ fn test_every_script_has_a_test_file() {
     );
 }
 
-// --- Requirements and pytest config ---
-
-#[test]
-fn test_pytest_xdist_in_requirements() {
-    let root = common::repo_root();
-    let requirements = fs::read_to_string(root.join("requirements.txt")).unwrap();
-    assert!(
-        requirements.contains("pytest-xdist"),
-        "pytest-xdist missing from requirements.txt"
-    );
-}
-
-#[test]
-fn test_n_auto_in_pytest_ini() {
-    let root = common::repo_root();
-    let ini_content = fs::read_to_string(root.join("pytest.ini")).unwrap();
-    // Parse the [pytest] section and find addopts
-    let mut in_pytest_section = false;
-    let mut addopts_found = false;
-    for line in ini_content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[pytest]" {
-            in_pytest_section = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && trimmed != "[pytest]" {
-            in_pytest_section = false;
-            continue;
-        }
-        if in_pytest_section && trimmed.starts_with("addopts") {
-            assert!(
-                trimmed.contains("-n auto"),
-                "-n auto not found in pytest.ini addopts"
-            );
-            addopts_found = true;
-        }
-    }
-    assert!(addopts_found, "pytest.ini [pytest] section missing addopts");
-}
+// --- Requirements and pytest config tests removed in PR #953 (Python artifacts removed) ---
 
 // --- CLAUDE.md invariants ---
 
@@ -651,7 +545,12 @@ fn test_claude_md_has_no_lessons_learned_section() {
 
 // --- Framework definition directory ---
 
-const FRAMEWORK_REQUIRED_FILES: &[&str] = &["detect.json", "permissions.json", "dependencies", "priming.md"];
+const FRAMEWORK_REQUIRED_FILES: &[&str] = &[
+    "detect.json",
+    "permissions.json",
+    "dependencies",
+    "priming.md",
+];
 
 fn load_frameworks() -> Vec<(String, PathBuf)> {
     let fw_dir = common::frameworks_dir();
@@ -833,11 +732,7 @@ fn agent_md_files() -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = fs::read_dir(&agents)
         .unwrap()
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .map_or(false, |ext| ext == "md")
-        })
+        .filter(|e| e.path().extension().map_or(false, |ext| ext == "md"))
         .map(|e| e.path())
         .collect();
     files.sort();
@@ -852,7 +747,11 @@ fn test_agent_frontmatter_only_supported_keys() {
     for agent_file in agent_md_files() {
         let frontmatter = parse_agent_frontmatter(&agent_file);
         let mapping = frontmatter.as_mapping().unwrap();
-        let file_name = agent_file.file_name().unwrap().to_string_lossy().into_owned();
+        let file_name = agent_file
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
         let mut unsupported: Vec<String> = Vec::new();
         for key in mapping.keys() {
             let key_str = key.as_str().unwrap();
@@ -888,7 +787,11 @@ fn test_all_agents_specify_model() {
     .collect();
 
     for agent_file in agent_md_files() {
-        let file_name = agent_file.file_name().unwrap().to_string_lossy().into_owned();
+        let file_name = agent_file
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
         let frontmatter = parse_agent_frontmatter(&agent_file);
         let mapping = frontmatter.as_mapping().unwrap();
         assert!(
@@ -1028,7 +931,9 @@ fn test_no_bump_version_py() {
 fn test_no_extract_release_notes_py() {
     // Tombstone: ported to Rust in PR #930. Must not return.
     assert!(
-        !common::repo_root().join("lib/extract-release-notes.py").exists(),
+        !common::repo_root()
+            .join("lib/extract-release-notes.py")
+            .exists(),
         "lib/extract-release-notes.py was ported to src/extract_release_notes.rs"
     );
 }
@@ -1037,7 +942,9 @@ fn test_no_extract_release_notes_py() {
 fn test_no_test_bump_version_py() {
     // Tombstone: ported to Rust in PR #930. Must not return.
     assert!(
-        !common::repo_root().join("tests/test_bump_version.py").exists(),
+        !common::repo_root()
+            .join("tests/test_bump_version.py")
+            .exists(),
         "tests/test_bump_version.py was ported to tests/bump_version.rs"
     );
 }
@@ -1046,7 +953,9 @@ fn test_no_test_bump_version_py() {
 fn test_no_test_extract_release_py() {
     // Tombstone: ported to Rust in PR #930. Must not return.
     assert!(
-        !common::repo_root().join("tests/test_extract_release.py").exists(),
+        !common::repo_root()
+            .join("tests/test_extract_release.py")
+            .exists(),
         "tests/test_extract_release.py was ported to tests/extract_release_notes.rs"
     );
 }
@@ -1111,60 +1020,130 @@ fn test_complete_modules_no_private_bin_flow_path() {
 
 #[test]
 fn test_no_test_structural_py() {
-    /// Tombstone: ported to tests/structural.rs in PR #942. Must not return.
-    assert!(!common::repo_root().join("tests/test_structural.py").exists());
+    // Tombstone: ported to tests/structural.rs in PR #942. Must not return.
+    assert!(!common::repo_root()
+        .join("tests/test_structural.py")
+        .exists());
 }
 
 #[test]
 fn test_no_test_skill_contracts_py() {
-    /// Tombstone: ported to tests/skill_contracts.rs in PR #942. Must not return.
-    assert!(!common::repo_root().join("tests/test_skill_contracts.py").exists());
+    // Tombstone: ported to tests/skill_contracts.rs in PR #942. Must not return.
+    assert!(!common::repo_root()
+        .join("tests/test_skill_contracts.py")
+        .exists());
 }
 
 #[test]
 fn test_no_test_permissions_py() {
-    /// Tombstone: ported to tests/permissions.rs in PR #942. Must not return.
-    assert!(!common::repo_root().join("tests/test_permissions.py").exists());
+    // Tombstone: ported to tests/permissions.rs in PR #942. Must not return.
+    assert!(!common::repo_root()
+        .join("tests/test_permissions.py")
+        .exists());
 }
 
 #[test]
 fn test_no_test_docs_sync_py() {
-    /// Tombstone: ported to tests/docs_sync.rs in PR #942. Must not return.
+    // Tombstone: ported to tests/docs_sync.rs in PR #942. Must not return.
     assert!(!common::repo_root().join("tests/test_docs_sync.py").exists());
 }
 
 #[test]
 fn test_no_test_concurrency_py() {
-    /// Tombstone: ported to tests/concurrency.rs in PR #942. Must not return.
-    assert!(!common::repo_root().join("tests/test_concurrency.py").exists());
+    // Tombstone: ported to tests/concurrency.rs in PR #942. Must not return.
+    assert!(!common::repo_root()
+        .join("tests/test_concurrency.py")
+        .exists());
 }
 
 #[test]
 fn test_no_test_bin_flow_py() {
-    /// Tombstone: ported to tests/bin_flow.rs in PR #942. Must not return.
+    // Tombstone: ported to tests/bin_flow.rs in PR #942. Must not return.
     assert!(!common::repo_root().join("tests/test_bin_flow.py").exists());
 }
 
 #[test]
 fn test_no_test_bin_ci_py() {
-    /// Tombstone: ported to tests/bin_ci.rs in PR #942. Must not return.
+    // Tombstone: ported to tests/bin_ci.rs in PR #942. Must not return.
     assert!(!common::repo_root().join("tests/test_bin_ci.py").exists());
 }
 
 #[test]
 fn test_no_test_bin_test_py() {
-    /// Tombstone: ported to tests/bin_test.rs in PR #942. Must not return.
+    // Tombstone: ported to tests/bin_test.rs in PR #942. Must not return.
     assert!(!common::repo_root().join("tests/test_bin_test.py").exists());
 }
 
 #[test]
 fn test_no_test_bin_dependencies_py() {
-    /// Tombstone: ported to tests/bin_dependencies.rs in PR #942. Must not return.
-    assert!(!common::repo_root().join("tests/test_bin_dependencies.py").exists());
+    // Tombstone: ported to tests/bin_dependencies.rs in PR #942. Must not return.
+    assert!(!common::repo_root()
+        .join("tests/test_bin_dependencies.py")
+        .exists());
 }
 
 #[test]
 fn test_no_test_flow_utils_shared_py() {
-    /// Tombstone: ported to Rust unit tests in PR #942. Must not return.
-    assert!(!common::repo_root().join("tests/test_flow_utils_shared.py").exists());
+    // Tombstone: ported to Rust unit tests in PR #942. Must not return.
+    assert!(!common::repo_root()
+        .join("tests/test_flow_utils_shared.py")
+        .exists());
+}
+
+// --- Tombstone tests for Python infrastructure removed in PR #953 ---
+
+#[test]
+fn test_no_ruff_toml() {
+    // Tombstone: removed in PR #953. Python linter config has no remaining consumers.
+    assert!(
+        !common::repo_root().join("ruff.toml").exists(),
+        "ruff.toml was removed in PR #953 (Python artifacts cleanup) and must not be re-added"
+    );
+}
+
+#[test]
+fn test_no_requirements_txt() {
+    // Tombstone: removed in PR #953. Python pip dependencies have no remaining consumers.
+    assert!(
+        !common::repo_root().join("requirements.txt").exists(),
+        "requirements.txt was removed in PR #953 (Python artifacts cleanup) and must not be re-added"
+    );
+}
+
+#[test]
+fn test_no_pytest_ini() {
+    // Tombstone: removed in PR #953. pytest config has no remaining consumers.
+    assert!(
+        !common::repo_root().join("pytest.ini").exists(),
+        "pytest.ini was removed in PR #953 (Python artifacts cleanup) and must not be re-added"
+    );
+}
+
+#[test]
+fn test_no_pymarkdown_yml() {
+    // Tombstone: removed in PR #953. pymarkdown config has no remaining consumers.
+    assert!(
+        !common::repo_root().join(".pymarkdown.yml").exists(),
+        ".pymarkdown.yml was removed in PR #953 (Python artifacts cleanup) and must not be re-added"
+    );
+}
+
+#[test]
+fn test_no_python_fallback_in_bin_flow() {
+    // Tombstone: removed in PR #953. bin/flow is now a pure Rust dispatcher.
+    let content = fs::read_to_string(common::bin_dir().join("flow")).unwrap();
+    assert!(
+        !content.contains("exec python3"),
+        "bin/flow must not contain Python fallback — removed in PR #953"
+    );
+}
+
+#[test]
+fn test_no_lib_dir_in_bin_flow() {
+    // Tombstone: removed in PR #953. bin/flow no longer references lib/.
+    let content = fs::read_to_string(common::bin_dir().join("flow")).unwrap();
+    assert!(
+        !content.contains("LIB_DIR"),
+        "bin/flow must not reference LIB_DIR — removed in PR #953"
+    );
 }

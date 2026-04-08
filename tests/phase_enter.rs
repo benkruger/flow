@@ -204,8 +204,7 @@ fn test_code_phase_happy_path() {
 
     // State should be updated — phase entered
     let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
-    let state: Value =
-        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-code"]["status"], "in_progress");
     assert_eq!(state["current_phase"], "flow-code");
     assert_eq!(state["phases"]["flow-code"]["visit_count"], 1);
@@ -223,7 +222,14 @@ fn test_code_review_phase_happy_path() {
 
     let output = run_phase_enter(
         &repo,
-        &["--phase", "flow-code-review", "--branch", branch, "--steps-total", "4"],
+        &[
+            "--phase",
+            "flow-code-review",
+            "--branch",
+            branch,
+            "--steps-total",
+            "4",
+        ],
     );
     assert_eq!(output.status.code(), Some(0));
     let data = parse_output(&output);
@@ -232,8 +238,7 @@ fn test_code_review_phase_happy_path() {
 
     // State should have step counters set
     let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
-    let state: Value =
-        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-code-review"]["status"], "in_progress");
     assert_eq!(state["code_review_steps_total"], 4);
     assert_eq!(state["code_review_step"], 0);
@@ -248,7 +253,14 @@ fn test_learn_phase_happy_path() {
 
     let output = run_phase_enter(
         &repo,
-        &["--phase", "flow-learn", "--branch", branch, "--steps-total", "7"],
+        &[
+            "--phase",
+            "flow-learn",
+            "--branch",
+            branch,
+            "--steps-total",
+            "7",
+        ],
     );
     assert_eq!(output.status.code(), Some(0));
     let data = parse_output(&output);
@@ -257,8 +269,7 @@ fn test_learn_phase_happy_path() {
 
     // State should have step counters set
     let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
-    let state: Value =
-        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-learn"]["status"], "in_progress");
     assert_eq!(state["learn_steps_total"], 7);
     assert_eq!(state["learn_step"], 0);
@@ -276,8 +287,16 @@ fn test_gate_failure_previous_phase_not_complete() {
     let data = parse_output(&output);
     assert_eq!(data["status"], "error");
     let msg = data["message"].as_str().unwrap();
-    assert!(msg.contains("flow-plan"), "Error should name the blocking phase: {}", msg);
-    assert!(msg.contains("complete"), "Error should mention 'complete': {}", msg);
+    assert!(
+        msg.contains("flow-plan"),
+        "Error should name the blocking phase: {}",
+        msg
+    );
+    assert!(
+        msg.contains("complete"),
+        "Error should mention 'complete': {}",
+        msg
+    );
 }
 
 #[test]
@@ -324,7 +343,14 @@ fn test_mode_defaults_code_review() {
 
     let output = run_phase_enter(
         &repo,
-        &["--phase", "flow-code-review", "--branch", branch, "--steps-total", "4"],
+        &[
+            "--phase",
+            "flow-code-review",
+            "--branch",
+            branch,
+            "--steps-total",
+            "4",
+        ],
     );
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
@@ -344,11 +370,24 @@ fn test_mode_defaults_learn() {
     let branch = "mode-learn";
     let repo = create_git_repo(dir.path(), branch);
     // No skills config → defaults
-    create_state(&repo, branch, "flow-code-review", "complete", Some(json!({})));
+    create_state(
+        &repo,
+        branch,
+        "flow-code-review",
+        "complete",
+        Some(json!({})),
+    );
 
     let output = run_phase_enter(
         &repo,
-        &["--phase", "flow-learn", "--branch", branch, "--steps-total", "7"],
+        &[
+            "--phase",
+            "flow-learn",
+            "--branch",
+            branch,
+            "--steps-total",
+            "7",
+        ],
     );
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
@@ -373,7 +412,14 @@ fn test_step_counter_field_names() {
     create_state(&repo, branch, "flow-code", "complete", None);
     let output = run_phase_enter(
         &repo,
-        &["--phase", "flow-code-review", "--branch", branch, "--steps-total", "4"],
+        &[
+            "--phase",
+            "flow-code-review",
+            "--branch",
+            branch,
+            "--steps-total",
+            "4",
+        ],
     );
     assert_eq!(parse_output(&output)["status"], "ok");
     let state: Value = serde_json::from_str(
@@ -391,7 +437,14 @@ fn test_step_counter_field_names() {
     create_state(&repo2, branch2, "flow-code-review", "complete", None);
     let output2 = run_phase_enter(
         &repo2,
-        &["--phase", "flow-learn", "--branch", branch2, "--steps-total", "7"],
+        &[
+            "--phase",
+            "flow-learn",
+            "--branch",
+            branch2,
+            "--steps-total",
+            "7",
+        ],
     );
     assert_eq!(parse_output(&output2)["status"], "ok");
     let state2: Value = serde_json::from_str(

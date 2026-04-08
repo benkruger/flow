@@ -53,7 +53,11 @@ fn run_prime_check(cwd: &Path) -> (Value, i32) {
 }
 
 fn write_flow_json(dir: &Path, data: Value) {
-    fs::write(dir.join(".flow.json"), serde_json::to_string(&data).unwrap()).unwrap();
+    fs::write(
+        dir.join(".flow.json"),
+        serde_json::to_string(&data).unwrap(),
+    )
+    .unwrap();
 }
 
 // --- Basic error and happy-path tests ---
@@ -63,14 +67,20 @@ fn fails_when_flow_json_missing() {
     let tmp = tempfile::tempdir().unwrap();
     let (data, code) = run_prime_check(tmp.path());
     assert_eq!(data["status"], "error");
-    assert!(data["message"].as_str().unwrap().contains("/flow:flow-prime"));
+    assert!(data["message"]
+        .as_str()
+        .unwrap()
+        .contains("/flow:flow-prime"));
     assert_eq!(code, 0);
 }
 
 #[test]
 fn fails_when_flow_version_mismatch_no_hashes() {
     let tmp = tempfile::tempdir().unwrap();
-    write_flow_json(tmp.path(), json!({"flow_version": "0.0.0", "framework": "rails"}));
+    write_flow_json(
+        tmp.path(),
+        json!({"flow_version": "0.0.0", "framework": "rails"}),
+    );
     let (data, code) = run_prime_check(tmp.path());
     assert_eq!(data["status"], "error");
     assert!(data["message"].as_str().unwrap().contains("mismatch"));
@@ -233,7 +243,10 @@ fn auto_upgrade_preserves_existing_fields() {
     assert_eq!(updated["framework"], "rails");
     assert_eq!(updated["config_hash"], config_hash);
     assert_eq!(updated["setup_hash"], setup_hash);
-    assert_eq!(updated["skills"], json!({"flow-start": {"continue": "auto"}}));
+    assert_eq!(
+        updated["skills"],
+        json!({"flow-start": {"continue": "auto"}})
+    );
 }
 
 #[test]
@@ -266,7 +279,10 @@ fn requires_reinit_when_config_hash_mismatches() {
     );
     let (data, _code) = run_prime_check(tmp.path());
     assert_eq!(data["status"], "error");
-    assert!(data["message"].as_str().unwrap().contains("/flow:flow-prime"));
+    assert!(data["message"]
+        .as_str()
+        .unwrap()
+        .contains("/flow:flow-prime"));
 }
 
 #[test]
@@ -301,5 +317,8 @@ fn requires_reinit_when_setup_hash_mismatches() {
     );
     let (data, _code) = run_prime_check(tmp.path());
     assert_eq!(data["status"], "error");
-    assert!(data["message"].as_str().unwrap().contains("/flow:flow-prime"));
+    assert!(data["message"]
+        .as_str()
+        .unwrap()
+        .contains("/flow:flow-prime"));
 }

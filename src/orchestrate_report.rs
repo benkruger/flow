@@ -32,7 +32,11 @@ pub fn compute_duration_seconds(started_at: &str, completed_at: Option<&str>) ->
     };
 
     let diff = (end - start).num_seconds();
-    if diff < 0 { 0 } else { diff }
+    if diff < 0 {
+        0
+    } else {
+        diff
+    }
 }
 
 /// Generate a morning report from orchestrate state dict.
@@ -65,10 +69,7 @@ pub fn generate_report(state: &Value) -> Value {
     lines.push("# FLOW Orchestration Report".to_string());
     lines.push(String::new());
     lines.push(format!("Started: {}", started_at));
-    lines.push(format!(
-        "Completed: {}",
-        completed_at.unwrap_or("")
-    ));
+    lines.push(format!("Completed: {}", completed_at.unwrap_or("")));
     lines.push(format!("Duration: {}", duration_str));
     lines.push(String::new());
 
@@ -181,10 +182,7 @@ pub fn generate_and_write_report(state_file: &Path, output_dir: &Path) -> Value 
 
     let report = generate_report(&state);
 
-    let summary = report
-        .get("summary")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let summary = report.get("summary").and_then(|v| v.as_str()).unwrap_or("");
     let output_path = output_dir.join("orchestrate-summary.md");
     if let Err(e) = std::fs::write(&output_path, summary) {
         return json!({
@@ -275,7 +273,11 @@ mod tests {
         })
     }
 
-    fn make_report_state(queue_items: Vec<Value>, started_at: &str, completed_at: Option<&str>) -> Value {
+    fn make_report_state(
+        queue_items: Vec<Value>,
+        started_at: &str,
+        completed_at: Option<&str>,
+    ) -> Value {
         json!({
             "started_at": started_at,
             "completed_at": completed_at,
@@ -288,7 +290,10 @@ mod tests {
 
     #[test]
     fn test_compute_duration_none_completed_at() {
-        assert_eq!(compute_duration_seconds("2026-03-20T22:00:00-07:00", None), 0);
+        assert_eq!(
+            compute_duration_seconds("2026-03-20T22:00:00-07:00", None),
+            0
+        );
     }
 
     #[test]
@@ -542,7 +547,11 @@ mod tests {
     fn test_cli_missing_state_file() {
         let dir = tempfile::tempdir().unwrap();
         let args = Args {
-            state_file: dir.path().join("missing.json").to_string_lossy().to_string(),
+            state_file: dir
+                .path()
+                .join("missing.json")
+                .to_string_lossy()
+                .to_string(),
             output_dir: dir.path().to_string_lossy().to_string(),
         };
 

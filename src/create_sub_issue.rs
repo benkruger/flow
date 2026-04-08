@@ -21,7 +21,10 @@ use crate::output::{json_error, json_ok};
 const LOCAL_TIMEOUT: u64 = 30;
 
 #[derive(Parser, Debug)]
-#[command(name = "create-sub-issue", about = "Create a GitHub sub-issue relationship")]
+#[command(
+    name = "create-sub-issue",
+    about = "Create a GitHub sub-issue relationship"
+)]
 pub struct Args {
     /// Repository (owner/name)
     #[arg(long)]
@@ -39,11 +42,18 @@ pub struct Args {
 /// Create a sub-issue relationship between two issues.
 ///
 /// Returns Ok((parent, child)) on success or Err(message) on failure.
-pub fn create_sub_issue(repo: &str, parent_number: i64, child_number: i64) -> Result<(i64, i64), String> {
+pub fn create_sub_issue(
+    repo: &str,
+    parent_number: i64,
+    child_number: i64,
+) -> Result<(i64, i64), String> {
     // Resolve parent to verify it exists (API URL uses parent_number, not the DB ID)
     let (_, err) = fetch_database_id(repo, parent_number);
     if let Some(e) = err {
-        return Err(format!("Failed to resolve parent #{}: {}", parent_number, e));
+        return Err(format!(
+            "Failed to resolve parent #{}: {}",
+            parent_number, e
+        ));
     }
 
     let (child_id, err) = fetch_database_id(repo, child_number);
@@ -57,7 +67,15 @@ pub fn create_sub_issue(repo: &str, parent_number: i64, child_number: i64) -> Re
     let timeout = Duration::from_secs(LOCAL_TIMEOUT);
 
     run_gh_cmd(
-        &["gh", "api", &api_path, "--method", "POST", "-F", &sub_issue_field],
+        &[
+            "gh",
+            "api",
+            &api_path,
+            "--method",
+            "POST",
+            "-F",
+            &sub_issue_field,
+        ],
         Some(timeout),
     )?;
 
@@ -67,10 +85,7 @@ pub fn create_sub_issue(repo: &str, parent_number: i64, child_number: i64) -> Re
 pub fn run(args: Args) {
     match create_sub_issue(&args.repo, args.parent_number, args.child_number) {
         Ok((parent, child)) => {
-            json_ok(&[
-                ("parent", json!(parent)),
-                ("child", json!(child)),
-            ]);
+            json_ok(&[("parent", json!(parent)), ("child", json!(child))]);
         }
         Err(e) => {
             json_error(&e, &[]);
@@ -91,9 +106,12 @@ mod tests {
     fn args_parse_all_required() {
         let args = Args::try_parse_from([
             "create-sub-issue",
-            "--repo", "owner/repo",
-            "--parent-number", "1",
-            "--child-number", "2",
+            "--repo",
+            "owner/repo",
+            "--parent-number",
+            "1",
+            "--child-number",
+            "2",
         ]);
         assert!(args.is_ok());
         let args = args.unwrap();
@@ -106,8 +124,10 @@ mod tests {
     fn args_missing_repo_fails() {
         let args = Args::try_parse_from([
             "create-sub-issue",
-            "--parent-number", "1",
-            "--child-number", "2",
+            "--parent-number",
+            "1",
+            "--child-number",
+            "2",
         ]);
         assert!(args.is_err());
     }
@@ -116,8 +136,10 @@ mod tests {
     fn args_missing_parent_fails() {
         let args = Args::try_parse_from([
             "create-sub-issue",
-            "--repo", "owner/repo",
-            "--child-number", "2",
+            "--repo",
+            "owner/repo",
+            "--child-number",
+            "2",
         ]);
         assert!(args.is_err());
     }
@@ -126,8 +148,10 @@ mod tests {
     fn args_missing_child_fails() {
         let args = Args::try_parse_from([
             "create-sub-issue",
-            "--repo", "owner/repo",
-            "--parent-number", "1",
+            "--repo",
+            "owner/repo",
+            "--parent-number",
+            "1",
         ]);
         assert!(args.is_err());
     }

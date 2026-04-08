@@ -309,10 +309,7 @@ fn broad_gh_pattern_subsumes_narrow() {
 #[test]
 fn cross_type_no_subsumption() {
     let tmp = tempfile::tempdir().unwrap();
-    write_settings(
-        tmp.path(),
-        &json!({"permissions": {"allow": ["Agent(*)"]}}),
-    );
+    write_settings(tmp.path(), &json!({"permissions": {"allow": ["Agent(*)"]}}));
     prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
     let settings = read_settings(tmp.path());
     let allow: Vec<String> = settings["permissions"]["allow"]
@@ -439,7 +436,8 @@ fn derived_permissions_subsumed() {
 #[test]
 fn version_marker_created() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None).unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None)
+        .unwrap();
     assert!(tmp.path().join(".flow.json").exists());
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
@@ -450,7 +448,8 @@ fn version_marker_created() {
 #[test]
 fn version_marker_trailing_newline() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None).unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None)
+        .unwrap();
     let content = fs::read_to_string(tmp.path().join(".flow.json")).unwrap();
     assert!(content.ends_with('\n'));
 }
@@ -477,7 +476,8 @@ fn version_marker_with_config_hash() {
 #[test]
 fn version_marker_without_config_hash() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None).unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None)
+        .unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert!(data.get("config_hash").is_none());
@@ -525,7 +525,8 @@ fn version_marker_with_skills() {
 #[test]
 fn version_marker_without_skills() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None).unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None)
+        .unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert!(data.get("skills").is_none());
@@ -676,7 +677,12 @@ fn pre_commit_hook_created() {
     let tmp = tempfile::tempdir().unwrap();
     make_git_repo(tmp.path());
     prime_setup::install_pre_commit_hook(tmp.path()).unwrap();
-    assert!(tmp.path().join(".git").join("hooks").join("pre-commit").exists());
+    assert!(tmp
+        .path()
+        .join(".git")
+        .join("hooks")
+        .join("pre-commit")
+        .exists());
 }
 
 #[test]
@@ -736,8 +742,7 @@ fn install_launcher_executable() {
 fn install_launcher_content() {
     let tmp = tempfile::tempdir().unwrap();
     prime_setup::install_launcher(tmp.path()).unwrap();
-    let content =
-        fs::read_to_string(tmp.path().join(".local").join("bin").join("flow")).unwrap();
+    let content = fs::read_to_string(tmp.path().join(".local").join("bin").join("flow")).unwrap();
     assert!(content.contains("git rev-parse --show-toplevel"));
     assert!(content.contains(".flow.json"));
     assert!(content.contains("plugin_root"));
@@ -748,11 +753,9 @@ fn install_launcher_content() {
 fn install_launcher_idempotent() {
     let tmp = tempfile::tempdir().unwrap();
     prime_setup::install_launcher(tmp.path()).unwrap();
-    let first =
-        fs::read_to_string(tmp.path().join(".local").join("bin").join("flow")).unwrap();
+    let first = fs::read_to_string(tmp.path().join(".local").join("bin").join("flow")).unwrap();
     prime_setup::install_launcher(tmp.path()).unwrap();
-    let second =
-        fs::read_to_string(tmp.path().join(".local").join("bin").join("flow")).unwrap();
+    let second = fs::read_to_string(tmp.path().join(".local").join("bin").join("flow")).unwrap();
     assert_eq!(first, second);
 }
 

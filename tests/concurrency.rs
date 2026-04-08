@@ -107,8 +107,10 @@ fn mutate_state_under_contention() {
         handle.join().expect("Worker thread panicked");
     }
 
-    let final_content = fs::read_to_string(state_path.as_ref()).expect("Failed to read final state");
-    let final_data: Value = serde_json::from_str(&final_content).expect("Failed to parse final state");
+    let final_content =
+        fs::read_to_string(state_path.as_ref()).expect("Failed to read final state");
+    let final_data: Value =
+        serde_json::from_str(&final_content).expect("Failed to parse final state");
     assert_eq!(
         final_data["count"].as_i64().unwrap(),
         20,
@@ -158,7 +160,12 @@ fn log_append_under_contention() {
 
     let content = fs::read_to_string(&log_file).expect("Failed to read log file");
     let lines: Vec<&str> = content.trim().split('\n').collect();
-    assert_eq!(lines.len(), 20, "Expected exactly 20 log lines, got {}", lines.len());
+    assert_eq!(
+        lines.len(),
+        20,
+        "Expected exactly 20 log lines, got {}",
+        lines.len()
+    );
 
     // Each line should contain a unique worker-N marker
     let mut markers: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -224,8 +231,12 @@ fn start_lock_serialization() {
                 );
 
                 let stdout = String::from_utf8_lossy(&output.stdout);
-                let data: Value = serde_json::from_str(stdout.trim())
-                    .unwrap_or_else(|e| panic!("Failed to parse start-lock JSON for {}: {} output: {}", feature, e, stdout));
+                let data: Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to parse start-lock JSON for {}: {} output: {}",
+                        feature, e, stdout
+                    )
+                });
                 assert_eq!(
                     data["status"].as_str().unwrap(),
                     "acquired",
@@ -328,8 +339,12 @@ fn thundering_herd_zero_delay() {
                 );
 
                 let stdout = String::from_utf8_lossy(&output.stdout);
-                let data: Value = serde_json::from_str(stdout.trim())
-                    .unwrap_or_else(|e| panic!("Failed to parse start-lock JSON for {}: {} output: {}", feature, e, stdout));
+                let data: Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to parse start-lock JSON for {}: {} output: {}",
+                        feature, e, stdout
+                    )
+                });
                 assert_eq!(
                     data["status"].as_str().unwrap(),
                     "acquired",

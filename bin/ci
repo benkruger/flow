@@ -3,29 +3,11 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Use venv if available, else system python
-if [ -x "$REPO_ROOT/.venv/bin/python3" ]; then
-  PYTHON="$REPO_ROOT/.venv/bin/python3"
-else
-  PYTHON="python3"
-fi
-
-"$PYTHON" -m pymarkdown -c "$REPO_ROOT/.pymarkdown.yml" scan -r -e ".venv" -e ".pytest_cache" -e ".claude" -e "tmp" -e ".flow-states" -e ".worktrees" .
-"$PYTHON" -m ruff check lib/ tests/
-"$PYTHON" -m ruff format --check lib/ tests/
-# Remove stale __pycache__ dirs (excluding .venv/) to prevent orphaned .pyc
-# files from interfering with coverage measurement and test discovery.
-# Use absolute $REPO_ROOT so the prune matches .venv regardless of CWD.
-find "$REPO_ROOT" -path "$REPO_ROOT/.venv" -prune -o -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-# Build Rust binary before Python tests so the hybrid dispatcher
-# can route to Rust commands during subprocess-based Python tests.
+# Build Rust binary before running tests
 if [ -f "$REPO_ROOT/Cargo.toml" ]; then
   cargo build --quiet
 fi
 
-"$PYTHON" -m pytest tests/
-
-# Run Rust tests if Cargo.toml exists (hybrid phase)
-if [ -f "$REPO_ROOT/Cargo.toml" ]; then
-  cargo test --quiet
-fi
+cargo test --quiet
+cargo clippy --quiet
+cargo fmt --check

@@ -99,10 +99,7 @@ pub fn validate_code_task(state: &Value, new_value: i64) -> Result<(), String> {
     if new_value == 0 {
         return Ok(());
     }
-    let current = state
-        .get("code_task")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+    let current = state.get("code_task").and_then(|v| v.as_i64()).unwrap_or(0);
     if new_value != current + 1 {
         return Err(format!(
             "code_task can only increment by 1. Current: {}, attempted: {}. \
@@ -177,15 +174,13 @@ pub fn run(set_args: Vec<String>, branch_override: Option<String>) {
 
     let mut collected_updates: Vec<Update> = Vec::new();
 
-    let result = mutate_state(&state_path, |state| {
-        match apply_updates(state, &set_args) {
-            Ok(updates) => {
-                collected_updates = updates;
-            }
-            Err(e) => {
-                json_error(&e, &[]);
-                process::exit(1);
-            }
+    let result = mutate_state(&state_path, |state| match apply_updates(state, &set_args) {
+        Ok(updates) => {
+            collected_updates = updates;
+        }
+        Err(e) => {
+            json_error(&e, &[]);
+            process::exit(1);
         }
     });
 
@@ -200,10 +195,7 @@ pub fn run(set_args: Vec<String>, branch_override: Option<String>) {
         Err(e) => {
             let msg = e.to_string();
             if msg.contains("Invalid JSON") || msg.contains("JSON error") {
-                json_error(
-                    &format!("Could not read state file: {}", msg),
-                    &[],
-                );
+                json_error(&format!("Could not read state file: {}", msg), &[]);
             } else {
                 json_error(&msg, &[]);
             }
@@ -329,8 +321,7 @@ mod tests {
     #[test]
     fn test_apply_updates_simple_string() {
         let mut state = json!({"design": {"status": "pending"}});
-        let updates =
-            apply_updates(&mut state, &["design.status=approved".to_string()]).unwrap();
+        let updates = apply_updates(&mut state, &["design.status=approved".to_string()]).unwrap();
         assert_eq!(updates.len(), 1);
         assert_eq!(state["design"]["status"], "approved");
     }
@@ -338,8 +329,7 @@ mod tests {
     #[test]
     fn test_apply_updates_now_magic_value() {
         let mut state = json!({"design": {"approved_at": null}});
-        let updates =
-            apply_updates(&mut state, &["design.approved_at=NOW".to_string()]).unwrap();
+        let updates = apply_updates(&mut state, &["design.approved_at=NOW".to_string()]).unwrap();
         assert_eq!(updates.len(), 1);
         assert!(iso_pattern().is_match(updates[0].value.as_str().unwrap()));
         assert!(iso_pattern().is_match(state["design"]["approved_at"].as_str().unwrap()));
@@ -348,8 +338,7 @@ mod tests {
     #[test]
     fn test_apply_updates_integer_coercion() {
         let mut state = json!({"code_review_step": 0});
-        let updates =
-            apply_updates(&mut state, &["code_review_step=1".to_string()]).unwrap();
+        let updates = apply_updates(&mut state, &["code_review_step=1".to_string()]).unwrap();
         assert_eq!(state["code_review_step"], 1);
         assert!(state["code_review_step"].is_i64());
         assert_eq!(updates[0].value, json!(1));
@@ -367,8 +356,7 @@ mod tests {
     #[test]
     fn test_apply_updates_non_digit_stays_string() {
         let mut state = json!({"some_field": "old"});
-        let updates =
-            apply_updates(&mut state, &["some_field=in_progress".to_string()]).unwrap();
+        let updates = apply_updates(&mut state, &["some_field=in_progress".to_string()]).unwrap();
         assert_eq!(state["some_field"], "in_progress");
         assert!(state["some_field"].is_string());
         assert_eq!(updates[0].value, json!("in_progress"));
@@ -389,16 +377,13 @@ mod tests {
         .unwrap();
         assert_eq!(updates.len(), 2);
         assert_eq!(state["plan"]["tasks"][0]["status"], "in_progress");
-        assert!(iso_pattern().is_match(
-            state["plan"]["tasks"][0]["started_at"].as_str().unwrap()
-        ));
+        assert!(iso_pattern().is_match(state["plan"]["tasks"][0]["started_at"].as_str().unwrap()));
     }
 
     #[test]
     fn test_apply_updates_invalid_format() {
         let mut state = json!({"a": 1});
-        let result =
-            apply_updates(&mut state, &["design.approved_at".to_string()]);
+        let result = apply_updates(&mut state, &["design.approved_at".to_string()]);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid format"));
     }
@@ -444,8 +429,7 @@ mod tests {
     #[test]
     fn test_code_task_non_integer_blocked() {
         let mut state = json!({"code_task": 0});
-        let result =
-            apply_updates(&mut state, &["code_task=abc".to_string()]);
+        let result = apply_updates(&mut state, &["code_task=abc".to_string()]);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("must be an integer"));
     }
@@ -453,8 +437,7 @@ mod tests {
     #[test]
     fn test_code_task_cli_increment_blocked() {
         let mut state = json!({"code_task": 0});
-        let result =
-            apply_updates(&mut state, &["code_task=5".to_string()]);
+        let result = apply_updates(&mut state, &["code_task=5".to_string()]);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("increment by 1"));
     }

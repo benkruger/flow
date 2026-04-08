@@ -160,10 +160,10 @@ pub fn read_hook_input() -> Option<Value> {
     serde_json::from_str(&input).ok()
 }
 
-pub mod validate_pretool;
-pub mod validate_claude_paths;
-pub mod validate_worktree_paths;
-pub mod validate_ask_user;
 pub mod post_compact;
 pub mod stop_continue;
 pub mod stop_failure;
+pub mod validate_ask_user;
+pub mod validate_claude_paths;
+pub mod validate_pretool;
+pub mod validate_worktree_paths;

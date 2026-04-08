@@ -145,12 +145,7 @@ pub fn acquire(feature: &str, queue_dir: &Path) -> Value {
 }
 
 /// Acquire with retry loop using the real thread::sleep.
-pub fn acquire_with_wait(
-    feature: &str,
-    queue_dir: &Path,
-    timeout: u64,
-    interval: u64,
-) -> Value {
+pub fn acquire_with_wait(feature: &str, queue_dir: &Path, timeout: u64, interval: u64) -> Value {
     acquire_with_wait_impl(feature, queue_dir, timeout, interval, |d| {
         std::thread::sleep(d)
     })
@@ -567,15 +562,9 @@ mod tests {
         let queue_dir = dir.path();
 
         let mut sleep_called = false;
-        let result = acquire_with_wait_impl(
-            "test-feature",
-            queue_dir,
-            90,
-            10,
-            |_| {
-                sleep_called = true;
-            },
-        );
+        let result = acquire_with_wait_impl("test-feature", queue_dir, 90, 10, |_| {
+            sleep_called = true;
+        });
         assert_eq!(result["status"], "acquired");
         assert!(!sleep_called);
     }

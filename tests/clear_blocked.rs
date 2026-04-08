@@ -10,10 +10,7 @@ fn flow_rs() -> Command {
 }
 
 fn setup_git_and_state(dir: &std::path::Path, branch: &str, state: &Value) {
-    let _ = Command::new("git")
-        .args(["init"])
-        .current_dir(dir)
-        .output();
+    let _ = Command::new("git").args(["init"]).current_dir(dir).output();
     let state_dir = dir.join(".flow-states");
     fs::create_dir_all(&state_dir).unwrap();
     fs::write(
@@ -23,7 +20,11 @@ fn setup_git_and_state(dir: &std::path::Path, branch: &str, state: &Value) {
     .unwrap();
 }
 
-fn run_clear_blocked(dir: &std::path::Path, branch: &str, stdin_data: &[u8]) -> std::process::Output {
+fn run_clear_blocked(
+    dir: &std::path::Path,
+    branch: &str,
+    stdin_data: &[u8],
+) -> std::process::Output {
     let mut cmd = flow_rs();
     cmd.arg("clear-blocked")
         .env("FLOW_SIMULATE_BRANCH", branch)
@@ -58,8 +59,7 @@ fn test_hook_clears_blocked_exits_zero() {
     assert_eq!(output.status.code().unwrap(), 0);
     assert!(output.stdout.is_empty());
 
-    let content =
-        fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap();
+    let content = fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap();
     let on_disk: Value = serde_json::from_str(&content).unwrap();
     assert!(on_disk.get("_blocked").is_none());
 }
@@ -104,8 +104,7 @@ fn test_hook_preserves_other_fields() {
     let output = run_clear_blocked(dir.path(), "test-feature", b"{}");
     assert_eq!(output.status.code().unwrap(), 0);
 
-    let content =
-        fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap();
+    let content = fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap();
     let on_disk: Value = serde_json::from_str(&content).unwrap();
     assert!(on_disk.get("_blocked").is_none());
     assert_eq!(on_disk["session_id"], "existing-session");

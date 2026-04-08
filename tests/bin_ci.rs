@@ -1,7 +1,4 @@
-//! Tests for bin/ci — the project CI runner.
-//!
-//! Ports tests/test_bin_ci.py to Rust integration tests.
-//! Each test validates the same invariant as its Python counterpart.
+//! Tests for bin/ci — the project CI runner (Rust-only since PR #953).
 
 mod common;
 
@@ -9,14 +6,11 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
-/// Creates a minimal project layout that bin/ci can run against.
+/// Creates a minimal Rust project layout that bin/ci can run against.
 ///
 /// bin/ci computes REPO_ROOT from $(dirname "$0")/.., so placing it at
-/// <tmp>/bin/ci makes it run pytest against <tmp>/tests/.
-/// Includes a .venv/bin/python3 wrapper that delegates to the repo's venv
-/// python so pytest/ruff/pymarkdown are available.
-///
-/// IMPORTANT: Uses a wrapper script, NOT a symlink.
+/// <tmp>/bin/ci makes it resolve Cargo.toml at <tmp>/Cargo.toml.
+/// Uses mock cargo to avoid real compilation.
 fn setup_ci_project(dir: &std::path::Path) {
     let bin_dir = dir.join("bin");
     fs::create_dir_all(&bin_dir).unwrap();
@@ -29,358 +23,181 @@ fn setup_ci_project(dir: &std::path::Path) {
     perms.set_mode(0o755);
     fs::set_permissions(bin_dir.join("ci"), perms).unwrap();
 
-    // Create README.md for pymarkdown
-    fs::write(dir.join("README.md"), "# Test\n").unwrap();
-
-    // Copy pymarkdown and ruff configs from the real repo
-    let repo = common::repo_root();
-    fs::copy(repo.join(".pymarkdown.yml"), dir.join(".pymarkdown.yml")).unwrap();
-    fs::copy(repo.join("ruff.toml"), dir.join("ruff.toml")).unwrap();
-
-    // Create lib/ and tests/ directories
-    fs::create_dir_all(dir.join("lib")).unwrap();
-    fs::create_dir_all(dir.join("tests")).unwrap();
-
-    // Create venv python3 wrapper that delegates to the repo's venv python
-    let venv_bin = dir.join(".venv").join("bin");
-    fs::create_dir_all(&venv_bin).unwrap();
-    let repo_python = repo.join(".venv").join("bin").join("python3");
+    // Create Cargo.toml for cargo build detection
     fs::write(
-        venv_bin.join("python3"),
-        format!(
-            "#!/usr/bin/env bash\nexec {} \"$@\"\n",
-            repo_python.display()
-        ),
-    )
-    .unwrap();
-    let mut perms = fs::metadata(venv_bin.join("python3")).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(venv_bin.join("python3"), perms).unwrap();
-}
-
-fn run_ci(project_dir: &std::path::Path) -> std::process::Output {
-    Command::new("bash")
-        .arg(project_dir.join("bin").join("ci"))
-        .current_dir(project_dir)
-        .env_remove("COVERAGE_PROCESS_START")
-        .output()
-        .unwrap()
-}
-
-fn run_ci_with_env(
-    project_dir: &std::path::Path,
-    key: &str,
-    value: &str,
-) -> std::process::Output {
-    Command::new("bash")
-        .arg(project_dir.join("bin").join("ci"))
-        .current_dir(project_dir)
-        .env_remove("COVERAGE_PROCESS_START")
-        .env(key, value)
-        .output()
-        .unwrap()
-}
-
-/// bin/ci exits 0 when pytest passes.
-#[test]
-fn exits_0_when_pytest_passes() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_ci_project(dir.path());
-    fs::write(
-        dir.path().join("tests").join("test_pass.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
-    let output = run_ci(dir.path());
-    assert!(
-        output.status.success(),
-        "Expected exit 0, got {:?}\nstderr: {}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-/// bin/ci exits non-zero when pytest fails.
-#[test]
-fn exits_nonzero_when_pytest_fails() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_ci_project(dir.path());
-    fs::write(
-        dir.path().join("tests").join("test_fail.py"),
-        "def test_bad():\n    assert False\n",
-    )
-    .unwrap();
-    let output = run_ci(dir.path());
-    assert!(!output.status.success(), "Expected non-zero exit code");
-}
-
-/// bin/ci uses venv python when available.
-#[test]
-fn uses_venv_python_when_available() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_ci_project(dir.path());
-    fs::write(
-        dir.path().join("tests").join("test_pass.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
-    // Replace the venv python with a marker script
-    let fake_python = dir.path().join(".venv").join("bin").join("python3");
-    fs::write(&fake_python, "#!/usr/bin/env bash\necho VENV_MARKER\nexit 0\n").unwrap();
-    let mut perms = fs::metadata(&fake_python).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(&fake_python, perms).unwrap();
-    let output = run_ci(dir.path());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("VENV_MARKER"),
-        "Should use venv python, stdout: {}",
-        stdout
-    );
-}
-
-/// bin/ci runs ruff check and ruff format --check before pytest.
-#[test]
-fn runs_ruff_check_and_format() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_ci_project(dir.path());
-    fs::write(
-        dir.path().join("tests").join("test_pass.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
-    // Replace venv python with a marker script
-    let fake_python = dir.path().join(".venv").join("bin").join("python3");
-    fs::write(
-        &fake_python,
-        "#!/usr/bin/env bash\necho \"RUFF_MARKER: $*\"\nexit 0\n",
-    )
-    .unwrap();
-    let mut perms = fs::metadata(&fake_python).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(&fake_python, perms).unwrap();
-    let output = run_ci(dir.path());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("RUFF_MARKER: -m ruff check lib/ tests/"),
-        "Should run ruff check, stdout: {}",
-        stdout
-    );
-    assert!(
-        stdout.contains("RUFF_MARKER: -m ruff format --check lib/ tests/"),
-        "Should run ruff format --check, stdout: {}",
-        stdout
-    );
-}
-
-/// bin/ci runs cargo test when Cargo.toml exists.
-#[test]
-fn runs_cargo_test_when_cargo_toml_exists() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_ci_project(dir.path());
-    fs::write(
-        dir.path().join("tests").join("test_pass.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
-    fs::write(
-        dir.path().join("Cargo.toml"),
+        dir.join("Cargo.toml"),
         "[package]\nname = \"test\"\nversion = \"0.1.0\"\n",
     )
     .unwrap();
-
-    // Create mock cargo
-    let mock_bin = dir.path().join("mock_bin");
-    fs::create_dir_all(&mock_bin).unwrap();
-    fs::write(
-        mock_bin.join("cargo"),
-        "#!/usr/bin/env bash\necho \"CARGO_TEST_MARKER: $*\"\nexit 0\n",
-    )
-    .unwrap();
-    let mut perms = fs::metadata(mock_bin.join("cargo")).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(mock_bin.join("cargo"), perms).unwrap();
-
-    let path = format!("{}:{}", mock_bin.display(), std::env::var("PATH").unwrap());
-    let output = run_ci_with_env(dir.path(), "PATH", &path);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success());
-    assert!(
-        stdout.contains("CARGO_TEST_MARKER: test"),
-        "Should run cargo test, stdout: {}",
-        stdout
-    );
 }
 
-/// bin/ci does not run cargo when no Cargo.toml exists.
-#[test]
-fn skips_cargo_when_no_cargo_toml() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_ci_project(dir.path());
-    fs::write(
-        dir.path().join("tests").join("test_pass.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
-
-    let mock_bin = dir.path().join("mock_bin");
-    fs::create_dir_all(&mock_bin).unwrap();
-    fs::write(
-        mock_bin.join("cargo"),
-        "#!/usr/bin/env bash\necho \"CARGO_SHOULD_NOT_RUN\"\nexit 1\n",
-    )
-    .unwrap();
-    let mut perms = fs::metadata(mock_bin.join("cargo")).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(mock_bin.join("cargo"), perms).unwrap();
-
-    let path = format!("{}:{}", mock_bin.display(), std::env::var("PATH").unwrap());
-    let output = run_ci_with_env(dir.path(), "PATH", &path);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success());
-    assert!(
-        !stdout.contains("CARGO_SHOULD_NOT_RUN"),
-        "Should not run cargo without Cargo.toml"
-    );
+fn run_ci(project_dir: &std::path::Path, extra_path: Option<&str>) -> std::process::Output {
+    let mut cmd = Command::new("bash");
+    cmd.arg(project_dir.join("bin").join("ci"))
+        .current_dir(project_dir)
+        .env_remove("COVERAGE_PROCESS_START");
+    if let Some(path) = extra_path {
+        cmd.env("PATH", path);
+    }
+    cmd.output().unwrap()
 }
 
-/// bin/ci falls back to system python when no venv.
-#[test]
-fn falls_back_to_system_python_when_no_venv() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_ci_project(dir.path());
+/// Creates a mock cargo that logs its invocations and exits 0.
+fn setup_mock_cargo(dir: &std::path::Path) -> std::path::PathBuf {
+    let mock_bin = dir.join("mock_bin");
+    fs::create_dir_all(&mock_bin).unwrap();
+    let log_file = dir.join("cargo_log");
     fs::write(
-        dir.path().join("tests").join("test_pass.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
-    // Remove the venv
-    fs::remove_dir_all(dir.path().join(".venv")).unwrap();
-
-    // Create a local_bin with a python3 wrapper pointing to the real venv python
-    let local_bin = dir.path().join("local_bin");
-    fs::create_dir_all(&local_bin).unwrap();
-    let repo_python = common::repo_root().join(".venv").join("bin").join("python3");
-    fs::write(
-        local_bin.join("python3"),
+        mock_bin.join("cargo"),
         format!(
-            "#!/usr/bin/env bash\nexec {} \"$@\"\n",
-            repo_python.display()
+            "#!/usr/bin/env bash\necho \"$*\" >> \"{}\"\nexit 0\n",
+            log_file.display()
         ),
     )
     .unwrap();
-    let mut perms = fs::metadata(local_bin.join("python3")).unwrap().permissions();
+    let mut perms = fs::metadata(mock_bin.join("cargo")).unwrap().permissions();
     perms.set_mode(0o755);
-    fs::set_permissions(local_bin.join("python3"), perms).unwrap();
+    fs::set_permissions(mock_bin.join("cargo"), perms).unwrap();
+    mock_bin
+}
 
-    let path = format!("{}:{}", local_bin.display(), std::env::var("PATH").unwrap());
-    let output = run_ci_with_env(dir.path(), "PATH", &path);
+/// bin/ci runs cargo build, cargo test, cargo clippy, and cargo fmt.
+#[test]
+fn runs_all_cargo_commands() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_ci_project(dir.path());
+    let mock_bin = setup_mock_cargo(dir.path());
+    let path = format!("{}:{}", mock_bin.display(), std::env::var("PATH").unwrap());
+    let output = run_ci(dir.path(), Some(&path));
     assert!(
         output.status.success(),
-        "Expected exit 0 with system python fallback\nstderr: {}",
+        "Expected exit 0\nstderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-}
 
-/// bin/ci removes stale __pycache__ dirs (excl. .venv) before running pytest.
-#[test]
-fn cleans_stale_pycache_before_pytest() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_ci_project(dir.path());
-    fs::write(
-        dir.path().join("tests").join("test_pass.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
-
-    // Create stale .pyc in lib/__pycache__/
-    let pycache = dir.path().join("lib").join("__pycache__");
-    fs::create_dir_all(&pycache).unwrap();
-    let stale_pyc = pycache.join("deleted_module.cpython-314.pyc");
-    fs::write(&stale_pyc, &[0u8]).unwrap();
-
-    // Create stale .pyc in tests/__pycache__/
-    let test_pycache = dir.path().join("tests").join("__pycache__");
-    fs::create_dir_all(&test_pycache).unwrap();
-    let stale_test_pyc = test_pycache.join("test_deleted.cpython-314-pytest-9.0.2.pyc");
-    fs::write(&stale_test_pyc, &[0u8]).unwrap();
-
-    let output = run_ci(dir.path());
-    assert!(output.status.success());
+    let log = fs::read_to_string(dir.path().join("cargo_log")).unwrap();
     assert!(
-        !stale_pyc.exists(),
-        "stale lib .pyc should be cleaned by bin/ci"
+        log.contains("build --quiet"),
+        "Should run cargo build, got: {}",
+        log
     );
     assert!(
-        !stale_test_pyc.exists(),
-        "stale test .pyc should be cleaned by bin/ci"
+        log.contains("test --quiet"),
+        "Should run cargo test, got: {}",
+        log
+    );
+    assert!(
+        log.contains("clippy --quiet"),
+        "Should run cargo clippy, got: {}",
+        log
+    );
+    assert!(
+        log.contains("fmt --check"),
+        "Should run cargo fmt --check, got: {}",
+        log
     );
 }
 
-/// bin/ci must NOT clean __pycache__ inside .venv/.
+/// bin/ci exits non-zero when cargo test fails.
 #[test]
-fn pycache_cleanup_preserves_venv() {
+fn exits_nonzero_when_cargo_test_fails() {
     let dir = tempfile::tempdir().unwrap();
     setup_ci_project(dir.path());
+    let mock_bin = dir.path().join("mock_bin");
+    fs::create_dir_all(&mock_bin).unwrap();
+    // Mock cargo that fails on "test" subcommand
     fs::write(
-        dir.path().join("tests").join("test_pass.py"),
-        "def test_ok():\n    assert True\n",
+        mock_bin.join("cargo"),
+        "#!/usr/bin/env bash\nif [[ \"$1\" == \"test\" ]]; then exit 1; fi\nexit 0\n",
     )
     .unwrap();
+    let mut perms = fs::metadata(mock_bin.join("cargo")).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(mock_bin.join("cargo"), perms).unwrap();
 
-    let venv_pycache = dir
-        .path()
-        .join(".venv")
-        .join("lib")
-        .join("python3")
-        .join("__pycache__");
-    fs::create_dir_all(&venv_pycache).unwrap();
-    let venv_marker = venv_pycache.join("venv_module.cpython-314.pyc");
-    fs::write(&venv_marker, &[0u8]).unwrap();
-
-    let output = run_ci(dir.path());
-    assert!(output.status.success());
+    let path = format!("{}:{}", mock_bin.display(), std::env::var("PATH").unwrap());
+    let output = run_ci(dir.path(), Some(&path));
     assert!(
-        venv_marker.exists(),
-        ".venv __pycache__ must be preserved"
+        !output.status.success(),
+        "Expected non-zero exit code when cargo test fails"
     );
 }
 
-/// bin/ci preserves .venv/__pycache__ even when invoked from a subdirectory.
+/// bin/ci exits non-zero when cargo clippy fails.
 #[test]
-fn pycache_cleanup_preserves_venv_from_subdirectory() {
+fn exits_nonzero_when_cargo_clippy_fails() {
     let dir = tempfile::tempdir().unwrap();
     setup_ci_project(dir.path());
+    let mock_bin = dir.path().join("mock_bin");
+    fs::create_dir_all(&mock_bin).unwrap();
+    // Mock cargo that fails on "clippy" subcommand
     fs::write(
-        dir.path().join("tests").join("test_pass.py"),
-        "def test_ok():\n    assert True\n",
+        mock_bin.join("cargo"),
+        "#!/usr/bin/env bash\nif [[ \"$1\" == \"clippy\" ]]; then exit 1; fi\nexit 0\n",
     )
     .unwrap();
+    let mut perms = fs::metadata(mock_bin.join("cargo")).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(mock_bin.join("cargo"), perms).unwrap();
 
-    let venv_pycache = dir
-        .path()
-        .join(".venv")
-        .join("lib")
-        .join("python3")
-        .join("__pycache__");
-    fs::create_dir_all(&venv_pycache).unwrap();
-    let venv_marker = venv_pycache.join("venv_pkg.cpython-314.pyc");
-    fs::write(&venv_marker, &[0u8]).unwrap();
-
-    // Invoke from the lib/ subdirectory
-    let output = Command::new("bash")
-        .arg(dir.path().join("bin").join("ci"))
-        .current_dir(dir.path().join("lib"))
-        .env_remove("COVERAGE_PROCESS_START")
-        .output()
-        .unwrap();
-
-    // bin/ci may fail for other reasons from a subdirectory. The assertion
-    // is that .venv/__pycache__ survives regardless of CWD.
+    let path = format!("{}:{}", mock_bin.display(), std::env::var("PATH").unwrap());
+    let output = run_ci(dir.path(), Some(&path));
     assert!(
-        venv_marker.exists(),
-        ".venv __pycache__ was deleted when bin/ci ran from a subdirectory. \
-         find must use absolute $REPO_ROOT. stderr: {}",
+        !output.status.success(),
+        "Expected non-zero exit code when cargo clippy fails"
+    );
+}
+
+/// bin/ci exits non-zero when cargo fmt --check fails.
+#[test]
+fn exits_nonzero_when_cargo_fmt_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_ci_project(dir.path());
+    let mock_bin = dir.path().join("mock_bin");
+    fs::create_dir_all(&mock_bin).unwrap();
+    // Mock cargo that fails on "fmt" subcommand
+    fs::write(
+        mock_bin.join("cargo"),
+        "#!/usr/bin/env bash\nif [[ \"$1\" == \"fmt\" ]]; then exit 1; fi\nexit 0\n",
+    )
+    .unwrap();
+    let mut perms = fs::metadata(mock_bin.join("cargo")).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(mock_bin.join("cargo"), perms).unwrap();
+
+    let path = format!("{}:{}", mock_bin.display(), std::env::var("PATH").unwrap());
+    let output = run_ci(dir.path(), Some(&path));
+    assert!(
+        !output.status.success(),
+        "Expected non-zero exit code when cargo fmt fails"
+    );
+}
+
+/// bin/ci skips cargo build when no Cargo.toml exists.
+#[test]
+fn skips_build_when_no_cargo_toml() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_ci_project(dir.path());
+    // Remove Cargo.toml
+    fs::remove_file(dir.path().join("Cargo.toml")).unwrap();
+    let mock_bin = setup_mock_cargo(dir.path());
+    let path = format!("{}:{}", mock_bin.display(), std::env::var("PATH").unwrap());
+    let output = run_ci(dir.path(), Some(&path));
+    assert!(
+        output.status.success(),
+        "Expected exit 0\nstderr: {}",
         String::from_utf8_lossy(&output.stderr)
+    );
+
+    let log = fs::read_to_string(dir.path().join("cargo_log")).unwrap();
+    assert!(
+        !log.contains("build"),
+        "Should not run cargo build without Cargo.toml, got: {}",
+        log
+    );
+    assert!(
+        log.contains("test"),
+        "Should still run cargo test, got: {}",
+        log
     );
 }

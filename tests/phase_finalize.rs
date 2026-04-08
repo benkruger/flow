@@ -44,12 +44,7 @@ fn create_git_repo(parent: &Path) -> PathBuf {
 }
 
 /// Create a state file with a specified phase in_progress.
-fn create_state(
-    repo: &Path,
-    branch: &str,
-    current_phase: &str,
-    skills_continue: &str,
-) {
+fn create_state(repo: &Path, branch: &str, current_phase: &str, skills_continue: &str) {
     let state_dir = repo.join(".flow-states");
     fs::create_dir_all(&state_dir).unwrap();
 
@@ -190,9 +185,12 @@ fn test_learn_with_slack_reply_skipped() {
     let output = run_phase_finalize(
         &repo,
         &[
-            "--phase", "flow-learn",
-            "--branch", branch,
-            "--thread-ts", "1234567890.123456",
+            "--phase",
+            "flow-learn",
+            "--branch",
+            branch,
+            "--thread-ts",
+            "1234567890.123456",
         ],
     );
     assert_eq!(
@@ -208,8 +206,7 @@ fn test_learn_with_slack_reply_skipped() {
 
     // State should be updated — phase completed
     let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
-    let state: Value =
-        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-learn"]["status"], "complete");
 }
 
@@ -224,9 +221,12 @@ fn test_start_creates_slack_thread_skipped() {
     let output = run_phase_finalize(
         &repo,
         &[
-            "--phase", "flow-start",
-            "--branch", branch,
-            "--pr-url", "https://github.com/test/repo/pull/42",
+            "--phase",
+            "flow-start",
+            "--branch",
+            branch,
+            "--pr-url",
+            "https://github.com/test/repo/pull/42",
         ],
     );
     assert_eq!(output.status.code(), Some(0));
@@ -236,8 +236,7 @@ fn test_start_creates_slack_thread_skipped() {
 
     // State should show Start complete
     let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
-    let state: Value =
-        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-start"]["status"], "complete");
 }
 
@@ -249,19 +248,18 @@ fn test_no_slack_config() {
     let repo = create_git_repo(dir.path());
     create_state(&repo, branch, "flow-code", "auto");
 
-    let output = run_phase_finalize(
-        &repo,
-        &["--phase", "flow-code", "--branch", branch],
-    );
+    let output = run_phase_finalize(&repo, &["--phase", "flow-code", "--branch", branch]);
     assert_eq!(output.status.code(), Some(0));
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
-    assert!(data.get("slack").is_none(), "No slack key when both thread-ts and pr-url absent");
+    assert!(
+        data.get("slack").is_none(),
+        "No slack key when both thread-ts and pr-url absent"
+    );
 
     // Phase still completes
     let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
-    let state: Value =
-        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-code"]["status"], "complete");
 }
 
@@ -272,10 +270,7 @@ fn test_continue_action_auto() {
     let repo = create_git_repo(dir.path());
     create_state(&repo, branch, "flow-code", "auto");
 
-    let output = run_phase_finalize(
-        &repo,
-        &["--phase", "flow-code", "--branch", branch],
-    );
+    let output = run_phase_finalize(&repo, &["--phase", "flow-code", "--branch", branch]);
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
     assert_eq!(
@@ -291,10 +286,7 @@ fn test_continue_action_manual() {
     let repo = create_git_repo(dir.path());
     create_state(&repo, branch, "flow-code", "manual");
 
-    let output = run_phase_finalize(
-        &repo,
-        &["--phase", "flow-code", "--branch", branch],
-    );
+    let output = run_phase_finalize(&repo, &["--phase", "flow-code", "--branch", branch]);
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
     assert_eq!(
@@ -310,16 +302,12 @@ fn test_code_phase() {
     let repo = create_git_repo(dir.path());
     create_state(&repo, branch, "flow-code", "auto");
 
-    let output = run_phase_finalize(
-        &repo,
-        &["--phase", "flow-code", "--branch", branch],
-    );
+    let output = run_phase_finalize(&repo, &["--phase", "flow-code", "--branch", branch]);
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
 
     let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
-    let state: Value =
-        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-code"]["status"], "complete");
     assert_eq!(state["current_phase"], "flow-code-review");
 }
@@ -331,16 +319,12 @@ fn test_code_review_phase() {
     let repo = create_git_repo(dir.path());
     create_state(&repo, branch, "flow-code-review", "auto");
 
-    let output = run_phase_finalize(
-        &repo,
-        &["--phase", "flow-code-review", "--branch", branch],
-    );
+    let output = run_phase_finalize(&repo, &["--phase", "flow-code-review", "--branch", branch]);
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
 
     let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
-    let state: Value =
-        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-code-review"]["status"], "complete");
     assert_eq!(state["current_phase"], "flow-learn");
 }

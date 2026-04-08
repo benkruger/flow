@@ -24,7 +24,9 @@ mod tests {
     fn is_lowercase_hex() {
         let result = generate_id();
         assert!(
-            result.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            result
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
             "Not valid lowercase hex: {}",
             result
         );

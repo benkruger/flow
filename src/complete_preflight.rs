@@ -480,12 +480,7 @@ pub fn preflight_inner(
 }
 
 /// Production wrapper — resolves branch, root, bin_flow, runner automatically.
-pub fn preflight(
-    branch: Option<&str>,
-    auto: bool,
-    manual: bool,
-    root: Option<&Path>,
-) -> Value {
+pub fn preflight(branch: Option<&str>, auto: bool, manual: bool, root: Option<&Path>) -> Value {
     let default_root = project_root();
     let root_ref: &Path = root.unwrap_or(&default_root);
     let resolved_branch: Option<String> = match branch {
@@ -703,8 +698,8 @@ mod tests {
     #[test]
     fn merge_main_already_up_to_date() {
         let runner = mock_runner(vec![
-            ok_empty(),  // git fetch
-            ok_empty(),  // merge-base is ancestor
+            ok_empty(), // git fetch
+            ok_empty(), // merge-base is ancestor
         ]);
         let (status, data) = merge_main(&runner);
         assert_eq!(status, "clean");
@@ -714,10 +709,10 @@ mod tests {
     #[test]
     fn merge_main_new_commits_merged_and_pushed() {
         let runner = mock_runner(vec![
-            ok_empty(),                  // git fetch
-            fail(""),                    // merge-base not ancestor
-            ok("Merge made"),            // git merge
-            ok_empty(),                  // git push
+            ok_empty(),       // git fetch
+            fail(""),         // merge-base not ancestor
+            ok("Merge made"), // git merge
+            ok_empty(),       // git push
         ]);
         let (status, data) = merge_main(&runner);
         assert_eq!(status, "merged");
@@ -727,9 +722,9 @@ mod tests {
     #[test]
     fn merge_main_conflicts_detected() {
         let runner = mock_runner(vec![
-            ok_empty(),                          // git fetch
-            fail(""),                            // merge-base not ancestor
-            fail("CONFLICT (content)"),          // git merge
+            ok_empty(),                           // git fetch
+            fail(""),                             // merge-base not ancestor
+            fail("CONFLICT (content)"),           // git merge
             ok("UU lib/foo.py\nAA lib/bar.py\n"), // git status
         ]);
         let (status, data) = merge_main(&runner);
@@ -750,7 +745,11 @@ mod tests {
         let runner = mock_runner(vec![fail("Could not resolve host")]);
         let (status, data) = merge_main(&runner);
         assert_eq!(status, "error");
-        assert!(data.unwrap().as_str().unwrap().contains("Could not resolve"));
+        assert!(data
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .contains("Could not resolve"));
     }
 
     #[test]
@@ -768,9 +767,9 @@ mod tests {
     #[test]
     fn merge_main_push_failure_after_merge() {
         let runner = mock_runner(vec![
-            ok_empty(),           // fetch
-            fail(""),             // merge-base not ancestor
-            ok("Merge made"),     // merge ok
+            ok_empty(),              // fetch
+            fail(""),                // merge-base not ancestor
+            ok("Merge made"),        // merge ok
             fail("remote rejected"), // push fails
         ]);
         let (status, data) = merge_main(&runner);
@@ -795,10 +794,10 @@ mod tests {
         setup_state(dir.path(), "test-feature", "complete", None);
 
         let runner = mock_runner(vec![
-            ok(PT_ENTER_OK),    // phase-transition enter
-            ok("OPEN"),         // gh pr view
-            ok_empty(),         // git fetch
-            ok_empty(),         // merge-base (already up to date)
+            ok(PT_ENTER_OK), // phase-transition enter
+            ok("OPEN"),      // gh pr view
+            ok_empty(),      // git fetch
+            ok_empty(),      // merge-base (already up to date)
         ]);
 
         let result = preflight_inner(
@@ -822,10 +821,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         setup_state(dir.path(), "test-feature", "complete", None);
 
-        let runner = mock_runner(vec![
-            ok(PT_ENTER_OK),
-            ok("MERGED"),
-        ]);
+        let runner = mock_runner(vec![ok(PT_ENTER_OK), ok("MERGED")]);
 
         let result = preflight_inner(
             Some("test-feature"),
@@ -873,9 +869,9 @@ mod tests {
         let runner = mock_runner(vec![
             ok(PT_ENTER_OK),
             ok("OPEN"),
-            ok_empty(),                          // fetch
-            fail(""),                            // merge-base not ancestor
-            fail("CONFLICT (content)"),          // merge
+            ok_empty(),                           // fetch
+            fail(""),                             // merge-base not ancestor
+            fail("CONFLICT (content)"),           // merge
             ok("UU lib/foo.py\nAA lib/bar.py\n"), // status
         ]);
 
@@ -907,9 +903,9 @@ mod tests {
 
         let runner = mock_runner(vec![
             // No phase-transition call because state missing
-            ok("OPEN"),  // gh pr view (by branch since no pr_number)
-            ok_empty(),  // fetch
-            ok_empty(),  // merge-base
+            ok("OPEN"), // gh pr view (by branch since no pr_number)
+            ok_empty(), // fetch
+            ok_empty(), // merge-base
         ]);
 
         let result = preflight_inner(
@@ -937,12 +933,7 @@ mod tests {
             Some(json!({"flow-complete": "manual"})),
         );
 
-        let runner = mock_runner(vec![
-            ok(PT_ENTER_OK),
-            ok("OPEN"),
-            ok_empty(),
-            ok_empty(),
-        ]);
+        let runner = mock_runner(vec![ok(PT_ENTER_OK), ok("OPEN"), ok_empty(), ok_empty()]);
 
         let result = preflight_inner(
             Some("test-feature"),
@@ -966,12 +957,7 @@ mod tests {
             Some(json!({"flow-complete": "auto"})),
         );
 
-        let runner = mock_runner(vec![
-            ok(PT_ENTER_OK),
-            ok("OPEN"),
-            ok_empty(),
-            ok_empty(),
-        ]);
+        let runner = mock_runner(vec![ok(PT_ENTER_OK), ok("OPEN"), ok_empty(), ok_empty()]);
 
         let result = preflight_inner(
             Some("test-feature"),
@@ -995,12 +981,7 @@ mod tests {
             Some(json!({"flow-complete": "manual"})),
         );
 
-        let runner = mock_runner(vec![
-            ok(PT_ENTER_OK),
-            ok("OPEN"),
-            ok_empty(),
-            ok_empty(),
-        ]);
+        let runner = mock_runner(vec![ok(PT_ENTER_OK), ok("OPEN"), ok_empty(), ok_empty()]);
 
         let result = preflight_inner(
             Some("test-feature"),
@@ -1021,12 +1002,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         setup_state(dir.path(), "test-feature", "pending", None);
 
-        let runner = mock_runner(vec![
-            ok(PT_ENTER_OK),
-            ok("OPEN"),
-            ok_empty(),
-            ok_empty(),
-        ]);
+        let runner = mock_runner(vec![ok(PT_ENTER_OK), ok("OPEN"), ok_empty(), ok_empty()]);
 
         let result = preflight_inner(
             Some("test-feature"),
@@ -1054,12 +1030,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         setup_state(dir.path(), "test-feature", "complete", None);
 
-        let runner = mock_runner(vec![
-            ok(PT_ENTER_OK),
-            ok("OPEN"),
-            ok_empty(),
-            ok_empty(),
-        ]);
+        let runner = mock_runner(vec![ok(PT_ENTER_OK), ok("OPEN"), ok_empty(), ok_empty()]);
 
         preflight_inner(
             Some("test-feature"),
@@ -1089,10 +1060,10 @@ mod tests {
             vec![
                 ok(PT_ENTER_OK),
                 ok("OPEN"),
-                ok_empty(),        // fetch
-                fail(""),          // merge-base not ancestor
-                ok("Merge made"),  // merge
-                ok_empty(),        // push
+                ok_empty(),       // fetch
+                fail(""),         // merge-base not ancestor
+                ok("Merge made"), // merge
+                ok_empty(),       // push
             ],
             calls.clone(),
         );
@@ -1126,12 +1097,7 @@ mod tests {
 
         let calls: Rc<RefCell<Vec<Vec<String>>>> = Rc::new(RefCell::new(Vec::new()));
         let runner = tracking_runner(
-            vec![
-                ok(PT_ENTER_OK),
-                ok("OPEN"),
-                ok_empty(),
-                ok_empty(),
-            ],
+            vec![ok(PT_ENTER_OK), ok("OPEN"), ok_empty(), ok_empty()],
             calls.clone(),
         );
 
@@ -1280,9 +1246,9 @@ mod tests {
         let runner = mock_runner(vec![
             ok(PT_ENTER_OK),
             ok("OPEN"),
-            ok_empty(),       // fetch
-            fail(""),         // merge-base not ancestor
-            ok("Merge made"), // merge ok
+            ok_empty(),              // fetch
+            fail(""),                // merge-base not ancestor
+            ok("Merge made"),        // merge ok
             fail("remote rejected"), // push fails
         ]);
 
@@ -1312,9 +1278,9 @@ mod tests {
             ok(PT_ENTER_OK),
             ok("OPEN"),
             ok_empty(),
-            fail(""),         // merge-base not ancestor
+            fail(""), // merge-base not ancestor
             fail("merge failed"),
-            ok_empty(),       // porcelain clean
+            ok_empty(), // porcelain clean
         ]);
 
         let result = preflight_inner(
@@ -1357,14 +1323,7 @@ mod tests {
     fn preflight_no_branch_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let runner = mock_runner(vec![]);
-        let result = preflight_inner(
-            None,
-            false,
-            false,
-            dir.path(),
-            "/fake/bin/flow",
-            &runner,
-        );
+        let result = preflight_inner(None, false, false, dir.path(), "/fake/bin/flow", &runner);
         assert_eq!(result["status"], "error");
         assert!(result["message"]
             .as_str()
@@ -1412,12 +1371,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         setup_state(dir.path(), "test-feature", "complete", None);
 
-        let runner = mock_runner(vec![
-            ok(PT_ENTER_OK),
-            ok("OPEN"),
-            ok_empty(),
-            ok_empty(),
-        ]);
+        let runner = mock_runner(vec![ok(PT_ENTER_OK), ok("OPEN"), ok_empty(), ok_empty()]);
 
         let result = preflight_inner(
             Some("test-feature"),

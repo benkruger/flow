@@ -252,9 +252,7 @@ pub fn run() {
     } else {
         None
     };
-    let main_root = project_root
-        .as_ref()
-        .map(|r| resolve_main_root(r));
+    let main_root = project_root.as_ref().map(|r| resolve_main_root(r));
     let flow_active = match (&branch, &main_root) {
         (Some(b), Some(r)) => is_flow_active(b, r),
         _ => false,
@@ -851,7 +849,10 @@ mod tests {
 
     #[test]
     fn test_blocks_background_absolute_bin_flow_finalize_commit() {
-        let msg = should_block_background("/Users/ben/code/flow/bin/flow finalize-commit .flow-commit-msg main", false);
+        let msg = should_block_background(
+            "/Users/ben/code/flow/bin/flow finalize-commit .flow-commit-msg main",
+            false,
+        );
         assert!(msg.is_some());
     }
 

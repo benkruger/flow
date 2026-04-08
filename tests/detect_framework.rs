@@ -173,7 +173,11 @@ fn detects_ios_with_glob_pattern() {
 fn detects_go_when_go_mod_exists() {
     let tmp = tempfile::tempdir().unwrap();
     let project = make_project(tmp.path());
-    fs::write(project.join("go.mod"), "module example.com/myapp\n\ngo 1.21\n").unwrap();
+    fs::write(
+        project.join("go.mod"),
+        "module example.com/myapp\n\ngo 1.21\n",
+    )
+    .unwrap();
 
     let output = flow_rs()
         .args(["detect-framework", project.to_str().unwrap()])
