@@ -506,7 +506,10 @@ pub fn flow_summary(state: &Value, now: Option<DateTime<FixedOffset>>) -> FlowSu
             .get("pr_url")
             .and_then(|u| u.as_str())
             .map(|s| s.to_string()),
-        phase_number: numbers_map.get(current_phase).copied().unwrap_or(0),
+        phase_number: numbers_map
+            .get(current_phase)
+            .copied()
+            .unwrap_or(usize::MAX),
         phase_name: names_map
             .get(current_phase)
             .cloned()
@@ -2371,6 +2374,40 @@ mod tests {
         // Phase 3 (Code) last
         assert_eq!(flows[3].branch, "alpha-feature");
         assert_eq!(flows[3].phase_number, 3);
+    }
+
+    #[test]
+    fn test_load_all_flows_unknown_phase_sorts_last() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        std::fs::create_dir(&state_dir).unwrap();
+
+        // Flow with recognized phase (Start, phase 1)
+        let mut start_state = make_state("flow-start", &[("flow-start", "in_progress")]);
+        start_state["branch"] = json!("known-feature");
+        std::fs::write(
+            state_dir.join("known-feature.json"),
+            serde_json::to_string(&start_state).unwrap(),
+        )
+        .unwrap();
+
+        // Flow with unrecognized phase
+        let mut unknown_state = make_state("flow-nonexistent", &[]);
+        unknown_state["branch"] = json!("unknown-feature");
+        std::fs::write(
+            state_dir.join("unknown-feature.json"),
+            serde_json::to_string(&unknown_state).unwrap(),
+        )
+        .unwrap();
+
+        let flows = load_all_flows(dir.path());
+
+        assert_eq!(flows.len(), 2);
+        // Known phase sorts first; unknown phase sorts last
+        assert_eq!(flows[0].branch, "known-feature");
+        assert_eq!(flows[0].phase_number, 1);
+        assert_eq!(flows[1].branch, "unknown-feature");
+        assert_eq!(flows[1].phase_number, usize::MAX);
     }
 
     #[test]
