@@ -18,7 +18,7 @@ Claude Code is powerful, but undisciplined by default. FLOW imposes structure. N
 
 ### Unobtrusive
 
-Zero dependencies — pure Markdown skills with a hybrid Rust/Python dispatcher. Prime commits `.claude/settings.json` and `CLAUDE.md` as project config — shared permissions and framework conventions. `.flow.json` and `.flow-states/` are git-excluded. During active development, a single gitignored JSON state file exists at `.flow-states/<branch>.json`. When the feature completes, that file is deleted too. Three commands to set up. One file while you work. Zero when you're done.
+Zero dependencies — pure Markdown skills with a Rust dispatcher. Prime commits `.claude/settings.json` and `CLAUDE.md` as project config — shared permissions and framework conventions. `.flow.json` and `.flow-states/` are git-excluded. During active development, a single gitignored JSON state file exists at `.flow-states/<branch>.json`. When the feature completes, that file is deleted too. Three commands to set up. One file while you work. Zero when you're done.
 
 ### Autonomous or Manual
 
@@ -178,7 +178,7 @@ Monitor every active flow from your terminal — no Claude session needed. `flow
 | Esc | Back to list view |
 | q | Quit |
 
-The detail panel shows the full phase timeline with per-phase cumulative time, code task progress, diff stats, notes count, and issues filed. Runs standalone on macOS and Linux using the Python standard library `curses` module.
+The detail panel shows the full phase timeline with per-phase cumulative time, code task progress, diff stats, notes count, and issues filed. Runs standalone on macOS and Linux.
 
 ### Project Decomposition
 
@@ -331,7 +331,7 @@ Three independent mechanisms enforce this:
 
 ## Maintainer Tools
 
-These skills and scripts live in the FLOW repo itself (`.claude/skills/` and `lib/`). They are not part of the user-facing plugin — they exist to develop, test, and release FLOW.
+These skills and scripts live in the FLOW repo itself (`.claude/skills/`). They are not part of the user-facing plugin — they exist to develop, test, and release FLOW.
 
 | Command | What it does |
 |---------|-------------|
