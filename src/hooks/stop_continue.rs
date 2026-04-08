@@ -160,8 +160,8 @@ pub fn check_continue(hook_input: &Value, state_path: &Path) -> ContinueResult {
                 state["_continue_pending"] = Value::String(String::new());
                 state["_continue_context"] = Value::String(String::new());
                 // Note: _stop_instructed is NOT cleared here. Clearing it
-                // would cause check_discussion_mode to re-fire in the same
-                // hook invocation (a non-user-initiated Stop). phase_enter()
+                // would cause check_first_stop to re-enter discussion mode
+                // on the next stop (a non-user-initiated Stop). phase_enter()
                 // clears it when the new session enters its first phase.
                 decision = Some(format!(
                     "session mismatch (state={} hook={}), cleared pending={}",
@@ -284,6 +284,11 @@ Wait for the user — they are not done talking.";
 
 /// Check if this is the first user interruption during an active flow.
 ///
+/// **Superseded in `run()` by `check_first_stop()`** which handles both
+/// discussion mode and pending continuations in a single function.
+/// This function is no longer called from the production `run()` path
+/// but is retained as a standalone building block with its own test suite.
+///
 /// On the first Stop event where `_stop_instructed` is not already set
 /// (bool `true`), sets the flag and returns a blocking `ContinueResult`
 /// with `DISCUSSION_BLOCK_REASON` as context. On subsequent stops
@@ -354,8 +359,13 @@ pub fn check_discussion_mode(state_path: &Path) -> ContinueResult {
 /// non-blocking so `check_continue()` can handle multi-child-skill chains.
 ///
 /// Key difference from `check_continue()`: does NOT remove
-/// `_stop_instructed` after consuming pending. This ensures discussion
-/// mode does not re-fire on every subsequent stop.
+/// `_stop_instructed` after consuming pending. `check_continue()` clears
+/// the flag because it handles multi-child-skill chains where each
+/// successive child completion should re-enable first-stop logic.
+/// `check_first_stop()` preserves the flag because it runs once per
+/// stop-cycle to establish discussion-mode boundaries — clearing it
+/// would allow subsequent stops to incorrectly re-enter discussion mode,
+/// duplicating the flow-note instruction on every stop event.
 pub fn check_first_stop(hook_input: &Value, state_path: &Path) -> ContinueResult {
     if !state_path.exists() {
         return ContinueResult {
@@ -446,6 +456,10 @@ pub fn check_first_stop(hook_input: &Value, state_path: &Path) -> ContinueResult
 
         let reason = format_conditional_continue_reason(&pending, ctx.as_deref());
         should_block = true;
+        // "discussion-with-pending" distinguishes this path from pure "discussion"
+        // in run()'s output formatting — both bypass format_block_output() and use
+        // the context directly as the block reason. The distinct name exists for
+        // diagnostic logging (log_diag can distinguish the two paths).
         skill = Some("discussion-with-pending".to_string());
         context = Some(reason);
         decision = Some(format!("first stop, conditional continue: pending={}", pending));
@@ -1382,6 +1396,26 @@ mod tests {
         assert!(
             state.get("_stop_instructed").is_none(),
             "_stop_instructed must be cleared when _continue_pending is consumed"
+        );
+    }
+
+    // --- Tombstone: check_discussion_mode removed from run() in PR #954 ---
+
+    #[test]
+    fn test_run_does_not_call_check_discussion_mode() {
+        // Tombstone: check_discussion_mode removed from run() in PR #954.
+        // check_first_stop now handles both discussion mode and pending
+        // continuations. Must not return to run().
+        let source = include_str!("stop_continue.rs");
+        // Find the run() function body — it starts after "pub fn run()"
+        let run_start = source.find("pub fn run()").expect("run() must exist");
+        let run_body = &source[run_start..];
+        // The run() body ends at the next function or #[cfg(test)]
+        let run_end = run_body.find("#[cfg(test)]").unwrap_or(run_body.len());
+        let run_text = &run_body[..run_end];
+        assert!(
+            !run_text.contains("check_discussion_mode"),
+            "run() must not call check_discussion_mode — superseded by check_first_stop in PR #954"
         );
     }
 }
