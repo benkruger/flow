@@ -66,8 +66,14 @@ struct Timing {
 
 #[test]
 fn mutate_state_under_contention() {
-    //20 parallel threads increment a counter in a JSON file using exclusive
-    //file locking. Final count must equal 20 — no increments lost.
+    // 20 parallel threads increment a counter in a JSON file using exclusive
+    // file locking. Final count must equal 20 — no increments lost.
+    //
+    // Note: This tests the fs2 file-locking mechanism directly rather than
+    // calling flow_rs::mutate_state via subprocess. The production mutate_state
+    // uses the same fs2::FileExt::lock_exclusive pattern. A regression where
+    // mutate_state acquires the lock after reading would not be caught here —
+    // that invariant is enforced by the mutate_state unit tests in src/utils.rs.
     let tmp = tempfile::tempdir().expect("Failed to create tempdir");
     let state_path = tmp.path().join("shared.json");
     fs::write(&state_path, r#"{"count": 0}"#).expect("Failed to write initial state");

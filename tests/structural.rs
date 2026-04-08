@@ -956,6 +956,23 @@ fn test_checksum_version_invariant() {
         .unwrap();
     assert!(git_init.status.success(), "git init failed");
 
+    // Configure git identity for CI environments without global config
+    std::process::Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(tmp_path)
+        .output()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(tmp_path)
+        .output()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["config", "commit.gpgsign", "false"])
+        .current_dir(tmp_path)
+        .output()
+        .unwrap();
+
     let git_commit = std::process::Command::new("git")
         .args(["commit", "--allow-empty", "-m", "init"])
         .current_dir(tmp_path)
@@ -1088,4 +1105,66 @@ fn test_complete_modules_no_private_bin_flow_path() {
             module
         );
     }
+}
+
+// --- Tombstone tests for Python meta test files ported to Rust in PR #942 ---
+
+#[test]
+fn test_no_test_structural_py() {
+    /// Tombstone: ported to tests/structural.rs in PR #942. Must not return.
+    assert!(!common::repo_root().join("tests/test_structural.py").exists());
+}
+
+#[test]
+fn test_no_test_skill_contracts_py() {
+    /// Tombstone: ported to tests/skill_contracts.rs in PR #942. Must not return.
+    assert!(!common::repo_root().join("tests/test_skill_contracts.py").exists());
+}
+
+#[test]
+fn test_no_test_permissions_py() {
+    /// Tombstone: ported to tests/permissions.rs in PR #942. Must not return.
+    assert!(!common::repo_root().join("tests/test_permissions.py").exists());
+}
+
+#[test]
+fn test_no_test_docs_sync_py() {
+    /// Tombstone: ported to tests/docs_sync.rs in PR #942. Must not return.
+    assert!(!common::repo_root().join("tests/test_docs_sync.py").exists());
+}
+
+#[test]
+fn test_no_test_concurrency_py() {
+    /// Tombstone: ported to tests/concurrency.rs in PR #942. Must not return.
+    assert!(!common::repo_root().join("tests/test_concurrency.py").exists());
+}
+
+#[test]
+fn test_no_test_bin_flow_py() {
+    /// Tombstone: ported to tests/bin_flow.rs in PR #942. Must not return.
+    assert!(!common::repo_root().join("tests/test_bin_flow.py").exists());
+}
+
+#[test]
+fn test_no_test_bin_ci_py() {
+    /// Tombstone: ported to tests/bin_ci.rs in PR #942. Must not return.
+    assert!(!common::repo_root().join("tests/test_bin_ci.py").exists());
+}
+
+#[test]
+fn test_no_test_bin_test_py() {
+    /// Tombstone: ported to tests/bin_test.rs in PR #942. Must not return.
+    assert!(!common::repo_root().join("tests/test_bin_test.py").exists());
+}
+
+#[test]
+fn test_no_test_bin_dependencies_py() {
+    /// Tombstone: ported to tests/bin_dependencies.rs in PR #942. Must not return.
+    assert!(!common::repo_root().join("tests/test_bin_dependencies.py").exists());
+}
+
+#[test]
+fn test_no_test_flow_utils_shared_py() {
+    /// Tombstone: ported to Rust unit tests in PR #942. Must not return.
+    assert!(!common::repo_root().join("tests/test_flow_utils_shared.py").exists());
 }
