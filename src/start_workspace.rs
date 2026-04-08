@@ -42,9 +42,19 @@ pub struct Args {
 }
 
 /// Extract PR number from URL like https://github.com/org/repo/pull/123.
+///
+/// Searches for the "pull" segment and parses the next segment as the number.
+/// Returns 0 if the URL is malformed or not a PR URL.
 pub(crate) fn extract_pr_number(pr_url: &str) -> u32 {
     let parts: Vec<&str> = pr_url.trim_end_matches('/').split('/').collect();
-    parts.last().and_then(|s| s.parse().ok()).unwrap_or(0)
+    for (i, part) in parts.iter().enumerate() {
+        if *part == "pull" && i + 1 < parts.len() {
+            if let Ok(n) = parts[i + 1].parse::<u32>() {
+                return n;
+            }
+        }
+    }
+    0
 }
 
 /// Create a git worktree for the feature branch.

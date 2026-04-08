@@ -229,10 +229,8 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         .output()
         .map_err(|e| format!("Failed to spawn init-state: {}", e))?;
 
-    // Clean up the prompt file after init-state has read it
-    if let Some(ref pf) = args.prompt_file {
-        let _ = fs::remove_file(pf);
-    }
+    // Prompt file cleanup is handled by init-state's read_prompt_file()
+    // which reads and deletes the file atomically.
 
     let init_stdout = String::from_utf8_lossy(&init_output.stdout);
     let init_json: Value = init_stdout

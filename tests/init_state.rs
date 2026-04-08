@@ -292,10 +292,10 @@ fn branch_name_truncated_at_32() {
     let data = parse_stdout(&output);
     let branch = data["branch"].as_str().unwrap();
     assert!(
-        branch.len() <= 32,
-        "Branch too long: {} ({})",
+        branch.chars().count() <= 32,
+        "Branch too long: {} ({} chars)",
         branch,
-        branch.len()
+        branch.chars().count()
     );
     assert!(!branch.ends_with('-'));
 }
@@ -847,6 +847,18 @@ fn tombstone_no_start_setup_rs() {
         !path.exists(),
         "src/start_setup.rs was deleted in PR #968 — functions relocated to utils.rs \
          and start_workspace.rs"
+    );
+}
+
+#[test]
+fn tombstone_no_start_setup_test_rs() {
+    // Tombstone: removed in PR #968. tests/start_setup.rs was the integration
+    // test file for the deleted start_setup.rs module. Must not be re-added.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir).join("tests/start_setup.rs");
+    assert!(
+        !path.exists(),
+        "tests/start_setup.rs was deleted in PR #968 — start_setup module was removed"
     );
 }
 

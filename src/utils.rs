@@ -12,7 +12,8 @@ use sha2::{Digest, Sha256};
 
 // --- SetupError + run_cmd ---
 
-/// Error during setup with step identification.
+/// Error type for start-phase subprocess operations (start-workspace, auto-close-parent).
+/// Captures a step identifier for tracing which operation failed.
 #[derive(Debug)]
 pub struct SetupError {
     pub step: String,
@@ -52,7 +53,8 @@ impl WaitTimeout for std::process::Child {
     }
 }
 
-/// Run a shell command, returning (stdout, stderr). Returns Err on failure.
+/// Run a shell command with optional timeout, returning (stdout, stderr).
+/// Used by start-workspace (worktree/PR creation) and auto-close-parent.
 pub fn run_cmd(
     args: &[&str],
     cwd: &Path,

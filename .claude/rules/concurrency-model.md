@@ -25,6 +25,21 @@ Ask: "What happens when two flows hit this at the same time?"
   operation on main (pull, commit, push) must be serialized
   via the start lock or avoided entirely.
 
+## Lock Name Must Match Release Name
+
+When acquiring a lock, the name used for acquisition must be the
+same name used for release. In `start-init`, the canonical branch
+name (derived from issue titles via `branch_name()`) must be
+resolved BEFORE acquiring the lock, because `start-workspace`
+releases the lock under the canonical branch name. If the lock is
+acquired under a raw feature name but released under the canonical
+name, a lock leak occurs — the orphan lock file blocks all
+subsequent flows for 30 minutes until the stale timeout expires.
+
+Pattern: resolve the canonical name first (issue fetch, label
+guard, duplicate check), then `acquire(&canonical_name)`. All
+error paths before the lock return without touching the lock queue.
+
 ## Never Edit Source on Main
 
 Never edit source files directly on main. Every change — including
@@ -42,3 +57,5 @@ a branch first, then fix the bug there.
 - Reading main branch state without holding the start lock
 - Assuming a GitHub label or issue state hasn't changed since
   last check
+- Acquiring a lock under one name and releasing under another
+  (e.g., feature name vs canonical branch name)
