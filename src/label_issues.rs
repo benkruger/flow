@@ -11,7 +11,7 @@ use crate::utils::extract_issue_numbers;
 pub const LABEL: &str = "Flow In-Progress";
 const TIMEOUT_SECS: u64 = 30;
 
-// Polling-based wait_timeout for child processes (same pattern as start_setup.rs)
+// Polling-based wait_timeout for child processes (same pattern as utils.rs)
 trait WaitTimeout {
     fn wait_timeout(&mut self, dur: Duration) -> std::io::Result<Option<std::process::ExitStatus>>;
 }

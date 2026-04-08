@@ -10,7 +10,7 @@ use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-// --- SetupError + run_cmd (relocated from start_setup.rs) ---
+// --- SetupError + run_cmd ---
 
 /// Error during setup with step identification.
 #[derive(Debug)]

@@ -2,7 +2,7 @@
 # FLOW dispatcher — routes subcommands to the Rust binary.
 #
 # Usage: bin/flow <subcommand> [args...]
-# Example: bin/flow start-setup "Invoice Pdf Export"
+# Example: bin/flow start-init "Invoice Pdf Export"
 #
 # Dispatch: tries the Rust binary first. If it exits 127
 # (unknown subcommand), returns an error. Auto-rebuilds when

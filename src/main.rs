@@ -57,7 +57,6 @@ use flow_rs::scaffold_qa;
 use flow_rs::start_finalize;
 use flow_rs::start_gate;
 use flow_rs::start_init;
-use flow_rs::start_setup;
 use flow_rs::start_workspace;
 use flow_rs::tui_data;
 use flow_rs::update_deps;
@@ -309,10 +308,6 @@ enum Commands {
     /// Consolidated start initialization (lock + prime + upgrade + init-state + labels)
     #[command(name = "start-init")]
     StartInit(start_init::Args),
-
-    /// FLOW Start phase setup (worktree, PR, state file)
-    #[command(name = "start-setup")]
-    StartSetup(start_setup::Args),
 
     /// Create worktree, PR, backfill state, release lock
     #[command(name = "start-workspace")]
@@ -578,9 +573,6 @@ fn main() {
         }
         Some(Commands::StartInit(args)) => {
             start_init::run(args);
-        }
-        Some(Commands::StartSetup(args)) => {
-            start_setup::run(args);
         }
         Some(Commands::StartWorkspace(args)) => {
             start_workspace::run(args);
