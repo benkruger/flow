@@ -21,18 +21,20 @@ the deleted content, the tombstone test fails immediately.
 
 ## Pattern
 
-```python
-def test_code_review_no_plugin_step():
-    """Tombstone: removed in PR #587. Must not return."""
-    content = _read_skill("flow-code-review")
-    assert "code-review:code-review" not in content
+```rust
+#[test]
+fn test_code_review_no_plugin_step() {
+    // Tombstone: removed in PR #587. Must not return.
+    let content = common::read_skill("flow-code-review");
+    assert!(!content.contains("code-review:code-review"));
+}
 ```
 
 ## When to Add
 
 Every intentional removal of a named feature, config axis,
 external plugin dependency, or numbered step should leave a
-tombstone test. The test docstring must reference the PR that
+tombstone test. The test comment must reference the PR that
 performed the removal so the intent is traceable.
 
 ## Naming Convention
