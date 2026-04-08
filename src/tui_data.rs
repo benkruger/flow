@@ -506,7 +506,10 @@ pub fn flow_summary(state: &Value, now: Option<DateTime<FixedOffset>>) -> FlowSu
             .get("pr_url")
             .and_then(|u| u.as_str())
             .map(|s| s.to_string()),
-        phase_number: numbers_map.get(current_phase).copied().unwrap_or(0),
+        phase_number: numbers_map
+            .get(current_phase)
+            .copied()
+            .unwrap_or(usize::MAX),
         phase_name: names_map
             .get(current_phase)
             .cloned()
@@ -529,7 +532,8 @@ pub fn flow_summary(state: &Value, now: Option<DateTime<FixedOffset>>) -> FlowSu
 
 /// Read all .flow-states/*.json state files and return flow summaries.
 ///
-/// Returns a list of FlowSummary sorted by feature name.
+/// Returns a list of FlowSummary sorted by phase number (ascending),
+/// then by feature name (alphabetical) as a tiebreaker.
 /// Skips corrupt JSON and non-state files (e.g., *-phases.json).
 pub fn load_all_flows(root: &Path) -> Vec<FlowSummary> {
     let state_dir = root.join(".flow-states");
@@ -563,7 +567,11 @@ pub fn load_all_flows(root: &Path) -> Vec<FlowSummary> {
         }
     }
 
-    flows.sort_by(|a, b| a.feature.cmp(&b.feature));
+    flows.sort_by(|a, b| {
+        a.phase_number
+            .cmp(&b.phase_number)
+            .then_with(|| a.feature.cmp(&b.feature))
+    });
     flows
 }
 
@@ -2298,6 +2306,108 @@ mod tests {
         assert!(result.stale);
         assert!(result.rl_5h.is_none());
         assert!(result.rl_7d.is_none());
+    }
+
+    #[test]
+    fn test_load_all_flows_sorted_by_phase_then_feature() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        std::fs::create_dir(&state_dir).unwrap();
+
+        // Flow in Code phase (phase 3) — branch "alpha" sorts first alphabetically
+        let mut code_state = make_state(
+            "flow-code",
+            &[
+                ("flow-start", "complete"),
+                ("flow-plan", "complete"),
+                ("flow-code", "in_progress"),
+            ],
+        );
+        code_state["branch"] = json!("alpha-feature");
+        std::fs::write(
+            state_dir.join("alpha-feature.json"),
+            serde_json::to_string(&code_state).unwrap(),
+        )
+        .unwrap();
+
+        // Flow in Start phase (phase 1) — branch "beta" sorts second alphabetically
+        let mut start_state = make_state("flow-start", &[("flow-start", "in_progress")]);
+        start_state["branch"] = json!("beta-feature");
+        std::fs::write(
+            state_dir.join("beta-feature.json"),
+            serde_json::to_string(&start_state).unwrap(),
+        )
+        .unwrap();
+
+        // Flow in Plan phase (phase 2)
+        let mut plan_state = make_state(
+            "flow-plan",
+            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        );
+        plan_state["branch"] = json!("gamma-feature");
+        std::fs::write(
+            state_dir.join("gamma-feature.json"),
+            serde_json::to_string(&plan_state).unwrap(),
+        )
+        .unwrap();
+
+        // Second flow in Start phase (phase 1) — tiebreaker: "delta" > "beta" alphabetically
+        let mut start_state2 = make_state("flow-start", &[("flow-start", "in_progress")]);
+        start_state2["branch"] = json!("delta-feature");
+        std::fs::write(
+            state_dir.join("delta-feature.json"),
+            serde_json::to_string(&start_state2).unwrap(),
+        )
+        .unwrap();
+
+        let flows = load_all_flows(dir.path());
+
+        assert_eq!(flows.len(), 4);
+        // Phase 1 (Start) first, alphabetical tiebreaker: Beta < Delta
+        assert_eq!(flows[0].branch, "beta-feature");
+        assert_eq!(flows[0].phase_number, 1);
+        assert_eq!(flows[1].branch, "delta-feature");
+        assert_eq!(flows[1].phase_number, 1);
+        // Phase 2 (Plan) next
+        assert_eq!(flows[2].branch, "gamma-feature");
+        assert_eq!(flows[2].phase_number, 2);
+        // Phase 3 (Code) last
+        assert_eq!(flows[3].branch, "alpha-feature");
+        assert_eq!(flows[3].phase_number, 3);
+    }
+
+    #[test]
+    fn test_load_all_flows_unknown_phase_sorts_last() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        std::fs::create_dir(&state_dir).unwrap();
+
+        // Flow with recognized phase (Start, phase 1)
+        let mut start_state = make_state("flow-start", &[("flow-start", "in_progress")]);
+        start_state["branch"] = json!("known-feature");
+        std::fs::write(
+            state_dir.join("known-feature.json"),
+            serde_json::to_string(&start_state).unwrap(),
+        )
+        .unwrap();
+
+        // Flow with unrecognized phase
+        let mut unknown_state = make_state("flow-nonexistent", &[]);
+        unknown_state["branch"] = json!("unknown-feature");
+        std::fs::write(
+            state_dir.join("unknown-feature.json"),
+            serde_json::to_string(&unknown_state).unwrap(),
+        )
+        .unwrap();
+
+        let flows = load_all_flows(dir.path());
+
+        assert_eq!(flows.len(), 2);
+        // Known phase sorts first; unknown phase sorts last
+        assert_eq!(flows[0].branch, "known-feature");
+        assert_eq!(flows[0].phase_number, 1);
+        assert_eq!(flows[1].branch, "unknown-feature");
+        assert_eq!(flows[1].phase_number, usize::MAX);
     }
 
     #[test]
