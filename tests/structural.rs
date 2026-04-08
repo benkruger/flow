@@ -1147,3 +1147,14 @@ fn test_no_lib_dir_in_bin_flow() {
         "bin/flow must not reference LIB_DIR — removed in PR #953"
     );
 }
+
+#[test]
+fn test_no_rust_port_parity_rule_file() {
+    // Tombstone: consolidated into rust-patterns.md in PR #953. Must not return.
+    assert!(
+        !common::repo_root()
+            .join(".claude/rules/rust-port-parity.md")
+            .exists(),
+        ".claude/rules/rust-port-parity.md was consolidated into rust-patterns.md in PR #953 and must not be re-added"
+    );
+}
