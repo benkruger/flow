@@ -2819,11 +2819,11 @@ fn code_review_has_self_invocation_check() {
 }
 
 #[test]
-fn code_review_has_bash_bintest_check() {
+fn code_review_has_bash_binflow_check() {
     let c = common::read_skill("flow-code-review");
     assert!(
-        c.contains("bin/test"),
-        "Step 1 (Gather) must check bin/test"
+        c.contains("bin/flow"),
+        "Step 1 (Gather) must check bin/flow"
     );
 }
 

@@ -157,10 +157,10 @@ git diff origin/main...HEAD
 **Check for test runner.**
 
 ```bash
-test -f bin/test
+test -f bin/flow
 ```
 
-If the command succeeds (exit 0), `bin/test` exists — the adversarial
+If the command succeeds (exit 0), `bin/flow` exists — the adversarial
 agent should be launched in Step 2. If it fails (exit non-zero), skip
 the adversarial agent in Step 2.
 
@@ -246,7 +246,7 @@ Provide the full diff output in the prompt, prefixed with:
 > Security failure modes are explicitly in scope."
 
 **Adversarial agent** — context-sparse (receives diff, temp file path,
-CLAUDE.md path, branch name). Only launch if `bin/test` exists:
+CLAUDE.md path, branch name). Only launch if `bin/flow` exists:
 
 Determine the temp test file path using the branch name from the state file:
 
@@ -287,7 +287,7 @@ Prefix the prompt with:
 
 Wait for all agents to return.
 
-If the adversarial agent was launched (`bin/test` exists), verify the
+If the adversarial agent was launched (`bin/flow` exists), verify the
 temp test file was deleted. If it still exists, delete it:
 
 ```bash

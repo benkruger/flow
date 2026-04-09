@@ -47,3 +47,16 @@ An entry may serve purposes the current task does not know about.
 When an entry needs to be repositioned, add first in the new
 location, then remove the duplicate — and explain the two-step
 approach before starting.
+
+## Never Edit Permissions Mid-Flow
+
+Never modify `.claude/settings.json` inside a worktree during an
+active FLOW phase. Claude Code enforces permission changes
+immediately — removing or narrowing a pattern breaks tools the
+current task still needs, causing permission prompts or hook
+blocks mid-session.
+
+Permission lockdown changes belong in `src/prime_check.rs`
+(UNIVERSAL_ALLOW, FLOW_DENY) for target projects. The FLOW repo's
+own `.claude/settings.json` is updated on main after the PR merges,
+or during the next `/flow:flow-prime` run.

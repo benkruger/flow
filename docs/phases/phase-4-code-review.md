@@ -33,7 +33,7 @@ Every finding must map to one of these tenants:
 ### Step 1 — Gather
 
 Collect all artifacts: branch diff, plan file, CLAUDE.md, `.claude/rules/`
-files, and check whether `bin/test` exists for adversarial testing.
+files, and check whether `bin/flow test` exists for adversarial testing.
 
 ### Step 2 — Launch
 
@@ -48,7 +48,7 @@ single response:
   security (T4).
 - **Adversarial** (context-sparse): receives the diff and writes tests
   designed to fail. Covers test coverage (T5). Only launched if
-  `bin/test` exists.
+  `bin/flow test` exists.
 - **Documentation** (context-sparse): receives the diff and doc paths,
   investigates the codebase. Covers maintainability (T3) and
   documentation accuracy (T6).

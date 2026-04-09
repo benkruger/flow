@@ -14,7 +14,7 @@ use std::process;
 use clap::Parser;
 use serde_json::{json, Value};
 
-use crate::ci::run_with_retry;
+use crate::ci;
 use crate::commands::log::append_log;
 use crate::commands::start_step::update_step;
 use crate::git::project_root;
@@ -60,8 +60,13 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
 
     // Step 2: CI baseline with retry
-    let bin_ci = resolve_bin_ci(&cwd);
-    let (ci_result, _ci_code) = run_with_retry(&cwd, &root, &bin_ci, Some("main"), 3, None);
+    let ci_args = ci::Args {
+        force: false,
+        retry: 3,
+        branch: Some("main".to_string()),
+        simulate_branch: None,
+    };
+    let (ci_result, _ci_code) = ci::run_impl(&ci_args, &cwd, &root, false);
     let _ = append_log(
         &root,
         branch,
@@ -158,8 +163,13 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
             "step": "update_deps",
         }));
     }
-    let (post_ci_result, _post_ci_code) =
-        run_with_retry(&cwd, &root, &bin_ci, Some("main"), 3, None);
+    let post_ci_args = ci::Args {
+        force: false,
+        retry: 3,
+        branch: Some("main".to_string()),
+        simulate_branch: None,
+    };
+    let (post_ci_result, _post_ci_code) = ci::run_impl(&post_ci_args, &cwd, &root, false);
     let _ = append_log(
         &root,
         branch,
@@ -241,15 +251,6 @@ fn git_pull(cwd: &Path) -> Result<(), String> {
 }
 
 /// Resolve the path to bin/ci in the current working directory.
-fn resolve_bin_ci(cwd: &Path) -> PathBuf {
-    let bin_ci = cwd.join("bin").join("ci");
-    if bin_ci.exists() {
-        return bin_ci;
-    }
-    // Fallback: assume it's on PATH-like location
-    PathBuf::from("bin/ci")
-}
-
 /// CLI entry point.
 pub fn run(args: Args) {
     match run_impl(&args) {

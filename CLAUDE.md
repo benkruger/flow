@@ -76,9 +76,9 @@ CI will fail if these are missing:
 
 ## Development Environment
 
-- Run tests with `bin/ci` only — never invoke cargo directly
-- `bin/ci` runs `cargo fmt --check`, `cargo clippy --all-targets`, and `cargo nextest run`
-- **Use `bin/test <filter>` for targeted test runs during development** — `bin/ci` runs the full suite and is the gate before committing. `bin/test hooks` runs every test in `tests/hooks.rs`. `bin/test --rust <filter>` is accepted for backwards compatibility (equivalent to `bin/test <filter>`). Never call cargo directly — always use `bin/test` or `bin/ci`.
+- Run tests with `bin/flow ci` only — never invoke cargo directly
+- `bin/flow ci` runs `bin/flow format`, `bin/flow lint`, `bin/flow build`, `bin/flow test` in sequence (format first for fail-fast)
+- **Use `bin/flow test -- <filter>` for targeted test runs during development** — `bin/flow ci` runs the full suite and is the gate before committing. `bin/flow test -- hooks` runs every test in `tests/hooks.rs`. Never call cargo directly — always use `bin/flow test` or `bin/flow ci`.
 - Dependencies managed via `bin/dependencies` (runs `cargo update`)
 
 ## Architecture
@@ -89,7 +89,7 @@ This repo is the plugin source. When installed, skills and hooks run in the targ
 
 ### Skills Are Markdown, Not Code
 
-Skills are pure Markdown instructions (`skills/<name>/SKILL.md`). The only executable code is `bin/flow` (dispatcher), `src/*.rs` (Rust source), `bin/ci`, and `bin/test`. Everything else is instructions that Claude reads and follows.
+Skills are pure Markdown instructions (`skills/<name>/SKILL.md`). The only executable code is `bin/flow` (dispatcher) and `src/*.rs` (Rust source). Everything else is instructions that Claude reads and follows.
 
 ### State File
 
@@ -120,7 +120,7 @@ Auto-memory is shared across git worktrees of the same repository (since Claude 
 
 Learn routes learnings to project CLAUDE.md and `.claude/rules/`. Also files GitHub issues for process gaps. All filed issues recorded via `bin/flow add-issue`.
 
-CI is enforced inside `finalize-commit` itself — `run_impl` calls `ci::run_once()` before `git commit`, so every commit path (including direct `bin/flow finalize-commit` calls) runs CI mechanically. The sentinel skip optimization means zero overhead when CI already passed. The `commit_format` preference is copied from `.flow.json` into the state file by `/flow-start`; the commit skill reads it from the state file. After `finalize-commit` succeeds and `git pull` did not introduce new content (`pull_merged == false`), the CI sentinel is automatically refreshed so the next `bin/flow ci` run skips when the working tree hasn't changed.
+CI is enforced inside `finalize-commit` itself — `run_impl` calls `ci::run_impl()` before `git commit`, so every commit path (including direct `bin/flow finalize-commit` calls) runs CI mechanically. The sentinel skip optimization means zero overhead when CI already passed. The `commit_format` preference is copied from `.flow.json` into the state file by `/flow-start`; the commit skill reads it from the state file. After `finalize-commit` succeeds and `git pull` did not introduce new content (`pull_merged == false`), the CI sentinel is automatically refreshed so the next `bin/flow ci` run skips when the working tree hasn't changed.
 
 ### Logging
 
@@ -162,7 +162,7 @@ Key test files: `tests/structural.rs` (config invariants, version consistency), 
 
 ## Maintainer Skills (private to this repo)
 
-- `/flow-qa` — `.claude/skills/flow-qa/SKILL.md` — clone QA repos, prime, run a full lifecycle, and verify results. **Always run `/flow-qa --start` before `/flow:flow-start` when developing FLOW.** The installed marketplace plugin enforces its own phase count and skill gates, which conflict with the source being developed and break the workflow mid-feature. QA repos exist solely to test the FLOW lifecycle (Start through Complete) — `bin/ci` must run tests only, no linters or style checks. If `bin/ci` fails on seed code, fix the seed, don't debug the linter.
+- `/flow-qa` — `.claude/skills/flow-qa/SKILL.md` — clone QA repos, prime, run a full lifecycle, and verify results. **Always run `/flow-qa --start` before `/flow:flow-start` when developing FLOW.** The installed marketplace plugin enforces its own phase count and skill gates, which conflict with the source being developed and break the workflow mid-feature. QA repos exist solely to test the FLOW lifecycle (Start through Complete) — `bin/flow ci` must run tests only, no linters or style checks. If `bin/flow ci` fails on seed code, fix the seed, don't debug the linter.
 - `/flow-release` — `.claude/skills/flow-release/SKILL.md` — bump version, tag, push, create GitHub Release
 - `/flow-changelog-audit` — `.claude/skills/flow-changelog-audit/SKILL.md` — audit Claude Code CHANGELOG.md for plugin-relevant changes, categorize as Adopt/Remove/Adapt, file issues
 
@@ -179,5 +179,5 @@ Key test files: `tests/structural.rs` (config invariants, version consistency), 
 - **Prefer dedicated tools over Bash** — see `.claude/rules/worktree-commands.md`
 - **Issue filing** — see `.claude/rules/filing-issues.md`
 - **Repo-level targets only** — see `.claude/rules/repo-level-only.md`
-- **No `run_in_background` during FLOW phases**; `bin/flow` (any subcommand) and `bin/ci` are never allowed in the background regardless of mode — see `.claude/rules/ci-is-a-gate.md`. Enforced by `bin/flow hook validate-pretool`.
+- **No `run_in_background` during FLOW phases**; `bin/flow` (any subcommand) is never allowed in the background regardless of mode — see `.claude/rules/ci-is-a-gate.md`. Enforced by `bin/flow hook validate-pretool`.
 - **User evidence is ground truth** — when a user provides screenshots, error output, or logs that contradict your code analysis, trust the evidence. Your code reading is a hypothesis; the user's evidence is an observation. Never explain away evidence to preserve your analysis.

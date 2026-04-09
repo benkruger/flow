@@ -7,6 +7,7 @@ use flow_rs::add_notification;
 use flow_rs::analyze_issues;
 use flow_rs::append_note;
 use flow_rs::auto_close_parent;
+use flow_rs::build;
 use flow_rs::bump_version;
 use flow_rs::check_freshness;
 use flow_rs::check_phase::check_phase;
@@ -26,6 +27,7 @@ use flow_rs::create_sub_issue;
 use flow_rs::detect_framework;
 use flow_rs::extract_release_notes;
 use flow_rs::finalize_commit;
+use flow_rs::format_check;
 use flow_rs::format_complete_summary;
 use flow_rs::format_issues_summary;
 use flow_rs::format_pr_timings;
@@ -35,6 +37,7 @@ use flow_rs::hooks;
 use flow_rs::issue;
 use flow_rs::label_issues;
 use flow_rs::link_blocked_by;
+use flow_rs::lint;
 use flow_rs::lock::mutate_state;
 use flow_rs::notify_slack;
 use flow_rs::orchestrate_report;
@@ -58,6 +61,7 @@ use flow_rs::start_finalize;
 use flow_rs::start_gate;
 use flow_rs::start_init;
 use flow_rs::start_workspace;
+use flow_rs::test_runner;
 use flow_rs::tombstone_audit;
 use flow_rs::tui_data;
 use flow_rs::update_deps;
@@ -116,6 +120,18 @@ enum Commands {
 
     /// Run bin/ci with dirty-check optimization, retry logic, and CI sentinel management.
     Ci(ci::Args),
+
+    /// Run framework build tool.
+    Build(build::Args),
+
+    /// Run framework test tool.
+    Test(test_runner::Args),
+
+    /// Run framework linter.
+    Lint(lint::Args),
+
+    /// Run framework format checker.
+    Format(format_check::Args),
 
     /// Run bin/dependencies with a configurable timeout and report git status changes.
     #[command(name = "update-deps")]
@@ -482,6 +498,10 @@ fn main() {
             );
         }
         Some(Commands::Ci(args)) => ci::run(args),
+        Some(Commands::Build(args)) => build::run(args),
+        Some(Commands::Test(args)) => test_runner::run(args),
+        Some(Commands::Lint(args)) => lint::run(args),
+        Some(Commands::Format(args)) => format_check::run(args),
         Some(Commands::UpdateDeps) => update_deps::run(),
         Some(Commands::AnalyzeIssues(args)) => analyze_issues::run(args),
         Some(Commands::AppendNote(args)) => append_note::run(args),

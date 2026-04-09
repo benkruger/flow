@@ -1,6 +1,6 @@
 //! Port of lib/finalize-commit.py — commit, cleanup, pull, push.
 //!
-//! Enforces CI before committing: calls [`ci::run_once`] as the first step
+//! Enforces CI before committing: calls [`ci::run_impl`] as the first step
 //! in [`run_impl`]. If CI fails, returns an error and commits nothing.
 //! When the CI sentinel is fresh (CI already passed for this tree state),
 //! the check noops instantly — no overhead on the happy path.
@@ -236,11 +236,15 @@ pub fn run_impl(
         return Err("Usage: bin/flow finalize-commit <message-file> <branch>".to_string());
     }
 
-    // Enforce CI before committing. run_once checks the sentinel first —
+    // Enforce CI before committing. run_impl checks the sentinel first —
     // if CI already passed for this tree state, it noops instantly.
-    let bin_ci = cwd.join("bin").join("ci");
-    let (ci_result, ci_code) =
-        crate::ci::run_once(cwd, root, &bin_ci, Some(&args.branch), false, None);
+    let ci_args = crate::ci::Args {
+        force: false,
+        retry: 0,
+        branch: Some(args.branch.clone()),
+        simulate_branch: None,
+    };
+    let (ci_result, ci_code) = crate::ci::run_impl(&ci_args, cwd, root, false);
 
     let result = if ci_code != 0 {
         let msg = ci_result["message"]
@@ -846,19 +850,15 @@ exit 0
         let msg_path = clone_path.join(".flow-commit-msg");
         fs::write(&msg_path, "Add feature.rs").unwrap();
 
-        // Run CI once to create a passing sentinel for THIS tree state
-        let bin_ci = clone_path.join("bin").join("ci");
-        let (_ci_result, ci_code) =
-            crate::ci::run_once(clone_path, clone_path, &bin_ci, Some("main"), false, None);
-        assert_eq!(ci_code, 0, "initial CI run should pass");
-
-        // Marker should have exactly 1 line from the CI invocation
-        let marker = clone_path.join(".ci-invocation-marker");
-        let lines_before = fs::read_to_string(&marker).unwrap().lines().count();
-        assert_eq!(lines_before, 1, "CI should have been invoked once");
+        // Write sentinel directly for this tree state — bypasses framework
+        // detection (no framework marker files in the fixture).
+        let snapshot = crate::ci::tree_snapshot(clone_path, None);
+        let sentinel = crate::ci::sentinel_path(clone_path, "main");
+        fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+        fs::write(&sentinel, &snapshot).unwrap();
 
         // Now call run_impl — sentinel matches the current tree state,
-        // so ci::run_once inside run_impl should skip without invoking bin/ci.
+        // so ci::run_impl should skip without running any CI tools.
         let args = Args {
             message_file: msg_path.to_str().unwrap().to_string(),
             branch: "main".to_string(),
@@ -871,11 +871,12 @@ exit 0
             "should have a commit SHA"
         );
 
-        // Marker should still have only 1 line — CI was skipped via sentinel
-        let lines_after = fs::read_to_string(&marker).unwrap().lines().count();
-        assert_eq!(
-            lines_after, 1,
-            "CI should not have been invoked again (sentinel was fresh)"
+        // Marker should not exist at all — CI was skipped via sentinel,
+        // so bin/ci was never invoked.
+        let marker = clone_path.join(".ci-invocation-marker");
+        assert!(
+            !marker.exists(),
+            "CI should not have been invoked (sentinel was fresh)"
         );
     }
 
@@ -992,6 +993,15 @@ exit 0
         (clone_dir, bare_dir)
     }
 
+    /// Helper: write a CI sentinel for the current tree state so
+    /// `ci::run_impl` skips without needing framework detection.
+    fn write_ci_sentinel(clone_path: &std::path::Path, branch: &str) {
+        let snapshot = crate::ci::tree_snapshot(clone_path, None);
+        let sentinel = crate::ci::sentinel_path(clone_path, branch);
+        fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+        fs::write(&sentinel, &snapshot).unwrap();
+    }
+
     /// Helper: write a state file with _continue_pending and _continue_context set.
     fn write_state_with_continue_pending(clone_path: &std::path::Path, branch: &str) {
         let flow_states = clone_path.join(".flow-states");
@@ -1092,6 +1102,9 @@ exit 0
 
         let msg_path = clone_path.join(".flow-commit-msg");
         fs::write(&msg_path, "Add feature.rs").unwrap();
+
+        // Write CI sentinel so ci::run_impl skips without needing framework detection
+        write_ci_sentinel(clone_path, "main");
 
         let args = Args {
             message_file: msg_path.to_str().unwrap().to_string(),
@@ -1217,6 +1230,9 @@ exit 0
                 .unwrap(),
         );
 
+        // Write CI sentinel so ci::run_impl skips without needing framework detection
+        write_ci_sentinel(clone_path, "main");
+
         let args = Args {
             message_file: msg_path.to_str().unwrap().to_string(),
             branch: "main".to_string(),
@@ -1257,6 +1273,9 @@ exit 0
         // Write commit message file (absolute path since git runs via -C)
         let msg_path = clone_dir.path().join(".flow-commit-msg");
         fs::write(&msg_path, "Add src.rs").unwrap();
+
+        // Write CI sentinel so ci::run_impl skips without needing framework detection
+        write_ci_sentinel(clone_dir.path(), "main");
 
         let args = Args {
             message_file: msg_path.to_str().unwrap().to_string(),
@@ -1380,6 +1399,9 @@ exit 0
 
         let msg_path = clone_dir.path().join(".flow-commit-msg");
         fs::write(&msg_path, "Add local.txt").unwrap();
+
+        // Write CI sentinel so ci::run_impl skips without needing framework detection
+        write_ci_sentinel(clone_dir.path(), "main");
 
         let args = Args {
             message_file: msg_path.to_str().unwrap().to_string(),

@@ -60,7 +60,7 @@ in the state file via `bin/flow add-issue`. The task continues after filing.
 
 During the TDD cycle, run the specific file for fast feedback:
 
-The targeted test command is defined by the framework instructions (e.g., `bin/rails test <file>` for Rails, `bin/test <file>` for Python).
+The targeted test command is defined by the framework instructions (e.g., `bin/flow test -- <file>`).
 
 `bin/flow ci` only runs when the task is done and the diff is approved.
 
