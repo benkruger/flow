@@ -1,0 +1,13 @@
+Delete bin/ci and bin/test, replace with bin/flow ci and bin/flow test. — Tasks 14-15 of 18
+
+tl;dr
+
+The standalone bash CI/test scripts are replaced by the framework-aware
+Rust subcommands. Tombstone tests prevent resurrection via merge conflicts.
+
+- bin/ci: Deleted — replaced by bin/flow ci orchestrator
+- bin/test: Deleted — replaced by bin/flow test subcommand
+- tests/bin_ci.rs: Deleted — tests for the removed script
+- tests/bin_test.rs: Deleted — tests for the removed script
+- tests/structural.rs: Add 4 tombstone tests for deleted files
+- tests/skill_contracts.rs: Add bin/flow to repo-tracked file list for worktree path validation
