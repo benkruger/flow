@@ -8,4 +8,4 @@ cargo fmt --check
 cargo clippy --all-targets --quiet -- -D warnings
 
 # Tests reuse clippy's compilation artifacts; nextest runs binaries in parallel
-cargo nextest run
+cargo nextest run --status-level none --final-status-level fail
