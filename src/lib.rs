@@ -57,6 +57,7 @@ pub mod start_gate;
 pub mod start_init;
 pub mod start_workspace;
 pub mod state;
+pub mod tombstone_audit;
 pub mod tui;
 pub mod tui_data;
 pub mod update_deps;
