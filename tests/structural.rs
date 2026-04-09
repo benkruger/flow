@@ -1082,30 +1082,6 @@ fn test_no_test_bin_dependencies_py() {
 }
 
 #[test]
-fn test_no_bin_ci_script() {
-    // Tombstone: replaced by bin/flow ci orchestrator in PR #972. Must not return.
-    assert!(!common::repo_root().join("bin/ci").exists());
-}
-
-#[test]
-fn test_no_bin_test_script() {
-    // Tombstone: replaced by bin/flow test subcommand in PR #972. Must not return.
-    assert!(!common::repo_root().join("bin/test").exists());
-}
-
-#[test]
-fn test_no_tests_bin_ci_rs() {
-    // Tombstone: deleted with bin/ci in PR #972. Must not return.
-    assert!(!common::repo_root().join("tests/bin_ci.rs").exists());
-}
-
-#[test]
-fn test_no_tests_bin_test_rs() {
-    // Tombstone: deleted with bin/test in PR #972. Must not return.
-    assert!(!common::repo_root().join("tests/bin_test.rs").exists());
-}
-
-#[test]
 fn test_no_test_flow_utils_shared_py() {
     // Tombstone: ported to Rust unit tests in PR #942. Must not return.
     assert!(!common::repo_root()

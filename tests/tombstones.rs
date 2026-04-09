@@ -213,6 +213,46 @@ fn enter_code_review_does_not_set_code_review_step() {
 }
 
 // ============================================================
+// bin/ci and bin/test script deletions (PR #972)
+// ============================================================
+
+#[test]
+fn test_no_bin_ci_script() {
+    // Tombstone: replaced by bin/flow ci orchestrator in PR #972. Must not return.
+    assert!(
+        !common::repo_root().join("bin/ci").exists(),
+        "bin/ci was replaced by bin/flow ci and must not be re-added"
+    );
+}
+
+#[test]
+fn test_no_bin_test_script() {
+    // Tombstone: replaced by bin/flow test subcommand in PR #972. Must not return.
+    assert!(
+        !common::repo_root().join("bin/test").exists(),
+        "bin/test was replaced by bin/flow test and must not be re-added"
+    );
+}
+
+#[test]
+fn test_no_tests_bin_ci_rs() {
+    // Tombstone: deleted with bin/ci in PR #972. Must not return.
+    assert!(
+        !common::repo_root().join("tests/bin_ci.rs").exists(),
+        "tests/bin_ci.rs was deleted with bin/ci and must not be re-added"
+    );
+}
+
+#[test]
+fn test_no_tests_bin_test_rs() {
+    // Tombstone: deleted with bin/test in PR #972. Must not return.
+    assert!(
+        !common::repo_root().join("tests/bin_test.rs").exists(),
+        "tests/bin_test.rs was deleted with bin/test and must not be re-added"
+    );
+}
+
+// ============================================================
 // issueDependenciesSummary removal (PR #849)
 // ============================================================
 
