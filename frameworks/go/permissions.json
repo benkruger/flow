@@ -1,9 +1,3 @@
 {
-  "allow": [
-    "Bash(go test *)",
-    "Bash(go build *)",
-    "Bash(go vet *)",
-    "Bash(go mod *)",
-    "Bash(go fmt *)"
-  ]
+  "allow": []
 }

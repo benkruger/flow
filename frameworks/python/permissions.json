@@ -1,6 +1,3 @@
 {
-  "allow": [
-    "Bash(.venv/bin/pip install *)",
-    "Bash(.venv/bin/ruff *)"
-  ]
+  "allow": []
 }

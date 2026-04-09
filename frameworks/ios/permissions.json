@@ -1,9 +1,5 @@
 {
-  "allow": [
-    "Bash(open *)",
-    "Bash(xcrun *)",
-    "Bash(xcodebuild *)"
-  ],
+  "allow": [],
   "derived_permissions": [
     {
       "glob": "*.xcodeproj",
