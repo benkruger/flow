@@ -2915,6 +2915,17 @@ fn code_review_no_plugin_config_axis() {
     );
 }
 
+// --- Code Review tombstone audit integration ---
+
+#[test]
+fn code_review_mentions_tombstone_audit() {
+    let c = common::read_skill("flow-code-review");
+    assert!(
+        c.contains("tombstone-audit"),
+        "Code Review Step 1 must run tombstone-audit for stale tombstone detection"
+    );
+}
+
 // --- Worktree path validation ---
 
 #[test]
