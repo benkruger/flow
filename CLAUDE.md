@@ -66,8 +66,6 @@ CI will fail if these are missing:
 - `hooks/hooks.json` — hook registration (SessionStart, PreToolUse, PermissionRequest, PostToolUse, PostCompact, Stop, StopFailure)
 - `hooks/session-start.sh` — writes terminal tab colors
 - `.claude/settings.json` — project permissions (git rebase denied)
-- `.github/workflows/ci.yml` — GitHub Actions CI (runs `bin/ci` on push/PR to main)
-- `.github/workflows/autoupdate.yml` — auto-updates PR branches when main advances
 - `docs/` — GitHub Pages site (static HTML); `docs/reference/flow-state-schema.md` for state file schema
 - `frameworks/<name>/` — per-framework data: `detect.json`, `permissions.json`, `dependencies`, `priming.md`
 - `agents/*.md` — six custom plugin sub-agents: ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, documentation
