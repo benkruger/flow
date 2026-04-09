@@ -173,8 +173,9 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow tombstone-audit
 Parse the JSON output. If the `stale` array is non-empty, note the stale
 tombstones for removal in Step 4. Each entry has `pr`, `merged_at`, and
 `file` fields identifying which test function to remove and from which
-file. If the command fails or produces an error, continue without
-tombstone data — the audit is best-effort.
+file. If the command fails (exit non-zero) or the JSON contains a
+`status` field with value `"threshold_error"` or `"error"`, note no
+stale tombstones — the audit is best-effort and skipped on API failure.
 
 Record step completion:
 
