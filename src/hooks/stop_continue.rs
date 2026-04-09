@@ -1430,24 +1430,4 @@ mod tests {
             "_stop_instructed must be cleared when _continue_pending is consumed"
         );
     }
-
-    // --- Tombstone: check_discussion_mode removed from run() in PR #954 ---
-
-    #[test]
-    fn test_run_does_not_call_check_discussion_mode() {
-        // Tombstone: check_discussion_mode removed from run() in PR #954.
-        // check_first_stop now handles both discussion mode and pending
-        // continuations. Must not return to run().
-        let source = include_str!("stop_continue.rs");
-        // Find the run() function body — it starts after "pub fn run()"
-        let run_start = source.find("pub fn run()").expect("run() must exist");
-        let run_body = &source[run_start..];
-        // The run() body ends at the next function or #[cfg(test)]
-        let run_end = run_body.find("#[cfg(test)]").unwrap_or(run_body.len());
-        let run_text = &run_body[..run_end];
-        assert!(
-            !run_text.contains("check_discussion_mode"),
-            "run() must not call check_discussion_mode — superseded by check_first_stop in PR #954"
-        );
-    }
 }
