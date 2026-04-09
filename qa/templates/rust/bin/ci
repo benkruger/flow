@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-cargo test
-cargo clippy --quiet -- -D warnings
-cargo fmt --check

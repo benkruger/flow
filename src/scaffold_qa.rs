@@ -285,7 +285,6 @@ mod tests {
     fn test_find_templates_rails() {
         let templates = find_templates("rails", Some(&templates_dir())).unwrap();
         assert!(templates.contains_key("Gemfile"));
-        assert!(templates.contains_key("bin/ci"));
         assert!(templates.contains_key("lib/calculator.rb"));
         assert!(templates.contains_key("test/calculator_test.rb"));
         assert!(templates.contains_key(".qa/issues.json"));
@@ -295,7 +294,6 @@ mod tests {
     fn test_find_templates_python() {
         let templates = find_templates("python", Some(&templates_dir())).unwrap();
         assert!(templates.contains_key("bin/dependencies"));
-        assert!(templates.contains_key("bin/ci"));
         assert!(templates.contains_key("src/calculator.py"));
         assert!(templates.contains_key("tests/test_calculator.py"));
         assert!(templates.contains_key(".qa/issues.json"));
@@ -306,7 +304,6 @@ mod tests {
         let templates = find_templates("ios", Some(&templates_dir())).unwrap();
         assert!(templates.contains_key("FlowQA.xcodeproj/project.pbxproj"));
         assert!(templates.contains_key("FlowQA.xcodeproj/xcshareddata/xcschemes/FlowQA.xcscheme"));
-        assert!(templates.contains_key("bin/ci"));
         assert!(templates.contains_key("FlowQA/Calculator.swift"));
         assert!(templates.contains_key("FlowQA/FlowQAApp.swift"));
         assert!(templates.contains_key("FlowQATests/CalculatorTests.swift"));
