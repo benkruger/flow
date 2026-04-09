@@ -21,6 +21,12 @@ the deleted content, the tombstone test fails immediately.
 
 ## Pattern
 
+The tombstone comment must follow the format `Tombstone:` (case-
+sensitive) followed by any text, then `PR #` and digits. The
+`tombstone-audit` subcommand uses the regex `Tombstone:.*?PR #(\d+)`
+to extract PR numbers — comments that don't match this pattern are
+invisible to the audit.
+
 ```rust
 #[test]
 fn test_code_review_no_plugin_step() {
@@ -75,10 +81,19 @@ tombstones (file-existence, source-content checks) go in
 test domain (skill_contracts, structural, dispatcher) stay in
 their respective test files.
 
-**Removal.** The `bin/flow tombstone-audit` subcommand scans ALL
+**Removal.** The `bin/flow tombstone-audit` subcommand scans all
 `tests/*.rs` files for PR references, queries GitHub for merge
-dates, and classifies each as stale or current. A tombstone is
-stale when the PR that removed the feature was merged before the
-oldest open PR was created — meaning no active branch could have
-forked before the deletion. Code Review Step 1 runs the audit
-automatically; Step 4 removes stale tombstones.
+dates, and classifies each as stale or current. The command
+requires the `gh` CLI tool and authenticated GitHub access. If
+network access or authentication fails, the audit skips gracefully
+and no stale tombstones are removed.
+
+A tombstone is stale when the PR that removed the feature was
+merged before the oldest open PR was created. For example, if
+PR #839 merged on 2024-01-15 and the oldest open PR was created
+on 2024-06-01, then tombstone PR #839 is stale — no branch could
+have been created before 2024-01-15 and still be open today, so
+the deleted code cannot be resurrected via merge conflict.
+
+Code Review Step 1 runs the audit automatically; Step 4 removes
+stale tombstones.

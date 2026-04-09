@@ -46,6 +46,7 @@ pub fn extract_pr_numbers(content: &str) -> HashSet<u64> {
     let re = Regex::new(r"Tombstone:.*?PR #(\d+)").unwrap();
     re.captures_iter(content)
         .filter_map(|cap| cap[1].parse::<u64>().ok())
+        .filter(|&n| n > 0) // PR #0 is not a valid GitHub PR number
         .collect()
 }
 
@@ -203,7 +204,11 @@ fn detect_repo() -> Option<String> {
 }
 
 /// Fetch the oldest open PR creation date as the staleness threshold.
-fn fetch_threshold(repo: &str) -> Option<String> {
+///
+/// Returns `Ok(Some(date))` when open PRs exist, `Ok(None)` when no
+/// open PRs exist (empty or "null" response), and `Err` on API failure.
+/// Callers must distinguish Ok(None) (all stale) from Err (skip audit).
+fn fetch_threshold(repo: &str) -> Result<Option<String>, String> {
     let output = std::process::Command::new("gh")
         .args([
             "pr",
@@ -218,14 +223,19 @@ fn fetch_threshold(repo: &str) -> Option<String> {
             "min_by(.createdAt).createdAt",
         ])
         .output()
-        .ok()?;
-    if output.status.success() {
-        let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !s.is_empty() && s != "null" {
-            return Some(s);
-        }
+        .map_err(|e| format!("gh pr list failed to execute: {}", e))?;
+    if !output.status.success() {
+        return Err(format!(
+            "gh pr list failed with exit code {}",
+            output.status.code().unwrap_or(-1)
+        ));
     }
-    None
+    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !s.is_empty() && s != "null" {
+        Ok(Some(s))
+    } else {
+        Ok(None)
+    }
 }
 
 /// Fetch merge dates for PRs via batched GraphQL query.
@@ -277,9 +287,9 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         return Ok(json!({
             "stale": [],
             "current": [],
-            "skipped": [],
             "total_tombstones": 0,
-            "unique_prs": 0
+            "unique_prs": 0,
+            "threshold": null
         }));
     }
 
@@ -298,7 +308,21 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     };
 
     // Fetch threshold (oldest open PR creation date)
-    let threshold = fetch_threshold(&repo);
+    // Ok(Some) = threshold date, Ok(None) = no open PRs, Err = API failure
+    let threshold = match fetch_threshold(&repo) {
+        Ok(t) => t,
+        Err(e) => {
+            return Ok(json!({
+                "status": "threshold_error",
+                "message": e,
+                "stale": [],
+                "current": [],
+                "total_tombstones": entries.len(),
+                "unique_prs": unique_prs.len(),
+                "threshold": null
+            }));
+        }
+    };
 
     // Fetch merge dates for all unique PRs
     let merge_dates = fetch_merge_dates(&repo, &unique_prs);

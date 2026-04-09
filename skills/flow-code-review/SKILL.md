@@ -427,7 +427,8 @@ If CI fails, identify the breaking fix and iterate until green.
 
 ### Remove stale tombstones
 
-If Step 1 found stale tombstones, remove them now. For each stale entry:
+After fixing all findings and running CI above, remove any stale
+tombstones identified in Step 1. For each stale entry:
 
 - Open the `file` from the audit output
 - Find the test function guarding the stale PR

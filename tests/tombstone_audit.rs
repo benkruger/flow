@@ -2,6 +2,10 @@
 //!
 //! These tests exercise the pure functions (PR extraction, GraphQL
 //! query/response parsing, date comparison) without network calls.
+//!
+//! IMPORTANT: Test fixture strings must NOT contain literal tombstone
+//! patterns that match the scan regex. Use `tombstone_line()` to build
+//! fixture content at runtime, keeping the source clean of false matches.
 
 mod common;
 
@@ -12,45 +16,56 @@ use flow_rs::tombstone_audit::{
 use std::collections::{HashMap, HashSet};
 use std::fs;
 
+/// Build a tombstone comment line at runtime to avoid the literal pattern
+/// appearing in this test file's source (which would contaminate scan results).
+fn tombstone_line(pr: u64, suffix: &str) -> String {
+    format!("// Tombstone: removed in PR #{}.{}", pr, suffix)
+}
+
+/// Build a doc-comment tombstone line.
+fn tombstone_doc_line(pr: u64, prefix: &str) -> String {
+    format!("/// Tombstone: {} in PR #{}. Must not return.", prefix, pr)
+}
+
+/// Build a string-literal tombstone (as found in assertion messages).
+fn tombstone_str_line(pr: u64) -> String {
+    format!("\"Tombstone: removed in PR #{}. Must not return.\"", pr)
+}
+
 // ============================================================
 // extract_pr_numbers — regex extraction from tombstone comments
 // ============================================================
 
 #[test]
 fn extract_pr_numbers_double_slash_comment() {
-    let content = r#"
-    // Tombstone: removed in PR #839. Must not return.
-    "#;
-    let prs = extract_pr_numbers(content);
+    let content = tombstone_line(839, " Must not return.");
+    let prs = extract_pr_numbers(&content);
     assert!(prs.contains(&839));
 }
 
 #[test]
 fn extract_pr_numbers_triple_slash_doc_comment() {
-    let content = r#"
-    /// Tombstone: .flow-states/ scan removed in PR #924. Must not return.
-    "#;
-    let prs = extract_pr_numbers(content);
+    let content = tombstone_doc_line(924, ".flow-states/ scan removed");
+    let prs = extract_pr_numbers(&content);
     assert!(prs.contains(&924));
 }
 
 #[test]
 fn extract_pr_numbers_assertion_message_string() {
-    let content = r#"
-        "Tombstone: removed in PR #587. Must not return."
-    "#;
-    let prs = extract_pr_numbers(content);
+    let content = tombstone_str_line(587);
+    let prs = extract_pr_numbers(&content);
     assert!(prs.contains(&587));
 }
 
 #[test]
 fn extract_pr_numbers_multiple_in_one_file() {
-    let content = r#"
-    // Tombstone: removed in PR #839. Must not return.
-    // Tombstone: removed in PR #924. Must not return.
-    // Tombstone: replaced with blockedBy connection in PR #849. Must not return.
-    "#;
-    let prs = extract_pr_numbers(content);
+    let content = format!(
+        "{}\n{}\n{}",
+        tombstone_line(839, " Must not return."),
+        tombstone_line(924, " Must not return."),
+        tombstone_line(849, " Must not return."),
+    );
+    let prs = extract_pr_numbers(&content);
     assert_eq!(prs.len(), 3);
     assert!(prs.contains(&839));
     assert!(prs.contains(&924));
@@ -59,12 +74,13 @@ fn extract_pr_numbers_multiple_in_one_file() {
 
 #[test]
 fn extract_pr_numbers_deduplicates() {
-    let content = r#"
-    // Tombstone: removed in PR #931. Must not return.
-    // Tombstone: removed in PR #931. Must not return.
-    // Tombstone: removed in PR #931. Must not return.
-    "#;
-    let prs = extract_pr_numbers(content);
+    let content = format!(
+        "{}\n{}\n{}",
+        tombstone_line(931, " Must not return."),
+        tombstone_line(931, " Must not return."),
+        tombstone_line(931, " Must not return."),
+    );
+    let prs = extract_pr_numbers(&content);
     assert_eq!(prs.len(), 1);
     assert!(prs.contains(&931));
 }
@@ -82,12 +98,17 @@ fn extract_pr_numbers_no_tombstones() {
 
 #[test]
 fn extract_pr_numbers_tombstone_without_pr_reference() {
-    // A tombstone comment that doesn't follow the PR # pattern
-    let content = r#"
-    // Tombstone: this feature was removed.
-    "#;
+    // A comment that says "Tombstone:" but has no PR # pattern
+    let content = "// Tombstone: this feature was removed.";
     let prs = extract_pr_numbers(content);
     assert!(prs.is_empty());
+}
+
+#[test]
+fn extract_pr_numbers_filters_zero() {
+    let content = tombstone_line(0, " Must not return.");
+    let prs = extract_pr_numbers(&content);
+    assert!(!prs.contains(&0), "PR #0 is not a valid GitHub PR number");
 }
 
 // ============================================================
@@ -102,12 +123,12 @@ fn scan_test_files_finds_tombstones_across_files() {
 
     fs::write(
         tests_dir.join("file_a.rs"),
-        "// Tombstone: removed in PR #100. Must not return.\n",
+        tombstone_line(100, " Must not return.\n"),
     )
     .unwrap();
     fs::write(
         tests_dir.join("file_b.rs"),
-        "// Tombstone: removed in PR #200. Must not return.\n",
+        tombstone_line(200, " Must not return.\n"),
     )
     .unwrap();
 
@@ -125,7 +146,7 @@ fn scan_test_files_skips_non_rs_files() {
 
     fs::write(
         tests_dir.join("notes.txt"),
-        "// Tombstone: removed in PR #999. Must not return.\n",
+        tombstone_line(999, " Must not return.\n"),
     )
     .unwrap();
     fs::write(tests_dir.join("real.rs"), "fn test() {}\n").unwrap();
@@ -143,7 +164,7 @@ fn scan_test_files_records_file_path() {
 
     fs::write(
         tests_dir.join("tombstones.rs"),
-        "// Tombstone: removed in PR #500. Must not return.\n",
+        tombstone_line(500, " Must not return.\n"),
     )
     .unwrap();
 
@@ -221,7 +242,6 @@ fn parse_merge_response_missing_pr() {
         }
     }"#;
     let result = parse_merge_response(json, &[999]);
-    // Missing PR should still have an entry with None
     assert!(result.get(&999).unwrap().merged_at.is_none());
 }
 
@@ -294,6 +314,26 @@ fn classify_current_when_merged_after_threshold() {
 }
 
 #[test]
+fn classify_at_threshold_is_current() {
+    let mut merge_dates = HashMap::new();
+    merge_dates.insert(
+        500,
+        MergeInfo {
+            merged_at: Some("2024-06-01T00:00:00Z".to_string()),
+        },
+    );
+    let entries = vec![TombstoneEntry {
+        pr: 500,
+        file: "tests/tombstones.rs".to_string(),
+    }];
+    // merged_at == threshold → current (not stale)
+    let (stale, current) =
+        classify_tombstones(&entries, &merge_dates, Some("2024-06-01T00:00:00Z"));
+    assert!(stale.is_empty());
+    assert_eq!(current.len(), 1);
+}
+
+#[test]
 fn classify_skip_unmerged_pr() {
     let mut merge_dates = HashMap::new();
     merge_dates.insert(100, MergeInfo { merged_at: None });
@@ -303,7 +343,6 @@ fn classify_skip_unmerged_pr() {
     }];
     let (stale, current) =
         classify_tombstones(&entries, &merge_dates, Some("2024-06-01T00:00:00Z"));
-    // Unmerged PRs are skipped — not stale, not current
     assert!(stale.is_empty());
     assert!(current.is_empty());
 }
@@ -333,7 +372,6 @@ fn classify_no_open_prs_all_stale() {
             file: "tests/tombstones.rs".to_string(),
         },
     ];
-    // threshold=None means no open PRs — all merged tombstones are stale
     let (stale, current) = classify_tombstones(&entries, &merge_dates, None);
     assert_eq!(stale.len(), 2);
     assert!(current.is_empty());
@@ -341,14 +379,13 @@ fn classify_no_open_prs_all_stale() {
 
 #[test]
 fn classify_missing_pr_in_merge_data_skipped() {
-    let merge_dates = HashMap::new(); // empty — no data for any PR
+    let merge_dates = HashMap::new();
     let entries = vec![TombstoneEntry {
         pr: 999,
         file: "tests/tombstones.rs".to_string(),
     }];
     let (stale, current) =
         classify_tombstones(&entries, &merge_dates, Some("2024-06-01T00:00:00Z"));
-    // No merge data → skip
     assert!(stale.is_empty());
     assert!(current.is_empty());
 }
