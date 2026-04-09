@@ -178,6 +178,14 @@ pass `--auto` as well. Do not output anything else after this invocation.
 
 ## Step 2 — Launch agents
 
+<HARD-GATE>
+You MUST launch ALL applicable agents listed below in a single response.
+Never skip an agent because another agent already returned findings.
+Each agent surfaces independent risk categories that other agents miss —
+skipping one defeats cognitive isolation. Do not proceed past this step
+until every applicable agent has been launched and returned.
+</HARD-GATE>
+
 Launch all applicable agents in a single response using multiple Agent
 tool calls. All agents are independent — they share no state and can
 run concurrently. Each agent is cognitively isolated from the
