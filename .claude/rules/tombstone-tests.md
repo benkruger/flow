@@ -51,3 +51,34 @@ skill, feature, or mechanism that does not yet exist. If the
 capability was removed without replacement, say so. If a
 replacement is planned, reference the tracking issue number so the
 claim is verifiable.
+
+## Consolidation
+
+When removing a feature tested inline in a `src/*.rs` file, put
+the tombstone in `tests/tombstones.rs` rather than adding an
+inline `#[cfg(test)]` tombstone to the source file. This keeps
+source files focused on production code and makes the tombstone
+inventory discoverable.
+
+If the tombstone needs to call crate-internal functions, convert
+it to a source-content assertion instead — read the source file
+at runtime with `std::fs::read_to_string` and assert the removed
+pattern does not appear.
+
+## Lifecycle
+
+Tombstones have two halves: creation and removal.
+
+**Creation.** Add a tombstone when removing a feature. Standalone
+tombstones (file-existence, source-content checks) go in
+`tests/tombstones.rs`. Topical tombstones that are integral to a
+test domain (skill_contracts, structural, dispatcher) stay in
+their respective test files.
+
+**Removal.** The `bin/flow tombstone-audit` subcommand scans ALL
+`tests/*.rs` files for PR references, queries GitHub for merge
+dates, and classifies each as stale or current. A tombstone is
+stale when the PR that removed the feature was merged before the
+oldest open PR was created — meaning no active branch could have
+forked before the deletion. Code Review Step 1 runs the audit
+automatically; Step 4 removes stale tombstones.

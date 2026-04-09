@@ -152,6 +152,10 @@ Phase auto-advance uses two layers. Layer 1: the phase completion command (`phas
 
 Every bash block in every skill must run without triggering a permission prompt. `tests/permissions.rs` enforces at test time (placeholder substitution, allow/deny matching); `bin/flow hook validate-pretool` enforces at runtime via global PreToolUse hook (compound commands, redirection, file-read commands blocked; whitelist enforced when a flow is active). See `.claude/rules/permissions.md` for the pattern-adding protocol.
 
+### Tombstone Lifecycle
+
+Tombstone tests prevent merge conflicts from silently resurrecting deleted code. The lifecycle has two halves: creation (`.claude/rules/tombstone-tests.md`) and removal (`bin/flow tombstone-audit`). Standalone tombstones (file-existence, source-content checks) live in `tests/tombstones.rs`. Topical tombstones that are integral to a test domain (skill_contracts, structural, dispatcher) stay in their respective test files. The `tombstone-audit` subcommand scans ALL `tests/*.rs` files for PR references, queries GitHub for merge dates, and classifies each as stale or current. Code Review Step 1 runs the audit; Step 4 removes stale tombstones.
+
 ## Test Architecture
 
 All tests are Rust integration tests in `tests/*.rs`. Shared helpers in `tests/common/mod.rs` provide `repo_root()`, `bin_dir()`, `hooks_dir()`, `skills_dir()`, `docs_dir()`, `frameworks_dir()`, `agents_dir()`, `load_phases()`, `load_hooks()`, `plugin_version()`, `phase_order()`, `utility_skills()`, `read_skill()`, `collect_md_files()`, and `create_git_repo_with_remote()`.
