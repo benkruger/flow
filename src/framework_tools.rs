@@ -99,13 +99,10 @@ fn rails_tool(tool_type: ToolType) -> Option<ToolCommand> {
     match tool_type {
         ToolType::Build => None,
         ToolType::Test => Some(ToolCommand {
-            program: "bundle".into(),
+            program: "sh".into(),
             args: vec![
-                "exec".into(),
-                "ruby".into(),
-                "-Ilib".into(),
-                "-Itest".into(),
-                "test/*_test.rb".into(),
+                "-c".into(),
+                "bundle exec ruby -Ilib -Itest test/*_test.rb".into(),
             ],
         }),
         ToolType::Lint => Some(ToolCommand {
@@ -137,16 +134,13 @@ fn go_tool(tool_type: ToolType) -> Option<ToolCommand> {
     }
 }
 
+/// iOS build and test require project-specific args (scheme, destination)
+/// that vary per project. Return None until project-level configuration
+/// is implemented.
 fn ios_tool(tool_type: ToolType) -> Option<ToolCommand> {
     match tool_type {
-        ToolType::Build => Some(ToolCommand {
-            program: "xcodebuild".into(),
-            args: vec!["build".into()],
-        }),
-        ToolType::Test => Some(ToolCommand {
-            program: "xcodebuild".into(),
-            args: vec!["test".into()],
-        }),
+        ToolType::Build => None,
+        ToolType::Test => None,
         ToolType::Lint => None,
         ToolType::Format => None,
     }
@@ -268,11 +262,12 @@ mod tests {
     }
 
     #[test]
-    fn rails_test_returns_bundle_exec_ruby() {
+    fn rails_test_returns_shell_with_bundle() {
         let cmd = tool_command("rails", ToolType::Test).unwrap().unwrap();
-        assert_eq!(cmd.program, "bundle");
-        assert!(cmd.args.contains(&"exec".to_string()));
-        assert!(cmd.args.contains(&"ruby".to_string()));
+        assert_eq!(cmd.program, "sh");
+        assert_eq!(cmd.args[0], "-c");
+        assert!(cmd.args[1].contains("bundle exec ruby"));
+        assert!(cmd.args[1].contains("test/*_test.rb"));
     }
 
     #[test]
@@ -317,17 +312,13 @@ mod tests {
     }
 
     #[test]
-    fn ios_build_returns_xcodebuild() {
-        let cmd = tool_command("ios", ToolType::Build).unwrap().unwrap();
-        assert_eq!(cmd.program, "xcodebuild");
-        assert_eq!(cmd.args[0], "build");
+    fn ios_build_is_noop() {
+        assert!(tool_command("ios", ToolType::Build).unwrap().is_none());
     }
 
     #[test]
-    fn ios_test_returns_xcodebuild_test() {
-        let cmd = tool_command("ios", ToolType::Test).unwrap().unwrap();
-        assert_eq!(cmd.program, "xcodebuild");
-        assert_eq!(cmd.args[0], "test");
+    fn ios_test_is_noop() {
+        assert!(tool_command("ios", ToolType::Test).unwrap().is_none());
     }
 
     #[test]
@@ -356,6 +347,8 @@ mod tests {
             ("python", ToolType::Build),
             ("rails", ToolType::Build),
             ("rails", ToolType::Format),
+            ("ios", ToolType::Build),
+            ("ios", ToolType::Test),
             ("ios", ToolType::Lint),
             ("ios", ToolType::Format),
         ];
@@ -382,6 +375,8 @@ mod tests {
             ("python", ToolType::Build),
             ("rails", ToolType::Build),
             ("rails", ToolType::Format),
+            ("ios", ToolType::Build),
+            ("ios", ToolType::Test),
             ("ios", ToolType::Lint),
             ("ios", ToolType::Format),
         ];

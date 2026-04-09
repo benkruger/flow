@@ -269,8 +269,9 @@ pub fn run_once(
 /// Runs the tool sequence up to `max_attempts` times with captured stdout
 /// and stderr so the first failure's combined output can be returned as
 /// `first_failure_output` when a retry pass classifies the test as flaky.
-/// Force semantics — sentinel is NEVER checked for a skip, but is written
-/// on success and unlinked on consistent failure.
+/// Does not check the sentinel internally — `run_impl` handles sentinel
+/// skipping before dispatching here. Writes the sentinel on success and
+/// unlinks on consistent failure.
 pub fn run_with_retry(
     cwd: &Path,
     root: &Path,
