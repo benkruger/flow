@@ -20,19 +20,19 @@
   Check existing test modules for patterns before adding new tests.
 - Use `assert_eq!`, `assert_ne!`, and `assert!` macros for assertions.
 - Follow existing test patterns in the project.
-- Targeted test command: `bin/test <test_name>`
+- Targeted test command: `bin/flow test -- <test_name>`
 
 ## CI Failure Fix Order
 
-1. Compilation errors — fix build errors first (`cargo build`)
-2. Clippy warnings — fix lint issues (`cargo clippy -- -D warnings`)
-3. Format violations — fix formatting (`cargo fmt`)
-4. Test failures — understand the root cause, fix the code not the test
+1. Compilation errors — fix build errors first (`bin/flow build`)
+2. Clippy warnings — fix lint issues (`bin/flow lint`)
+3. Format violations — fix formatting (`bin/flow format`)
+4. Test failures — understand the root cause, fix the code not the test (`bin/flow test`)
 5. Coverage gaps — write the missing test
 
 ## Hard Rules
 
-- Always run `cargo clippy -- -D warnings` before committing — warnings fail the build.
+- Always run `bin/flow lint` before committing — warnings fail the build.
 - Never allow clippy warnings — fix them or explicitly document exceptions with `#[allow(...)]`.
 - Always read the full trait and its implementations before modifying.
 

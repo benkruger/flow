@@ -14,7 +14,7 @@
 - Check `conftest.py` for existing fixtures before creating new ones.
 - Never duplicate fixture logic — reuse existing fixtures.
 - Follow existing test patterns in the project.
-- Targeted test command: `bin/test <tests/path/to/test_file.py>`
+- Targeted test command: `bin/flow test -- <tests/path/to/test_file.py>`
 
 ## CI Failure Fix Order
 

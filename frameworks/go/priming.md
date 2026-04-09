@@ -17,18 +17,18 @@
   patterns before adding new tests.
 - Use table-driven tests for functions with multiple input/output cases.
 - Follow existing test patterns in the project.
-- Targeted test command: `bin/test <path/to/package>`
+- Targeted test command: `bin/flow test -- <path/to/package>`
 
 ## CI Failure Fix Order
 
-1. Build errors — fix compilation errors first (`go build ./...`)
-2. Vet warnings — fix static analysis issues (`go vet ./...`)
+1. Build errors — fix compilation errors first (`bin/flow build`)
+2. Vet warnings — fix static analysis issues (`bin/flow lint`)
 3. Test failures — understand the root cause, fix the code not the test
 4. Coverage gaps — write the missing test
 
 ## Hard Rules
 
-- Always run `go vet ./...` before committing — it catches common mistakes.
+- Always run `bin/flow lint` before committing — it catches common mistakes.
 - Never disable or skip vet checks.
 - Always read the full interface and its implementations before modifying.
 

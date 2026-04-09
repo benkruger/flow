@@ -14,8 +14,8 @@
 
 - Use Swift Testing framework (`import Testing`) unless the project uses
   XCTest. Check existing test files for the convention.
-- Never run `xcodebuild` directly — use `bin/ci` or `bin/test`.
-- Targeted test command: `bin/test ClassName` or `bin/test ClassName/testName`
+- Never run `xcodebuild` directly — use `bin/flow ci` or `bin/flow test`.
+- Targeted test command: `bin/flow test -- ClassName` or `bin/flow test -- ClassName/testName`
 
 ## CI Failure Fix Order
 
@@ -26,7 +26,7 @@
 ## Hard Rules
 
 - Never run `xcodebuild`, `xcrun`, or `xcresulttool` directly — use
-  `bin/ci`, `bin/test`, or `bin/coverage` wrappers.
+  `bin/flow ci`, `bin/flow test`, or `bin/flow build` subcommands.
 - Never modify `.xcodeproj/project.pbxproj` by hand — use Xcode.
 - Always read the full protocol and its conformances before modifying.
 
