@@ -341,38 +341,4 @@ mod tests {
             .collect();
         assert_eq!(state_check[0]["passed"], true);
     }
-
-    // Tombstone tests — removed features that must not return
-
-    #[test]
-    fn test_qa_verify_no_decomposed_issue_check() {
-        // Tombstone: removed in PR #729. Must not return.
-        let dir = tempfile::tempdir().unwrap();
-
-        let result = verify_impl(Some("python"), "owner/repo", dir.path(), &|_| mock_ok_pr());
-
-        let check_names: Vec<&str> = result["checks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|c| c["name"].as_str().unwrap())
-            .collect();
-        assert!(!check_names.contains(&"Decomposed issue created"));
-    }
-
-    #[test]
-    fn test_qa_verify_no_body_files_check() {
-        // Tombstone: removed in PR #729. Must not return.
-        let dir = tempfile::tempdir().unwrap();
-
-        let result = verify_impl(Some("python"), "owner/repo", dir.path(), &|_| mock_ok_pr());
-
-        let check_names: Vec<&str> = result["checks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|c| c["name"].as_str().unwrap())
-            .collect();
-        assert!(!check_names.contains(&"No leftover body files"));
-    }
 }

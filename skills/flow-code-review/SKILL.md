@@ -164,6 +164,19 @@ If the command succeeds (exit 0), `bin/test` exists — the adversarial
 agent should be launched in Step 2. If it fails (exit non-zero), skip
 the adversarial agent in Step 2.
 
+**Audit tombstone staleness.**
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow tombstone-audit
+```
+
+Parse the JSON output. If the `stale` array is non-empty, note the stale
+tombstones for removal in Step 4. Each entry has `pr`, `merged_at`, and
+`file` fields identifying which test function to remove and from which
+file. If the command fails (exit non-zero) or the JSON contains a
+`status` field with value `"threshold_error"` or `"error"`, note no
+stale tombstones — the audit is best-effort and skipped on API failure.
+
 Record step completion:
 
 ```bash
@@ -420,6 +433,24 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 If CI fails, identify the breaking fix and iterate until green.
 
 </HARD-GATE>
+
+### Remove stale tombstones
+
+After fixing all findings and running CI above, remove any stale
+tombstones identified in Step 1. For each stale entry:
+
+- Open the `file` from the audit output
+- Find the test function guarding the stale PR
+- Remove the entire test function (including its doc comment and
+  `#[test]` attribute)
+- If the removal leaves an empty section comment (e.g.
+  `// --- Tombstone tests ---` with no tests below it), remove the
+  section comment too
+
+Stale tombstone removal is a mechanical operation — no judgment call
+needed. The tombstone-audit command already verified that the PR was
+merged before the oldest open PR was created, meaning no active branch
+could resurrect the deleted code.
 
 ### Back navigation
 
