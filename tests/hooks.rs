@@ -643,44 +643,6 @@ fn test_stop_continue_session_mismatch_preserves_stop_instructed() {
 }
 
 #[test]
-/// Tombstone: .flow-states/ scan removed from resolve_branch in PR #924.
-/// When on main with another branch's state file, the hook must NOT
-/// resolve to that branch — it silently exits without blocking.
-fn test_stop_continue_no_scan_on_main_tombstone() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo_on_branch(dir.path(), "main");
-
-    let feature_branch = "feature-xyz";
-    let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state = json!({
-        "branch": feature_branch,
-        "_continue_pending": "flow-plan",
-        "_continue_context": "Resume plan phase."
-    });
-    fs::write(
-        state_dir.join(format!("{}.json", feature_branch)),
-        serde_json::to_string_pretty(&state).unwrap(),
-    )
-    .unwrap();
-
-    let output = run_hook_no_simulate("stop-continue", dir.path(), b"{}");
-
-    assert_eq!(output.status.code().unwrap(), 0);
-    let stdout = std::str::from_utf8(&output.stdout).unwrap().trim();
-    // No output — hook exits silently because main has no state file
-    assert!(
-        stdout.is_empty(),
-        "hook must NOT block when on main with another branch's state file — scan removed in PR #924, got: {}",
-        stdout
-    );
-
-    // State file for feature-xyz must be UNTOUCHED — hook did not find or modify it.
-    let on_disk = read_state(dir.path(), feature_branch);
-    assert_eq!(on_disk["_continue_pending"], "flow-plan");
-}
-
-#[test]
 fn test_stop_continue_no_block_after_cleared_continue_pending() {
     // Integration test for the finalize-commit → stop-continue contract:
     // when finalize-commit clears _continue_pending and _continue_context

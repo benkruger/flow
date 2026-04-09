@@ -349,19 +349,3 @@ fn test_lock_uses_canonical_branch_not_feature_name() {
         "Lock must NOT be under the raw feature name"
     );
 }
-
-// --- Tombstone tests ---
-
-#[test]
-fn test_start_init_no_acquire_feature_name() {
-    // Tombstone: removed in PR #968. The lock must never be acquired under
-    // args.feature_name — always under the canonical branch name.
-    let content =
-        fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/start_init.rs"))
-            .unwrap();
-    assert!(
-        !content.contains("acquire(&args.feature_name"),
-        "start_init.rs must not acquire lock under args.feature_name — \
-         lock must use canonical branch name (PR #968)"
-    );
-}

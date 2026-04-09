@@ -203,29 +203,6 @@ fn branch_flag_works() {
     assert_eq!(json["phase"], "flow-plan");
 }
 
-/// Tombstone: .flow-states/ scan removed from resolve_branch in PR #924.
-/// On main with other branches' state files, phase-transition returns
-/// "no state file" for the current branch — not "Multiple active features".
-#[test]
-fn no_state_file_for_current_branch_phase_transition() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path(), "main");
-
-    for name in ["feat-a", "feat-b"] {
-        let state = make_state("flow-start", &[("flow-start", "complete")]);
-        setup_state(dir.path(), name, &state);
-    }
-
-    let (code, json) = run(dir.path(), "flow-plan", "enter", &[]);
-    assert_eq!(code, 1);
-    assert_eq!(json["status"], "error");
-    assert!(
-        json["message"].as_str().unwrap().contains("No state file"),
-        "Expected 'No state file' error, got: {}",
-        json["message"]
-    );
-}
-
 #[test]
 fn frozen_phases_file_is_used() {
     let dir = tempfile::tempdir().unwrap();

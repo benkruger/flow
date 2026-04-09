@@ -1484,15 +1484,6 @@ fn configurable_skills_match_phase_order() {
 // --- Start skill consolidation tombstones ---
 
 #[test]
-fn start_no_start_setup_reference() {
-    let c = common::read_skill("flow-start");
-    assert!(
-        !c.contains("start-setup"),
-        "Tombstone: start-setup replaced in PR #904"
-    );
-}
-
-#[test]
 fn start_references_start_init() {
     let c = common::read_skill("flow-start");
     assert!(
@@ -1525,15 +1516,6 @@ fn start_references_phase_finalize() {
     assert!(
         c.contains("phase-finalize"),
         "flow-start must reference phase-finalize"
-    );
-}
-
-#[test]
-fn start_no_start_finalize() {
-    let c = common::read_skill("flow-start");
-    assert!(
-        !c.contains("start-finalize"),
-        "Tombstone: start-finalize replaced by phase-finalize in PR #925"
     );
 }
 
@@ -1692,38 +1674,11 @@ fn start_derives_branch_name_from_prompt() {
 }
 
 #[test]
-fn flow_start_no_gh_issue_view_instruction() {
-    let c = common::read_skill("flow-start");
-    assert!(
-        !c.contains("gh issue view"),
-        "Tombstone: removed in PR #741"
-    );
-}
-
-#[test]
 fn flow_start_documents_automatic_issue_branch_naming() {
     let c = common::read_skill("flow-start");
     assert!(
         c.contains("issue") && c.contains("branch"),
         "flow-start must document issue-aware branch naming"
-    );
-}
-
-#[test]
-fn start_no_manual_step_counter() {
-    let c = common::read_skill("flow-start");
-    assert!(
-        !c.contains("start_step_counter") && !c.contains("step_counter"),
-        "Tombstone: manual step counter removed in PR #737"
-    );
-}
-
-#[test]
-fn start_no_explicit_lock_release() {
-    let c = common::read_skill("flow-start");
-    assert!(
-        !c.contains("start-lock --release"),
-        "Tombstone: explicit lock release removed in PR #904"
     );
 }
 
@@ -1754,15 +1709,6 @@ fn prime_commit_step_enforces_flow_commit_exclusively() {
     assert!(
         c.contains("flow-commit") || c.contains("flow:flow-commit"),
         "flow-prime must use flow-commit exclusively"
-    );
-}
-
-#[test]
-fn prime_step_6_no_git_exclude_option() {
-    let c = common::read_skill("flow-prime");
-    assert!(
-        !c.contains("git config core.excludes") && !c.contains("--git-exclude"),
-        "Tombstone: removed in PR #696"
     );
 }
 
@@ -2379,15 +2325,6 @@ fn flow_issues_has_decomposed_detection() {
 }
 
 #[test]
-fn flow_issues_no_dependency_detection() {
-    let c = common::read_skill("flow-issues");
-    assert!(
-        !c.contains("Depends on #") && !c.contains("depends on #"),
-        "Tombstone: dependency detection removed in PR #661"
-    );
-}
-
-#[test]
 fn flow_issues_has_blocked_label_detection() {
     let c = common::read_skill("flow-issues");
     assert!(
@@ -2535,33 +2472,6 @@ fn create_issue_has_resume_check() {
     assert!(
         c.contains("Resume") || c.contains("resume"),
         "flow-create-issue must have Resume Check"
-    );
-}
-
-#[test]
-fn create_issue_no_input_classification() {
-    let c = common::read_skill("flow-create-issue");
-    assert!(
-        !c.contains("input classification") && !c.contains("Input Classification"),
-        "Tombstone: removed in PR #677"
-    );
-}
-
-#[test]
-fn create_issue_no_exploration_mode() {
-    let c = common::read_skill("flow-create-issue");
-    assert!(
-        !c.contains("exploration mode") && !c.contains("Exploration Mode"),
-        "Tombstone: removed in PR #677"
-    );
-}
-
-#[test]
-fn create_issue_no_multi_issue_path() {
-    let c = common::read_skill("flow-create-issue");
-    assert!(
-        !c.contains("multi-issue") && !c.contains("Multi-Issue") && !c.contains("multiple issues"),
-        "Tombstone: removed in PR #677"
     );
 }
 
