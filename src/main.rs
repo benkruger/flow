@@ -62,6 +62,7 @@ use flow_rs::start_gate;
 use flow_rs::start_init;
 use flow_rs::start_workspace;
 use flow_rs::test_runner;
+use flow_rs::tombstone_audit;
 use flow_rs::tui_data;
 use flow_rs::update_deps;
 use flow_rs::update_pr_body;
@@ -390,6 +391,10 @@ enum Commands {
     #[command(name = "orchestrate-state")]
     OrchestrateState(orchestrate_state::Args),
 
+    /// Audit tombstone tests for staleness by checking PR merge dates.
+    #[command(name = "tombstone-audit")]
+    TombstoneAudit(tombstone_audit::Args),
+
     /// Interactive TUI for viewing and managing active FLOW features.
     #[command(name = "tui")]
     Tui,
@@ -641,6 +646,7 @@ fn main() {
         }
         Some(Commands::OrchestrateReport(args)) => orchestrate_report::run(args),
         Some(Commands::OrchestrateState(args)) => orchestrate_state::run(args),
+        Some(Commands::TombstoneAudit(args)) => tombstone_audit::run(args),
         Some(Commands::Tui) => {
             let root = project_root();
             let version = flow_rs::utils::read_version();

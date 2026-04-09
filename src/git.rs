@@ -219,24 +219,6 @@ mod tests {
         assert_eq!(result, Some("main".to_string()));
     }
 
-    /// Tombstone: .flow-states/ scan removed in PR #924. Must not return.
-    #[test]
-    fn resolve_branch_no_scan_tombstone() {
-        let source = include_str!("git.rs");
-        // Find the resolve_branch_impl function body
-        let start = source.find("fn resolve_branch_impl(").unwrap();
-        let end = source[start..].find("\n}\n").unwrap() + start;
-        let func_body = &source[start..end];
-        assert!(
-            !func_body.contains("read_dir"),
-            "resolve_branch_impl must not scan .flow-states/ via read_dir — removed in PR #924"
-        );
-        assert!(
-            !func_body.contains("candidates"),
-            "resolve_branch_impl must not collect candidates — removed in PR #924"
-        );
-    }
-
     // --- current_branch_in() ---
 
     /// Initialize a git repo in the given directory with an initial commit

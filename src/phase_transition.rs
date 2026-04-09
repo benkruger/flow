@@ -348,26 +348,6 @@ mod tests {
         assert_eq!(state["current_phase"], "flow-complete");
     }
 
-    /// Tombstone: code_review_step initialization moved to phase-enter command in PR #925.
-    #[test]
-    fn enter_code_review_does_not_set_code_review_step() {
-        let mut state = make_state(
-            "flow-code",
-            &[
-                ("flow-start", "complete"),
-                ("flow-plan", "complete"),
-                ("flow-code", "complete"),
-            ],
-        );
-        phase_enter(&mut state, "flow-code-review", None);
-
-        // phase_enter() no longer sets code_review_step — phase-enter command handles it
-        assert!(
-            state.get("code_review_step").is_none() || state["code_review_step"].is_null(),
-            "phase_enter() must not set code_review_step — moved to phase-enter command in PR #925"
-        );
-    }
-
     #[test]
     fn enter_non_code_review_does_not_set_code_review_step() {
         let mut state = make_state("flow-start", &[("flow-start", "complete")]);
