@@ -510,15 +510,19 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         };
 
         if !ci_skipped {
-            let bin_ci = cwd.join("bin").join("ci");
-            let (ci_result, ci_code) =
-                ci::run_once(&cwd, &root, &bin_ci, Some(&branch), false, None);
+            let ci_args = ci::Args {
+                force: false,
+                retry: 0,
+                branch: Some(branch.clone()),
+                simulate_branch: None,
+            };
+            let (ci_result, ci_code) = ci::run_impl(&ci_args, &cwd, &root, false);
             if ci_code != 0 {
                 ci_failed_output = Some(
                     ci_result
                         .get("message")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("bin/ci failed")
+                        .unwrap_or("CI failed")
                         .to_string(),
                 );
             } else {
