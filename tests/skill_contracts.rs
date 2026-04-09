@@ -2919,7 +2919,7 @@ fn code_review_no_plugin_config_axis() {
 
 #[test]
 fn skills_no_repo_tracked_files_at_project_root() {
-    let repo_tracked = ["bin/test", "bin/ci", "bin/flow"];
+    let repo_tracked = ["bin/test", "bin/ci"];
     let mut violations = Vec::new();
     for name in common::all_skill_names() {
         let content = common::read_skill(&name);

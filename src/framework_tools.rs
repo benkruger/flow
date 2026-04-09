@@ -50,7 +50,14 @@ fn rust_tool(tool_type: ToolType) -> Option<ToolCommand> {
         }),
         ToolType::Test => Some(ToolCommand {
             program: "cargo".into(),
-            args: vec!["nextest".into(), "run".into()],
+            args: vec![
+                "nextest".into(),
+                "run".into(),
+                "--status-level".into(),
+                "none".into(),
+                "--final-status-level".into(),
+                "fail".into(),
+            ],
         }),
         ToolType::Lint => Some(ToolCommand {
             program: "cargo".into(),
