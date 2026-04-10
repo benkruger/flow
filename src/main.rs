@@ -16,6 +16,7 @@ use flow_rs::cleanup;
 use flow_rs::close_issue;
 use flow_rs::close_issues;
 use flow_rs::commands;
+use flow_rs::commands::log::append_log;
 use flow_rs::complete_fast;
 use flow_rs::complete_finalize;
 use flow_rs::complete_merge;
@@ -43,7 +44,7 @@ use flow_rs::notify_slack;
 use flow_rs::orchestrate_report;
 use flow_rs::orchestrate_state;
 use flow_rs::output::json_error;
-use flow_rs::phase_config::{find_state_files, load_phase_config, PHASE_ORDER};
+use flow_rs::phase_config::{find_state_files, load_phase_config, phase_number, PHASE_ORDER};
 use flow_rs::phase_enter;
 use flow_rs::phase_finalize;
 use flow_rs::phase_transition::{phase_complete, phase_enter as phase_enter_fn};
@@ -847,12 +848,34 @@ fn run_phase_transition(
         *result_holder.borrow_mut() = result;
     });
 
+    let pn = phase_number(phase);
+
     match mutate_result {
         Ok(_) => {
             let result = result_holder.into_inner();
+            let status = result
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let _ = append_log(
+                &root,
+                &branch,
+                &format!(
+                    "[Phase {}] phase-transition --action {} --phase {} (\"{}\")",
+                    pn, action, phase, status
+                ),
+            );
             println!("{}", serde_json::to_string(&result).unwrap());
         }
         Err(e) => {
+            let _ = append_log(
+                &root,
+                &branch,
+                &format!(
+                    "[Phase {}] phase-transition --action {} --phase {} (\"error\")",
+                    pn, action, phase
+                ),
+            );
             json_error(&format!("State mutation failed: {}", e), &[]);
             process::exit(1);
         }

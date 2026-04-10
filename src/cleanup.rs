@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 use clap::Parser;
 use indexmap::IndexMap;
 
+use crate::commands::log::append_log;
 use crate::output::{json_error, json_ok};
 
 const CMD_TIMEOUT: Duration = Duration::from_secs(30);
@@ -216,6 +217,21 @@ pub fn cleanup(
         "dag_file".to_string(),
         try_delete_file(&flow_states.join(format!("{}-dag.md", branch))),
     );
+
+    // Log cleanup progress before the log file is deleted.
+    // Only log if the log file already exists — append_log creates the file
+    // if missing, which would cause try_delete_file to return "deleted" instead
+    // of "skipped" for test fixtures that intentionally remove the log file.
+    // This entry is written mid-cleanup (before file deletions), so it cannot
+    // report a total step count — the JSON output has the full step results.
+    let log_path = flow_states.join(format!("{}.log", branch));
+    if log_path.exists() {
+        let _ = append_log(
+            project_root,
+            branch,
+            "[Phase 6] cleanup — in progress (log file will be deleted next)",
+        );
+    }
 
     // Delete log file
     steps.insert(
