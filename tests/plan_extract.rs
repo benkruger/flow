@@ -160,6 +160,31 @@ fn extract_plan_matches_windows_line_endings() {
 }
 
 #[test]
+fn extract_plan_tolerates_trailing_space() {
+    // Heading with trailing spaces should still match
+    let body = "## Problem\n\nFoo.\n\n## Implementation Plan  \n\n### Context\n\nContent.\n";
+    let result = extract_implementation_plan(body).unwrap();
+    assert!(result.contains("### Context"));
+}
+
+#[test]
+fn extract_plan_tolerates_trailing_tab() {
+    // Heading with trailing tab should still match
+    let body = "## Implementation Plan\t\n\n### Context\n\nStuff.\n";
+    let result = extract_implementation_plan(body).unwrap();
+    assert!(result.contains("### Context"));
+}
+
+#[test]
+fn extract_plan_skips_suffix_finds_exact() {
+    // First heading has suffix (rejected), second is exact (accepted)
+    let body = "## Implementation Planning\n\nIgnore.\n\n## Implementation Plan\n\nReal content.\n";
+    let result = extract_implementation_plan(body).unwrap();
+    assert!(result.contains("Real content."));
+    assert!(!result.contains("Ignore."));
+}
+
+#[test]
 fn promote_headings_five_hashes_unchanged() {
     // ##### should not be promoted (only ### and #### are)
     let content = "##### Five hashes\n### Three hashes\n";

@@ -181,11 +181,13 @@ fn read_dag_mode(state: &Value) -> String {
 ///
 /// Returns the byte index of the heading start, or None if not found.
 /// The heading must appear at the start of a line (preceded by `\n` or at
-/// position 0) and be followed by `\n`, `\r`, or end of string.
+/// position 0) and be followed by optional trailing whitespace then `\n`,
+/// `\r`, or end of string. Trailing spaces and tabs after the heading text
+/// are tolerated (common in editor artifacts and copy-paste).
 fn find_heading(body: &str, heading: &str) -> Option<usize> {
     // Check if body starts with the heading
     if let Some(after) = body.strip_prefix(heading) {
-        if after.is_empty() || after.starts_with('\n') || after.starts_with('\r') {
+        if is_heading_terminated(after) {
             return Some(0);
         }
     }
@@ -195,16 +197,20 @@ fn find_heading(body: &str, heading: &str) -> Option<usize> {
     while let Some(pos) = body[start..].find(&search) {
         let abs_pos = start + pos + 1; // +1 to skip the \n
         let after_heading = abs_pos + heading.len();
-        if after_heading >= body.len() {
-            return Some(abs_pos);
-        }
-        let next_char = body.as_bytes()[after_heading];
-        if next_char == b'\n' || next_char == b'\r' {
+        let remainder = &body[after_heading..];
+        if is_heading_terminated(remainder) {
             return Some(abs_pos);
         }
         start = start + pos + 1;
     }
     None
+}
+
+/// Check that the text after a heading marker is a valid line termination:
+/// optional trailing whitespace (spaces/tabs) followed by `\n`, `\r`, or EOF.
+fn is_heading_terminated(after: &str) -> bool {
+    let trimmed = after.trim_start_matches([' ', '\t']);
+    trimmed.is_empty() || trimmed.starts_with('\n') || trimmed.starts_with('\r')
 }
 
 /// Extract the `## Implementation Plan` section from an issue body.
