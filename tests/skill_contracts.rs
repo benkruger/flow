@@ -1814,6 +1814,15 @@ fn code_skill_has_atomic_group_handling() {
     );
 }
 
+#[test]
+fn code_has_plan_test_verification() {
+    let c = common::read_skill("flow-code");
+    assert!(
+        c.contains("Plan Test Verification"),
+        "Code skill must have Plan Test Verification subsection"
+    );
+}
+
 // --- Learn phase ---
 
 #[test]

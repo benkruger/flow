@@ -399,3 +399,31 @@ task, verify whether existing tests at the entry-point level already
 cover the new delegation path. If yes, replace the migration task
 with a single verification task (run the existing tests and confirm
 they pass against the new implementation).
+
+## Cross-Framework Completeness
+
+When a skill instruction references framework-specific syntax (test
+function names, import statements, class definitions, build commands),
+enumerate patterns for all supported frameworks — not just the one
+the current task targets. FLOW supports Rails, Python, iOS, Go, and
+Rust. An instruction that shows examples for two frameworks silently
+breaks for the other three.
+
+How to apply: during the Code phase, when writing a skill instruction
+that includes framework-specific syntax examples, check the
+`frameworks/` directory for the full list of supported frameworks and
+add a pattern for each. If a framework's convention cannot be expressed
+concisely, note the framework name and link to its convention.
+
+## Purpose Preamble for Behavioral Sections
+
+Every new behavioral subsection in a SKILL.md (a subsection with
+decision logic, conditional branches, or tool invocations) must open
+with a 2-3 sentence preamble explaining why the step exists and what
+problem it solves. The preamble answers "Why does this step exist?"
+before the mechanics of "How does it work?"
+
+Without the preamble, a newcomer reading the skill sees the mechanics
+but cannot judge whether the step is still relevant after a refactor.
+The preamble makes the intent explicit so future sessions can evaluate
+whether the step still serves its purpose.
