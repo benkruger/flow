@@ -2278,6 +2278,15 @@ fn plan_verifies_script_behavior_assertions() {
 }
 
 #[test]
+fn plan_has_dag_freshness_check() {
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("DAG Freshness") || c.contains("dag freshness"),
+        "Plan must have DAG Freshness Check subsection"
+    );
+}
+
+#[test]
 fn prime_presets_include_dag_config() {
     let c = common::read_skill("flow-prime");
     let re = Regex::new(r"```json\n(\{[\s\S]*?\})\n```").unwrap();
