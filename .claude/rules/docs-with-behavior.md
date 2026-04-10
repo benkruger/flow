@@ -17,6 +17,29 @@ to write the same updates you could write now.
   `docs/reference/flow-state-schema.md` (field descriptions
   include hardcoded values like step ranges and totals that
   must match the Rust constants)
+- Changed what a skill passes to a sub-agent → the agent's
+  `## Input` section in `agents/<name>.md`
+
+## Agent Input Section Sync
+
+Agent `## Input` sections are contracts with the model about what
+data is available. When a skill changes what artifacts it passes to
+a sub-agent (e.g. switching from full diff to substantive diff),
+update the agent's Input section in the same commit. Stale Input
+sections mislead the agent about available context and produce
+incorrect reasoning. CI cannot enforce this (agent Input sections
+are prose), so the Plan phase must enumerate all affected agent
+files when a skill modifies agent invocations.
+
+## Multi-Task Plans
+
+When a plan splits a behavior change and its documentation update
+across separate tasks, the Plan phase should mark them as an atomic
+group — or combine them into a single task. The "same commit" rule
+means the behavior change and its documentation must land together.
+Separate commits within the same PR are not sufficient: if the PR
+is reviewed commit-by-commit, the intermediate state shows stale
+documentation.
 
 ## Scope Enumeration
 
