@@ -1,6 +1,6 @@
 //! Consolidated setup for FLOW Prime.
 //!
-//! Port of `lib/prime-setup.py`. Merges permissions into
+//! Merges permissions into
 //! `.claude/settings.json`, writes `.flow.json` version marker,
 //! updates `.git/info/exclude`, installs hooks and launcher.
 //! Does NOT commit — the skill handles `git add` + `commit`.

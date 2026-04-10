@@ -1,6 +1,5 @@
 //! Structural invariant tests for FLOW plugin configuration files.
 //!
-//! Ports tests/test_structural.py to Rust integration tests.
 //! These tests verify config consistency, hook registration, framework
 //! definitions, agent frontmatter, version parity, and tombstone guards.
 

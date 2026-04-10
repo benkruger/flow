@@ -134,8 +134,8 @@ pub const EXCLUDE_ENTRIES: &[&str] = &[
 ];
 
 /// Custom `serde_json` formatter that emits `(", ", ": ")` separators
-/// to match Python's `json.dumps` default. Required for byte-parity
-/// with Python's hash input. Only the three separator methods are
+/// to match the format used by existing `.flow.json` files. Required
+/// for hash stability on upgrade. Only the three separator methods are
 /// overridden; everything else uses the default (compact) behavior.
 struct PythonDefaultFormatter;
 
@@ -171,7 +171,7 @@ impl Formatter for PythonDefaultFormatter {
 }
 
 /// Load framework-specific permissions from frameworks/<name>/permissions.json.
-/// Returns an empty vec if the file is missing (Python parity).
+/// Returns an empty vec if the file is missing — not all frameworks define permissions.
 pub fn load_framework_permissions(framework: &str, fw_dir: &Path) -> Vec<String> {
     let path = fw_dir.join(framework).join("permissions.json");
     if !path.exists() {
@@ -267,9 +267,9 @@ fn read_flow_json(cwd: &Path) -> Option<Value> {
     serde_json::from_str(&content).ok()
 }
 
-/// Filter `Some("")` as falsy. Matches Python's `if x:` semantics for
-/// string dict values: both missing keys and empty strings are falsy.
-/// See rust-port-parity.md "Empty-String vs Missing-Key Falsy Equivalence".
+/// Filter `Some("")` as falsy — both missing keys and empty strings
+/// should be treated as absent. See rust-patterns.md
+/// "Empty-String vs Missing-Key Equivalence".
 fn as_nonempty_str(v: &Value) -> Option<&str> {
     v.as_str().filter(|s| !s.is_empty())
 }

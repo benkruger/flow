@@ -98,7 +98,7 @@ fn run_hook(hook: &str, dir: &Path, branch: &str, stdin_data: &[u8]) -> Output {
 /// Creates a deterministic HEAD so `git branch --show-current` returns
 /// `branch_name` inside the child process. Mirrors `init_git_repo` from
 /// `src/git.rs` tests but is self-contained in this integration test module.
-/// Uses `Command::output()` (not `.status()`) per rust-port-parity rules.
+/// Uses `Command::output()` so child stdout/stderr are captured, not inherited.
 fn setup_git_repo_on_branch(dir: &Path, branch_name: &str) {
     let run = |args: &[&str]| {
         let output = Command::new("git")

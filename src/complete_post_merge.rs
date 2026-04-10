@@ -45,8 +45,7 @@ pub struct Args {
 /// Drains stdout and stderr in spawned threads to prevent pipe buffer
 /// deadlock — children writing >64KB to a piped stream would otherwise
 /// block forever when the kernel buffer fills and `try_wait()` would
-/// never observe the child exiting. See `.claude/rules/rust-port-parity.md`
-/// "Subprocess Timeout Parity".
+/// never observe the child exiting.
 fn run_cmd_with_timeout(args: &[&str], timeout_secs: u64) -> CmdResult {
     let (program, rest) = match args.split_first() {
         Some(p) => p,

@@ -174,8 +174,8 @@ fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
 
 /// Real `gh` subprocess runner with polling-based timeout and thread-drain.
 ///
-/// Uses the thread-drain pattern from `.claude/rules/rust-port-parity.md`
-/// Subprocess Timeout Parity: take stdout/stderr handles before the poll
+/// Uses the thread-drain pattern to prevent pipe buffer deadlock: take
+/// stdout/stderr handles before the poll
 /// loop, drain them in spawned reader threads, poll `try_wait()` for exit
 /// status, then join the readers. Compliant reference: see
 /// `src/analyze_issues.rs` lines 472-518.
