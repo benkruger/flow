@@ -848,6 +848,8 @@ fn run_phase_transition(
         *result_holder.borrow_mut() = result;
     });
 
+    let pn = phase_number(phase);
+
     match mutate_result {
         Ok(_) => {
             let result = result_holder.into_inner();
@@ -855,7 +857,6 @@ fn run_phase_transition(
                 .get("status")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            let pn = phase_number(phase);
             let _ = append_log(
                 &root,
                 &branch,
@@ -867,6 +868,14 @@ fn run_phase_transition(
             println!("{}", serde_json::to_string(&result).unwrap());
         }
         Err(e) => {
+            let _ = append_log(
+                &root,
+                &branch,
+                &format!(
+                    "[Phase {}] phase-transition --action {} --phase {} (\"error\")",
+                    pn, action, phase
+                ),
+            );
             json_error(&format!("State mutation failed: {}", e), &[]);
             process::exit(1);
         }

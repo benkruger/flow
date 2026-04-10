@@ -218,21 +218,18 @@ pub fn cleanup(
         try_delete_file(&flow_states.join(format!("{}-dag.md", branch))),
     );
 
-    // Log cleanup summary before the log file is deleted.
+    // Log cleanup progress before the log file is deleted.
     // Only log if the log file already exists — append_log creates the file
     // if missing, which would cause try_delete_file to return "deleted" instead
     // of "skipped" for test fixtures that intentionally remove the log file.
+    // This entry is written mid-cleanup (before file deletions), so it cannot
+    // report a total step count — the JSON output has the full step results.
     let log_path = flow_states.join(format!("{}.log", branch));
     if log_path.exists() {
-        let completed: Vec<&str> = steps
-            .iter()
-            .filter(|(_, v)| !v.starts_with("skipped") && !v.starts_with("failed"))
-            .map(|(k, _)| k.as_str())
-            .collect();
         let _ = append_log(
             project_root,
             branch,
-            &format!("[Phase 6] cleanup — {} steps completed", completed.len()),
+            "[Phase 6] cleanup — in progress (log file will be deleted next)",
         );
     }
 

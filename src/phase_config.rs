@@ -48,7 +48,8 @@ pub fn commands() -> IndexMap<String, String> {
     m
 }
 
-/// Return the 1-based phase number for a phase name, or 0 if not found.
+/// Single-lookup alternative to [`phase_numbers`] — avoids map allocation for per-call use.
+/// Returns the 1-based phase number for a phase name, or 0 if not found.
 pub fn phase_number(phase: &str) -> usize {
     PHASE_ORDER
         .iter()

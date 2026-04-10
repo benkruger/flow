@@ -1,9 +1,9 @@
-//! Tests that verify session log entries are produced by each module.
+//! Structural presence tests for session logging.
 //!
 //! Each module that performs significant operations must call `append_log`
 //! to record entries in `.flow-states/<branch>.log`. These source-content
-//! tests assert the logging contract: the module must contain `append_log(`
-//! calls. Tasks 3-7 make these tests pass by adding the actual log calls.
+//! tests assert that the call site exists in each module's source — they
+//! verify structural presence, not behavioral log production.
 
 mod common;
 

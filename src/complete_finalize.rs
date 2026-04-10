@@ -142,26 +142,37 @@ pub fn finalize_inner(
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
 
-    let _ = append_log(
-        &root,
-        &args.branch,
-        "[Phase 6] complete-finalize — starting",
-    );
+    // Best-effort logging — only log when .flow-states/ already exists.
+    // Matches the guard pattern in complete_post_merge.rs to avoid
+    // creating the directory in test fixtures that deliberately omit it.
+    let log = |msg: &str| {
+        if root.join(".flow-states").is_dir() {
+            let _ = append_log(&root, &args.branch, msg);
+        }
+    };
+
+    log("[Phase 6] complete-finalize — starting");
 
     let result = finalize_inner(
         &|| complete_post_merge::post_merge(args.pr, &args.state_file, &args.branch),
         &|| cleanup::cleanup(&root, &args.branch, &args.worktree, None, args.pull),
     );
 
-    let status = result
-        .get("status")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
-    let _ = append_log(
-        &root,
-        &args.branch,
-        &format!("[Phase 6] complete-finalize — done (\"{}\")", status),
-    );
+    let has_failures = result.get("post_merge_error").is_some()
+        || result
+            .get("post_merge_failures")
+            .and_then(|v| v.as_object())
+            .map(|m| !m.is_empty())
+            .unwrap_or(false);
+    let effective_status = if has_failures {
+        "ok with failures"
+    } else {
+        "ok"
+    };
+    log(&format!(
+        "[Phase 6] complete-finalize — done (\"{}\")",
+        effective_status
+    ));
 
     Ok(result)
 }
