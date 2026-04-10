@@ -1,7 +1,11 @@
 //! PreToolUse hook validator for Bash and Agent tool calls.
 //!
-//! Reads the Claude Code hook input JSON from stdin, checks the Bash
-//! command against blocked patterns, and exits with the appropriate code.
+//! For Bash calls, checks the command against blocked patterns (compound
+//! commands, redirection, file-read commands, deny list, whitelist).
+//!
+//! For Agent calls, blocks `general-purpose` sub-agents during active
+//! FLOW phases. Custom plugin agents (`flow:*`) and specialized types
+//! (`Explore`, `Plan`) are allowed through.
 //!
 //! Exit 0 — allow (command passes through to normal permission system)
 //! Exit 2 — block (error message on stderr is fed back to the sub-agent)
@@ -194,6 +198,32 @@ pub fn should_block_background(command: &str, flow_active: bool) -> Option<Strin
     None
 }
 
+/// Validate an Agent tool call by subagent type.
+///
+/// During an active FLOW phase, blocks `general-purpose` sub-agents
+/// (explicit or default when `subagent_type` is absent). All other
+/// types — custom plugin agents (`flow:*`), specialized built-in
+/// types (`Explore`, `Plan`), etc. — are allowed through.
+///
+/// Outside a FLOW phase, all agent types are allowed.
+///
+/// Returns `(allowed, message)`. Message is empty if allowed.
+pub fn validate_agent(subagent_type: Option<&str>, flow_active: bool) -> (bool, String) {
+    if !flow_active {
+        return (true, String::new());
+    }
+    match subagent_type {
+        None | Some("general-purpose") => (
+            false,
+            "BLOCKED: general-purpose sub-agents are not allowed during FLOW phases. \
+             Use a custom plugin sub-agent (flow:ci-fixer, flow:reviewer, etc.) or \
+             a specialized agent type (Explore, Plan) instead."
+                .to_string(),
+        ),
+        Some(_) => (true, String::new()),
+    }
+}
+
 /// Check whether a command invokes bin/flow (any subcommand) or bin/ci.
 ///
 /// Matches by tokenizing on whitespace, so path prefixes and trailing
@@ -276,6 +306,13 @@ pub fn run() {
         }
     }
     if command.is_empty() {
+        // No command means this is an Agent tool call, not Bash.
+        let subagent_type = tool_input.get("subagent_type").and_then(|v| v.as_str());
+        let (allowed, message) = validate_agent(subagent_type, flow_active);
+        if !allowed {
+            eprintln!("{}", message);
+            std::process::exit(2);
+        }
         std::process::exit(0);
     }
 
@@ -938,5 +975,57 @@ mod tests {
     fn test_is_bg_truthy_object_and_array() {
         assert!(!is_bg_truthy(&json!({})));
         assert!(!is_bg_truthy(&json!([])));
+    }
+
+    // --- Agent validation ---
+
+    #[test]
+    fn test_validate_agent_blocks_general_purpose_when_flow_active() {
+        let (allowed, msg) = validate_agent(Some("general-purpose"), true);
+        assert!(!allowed);
+        assert!(msg.contains("general-purpose"));
+        assert!(msg.contains("BLOCKED"));
+    }
+
+    #[test]
+    fn test_validate_agent_blocks_absent_type_when_flow_active() {
+        let (allowed, msg) = validate_agent(None, true);
+        assert!(!allowed);
+        assert!(msg.contains("general-purpose"));
+    }
+
+    #[test]
+    fn test_validate_agent_allows_flow_namespace_when_flow_active() {
+        let (allowed, msg) = validate_agent(Some("flow:ci-fixer"), true);
+        assert!(allowed);
+        assert!(msg.is_empty());
+    }
+
+    #[test]
+    fn test_validate_agent_allows_explore_when_flow_active() {
+        let (allowed, msg) = validate_agent(Some("Explore"), true);
+        assert!(allowed);
+        assert!(msg.is_empty());
+    }
+
+    #[test]
+    fn test_validate_agent_allows_plan_when_flow_active() {
+        let (allowed, msg) = validate_agent(Some("Plan"), true);
+        assert!(allowed);
+        assert!(msg.is_empty());
+    }
+
+    #[test]
+    fn test_validate_agent_allows_general_purpose_when_no_flow() {
+        let (allowed, msg) = validate_agent(Some("general-purpose"), false);
+        assert!(allowed);
+        assert!(msg.is_empty());
+    }
+
+    #[test]
+    fn test_validate_agent_allows_absent_type_when_no_flow() {
+        let (allowed, msg) = validate_agent(None, false);
+        assert!(allowed);
+        assert!(msg.is_empty());
     }
 }
