@@ -317,9 +317,13 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty());
 
-    // Resume: plan already exists → enter phase, complete immediately, return "resumed"
+    // Resume: plan already exists → read file first, then enter/complete phase
     if let Some(plan_rel) = plan_path {
         let plan_abs = root.join(plan_rel);
+
+        // Read plan file FIRST — fail early before any state mutations
+        let plan_content = std::fs::read_to_string(&plan_abs)
+            .map_err(|e| format!("Could not read plan file: {}", e))?;
 
         // Enter the phase (idempotent if already in_progress)
         mutate_state(&state_path, |state| {
@@ -332,9 +336,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 
         // Complete the phase
         let complete_result = complete_plan_phase(&state_path, &root, &branch)?;
-
-        let plan_content = std::fs::read_to_string(&plan_abs)
-            .map_err(|e| format!("Could not read plan file: {}", e))?;
 
         let formatted_time = complete_result
             .get("formatted_time")

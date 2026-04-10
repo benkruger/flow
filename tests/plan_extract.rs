@@ -465,6 +465,43 @@ mod integration {
         );
     }
 
+    #[test]
+    fn test_resumed_missing_plan_file_does_not_corrupt_state() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let plan_rel = ".flow-states/test-feature-plan.md";
+
+        // State with files.plan set but NO plan file on disk
+        let state = make_plan_state("build a feature", |s| {
+            s["files"]["plan"] = serde_json::json!(plan_rel);
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        // Deliberately do NOT create the plan file
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 1, "Should exit 1 when plan file is missing");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Could not read plan file"),
+            "Expected 'Could not read plan file' error, got: {}",
+            json
+        );
+
+        // Critical: state file must NOT be corrupted with "complete"
+        let updated_state: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
+        )
+        .unwrap();
+        assert_ne!(
+            updated_state["phases"]["flow-plan"]["status"], "complete",
+            "flow-plan must NOT be marked complete when plan file is missing"
+        );
+    }
+
     // --- gh-dependent tests ---
 
     #[test]
