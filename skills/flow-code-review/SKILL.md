@@ -148,11 +148,26 @@ CLAUDE.md at `<worktree_path>/CLAUDE.md`. Use the Glob tool to find all
 `.claude/rules/*.md` files at `<worktree_path>/.claude/rules/*.md`, then
 read each file.
 
-**Get the branch diff.**
+**Get the full branch diff.**
 
 ```bash
 git diff origin/main...HEAD
 ```
+
+This is the **full diff** — used by the reviewer agent (context-rich).
+
+**Get the substantive diff.**
+
+```bash
+git diff origin/main...HEAD -w
+```
+
+This is the **substantive diff** — whitespace-only changes filtered out.
+Context-sparse agents (pre-mortem, adversarial, documentation) receive
+this diff instead of the full diff. On PRs where formatters (cargo fmt,
+prettier, black) reformat many files, the substantive diff excludes
+formatting noise and preserves the agents' turn budget for behavioral
+analysis.
 
 **Check for test runner.**
 
@@ -232,21 +247,22 @@ Prefix the prompt with:
 > Review the diff for architecture adherence, simplicity, correctness,
 > and security."
 
-**Pre-mortem agent** — context-sparse (receives only the diff):
+**Pre-mortem agent** — context-sparse (receives only the substantive diff):
 
 Use the Agent tool with:
 
 - `subagent_type`: `"flow:pre-mortem"`
 - `description`: `"Pre-mortem incident analysis"`
 
-Provide the full diff output in the prompt, prefixed with:
+Provide the substantive diff output in the prompt, prefixed with:
 
-> "This PR was merged and caused a production incident. The full diff
-> is below. Investigate the codebase and write the incident report.
-> Security failure modes are explicitly in scope."
+> "This PR was merged and caused a production incident. The substantive
+> diff (whitespace-only changes filtered) is below. Investigate the
+> codebase and write the incident report. Security failure modes are
+> explicitly in scope."
 
-**Adversarial agent** — context-sparse (receives diff, temp file path,
-CLAUDE.md path, branch name). Only launch if `bin/flow` exists:
+**Adversarial agent** — context-sparse (receives substantive diff, temp
+file path, CLAUDE.md path, branch name). Only launch if `bin/flow` exists:
 
 Determine the temp test file path using the branch name from the state file:
 
@@ -261,20 +277,20 @@ Use the Agent tool with:
 - `subagent_type`: `"flow:adversarial"`
 - `description`: `"Adversarial test generation"`
 
-Provide the full diff output in the prompt, along with:
+Provide the substantive diff output in the prompt, along with:
 
 - The temp test file path
 - The path to the project CLAUDE.md
 - The branch name
 
-**Documentation agent** — context-sparse (receives diff, doc paths):
+**Documentation agent** — context-sparse (receives substantive diff, doc paths):
 
 Use the Agent tool with:
 
 - `subagent_type`: `"flow:documentation"`
 - `description`: `"Documentation and maintainability review"`
 
-Provide the full diff output in the prompt, along with:
+Provide the substantive diff output in the prompt, along with:
 
 - The path to the project CLAUDE.md
 - The path to the `.claude/rules/` directory
@@ -282,8 +298,9 @@ Provide the full diff output in the prompt, along with:
 Prefix the prompt with:
 
 > "You are a new team member reading this PR for the first time. The
-> full diff is below. Investigate the codebase and documentation for
-> comprehension barriers and documentation drift."
+> substantive diff (whitespace-only changes filtered) is below.
+> Investigate the codebase and documentation for comprehension barriers
+> and documentation drift."
 
 Wait for all agents to return.
 
