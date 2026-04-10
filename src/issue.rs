@@ -48,6 +48,10 @@ pub struct Args {
     /// Path to state file for repo lookup
     #[arg(long = "state-file")]
     pub state_file: Option<String>,
+
+    /// Milestone title to assign the issue to
+    #[arg(long)]
+    pub milestone: Option<String>,
 }
 
 pub struct IssueResult {
@@ -505,5 +509,20 @@ mod tests {
     #[test]
     fn resolve_repo_from_missing_state() {
         assert_eq!(resolve_repo_from_state("/nonexistent/state.json"), None);
+    }
+
+    // --- Args milestone parsing ---
+
+    #[test]
+    fn args_parses_milestone() {
+        let args = Args::try_parse_from(["issue", "--title", "Test issue", "--milestone", "v1.0"])
+            .unwrap();
+        assert_eq!(args.milestone.as_deref(), Some("v1.0"));
+    }
+
+    #[test]
+    fn args_milestone_defaults_to_none() {
+        let args = Args::try_parse_from(["issue", "--title", "Test issue"]).unwrap();
+        assert!(args.milestone.is_none());
     }
 }
