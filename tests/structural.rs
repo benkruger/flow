@@ -173,8 +173,6 @@ fn test_every_skill_dir_starts_with_flow_prefix() {
     }
 }
 
-// --- flow_utils.py parity tests removed in PR #953 (Python artifacts removed) ---
-
 // --- Hook invariants ---
 
 #[test]
@@ -452,8 +450,6 @@ fn test_hooks_json_has_stop_failure_hook() {
     );
 }
 
-// --- conftest parity tests removed in PR #953 (Python artifacts removed) ---
-
 // --- Script test file coverage ---
 
 #[test]
@@ -527,8 +523,6 @@ fn test_every_script_has_a_test_file() {
         missing.join(", ")
     );
 }
-
-// --- Requirements and pytest config tests removed in PR #953 (Python artifacts removed) ---
 
 // --- CLAUDE.md invariants ---
 
