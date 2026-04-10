@@ -1,8 +1,8 @@
 # Rust Patterns
 
-Durable Rust development patterns for the FLOW codebase. Promoted from
-`.claude/rules/rust-port-parity.md` in PR #953 after completing the
-Python-to-Rust migration.
+Durable Rust development patterns for the FLOW codebase. Covers JSON
+serialization, string safety, state mutation guards, test conventions,
+and CLI architecture patterns used across `src/*.rs` modules.
 
 ## JSON Key Order Preservation
 

@@ -2,8 +2,8 @@
 //!
 //! Exercises the real binary end-to-end with a fake `gh` shell script on
 //! PATH and a tempdir plugin.json via `FLOW_PLUGIN_JSON`. Uses
-//! `Command::env()` (per-subprocess, safe per rust-port-parity
-//! env-var rule) to avoid parent-process env races with parallel tests.
+//! `Command::env()` (per-subprocess) to avoid parent-process env races
+//! with parallel tests.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
