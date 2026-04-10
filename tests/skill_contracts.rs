@@ -1814,6 +1814,15 @@ fn code_skill_has_atomic_group_handling() {
     );
 }
 
+#[test]
+fn code_has_plan_test_verification() {
+    let c = common::read_skill("flow-code");
+    assert!(
+        c.contains("Plan Test Verification"),
+        "Code skill must have Plan Test Verification subsection"
+    );
+}
+
 // --- Learn phase ---
 
 #[test]
@@ -2283,6 +2292,15 @@ fn plan_enforces_must_verify_risk_tasks() {
     assert!(
         c.contains("Risk Verification Enforcement") || c.contains("risk verification enforcement"),
         "Plan must have Risk Verification Enforcement subsection"
+    );
+}
+
+#[test]
+fn plan_has_dag_freshness_check() {
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("DAG Freshness") || c.contains("dag freshness"),
+        "Plan must have DAG Freshness Check subsection"
     );
 }
 

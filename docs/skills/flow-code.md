@@ -30,8 +30,9 @@ For the current task:
 3. Write code → confirm test passes → refactor
 4. Show diff → AskUserQuestion review (streamline available after first task)
 5. `bin/flow ci` green (required)
-6. `/flow-commit` for this task
-7. Self-invoke for next task
+6. Plan test verification — confirm all plan-named test functions exist
+7. `/flow-commit` for this task
+8. Self-invoke for next task
 
 ---
 
