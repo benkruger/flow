@@ -29,7 +29,9 @@ fn run_clear_blocked(
     cmd.arg("clear-blocked")
         .env("FLOW_SIMULATE_BRANCH", branch)
         .current_dir(dir)
-        .stdin(Stdio::piped());
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     let mut child = cmd.spawn().unwrap();
     {
