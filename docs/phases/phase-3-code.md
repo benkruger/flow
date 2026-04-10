@@ -26,8 +26,9 @@ For the current task:
 2. **TDD cycle** — write failing test, confirm it fails, write code, confirm it passes, refactor
 3. **Diff review** — show the changes, AskUserQuestion approval before `bin/flow ci`. After the first task, the user can opt into streamline mode which auto-proceeds through remaining tasks
 4. **`bin/flow ci`** — must be green, 100% coverage
-5. **`/flow-commit`** — commit this task
-6. **Self-invoke** for next task
+5. **Plan test verification** — confirm every test function the plan names for this task exists in the codebase
+6. **`/flow-commit`** — commit this task
+7. **Self-invoke** for next task
 
 ---
 
