@@ -434,6 +434,11 @@ fn setup_tombstone_repo(dir: &std::path::Path) {
         .output()
         .unwrap();
     Command::new("git")
+        .args(["config", "commit.gpgsign", "false"])
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    Command::new("git")
         .args(["commit", "--allow-empty", "-m", "init"])
         .current_dir(dir)
         .output()
@@ -525,6 +530,7 @@ fn run_impl_no_tombstones() {
     let output = flow_rs()
         .args(["tombstone-audit", "--repo", "owner/repo"])
         .current_dir(dir.path())
+        .env("PATH", "/usr/bin:/bin")
         .output()
         .unwrap();
 
@@ -595,6 +601,7 @@ fn run_impl_current_tombstones() {
     assert_eq!(data["stale"].as_array().unwrap().len(), 0);
     assert_eq!(data["current"].as_array().unwrap().len(), 1);
     assert_eq!(data["current"][0]["pr"], 924);
+    assert_eq!(data["threshold"], "2024-06-01T00:00:00Z");
 }
 
 #[test]
