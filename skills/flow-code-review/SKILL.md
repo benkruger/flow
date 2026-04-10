@@ -178,9 +178,9 @@ in the project's language and run with the correct tool.
 
 | Framework | Temp file | Test command | Skip? |
 |-----------|-----------|-------------|-------|
-| rust | `.flow-states/<branch>-adversarial_test.rs` | `${CLAUDE_PLUGIN_ROOT}/bin/flow test --file <path>` | No |
+| rust | `.flow-states/<branch>-adversarial_test.rs` | `${CLAUDE_PLUGIN_ROOT}/bin/flow test --file <temp_test_file>` | No |
 | python | `.flow-states/<branch>-adversarial_test.py` | `bin/test <path>` | No |
-| rails | `.flow-states/<branch>-adversarial_test.py` | `bin/test <path>` | No |
+| rails | `.flow-states/<branch>-adversarial_test.rb` | `bin/test <path>` | No |
 | go | — | — | Yes |
 | ios | — | — | Yes |
 | (missing/unknown) | — | — | Yes |
