@@ -271,8 +271,9 @@ in the content.
 - Light validation: use Glob and Read to verify that files referenced in
   the Tasks section exist. Note any missing files (they may need to be
   created by the implementation) but do not block or re-derive the plan.
-- Run Script Behavior Verification and Target Path Validation (below)
-  on the extracted plan content, then proceed to Step 4.
+- Run DAG Freshness Check, Script Behavior Verification, and Target
+  Path Validation (below) on the extracted plan content, then proceed
+  to Step 4.
 
 **If not found** — the issue is an older-format decomposed issue without
 a plan. Use the issue body content from the DAG file as a head start
@@ -290,14 +291,15 @@ Continue with the standard exploration and plan-writing flow below.
 
 ### DAG Freshness Check
 
-When the DAG comes from a pre-produced source — plan-extract wrote it
-from a pre-planned or pre-decomposed issue, or the Resume Check
-dispatched here from a dag_file resume — the analysis may be stale.
-Main can advance between DAG generation and Plan phase execution,
-changing files the DAG references.
+**When to run:** The DAG comes from a pre-produced source — plan-extract
+wrote it from a pre-planned or pre-decomposed issue, the "if found"
+extraction path above used a pre-existing Implementation Plan, or the
+Resume Check dispatched here from a dag_file resume. In all these cases,
+main may have advanced since the analysis was produced, changing files
+the DAG references.
 
-Skip this check when Step 2 decompose just ran in the current session
-(the DAG explored the worktree minutes ago and is fresh).
+**When to skip:** Step 2 decompose just ran in the current session. The
+DAG explored the worktree minutes ago and is fresh.
 
 For pre-produced DAGs, verify the DAG's assumptions against reality:
 
