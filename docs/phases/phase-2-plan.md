@@ -35,9 +35,11 @@ skipped.
 4. Claude explores the codebase to validate the DAG against reality
 5. Claude verifies script behavior assertions from issue bodies by
    reading the relevant source code
-6. Claude writes the plan file with a Dependency Graph section and
+6. Claude enforces that risks marked "Must verify" or "Must confirm"
+   have corresponding verification tasks in the plan
+7. Claude writes the plan file with a Dependency Graph section and
    ordered tasks derived from the DAG
-7. The plan file path is stored in the state file and the phase completes
+8. The plan file path is stored in the state file and the phase completes
 
 DAG decomposition is configurable via `skills.flow-plan.dag` in
 `.flow.json` — set to `"never"` to skip it.

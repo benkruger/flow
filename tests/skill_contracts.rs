@@ -2278,6 +2278,15 @@ fn plan_verifies_script_behavior_assertions() {
 }
 
 #[test]
+fn plan_enforces_must_verify_risk_tasks() {
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("Risk Verification Enforcement"),
+        "Plan must have Risk Verification Enforcement subsection"
+    );
+}
+
+#[test]
 fn prime_presets_include_dag_config() {
     let c = common::read_skill("flow-prime");
     let re = Regex::new(r"```json\n(\{[\s\S]*?\})\n```").unwrap();
