@@ -32,7 +32,7 @@ fn flow_rs() -> Command {
 /// the temp dir rather than falling back to `PathBuf::from(".")` — which
 /// would then resolve against the child's `current_dir`, still the temp
 /// dir, but only by coincidence. An explicit `git init` makes the
-/// resolution deterministic and mirrors `tests/clear_blocked.rs`.
+/// resolution deterministic (same pattern as `tests/clear_blocked.rs`).
 fn setup_git_and_state(dir: &Path, branch: &str, state: &Value) {
     let _ = Command::new("git").args(["init"]).current_dir(dir).output();
     let state_dir = dir.join(".flow-states");
@@ -68,12 +68,11 @@ fn read_state(dir: &Path, branch: &str) -> Value {
 ///   env var, so one helper serves all three hooks.
 /// - `current_dir(dir)` scopes `project_root()` discovery to the tempdir
 ///   so the child reads and mutates only the fixture's `.flow-states/`
-///   directory — satisfies Subprocess CWD Parity in rust-port-parity.md.
+///   directory — prevents host environment leaks (see testing-gotchas.md).
 /// - All three stdio streams must be piped explicitly. `Command::spawn`
 ///   defaults to inheriting stdout/stderr, which means `wait_with_output`
 ///   would return empty buffers while the child's output leaks directly
-///   to the test harness terminal — the exact failure mode that the
-///   Test-Module Subprocess Stdio rule in rust-port-parity.md forbids.
+///   to the test harness terminal.
 ///   Piping stdout and stderr lets `wait_with_output` capture them for
 ///   assertion AND keeps cargo test output clean.
 fn run_hook(hook: &str, dir: &Path, branch: &str, stdin_data: &[u8]) -> Output {
@@ -683,8 +682,8 @@ fn test_stop_continue_no_block_after_cleared_continue_pending() {
 fn test_stop_continue_pending_with_first_stop_uses_conditional_message() {
     // When _continue_pending is set and _stop_instructed is NOT set (first stop),
     // check_first_stop fires and produces a conditional message that tells the
-    // model to check for user messages before auto-continuing. This is the fix
-    // for issue #950: _continue_pending no longer tramples user conversations.
+    // model to check for user messages before auto-continuing. Guards against
+    // _continue_pending trampling user conversations (issue #950).
     let dir = tempfile::tempdir().unwrap();
     let branch = "test-feature";
     let state = json!({

@@ -1,11 +1,10 @@
 //! Integration tests for `flow-rs prime-check`.
 //!
-//! Mirrors tests/test_prime_check.py (264 lines, 15 test cases).
 //! Points the Rust binary at the real plugin via
 //! CLAUDE_PLUGIN_ROOT=CARGO_MANIFEST_DIR so plugin.json version and the
-//! real lib/prime-setup.py bytes are used for hash computation. Every
-//! subprocess call uses Command::output() per rust-port-parity.md
-//! Test-Module Subprocess Stdio rule.
+//! real `src/prime_setup.rs` bytes are used for hash computation. All
+//! subprocess calls use Command::output() to avoid leaking child
+//! output to the test harness.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -166,8 +165,8 @@ fn fails_on_invalid_framework() {
 //
 // These tests use the Rust public API (compute_config_hash /
 // compute_setup_hash) to build the "stored" hashes so the Rust binary
-// can verify them. This is a self-consistency test — end-to-end hash
-// round-trips are verified separately by tests/test_prime_port_parity.py.
+// can verify them. This is a self-consistency test — the hashes built
+// here must match what prime-check computes at runtime.
 
 fn computed_config_hash(framework: &str) -> String {
     let fw_dir = plugin_root().join("frameworks");

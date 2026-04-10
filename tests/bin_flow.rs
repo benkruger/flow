@@ -1,6 +1,6 @@
 //! Tests for bin/flow — the subcommand dispatcher.
 //!
-//! Validates the Rust-only dispatcher (Python fallback removed in PR #953).
+//! Validates the Rust subcommand dispatcher.
 
 mod common;
 
