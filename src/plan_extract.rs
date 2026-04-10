@@ -325,7 +325,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         let plan_content = std::fs::read_to_string(&plan_abs)
             .map_err(|e| format!("Could not read plan file: {}", e))?;
 
-        // Enter the phase (idempotent if already in_progress)
+        // Enter the phase (safe to call if already in_progress — updates timestamps and visit_count)
         mutate_state(&state_path, |state| {
             if !(state.is_object() || state.is_null()) {
                 return;

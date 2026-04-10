@@ -482,6 +482,10 @@ mod integration {
 
         let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
         assert_eq!(code, 1, "Should exit 1 when plan file is missing");
+        assert_eq!(
+            json["status"], "error",
+            "error path should set status=error"
+        );
         assert!(
             json["message"]
                 .as_str()
