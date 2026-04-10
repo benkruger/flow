@@ -154,9 +154,9 @@ pub fn derive_permissions(project_root: &Path, framework: &str, fw_dir: &Path) -
 /// Check if any entry in `existing_set` pattern-subsumes `candidate`.
 ///
 /// Uses `permission_to_regex()` to test whether an existing broader pattern
-/// (e.g. `Bash(git *)`) matches the candidate's concrete form (e.g.
-/// `Bash(git add *)`). Only checks same-type entries (Bash vs Bash, not
-/// Agent vs Bash).
+/// (e.g. `Agent(*)`) matches the candidate's concrete form (e.g.
+/// `Agent(flow:ci-fixer)`). Only checks same-type entries (e.g. Agent vs
+/// Agent, Read vs Read); never matches across types (Agent vs Bash).
 pub fn is_subsumed(candidate: &str, existing_set: &HashSet<String>) -> bool {
     let outer_re = Regex::new(r"^(\w+)\((.+)\)$").unwrap();
     let cand_caps = match outer_re.captures(candidate) {

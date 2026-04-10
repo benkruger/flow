@@ -337,6 +337,38 @@ fn is_subsumed_skips_exact_match() {
     ));
 }
 
+#[test]
+fn is_subsumed_agent_wildcard_subsumes_specific() {
+    assert!(prime_setup::is_subsumed(
+        "Agent(flow:ci-fixer)",
+        &HashSet::from(["Agent(*)".to_string()])
+    ));
+}
+
+#[test]
+fn is_subsumed_read_wildcard_subsumes_specific() {
+    assert!(prime_setup::is_subsumed(
+        "Read(~/.claude/rules/*)",
+        &HashSet::from(["Read(~/.claude/*)".to_string()])
+    ));
+}
+
+#[test]
+fn is_subsumed_skill_wildcard_subsumes_specific() {
+    assert!(prime_setup::is_subsumed(
+        "Skill(decompose:decompose)",
+        &HashSet::from(["Skill(*)".to_string()])
+    ));
+}
+
+#[test]
+fn is_subsumed_cross_type_no_match() {
+    assert!(!prime_setup::is_subsumed(
+        "Skill(decompose:decompose)",
+        &HashSet::from(["Agent(*)".to_string()])
+    ));
+}
+
 // ── Derived permissions ─────────────────────────────────────
 
 #[test]

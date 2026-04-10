@@ -560,14 +560,24 @@ pub fn parse_conflict_files(porcelain_output: &str) -> Vec<String> {
 
 // --- Permission regex ---
 
-/// Convert a Bash(pattern) permission to a compiled regex.
+/// Convert a `Type(pattern)` permission to a compiled regex.
 ///
-/// Bash(git push) -> ^git push$
-/// Bash(git push *) -> ^git push .*$
+/// Extracts the inner pattern from any permission type and converts
+/// glob wildcards to regex:
 ///
-/// Returns None for non-Bash entries.
+/// `Bash(git push)` → `^git push$`
+/// `Bash(git push *)` → `^git push .*$`
+/// `Agent(*)` → `^.*$`
+/// `Read(~/.claude/rules/*)` → `^~/\.claude/rules/.*$`
+///
+/// Returns `None` for entries that don't match the `Type(pattern)` format.
+///
+/// Note: `src/hooks/mod.rs` has a Bash-only variant used by
+/// `build_permission_regexes` for PreToolUse hook validation.
+/// That version is intentionally restricted to `Bash(...)` entries
+/// because the hook only validates Bash tool commands.
 pub fn permission_to_regex(perm: &str) -> Option<Regex> {
-    let outer_re = Regex::new(r"^Bash\((.+)\)$").unwrap();
+    let outer_re = Regex::new(r"^\w+\((.+)\)$").unwrap();
     let cap = outer_re.captures(perm)?;
     let pattern = &cap[1];
     let escaped = regex::escape(pattern).replace(r"\*", ".*");
@@ -1000,7 +1010,37 @@ mod tests {
 
     #[test]
     fn permission_to_regex_non_bash() {
-        assert!(permission_to_regex("Read(file.txt)").is_none());
+        let re = permission_to_regex("Read(file.txt)").unwrap();
+        assert!(re.is_match("file.txt"));
+        assert!(!re.is_match("other.txt"));
+    }
+
+    #[test]
+    fn permission_to_regex_read_wildcard() {
+        let re = permission_to_regex("Read(~/.claude/rules/*)").unwrap();
+        assert!(re.is_match("~/.claude/rules/foo.md"));
+        assert!(!re.is_match("~/.claude/other/bar.md"));
+    }
+
+    #[test]
+    fn permission_to_regex_agent() {
+        let re = permission_to_regex("Agent(*)").unwrap();
+        assert!(re.is_match("flow:ci-fixer"));
+        assert!(re.is_match("anything"));
+    }
+
+    #[test]
+    fn permission_to_regex_skill() {
+        let re = permission_to_regex("Skill(decompose:decompose)").unwrap();
+        assert!(re.is_match("decompose:decompose"));
+        assert!(!re.is_match("decompose:other"));
+    }
+
+    #[test]
+    fn permission_to_regex_double_star() {
+        let re = permission_to_regex("Read(~/.claude/projects/**/tool-results/*)").unwrap();
+        assert!(re.is_match("~/.claude/projects/foo/bar/tool-results/abc"));
+        assert!(!re.is_match("~/.claude/other/tool-results/abc"));
     }
 
     #[test]

@@ -779,8 +779,11 @@ fn permission_to_regex_known_conversions() {
     assert!(r.is_match("git show HEAD:file.py | sed 's/foo/bar/'"));
     assert!(!r.is_match("git status"));
 
-    // Non-Bash entries return None
-    assert!(permission_to_regex("Write(*)").is_none());
+    // Non-Bash Type(pattern) entries now return a regex
+    let r = permission_to_regex("Write(*)").unwrap();
+    assert!(r.is_match("anything"));
+
+    // Malformed entries (no Type(pattern) format) return None
     assert!(permission_to_regex("plain string").is_none());
 }
 
