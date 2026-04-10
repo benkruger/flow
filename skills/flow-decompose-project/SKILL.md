@@ -220,7 +220,7 @@ Create the parent epic issue. Write the epic body to
 `.flow-states/decompose-project-<id>-epic-body` using the Write tool, then:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo <repo> --title "Epic: <project_name>" --body-file .flow-states/decompose-project-<id>-epic-body
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo <repo> --title "Epic: <project_name>" --body-file .flow-states/decompose-project-<id>-epic-body --milestone "<project_name>"
 ```
 
 Parse the JSON output. Record the epic issue number and database ID.
@@ -253,7 +253,7 @@ Write the issue body to `.flow-states/decompose-project-<id>-issue-body`
 using the Write tool, then create the issue:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo <repo> --title "<title>" --body-file .flow-states/decompose-project-<id>-issue-body --label decomposed
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo <repo> --title "<title>" --body-file .flow-states/decompose-project-<id>-issue-body --label decomposed --milestone "<project_name>"
 ```
 
 Parse the JSON output and record `{title, number, id}` in the mapping.
