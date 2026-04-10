@@ -177,13 +177,45 @@ fn read_dag_mode(state: &Value) -> String {
         .to_string()
 }
 
+/// Find a markdown heading as a full line match, not a substring.
+///
+/// Returns the byte index of the heading start, or None if not found.
+/// The heading must appear at the start of a line (preceded by `\n` or at
+/// position 0) and be followed by `\n`, `\r`, or end of string.
+fn find_heading(body: &str, heading: &str) -> Option<usize> {
+    // Check if body starts with the heading
+    if let Some(after) = body.strip_prefix(heading) {
+        if after.is_empty() || after.starts_with('\n') || after.starts_with('\r') {
+            return Some(0);
+        }
+    }
+    // Search for \n followed by heading
+    let search = format!("\n{}", heading);
+    let mut start = 0;
+    while let Some(pos) = body[start..].find(&search) {
+        let abs_pos = start + pos + 1; // +1 to skip the \n
+        let after_heading = abs_pos + heading.len();
+        if after_heading >= body.len() {
+            return Some(abs_pos);
+        }
+        let next_char = body.as_bytes()[after_heading];
+        if next_char == b'\n' || next_char == b'\r' {
+            return Some(abs_pos);
+        }
+        start = start + pos + 1;
+    }
+    None
+}
+
 /// Extract the `## Implementation Plan` section from an issue body.
 ///
-/// Returns the content between `## Implementation Plan` and the next `##`-level
-/// heading (or end of string). Returns None if the section is not found.
+/// Uses full-heading matching: the marker must appear at the start of a line
+/// and be followed by a newline or end of string. Returns the content between
+/// `## Implementation Plan` and the next `##`-level heading (or end of string).
+/// Returns None if the section is not found.
 pub fn extract_implementation_plan(body: &str) -> Option<String> {
     let marker = "## Implementation Plan";
-    let start_idx = body.find(marker)?;
+    let start_idx = find_heading(body, marker)?;
     let after_marker = start_idx + marker.len();
 
     // Find the next ## heading after the marker
