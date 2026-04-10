@@ -571,6 +571,11 @@ pub fn parse_conflict_files(porcelain_output: &str) -> Vec<String> {
 /// `Read(~/.claude/rules/*)` → `^~/\.claude/rules/.*$`
 ///
 /// Returns `None` for entries that don't match the `Type(pattern)` format.
+///
+/// Note: `src/hooks/mod.rs` has a Bash-only variant used by
+/// `build_permission_regexes` for PreToolUse hook validation.
+/// That version is intentionally restricted to `Bash(...)` entries
+/// because the hook only validates Bash tool commands.
 pub fn permission_to_regex(perm: &str) -> Option<Regex> {
     let outer_re = Regex::new(r"^\w+\((.+)\)$").unwrap();
     let cap = outer_re.captures(perm)?;
