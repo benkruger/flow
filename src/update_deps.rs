@@ -1,4 +1,4 @@
-//! Port of lib/update-deps.py — the `bin/flow update-deps` subcommand.
+//! The `bin/flow update-deps` subcommand.
 //!
 //! Runs the target project's `bin/dependencies` and reports whether
 //! git status changed. Spawns the dependency script in a new process
@@ -34,8 +34,8 @@ const POLL_INTERVAL: Duration = Duration::from_millis(50);
 pub fn run_update_deps(cwd: &Path, timeout_secs: u64) -> (Value, i32) {
     let deps = cwd.join("bin").join("dependencies");
 
-    // Mirrors Python's `is_file()` — returns false for directories AND
-    // for nonexistent paths. Both cases report skipped.
+    // Returns false for directories AND nonexistent paths. Both cases
+    // report skipped.
     if !deps.is_file() {
         return (
             json!({

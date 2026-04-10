@@ -1,6 +1,6 @@
 //! Data-driven framework auto-detection.
 //!
-//! Port of lib/detect-framework.py. Reads `frameworks/*/detect.json`
+//! Reads `frameworks/*/detect.json`
 //! to discover which frameworks match a project based on file presence.
 //!
 //! Usage: `bin/flow detect-framework <project_root>`
@@ -117,8 +117,7 @@ pub fn available_frameworks(fw_dir: &Path) -> Vec<Value> {
 ///
 /// Returns `Err` on infrastructure failures (missing project root,
 /// missing frameworks directory). Error-status responses are returned
-/// via `Err` so `run` can exit non-zero; this matches the Python
-/// script's behavior of printing JSON + `sys.exit(1)`.
+/// via `Err` so `run` can exit non-zero and print JSON before exiting.
 ///
 /// Loads detect.json configs once and derives both `detected` and
 /// `available` from the single load — avoids reading each detect.json

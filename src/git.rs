@@ -93,7 +93,7 @@ pub fn current_branch_in(cwd: &Path) -> Option<String> {
 /// 3. Return current_branch() anyway (callers check state file existence)
 ///
 /// Never scans `.flow-states/` for candidates — each caller targets only
-/// its own branch. Removed in PR #924.
+/// its own branch.
 pub fn resolve_branch(override_branch: Option<&str>, root: &Path) -> Option<String> {
     resolve_branch_impl(override_branch, root, current_branch())
 }

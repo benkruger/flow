@@ -1,4 +1,4 @@
-//! Port of lib/create-dependencies.py — copy framework dependency template.
+//! Copy framework dependency template.
 //!
 //! Copies frameworks/<name>/dependencies to the target project's
 //! bin/dependencies. Skips if bin/dependencies already exists (user

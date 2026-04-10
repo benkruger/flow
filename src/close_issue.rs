@@ -1,4 +1,4 @@
-//! Port of lib/close-issue.py — close a single GitHub issue via gh CLI.
+//! Close a single GitHub issue via gh CLI.
 //!
 //! Usage:
 //!   bin/flow close-issue --number <N> [--repo <repo>]

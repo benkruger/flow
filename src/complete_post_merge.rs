@@ -1,4 +1,4 @@
-//! Port of lib/complete-post-merge.py — consolidated Complete phase post-merge.
+//! Consolidated Complete phase post-merge.
 //!
 //! Absorbs Steps 7 + 9 + 10: phase completion, PR body render, issues summary,
 //! close issues, summary generation, label removal, auto-close parents, and
@@ -45,8 +45,7 @@ pub struct Args {
 /// Drains stdout and stderr in spawned threads to prevent pipe buffer
 /// deadlock — children writing >64KB to a piped stream would otherwise
 /// block forever when the kernel buffer fills and `try_wait()` would
-/// never observe the child exiting. See `.claude/rules/rust-port-parity.md`
-/// "Subprocess Timeout Parity".
+/// never observe the child exiting.
 fn run_cmd_with_timeout(args: &[&str], timeout_secs: u64) -> CmdResult {
     let (program, rest) = match args.split_first() {
         Some(p) => p,
@@ -111,7 +110,6 @@ fn run_cmd_with_timeout(args: &[&str], timeout_secs: u64) -> CmdResult {
 }
 
 /// Parse JSON from stdout. Returns (parsed_value, parse_error).
-/// Mirrors Python's _parse_json helper.
 fn parse_json_or(stdout: &str) -> (Option<Value>, Option<String>) {
     match serde_json::from_str::<Value>(stdout.trim()) {
         Ok(v) => (Some(v), None),

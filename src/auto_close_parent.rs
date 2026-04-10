@@ -1,4 +1,4 @@
-//! Port of lib/auto-close-parent.py — auto-close parent issue and milestone.
+//! Auto-close parent issue and milestone.
 //!
 //! Usage:
 //!   bin/flow auto-close-parent --repo <owner/repo> --issue-number N

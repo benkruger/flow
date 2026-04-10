@@ -1,4 +1,4 @@
-//! Port of lib/cleanup.py — cleanup orchestrator for FLOW features.
+//! Cleanup orchestrator for FLOW features.
 //!
 //! Shared by /flow:flow-complete (Phase 6) and /flow:flow-abort. Performs best-effort
 //! cleanup steps, continuing on failure.

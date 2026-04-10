@@ -1,13 +1,13 @@
 //! Integration tests for `flow-rs prime-setup`.
 //!
-//! Mirrors tests/test_prime_setup.py (1,135 lines). Tests cover:
+//! Tests cover:
 //! - Pure function tests (merge_settings, is_subsumed, derive_permissions,
 //!   write_version_marker, update_git_exclude, install_script,
 //!   install_pre_commit_hook, install_launcher, check_launcher_path)
 //! - CLI tests via run_impl
 //!
-//! Every subprocess call uses Command::output() per rust-port-parity.md
-//! Test-Module Subprocess Stdio rule.
+//! All subprocess calls use Command::output() to avoid leaking child
+//! output to the test harness.
 
 use std::collections::HashSet;
 use std::fs;
@@ -403,7 +403,7 @@ fn derive_permissions_unknown_framework() {
 #[test]
 fn derive_permissions_dot_prefix_skipped() {
     let tmp = tempfile::tempdir().unwrap();
-    // Dot-prefixed entry should be skipped (Python Path.glob parity)
+    // Dot-prefixed entry should be skipped (fnmatch convention)
     fs::create_dir(tmp.path().join(".xcodeproj")).unwrap();
     let result = prime_setup::derive_permissions(tmp.path(), "ios", &fw_dir());
     assert!(result.is_empty());

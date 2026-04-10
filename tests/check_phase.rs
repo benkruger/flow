@@ -182,8 +182,8 @@ fn no_state_file_for_current_branch() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "main");
 
-    // Create state files for OTHER branches — resolve_branch no longer
-    // scans for these, so check-phase reports no feature on "main".
+    // Create state files for OTHER branches — resolve_branch targets only
+    // the current branch, so check-phase reports no feature on "main".
     for name in ["feat-a", "feat-b"] {
         let state = make_state("flow-plan", &[("flow-start", "complete")]);
         setup_state(dir.path(), name, &state);

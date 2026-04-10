@@ -1,8 +1,8 @@
-//! Tests for `src/bump_version.rs` — port of tests/test_bump_version.py.
+//! Tests for `src/bump_version.rs`.
 //!
 //! Pure-function tests call the library directly. CLI tests call run_impl
 //! with a fake repo fixture. All subprocess calls use Command::output()
-//! per rust-port-parity.md Test-Module Subprocess Stdio rule.
+//! to avoid leaking child output to the test harness.
 
 use std::fs;
 use std::path::Path;

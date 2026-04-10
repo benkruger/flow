@@ -1,4 +1,4 @@
-//! Port of lib/bump-version.py — bump FLOW plugin version across all files.
+//! Bump FLOW plugin version across all files.
 //!
 //! Updates plugin.json, marketplace.json, and all skill banners.
 //!
@@ -121,7 +121,7 @@ pub fn run_impl(args: &Args, repo_root: &Path) -> Result<String, String> {
         );
     }
 
-    // 3. skills/*/SKILL.md — filter dot-prefixed entries per rust-port-parity rule
+    // 3. skills/*/SKILL.md — filter dot-prefixed entries (fnmatch convention)
     let skills_dir = repo_root.join("skills");
     if skills_dir.exists() {
         let mut entries: Vec<_> = fs::read_dir(&skills_dir)

@@ -1,10 +1,8 @@
 //! Integration tests for `flow-rs prime-project`.
 //!
-//! Mirrors tests/test_prime_project.py (124 lines, 11 test cases).
 //! Uses env!("CARGO_MANIFEST_DIR")/frameworks for real priming.md
-//! fixtures (rails and python). Every subprocess call uses
-//! Command::output() per rust-port-parity.md Test-Module Subprocess
-//! Stdio rule.
+//! fixtures (rails and python). All subprocess calls use
+//! Command::output() to avoid leaking child output to the test harness.
 
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -1,6 +1,6 @@
 //! Insert or replace FLOW priming content in a project's CLAUDE.md.
 //!
-//! Port of lib/prime-project.py. Reads
+//! Reads
 //! `frameworks/<name>/priming.md` and inserts it between
 //! `<!-- FLOW:BEGIN -->` / `<!-- FLOW:END -->` markers in the target
 //! project's CLAUDE.md. Idempotent — re-running replaces existing

@@ -1,6 +1,6 @@
 //! Manage orchestration queue state at `.flow-states/orchestrate.json`.
 //!
-//! Ported from `lib/orchestrate-state.py`. Orchestrate.json is a machine-level
+//! Orchestrate.json is a machine-level
 //! singleton (not branch-scoped) that tracks overnight autonomous execution.
 //!
 //! Six mutually exclusive operations:
