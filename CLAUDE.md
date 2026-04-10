@@ -126,6 +126,8 @@ CI is enforced inside `finalize-commit` itself — `run_impl` calls `ci::run_imp
 
 Phase skills log completion events to `.flow-states/<branch>.log` using a command-first pattern (no START timestamps). Logging goes to `.flow-states/`, never `/tmp/`.
 
+All 6 phases produce log entries. Phase 1 (Start) logs via its four consolidated commands (`start-init`, `start-gate`, `start-workspace`, `phase-finalize`). Phases 2–5 log via skill-level `bin/flow log` calls and Rust-tier `append_log` calls in `phase_enter.rs` and `finalize_commit.rs`. Phase 6 (Complete) logs via `complete_finalize.rs`, `complete_post_merge.rs`, and `cleanup.rs`. Log entries use `[Phase N] module — step (status)` format where N is derived from `phase_number()` in `phase_config.rs`. `finalize_commit.rs` reads `current_phase` from the state file to derive the correct phase number across all calling phases. `cleanup.rs` logs before the log file deletion step (guarded by log file existence). `complete_post_merge.rs` uses a guarded log closure that checks `.flow-states/` existence to avoid creating the directory in test fixtures.
+
 ### Version Locations
 
 The version lives in 3 places (across 2 files), all must match: `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (top-level metadata), `.claude-plugin/marketplace.json` (plugins array entry). `tests/structural.rs` enforces consistency.
