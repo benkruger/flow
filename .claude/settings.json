@@ -42,19 +42,11 @@
       "Bash(rm .flow-*)",
       "Bash(rm -rf *.qa-repos*)",
       "Bash(rm .claude/settings.local.json)",
-      "Bash(rm tests/test_adversarial_*)",
       "Bash(chmod +x *)",
       "Bash(cd *)",
       "Bash(pwd)",
       "Bash(make *)",
       "Bash(diff *)",
-      "Bash(cargo build *)",
-      "Bash(cargo test *)",
-      "Bash(cargo nextest *)",
-      "Bash(cargo check *)",
-      "Bash(cargo clippy *)",
-      "Bash(cargo fmt *)",
-      "Bash(cargo version)",
       "Bash(curl *)",
       "Bash(open:*)",
       "Read(~/Desktop/*.png)",
@@ -92,7 +84,9 @@
       "Bash(gh * --admin*)",
       "Bash(* && *)",
       "Bash(* ; *)",
-      "Bash(* | *)"
+      "Bash(* | *)",
+      "Bash(cargo *)",
+      "Bash(rustc *)"
     ]
   },
   "attribution": {

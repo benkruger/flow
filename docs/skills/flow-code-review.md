@@ -34,8 +34,9 @@ from agents — the parent session never reviews the diff itself.
 
 Collect all artifacts: full branch diff, substantive diff (whitespace
 changes filtered via `git diff -w`), plan file, CLAUDE.md, rules files,
-check for `bin/test`, run `tombstone-audit` to identify stale tombstones
-for removal in Step 4. No analysis.
+derive adversarial test setup from `framework` (per-framework temp file
+path and test command), run `tombstone-audit` to identify stale
+tombstones for removal in Step 4. No analysis.
 
 ### Step 2 — Launch
 

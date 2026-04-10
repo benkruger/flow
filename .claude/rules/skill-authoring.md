@@ -415,6 +415,24 @@ that includes framework-specific syntax examples, check the
 add a pattern for each. If a framework's convention cannot be expressed
 concisely, note the framework name and link to its convention.
 
+## Framework Table Placeholder Consistency
+
+When a SKILL.md includes a framework table that parameterizes behavior
+(paths, commands, configuration), every framework row must use the
+same placeholder names for equivalent columns. If one framework uses
+`<temp_test_file>` in a command column, all frameworks that include a
+command must use the same placeholder — not `<path>` or other aliases.
+
+Why: placeholder names are contracts with downstream consumers (agents,
+permission tests, placeholder substitution in `tests/permissions.rs`).
+Inconsistent naming means only one variant gets tested and the others
+silently substitute wrong values or skip validation entirely.
+
+How to apply: after writing a framework table, scan every cell for
+angle-bracket placeholders and verify every row uses identical names
+for the same semantic value. If Code Review fixes a placeholder in one
+row, verify all rows in the same pass.
+
 ## Purpose Preamble for Behavioral Sections
 
 Every new behavioral subsection in a SKILL.md (a subsection with

@@ -21,7 +21,8 @@ it. Only failures matter.
 The substantive diff (`git diff origin/main...HEAD -w`) is provided in
 your prompt — whitespace-only changes are filtered out so your turn
 budget is spent on behavioral analysis, not formatting noise. The branch
-name and project CLAUDE.md path are also provided. Use the
+name, project CLAUDE.md path, temp test file path (`<temp_test_file>`),
+and test command (`<test_command>`) are also provided. Use the
 Read tool to read the CLAUDE.md for test conventions and patterns. Use
 Read, Glob, and Grep to investigate the codebase.
 
@@ -57,10 +58,11 @@ patterns, imports, targeted test command).
 
 Write the test file using the Write tool to `<temp_test_file>`.
 
-**Run the tests.** Execute only your adversarial test file:
+**Run the tests.** Execute only your adversarial test file using the
+test command provided in your prompt:
 
 ```bash
-bin/test <temp_test_file>
+<test_command>
 ```
 
 **Collect results.** For each test:
@@ -91,7 +93,7 @@ For each finding (failing test), produce a structured block:
 **Finding N: [Short title]**
 
 - **Test code:** The failing test function (complete, runnable)
-- **Failure output:** The pytest failure message
+- **Failure output:** The test failure output
 - **What it proves:** Which code path is insufficiently tested
 - **Severity:** Critical / High / Medium / Low
 
@@ -116,15 +118,21 @@ function, branch, or guard you traverse. Use Read or Grep to verify
 each step — do not assume behavior from names alone. If the path is
 already guarded or tested, discard the candidate.
 
+**Verify.** Before writing the test, use the Read tool to confirm
+that every file and function referenced in the Premise and Trace
+actually exists in the codebase. If a file was deleted, renamed, or
+a function signature changed, the edge case may no longer apply.
+Discard candidates where the verify step reveals stale references.
+
 **Conclude.** State whether the gap is confirmed — the path is
 reachable with the stated input and no existing test covers it.
 Only write a test for confirmed gaps. Discard speculative edge
-cases that the trace refutes.
+cases that the trace or verify step refutes.
 
 ## Rules
 
 - Only use the Write tool to write to `<temp_test_file>` — no other path
-- Only use Bash for `bin/test`, `rm`, `git log`, `git show`, and `git diff`
+- Only use Bash for `<test_command>`, `rm`, `git log`, `git show`, and `git diff`
 - Never use `cd <path> && git` — use `git -C <path>` if needed
 - Never use piped commands (|) — use separate Bash calls
 - Never use cat, head, tail, grep, rg, find, or ls via Bash

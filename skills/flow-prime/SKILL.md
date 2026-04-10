@@ -281,7 +281,6 @@ All permissions (universal + all framework sets) for reference:
       "Bash(gh -C *)",
       "Bash(*bin/flow *)",
       "Bash(rm .flow-*)",
-      "Bash(rm tests/test_adversarial_*)",
       "Bash(test -f *)",
       "Bash(claude plugin list)",
       "Bash(claude plugin marketplace add *)",

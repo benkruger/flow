@@ -2853,6 +2853,65 @@ fn code_review_no_plugin_config_axis() {
     );
 }
 
+// --- Adversarial framework-awareness (PR #998) ---
+
+#[test]
+fn code_review_no_hardcoded_python_adversarial_path() {
+    // Tombstone: hardcoded Python test path removed in PR #998. Must not return.
+    let c = common::read_skill("flow-code-review");
+    assert!(
+        !c.contains("test_adversarial_"),
+        "SKILL.md must not contain hardcoded test_adversarial_ Python path"
+    );
+}
+
+#[test]
+fn adversarial_agent_no_pytest_reference() {
+    // Tombstone: pytest reference removed in PR #998. Must not return.
+    let c = common::read_agent("adversarial.md");
+    assert!(
+        !c.contains("pytest"),
+        "adversarial.md must not contain literal pytest reference"
+    );
+}
+
+#[test]
+fn adversarial_agent_no_hardcoded_bin_test() {
+    // Tombstone: hardcoded bin/test runner removed in PR #998. Must not return.
+    let c = common::read_agent("adversarial.md");
+    assert!(
+        !c.contains("bin/test"),
+        "adversarial.md must not contain hardcoded bin/test runner"
+    );
+}
+
+#[test]
+fn adversarial_agent_has_verify_step() {
+    let c = common::read_agent("adversarial.md");
+    assert!(
+        c.contains("**Verify."),
+        "adversarial.md Reasoning Discipline must contain a Verify step"
+    );
+}
+
+#[test]
+fn code_review_step_2_references_framework() {
+    let c = common::read_skill("flow-code-review");
+    assert!(
+        c.contains("framework"),
+        "SKILL.md Step 2 must reference framework for adversarial setup"
+    );
+}
+
+#[test]
+fn adversarial_agent_uses_test_command_placeholder() {
+    let c = common::read_agent("adversarial.md");
+    assert!(
+        c.contains("<test_command>"),
+        "adversarial.md must reference <test_command> parameterized runner"
+    );
+}
+
 // --- Tombstone audit fixture contamination prevention ---
 
 /// `scan_test_files()` reads ALL `tests/*.rs` files and runs `extract_pr_numbers()`
