@@ -113,6 +113,78 @@ fn extract_plan_ends_at_first_h2() {
 }
 
 #[test]
+fn extract_plan_rejects_heading_suffix() {
+    // "## Implementation Planning" should NOT match — it's a different heading
+    let body = "## Implementation Planning\n\n### Context\n\nStuff.\n";
+    assert!(extract_implementation_plan(body).is_none());
+}
+
+#[test]
+fn extract_plan_rejects_heading_extra_words() {
+    // "## Implementation Plan Details" should NOT match
+    let body = "## Problem\n\nFoo.\n\n## Implementation Plan Details\n\n### Context\n\nStuff.\n";
+    assert!(extract_implementation_plan(body).is_none());
+}
+
+#[test]
+fn extract_plan_rejects_mid_line_heading() {
+    // "## Implementation Plan" not at line start should NOT match
+    let body = "some text ## Implementation Plan\n\n### Context\n\nStuff.\n";
+    assert!(extract_implementation_plan(body).is_none());
+}
+
+#[test]
+fn extract_plan_matches_at_start_of_body() {
+    // Body starting with the heading should match
+    let body = "## Implementation Plan\n\n### Context\n\nStuff.\n";
+    let result = extract_implementation_plan(body).unwrap();
+    assert!(result.contains("### Context"));
+}
+
+#[test]
+fn extract_plan_matches_after_other_sections() {
+    // Heading preceded by \n (after other content) should match
+    let body = "## Problem\n\nFoo.\n\n## Implementation Plan\n\n### Context\n\nContent.\n";
+    let result = extract_implementation_plan(body).unwrap();
+    assert!(result.contains("### Context"));
+    assert!(result.contains("Content."));
+}
+
+#[test]
+fn extract_plan_matches_windows_line_endings() {
+    // Heading followed by \r\n should match
+    let body =
+        "## Problem\r\n\r\nFoo.\r\n\r\n## Implementation Plan\r\n\r\n### Context\r\n\r\nStuff.\r\n";
+    let result = extract_implementation_plan(body).unwrap();
+    assert!(result.contains("### Context"));
+}
+
+#[test]
+fn extract_plan_tolerates_trailing_space() {
+    // Heading with trailing spaces should still match
+    let body = "## Problem\n\nFoo.\n\n## Implementation Plan  \n\n### Context\n\nContent.\n";
+    let result = extract_implementation_plan(body).unwrap();
+    assert!(result.contains("### Context"));
+}
+
+#[test]
+fn extract_plan_tolerates_trailing_tab() {
+    // Heading with trailing tab should still match
+    let body = "## Implementation Plan\t\n\n### Context\n\nStuff.\n";
+    let result = extract_implementation_plan(body).unwrap();
+    assert!(result.contains("### Context"));
+}
+
+#[test]
+fn extract_plan_skips_suffix_finds_exact() {
+    // First heading has suffix (rejected), second is exact (accepted)
+    let body = "## Implementation Planning\n\nIgnore.\n\n## Implementation Plan\n\nReal content.\n";
+    let result = extract_implementation_plan(body).unwrap();
+    assert!(result.contains("Real content."));
+    assert!(!result.contains("Ignore."));
+}
+
+#[test]
 fn promote_headings_five_hashes_unchanged() {
     // ##### should not be promoted (only ### and #### are)
     let content = "##### Five hashes\n### Three hashes\n";
