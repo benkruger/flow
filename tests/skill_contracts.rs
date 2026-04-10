@@ -2836,6 +2836,15 @@ fn code_review_mentions_tombstone_audit() {
     );
 }
 
+#[test]
+fn code_review_collects_substantive_diff() {
+    let c = common::read_skill("flow-code-review");
+    assert!(
+        c.contains("git diff origin/main...HEAD -w"),
+        "Code Review Step 1 must collect a substantive diff (git diff -w) for context-sparse agents"
+    );
+}
+
 // --- Worktree path validation ---
 
 #[test]
