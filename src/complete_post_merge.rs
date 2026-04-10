@@ -221,7 +221,9 @@ pub fn post_merge_inner(
         }
     }
 
-    // Render PR body
+    // Render PR body — pass state_file explicitly because render-pr-body's
+    // auto-detection uses current_branch(), which returns "main" when the
+    // Complete skill runs from the project root after merge.
     let pr_str = pr_number.to_string();
     let render_args = [
         bin_flow,
