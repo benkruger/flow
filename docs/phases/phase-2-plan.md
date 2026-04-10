@@ -23,7 +23,7 @@ single process call.
 the "decomposed" label and an `## Implementation Plan` section,
 `plan-extract` completes the entire phase in one call: extracts the
 plan, promotes headings, writes DAG and plan files, updates state,
-renders the PR body, and completes the phase. Steps 2–6 below are
+renders the PR body, and completes the phase. Steps 2–8 below are
 skipped.
 
 **Standard path** — when the fast path does not apply:
@@ -33,11 +33,15 @@ skipped.
    (nodes, dependencies, topological ordering)
 3. The DAG output is stored to `.flow-states/<branch>-dag.md`
 4. Claude explores the codebase to validate the DAG against reality
-5. Claude verifies script behavior assertions from issue bodies by
+5. For pre-produced DAGs, Claude verifies that files referenced in the
+   DAG still match the DAG's assumptions at their current worktree state
+6. Claude verifies script behavior assertions from issue bodies by
    reading the relevant source code
-6. Claude writes the plan file with a Dependency Graph section and
+7. Claude enforces that risks marked "Must verify" or "Must confirm"
+   have corresponding verification tasks in the plan
+8. Claude writes the plan file with a Dependency Graph section and
    ordered tasks derived from the DAG
-7. The plan file path is stored in the state file and the phase completes
+9. The plan file path is stored in the state file and the phase completes
 
 DAG decomposition is configurable via `skills.flow-plan.dag` in
 `.flow.json` — set to `"never"` to skip it.

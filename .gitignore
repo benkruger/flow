@@ -4,6 +4,7 @@ target/
 # Python / test artifacts
 __pycache__/
 tests/test_adversarial_*.py
+tests/adversarial_*.rs
 .venv
 .venv/
 .pytest_cache/
