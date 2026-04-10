@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use clap::Parser;
 use serde_json::{json, Map, Value};
 
+use crate::commands::log::append_log;
 use crate::git::project_root;
 use crate::lock::mutate_state;
 use crate::utils::bin_flow_path;
@@ -130,6 +131,15 @@ pub fn post_merge_inner(
 ) -> Value {
     let state_path = Path::new(state_file);
 
+    // Best-effort logging — only log when .flow-states/ already exists.
+    // append_log creates the directory if missing, which would break test
+    // fixtures that deliberately omit it.
+    let log = |msg: &str| {
+        if root.join(".flow-states").is_dir() {
+            let _ = append_log(root, branch, msg);
+        }
+    };
+
     // Initialize result with default fields (preserve_order maintains this order)
     let mut result: Map<String, Value> = Map::new();
     result.insert("status".to_string(), json!("ok"));
@@ -195,6 +205,7 @@ pub fn post_merge_inner(
     ];
     match runner(&pt_args, NETWORK_TIMEOUT) {
         Err(e) => {
+            log("[Phase 6] complete-post-merge — phase-transition (error)");
             failures.insert("phase_transition".to_string(), json!(e));
         }
         Ok((_code, stdout, stderr)) => {
@@ -211,10 +222,12 @@ pub fn post_merge_inner(
                         .unwrap_or(0);
                     result.insert("formatted_time".to_string(), json!(formatted_time));
                     result.insert("cumulative_seconds".to_string(), json!(cumulative_seconds));
+                    log("[Phase 6] complete-post-merge — phase-transition (ok)");
                 }
                 _ => {
                     // Python: pt_err or pt_result.stderr.strip()
                     let msg = parse_err.unwrap_or_else(|| stderr.trim().to_string());
+                    log("[Phase 6] complete-post-merge — phase-transition (failed)");
                     failures.insert("phase_transition".to_string(), json!(msg));
                 }
             }
@@ -235,11 +248,15 @@ pub fn post_merge_inner(
     ];
     match runner(&render_args, NETWORK_TIMEOUT) {
         Err(e) => {
+            log("[Phase 6] complete-post-merge — render-pr-body (error)");
             failures.insert("render_pr_body".to_string(), json!(e));
         }
         Ok((code, _, stderr)) => {
             if code != 0 {
+                log("[Phase 6] complete-post-merge — render-pr-body (failed)");
                 failures.insert("render_pr_body".to_string(), json!(stderr.trim()));
+            } else {
+                log("[Phase 6] complete-post-merge — render-pr-body (ok)");
             }
         }
     }
@@ -284,6 +301,10 @@ pub fn post_merge_inner(
         }
     }
     result.insert("closed_issues".to_string(), json!(closed_issues.clone()));
+    log(&format!(
+        "[Phase 6] complete-post-merge — close-issues ({} closed)",
+        closed_issues.len(),
+    ));
 
     // Write closed-issues file if non-empty
     if !closed_issues.is_empty() {
@@ -456,7 +477,12 @@ pub fn post_merge_inner(
         }
     }
 
+    let failure_count = failures.len();
     result.insert("failures".to_string(), Value::Object(failures));
+    log(&format!(
+        "[Phase 6] complete-post-merge — done ({} failures)",
+        failure_count,
+    ));
     Value::Object(result)
 }
 

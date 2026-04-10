@@ -17,6 +17,7 @@ use indexmap::IndexMap;
 use serde_json::{json, Value};
 
 use crate::cleanup;
+use crate::commands::log::append_log;
 use crate::complete_post_merge;
 use crate::git::project_root;
 
@@ -141,9 +142,25 @@ pub fn finalize_inner(
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
 
+    let _ = append_log(
+        &root,
+        &args.branch,
+        "[Phase 6] complete-finalize — starting",
+    );
+
     let result = finalize_inner(
         &|| complete_post_merge::post_merge(args.pr, &args.state_file, &args.branch),
         &|| cleanup::cleanup(&root, &args.branch, &args.worktree, None, args.pull),
+    );
+
+    let status = result
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let _ = append_log(
+        &root,
+        &args.branch,
+        &format!("[Phase 6] complete-finalize — done (\"{}\")", status),
     );
 
     Ok(result)
