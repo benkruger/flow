@@ -169,7 +169,7 @@ Key test files: `tests/structural.rs` (config invariants, version consistency), 
 ## Conventions
 
 - **Never invoke `/flow-release` unless the user explicitly runs it** — fixing a bug does not authorize a release. Committing a fix and releasing it are separate decisions. The user decides when to ship.
-- All commits via `/flow:flow-commit` skill — no exceptions, no shortcuts, no "just this once"
+- All commits via `/flow:flow-commit` skill — no exceptions, no shortcuts, no "just this once". Infrastructure commits during `start-gate` (e.g., `commit_deps` for dependency lock files) are the sole carve-out: they commit directly via Rust under the start lock, before any worktree exists.
 - All changes require `bin/flow ci` green before committing — tests are the gate
 - New skills are automatically covered by `tests/skill_contracts.rs` (glob-based discovery)
 - Namespace is `flow:` — plugin.json name is `"flow"`

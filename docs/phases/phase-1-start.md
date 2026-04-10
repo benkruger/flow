@@ -23,7 +23,7 @@ Acquires a queue-based lock, runs version gate and upgrade check, creates the ea
 
 ### 2. CI and dependency gate (`start-gate`)
 
-Pulls latest main, runs `bin/flow ci` baseline with retry (up to 3 attempts), updates dependencies via `bin/dependencies`, and runs post-deps CI with retry if deps changed. Files Flaky Test issues for intermittent failures. Falls back to the ci-fixer sub-agent for consistent dep-induced breakage.
+Pulls latest main, runs `bin/flow ci` baseline with retry (up to 3 attempts), updates dependencies via `bin/dependencies`, and runs post-deps CI with retry if deps changed. When dependencies change and CI passes, commits and pushes the updated lock file to main before proceeding. Files Flaky Test issues for intermittent failures. Falls back to the ci-fixer sub-agent for consistent dep-induced breakage.
 
 ### 3. Create workspace (`start-workspace`)
 

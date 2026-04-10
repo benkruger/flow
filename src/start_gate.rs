@@ -212,6 +212,21 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }));
     }
 
+    // Commit dependency changes to main while holding the start lock
+    if let Err(e) = commit_deps(&cwd) {
+        let _ = append_log(
+            &root,
+            branch,
+            &format!("[Phase 1] start-gate — commit deps (error: {})", e),
+        );
+        return Ok(json!({
+            "status": "error",
+            "message": format!("Failed to commit dependency update: {}", e),
+            "step": "commit_deps",
+        }));
+    }
+    let _ = append_log(&root, branch, "[Phase 1] start-gate — commit deps (ok)");
+
     // Build response
     let mut response = json!({
         "status": "clean",
@@ -226,6 +241,56 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
 
     Ok(response)
+}
+
+/// Commit dependency changes to main and push.
+///
+/// Runs `git add -A` → `git commit` → `git push origin main`.
+/// Called after deps changed and post-deps CI passed. Must only be
+/// called while the start lock is held — this serializes all
+/// main-branch mutations per the concurrency model. Returns `Err`
+/// if any git command fails (including "nothing to commit").
+fn commit_deps(cwd: &Path) -> Result<(), String> {
+    // Stage all changes left by bin/dependencies
+    let add = std::process::Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(cwd)
+        .output()
+        .map_err(|e| format!("git add: {}", e))?;
+    if !add.status.success() {
+        return Err(format!(
+            "git add: {}",
+            String::from_utf8_lossy(&add.stderr).trim()
+        ));
+    }
+
+    // Commit
+    let commit = std::process::Command::new("git")
+        .args(["commit", "-m", "Update dependencies"])
+        .current_dir(cwd)
+        .output()
+        .map_err(|e| format!("git commit: {}", e))?;
+    if !commit.status.success() {
+        return Err(format!(
+            "git commit: {}",
+            String::from_utf8_lossy(&commit.stderr).trim()
+        ));
+    }
+
+    // Push to remote
+    let push = std::process::Command::new("git")
+        .args(["push", "origin", "main"])
+        .current_dir(cwd)
+        .output()
+        .map_err(|e| format!("git push: {}", e))?;
+    if !push.status.success() {
+        return Err(format!(
+            "git push: {}",
+            String::from_utf8_lossy(&push.stderr).trim()
+        ));
+    }
+
+    Ok(())
 }
 
 /// Run `git pull origin main` with a timeout.
@@ -250,7 +315,6 @@ fn git_pull(cwd: &Path) -> Result<(), String> {
     }
 }
 
-/// Resolve the path to bin/ci in the current working directory.
 /// CLI entry point.
 pub fn run(args: Args) {
     match run_impl(&args) {
@@ -261,5 +325,111 @@ pub fn run(args: Args) {
             json_error(&e, &[]);
             process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::process::Command;
+
+    /// Create a git repo with a bare remote and push initial commit.
+    fn create_repo_with_remote(parent: &Path) -> (PathBuf, PathBuf) {
+        let bare = parent.join("bare.git");
+        let repo = parent.join("repo");
+
+        Command::new("git")
+            .args(["init", "--bare", "-b", "main", &bare.to_string_lossy()])
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["clone", &bare.to_string_lossy(), &repo.to_string_lossy()])
+            .output()
+            .unwrap();
+
+        for (key, val) in [
+            ("user.email", "test@test.com"),
+            ("user.name", "Test"),
+            ("commit.gpgsign", "false"),
+        ] {
+            Command::new("git")
+                .args(["config", key, val])
+                .current_dir(&repo)
+                .output()
+                .unwrap();
+        }
+
+        Command::new("git")
+            .args(["commit", "--allow-empty", "-m", "init"])
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["push", "-u", "origin", "main"])
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+
+        (repo, bare)
+    }
+
+    #[test]
+    fn commit_deps_commits_and_pushes() {
+        let dir = tempfile::tempdir().unwrap();
+        let (repo, bare) = create_repo_with_remote(dir.path());
+
+        // Simulate a dep update leaving a dirty file
+        fs::write(repo.join("Cargo.lock"), "updated-lock-content").unwrap();
+
+        // Commit the dep changes
+        commit_deps(&repo).expect("commit_deps should succeed");
+
+        // Verify: file is committed on main
+        let log_output = Command::new("git")
+            .args(["log", "--oneline", "-1", "--format=%s"])
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+        let msg = String::from_utf8_lossy(&log_output.stdout)
+            .trim()
+            .to_string();
+        assert_eq!(msg, "Update dependencies");
+
+        // Verify: Cargo.lock is tracked
+        let show_output = Command::new("git")
+            .args(["show", "HEAD:Cargo.lock"])
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+        assert!(show_output.status.success());
+        let content = String::from_utf8_lossy(&show_output.stdout);
+        assert_eq!(content.trim(), "updated-lock-content");
+
+        // Verify: pushed to remote
+        let remote_log = Command::new("git")
+            .args(["log", "--oneline", "-1", "--format=%s"])
+            .current_dir(&bare)
+            .output()
+            .unwrap();
+        let remote_msg = String::from_utf8_lossy(&remote_log.stdout)
+            .trim()
+            .to_string();
+        assert_eq!(remote_msg, "Update dependencies");
+    }
+
+    #[test]
+    fn commit_deps_error_on_nothing_to_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let (repo, _bare) = create_repo_with_remote(dir.path());
+
+        // No changes — commit should fail
+        let result = commit_deps(&repo);
+        assert!(
+            result.is_err(),
+            "commit_deps should fail with nothing to commit"
+        );
     }
 }
