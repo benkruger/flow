@@ -1,4 +1,4 @@
-//! Port of lib/finalize-commit.py — commit, cleanup, pull, push.
+//! Commit, cleanup, pull, push.
 //!
 //! Enforces CI before committing: calls [`ci::run_impl`] as the first step
 //! in [`run_impl`]. If CI fails, returns an error and commits nothing.

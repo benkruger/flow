@@ -1,4 +1,4 @@
-//! Port of lib/close-issues.py — close GitHub issues referenced in the FLOW start prompt.
+//! Close GitHub issues referenced in the FLOW start prompt.
 //!
 //! Reads the state file, extracts #N patterns from the prompt field,
 //! and closes each issue via gh CLI after the PR is merged.

@@ -1,6 +1,6 @@
 //! Generate morning report from orchestration state.
 //!
-//! Ported from `lib/orchestrate-report.py`. Reads `.flow-states/orchestrate.json`
+//! Reads `.flow-states/orchestrate.json`
 //! and produces a markdown summary with results table, completed/failed sections,
 //! and timing information. Writes `orchestrate-summary.md` to the output directory.
 

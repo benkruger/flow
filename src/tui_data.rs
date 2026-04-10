@@ -2,9 +2,6 @@
 //!
 //! Reads state files, computes display structs (flow summaries, phase timelines,
 //! log entries). No curses dependency — fully testable with make_state() fixture.
-//!
-//! Ported from lib/tui_data.py. Consumed by lib/tui.py via the `bin/flow tui-data`
-//! CLI subcommand bridge.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -792,7 +789,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    // --- Test helper: make_state (mirrors Python conftest.make_state) ---
+    // --- Test helper: make_state ---
 
     fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
         let mut phases = serde_json::Map::new();

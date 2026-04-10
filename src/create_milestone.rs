@@ -1,4 +1,4 @@
-//! Port of lib/create-milestone.py — create a GitHub milestone via gh API.
+//! Create a GitHub milestone via gh API.
 //!
 //! Usage:
 //!   bin/flow create-milestone --repo <owner/repo> --title <title> --due-date <YYYY-MM-DD>

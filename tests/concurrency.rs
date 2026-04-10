@@ -1,4 +1,4 @@
-// Rust port of tests/test_concurrency.py — concurrent access to FLOW's shared resources.
+// Concurrent access to FLOW's shared resources.
 //
 // All tests use std::thread for real thread-based parallelism.
 // Each test creates an isolated tempdir to avoid cross-test interference.

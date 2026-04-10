@@ -1,4 +1,4 @@
-//! Port of lib/check-freshness.py — pre-merge freshness check.
+//! Pre-merge freshness check.
 //!
 //! Fetches origin/main, verifies the branch is up-to-date via
 //! `git merge-base --is-ancestor`, and merges if behind. Detects merge
@@ -30,8 +30,8 @@ pub struct Args {
     pub raw_args: Vec<String>,
 }
 
-/// Result of a single git subprocess call. Mirrors Python
-/// `subprocess.CompletedProcess` + `TimeoutExpired` distinction.
+/// Result of a single git subprocess call — either completed (with exit
+/// code and captured output) or timed out.
 #[derive(Debug, Clone)]
 pub enum CmdResult {
     Ok {
@@ -155,7 +155,7 @@ pub fn check_freshness_impl(
 fn read_retries(state_path: &Path) -> i64 {
     let cell = std::cell::Cell::new(0i64);
     let _ = mutate_state(state_path, |state| {
-        // State Mutation Object Guard — see .claude/rules/rust-port-parity.md
+        // State Mutation Object Guard — prevents panic on non-object values
         if !(state.is_object() || state.is_null()) {
             return;
         }
@@ -182,7 +182,7 @@ fn increment_retries(state_path: &Path) -> i64 {
 
 /// Counter type tolerance — state files in the wild may store
 /// `freshness_retries` as int, float, or string (older versions or hand
-/// edits). Per rust-port-parity counter-field-type-tolerance rule.
+/// edits). Accepts all three representations for backwards compatibility.
 fn read_retries_value(state: &Value) -> i64 {
     state
         .get("freshness_retries")
@@ -196,8 +196,8 @@ fn read_retries_value(state: &Value) -> i64 {
 
 /// Real git subprocess runner with polling-based timeout and thread-drain.
 ///
-/// Uses the thread-drain pattern from `.claude/rules/rust-port-parity.md`
-/// Subprocess Timeout Parity: take stdout/stderr handles before the poll
+/// Uses the thread-drain pattern to prevent pipe buffer deadlock: take
+/// stdout/stderr handles before the poll
 /// loop, drain them in spawned reader threads, poll `try_wait()` for exit
 /// status, then join the readers. Compliant reference: see
 /// `src/analyze_issues.rs` lines 472-518.
@@ -670,9 +670,8 @@ mod tests {
     }
 
     // Counter type tolerance tests: the fallback chain in `read_retries_value`
-    // exists per `.claude/rules/rust-port-parity.md` Counter Field Type
-    // Tolerance. State files can outlive the code that writes them, so
-    // freshness_retries may arrive as int, float, or string.
+    // accepts int, float, and string representations because state files can
+    // outlive the code that writes them.
 
     #[test]
     fn test_retry_value_as_float() {

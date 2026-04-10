@@ -544,7 +544,7 @@ fn flow_in_progress_label_blocks_start() {
     // must exit with status=error, step=flow_in_progress_label, and NOT
     // create a state file. The error message must name the issue number, name
     // the label, and direct the user to resume the existing flow in its
-    // worktree (/flow:flow-continue was removed in PR #868). Issue #887.
+    // worktree. Issue #887.
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
 

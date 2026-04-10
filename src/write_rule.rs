@@ -1,4 +1,4 @@
-//! Port of lib/write-rule.py — write content to a target file path.
+//! Write content to a target file path.
 //!
 //! Usage:
 //!   bin/flow write-rule --path <target> --content-file <temp>

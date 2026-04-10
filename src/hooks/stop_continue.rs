@@ -294,8 +294,8 @@ Wait for the user — they are not done talking.";
 ///
 /// **Superseded in `run()` by `check_first_stop()`** which handles both
 /// discussion mode and pending continuations in a single function.
-/// This function is no longer called from the production `run()` path
-/// but is retained as a standalone building block with its own test suite.
+/// Not called from the production `run()` path — retained as a
+/// standalone building block with its own test suite.
 ///
 /// On the first Stop event where `_stop_instructed` is not already set
 /// (bool `true`), sets the flag and returns a blocking `ContinueResult`
@@ -492,9 +492,8 @@ pub fn check_first_stop(hook_input: &Value, state_path: &Path) -> ContinueResult
 ///
 /// Returns `{"decision": "block", "reason": "..."}` where `reason`
 /// embeds the skill name and, when context is non-empty, the
-/// parent phase's next-step instructions. Matches the Python
-/// `stop-continue.py` main() output exactly so Claude Code's
-/// stop-hook protocol stays backward compatible.
+/// parent phase's next-step instructions. The output format is
+/// part of Claude Code's stop-hook protocol contract.
 pub fn format_block_output(skill: &str, context: Option<&str>) -> Value {
     let reason = match context {
         Some(ctx) if !ctx.is_empty() => format!(
@@ -981,11 +980,10 @@ mod tests {
     }
 
     // --- check_continue log file writes ---
-    // Closes the coverage gap flagged by the reviewer agent: the
-    // `check_continue` log_diag calls were previously passing
-    // (None, None) and silently dropping the log file write. These
-    // tests use the canonical `.flow-states/<branch>.json` layout
-    // so `derive_root_branch` can recover the log path.
+    // Verify that `check_continue` log_diag calls write to the log
+    // file when root and branch are derivable. These tests use the
+    // canonical `.flow-states/<branch>.json` layout so
+    // `derive_root_branch` can recover the log path.
 
     #[test]
     fn test_check_continue_block_writes_log_file() {

@@ -1,4 +1,4 @@
-//! Port of lib/extract-release-notes.py — extract release notes for a version.
+//! Extract release notes for a version.
 //!
 //! Reads RELEASE-NOTES.md, finds the section matching the given version,
 //! and writes it to `tmp/release-notes-<version>.md`.

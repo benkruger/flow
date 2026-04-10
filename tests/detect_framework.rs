@@ -1,10 +1,9 @@
 //! Integration tests for `flow-rs detect-framework`.
 //!
-//! Mirrors tests/test_detect_framework.py (183 lines, 17 test cases).
 //! Uses tempfile fixtures + CLAUDE_PLUGIN_ROOT=CARGO_MANIFEST_DIR to
-//! point the Rust binary at the real frameworks/ directory. Every
-//! subprocess call uses Command::output() per rust-port-parity.md
-//! Test-Module Subprocess Stdio rule.
+//! point the Rust binary at the real frameworks/ directory. All
+//! subprocess calls use Command::output() to avoid leaking child
+//! output to the test harness.
 
 use std::fs;
 use std::path::{Path, PathBuf};

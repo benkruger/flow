@@ -1,6 +1,5 @@
 //! Structural invariant tests for FLOW plugin configuration files.
 //!
-//! Ports tests/test_structural.py to Rust integration tests.
 //! These tests verify config consistency, hook registration, framework
 //! definitions, agent frontmatter, version parity, and tombstone guards.
 
@@ -172,8 +171,6 @@ fn test_every_skill_dir_starts_with_flow_prefix() {
         );
     }
 }
-
-// --- flow_utils.py parity tests removed in PR #953 (Python artifacts removed) ---
 
 // --- Hook invariants ---
 
@@ -452,8 +449,6 @@ fn test_hooks_json_has_stop_failure_hook() {
     );
 }
 
-// --- conftest parity tests removed in PR #953 (Python artifacts removed) ---
-
 // --- Script test file coverage ---
 
 #[test]
@@ -527,8 +522,6 @@ fn test_every_script_has_a_test_file() {
         missing.join(", ")
     );
 }
-
-// --- Requirements and pytest config tests removed in PR #953 (Python artifacts removed) ---
 
 // --- CLAUDE.md invariants ---
 
