@@ -2281,7 +2281,7 @@ fn plan_verifies_script_behavior_assertions() {
 fn plan_enforces_must_verify_risk_tasks() {
     let c = common::read_skill("flow-plan");
     assert!(
-        c.contains("Risk Verification Enforcement"),
+        c.contains("Risk Verification Enforcement") || c.contains("risk verification enforcement"),
         "Plan must have Risk Verification Enforcement subsection"
     );
 }

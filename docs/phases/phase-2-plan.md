@@ -23,7 +23,7 @@ single process call.
 the "decomposed" label and an `## Implementation Plan` section,
 `plan-extract` completes the entire phase in one call: extracts the
 plan, promotes headings, writes DAG and plan files, updates state,
-renders the PR body, and completes the phase. Steps 2–6 below are
+renders the PR body, and completes the phase. Steps 2–7 below are
 skipped.
 
 **Standard path** — when the fast path does not apply:
