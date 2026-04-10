@@ -32,25 +32,27 @@ Every finding must map to one of these tenants:
 
 ### Step 1 — Gather
 
-Collect all artifacts: branch diff, plan file, CLAUDE.md, `.claude/rules/`
-files, and check whether `bin/flow test` exists for adversarial testing.
+Collect all artifacts: full branch diff, substantive diff (whitespace
+changes filtered via `git diff -w`), plan file, CLAUDE.md,
+`.claude/rules/` files, and check whether `bin/flow test` exists for
+adversarial testing.
 
 ### Step 2 — Launch
 
 Launch four agents in parallel using multiple Agent tool calls in a
 single response:
 
-- **Reviewer** (context-rich): receives diff, plan, CLAUDE.md, rules.
-  Covers architecture (T1), simplicity (T2), and correctness including
-  security (T4).
-- **Pre-mortem** (context-sparse): receives only the diff, investigates
-  the codebase independently. Covers correctness failure modes including
-  security (T4).
-- **Adversarial** (context-sparse): receives the diff and writes tests
-  designed to fail. Covers test coverage (T5). Only launched if
-  `bin/flow test` exists.
-- **Documentation** (context-sparse): receives the diff and doc paths,
-  investigates the codebase. Covers maintainability (T3) and
+- **Reviewer** (context-rich): receives full diff, plan, CLAUDE.md,
+  rules. Covers architecture (T1), simplicity (T2), and correctness
+  including security (T4).
+- **Pre-mortem** (context-sparse): receives only the substantive diff,
+  investigates the codebase independently. Covers correctness failure
+  modes including security (T4).
+- **Adversarial** (context-sparse): receives the substantive diff and
+  writes tests designed to fail. Covers test coverage (T5). Only
+  launched if `bin/flow test` exists.
+- **Documentation** (context-sparse): receives the substantive diff and
+  doc paths, investigates the codebase. Covers maintainability (T3) and
   documentation accuracy (T6).
 
 ### Step 3 — Triage

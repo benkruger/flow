@@ -18,8 +18,10 @@ it. Only failures matter.
 
 ## Input
 
-The full diff (`git diff origin/main...HEAD`) is provided in your prompt.
-The branch name and project CLAUDE.md path are also provided. Use the
+The substantive diff (`git diff origin/main...HEAD -w`) is provided in
+your prompt — whitespace-only changes are filtered out so your turn
+budget is spent on behavioral analysis, not formatting noise. The branch
+name and project CLAUDE.md path are also provided. Use the
 Read tool to read the CLAUDE.md for test conventions and patterns. Use
 Read, Glob, and Grep to investigate the codebase.
 

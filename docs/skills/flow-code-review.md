@@ -32,15 +32,17 @@ from agents — the parent session never reviews the diff itself.
 
 ### Step 1 — Gather
 
-Collect all artifacts: branch diff, plan file, CLAUDE.md, rules files,
+Collect all artifacts: full branch diff, substantive diff (whitespace
+changes filtered via `git diff -w`), plan file, CLAUDE.md, rules files,
 check for `bin/test`, run `tombstone-audit` to identify stale tombstones
 for removal in Step 4. No analysis.
 
 ### Step 2 — Launch
 
-Launch four agents in parallel. Reviewer is context-rich (receives diff,
-plan, CLAUDE.md, rules). Pre-mortem, adversarial, and documentation are
-context-sparse (receive diff only, investigate independently).
+Launch four agents in parallel. Reviewer is context-rich (receives full
+diff, plan, CLAUDE.md, rules). Pre-mortem, adversarial, and documentation
+are context-sparse (receive substantive diff only, investigate
+independently).
 
 ### Step 3 — Triage
 

@@ -17,13 +17,15 @@ intended, or what trade-offs were considered. You see only the code.
 
 ## Input
 
-The full diff (`git diff origin/main...HEAD`) is provided in your prompt.
-Use it as your primary evidence. Use Read, Glob, and Grep tools to
-investigate the surrounding codebase for context.
+The substantive diff (`git diff origin/main...HEAD -w`) is provided in
+your prompt — whitespace-only changes are filtered out so your turn
+budget is spent on behavioral analysis, not formatting noise. Use it as
+your primary evidence. Use Read, Glob, and Grep tools to investigate the
+surrounding codebase for context.
 
 ## Design Note
 
-This agent intentionally receives only the diff — not the plan,
+This agent intentionally receives only the substantive diff — not the plan,
 CLAUDE.md, or project rules. The reviewer agent receives those
 inline because it checks against known standards (conventions,
 plan alignment, rule compliance). The pre-mortem agent must
