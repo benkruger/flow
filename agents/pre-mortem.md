@@ -25,7 +25,7 @@ surrounding codebase for context.
 
 ## Design Note
 
-This agent intentionally receives only the diff — not the plan,
+This agent intentionally receives only the substantive diff — not the plan,
 CLAUDE.md, or project rules. The reviewer agent receives those
 inline because it checks against known standards (conventions,
 plan alignment, rule compliance). The pre-mortem agent must

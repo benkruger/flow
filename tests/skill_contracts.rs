@@ -2845,6 +2845,18 @@ fn code_review_collects_substantive_diff() {
     );
 }
 
+#[test]
+fn code_review_routes_substantive_diff_to_context_sparse_agents() {
+    let c = common::read_skill("flow-code-review");
+    for agent in &["Pre-mortem", "Adversarial", "Documentation"] {
+        assert!(
+            c.contains("substantive diff output"),
+            "Code Review Step 2 must route substantive diff to {} agent",
+            agent
+        );
+    }
+}
+
 // --- Worktree path validation ---
 
 #[test]

@@ -19,9 +19,9 @@ assumptions feel like facts and go unexamined.
 Not all sub-agents receive the same artifacts. The amount of
 context is a design choice matched to the agent's task:
 
-- **Context-rich** (reviewer, learn-analyst) — receives diff, plan,
-  CLAUDE.md, and rules inline. Its task is checking against known
-  standards where having the standards at hand saves turns.
+- **Context-rich** (reviewer, learn-analyst) — receives full diff,
+  plan, CLAUDE.md, and rules inline. Its task is checking against
+  known standards where having the standards at hand saves turns.
   Learn-analyst additionally receives state file data (visit counts,
   timings, session notes) to detect process friction and rule
   violations.
@@ -62,9 +62,9 @@ history by design, not by instruction.
 
 The learn-analyst agent (`agents/learn-analyst.md`) demonstrates
 the context-rich pattern: it runs in the foreground during Learn,
-receives the diff, state data, plan, and all project rules, and
-returns structured compliance findings to the parent session. Its
-prompt explicitly states it has no knowledge of the conversation
+receives the full diff, state data, plan, and all project rules,
+and returns structured compliance findings to the parent session.
+Its prompt explicitly states it has no knowledge of the conversation
 that produced the changes.
 
 The documentation agent (`agents/documentation.md`) demonstrates the
