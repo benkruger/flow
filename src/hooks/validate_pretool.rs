@@ -212,16 +212,21 @@ pub fn validate_agent(subagent_type: Option<&str>, flow_active: bool) -> (bool, 
     if !flow_active {
         return (true, String::new());
     }
-    match subagent_type {
-        None | Some("general-purpose") => (
+    let normalized = subagent_type.map(|s| s.trim().to_ascii_lowercase());
+    let is_general_purpose = match normalized.as_deref() {
+        None | Some("") | Some("general-purpose") => true,
+        Some(_) => false,
+    };
+    if is_general_purpose {
+        return (
             false,
             "BLOCKED: general-purpose sub-agents are not allowed during FLOW phases. \
              Use a custom plugin sub-agent (flow:ci-fixer, flow:reviewer, etc.) or \
              a specialized agent type (Explore, Plan) instead."
                 .to_string(),
-        ),
-        Some(_) => (true, String::new()),
+        );
     }
+    (true, String::new())
 }
 
 /// Check whether a command invokes bin/flow (any subcommand) or bin/ci.
@@ -992,6 +997,7 @@ mod tests {
         let (allowed, msg) = validate_agent(None, true);
         assert!(!allowed);
         assert!(msg.contains("general-purpose"));
+        assert!(msg.contains("BLOCKED"));
     }
 
     #[test]
@@ -1027,5 +1033,26 @@ mod tests {
         let (allowed, msg) = validate_agent(None, false);
         assert!(allowed);
         assert!(msg.is_empty());
+    }
+
+    #[test]
+    fn test_validate_agent_blocks_case_variants_when_flow_active() {
+        let (allowed, _) = validate_agent(Some("General-Purpose"), true);
+        assert!(!allowed);
+        let (allowed, _) = validate_agent(Some("GENERAL-PURPOSE"), true);
+        assert!(!allowed);
+    }
+
+    #[test]
+    fn test_validate_agent_blocks_empty_string_when_flow_active() {
+        let (allowed, msg) = validate_agent(Some(""), true);
+        assert!(!allowed);
+        assert!(msg.contains("BLOCKED"));
+    }
+
+    #[test]
+    fn test_validate_agent_blocks_whitespace_padded_when_flow_active() {
+        let (allowed, _) = validate_agent(Some(" general-purpose "), true);
+        assert!(!allowed);
     }
 }
