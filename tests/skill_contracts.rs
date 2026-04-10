@@ -11,6 +11,7 @@ mod common;
 use std::collections::HashSet;
 use std::fs;
 
+use flow_rs::tombstone_audit::extract_pr_numbers;
 use regex::Regex;
 use serde_json::Value;
 
@@ -2822,6 +2823,24 @@ fn code_review_no_plugin_config_axis() {
     assert!(
         !c.contains("code_review_plugin"),
         "Tombstone: code_review_plugin config removed"
+    );
+}
+
+// --- Tombstone audit fixture contamination prevention ---
+
+#[test]
+fn tombstone_audit_fixture_no_literal_tombstone_patterns() {
+    let path = common::repo_root().join("tests/tombstone_audit.rs");
+    let content = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
+    let prs = extract_pr_numbers(&content);
+    assert!(
+        prs.is_empty(),
+        "tests/tombstone_audit.rs contains literal tombstone patterns matching the scanner regex. \
+         Found PR references: {:?}. Use tombstone_line() / tombstone_doc_line() / \
+         tombstone_str_line() builders instead of literal patterns to avoid contaminating \
+         scan_test_files() results.",
+        prs
     );
 }
 
