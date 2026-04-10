@@ -200,6 +200,11 @@ combined diff.
 **Single CI gate.** Run `bin/flow ci` once for the entire group.
 If it fails, fix and retry following the standard CI failure process.
 
+**Plan Test Verification.** After CI passes, run the Plan Test
+Verification check (see the section below) for ALL tasks in the
+group — not just the last one. Verify that every test function
+named in any task's plan description exists in the codebase.
+
 **Single commit.** Use the standard Commit section flow: set the
 continuation context and `_continue_pending`, then invoke
 `/flow:flow-commit`. The commit message should reference the group:
@@ -352,6 +357,30 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_ti
 <HARD-GATE>
 Do NOT commit and do NOT move to the next task until `bin/flow ci` is green.
 </HARD-GATE>
+
+---
+
+### Plan Test Verification
+
+After CI passes and before committing, verify that every test function
+the plan explicitly names for this task exists in the codebase.
+
+Re-read the current task's description from the plan file. Look for
+explicitly named test functions — identifiers prefixed with `test_`
+(e.g., `test_parser_handles_empty_input`, `test_login_timeout`). These
+appear as comma-separated lists, under headings like "Rust tests:" or
+"Tests:", or inline in the task description.
+
+If the task description names specific test functions, use the Grep
+tool to verify each one exists as a function definition in the
+codebase. For Rust, search for `fn <test_name>`. For Python, search
+for `def <test_name>`.
+
+- If all named tests are found → proceed to Commit
+- If the task does not name specific test functions → proceed to Commit
+- If any named test is missing → list the missing tests, write them,
+  re-run `bin/flow ci`, and only proceed to Commit once all named
+  tests exist and CI is green
 
 ---
 
