@@ -542,7 +542,7 @@ Parse the JSON output. Keep `formatted_time`, `cumulative_seconds`,
 `summary`, `issues_links`, and `banner_line` for the Done banner.
 
 The `cleanup` field contains the results of Step 7 (cleanup operations):
-worktree removal, state file and log deletion, branch cleanup, and
+worktree removal, state file and log deletion, local branch cleanup, and
 git pull. Report the results to the user: what was cleaned, what was
 already gone, and what failed.
 
