@@ -1,5 +1,5 @@
 //! Version gate — verify `/flow:flow-prime` has been run with a
-//! matching version. Port of lib/prime-check.py.
+//! matching version.
 //!
 //! Usage: `bin/flow prime-check`
 //!
@@ -14,16 +14,15 @@
 //! canonical source for permission and exclude lists. They are shared
 //! with `src/prime_setup.rs` which imports them via `pub use`.
 //!
-//! # Hash byte-parity with Python
+//! # JSON Separator Format for Config Hashing
 //!
-//! `compute_config_hash` must produce byte-identical SHA-256 input
-//! bytes to Python's `json.dumps(canonical, sort_keys=True)`. Python's
-//! default separators are `(", ", ": ")`; Rust's
-//! `serde_json::to_string` default is `(",", ":")`. Without a fix the
-//! resulting digests differ, breaking round-trip with Python-written
-//! `.flow.json` files. `PythonDefaultFormatter` below implements the
-//! three `serde_json::ser::Formatter` methods needed to emit the
-//! Python separators.
+//! `compute_config_hash` must produce SHA-256 digests that match
+//! existing `.flow.json` files, which use `(", ", ": ")` separators.
+//! Rust's `serde_json::to_string` default is `(",", ":")` — without
+//! a custom formatter the digests differ, breaking hash comparisons
+//! on upgrade. `PythonDefaultFormatter` below implements the three
+//! `serde_json::ser::Formatter` methods needed to emit the expected
+//! separators.
 
 use std::collections::BTreeMap;
 use std::fs;

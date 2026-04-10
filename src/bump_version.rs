@@ -1,4 +1,4 @@
-//! Port of lib/bump-version.py — bump FLOW plugin version across all files.
+//! Bump FLOW plugin version across all files.
 //!
 //! Updates plugin.json, marketplace.json, and all skill banners.
 //!

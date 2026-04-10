@@ -1,4 +1,4 @@
-//! Port of lib/check-freshness.py — pre-merge freshness check.
+//! Pre-merge freshness check.
 //!
 //! Fetches origin/main, verifies the branch is up-to-date via
 //! `git merge-base --is-ancestor`, and merges if behind. Detects merge
@@ -30,8 +30,8 @@ pub struct Args {
     pub raw_args: Vec<String>,
 }
 
-/// Result of a single git subprocess call. Mirrors Python
-/// `subprocess.CompletedProcess` + `TimeoutExpired` distinction.
+/// Result of a single git subprocess call — either completed (with exit
+/// code and captured output) or timed out.
 #[derive(Debug, Clone)]
 pub enum CmdResult {
     Ok {

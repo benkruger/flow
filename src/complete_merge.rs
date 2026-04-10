@@ -1,4 +1,4 @@
-//! Port of lib/complete-merge.py — consolidated Complete phase merge.
+//! Consolidated Complete phase merge.
 //!
 //! Absorbs Step 8: freshness check + squash merge.
 //!

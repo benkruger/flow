@@ -1,4 +1,4 @@
-//! Port of lib/issue.py — GitHub issue creation wrapper.
+//! GitHub issue creation wrapper.
 //!
 //! Usage:
 //!   bin/flow issue --title <title> [--repo <repo>] [--label <label>] [--body-file <path>]
