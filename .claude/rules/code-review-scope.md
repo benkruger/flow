@@ -38,6 +38,18 @@ duplicate code, missing abstractions, naming problems, documentation
 drift. "Low severity" and "simplicity" findings in PR-touched files
 are still in-scope.
 
+## New Rules and Pre-Existing Violations
+
+When a PR adds a new rule (`.claude/rules/*.md`) that retroactively
+flags existing code as a violation, the pre-existing violations in
+files NOT touched by the PR are out-of-scope. The rule defines
+expectations going forward — it does not make prior code "caused by
+the PR." File an issue for the pre-existing violations.
+
+Pre-existing violations in files the PR DID touch are in-scope per
+the standard diff boundary test (Step 1 above). The file is in the
+diff — fix it.
+
 ## In-Scope Means Fix, Not File
 
 Never file a GitHub issue for an in-scope finding — not even one

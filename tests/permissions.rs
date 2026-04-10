@@ -1,4 +1,4 @@
-// Rust port of tests/test_permissions.py — bash permission coverage tests.
+// Bash permission coverage tests.
 //
 // Every Bash command in every skill must have a matching permission entry.
 // Prohibition tests enforce that bash blocks never contain patterns that

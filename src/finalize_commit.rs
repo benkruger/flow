@@ -1,4 +1,4 @@
-//! Port of lib/finalize-commit.py — commit, cleanup, pull, push.
+//! Commit, cleanup, pull, push.
 //!
 //! Enforces CI before committing: calls [`ci::run_impl`] as the first step
 //! in [`run_impl`]. If CI fails, returns an error and commits nothing.
@@ -21,8 +21,10 @@ use std::time::{Duration, Instant};
 use clap::Parser;
 use serde_json::{json, Value};
 
+use crate::commands::log::append_log;
 use crate::lock::mutate_state;
 use crate::output::json_error;
+use crate::phase_config::phase_number;
 use crate::utils::parse_conflict_files;
 
 const LOCAL_TIMEOUT: u64 = 30;
@@ -236,6 +238,23 @@ pub fn run_impl(
         return Err("Usage: bin/flow finalize-commit <message-file> <branch>".to_string());
     }
 
+    // Derive phase number from state file's current_phase for log prefixes.
+    let pn = {
+        let state_path = root
+            .join(".flow-states")
+            .join(format!("{}.json", args.branch));
+        std::fs::read_to_string(&state_path)
+            .ok()
+            .and_then(|c| serde_json::from_str::<Value>(&c).ok())
+            .and_then(|s| {
+                s.get("current_phase")
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
+            })
+            .map(|p| phase_number(&p))
+            .unwrap_or(0)
+    };
+
     // Enforce CI before committing. run_impl checks the sentinel first —
     // if CI already passed for this tree state, it noops instantly.
     let ci_args = crate::ci::Args {
@@ -250,18 +269,39 @@ pub fn run_impl(
         let msg = ci_result["message"]
             .as_str()
             .unwrap_or("bin/flow ci failed");
+        let _ = append_log(
+            root,
+            &args.branch,
+            &format!("[Phase {}] finalize-commit — ci (failed)", pn),
+        );
         json!({
             "status": "error",
             "step": "ci",
             "message": msg,
         })
     } else {
+        let _ = append_log(
+            root,
+            &args.branch,
+            &format!("[Phase {}] finalize-commit — ci (ok)", pn),
+        );
         let cwd_owned = cwd.to_path_buf();
         let git = |git_args: &[&str], timeout: u64| -> Result<(i32, String, String), String> {
             run_git_in_dir(&cwd_owned, git_args, timeout)
         };
         finalize_commit_inner(&args.message_file, &args.branch, &git)
     };
+
+    // Log final result
+    let final_status = result["status"].as_str().unwrap_or("unknown");
+    let _ = append_log(
+        root,
+        &args.branch,
+        &format!(
+            "[Phase {}] finalize-commit — done (\"{}\")",
+            pn, final_status
+        ),
+    );
 
     // Clear continuation flags on error so the stop-continue hook
     // does not force-advance the parent phase after a failed commit.

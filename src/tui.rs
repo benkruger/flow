@@ -2,8 +2,7 @@
 //!
 //! A ratatui-based terminal application that reads local state files and
 //! provides keyboard-driven navigation. No Claude session required.
-//!
-//! Ported from lib/tui.py. Uses tui_data module for data loading.
+//! Uses tui_data module for data loading.
 
 use std::io;
 use std::path::PathBuf;

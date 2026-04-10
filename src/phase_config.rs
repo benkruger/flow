@@ -48,6 +48,16 @@ pub fn commands() -> IndexMap<String, String> {
     m
 }
 
+/// Single-lookup alternative to [`phase_numbers`] — avoids map allocation for per-call use.
+/// Returns the 1-based phase number for a phase name, or 0 if not found.
+pub fn phase_number(phase: &str) -> usize {
+    PHASE_ORDER
+        .iter()
+        .position(|&p| p == phase)
+        .map(|i| i + 1)
+        .unwrap_or(0)
+}
+
 /// Build the PHASE_NUMBER map (1-indexed).
 pub fn phase_numbers() -> IndexMap<String, usize> {
     PHASE_ORDER
@@ -292,6 +302,22 @@ mod tests {
         let nums = phase_numbers();
         assert_eq!(*nums.get("flow-start").unwrap(), 1);
         assert_eq!(*nums.get("flow-complete").unwrap(), 6);
+    }
+
+    #[test]
+    fn phase_number_returns_one_indexed() {
+        assert_eq!(phase_number("flow-start"), 1);
+        assert_eq!(phase_number("flow-plan"), 2);
+        assert_eq!(phase_number("flow-code"), 3);
+        assert_eq!(phase_number("flow-code-review"), 4);
+        assert_eq!(phase_number("flow-learn"), 5);
+        assert_eq!(phase_number("flow-complete"), 6);
+    }
+
+    #[test]
+    fn phase_number_returns_zero_for_unknown() {
+        assert_eq!(phase_number("nonexistent"), 0);
+        assert_eq!(phase_number(""), 0);
     }
 
     #[test]

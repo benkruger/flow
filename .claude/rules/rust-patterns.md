@@ -99,3 +99,16 @@ paths.
 Any non-obvious design decision (custom formatters, shared constants,
 unusual return types) must have a local doc comment on the definition
 site summarizing why it exists in one sentence.
+
+## Session Log Message Format
+
+When adding `append_log` calls to a Rust module, use
+`[Phase N] module-name — step (status)` format. Derive the phase
+number via `phase_number()` from `phase_config.rs` — never hardcode
+it unless the module is phase-specific (e.g., Phase 6 modules that
+only run during Complete). For modules called from multiple phases
+(e.g., `finalize_commit`), read `current_phase` from the state file
+at runtime. Guard `append_log` calls in modules where
+`.flow-states/` may not exist (test fixtures): check directory or
+file existence before calling. `append_log` creates the directory
+if missing, which breaks test fixtures that deliberately omit it.

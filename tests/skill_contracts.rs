@@ -1,4 +1,4 @@
-// Rust port of tests/test_skill_contracts.py — SKILL.md content contracts.
+// SKILL.md content contracts.
 //
 // Validates structural invariants in skill markdown files: phase gates,
 // state field references, cross-skill invocations, agent contracts,
@@ -962,7 +962,7 @@ fn paused_banners_have_diamond() {
     }
 }
 
-// format_status_no_equals_banners removed in PR #953 — lib/format-status.py deleted
+// Equals-sign banners are prohibited — only box-drawing characters allowed
 
 #[test]
 fn docs_no_equals_banners() {

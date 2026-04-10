@@ -1,4 +1,4 @@
-//! Port of lib/notify-slack.py — post messages to Slack via curl.
+//! Post messages to Slack via curl.
 //!
 //! Usage:
 //!   bin/flow notify-slack --phase <phase> --message <text> [--thread-ts <ts>]

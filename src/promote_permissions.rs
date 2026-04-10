@@ -1,6 +1,6 @@
 //! Promote permissions from settings.local.json into settings.json.
 //!
-//! Port of lib/promote-permissions.py. Reads
+//! Reads
 //! `.claude/settings.local.json`, merges new `permissions.allow` entries
 //! into `.claude/settings.json`, deletes settings.local.json, and
 //! outputs JSON.
@@ -159,9 +159,8 @@ fn read_json(path: &Path) -> Result<Value, String> {
 /// Build the CLI result as a JSON value.
 ///
 /// Returns `Err` when the result `status` is `"error"` so `run` can
-/// exit non-zero — this matches the Python script's
-/// `print(json); sys.exit(1)` behavior for error results while keeping
-/// `ok`/`skipped` on the `Ok` path.
+/// exit non-zero with JSON output, while keeping `ok`/`skipped` on
+/// the `Ok` path.
 pub fn run_impl(args: &Args) -> Result<Value, Value> {
     let worktree = PathBuf::from(&args.worktree_path);
     let result = promote(&worktree);

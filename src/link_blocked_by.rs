@@ -1,4 +1,4 @@
-//! Port of lib/link-blocked-by.py — create a GitHub blocked-by dependency.
+//! Create a GitHub blocked-by dependency.
 //!
 //! Usage:
 //!   bin/flow link-blocked-by --repo <owner/repo> --blocked-number N --blocking-number N

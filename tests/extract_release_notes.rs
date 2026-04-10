@@ -1,4 +1,4 @@
-//! Tests for `src/extract_release_notes.rs` — port of tests/test_extract_release.py.
+//! Tests for `src/extract_release_notes.rs`.
 //!
 //! Pure-function tests call extract() directly. CLI tests call run_impl
 //! with a fake repo fixture.

@@ -1,6 +1,6 @@
 //! Consolidated setup for FLOW Prime.
 //!
-//! Port of `lib/prime-setup.py`. Merges permissions into
+//! Merges permissions into
 //! `.claude/settings.json`, writes `.flow.json` version marker,
 //! updates `.git/info/exclude`, installs hooks and launcher.
 //! Does NOT commit — the skill handles `git add` + `commit`.
@@ -476,8 +476,8 @@ pub struct Args {
 
 /// Run the prime-setup sequence.
 ///
-/// Returns `Err(Value)` for all error cases — matches the Python script's
-/// `print(json); sys.exit(1)` pattern. `Ok(Value)` for success.
+/// Returns `Err(Value)` for all error cases (printed as JSON, exit 1).
+/// `Ok(Value)` for success.
 pub fn run_impl(args: &Args) -> Result<Value, Value> {
     let project_root = PathBuf::from(&args.project_root);
     if !project_root.is_dir() {

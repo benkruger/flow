@@ -1,4 +1,4 @@
-//! Port of lib/create-sub-issue.py — create a GitHub sub-issue relationship.
+//! Create a GitHub sub-issue relationship.
 //!
 //! Usage:
 //!   bin/flow create-sub-issue --repo <owner/repo> --parent-number N --child-number N

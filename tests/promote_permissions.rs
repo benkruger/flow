@@ -1,8 +1,7 @@
 //! Integration tests for `flow-rs promote-permissions`.
 //!
-//! Mirrors tests/test_promote_permissions.py (315 lines, 18 test cases).
-//! Every subprocess call uses Command::output() per rust-port-parity.md
-//! Test-Module Subprocess Stdio rule.
+//! All subprocess calls use Command::output() to avoid leaking child
+//! output to the test harness.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
