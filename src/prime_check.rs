@@ -78,7 +78,6 @@ pub const UNIVERSAL_ALLOW: &[&str] = &[
     "Bash(gh -C *)",
     "Bash(*bin/flow *)",
     "Bash(rm .flow-*)",
-    "Bash(rm tests/test_adversarial_*)",
     "Bash(test -f *)",
     "Bash(claude plugin list)",
     "Bash(claude plugin marketplace add *)",

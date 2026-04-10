@@ -33,7 +33,8 @@ Parse the JSON output. If `"status": "error"`, STOP and show the error.
 
 If `"status": "ok"`, capture the returned fields:
 `project_root`, `branch`, `worktree_path`, `pr_number`, `pr_url`,
-`feature`, `slack_thread_ts`, `plan_file`, and `mode` (commit + continue).
+`feature`, `slack_thread_ts`, `plan_file`, `framework`, and `mode`
+(commit + continue).
 
 </HARD-GATE>
 
@@ -169,15 +170,23 @@ prettier, black) reformat many files, the substantive diff excludes
 formatting noise and preserves the agents' turn budget for behavioral
 analysis.
 
-**Check for test runner.**
+**Derive adversarial test setup from framework.**
 
-```bash
-test -f bin/flow
-```
+The `framework` field from `phase-enter` determines the adversarial
+agent's temp file path and test command. This ensures tests are written
+in the project's language and run with the correct tool.
 
-If the command succeeds (exit 0), `bin/flow` exists — the adversarial
-agent should be launched in Step 2. If it fails (exit non-zero), skip
-the adversarial agent in Step 2.
+| Framework | Temp file | Test command | Skip? |
+|-----------|-----------|-------------|-------|
+| rust | `.flow-states/<branch>-adversarial_test.rs` | `${CLAUDE_PLUGIN_ROOT}/bin/flow test --file <path>` | No |
+| python | `.flow-states/<branch>-adversarial_test.py` | `bin/test <path>` | No |
+| rails | `.flow-states/<branch>-adversarial_test.py` | `bin/test <path>` | No |
+| go | — | — | Yes |
+| ios | — | — | Yes |
+| (missing/unknown) | — | — | Yes |
+
+Capture `<temp_test_file>` and `<test_command>` for Step 2. If the
+framework is skipped, do not launch the adversarial agent in Step 2.
 
 **Audit tombstone staleness.**
 
@@ -262,15 +271,10 @@ Provide the substantive diff output in the prompt, prefixed with:
 > explicitly in scope."
 
 **Adversarial agent** — context-sparse (receives substantive diff, temp
-file path, CLAUDE.md path, branch name). Only launch if `bin/flow` exists:
+file path, test command, CLAUDE.md path, branch name). Only launch if the
+framework supports adversarial testing (see the table in Step 1).
 
-Determine the temp test file path using the branch name from the state file:
-
-```text
-tests/test_adversarial_<branch>.py
-```
-
-Replace `<branch>` with the actual branch name (hyphens are fine in filenames).
+Use the `<temp_test_file>` and `<test_command>` derived in Step 1.
 
 Use the Agent tool with:
 
@@ -279,7 +283,8 @@ Use the Agent tool with:
 
 Provide the substantive diff output in the prompt, along with:
 
-- The temp test file path
+- The temp test file path (`<temp_test_file>`)
+- The test command (`<test_command>`)
 - The path to the project CLAUDE.md
 - The branch name
 
@@ -304,11 +309,11 @@ Prefix the prompt with:
 
 Wait for all agents to return.
 
-If the adversarial agent was launched (`bin/flow` exists), verify the
-temp test file was deleted. If it still exists, delete it:
+If the adversarial agent was launched, verify the temp test file was
+deleted. If it still exists, delete it:
 
 ```bash
-rm tests/test_adversarial_<branch>.py
+rm <temp_test_file>
 ```
 
 Record step completion:

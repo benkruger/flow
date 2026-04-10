@@ -183,6 +183,14 @@ const PLACEHOLDER_SUBS: &[(&str, &str)] = &[
     ("<topic>", "testing-gotchas"),
     ("<description>", "Update contract tests"),
     ("<slack_thread_ts>", "1234567890.123456"),
+    (
+        "<temp_test_file>",
+        ".flow-states/test-branch-adversarial_test.py",
+    ),
+    (
+        "<test_command>",
+        "bin/test .flow-states/test-branch-adversarial_test.py",
+    ),
 ];
 
 fn substitute_placeholders(line: &str) -> Option<String> {
