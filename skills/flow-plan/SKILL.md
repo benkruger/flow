@@ -118,9 +118,9 @@ complete. Render the plan and transition.
 Use the `plan_content` from the plan-extract response. Render it inline in
 your response — the complete Context, Exploration, Risks, Approach,
 Dependency Graph, and Tasks sections. Run DAG Freshness Check, Script
-Behavior Verification, and Target Path Validation on the plan content
-(see Step 3 for definitions). Use Glob and Read to verify files
-referenced in the Tasks section exist.
+Behavior Verification, Target Path Validation, and Risk Verification
+Enforcement on the plan content (see Step 3 for definitions). Use Glob
+and Read to verify files referenced in the Tasks section exist.
 
 Then skip to "Done — Banner and transition", using `formatted_time` and
 `continue_action` from the plan-extract response.
@@ -271,9 +271,9 @@ in the content.
 - Light validation: use Glob and Read to verify that files referenced in
   the Tasks section exist. Note any missing files (they may need to be
   created by the implementation) but do not block or re-derive the plan.
-- Run DAG Freshness Check, Script Behavior Verification, and Target
-  Path Validation (below) on the extracted plan content, then proceed
-  to Step 4.
+- Run DAG Freshness Check, Script Behavior Verification, Target Path
+  Validation, and Risk Verification Enforcement (below) on the
+  extracted plan content, then proceed to Step 4.
 
 **If not found** — the issue is an older-format decomposed issue without
 a plan. Use the issue body content from the DAG file as a head start
@@ -351,6 +351,29 @@ For other out-of-repo paths: if the prompt or issue body contains
 keywords like "repo", "version-controlled", "shared", "committed", or
 "tracked", default to the repo-local equivalent. Otherwise, note the
 out-of-repo path in the plan's Risks section so the user is aware.
+
+### Risk Verification Enforcement
+
+After writing the plan (or extracting a pre-planned plan), scan the
+Risks section for any risk containing "Must verify" or "Must confirm"
+language. For each such risk:
+
+**Identify.** Extract the specific claim or behavior that must be
+verified.
+
+**Search.** Check the Tasks section for a task that addresses this
+verification — either directly (a dedicated verification task) or
+indirectly (a test task whose TDD notes cover the claim).
+
+**Add if missing.** If no corresponding task exists, add a
+verification task to the Tasks section and update the Dependency
+Graph. The verification task should produce evidence that the risk
+has been checked — a test, a manual check, or a targeted
+exploration.
+
+A plan with unaddressed verification risks is incomplete. Every risk
+that says something must be verified needs at least one task that
+produces evidence the verification happened.
 
 ### Standard Exploration
 

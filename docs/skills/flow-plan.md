@@ -53,9 +53,11 @@ planning process:
 5. Claude verifies script behavior assertions from issue bodies by
    reading the relevant source code
 6. Claude validates that file targets are inside the repo working tree
-7. Claude writes the plan file with a Dependency Graph and ordered tasks
-8. Renders the full plan content inline in the conversation for review
-9. Stores the plan file path in state and transitions to Code
+7. Claude enforces that risks marked "Must verify" or "Must confirm"
+   have corresponding verification tasks in the plan
+8. Claude writes the plan file with a Dependency Graph and ordered tasks
+9. Renders the full plan content inline in the conversation for review
+10. Stores the plan file path in state and transitions to Code
 
 ---
 
