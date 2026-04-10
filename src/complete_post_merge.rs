@@ -221,9 +221,18 @@ pub fn post_merge_inner(
         }
     }
 
-    // Render PR body
+    // Render PR body — pass state_file explicitly because render-pr-body's
+    // auto-detection uses current_branch(), which returns "main" when the
+    // Complete skill runs from the project root after merge.
     let pr_str = pr_number.to_string();
-    let render_args = [bin_flow, "render-pr-body", "--pr", &pr_str];
+    let render_args = [
+        bin_flow,
+        "render-pr-body",
+        "--pr",
+        &pr_str,
+        "--state-file",
+        state_file,
+    ];
     match runner(&render_args, NETWORK_TIMEOUT) {
         Err(e) => {
             failures.insert("render_pr_body".to_string(), json!(e));
@@ -882,6 +891,49 @@ mod tests {
         assert!(pt_call.contains(&"flow-complete".to_string()));
         assert!(pt_call.contains(&"--branch".to_string()));
         assert!(pt_call.contains(&"test-feature".to_string()));
+    }
+
+    #[test]
+    fn render_pr_body_called_with_state_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = setup(dir.path(), "test-feature", None, None);
+
+        let calls: Rc<RefCell<Vec<Vec<String>>>> = Rc::new(RefCell::new(Vec::new()));
+        let runner = tracking_runner(
+            vec![
+                ok(PT_COMPLETE_OK),
+                ok(RENDER_PR_OK),
+                ok(ISSUES_SUMMARY_NO_ISSUES),
+                ok(CLOSE_ISSUES_EMPTY),
+                ok(SUMMARY_OK),
+                ok(LABEL_OK),
+            ],
+            calls.clone(),
+        );
+
+        post_merge_inner(
+            42,
+            state_path.to_str().unwrap(),
+            "test-feature",
+            dir.path(),
+            "/fake/bin/flow",
+            &runner,
+        );
+
+        let render_call = calls
+            .borrow()
+            .iter()
+            .find(|c| c.iter().any(|a| a == "render-pr-body"))
+            .cloned()
+            .expect("render-pr-body call not found");
+        assert!(
+            render_call.contains(&"--state-file".to_string()),
+            "render-pr-body must receive --state-file arg"
+        );
+        assert!(
+            render_call.contains(&state_path.to_str().unwrap().to_string()),
+            "render-pr-body must receive the state file path"
+        );
     }
 
     // --- step counter persistence ---
