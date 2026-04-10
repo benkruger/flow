@@ -117,9 +117,10 @@ complete. Render the plan and transition.
 
 Use the `plan_content` from the plan-extract response. Render it inline in
 your response — the complete Context, Exploration, Risks, Approach,
-Dependency Graph, and Tasks sections. Run Script Behavior Verification and
-Target Path Validation on the plan content (see Step 3 for definitions).
-Use Glob and Read to verify files referenced in the Tasks section exist.
+Dependency Graph, and Tasks sections. Run DAG Freshness Check, Script
+Behavior Verification, and Target Path Validation on the plan content
+(see Step 3 for definitions). Use Glob and Read to verify files
+referenced in the Tasks section exist.
 
 Then skip to "Done — Banner and transition", using `formatted_time` and
 `continue_action` from the plan-extract response.
@@ -270,8 +271,9 @@ in the content.
 - Light validation: use Glob and Read to verify that files referenced in
   the Tasks section exist. Note any missing files (they may need to be
   created by the implementation) but do not block or re-derive the plan.
-- Run Script Behavior Verification and Target Path Validation (below)
-  on the extracted plan content, then proceed to Step 4.
+- Run DAG Freshness Check, Script Behavior Verification, and Target
+  Path Validation (below) on the extracted plan content, then proceed
+  to Step 4.
 
 **If not found** — the issue is an older-format decomposed issue without
 a plan. Use the issue body content from the DAG file as a head start
@@ -286,6 +288,31 @@ for plan writing:
   re-evaluate the problem statement
 
 Continue with the standard exploration and plan-writing flow below.
+
+### DAG Freshness Check
+
+**When to run:** The DAG comes from a pre-produced source — plan-extract
+wrote it from a pre-planned or pre-decomposed issue, the "if found"
+extraction path above used a pre-existing Implementation Plan, or the
+Resume Check dispatched here from a dag_file resume. In all these cases,
+main may have advanced since the analysis was produced, changing files
+the DAG references.
+
+**When to skip:** Step 2 decompose just ran in the current session. The
+DAG explored the worktree minutes ago and is fresh.
+
+For pre-produced DAGs, verify the DAG's assumptions against reality:
+
+- Read the DAG file and identify all file paths mentioned in backticks
+- For each referenced file, use the Read tool to read the current
+  version in the worktree
+- Compare the DAG's characterization of each file (language, structure,
+  content assumptions) against its current state
+- If any file contradicts the DAG's assumptions — rewritten in a
+  different language, deleted, or completely restructured — note the
+  discrepancy in the plan's Risks section and adjust plan tasks to
+  target the current implementation, not the DAG's stale description
+- If no discrepancies are found, proceed normally
 
 ### Script Behavior Verification
 

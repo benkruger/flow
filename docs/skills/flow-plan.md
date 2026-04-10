@@ -33,7 +33,9 @@ completes the entire phase in a single CLI call:
 3. Detects the "decomposed" label and `## Implementation Plan` section
 4. Writes the DAG file and extracts the plan with heading promotion
 5. Updates state, logs, renders the PR body, and completes the phase
-6. Returns the plan content to the skill for inline rendering
+6. Returns the plan content to the skill for inline rendering and
+   freshness verification (DAG assumptions are checked against the
+   current worktree state before the plan is accepted)
 
 ### Standard path (non-decomposed issues)
 
@@ -46,12 +48,14 @@ planning process:
    (configurable via `dag` mode — see below), then self-invokes with
    `--continue-step` to continue after the turn boundary
 3. Claude explores the codebase to validate the DAG against reality
-4. Claude verifies script behavior assertions from issue bodies by
+4. For pre-produced DAGs, Claude verifies that files referenced in the
+   DAG still match the DAG's assumptions at their current worktree state
+5. Claude verifies script behavior assertions from issue bodies by
    reading the relevant source code
-5. Claude validates that file targets are inside the repo working tree
-6. Claude writes the plan file with a Dependency Graph and ordered tasks
-7. Renders the full plan content inline in the conversation for review
-8. Stores the plan file path in state and transitions to Code
+6. Claude validates that file targets are inside the repo working tree
+7. Claude writes the plan file with a Dependency Graph and ordered tasks
+8. Renders the full plan content inline in the conversation for review
+9. Stores the plan file path in state and transitions to Code
 
 ---
 
