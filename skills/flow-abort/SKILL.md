@@ -113,7 +113,7 @@ Run the cleanup script from the project root with abort flags:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup <project_root> --branch <branch> --worktree <worktree_path> --pr <pr_number>
 ```
 
-If `pr_number` is unknown, omit `--pr`. The cleanup script deletes remote and local branches.
+If `pr_number` is unknown, omit `--pr`. The cleanup script deletes local branches and attempts remote branch deletion when `--pr` is provided.
 
 The script outputs JSON with a `steps` dict showing what happened to each resource (pr\_close, worktree, remote\_branch, local\_branch, state\_file, log\_file, ci\_sentinel). Each step reports "closed"/"removed"/"deleted", "skipped", or "failed: reason".
 
@@ -130,8 +130,7 @@ Then output the following banner in your response (not via Bash) inside a fenced
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Feature '<feature>' has been abandoned.
-  PR closed, remote branch deleted,
-  worktree removed, state file and log deleted.
+  Cleanup complete — see results above for details.
 ```
 ````
 
