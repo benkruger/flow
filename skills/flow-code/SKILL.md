@@ -362,25 +362,34 @@ Do NOT commit and do NOT move to the next task until `bin/flow ci` is green.
 
 ### Plan Test Verification
 
+The plan decomposes work into specific test functions. This step verifies
+that every test the plan promised was actually written during the TDD
+cycle — CI proves tests pass, but cannot prove missing tests exist.
+
 After CI passes and before committing, verify that every test function
 the plan explicitly names for this task exists in the codebase.
 
 Re-read the current task's description from the plan file. Look for
-explicitly named test functions — identifiers prefixed with `test_`
-(e.g., `test_parser_handles_empty_input`, `test_login_timeout`). These
-appear as comma-separated lists, under headings like "Rust tests:" or
-"Tests:", or inline in the task description.
+explicitly named test functions. These appear as comma-separated lists,
+under headings like "Rust tests:" or "Tests:", or inline in the task
+description. Test naming conventions vary by framework:
+
+- **Rust** — `test_` prefix (e.g., `test_parser_handles_empty_input`)
+- **Python** — `test_` prefix (e.g., `test_login_timeout`)
+- **Go** — `Test` prefix with capital T (e.g., `TestParseConfig`)
+- **Swift/iOS** — `test` prefix in camelCase (e.g., `testLoginTimeout`)
+- **Rails/Ruby** — `test_` prefix for minitest; `it` or `describe` blocks for RSpec
 
 If the task description names specific test functions, use the Grep
-tool to verify each one exists as a function definition in the
-codebase. For Rust, search for `fn <test_name>`. For Python, search
-for `def <test_name>`.
+tool to verify each one exists as a function or method definition in
+the codebase. Match the framework convention: `fn <name>` for Rust,
+`def <name>` for Python/Ruby, `func <name>` for Go/Swift.
 
 - If all named tests are found → proceed to Commit
 - If the task does not name specific test functions → proceed to Commit
 - If any named test is missing → list the missing tests, write them,
-  re-run `bin/flow ci`, and only proceed to Commit once all named
-  tests exist and CI is green
+  re-run CI, and only proceed to Commit once all named tests exist
+  and CI is green
 
 ---
 
