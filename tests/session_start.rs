@@ -1,6 +1,4 @@
 //! Tests for hooks/session-start.sh — the SessionStart hook.
-//!
-//! Ports tests/test_session_start.py to Rust (PR #953).
 
 mod common;
 

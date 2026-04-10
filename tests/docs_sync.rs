@@ -1,6 +1,5 @@
 //! Tests that documentation stays in sync with skills and flow-phases.json.
 //!
-//! Ports tests/test_docs_sync.py to Rust integration tests.
 //! Skills are hand-authored for different audiences (Claude vs. public users)
 //! so auto-generation isn't appropriate. These tests catch structural drift —
 //! missing files, wrong names, stale references.
