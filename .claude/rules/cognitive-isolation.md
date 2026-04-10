@@ -26,10 +26,12 @@ context is a design choice matched to the agent's task:
   timings, session notes) to detect process friction and rule
   violations.
 - **Context-sparse** (pre-mortem, adversarial, documentation) — receives
-  only the diff and must investigate the codebase itself. Less context
+  only the substantive diff (`git diff -w`, whitespace-only changes
+  filtered) and must investigate the codebase itself. Less context
   forces independent investigation, surfacing risks and coverage gaps
-  that pre-supplied context would mask. The documentation agent receives
-  doc paths but must investigate the codebase independently for
+  that pre-supplied context would mask. The whitespace filter preserves
+  turn budget on PRs with formatting changes. The documentation agent
+  receives doc paths but must investigate the codebase independently for
   comprehension barriers before reading documentation for drift.
 
 This asymmetry is intentional. See `agents/pre-mortem.md` Design
