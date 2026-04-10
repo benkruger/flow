@@ -91,7 +91,7 @@ By the end of Phase 6:
 
 - PR squash-merged into main
 - Referenced GitHub issues closed (extracted from the start prompt)
-- Remote branch deleted
+- Remote branch auto-deleted by GitHub after merge
 - Worktree and all its contents removed
 - Business-friendly summary displayed in Done banner: feature name, prompt,
   per-phase timeline, and artifact counts (issues filed, notes captured)

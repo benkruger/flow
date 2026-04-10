@@ -172,16 +172,20 @@ pub fn cleanup(
         steps.insert("worktree".to_string(), "skipped".to_string());
     }
 
-    // Delete remote branch
-    let (ok, output) = run_cmd(&["git", "push", "origin", "--delete", branch], project_root);
-    steps.insert(
-        "remote_branch".to_string(),
-        if ok {
-            "deleted".to_string()
-        } else {
-            format!("failed: {}", output)
-        },
-    );
+    // Delete remote branch (abort only — GitHub auto-deletes after merge)
+    if pr_number.is_some() {
+        let (ok, output) = run_cmd(&["git", "push", "origin", "--delete", branch], project_root);
+        steps.insert(
+            "remote_branch".to_string(),
+            if ok {
+                "deleted".to_string()
+            } else {
+                format!("failed: {}", output)
+            },
+        );
+    } else {
+        steps.insert("remote_branch".to_string(), "skipped".to_string());
+    }
 
     // Delete local branch
     let (ok, output) = run_cmd(&["git", "branch", "-D", branch], project_root);
@@ -579,13 +583,25 @@ mod tests {
     // --- Branch deletion ---
 
     #[test]
-    fn test_cleanup_always_attempts_remote_branch() {
+    fn test_cleanup_skips_remote_branch_on_complete() {
         let dir = tempfile::tempdir().unwrap();
         setup_git_repo(dir.path());
         let wt_rel = setup_feature(dir.path(), "test-feature");
 
+        // Complete path (pr_number=None) skips remote branch deletion
         let steps = cleanup(dir.path(), "test-feature", &wt_rel, None, false);
-        // No remote configured, so push --delete will fail
+        assert_eq!(steps["remote_branch"], "skipped");
+    }
+
+    #[test]
+    fn test_abort_attempts_remote_branch_deletion() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path());
+        let wt_rel = setup_feature(dir.path(), "test-feature");
+
+        // Abort path (pr_number=Some) attempts remote branch deletion
+        let steps = cleanup(dir.path(), "test-feature", &wt_rel, Some(999), false);
+        // No remote configured, so push --delete will fail — but it tried
         assert!(steps["remote_branch"].starts_with("failed:"));
     }
 
@@ -657,7 +673,7 @@ mod tests {
 
         assert_eq!(steps["pr_close"], "skipped");
         assert_eq!(steps["worktree"], "removed");
-        assert!(steps["remote_branch"].starts_with("failed:")); // no remote
+        assert_eq!(steps["remote_branch"], "skipped");
         assert_eq!(steps["local_branch"], "deleted");
         assert_eq!(steps["state_file"], "deleted");
         assert_eq!(steps["plan_file"], "skipped");
