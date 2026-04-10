@@ -246,11 +246,12 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 /// Commit dependency changes to main and push.
 ///
 /// Runs `git add -A` → `git commit` → `git push origin main`.
-/// Called after deps changed and post-deps CI passed, while the
-/// start lock is held. Returns `Err` if any git command fails
-/// (including "nothing to commit").
+/// Called after deps changed and post-deps CI passed. Must only be
+/// called while the start lock is held — this serializes all
+/// main-branch mutations per the concurrency model. Returns `Err`
+/// if any git command fails (including "nothing to commit").
 fn commit_deps(cwd: &Path) -> Result<(), String> {
-    // Stage all changes (lock files from bin/dependencies)
+    // Stage all changes left by bin/dependencies
     let add = std::process::Command::new("git")
         .args(["add", "-A"])
         .current_dir(cwd)
