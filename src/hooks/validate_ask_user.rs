@@ -25,6 +25,7 @@ pub fn set_blocked(state_path: &Path) {
         return;
     }
     let _ = mutate_state(state_path, |state| {
+        // Guard: Value::IndexMut panics on non-object types (arrays, bools, etc.)
         if !(state.is_object() || state.is_null()) {
             return;
         }

@@ -47,10 +47,7 @@ pub struct Args {
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
     let branch = &args.branch;
-    let phase_num = phase_config::phase_numbers()
-        .get(&args.phase)
-        .copied()
-        .unwrap_or(0);
+    let phase_num = phase_config::phase_number(&args.phase);
     let state_path = root.join(".flow-states").join(format!("{}.json", branch));
 
     if !state_path.exists() {

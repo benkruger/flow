@@ -24,6 +24,8 @@ static DIR_PREFIX_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
 });
 
 /// Pre-compiled regex for file paths with recognized extensions.
+/// Uses non-word character boundaries (`(?:^|[^\w])` / `(?:$|[^\w])`) instead of
+/// lookahead/lookbehind because the `regex` crate does not support lookaround.
 static FILE_EXT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?:^|[^\w])([\w./\-]+/[\w.\-]+\.(?:py|md|json|sh|yml|yaml|rb|js|ts|html|css|toml))(?:$|[^\w])",

@@ -31,7 +31,7 @@ pub const LOCAL_TIMEOUT: u64 = 30;
 pub const NETWORK_TIMEOUT: u64 = 60;
 /// Step counter total for complete phase: 6 steps (running checks, local CI,
 /// GitHub CI, confirming, merging PR, finalizing).
-const COMPLETE_STEPS_TOTAL: i64 = 6;
+pub const COMPLETE_STEPS_TOTAL: i64 = 6;
 
 pub type CmdResult = Result<(i32, String, String), String>;
 
