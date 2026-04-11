@@ -673,6 +673,20 @@
         <p>Coding anti-patterns and gotchas. &ldquo;Never use update_column in tests.&rdquo;</p>
       </div>
     </div>
+
+    <h3>Maintenance</h3>
+    <p>Learnings accumulate across many sessions. Over time, references go stale, constraints duplicate, and content drifts to the wrong persistence layer. Two read-only utilities audit the corpus between features.</p>
+
+    <div class="features">
+      <div class="feature">
+        <h4><code>/flow-hygiene</code></h4>
+        <p>Audits the instruction corpus itself &mdash; CLAUDE.md, rules, and memory. Six finding types: stale, orphaned, unenforced, misplaced, duplicate, contradiction. Run weekly or after big refactors.</p>
+      </div>
+      <div class="feature">
+        <h4><code>/flow-doc-sync</code></h4>
+        <p>Audits documentation against code behavior &mdash; reports drift between what docs say and what code does. Run when docs feel out of date.</p>
+      </div>
+    </div>
   </section>
 
   <!-- BEYOND THE PHASES -->
