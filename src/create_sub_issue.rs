@@ -15,10 +15,9 @@ use std::time::Duration;
 use clap::Parser;
 use serde_json::json;
 
+use crate::complete_preflight::LOCAL_TIMEOUT;
 use crate::issue::{fetch_database_id, run_gh_cmd};
 use crate::output::{json_error, json_ok};
-
-const LOCAL_TIMEOUT: u64 = 30;
 
 #[derive(Parser, Debug)]
 #[command(

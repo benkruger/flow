@@ -25,16 +25,12 @@ use serde_json::{json, Value};
 use crate::ci;
 use crate::complete_preflight::{
     check_learn_phase, check_pr_status, merge_main, resolve_mode, run_cmd_with_timeout, CmdResult,
+    COMPLETE_STEPS_TOTAL, NETWORK_TIMEOUT,
 };
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
 use crate::phase_transition::phase_enter;
 use crate::utils::{bin_flow_path, derive_worktree};
-
-/// Step counter total for complete phase: 6 steps (running checks, local CI,
-/// GitHub CI, confirming, merging PR, finalizing).
-const COMPLETE_STEPS_TOTAL: i64 = 6;
-const NETWORK_TIMEOUT: u64 = 60;
 
 #[derive(Parser, Debug)]
 #[command(name = "complete-fast", about = "FLOW Complete phase fast path")]
@@ -114,7 +110,6 @@ fn parse_gh_checks_output(stdout: &str) -> String {
 #[allow(clippy::too_many_arguments)]
 pub fn fast_inner(
     branch: &str,
-    _root: &Path,
     state: &Value,
     state_path: &Path,
     auto: bool,
@@ -549,7 +544,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     // Delegate to fast_inner for the remaining logic (mode branch, freshness, merge)
     Ok(fast_inner(
         &branch,
-        &root,
         &state,
         &state_path,
         args.auto,
@@ -646,7 +640,6 @@ mod tests {
 
         let result = fast_inner(
             "test-feature",
-            dir.path(),
             &state,
             &state_path,
             true,
@@ -677,7 +670,6 @@ mod tests {
 
         let result = fast_inner(
             "test-feature",
-            dir.path(),
             &state,
             &state_path,
             true,
@@ -706,7 +698,6 @@ mod tests {
 
         let result = fast_inner(
             "test-feature",
-            dir.path(),
             &state,
             &state_path,
             true,
@@ -739,7 +730,6 @@ mod tests {
 
         let result = fast_inner(
             "test-feature",
-            dir.path(),
             &state,
             &state_path,
             true,
@@ -770,7 +760,6 @@ mod tests {
 
         let result = fast_inner(
             "test-feature",
-            dir.path(),
             &state,
             &state_path,
             true,
@@ -821,7 +810,6 @@ mod tests {
 
         let result = fast_inner(
             "test-feature",
-            dir.path(),
             &state,
             &state_path,
             false,
@@ -873,7 +861,6 @@ mod tests {
 
         let result = fast_inner(
             "test-feature",
-            dir.path(),
             &state,
             &state_path,
             true,
@@ -906,7 +893,6 @@ mod tests {
 
         let result = fast_inner(
             "test-feature",
-            dir.path(),
             &state,
             &state_path,
             true,
@@ -966,7 +952,6 @@ mod tests {
 
         fast_inner(
             "test-feature",
-            dir.path(),
             &state,
             &state_path,
             true,
@@ -998,7 +983,6 @@ mod tests {
 
         let result = fast_inner(
             "test-feature",
-            dir.path(),
             &state,
             &state_path,
             true,
@@ -1033,7 +1017,6 @@ mod tests {
 
         let result = fast_inner(
             "test-feature",
-            dir.path(),
             &state,
             &state_path,
             true,

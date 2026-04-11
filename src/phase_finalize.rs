@@ -47,6 +47,7 @@ pub struct Args {
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
     let branch = &args.branch;
+    let phase_num = phase_config::phase_number(&args.phase);
     let state_path = root.join(".flow-states").join(format!("{}.json", branch));
 
     if !state_path.exists() {
@@ -102,8 +103,8 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         &root,
         branch,
         &format!(
-            "[Phase] phase-finalize --phase {} ({})",
-            args.phase, phase_result["status"]
+            "[Phase {}] phase-finalize --phase {} ({})",
+            phase_num, args.phase, phase_result["status"]
         ),
     );
 
@@ -196,8 +197,8 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
             &root,
             branch,
             &format!(
-                "[Phase] phase-finalize --phase {} — notify-slack ({})",
-                args.phase, slack_result["status"]
+                "[Phase {}] phase-finalize --phase {} — notify-slack ({})",
+                phase_num, args.phase, slack_result["status"]
             ),
         );
     }

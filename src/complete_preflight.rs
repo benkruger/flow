@@ -25,11 +25,13 @@ use crate::git::{current_branch, project_root};
 use crate::lock::mutate_state;
 use crate::utils::{bin_flow_path, derive_worktree, parse_conflict_files};
 
-const LOCAL_TIMEOUT: u64 = 30;
-const NETWORK_TIMEOUT: u64 = 60;
+/// Standard timeout for local subprocess calls (git status, git add, etc.).
+pub const LOCAL_TIMEOUT: u64 = 30;
+/// Standard timeout for network subprocess calls (git fetch, gh api, etc.).
+pub const NETWORK_TIMEOUT: u64 = 60;
 /// Step counter total for complete phase: 6 steps (running checks, local CI,
 /// GitHub CI, confirming, merging PR, finalizing).
-const COMPLETE_STEPS_TOTAL: i64 = 6;
+pub const COMPLETE_STEPS_TOTAL: i64 = 6;
 
 pub type CmdResult = Result<(i32, String, String), String>;
 

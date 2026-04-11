@@ -25,6 +25,10 @@ pub fn set_blocked(state_path: &Path) {
         return;
     }
     let _ = mutate_state(state_path, |state| {
+        // Guard: Value::IndexMut panics on non-object types (arrays, bools, etc.)
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
         state["_blocked"] = Value::String(now());
     });
 }
@@ -233,6 +237,22 @@ mod tests {
         fs::write(&bad_file, "{bad json").unwrap();
         // Should not panic
         set_blocked(&bad_file);
+    }
+
+    #[test]
+    fn test_set_blocked_non_object_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("array.json");
+        fs::write(&path, "[1, 2, 3]").unwrap();
+        // Should not panic — object guard skips the mutation
+        set_blocked(&path);
+        let content = fs::read_to_string(&path).unwrap();
+        let parsed: Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(
+            parsed,
+            json!([1, 2, 3]),
+            "non-object state must be unchanged"
+        );
     }
 
     #[test]
