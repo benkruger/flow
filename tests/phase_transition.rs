@@ -342,3 +342,131 @@ fn code_phase_completion_captures_diff_stats() {
     assert!(updated["diff_stats"]["files_changed"].as_i64().unwrap() >= 1);
     assert!(updated["diff_stats"]["captured_at"].is_string());
 }
+
+#[test]
+fn diff_stats_with_merge_commit_in_history() {
+    // Feature branch has a merge commit (merged a side branch into it).
+    // Verifies capture_diff_stats parses correctly when HEAD history
+    // includes non-linear commits.
+    let dir = tempfile::tempdir().unwrap();
+
+    // Init repo on main
+    Command::new("git")
+        .args(["-c", "init.defaultBranch=main", "init"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "commit.gpgsign", "false"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    fs::write(dir.path().join("base.txt"), "base\n").unwrap();
+    Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "init"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    // Create side branch with a change
+    Command::new("git")
+        .args(["checkout", "-b", "side-branch"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    fs::write(dir.path().join("side.txt"), "side content\n").unwrap();
+    Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "add side"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    // Back to main, create feature branch
+    Command::new("git")
+        .args(["checkout", "main"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["checkout", "-b", "my-feature"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    fs::write(dir.path().join("feature.txt"), "feature content\n").unwrap();
+    Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "add feature"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    // Merge side-branch into feature branch (creates merge commit)
+    Command::new("git")
+        .args(["merge", "side-branch", "--no-edit"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    // Set up state for code phase completion
+    let state = make_state(
+        "flow-code",
+        &[
+            ("flow-start", "complete"),
+            ("flow-plan", "complete"),
+            ("flow-code", "in_progress"),
+        ],
+    );
+    setup_state(dir.path(), "my-feature", &state);
+
+    let (code, json) = run(
+        dir.path(),
+        "flow-code",
+        "complete",
+        &["--branch", "my-feature"],
+    );
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "ok");
+
+    // Verify diff_stats parsed correctly with merge in history
+    let state_path = dir.path().join(".flow-states").join("my-feature.json");
+    let content = fs::read_to_string(state_path).unwrap();
+    let updated: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let stats = &updated["diff_stats"];
+    assert!(stats.get("files_changed").is_some());
+    let files = stats["files_changed"].as_i64().unwrap();
+    let ins = stats["insertions"].as_i64().unwrap();
+    let del = stats["deletions"].as_i64().unwrap();
+    assert!(files >= 0, "files_changed should be non-negative");
+    assert!(ins >= 0, "insertions should be non-negative");
+    assert!(del >= 0, "deletions should be non-negative");
+    // Feature branch adds 2 files (feature.txt + side.txt from merge)
+    assert!(
+        files >= 2,
+        "Expected at least 2 files changed (feature + side), got {}",
+        files
+    );
+}
