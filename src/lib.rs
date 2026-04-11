@@ -54,6 +54,7 @@ pub mod qa_reset;
 pub mod qa_verify;
 pub mod render_pr_body;
 pub mod scaffold_qa;
+pub mod scope_enumeration;
 pub mod start_finalize;
 pub mod start_gate;
 pub mod start_init;

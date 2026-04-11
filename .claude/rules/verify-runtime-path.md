@@ -5,6 +5,7 @@ where the code runs.
 
 ## Required Steps
 
+<!-- scope-enumeration: imperative -->
 1. **Find the real call site.** Grep for all callers. A function
    may exist in one file but be called from another — or not called
    at all if a different code path runs first.
