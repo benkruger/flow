@@ -28,6 +28,58 @@ fn truncate_prompt(prompt: &str) -> String {
     format!("{}...", truncated)
 }
 
+/// Map a finding outcome to its display marker.
+fn outcome_marker(outcome: &str) -> &'static str {
+    match outcome {
+        "fixed" => "✓",
+        "dismissed" => "✗",
+        "filed" => "→",
+        "rule_written" | "rule_clarified" => "+",
+        _ => "?",
+    }
+}
+
+/// Map a finding outcome to its display label.
+fn outcome_label(outcome: &str) -> &'static str {
+    match outcome {
+        "fixed" => "Fixed",
+        "dismissed" => "Dismissed",
+        "filed" => "Filed",
+        "rule_written" => "Rule written",
+        "rule_clarified" => "Rule clarified",
+        _ => "Unknown",
+    }
+}
+
+/// Render a findings section for a single phase.
+///
+/// Returns lines for the section header and each finding (two lines per finding:
+/// marker + description, then indented outcome label + reason). Returns empty vec
+/// if no findings match the phase.
+fn phase_findings_section(findings: &[Value], phase_key: &str, section_title: &str) -> Vec<String> {
+    let matched: Vec<&Value> = findings
+        .iter()
+        .filter(|f| f.get("phase").and_then(|p| p.as_str()) == Some(phase_key))
+        .collect();
+    if matched.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = Vec::new();
+    lines.push(format!("  {}", section_title));
+    lines.push(format!("  {}", "─".repeat(28)));
+    for f in &matched {
+        let finding = f.get("finding").and_then(|v| v.as_str()).unwrap_or("");
+        let reason = f.get("reason").and_then(|v| v.as_str()).unwrap_or("");
+        let outcome = f.get("outcome").and_then(|v| v.as_str()).unwrap_or("");
+        let marker = outcome_marker(outcome);
+        let label = outcome_label(outcome);
+        lines.push(format!("    {} {}", marker, finding));
+        lines.push(format!("      {} — {}", label, reason));
+    }
+    lines.push(String::new());
+    lines
+}
+
 /// Build the Complete phase Done banner from state dict.
 pub fn format_complete_summary(state: &Value, closed_issues: Option<&[Value]>) -> SummaryResult {
     let names = phase_config::phase_names();
@@ -45,6 +97,7 @@ pub fn format_complete_summary(state: &Value, closed_issues: Option<&[Value]>) -
     let phases = state.get("phases").and_then(|p| p.as_object());
     let issues = state.get("issues_filed").and_then(|i| i.as_array());
     let notes = state.get("notes").and_then(|n| n.as_array());
+    let findings = state.get("findings").and_then(|f| f.as_array());
     let version = read_version();
 
     // Build phase timing rows and total
@@ -104,6 +157,15 @@ pub fn format_complete_summary(state: &Value, closed_issues: Option<&[Value]>) -
     lines.push(format!("  {}", "─".repeat(28)));
     lines.push(format!("  {:<16} {}", "Total:", format_time(total_seconds)));
     lines.push(String::new());
+
+    // Findings sections (between Timeline and Artifacts)
+    if let Some(findings_arr) = findings {
+        let cr_lines =
+            phase_findings_section(findings_arr, "flow-code-review", "Code Review Findings");
+        lines.extend(cr_lines);
+        let learn_lines = phase_findings_section(findings_arr, "flow-learn", "Learn Findings");
+        lines.extend(learn_lines);
+    }
 
     // Artifacts section
     let issues_count = issues.map(|i| i.len()).unwrap_or(0);
@@ -757,5 +819,265 @@ mod tests {
         let result = run_impl(&args);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Failed to parse"));
+    }
+
+    // --- Findings display tests ---
+
+    #[test]
+    fn test_summary_with_code_review_findings() {
+        let mut state = all_complete_state();
+        state["findings"] = json!([
+            {
+                "finding": "Unused variable in handler",
+                "reason": "False positive from macro expansion",
+                "outcome": "dismissed",
+                "phase": "flow-code-review",
+                "phase_name": "Code Review",
+                "timestamp": "2026-01-01T00:30:00-08:00",
+            },
+            {
+                "finding": "Missing null check in parser",
+                "reason": "Could panic on malformed input",
+                "outcome": "fixed",
+                "phase": "flow-code-review",
+                "phase_name": "Code Review",
+                "timestamp": "2026-01-01T00:31:00-08:00",
+            },
+        ]);
+
+        let result = format_complete_summary(&state, None);
+
+        assert!(
+            result.summary.contains("Code Review Findings"),
+            "Summary:\n{}",
+            result.summary
+        );
+        assert!(
+            result.summary.contains("Unused variable in handler"),
+            "Summary:\n{}",
+            result.summary
+        );
+        assert!(
+            result.summary.contains("Missing null check in parser"),
+            "Summary:\n{}",
+            result.summary
+        );
+        assert!(
+            result.summary.contains("✗"),
+            "Dismissed marker missing:\n{}",
+            result.summary
+        );
+        assert!(
+            result.summary.contains("✓"),
+            "Fixed marker missing:\n{}",
+            result.summary
+        );
+        assert!(
+            result
+                .summary
+                .contains("False positive from macro expansion"),
+            "Summary:\n{}",
+            result.summary
+        );
+    }
+
+    #[test]
+    fn test_summary_with_learn_findings() {
+        let mut state = all_complete_state();
+        state["findings"] = json!([
+            {
+                "finding": "No rule for error handling",
+                "reason": "Gap identified during analysis",
+                "outcome": "rule_written",
+                "phase": "flow-learn",
+                "phase_name": "Learn",
+                "path": ".claude/rules/error-handling.md",
+                "timestamp": "2026-01-01T00:45:00-08:00",
+            },
+        ]);
+
+        let result = format_complete_summary(&state, None);
+
+        assert!(
+            result.summary.contains("Learn Findings"),
+            "Summary:\n{}",
+            result.summary
+        );
+        assert!(
+            result.summary.contains("No rule for error handling"),
+            "Summary:\n{}",
+            result.summary
+        );
+        assert!(
+            result.summary.contains("+"),
+            "Rule written marker missing:\n{}",
+            result.summary
+        );
+    }
+
+    #[test]
+    fn test_summary_with_both_phase_findings() {
+        let mut state = all_complete_state();
+        state["findings"] = json!([
+            {
+                "finding": "Bug in parser",
+                "reason": "Fixed inline",
+                "outcome": "fixed",
+                "phase": "flow-code-review",
+                "phase_name": "Code Review",
+                "timestamp": "2026-01-01T00:30:00-08:00",
+            },
+            {
+                "finding": "Missing rule",
+                "reason": "Created new rule",
+                "outcome": "rule_written",
+                "phase": "flow-learn",
+                "phase_name": "Learn",
+                "timestamp": "2026-01-01T00:45:00-08:00",
+            },
+        ]);
+
+        let result = format_complete_summary(&state, None);
+
+        assert!(
+            result.summary.contains("Code Review Findings"),
+            "Summary:\n{}",
+            result.summary
+        );
+        assert!(
+            result.summary.contains("Learn Findings"),
+            "Summary:\n{}",
+            result.summary
+        );
+    }
+
+    #[test]
+    fn test_summary_no_findings_hides_sections() {
+        let mut state = all_complete_state();
+        state["findings"] = json!([]);
+
+        let result_empty = format_complete_summary(&state, None);
+        assert!(
+            !result_empty.summary.contains("Code Review Findings"),
+            "Summary:\n{}",
+            result_empty.summary
+        );
+        assert!(
+            !result_empty.summary.contains("Learn Findings"),
+            "Summary:\n{}",
+            result_empty.summary
+        );
+
+        // Also test when findings key is missing entirely
+        let state_no_key = all_complete_state();
+        let result_missing = format_complete_summary(&state_no_key, None);
+        assert!(!result_missing.summary.contains("Code Review Findings"));
+        assert!(!result_missing.summary.contains("Learn Findings"));
+    }
+
+    #[test]
+    fn test_summary_findings_all_outcomes() {
+        let mut state = all_complete_state();
+        state["findings"] = json!([
+            {
+                "finding": "f1",
+                "reason": "r1",
+                "outcome": "fixed",
+                "phase": "flow-code-review",
+                "phase_name": "Code Review",
+                "timestamp": "2026-01-01T00:30:00-08:00",
+            },
+            {
+                "finding": "f2",
+                "reason": "r2",
+                "outcome": "dismissed",
+                "phase": "flow-code-review",
+                "phase_name": "Code Review",
+                "timestamp": "2026-01-01T00:31:00-08:00",
+            },
+            {
+                "finding": "f3",
+                "reason": "r3",
+                "outcome": "filed",
+                "phase": "flow-code-review",
+                "phase_name": "Code Review",
+                "issue_url": "https://github.com/test/test/issues/99",
+                "timestamp": "2026-01-01T00:32:00-08:00",
+            },
+            {
+                "finding": "f4",
+                "reason": "r4",
+                "outcome": "rule_written",
+                "phase": "flow-learn",
+                "phase_name": "Learn",
+                "path": ".claude/rules/test.md",
+                "timestamp": "2026-01-01T00:33:00-08:00",
+            },
+            {
+                "finding": "f5",
+                "reason": "r5",
+                "outcome": "rule_clarified",
+                "phase": "flow-learn",
+                "phase_name": "Learn",
+                "path": ".claude/rules/existing.md",
+                "timestamp": "2026-01-01T00:34:00-08:00",
+            },
+        ]);
+
+        let result = format_complete_summary(&state, None);
+
+        // fixed → ✓
+        assert!(result.summary.contains("✓"), "Summary:\n{}", result.summary);
+        // dismissed → ✗
+        assert!(result.summary.contains("✗"), "Summary:\n{}", result.summary);
+        // filed → →
+        assert!(result.summary.contains("→"), "Summary:\n{}", result.summary);
+        // rule_written and rule_clarified → +
+        // Count occurrences of "+" in Learn Findings section
+        let learn_section_start = result.summary.find("Learn Findings");
+        assert!(
+            learn_section_start.is_some(),
+            "Learn Findings section missing:\n{}",
+            result.summary
+        );
+    }
+
+    #[test]
+    fn test_summary_findings_with_existing_artifacts() {
+        let mut state = all_complete_state();
+        state["findings"] = json!([
+            {
+                "finding": "Bug found",
+                "reason": "Fixed it",
+                "outcome": "fixed",
+                "phase": "flow-code-review",
+                "phase_name": "Code Review",
+                "timestamp": "2026-01-01T00:30:00-08:00",
+            },
+        ]);
+        state["issues_filed"] = json!([
+            {
+                "label": "Tech Debt",
+                "title": "Refactor X",
+                "url": "https://github.com/test/test/issues/50",
+                "phase": "flow-code-review",
+                "phase_name": "Code Review",
+                "timestamp": "2026-01-01T00:00:00-08:00",
+            },
+        ]);
+
+        let result = format_complete_summary(&state, None);
+
+        // Both findings and artifacts sections should coexist
+        assert!(
+            result.summary.contains("Code Review Findings"),
+            "Summary:\n{}",
+            result.summary
+        );
+        assert!(
+            result.summary.contains("Issues filed: 1"),
+            "Summary:\n{}",
+            result.summary
+        );
     }
 }

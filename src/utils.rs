@@ -321,6 +321,14 @@ pub fn branch_name(feature_words: &str) -> String {
         .collect::<Vec<_>>()
         .join("-");
 
+    // Fallback for feature descriptions with no alphanumeric characters
+    // (empty input, pure punctuation, or all-unicode). Returns a safe
+    // placeholder rather than an empty string that would break downstream
+    // worktree creation and git operations.
+    if name.is_empty() {
+        return "unnamed".to_string();
+    }
+
     if name.chars().count() <= 32 {
         return name;
     }
@@ -492,6 +500,18 @@ pub fn check_duplicate_issue(
             Ok(v) => v,
             Err(_) => continue,
         };
+
+        // Skip completed flows — their state files are normally deleted by
+        // cleanup, but leftovers should not block new flows for the same issue.
+        let is_completed = state
+            .get("phases")
+            .and_then(|p| p.get("flow-complete"))
+            .and_then(|fc| fc.get("status"))
+            .and_then(|s| s.as_str())
+            == Some("complete");
+        if is_completed {
+            continue;
+        }
 
         let prompt = state.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
         let existing_issues: std::collections::HashSet<i64> =
@@ -855,6 +875,26 @@ mod tests {
         assert!(result.len() <= 32, "Got: {} ({})", result, result.len());
         assert!(result.is_ascii());
         assert!(!result.ends_with('-'));
+    }
+
+    #[test]
+    fn branch_name_empty_string() {
+        let result = branch_name("");
+        assert_eq!(result, "unnamed");
+    }
+
+    #[test]
+    fn branch_name_all_special_chars() {
+        let result = branch_name("!@#$%");
+        assert_eq!(result, "unnamed");
+    }
+
+    #[test]
+    fn branch_name_reserved_words_pass_through() {
+        // Reserved words like HEAD and main are valid branch components
+        // when used as feature descriptions
+        assert_eq!(branch_name("HEAD"), "head");
+        assert_eq!(branch_name("main"), "main");
     }
 
     // --- derive_feature() ---
@@ -1235,6 +1275,45 @@ mod tests {
             serde_json::json!({"prompt": null, "branch": "null-prompt"}).to_string(),
         )
         .unwrap();
+        assert!(check_duplicate_issue(dir.path(), &[123], "other-branch").is_none());
+    }
+
+    #[test]
+    fn check_duplicate_skips_completed_flow() {
+        // A completed flow's leftover state file should not block a new flow
+        // targeting the same issue
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(
+            state_dir.join("completed-branch.json"),
+            serde_json::json!({
+                "prompt": "work on issue #42",
+                "branch": "completed-branch",
+                "current_phase": "flow-complete",
+                "phases": {
+                    "flow-complete": {
+                        "status": "complete"
+                    }
+                },
+                "pr_url": "https://github.com/test/repo/pull/55",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert!(
+            check_duplicate_issue(dir.path(), &[42], "new-branch").is_none(),
+            "Completed flow should not block new flow for the same issue"
+        );
+    }
+
+    #[test]
+    fn check_duplicate_skips_empty_state_file() {
+        // An empty (0-byte) state file should not block
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(state_dir.join("empty-branch.json"), "").unwrap();
         assert!(check_duplicate_issue(dir.path(), &[123], "other-branch").is_none());
     }
 

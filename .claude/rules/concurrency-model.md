@@ -25,6 +25,15 @@ Ask: "What happens when two flows hit this at the same time?"
   operation on main (pull, commit, push) must be serialized
   via the start lock or avoided entirely.
 
+## Completed Flow State File Leftovers
+
+Cleanup normally deletes `.flow-states/<branch>.json` at Complete.
+If cleanup fails (kill signal, filesystem error), a state file may
+survive with `phases.flow-complete.status == "complete"`. Functions
+that scan `.flow-states/` for active flows (e.g. duplicate issue
+detection) must skip state files where the flow-complete phase is
+complete — these are orphans from finished flows, not active work.
+
 ## Lock Name Must Match Release Name
 
 When acquiring a lock, the name used for acquisition must be the

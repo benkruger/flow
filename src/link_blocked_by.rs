@@ -46,6 +46,13 @@ pub fn link_blocked_by(
     blocked_number: i64,
     blocking_number: i64,
 ) -> Result<(i64, i64), String> {
+    if blocked_number == blocking_number {
+        return Err(format!(
+            "Cannot create self-reference: issue #{} as both blocked and blocking",
+            blocked_number
+        ));
+    }
+
     // Resolve blocked issue to verify it exists (API URL uses blocked_number, not the DB ID)
     let (_, err) = fetch_database_id(repo, blocked_number);
     if let Some(e) = err {
@@ -155,6 +162,19 @@ mod tests {
             "10",
         ]);
         assert!(args.is_err());
+    }
+
+    #[test]
+    fn self_reference_rejected() {
+        // blocked == blocking should be rejected before any API call
+        let result = link_blocked_by("owner/repo", 42, 42);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("self-reference"),
+            "Error should mention self-reference, got: {}",
+            msg
+        );
     }
 
     #[test]

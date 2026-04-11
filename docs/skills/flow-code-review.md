@@ -48,11 +48,14 @@ independently).
 ### Step 3 — Triage
 
 Classify each finding: real in-scope (fix), real out-of-scope (file
-issue), or false positive (discard). Shows triage summary table.
+issue), or false positive (discard). Each triage decision is recorded
+via `bin/flow add-finding` with the outcome and reasoning. Shows triage
+summary table.
 
 ### Step 4 — Fix
 
-Fix all real in-scope findings, run `bin/flow ci`, commit once via
+Fix all real in-scope findings, recording each fix via
+`bin/flow add-finding`. Run `bin/flow ci`, commit once via
 `/flow-commit`.
 
 ---
