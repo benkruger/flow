@@ -141,7 +141,7 @@ pub fn check_stale(file_paths: &[String], age_days: i64) -> StaleInfo {
 }
 
 /// Truncate body to max_length, adding ellipsis if needed.
-/// Uses char count (not byte count) per rust-port-parity rule.
+/// Uses char count (not byte count) to avoid panicking on multi-byte UTF-8 boundaries.
 pub fn truncate_body(body: &str, max_length: usize) -> String {
     if body.chars().count() <= max_length {
         return body.to_string();
