@@ -673,6 +673,20 @@
         <p>Coding anti-patterns and gotchas. &ldquo;Never use update_column in tests.&rdquo;</p>
       </div>
     </div>
+
+    <h3>Maintenance</h3>
+    <p>When you extract learnings across many sessions into CLAUDE.md and project rules, references go stale, constraints duplicate, and content drifts to the wrong destination. Two read-only utilities audit the corpus between features.</p>
+
+    <div class="features">
+      <div class="feature">
+        <h4><code>/flow-hygiene</code></h4>
+        <p>Audits the instruction corpus itself &mdash; CLAUDE.md, rules, and memory. Six finding types: stale, orphaned, unenforced, misplaced, duplicate, contradiction. Run weekly or after big refactors.</p>
+      </div>
+      <div class="feature">
+        <h4><code>/flow-doc-sync</code></h4>
+        <p>Audits documentation against code behavior &mdash; reports drift between what docs say and what code does. Run when docs feel out of date.</p>
+      </div>
+    </div>
   </section>
 
   <!-- BEYOND THE PHASES -->
@@ -837,10 +851,12 @@ Duration: <span class="t-accent">6h 27m</span>
         <tr><td><code>/flow-status</code></td><td>Current phase, PR link, cumulative time per phase, next step</td></tr>
         <tr><td><code>/flow-note</code></td><td>Capture a correction &mdash; auto-invoked when Claude is wrong</td></tr>
         <tr><td><code>/flow-abort</code></td><td>Abandon feature &mdash; close PR, delete branch, remove worktree</td></tr>
+        <tr><td><code>/flow-reset</code></td><td>Remove all FLOW artifacts &mdash; close PRs, delete worktrees/branches/state files</td></tr>
         <tr><td><code>/flow-config</code></td><td>Display current configuration &mdash; version, framework, per-skill autonomy</td></tr>
         <tr><td><code>/flow-issues</code></td><td>Fetch open issues, categorize, prioritize, and display a dashboard. Supports readiness filters</td></tr>
         <tr><td><code>/flow-create-issue</code></td><td>Explore a design question or decompose a concrete problem, iterate until work-ready, then file it</td></tr>
         <tr><td><code>/flow-doc-sync</code></td><td>Audit documentation against code behavior &mdash; reports drift between what docs say and what code does</td></tr>
+        <tr><td><code>/flow-hygiene</code></td><td>Audit instruction corpus health &mdash; CLAUDE.md, rules, and memory for staleness, misplacement, duplication, and contradictions</td></tr>
         <tr><td><code>/flow-decompose-project</code></td><td>Decompose a project into a linked GitHub issue graph &mdash; epic, milestones, sub-issues, blocked-by dependencies</td></tr>
         <tr><td><code>/flow-orchestrate</code></td><td>Batch orchestration &mdash; process decomposed issues overnight via flow-start --auto</td></tr>
       </tbody>

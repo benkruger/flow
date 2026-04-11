@@ -294,6 +294,20 @@ fn readme_mentions_all_utility_commands() {
 
 // --- Landing page completeness ---
 
+/// docs/index.html must mention all utility skill commands.
+#[test]
+fn landing_page_mentions_all_utility_commands() {
+    let html = fs::read_to_string(common::docs_dir().join("index.html")).unwrap();
+    for name in utility_skill_names() {
+        let command = format!("/{}", name);
+        assert!(
+            html.contains(&command),
+            "docs/index.html does not mention utility command '{}'",
+            command
+        );
+    }
+}
+
 /// docs/index.html must mention all 6 phase names.
 #[test]
 fn landing_page_mentions_all_phase_names() {
