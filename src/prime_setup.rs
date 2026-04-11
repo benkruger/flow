@@ -491,6 +491,16 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
 /// installer only fills in the gaps so users who already configured
 /// their own bin/* scripts (or migrated by hand) keep their work.
 ///
+/// # Symlink safety
+///
+/// The existence check uses [`fs::symlink_metadata`], which does not
+/// follow symlinks. This matters because `Path::exists()` would return
+/// `false` for a dangling symlink, and a subsequent `fs::write` would
+/// then follow the symlink and write to its target — potentially
+/// anywhere on the filesystem the user has write permission. Using
+/// `symlink_metadata` correctly detects the symlink entry itself and
+/// skips it, so the installer never writes through a symlink.
+///
 /// Returns the list of tool names that were actually installed.
 pub fn install_bin_stubs(project_root: &Path, plugin_root: &Path) -> Vec<String> {
     let stubs_dir = plugin_root.join("assets").join("bin-stubs");
@@ -498,7 +508,11 @@ pub fn install_bin_stubs(project_root: &Path, plugin_root: &Path) -> Vec<String>
     let mut installed = Vec::new();
     for tool in ["format", "lint", "build", "test"] {
         let target = bin_dir.join(tool);
-        if target.exists() {
+        // symlink_metadata returns Ok for files, directories, valid
+        // symlinks, and dangling symlinks — anything the filesystem
+        // considers an entry. This is the only safe existence check
+        // for a path we are about to write to.
+        if fs::symlink_metadata(&target).is_ok() {
             continue;
         }
         let source = stubs_dir.join(format!("{}.sh", tool));

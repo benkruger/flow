@@ -149,6 +149,14 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         Err(err_json) => return Ok(err_json),
     };
 
+    // Drift guard: phase entry is a state mutation, so it must run
+    // from inside the subdirectory the flow was started in. See
+    // [`crate::cwd_scope::enforce`].
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    if let Err(msg) = crate::cwd_scope::enforce(&cwd, &root) {
+        return Ok(json!({"status": "error", "message": msg}));
+    }
+
     // Read state for gate check and data extraction
     let state_content = std::fs::read_to_string(&state_path)
         .map_err(|e| format!("Could not read state file: {}", e))?;

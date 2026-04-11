@@ -87,6 +87,38 @@ pub fn bin_tool_sequence(cwd: &Path) -> Vec<CiTool> {
     tools
 }
 
+/// Marker string used in `assets/bin-stubs/*.sh` to identify an
+/// unconfigured stub. Scripts that contain this marker are treated as
+/// placeholders by [`any_tool_is_stub`] and suppress sentinel writes
+/// so the stderr reminder surfaces on every CI run until the user
+/// configures a real command.
+const STUB_MARKER: &str = "FLOW-STUB-UNCONFIGURED";
+
+/// Return true if any of the scripts in `tools` contains the stub
+/// marker. Used by [`run_once`] and [`run_with_retry`] to suppress
+/// sentinel writes when CI "passed" only because the installed stubs
+/// exit 0 with a stderr reminder.
+///
+/// This protects against a subtle failure mode: the stubs are
+/// installed by `/flow:flow-prime` with `exit 0` so fresh primes
+/// never block CI. Without stub detection, the first `bin/flow ci`
+/// run after prime writes a sentinel, and every subsequent run skips
+/// with "no changes since last CI pass" — the stderr reminder
+/// becomes invisible and users can ship code with no real CI gate.
+/// Scanning each script's source for the marker is cheap (four small
+/// file reads) and catches the case even when a stub has been renamed
+/// or moved, as long as the marker comment is preserved.
+pub fn any_tool_is_stub(tools: &[CiTool]) -> bool {
+    for tool in tools {
+        if let Ok(content) = fs::read_to_string(&tool.program) {
+            if content.contains(STUB_MARKER) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Build the sentinel file path for a given branch: `<root>/.flow-states/<branch>-ci-passed`.
 ///
 /// Centralizes the naming convention so [`run_once`], [`run_with_retry`], and the
@@ -193,11 +225,21 @@ pub fn run_once(
     simulate_branch: Option<&str>,
 ) -> (Value, i32) {
     if tools.is_empty() {
+        // A repo with no bin/{format,lint,build,test} scripts has no
+        // gate at all, so returning "skipped ok" would silently pass
+        // every commit. Fail loudly and tell the user how to fix it.
         return (
-            json!({"status": "ok", "skipped": true, "reason": "no ./bin/<tool> scripts found"}),
-            0,
+            json!({
+                "status": "error",
+                "message": "No ./bin/{format,lint,build,test} scripts found. Run /flow:flow-prime to install stubs or create the scripts manually.",
+            }),
+            1,
         );
     }
+
+    // Detect unconfigured stubs up front so we can suppress the
+    // sentinel write on success. See [`any_tool_is_stub`].
+    let any_stub = any_tool_is_stub(tools);
 
     let sentinel = branch.map(|b| sentinel_path(root, b));
     let snapshot = tree_snapshot(cwd, simulate_branch);
@@ -258,12 +300,24 @@ pub fn run_once(
     }
 
     if let Some(ref path) = sentinel {
-        if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
+        if any_stub {
+            // Unconfigured stubs just echoed a reminder — do not lock
+            // in a sentinel that would hide the reminder on the next
+            // run. Remove any previous sentinel so the next `bin/flow
+            // ci` run the scripts again.
+            let _ = fs::remove_file(path);
+        } else {
+            if let Some(parent) = path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let _ = fs::write(path, &snapshot);
         }
-        let _ = fs::write(path, &snapshot);
     }
-    (json!({"status": "ok", "skipped": false}), 0)
+    let mut response = json!({"status": "ok", "skipped": false});
+    if any_stub {
+        response["stubs_detected"] = json!(true);
+    }
+    (response, 0)
 }
 
 /// Retry CI path with flaky/consistent classification.
@@ -282,6 +336,20 @@ pub fn run_with_retry(
     max_attempts: u32,
     simulate_branch: Option<&str>,
 ) -> (Value, i32) {
+    if tools.is_empty() {
+        // Mirror [`run_once`]: no gate → fail loudly. A retry run that
+        // returned "ok" here would cache a useless sentinel and let
+        // every commit bypass CI.
+        return (
+            json!({
+                "status": "error",
+                "message": "No ./bin/{format,lint,build,test} scripts found. Run /flow:flow-prime to install stubs or create the scripts manually.",
+            }),
+            1,
+        );
+    }
+
+    let any_stub = any_tool_is_stub(tools);
     let sentinel = branch.map(|b| sentinel_path(root, b));
     let mut first_failure_output: Option<String> = None;
 
@@ -322,15 +390,24 @@ pub fn run_with_retry(
         if !attempt_failed {
             let snapshot = tree_snapshot(cwd, simulate_branch);
             if let Some(ref path) = sentinel {
-                if let Some(parent) = path.parent() {
-                    let _ = fs::create_dir_all(parent);
+                if any_stub {
+                    // See [`run_once`] for rationale: stub "passes"
+                    // should never lock in a sentinel.
+                    let _ = fs::remove_file(path);
+                } else {
+                    if let Some(parent) = path.parent() {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                    let _ = fs::write(path, &snapshot);
                 }
-                let _ = fs::write(path, &snapshot);
             }
             let mut result = json!({"status": "ok", "attempts": attempt});
             if attempt > 1 {
                 result["flaky"] = json!(true);
                 result["first_failure_output"] = json!(first_failure_output.unwrap_or_default());
+            }
+            if any_stub {
+                result["stubs_detected"] = json!(true);
             }
             return (result, 0);
         } else {
@@ -780,11 +857,75 @@ mod tests {
     }
 
     #[test]
-    fn run_once_empty_tools_skips() {
+    fn run_once_empty_tools_errors() {
+        // A repo with no bin/{format,lint,build,test} scripts must
+        // fail CI loudly — an "ok skipped" result would silently pass
+        // every commit in a non-primed project.
         let f = make_ci_fixture();
         let (out, code) = run_once(&f.path, &f.path, &[], Some(&f.branch), false, None);
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        assert!(out["message"]
+            .as_str()
+            .unwrap()
+            .contains("No ./bin/{format,lint,build,test} scripts"));
+    }
+
+    #[test]
+    fn run_with_retry_empty_tools_errors() {
+        // Mirror [`run_once_empty_tools_errors`]: retry mode must not
+        // cache a useless sentinel when there are no tools to run.
+        let f = make_ci_fixture();
+        let (out, code) = run_with_retry(&f.path, &f.path, &[], Some(&f.branch), 3, None);
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        assert!(out.get("skipped").is_none());
+        assert!(out.get("attempts").is_none());
+        assert!(!fixture_sentinel(&f).exists());
+    }
+
+    #[test]
+    fn run_once_stub_script_suppresses_sentinel() {
+        // An unconfigured stub (identified by the FLOW-STUB-UNCONFIGURED
+        // marker) must not cause a sentinel write. Otherwise the stub's
+        // stderr reminder would be invisible on the next CI run and the
+        // user could ship code with no real gate.
+        let f = make_ci_fixture();
+        let script = f.path.join("stub.sh");
+        write_script(
+            &script,
+            "#!/usr/bin/env bash\n# FLOW-STUB-UNCONFIGURED (remove this line)\necho 'stub' >&2\nexit 0\n",
+        );
+        let tools = single_tool(&script);
+
+        let (out, code) = run_once(&f.path, &f.path, &tools, Some(&f.branch), false, None);
         assert_eq!(code, 0);
-        assert_eq!(out["skipped"], true);
+        assert_eq!(out["status"], "ok");
+        assert_eq!(out["stubs_detected"], true);
+        assert!(
+            !fixture_sentinel(&f).exists(),
+            "sentinel must not be written when any tool is a stub"
+        );
+    }
+
+    #[test]
+    fn run_with_retry_stub_script_suppresses_sentinel() {
+        let f = make_ci_fixture();
+        let script = f.path.join("stub.sh");
+        write_script(
+            &script,
+            "#!/usr/bin/env bash\n# FLOW-STUB-UNCONFIGURED (remove this line)\necho 'stub' >&2\nexit 0\n",
+        );
+        let tools = single_tool(&script);
+
+        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 3, None);
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+        assert_eq!(out["stubs_detected"], true);
+        assert!(
+            !fixture_sentinel(&f).exists(),
+            "sentinel must not be written when any tool is a stub"
+        );
     }
 
     #[test]
@@ -904,7 +1045,10 @@ exit 0
     }
 
     #[test]
-    fn run_impl_no_bin_scripts_returns_skipped_ok() {
+    fn run_impl_no_bin_scripts_returns_error() {
+        // A repo with no bin/{format,lint,build,test} scripts is not
+        // primed (or its prime was rolled back). run_impl must error
+        // so the caller sees the actionable message.
         let f = make_ci_fixture();
         let args = Args {
             branch: Some(f.branch.clone()),
@@ -912,9 +1056,12 @@ exit 0
             ..default_args()
         };
         let (out, code) = run_impl(&args, &f.path, &f.path, false);
-        assert_eq!(code, 0);
-        assert_eq!(out["status"], "ok");
-        assert_eq!(out["skipped"], true);
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        assert!(out["message"]
+            .as_str()
+            .unwrap()
+            .contains("No ./bin/{format,lint,build,test} scripts"));
     }
 
     #[test]

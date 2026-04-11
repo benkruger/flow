@@ -60,6 +60,17 @@ pub fn run_impl(_args: &Args, cwd: &Path, root: &Path) -> (Value, i32) {
 }
 
 pub fn run(args: Args) {
+    // Recursion guard: when this is spawned from `bin/flow ci` (or a
+    // user script already inside the CI chain), FLOW_CI_RUNNING is
+    // set and we must not re-enter the tool chain. Return "ok
+    // skipped" so the outer caller keeps going.
+    if std::env::var("FLOW_CI_RUNNING").is_ok() {
+        println!(
+            r#"{{"status":"ok","skipped":true,"reason":"FLOW_CI_RUNNING set (recursion guard)"}}"#
+        );
+        std::process::exit(0);
+    }
+
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let root = crate::git::project_root();
     let (result, code) = run_impl(&args, &cwd, &root);

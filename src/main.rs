@@ -772,6 +772,16 @@ fn run_phase_transition(
     }
 
     let root = project_root();
+
+    // Drift guard: phase-transition mutates the state file and must
+    // run from inside the subdirectory the flow was started in. See
+    // crate::cwd_scope::enforce.
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    if let Err(msg) = flow_rs::cwd_scope::enforce(&cwd, &root) {
+        json_error(&msg, &[]);
+        process::exit(1);
+    }
+
     let branch = match resolve_branch(branch_override, &root) {
         Some(b) => b,
         None => {

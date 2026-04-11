@@ -216,6 +216,17 @@ pub fn format_all_complete(
 
     let branch = state.get("branch").and_then(|b| b.as_str()).unwrap_or("");
     lines.push(format!("  Feature : {}", derive_feature(branch)));
+    // Subdirectory scope (only shown when non-empty). Mirrors the
+    // in-progress panel in format_panel: when a flow was started
+    // inside a mono-repo subdirectory, the user needs to see which
+    // one even after the flow is complete.
+    let relative_cwd = state
+        .get("relative_cwd")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if !relative_cwd.is_empty() {
+        lines.push(format!("  Subdir  : {}", relative_cwd));
+    }
     lines.push(format!(
         "  PR      : {}",
         state

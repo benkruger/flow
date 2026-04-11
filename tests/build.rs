@@ -29,6 +29,7 @@ fn build_errors_when_bin_build_missing() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["build"])
         .current_dir(&repo)
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap();
     assert!(!output.status.success());
@@ -60,6 +61,7 @@ fn build_execs_repo_local_bin_build() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["build"])
         .current_dir(&repo)
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap();
     assert!(
@@ -90,6 +92,7 @@ fn build_propagates_failure_exit() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["build"])
         .current_dir(&repo)
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap();
     assert!(!output.status.success());
@@ -120,6 +123,7 @@ fn build_sets_flow_ci_running_env() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["build"])
         .current_dir(&repo)
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap();
     assert!(

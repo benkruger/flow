@@ -29,6 +29,7 @@ fn format_errors_when_bin_format_missing() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["format"])
         .current_dir(&repo)
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap();
     assert!(!output.status.success());
@@ -60,6 +61,7 @@ fn format_execs_repo_local_bin_format() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["format"])
         .current_dir(&repo)
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap();
     assert!(
@@ -90,6 +92,7 @@ fn format_propagates_failure_exit() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["format"])
         .current_dir(&repo)
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap();
     assert!(!output.status.success());

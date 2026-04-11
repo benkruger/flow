@@ -82,6 +82,17 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path) -> (Value, i32) {
 }
 
 pub fn run(args: Args) {
+    // Recursion guard: see [`crate::build::run`] for rationale. If a
+    // user's `bin/test` shells back out to `bin/flow test` (e.g. to
+    // re-use `--file` passthrough), this breaks the cycle instead of
+    // spawning children until the OS kills the process.
+    if std::env::var("FLOW_CI_RUNNING").is_ok() {
+        println!(
+            r#"{{"status":"ok","skipped":true,"reason":"FLOW_CI_RUNNING set (recursion guard)"}}"#
+        );
+        std::process::exit(0);
+    }
+
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let root = crate::git::project_root();
     let (result, code) = run_impl(&args, &cwd, &root);

@@ -29,6 +29,7 @@ fn lint_errors_when_bin_lint_missing() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["lint"])
         .current_dir(&repo)
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap();
     assert!(!output.status.success());
@@ -60,6 +61,7 @@ fn lint_execs_repo_local_bin_lint() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["lint"])
         .current_dir(&repo)
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap();
     assert!(
@@ -90,6 +92,7 @@ fn lint_propagates_failure_exit() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["lint"])
         .current_dir(&repo)
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap();
     assert!(!output.status.success());

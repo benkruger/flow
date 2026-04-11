@@ -32,8 +32,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Enforce that `cwd` is inside the expected subdirectory of the worktree
-/// for the current branch's flow.
+/// Enforce that `cwd` is inside (or equal to) the expected subdirectory
+/// of the worktree for the current branch's flow.
 ///
 /// Resolution order:
 ///
@@ -46,8 +46,14 @@ use std::process::Command;
 ///    `cwd`. If git fails, return Ok(()) (can't determine worktree).
 /// 5. Compute expected = `<worktree_root>/<relative_cwd>` (just
 ///    `<worktree_root>` when empty).
-/// 6. Canonicalize both `cwd` and `expected` and compare. If they
-///    differ, return Err with a message naming the expected directory.
+/// 6. Canonicalize both `cwd` and `expected` and check that `cwd` is
+///    inside (or equal to) `expected`. If `cwd` is outside, return Err
+///    with a message naming the expected directory.
+///
+/// The check is a prefix match on canonical paths, so descending into
+/// subdirectories of `expected` is allowed (e.g. a root-level flow may
+/// cd into any worktree directory; an `api`-scoped flow may cd into
+/// `api/src/` but not into `ios/`).
 ///
 /// `project_root` is the main repo root (where `.flow-states/` lives).
 /// `cwd` is the subcommand's current working directory.
@@ -93,9 +99,9 @@ pub fn enforce(cwd: &Path, project_root: &Path) -> Result<(), String> {
     let cwd_canon = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
     let expected_canon = expected.canonicalize().unwrap_or_else(|_| expected.clone());
 
-    if cwd_canon != expected_canon {
+    if !cwd_canon.starts_with(&expected_canon) {
         return Err(format!(
-            "cwd drift: expected {}, current {}. cd to the expected directory before running bin/flow commands.",
+            "cwd drift: expected {} (or a subdirectory), current {}. cd to the expected directory before running bin/flow commands.",
             expected_canon.display(),
             cwd_canon.display()
         ));
@@ -189,17 +195,28 @@ mod tests {
     }
 
     #[test]
-    fn enforce_empty_relative_cwd_in_subdir_errors() {
+    fn enforce_empty_relative_cwd_in_subdir_returns_ok() {
         let dir = tempfile::tempdir().unwrap();
         init_git_repo(dir.path(), "feature-x");
         write_state(dir.path(), "feature-x", "");
         let subdir = dir.path().join("api");
         fs::create_dir(&subdir).unwrap();
-        // cwd is api/, relative_cwd is empty → error
+        // cwd is api/, relative_cwd is empty → ok because api/ is a
+        // descendant of the worktree root (prefix match).
         let result = enforce(&subdir, dir.path());
-        assert!(result.is_err(), "expected error, got: {:?}", result);
-        let msg = result.unwrap_err();
-        assert!(msg.contains("cwd drift"), "got: {}", msg);
+        assert!(result.is_ok(), "expected ok, got: {:?}", result);
+    }
+
+    #[test]
+    fn enforce_relative_cwd_descendant_returns_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        init_git_repo(dir.path(), "feature-x");
+        write_state(dir.path(), "feature-x", "api");
+        let nested = dir.path().join("api").join("src");
+        fs::create_dir_all(&nested).unwrap();
+        // cwd is api/src/, relative_cwd is "api" → ok (descendant)
+        let result = enforce(&nested, dir.path());
+        assert!(result.is_ok(), "expected ok, got: {:?}", result);
     }
 
     #[test]

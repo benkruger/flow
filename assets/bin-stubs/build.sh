@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# FLOW-STUB-UNCONFIGURED (remove this line once you configure a real build step)
 # FLOW build — called by `bin/flow build` and `bin/flow ci`.
 #
 # Compiles your project; nonzero exit blocks the rest of the CI

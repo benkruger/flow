@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# FLOW-STUB-UNCONFIGURED (remove this line once you configure a real format checker)
 # FLOW format checker — called by `bin/flow format` and `bin/flow ci`.
 #
 # `bin/flow ci` runs format → lint → build → test in sequence; format

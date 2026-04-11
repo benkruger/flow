@@ -103,11 +103,13 @@ Skills are pure Markdown instructions (`skills/<name>/SKILL.md`). The only execu
 - Stable JSON output contract
 - Cwd-drift guard via `cwd_scope::enforce` so subdirectory-scoped flows can't be run from the wrong directory
 
-The four `bin/*` stubs are installed by `/flow:flow-prime` from `assets/bin-stubs/<tool>.sh` when absent. Pre-existing user scripts are never overwritten. Each stub defaults to `exit 0` with a stderr reminder so a fresh prime never blocks CI; users uncomment one of the example invocations to wire their toolchain.
+The four `bin/*` stubs are installed by `/flow:flow-prime` from `assets/bin-stubs/<tool>.sh` when absent. Pre-existing user scripts are never overwritten. Each stub carries a `# FLOW-STUB-UNCONFIGURED` marker and defaults to `exit 0` with a stderr reminder so a fresh prime never blocks CI. `bin/flow ci` detects the marker in each script's source and refuses to write the sentinel when any tool is still a stub — that way the stderr reminder surfaces on every CI run until the user configures a real command. A repo with no `bin/{format,lint,build,test}` scripts at all (e.g. a subdirectory where prime hasn't run) is a hard error, not a skip: `bin/flow ci` returns `{"status": "error"}` with an actionable message.
 
 ### Subdirectory Context
 
-State files capture `relative_cwd` at flow-start time — the path inside the project root where the user invoked `/flow:flow-start`. For root-level flows this is the empty string and behavior is unchanged. For mono-repo flows started inside `api/` (or `packages/api/`), `start-workspace` returns a `worktree_cwd` that includes the suffix so the agent lands in `.worktrees/<branch>/api/` after the worktree is created. Every `bin/flow` subcommand calls `cwd_scope::enforce` as its first action, hard-erroring with the expected directory if the user has cd'd outside it. The mechanism is additive: empty `relative_cwd` preserves all pre-existing behavior.
+State files capture `relative_cwd` at flow-start time — the path inside the project root where the user invoked `/flow:flow-start`. For root-level flows this is the empty string and behavior is unchanged. For mono-repo flows started inside `api/` (or `packages/api/`), `start-workspace` returns a `worktree_cwd` that includes the suffix so the agent lands in `.worktrees/<branch>/api/` after the worktree is created.
+
+`cwd_scope::enforce` runs as the first action in every subcommand that either runs tools or mutates state: `ci`, `build`, `lint`, `format`, `test` (tool runners) and `phase-enter`, `phase-finalize`, `phase-transition`, `set-timestamp`, `add-finding` (state mutators). Read-only subcommands (e.g. `format-status`, `tombstone-audit`) do not enforce because they cannot drift the flow. The guard compares the canonicalized cwd against `<worktree_root>/<relative_cwd>` as a prefix match: cwd must be equal to or a descendant of the expected directory, so agents can cd into sub-modules of `api/` without tripping the guard, but cannot cd into a sibling `ios/` subdirectory. The mechanism is additive: empty `relative_cwd` preserves all pre-existing behavior.
 
 ### State File
 

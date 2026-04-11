@@ -50,6 +50,16 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let phase_num = phase_config::phase_number(&args.phase);
     let state_path = root.join(".flow-states").join(format!("{}.json", branch));
 
+    // Drift guard: phase transitions must happen from inside the
+    // subdirectory the flow was started in. Running phase-finalize
+    // from the wrong subdirectory of a mono-repo would mark the phase
+    // complete against the wrong assumed scope. See
+    // [`crate::cwd_scope::enforce`].
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    if let Err(msg) = crate::cwd_scope::enforce(&cwd, &root) {
+        return Ok(json!({"status": "error", "message": msg}));
+    }
+
     if !state_path.exists() {
         return Ok(json!({
             "status": "error",

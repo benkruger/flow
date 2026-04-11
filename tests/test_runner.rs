@@ -29,6 +29,7 @@ fn test_errors_when_bin_test_missing() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["test"])
         .current_dir(&repo)
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap();
     assert!(!output.status.success());
@@ -60,6 +61,7 @@ fn test_execs_repo_local_bin_test() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["test"])
         .current_dir(&repo)
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap();
     assert!(
@@ -98,6 +100,7 @@ fn test_forwards_file_argument() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["test", "--file", "tests/foo.rs"])
         .current_dir(&repo)
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap();
     assert!(
@@ -141,6 +144,7 @@ fn test_forwards_trailing_args() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["test", "--", "my_filter"])
         .current_dir(&repo)
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap();
     assert!(
@@ -171,6 +175,7 @@ fn test_propagates_failure_exit() {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["test"])
         .current_dir(&repo)
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap();
     assert!(!output.status.success());
