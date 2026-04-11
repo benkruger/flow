@@ -150,6 +150,16 @@ The `git worktree remove` call deletes the entire directory tree —
 any step that reads or removes worktree-internal files must precede
 it or the target path will not exist.
 
+Files under `.flow-states/` at the project root are NOT inside the
+worktree — they live in the main repo's directory tree and persist
+across worktree removal. Cleanup steps that operate on those files
+(state_file, plan_file, dag_file, log_file, frozen_phases,
+ci_sentinel, timings_file, closed_issues_file, issues_file,
+adversarial_test) may be placed after the worktree removal step
+without risk. The distinguishing test is "does this step's target
+path pass through `.worktrees/<branch>/`?" If yes, it must precede
+`git worktree remove`. If no, placement is free.
+
 Similarly, any SKILL.md command that reads `.flow-states/` files
 (state file, log, CI sentinel) must be placed in a numbered step
 BEFORE the cleanup step. The Done section runs after cleanup — by
@@ -476,6 +486,53 @@ How to apply: after writing a parameterized table, scan every cell for
 angle-bracket placeholders and verify every row uses identical names
 for the same semantic value. If Code Review fixes a placeholder in one
 row, verify all rows in the same pass.
+
+## Placeholder Resolution Must Match Runtime Paths
+
+When a skill instruction or agent prompt uses a placeholder to name a
+file path (e.g. `<temp_test_file>`), the placeholder's resolved value
+must be the EXACT path the code eventually writes, reads, or removes
+— not a logical abstraction, not a prefix, not a base name.
+
+### Why this matters
+
+A placeholder that represents a conceptual file (`<temp_test_file>` =
+`.flow-states/<branch>-adversarial_test` without extension) while the
+producing code actually writes a concrete file with an additional
+suffix (`.flow-states/<branch>-adversarial_test.rs`) creates a silent
+cleanup gap: `rm <temp_test_file>` targets a path that never exists,
+succeeds with no effect, and the real file orphans. Issue #1037
+documents this class of bug — the adversarial agent writes
+`<temp_test_file>.<ext>` but two cleanup layers `rm <temp_test_file>`
+(no extension), so both layers silently no-op and the file survives
+until a later phase can glob it by prefix.
+
+### How to apply
+
+1. **Trace the placeholder to every reader and writer.** Grep the
+   skill and its sub-agents for every occurrence of the placeholder.
+   Every producer (Write, cp, touch) and every consumer (rm, Read,
+   test, cat) must use paths that resolve to the same physical file.
+2. **If the extension is chosen at runtime**, the placeholder that
+   appears in cleanup instructions must either (a) carry the
+   extension too (so the cleanup matches exactly what was written),
+   (b) use a glob pattern that matches the runtime variants, or
+   (c) defer cleanup to a phase that can enumerate matches by
+   prefix (e.g., `fs::read_dir` + prefix filter in Rust code).
+3. **Abstractions are for documentation, not for cleanup commands.**
+   It is fine to describe a file conceptually in prose
+   (`<temp_test_file>` the Phase 4 adversarial test file), but the
+   actual `rm`, `Write`, or `Read` call must use a path that resolves
+   to the real bytes on disk. If the prose placeholder cannot be made
+   concrete (because the runtime chooses part of the name), split
+   the placeholder into a documented prefix plus a runtime suffix,
+   and have the cleanup command operate on the prefix via glob —
+   never directly via `rm <prefix>`.
+4. **Plan phase verification.** When a plan adds or modifies a skill
+   that writes a temp file and cleans it up later, grep both the
+   writer's and cleaner's references to the placeholder and confirm
+   the resolved path matches byte-for-byte. Record this check in
+   the Risks section so Code Review can verify it.
 
 ## Purpose Preamble for Behavioral Sections
 
