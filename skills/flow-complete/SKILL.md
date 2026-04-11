@@ -581,9 +581,10 @@ status in your response (not via Bash) inside a single fenced code block:
 
 The summary already includes the feature name, prompt, PR: <pr_url>,
 per-phase timeline (Start:, Plan:, Code:, Code Review:, Learn:,
-Complete:, Total:), and artifact counts (issues filed count, notes
-captured count). Do not add a separate PR line — it is part of the
-summary.
+Complete:, Total:), Code Review Findings and Learn Findings sections
+(each finding with its outcome marker and reasoning), and artifact
+counts (issues filed count, notes captured count). Do not add a
+separate PR line — it is part of the summary.
 
 If the `complete-finalize` JSON output has a non-empty
 `issues_links` field, render it as regular text (not inside a code

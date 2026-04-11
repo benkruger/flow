@@ -345,7 +345,11 @@ move on — do not fix. Never classify a finding as out-of-scope when the
 file was created or modified by this PR.
 
 **False positive** — speculative, not supported by the code, or already
-covered by tests. Discard with rationale.
+covered by tests. Discard with rationale. After classifying each false positive, record it:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "dismissed" --phase "flow-code-review"
+```
 
 ### Truncation check
 
@@ -379,6 +383,12 @@ After filing, record it:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Tech Debt" --title "<issue_title>" --url "<issue_url>" --phase "flow-code-review"
+```
+
+After each filed issue, also record the finding:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "filed" --phase "flow-code-review" --issue-url "<issue_url>"
 ```
 
 ### Triage summary
@@ -443,8 +453,13 @@ If no real in-scope findings exist, skip this step and proceed to Done.
 
 ### Fix each finding
 
-For each real in-scope finding, fix the issue in code. After fixing all
-findings, run CI once:
+For each real in-scope finding, fix the issue in code. After fixing each finding, record it:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "fixed" --phase "flow-code-review"
+```
+
+After fixing all findings, run CI once:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow ci

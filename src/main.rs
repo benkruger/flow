@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use serde_json::json;
 use std::process;
 
+use flow_rs::add_finding;
 use flow_rs::add_issue;
 use flow_rs::add_notification;
 use flow_rs::analyze_issues;
@@ -144,6 +145,8 @@ enum Commands {
 
     /// Append a note to FLOW state
     AppendNote(append_note::Args),
+    /// Record a triage finding in FLOW state
+    AddFinding(add_finding::Args),
     /// Record a filed issue in FLOW state
     AddIssue(add_issue::Args),
     /// Record a Slack notification in FLOW state
@@ -507,6 +510,7 @@ fn main() {
         Some(Commands::AnalyzeIssues(args)) => analyze_issues::run(args),
         Some(Commands::AppendNote(args)) => append_note::run(args),
         Some(Commands::Cleanup(args)) => cleanup::run(args),
+        Some(Commands::AddFinding(args)) => add_finding::run(args),
         Some(Commands::AddIssue(args)) => add_issue::run(args),
         Some(Commands::AddNotification(args)) => add_notification::run(args),
         Some(Commands::Issue(args)) => issue::run(args),
