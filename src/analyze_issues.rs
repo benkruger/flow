@@ -6,9 +6,40 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::LazyLock;
 
 use regex::Regex;
 use serde_json::Value;
+
+/// Pre-compiled regexes for extracting file paths with known directory prefixes.
+static DIR_PREFIX_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+    DIR_PREFIXES
+        .iter()
+        .map(|prefix| {
+            let escaped = regex::escape(prefix);
+            let pattern = format!("{}{}", escaped, r"[\w./\-]+");
+            Regex::new(&pattern).unwrap()
+        })
+        .collect()
+});
+
+/// Pre-compiled regex for file paths with recognized extensions.
+static FILE_EXT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?:^|[^\w])([\w./\-]+/[\w.\-]+\.(?:py|md|json|sh|yml|yaml|rb|js|ts|html|css|toml))(?:$|[^\w])",
+    )
+    .unwrap()
+});
+
+/// Pre-compiled regex for bug-related keywords in issue content.
+static BUG_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(bug|fix|crash|error|broken|fail|wrong|incorrect)\b").unwrap()
+});
+
+/// Pre-compiled regex for enhancement-related keywords in issue content.
+static ENHANCEMENT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(add|new|feature|enhance|improve|support|implement)\b").unwrap()
+});
 
 /// Known directory prefixes for file path extraction.
 const DIR_PREFIXES: &[&str] = &[
@@ -34,23 +65,14 @@ pub fn extract_file_paths(body: &str) -> Vec<String> {
     let mut paths: HashSet<String> = HashSet::new();
 
     // Match paths with known directory prefixes
-    for prefix in DIR_PREFIXES {
-        let escaped = regex::escape(prefix);
-        let pattern = format!("{}{}", escaped, r"[\w./\-]+");
-        let re = Regex::new(&pattern).unwrap();
+    for re in DIR_PREFIX_REGEXES.iter() {
         for mat in re.find_iter(body) {
             paths.insert(mat.as_str().to_string());
         }
     }
 
     // Match paths with file extensions (must contain /)
-    // Python uses lookbehind/lookahead; regex crate doesn't support those.
-    // Use (?:^|[^\w]) prefix and (?:$|[^\w]) suffix with capture group for the path.
-    let file_ext_re = Regex::new(
-        r"(?:^|[^\w])([\w./\-]+/[\w.\-]+\.(?:py|md|json|sh|yml|yaml|rb|js|ts|html|css|toml))(?:$|[^\w])",
-    )
-    .unwrap();
-    for cap in file_ext_re.captures_iter(body) {
+    for cap in FILE_EXT_RE.captures_iter(body) {
         paths.insert(cap[1].to_string());
     }
 
@@ -102,14 +124,11 @@ pub fn categorize(label_names: &HashSet<String>, title: &str, body: &str) -> Str
     }
 
     let combined = format!("{} {}", title, body);
-    let bug_re = Regex::new(r"(?i)\b(bug|fix|crash|error|broken|fail|wrong|incorrect)\b").unwrap();
-    let enhancement_re =
-        Regex::new(r"(?i)\b(add|new|feature|enhance|improve|support|implement)\b").unwrap();
 
-    if bug_re.is_match(&combined) {
+    if BUG_RE.is_match(&combined) {
         return "Bug".to_string();
     }
-    if enhancement_re.is_match(&combined) {
+    if ENHANCEMENT_RE.is_match(&combined) {
         return "Enhancement".to_string();
     }
     "Other".to_string()
