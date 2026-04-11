@@ -21,6 +21,7 @@ pub mod complete_preflight;
 pub mod create_dependencies;
 pub mod create_milestone;
 pub mod create_sub_issue;
+pub mod cwd_scope;
 pub mod detect_framework;
 pub mod error;
 pub mod extract_release_notes;

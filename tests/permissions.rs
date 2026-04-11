@@ -141,6 +141,7 @@ const PLACEHOLDER_SUBS: &[(&str, &str)] = &[
     ("<project_root>", "/tmp/test"),
     ("<framework>", "rails"),
     ("<worktree_path>", ".worktrees/test-branch"),
+    ("<worktree_cwd>", ".worktrees/test-branch"),
     ("<pr_number>", "123"),
     ("<note_text>", "test note"),
     ("<current-branch>", "test-branch"),
@@ -599,15 +600,26 @@ fn worktree_cd_persists_no_repeated_cd() {
         sections.push((step_num, section.to_string()));
     }
 
+    // The skill cds the agent into the worktree exactly once. The cd
+    // target is taken from `start-workspace`'s JSON response: the
+    // `worktree_cwd` field, which equals `.worktrees/<branch>` for
+    // root-level flows and `.worktrees/<branch>/<relative_cwd>` for
+    // mono-repo subdirectory flows. Either the bare literal
+    // `cd .worktrees/` (older single-target form) or the placeholder
+    // `cd <worktree_cwd>` (current form) is acceptable.
     let mut bare_cd_count = 0;
     let mut compound_cd_blocks = Vec::new();
 
     for (step_num, section) in &sections {
         for block in extract_bash_blocks_from_content(section) {
-            if !block.contains("cd .worktrees/") {
+            let is_worktree_cd =
+                block.contains("cd .worktrees/") || block.contains("cd <worktree_cwd>");
+            if !is_worktree_cd {
                 continue;
             }
-            if block.starts_with("cd .worktrees/") && !block.contains("&&") {
+            let starts_correct =
+                block.starts_with("cd .worktrees/") || block.starts_with("cd <worktree_cwd>");
+            if starts_correct && !block.contains("&&") {
                 bare_cd_count += 1;
             } else {
                 let first_line = block.lines().next().unwrap_or("");
@@ -618,12 +630,12 @@ fn worktree_cd_persists_no_repeated_cd() {
 
     assert_eq!(
         bare_cd_count, 1,
-        "Expected exactly 1 bare 'cd .worktrees/' block, found {}",
+        "Expected exactly 1 bare worktree cd block, found {}",
         bare_cd_count
     );
     assert!(
         compound_cd_blocks.is_empty(),
-        "Found {} compound 'cd .worktrees/ && ...' block(s):\n{}",
+        "Found {} compound worktree cd block(s):\n{}",
         compound_cd_blocks.len(),
         compound_cd_blocks.join("\n  ")
     );

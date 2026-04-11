@@ -245,6 +245,20 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let prompt_clone = prompt.clone();
     let repo_clone = repo.clone();
 
+    // Read relative_cwd from state file (init_state wrote it earlier).
+    // Used below to construct the worktree_cwd response field so the
+    // skill can cd the agent into a subdirectory of the worktree when
+    // the flow was started inside a mono-repo subdir.
+    let relative_cwd = std::fs::read_to_string(&state_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| {
+            v.get("relative_cwd")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_default();
+
     if state_path.exists() {
         match mutate_state(&state_path, move |state| {
             if !(state.is_object() || state.is_null()) {
@@ -292,9 +306,21 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     update_step(&state_path, 4);
 
     let wt_relative = format!(".worktrees/{}", branch);
+    // worktree_cwd is the directory the agent should cd into. For
+    // root-level flows it equals the worktree path; for flows started
+    // inside a subdirectory of a mono-repo (relative_cwd non-empty),
+    // it includes that suffix so the agent lands in the same subdir
+    // it started from.
+    let worktree_cwd = if relative_cwd.is_empty() {
+        wt_relative.clone()
+    } else {
+        format!("{}/{}", wt_relative, relative_cwd)
+    };
     Ok(json!({
         "status": "ok",
         "worktree": wt_relative,
+        "worktree_cwd": worktree_cwd,
+        "relative_cwd": relative_cwd,
         "pr_url": pr_url,
         "pr_number": pr_number,
         "feature": feature_title,

@@ -130,6 +130,16 @@ pub struct SlackNotification {
 pub struct FlowState {
     pub schema_version: i64,
     pub branch: String,
+    /// Relative path inside the worktree where the agent should operate.
+    ///
+    /// Empty string means the agent operates at the worktree root (the
+    /// common case). When non-empty (e.g. `"api"` for a mono-repo flow
+    /// started inside `api/`), `start_workspace` cds the agent into
+    /// `<worktree>/<relative_cwd>` and every `bin/flow` subcommand
+    /// enforces that cwd against this value via `cwd_scope::enforce`.
+    /// Captured by `start_init` from `cwd.strip_prefix(project_root())`.
+    #[serde(default)]
+    pub relative_cwd: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

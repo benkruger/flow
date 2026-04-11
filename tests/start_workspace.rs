@@ -297,6 +297,85 @@ fn test_state_backfill_preserves_existing_fields() {
 }
 
 #[test]
+fn test_worktree_cwd_root_when_relative_cwd_empty() {
+    // When relative_cwd is empty (root-level flow), worktree_cwd in the
+    // response equals worktree itself (no subdir suffix). The skill cds
+    // into this path; an empty relative_cwd means cd to .worktrees/<branch>.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "root-flow");
+    create_lock_entry(&repo, "root-flow");
+
+    let output = run_start_workspace(&repo, "Root Flow", "root-flow", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["worktree"], ".worktrees/root-flow");
+    assert_eq!(data["worktree_cwd"], ".worktrees/root-flow");
+    assert_eq!(data["relative_cwd"], "");
+}
+
+#[test]
+fn test_worktree_cwd_includes_relative_cwd_suffix() {
+    // When the state file has a non-empty relative_cwd (set by start-init
+    // when the user starts a flow inside a mono-repo subdir), start-workspace
+    // returns worktree_cwd with that suffix appended so the skill can cd
+    // the agent into the same subdirectory after the worktree is created.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    let stub_dir = create_default_gh_stub(&repo);
+
+    // Pre-create state file with non-empty relative_cwd
+    let state_dir = repo.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    let state = json!({
+        "schema_version": 1,
+        "branch": "subdir-flow",
+        "relative_cwd": "api",
+        "started_at": "2026-01-01T00:00:00-08:00",
+        "current_phase": "flow-start",
+        "framework": "python",
+        "files": {
+            "plan": null,
+            "dag": null,
+            "log": ".flow-states/subdir-flow.log",
+            "state": ".flow-states/subdir-flow.json",
+        },
+        "phases": {},
+        "phase_transitions": [],
+        "notes": [],
+        "prompt": "test",
+    });
+    fs::write(
+        state_dir.join("subdir-flow.json"),
+        serde_json::to_string_pretty(&state).unwrap(),
+    )
+    .unwrap();
+    create_lock_entry(&repo, "subdir-flow");
+
+    let output = run_start_workspace(&repo, "Subdir Flow", "subdir-flow", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["worktree"], ".worktrees/subdir-flow");
+    assert_eq!(data["worktree_cwd"], ".worktrees/subdir-flow/api");
+    assert_eq!(data["relative_cwd"], "api");
+}
+
+#[test]
 fn test_worktree_partial_failure_recovery_after_cleanup() {
     // Simulates a partial failure where a directory exists at the worktree path
     // (e.g., from a crashed start-workspace). First attempt fails. After removing

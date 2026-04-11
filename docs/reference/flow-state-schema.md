@@ -33,6 +33,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 {
   "schema_version": 1,
   "branch": "app-payment-webhooks",
+  "relative_cwd": "",
   "repo": "org/repo",
   "pr_number": 42,
   "pr_url": "https://github.com/org/repo/pull/42",
@@ -103,6 +104,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 |-------|------|-------------|
 | `schema_version` | integer | Schema version marker — currently `1` |
 | `branch` | string | Git branch name — slug format. Canonical identity field. Feature name and worktree path are derived from this at read time |
+| `relative_cwd` | string | Subdirectory inside the project root where the user started the flow, captured by `start-init` from `cwd.strip_prefix(project_root())`. Empty string means the flow operates at the worktree root (the common case). Non-empty values (e.g. `"api"` or `"packages/api"`) tell `start-workspace` to return a `worktree_cwd` that includes the suffix so the agent lands in the same subdirectory after the worktree is created, and tell every `bin/flow` subcommand's cwd-drift guard which directory to enforce. Defaults to empty for state files written before this field existed |
 | `repo` | string / null | GitHub repo in `owner/repo` format, cached during `/flow-start`. Used by `bin/flow issue` to avoid repeated `git remote` calls. Null if detection fails |
 | `pr_number` | integer / null | GitHub PR number. Null during early Start (before PR creation) when created by `init-state` — backfilled by `start-workspace` after PR creation |
 | `pr_url` | string / null | Full GitHub PR URL. Null during early Start — backfilled by `start-workspace` after PR creation |

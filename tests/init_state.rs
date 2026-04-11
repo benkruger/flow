@@ -142,6 +142,58 @@ fn state_file_other_phases_pending() {
     }
 }
 
+// --- Subdirectory scope (relative_cwd) ---
+
+#[test]
+fn relative_cwd_persisted_to_state_file() {
+    // When --relative-cwd is passed, init-state writes it to the state file.
+    // start-init computes this from cwd.strip_prefix(project_root()) at
+    // flow-start time and forwards it via this flag.
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+    let output = run_init_state(dir.path(), &["subdir test", "--relative-cwd", "api"]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let state = read_state_file(dir.path(), "subdir-test");
+    assert_eq!(state["relative_cwd"], "api");
+}
+
+#[test]
+fn relative_cwd_defaults_to_empty_when_flag_omitted() {
+    // Backwards-compatible default: when --relative-cwd is omitted,
+    // the state file gets an empty string. Existing flow-start callers
+    // that don't yet pass the flag continue to work.
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+    run_init_state(dir.path(), &["empty rel test"]);
+    let state = read_state_file(dir.path(), "empty-rel-test");
+    assert_eq!(state["relative_cwd"], "");
+}
+
+#[test]
+fn relative_cwd_supports_nested_paths() {
+    // Mono-repos with nested package layouts (e.g. packages/api) need
+    // multi-segment relative paths. The flag passes them through verbatim.
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+    let output = run_init_state(
+        dir.path(),
+        &["nested test", "--relative-cwd", "packages/api"],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let state = read_state_file(dir.path(), "nested-test");
+    assert_eq!(state["relative_cwd"], "packages/api");
+}
+
 // --- Framework ---
 
 #[test]

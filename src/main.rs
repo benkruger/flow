@@ -265,6 +265,12 @@ enum Commands {
         /// Canonical branch name (from start-init). Skips branch derivation.
         #[arg(long)]
         branch: Option<String>,
+        /// Relative path inside the project root captured at flow-start
+        /// time. Empty string means worktree root. Persisted to the state
+        /// file so subsequent commands can route the agent back to the
+        /// same subdirectory after the worktree is created.
+        #[arg(long = "relative-cwd", default_value = "")]
+        relative_cwd: String,
     },
 
     /// Append a timestamped log entry to .flow-states/<branch>.log
@@ -548,6 +554,7 @@ fn main() {
             start_step,
             start_steps_total,
             branch,
+            relative_cwd,
         }) => {
             if feature_name.is_empty() {
                 json_error(
@@ -563,6 +570,7 @@ fn main() {
                 start_step,
                 start_steps_total,
                 branch.as_deref(),
+                &relative_cwd,
             );
         }
         Some(Commands::Log { branch, message }) => {

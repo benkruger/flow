@@ -374,6 +374,10 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
         );
     }
 
+    if let Err(msg) = crate::cwd_scope::enforce(cwd, root) {
+        return (json!({"status": "error", "message": msg}), 1);
+    }
+
     let resolved_branch = crate::git::resolve_branch_in(args.branch.as_deref(), cwd, root);
 
     // Sentinel skip check — before tool discovery.

@@ -25,6 +25,12 @@ use crate::utils::{
 /// `commit_format` — optional commit message format (`"full"` or `"title-only"`)
 /// extracted from `.flow.json` during prime. Written to state file when present;
 /// the commit skill reads it at runtime.
+///
+/// `relative_cwd` — relative path inside the worktree where the agent
+/// should operate. Empty string means worktree root. Captured by
+/// `start_init` from the user's cwd at flow-start time so mono-repo
+/// flows started inside a subdirectory land back in the same subdirectory
+/// after worktree creation.
 #[allow(clippy::too_many_arguments)]
 pub fn create_state(
     project_root: &Path,
@@ -35,6 +41,7 @@ pub fn create_state(
     commit_format: Option<&str>,
     start_step: Option<i64>,
     start_steps_total: Option<i64>,
+    relative_cwd: &str,
 ) -> Result<(), String> {
     let current_time = now();
     let phases = build_initial_phases(&current_time);
@@ -42,6 +49,7 @@ pub fn create_state(
     let mut state = serde_json::Map::new();
     state.insert("schema_version".into(), json!(1));
     state.insert("branch".into(), json!(branch));
+    state.insert("relative_cwd".into(), json!(relative_cwd));
     state.insert("repo".into(), Value::Null);
     state.insert("pr_number".into(), Value::Null);
     state.insert("pr_url".into(), Value::Null);
@@ -109,6 +117,13 @@ pub fn create_state(
 /// duplicate check, and branch derivation — use the provided branch directly.
 /// This is the normal path when called from `start-init`, which already
 /// derived the canonical branch before acquiring the lock.
+///
+/// `relative_cwd` — relative path inside the project root captured by
+/// `start_init` at flow-start time. Persisted into the state file so
+/// downstream commands (cwd_scope guard, start_workspace cd target) can
+/// route the agent back to the same subdirectory after the worktree is
+/// created. Defaults to empty string.
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     feature_name: &str,
     prompt_file: Option<&str>,
@@ -116,6 +131,7 @@ pub fn run(
     start_step: Option<i64>,
     start_steps_total: Option<i64>,
     branch_override: Option<&str>,
+    relative_cwd: &str,
 ) {
     let root = project_root();
 
@@ -225,6 +241,7 @@ pub fn run(
         commit_format,
         start_step,
         start_steps_total,
+        relative_cwd,
     ) {
         json_error(&e, &[("step", json!("create_state"))]);
         std::process::exit(1);
@@ -294,6 +311,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "test-feature");
@@ -316,6 +334,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "pr-null-test");
@@ -338,6 +357,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "six-phases");
@@ -363,6 +383,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "phase-status");
@@ -385,6 +406,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "pending-test");
@@ -428,6 +450,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "fw-test");
@@ -446,6 +469,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "fw-default");
@@ -473,6 +497,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "skills-test");
@@ -491,6 +516,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "no-skills");
@@ -510,6 +536,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "auto-test");
@@ -534,6 +561,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "prompt-test");
@@ -554,6 +582,7 @@ mod tests {
             None,
             Some(3),
             Some(11),
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "step-test");
@@ -573,6 +602,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "no-step");
@@ -594,6 +624,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "files-test");
@@ -618,6 +649,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "fields-test");
@@ -647,6 +679,7 @@ mod tests {
             Some("full"),
             Some(3),
             Some(11),
+            "",
         )
         .unwrap();
         let content = fs::read_to_string(dir.path().join(".flow-states/order-test.json")).unwrap();
@@ -655,6 +688,7 @@ mod tests {
         let expected = vec![
             "schema_version",
             "branch",
+            "relative_cwd",
             "repo",
             "pr_number",
             "pr_url",
@@ -695,6 +729,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         assert!(dir.path().join(".flow-states").is_dir());
@@ -715,6 +750,7 @@ mod tests {
             Some("title-only"),
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "cf-test");
@@ -733,6 +769,7 @@ mod tests {
             None,
             None,
             None,
+            "",
         )
         .unwrap();
         let state = read_state(dir.path(), "cf-none");

@@ -255,15 +255,26 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow start-workspace "<feature-name>" --branch <branch
 The command creates the worktree, opens a PR, backfills the state file with
 PR fields, and releases the start lock as its final action.
 
-**On success** — parse the JSON output. Then run:
+**On success** — parse the JSON output. Capture the `worktree_cwd`
+field — this is the directory the agent should cd into. For root-level
+flows it equals `.worktrees/<branch>`; for flows started from inside a
+mono-repo subdirectory (`relative_cwd` non-empty) it includes the
+subdirectory suffix (e.g. `.worktrees/<branch>/api`). Then run:
 
 ```bash
-cd .worktrees/<branch>
+cd <worktree_cwd>
 ```
 
-The Bash tool persists working directory between calls, so all subsequent
-commands run inside the worktree automatically. Do NOT repeat `cd .worktrees/`
-in later steps — it would look for a nested `.worktrees/` that doesn't exist.
+Substitute the literal `worktree_cwd` value from the JSON response. The
+Bash tool persists working directory between calls, so all subsequent
+commands run inside that directory automatically. Do NOT repeat
+`cd .worktrees/` in later steps — it would look for a nested
+`.worktrees/` that doesn't exist.
+
+After the cd, every `bin/flow` subcommand enforces this directory via
+its built-in cwd-drift guard. If you cd elsewhere within the worktree
+(e.g. into a sibling subdirectory), the next subcommand will hard-error
+with an "expected directory" message.
 
 **On failure** — report the error and stop. The command releases the lock
 even on error (main is untouched by worktree operations).

@@ -25,7 +25,11 @@ pub struct Args {
 }
 
 /// Testable entry point.
-pub fn run_impl(_args: &Args, cwd: &Path, _root: &Path) -> (Value, i32) {
+pub fn run_impl(_args: &Args, cwd: &Path, root: &Path) -> (Value, i32) {
+    if let Err(msg) = crate::cwd_scope::enforce(cwd, root) {
+        return (json!({"status": "error", "message": msg}), 1);
+    }
+
     let bin_build = cwd.join("bin").join("build");
     if !bin_build.is_file() {
         return (
