@@ -701,4 +701,155 @@ exit 1
             "flow-plan should be complete after extracted path"
         );
     }
+
+    // --- scope-enumeration gate (issue #1033) ---
+
+    #[test]
+    fn plan_extract_returns_error_on_unenumerated_plan() {
+        // A pre-planned issue with universal-coverage prose but no
+        // named enumeration must fail the extracted path before
+        // `complete_plan_phase` runs. The plan file is still written
+        // to disk so the model can edit it and re-run.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("work on #101", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        // Implementation Plan contains "every state mutator" with no
+        // adjacent named list — the scope-enumeration scanner flags it.
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":101,"title":"Add drift guard","body":"## Problem\n\nGuard is missing.\n\n## Implementation Plan\n\n### Context\n\nAdd the drift guard to every state mutator.\n\n### Tasks\n\n#### Task 1: Add guard\n\nImplement.\n\n## Files to Investigate\n\n- src/lib.rs","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0, "business errors exit 0, got {}", json);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["path"], "extracted");
+        let violations = json["violations"]
+            .as_array()
+            .expect("violations[] expected");
+        assert!(!violations.is_empty(), "expected at least one violation");
+        assert!(
+            violations[0]["phrase"]
+                .as_str()
+                .unwrap()
+                .to_lowercase()
+                .contains("every"),
+            "phrase should contain the trigger, got {}",
+            violations[0]
+        );
+
+        // Plan file MUST exist on disk so the user can edit it in place.
+        let plan_path = dir.path().join(".flow-states/test-feature-plan.md");
+        assert!(
+            plan_path.exists(),
+            "plan file must be written to disk even on violation"
+        );
+
+        // Phase must NOT be marked complete.
+        let updated_state: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
+        )
+        .unwrap();
+        assert_ne!(
+            updated_state["phases"]["flow-plan"]["status"], "complete",
+            "flow-plan must not be marked complete when violations are found"
+        );
+
+        // files.plan must be set so the next invocation takes the
+        // resume path (which re-scans the file the user edited).
+        assert_eq!(
+            updated_state["files"]["plan"].as_str().unwrap(),
+            ".flow-states/test-feature-plan.md",
+            "files.plan must be set so resume path can pick up the edited file"
+        );
+    }
+
+    #[test]
+    fn plan_extract_resume_gates_on_scope_enumeration() {
+        // When a plan file already exists on disk with a violation,
+        // the resume path must return an error without completing
+        // the phase. Mirrors the "user fixed the extracted-path
+        // error, re-ran plan-extract" path.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let plan_content = "## Context\n\nAdd the drift guard to every state mutator.\n";
+        let plan_rel = ".flow-states/test-feature-plan.md";
+
+        let state = make_plan_state("build a feature", |s| {
+            s["files"]["plan"] = serde_json::json!(plan_rel);
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let plan_abs = dir.path().join(plan_rel);
+        fs::write(&plan_abs, plan_content).unwrap();
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["path"], "resumed");
+        assert!(
+            json["violations"].is_array(),
+            "violations[] expected, got {}",
+            json
+        );
+
+        // Phase must not be marked complete.
+        let updated_state: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
+        )
+        .unwrap();
+        assert_ne!(
+            updated_state["phases"]["flow-plan"]["status"], "complete",
+            "flow-plan must not be marked complete on resume-path violation"
+        );
+    }
+
+    #[test]
+    fn plan_extract_resume_passes_enumerated_plan() {
+        // The resume path must allow completion when the plan has
+        // been fixed to include a named enumeration. Simulates the
+        // user editing the plan file after seeing a violation on
+        // the prior run.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let plan_content = "## Context\n\n\
+            Add the drift guard to every state mutator \
+            (`phase-enter`, `phase-finalize`, `phase-transition`, \
+            `set-timestamp`, `add-finding`).\n";
+        let plan_rel = ".flow-states/test-feature-plan.md";
+
+        let state = make_plan_state("build a feature", |s| {
+            s["files"]["plan"] = serde_json::json!(plan_rel);
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let plan_abs = dir.path().join(plan_rel);
+        fs::write(&plan_abs, plan_content).unwrap();
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "resumed");
+
+        let updated_state: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            updated_state["phases"]["flow-plan"]["status"], "complete",
+            "flow-plan should complete when enumerated plan passes the gate"
+        );
+    }
 }

@@ -162,6 +162,7 @@ writers, or integer overflow from a prior session). Raw `+ 1` or
 `+ elapsed` arithmetic on those values panics in debug builds and wraps
 silently to `i64::MIN` in release builds, corrupting the counter.
 
+<!-- scope-enumeration: imperative -->
 Use `saturating_add` at every counter-increment callsite:
 
 ```rust
@@ -360,6 +361,23 @@ family. FLOW has two relevant families:
   `PhaseTransition` branch in `src/main.rs`, `src/commands/*.rs`,
   `src/add_finding.rs`, etc.).
 
+**Read-only exemption.** Subcommands that only READ the state file
+and plan/worktree files (no mutations, no tool dispatch) are
+exempt from `cwd_scope::enforce` — a wrong cwd on a read-only
+command cannot drift the flow because the command produces no
+side effects. The current exempt set is:
+
+- `bin/flow format-status` (`src/format_status.rs`) — renders the
+  status panel from state
+- `bin/flow tombstone-audit` (`src/tombstone_audit.rs`) — scans
+  `tests/*.rs` for tombstone PR references and queries GitHub
+- `bin/flow plan-check` (`src/plan_check.rs`) — runs the
+  scope-enumeration scanner against the current plan file
+
+When adding a new read-only subcommand, add it to this list AND
+to the corresponding list in CLAUDE.md's Subdirectory Context
+section so the two canonical enumerations stay in sync.
+
 Before merging a PR that adds a guard, grep `src/main.rs` for every
 `Commands::` variant in the target family and verify the guard lands
 in every `run_impl` or `run()` entry. A guard that exists in only one
@@ -375,6 +393,13 @@ suite itself is running inside a `bin/flow ci` invocation,
 on the child will fire. Tests in this situation must call
 `.env_remove("FLOW_CI_RUNNING")` on the `Command` to simulate a
 fresh invocation.
+
+The two family lists above are also the canonical enumeration used
+by `.claude/rules/scope-enumeration.md` — the prose-side rule that
+requires every universal-quantifier claim about a code family to
+carry a named sibling list. When you add a new member to either
+family, update both this section and any plan prose that references
+the family by its universal noun so the named list stays in sync.
 
 ## Local Doc Comments
 

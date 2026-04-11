@@ -2220,6 +2220,50 @@ fn plan_step3_extracts_implementation_plan_for_decomposed() {
     );
 }
 
+// --- plan-check ordering ---
+
+/// Step 4 of flow-plan must invoke `bin/flow plan-check` and the
+/// invocation must appear BEFORE `phase-transition --action complete`
+/// in the skill content. A reordered edit that moves plan-check
+/// after the phase transition would defeat the scope-enumeration
+/// gate — the phase would complete before violations are caught.
+#[test]
+fn plan_skill_step4_invokes_plan_check_before_phase_transition() {
+    let c = common::read_skill("flow-plan");
+
+    let plan_check_idx = c.find("bin/flow plan-check").unwrap_or_else(|| {
+        panic!("flow-plan SKILL.md must invoke `bin/flow plan-check` in Step 4")
+    });
+    let phase_complete_idx = c.find("phase-transition --phase flow-plan --action complete").unwrap_or_else(
+        || panic!("flow-plan SKILL.md must invoke `phase-transition --phase flow-plan --action complete`"),
+    );
+
+    assert!(
+        plan_check_idx < phase_complete_idx,
+        "flow-plan Step 4 must run `bin/flow plan-check` BEFORE \
+         `phase-transition --phase flow-plan --action complete`. \
+         Found plan-check at byte {} and phase-transition at byte {}.",
+        plan_check_idx,
+        phase_complete_idx
+    );
+}
+
+/// The scope-enumeration rule file must exist — it is the
+/// authoritative statement of the universal-coverage rule that the
+/// scanner, the plan-check subcommand, and the `plan_extract.rs`
+/// integration all reference.
+#[test]
+fn scope_enumeration_rule_file_exists() {
+    let path = common::repo_root()
+        .join(".claude")
+        .join("rules")
+        .join("scope-enumeration.md");
+    assert!(
+        path.exists(),
+        ".claude/rules/scope-enumeration.md must exist"
+    );
+}
+
 // --- Done section hard gates ---
 
 #[test]

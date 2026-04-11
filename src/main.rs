@@ -47,6 +47,7 @@ use flow_rs::phase_config::{find_state_files, load_phase_config, phase_number, P
 use flow_rs::phase_enter;
 use flow_rs::phase_finalize;
 use flow_rs::phase_transition::{phase_complete, phase_enter as phase_enter_fn};
+use flow_rs::plan_check;
 use flow_rs::plan_extract;
 use flow_rs::prime_check;
 use flow_rs::prime_setup;
@@ -367,6 +368,10 @@ enum Commands {
     #[command(name = "phase-finalize")]
     PhaseFinalize(phase_finalize::Args),
 
+    /// Scan the current plan file for unenumerated universal-coverage prose.
+    #[command(name = "plan-check")]
+    PlanCheck(plan_check::Args),
+
     /// Extract pre-decomposed plan or prepare state for model-driven planning.
     #[command(name = "plan-extract")]
     PlanExtract(plan_extract::Args),
@@ -630,6 +635,9 @@ fn main() {
         }
         Some(Commands::PhaseFinalize(args)) => {
             phase_finalize::run(args);
+        }
+        Some(Commands::PlanCheck(args)) => {
+            plan_check::run(args);
         }
         Some(Commands::PlanExtract(args)) => {
             plan_extract::run(args);
