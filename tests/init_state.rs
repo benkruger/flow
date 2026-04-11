@@ -143,48 +143,13 @@ fn state_file_other_phases_pending() {
 }
 
 // --- Framework ---
-//
-// `framework` in the state file is resolved at init-state time by
-// `resolve_framework()` in src/commands/init_state.rs:
-// fresh detection from project marker files wins when unambiguous;
-// `.flow.json` is the fallback for undetectable or ambiguous projects.
-// Issue #1020.
 
 #[test]
 fn framework_from_flow_json() {
-    // Undetectable project (no marker files) falls back to .flow.json.
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "python", None);
     run_init_state(dir.path(), &["python framework"]);
     let state = read_state_file(dir.path(), "python-framework");
-    assert_eq!(state["framework"], "python");
-}
-
-#[test]
-fn framework_detected_from_cargo_toml_overrides_flow_json() {
-    // When Cargo.toml is present and .flow.json says "python", the
-    // state file must end up with "rust" — detection wins over the
-    // stale stored value.
-    let dir = tempfile::tempdir().unwrap();
-    setup_project(dir.path(), "python", None);
-    fs::write(
-        dir.path().join("Cargo.toml"),
-        "[package]\nname = \"test\"\n",
-    )
-    .unwrap();
-    run_init_state(dir.path(), &["cargo override"]);
-    let state = read_state_file(dir.path(), "cargo-override");
-    assert_eq!(state["framework"], "rust");
-}
-
-#[test]
-fn framework_falls_back_to_flow_json_when_undetectable() {
-    // Explicit coverage of the fallback path: no marker files, the
-    // .flow.json value is written to the state file verbatim.
-    let dir = tempfile::tempdir().unwrap();
-    setup_project(dir.path(), "python", None);
-    run_init_state(dir.path(), &["undetectable feature"]);
-    let state = read_state_file(dir.path(), "undetectable-feature");
     assert_eq!(state["framework"], "python");
 }
 

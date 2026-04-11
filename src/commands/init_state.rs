@@ -5,15 +5,14 @@ use indexmap::IndexMap;
 use serde_json::{json, Value};
 
 use crate::commands::log::append_log;
-use crate::detect_framework;
 use crate::git::project_root;
 use crate::label_issues::LABEL;
 use crate::output::{json_error, json_ok};
 use crate::phase_config::{auto_skills, build_initial_phases, freeze_phases, read_flow_json};
 use crate::state::{Framework, SkillConfig};
 use crate::utils::{
-    branch_name, check_duplicate_issue, detect_tty, extract_issue_numbers, fetch_issue_info,
-    frameworks_dir, now, plugin_root, read_prompt_file,
+    branch_name, check_duplicate_issue, detect_tty, extract_issue_numbers, fetch_issue_info, now,
+    plugin_root, read_prompt_file,
 };
 
 /// Create the initial FLOW state file with null PR fields.
@@ -104,36 +103,6 @@ pub fn create_state(
     Ok(())
 }
 
-/// Resolve the framework for a new flow.
-///
-/// Prefers live filesystem detection over the `.flow.json` stored
-/// value so stale prime-time values do not propagate into state files.
-/// When `detect_framework::detect()` finds exactly one matching
-/// framework, that value is returned. When detection is ambiguous
-/// (zero or multiple matches), fall back to the `.flow.json` value
-/// so multi-framework repos keep the prime-time choice. As a
-/// last-resort default — when `.flow.json` lacks the `framework` key
-/// or `frameworks_dir()` cannot be resolved — return `Framework::Rails`.
-/// Issue #1020.
-fn resolve_framework(root: &Path, flow_json: &Value) -> Framework {
-    if let Some(fw_dir) = frameworks_dir() {
-        let detected = detect_framework::detect(root, &fw_dir);
-        if detected.len() == 1 {
-            if let Some(name) = detected[0].get("name").and_then(|v| v.as_str()) {
-                if let Ok(fw) = serde_json::from_value::<Framework>(json!(name)) {
-                    return fw;
-                }
-            }
-        }
-    }
-
-    let framework_str = flow_json
-        .get("framework")
-        .and_then(|v| v.as_str())
-        .unwrap_or("rails");
-    serde_json::from_value(json!(framework_str)).unwrap_or(Framework::Rails)
-}
-
 /// CLI entry point for `flow-rs init-state`.
 ///
 /// When `branch_override` is `Some`, skip issue extraction, label guard,
@@ -158,7 +127,12 @@ pub fn run(
         }
     };
 
-    let framework = resolve_framework(&root, &flow_json);
+    let framework_str = flow_json
+        .get("framework")
+        .and_then(|v| v.as_str())
+        .unwrap_or("rails");
+    let framework: Framework =
+        serde_json::from_value(json!(framework_str)).unwrap_or(Framework::Rails);
 
     let skills = if auto {
         Some(auto_skills())
@@ -476,65 +450,6 @@ mod tests {
         .unwrap();
         let state = read_state(dir.path(), "fw-default");
         assert_eq!(state["framework"], "rails");
-    }
-
-    // --- resolve_framework ---
-    //
-    // Covers the helper that selects a framework at flow-start time.
-    // Detection from project marker files takes precedence when
-    // unambiguous (exactly one framework matches); otherwise fall back
-    // to the `.flow.json` stored value. Issue #1020.
-
-    #[test]
-    fn resolve_framework_uses_detection_when_cargo_toml_present() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("Cargo.toml"),
-            "[package]\nname = \"test\"\n",
-        )
-        .unwrap();
-        let flow_json = json!({"framework": "python"});
-        let fw = resolve_framework(dir.path(), &flow_json);
-        assert_eq!(fw, Framework::Rust);
-    }
-
-    #[test]
-    fn resolve_framework_uses_detection_when_pyproject_toml_present() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("pyproject.toml"),
-            "[project]\nname = \"test\"\n",
-        )
-        .unwrap();
-        let flow_json = json!({"framework": "rust"});
-        let fw = resolve_framework(dir.path(), &flow_json);
-        assert_eq!(fw, Framework::Python);
-    }
-
-    #[test]
-    fn resolve_framework_falls_back_when_no_marker_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let flow_json = json!({"framework": "python"});
-        let fw = resolve_framework(dir.path(), &flow_json);
-        assert_eq!(fw, Framework::Python);
-    }
-
-    #[test]
-    fn resolve_framework_falls_back_when_ambiguous() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("Cargo.toml"), "").unwrap();
-        fs::write(dir.path().join("go.mod"), "").unwrap();
-        let flow_json = json!({"framework": "rust"});
-        let fw = resolve_framework(dir.path(), &flow_json);
-        assert_eq!(fw, Framework::Rust);
-    }
-
-    #[test]
-    fn resolve_framework_defaults_to_rails_when_flow_json_missing_framework() {
-        let dir = tempfile::tempdir().unwrap();
-        let flow_json = json!({});
-        let fw = resolve_framework(dir.path(), &flow_json);
-        assert_eq!(fw, Framework::Rails);
     }
 
     // --- Skills ---
