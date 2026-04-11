@@ -146,6 +146,16 @@ override the configured mode.
 
 - Requires Phase 1: Start to be complete
 - Plan file path must be stored in state before phase completion
+- **Scope-enumeration gate** — before the phase completes, `bin/flow
+  plan-check` scans the plan file for universal-coverage language
+  ("every subcommand", "all runners", "each CLI entry point", …)
+  that is not paired with a named list of the concrete siblings the
+  claim covers. Violations block phase completion until the plan is
+  edited to add the enumeration or a line-level opt-out comment. The
+  gate applies to both plan-file paths: the standard skill invocation
+  at Step 4 and the pre-decomposed fast path inside `plan-extract`.
+  See `.claude/rules/scope-enumeration.md` for the rule and the
+  motivating incidents.
 
 ---
 

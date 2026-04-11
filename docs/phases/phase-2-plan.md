@@ -41,7 +41,10 @@ skipped.
    have corresponding verification tasks in the plan
 8. Claude writes the plan file with a Dependency Graph section and
    ordered tasks derived from the DAG
-9. The plan file path is stored in the state file and the phase completes
+9. `bin/flow plan-check` scans the plan for universal-coverage prose
+   that lacks a named enumeration — phase completion is blocked
+   until the plan passes the gate (see Gates below)
+10. The plan file path is stored in the state file and the phase completes
 
 DAG decomposition is configurable via `skills.flow-plan.dag` in
 `.flow.json` — set to `"never"` to skip it.
@@ -80,6 +83,24 @@ By the end of Phase 2:
 - An approved approach with clear rationale
 - Ordered implementation tasks ready for Phase 3: Code
 - Plan file path stored in the state file
+
+---
+
+## Gates
+
+- **Start phase must be complete** before Plan can enter
+- **Scope-enumeration gate** — before the phase completes, the plan
+  file is scanned for universal-coverage language ("every subcommand",
+  "all runners", "each CLI entry point", …) that is not paired with
+  a named list of the concrete siblings the claim covers. Violations
+  block phase completion; the plan must be edited to add the
+  enumeration (inline parenthetical or bullet list with backtick
+  identifiers) or to add a line-level opt-out comment. The gate
+  applies to both the standard path (via `bin/flow plan-check` in
+  the skill's Step 4) and the fast path (via `src/plan_extract.rs`
+  before `complete_plan_phase`). The motivating incidents and the
+  opt-out vocabulary are documented in
+  `.claude/rules/scope-enumeration.md`.
 
 ---
 

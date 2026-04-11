@@ -429,6 +429,47 @@ Proceed to Step 4.
 
 ## Step 4 — Store plan file and complete phase
 
+### Scope enumeration gate
+
+Before advancing the step counter, gate phase completion on the
+scope-enumeration rule. The plan file must not contain
+universal-coverage language (`every subcommand`, `all runners`,
+`each CLI entry point`, `every state mutator`, …) without a named
+list of the concrete siblings nearby — see
+`.claude/rules/scope-enumeration.md` for the rule, the opt-out
+comment vocabulary, and the motivating incidents.
+
+Write the plan file path from earlier in this phase (from
+`files.plan` in the state file) to the command below:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow plan-check
+```
+
+Parse the JSON output:
+
+- **If `"status": "ok"`** — the plan has no unenumerated
+  universal-coverage claims. Proceed to the `set-timestamp --set
+  plan_step=4` block below.
+- **If `"status": "error"`** — the response contains a `violations`
+  array with `file`, `line`, `phrase`, and `context` fields. Render
+  the violations inline in your response so the user can see each
+  flagged phrase, then use the Edit tool on the plan file to add a
+  named list (inline parenthetical with backtick-quoted identifiers,
+  or a bullet list with backtick-quoted identifiers immediately
+  before or after the phrase) next to each violation. If a flagged
+  phrase is genuinely open-ended or purely instructional, add a
+  line-level opt-out comment as documented in the rule file. Re-run
+  `bin/flow plan-check` and loop until the response is `"status":
+  "ok"`. Only then proceed to the `set-timestamp --set plan_step=4`
+  block.
+
+The Rust tier refuses to complete the phase on violations — a
+`phase-transition --action complete` call cannot bypass the gate
+because `src/plan_extract.rs` runs the same scanner on its extracted
+and resume paths. Editing the plan file in place is the only way
+through.
+
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_step=4
 ```
