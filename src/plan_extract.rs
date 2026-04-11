@@ -306,6 +306,34 @@ pub fn count_tasks(content: &str) -> usize {
     count
 }
 
+/// Count `### Task N:` or `#### Task N:` headings in the content.
+///
+/// Used by the resume path to re-derive `code_tasks_total` from a
+/// plan file that the user may have edited after a scope-enumeration
+/// violation. The extracted path writes tasks with `#### Task ` before
+/// `promote_headings`; after promotion the plan file on disk uses
+/// `### Task `. Standard-path plans (written by the model) typically
+/// also use `### Task`. This counter accepts both so a resume-path
+/// recount produces a meaningful total regardless of which path
+/// originally wrote the file.
+pub fn count_tasks_any_level(content: &str) -> usize {
+    let mut count = 0;
+    let mut in_code_block = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            in_code_block = !in_code_block;
+            continue;
+        }
+        if !in_code_block && (trimmed.starts_with("#### Task ") || trimmed.starts_with("### Task "))
+        {
+            count += 1;
+        }
+    }
+    count
+}
+
 /// Build the plan-check violation response that both the extracted
 /// path and the resume path return when the promoted plan content
 /// contains universal-coverage prose without a named enumeration.
@@ -407,12 +435,22 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
             return Ok(violations_response(&violations, "resumed"));
         }
 
+        // Re-count tasks from the post-edit plan file so that
+        // `code_tasks_total` reflects any tasks the user added
+        // while fixing scope-enumeration violations. The extracted
+        // path sets this field BEFORE the scan runs, so a
+        // violation-driven edit can invalidate the initial count.
+        let task_count_on_resume = count_tasks_any_level(&plan_content);
+
         // Enter the phase (safe to call if already in_progress — updates timestamps and visit_count)
         mutate_state(&state_path, |state| {
             if !(state.is_object() || state.is_null()) {
                 return;
             }
             phase_enter(state, "flow-plan", None);
+            if task_count_on_resume > 0 {
+                state["code_tasks_total"] = json!(task_count_on_resume);
+            }
         })
         .map_err(|e| format!("Failed to enter phase: {}", e))?;
 

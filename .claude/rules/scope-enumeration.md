@@ -30,14 +30,49 @@ with avoidable Code Review back-and-forth.
 For every prose sentence that combines a universal quantifier with
 a code-family noun, include a named list adjacent to the phrase:
 
-- an inline parenthetical with backtick-quoted identifiers, OR
+- an inline parenthetical or colon list with backtick-quoted
+  identifiers on the same line, OR
 - a bullet list with backtick-quoted identifiers immediately before
   or after the sentence, OR
 - a table row that enumerates the family
 
 The list must name every concrete sibling, not a representative
-sample. The vocabulary is closed and curated — see
-`src/scope_enumeration.rs` for the current trigger noun set.
+sample.
+
+## Vocabulary
+
+The trigger vocabulary is closed and curated. The scanner in
+`src/scope_enumeration.rs` currently flags these noun phrases when
+paired with a universal quantifier (`every`, `all`, `each`) and up
+to two optional intervening adjectives:
+
+- `subcommand` (and plural `subcommands`)
+- `runner`
+- `entry point`
+- `state mutator` (and hyphenated `state-mutator`)
+- `mutator` (bare)
+- `CLI variant`, `CLI entry`
+- `callsite`
+- `caller`
+- `dispatch path`
+- `handler`
+
+**Intentional gaps.** Bare `command` and bare `module` are NOT in
+the vocabulary. Adding them would catch novel phrasings but also
+flag pre-existing imperative prose in this tree (e.g. "every Bash
+command", "every command in every step", "every mutate_state
+module"). The scanner's curated-closed philosophy prefers to miss
+a novel phrasing over introducing mass false positives — the rule
+file itself is the primary instrument and the contract test is the
+drift tripwire. The unit tests
+`trigger_rejects_bare_command_intentionally` and
+`trigger_rejects_bare_module_intentionally` lock these gaps in so
+a future widening is a deliberate decision, not an accident.
+
+When a reviewer finds a novel phrasing that slips past the scanner,
+the fix is to add the noun to `SCOPE_TRIGGER_PATTERN` in
+`src/scope_enumeration.rs`, add a matching trigger unit test,
+update this list, and note the addition in the commit message.
 
 ## How to Enumerate
 
@@ -55,7 +90,7 @@ use the opt-out comment instead of a forced list.
 - **Plan files** (`.flow-states/<branch>-plan.md`) — scanned at Plan
   phase completion by `bin/flow plan-check`. Gated in the standard
   path by `skills/flow-plan/SKILL.md` Step 4 and in the pre-planned
-  path by `src/plan_extract.rs`.
+  path by `src/plan_extract.rs` extracted and resume paths.
 - **`CLAUDE.md`** — scanned by a contract test in
   `tests/scope_enumeration.rs`.
 - **`.claude/rules/*.md`** — same contract test.
@@ -73,12 +108,14 @@ Two line-level opt-out comments are recognized by the scanner:
 - An `imperative` opt-out for instructional phrasing that tells the
   reader to perform an action rather than asserting coverage.
 
-The opt-out applies to the line it sits on and to the next non-blank
-line. Choose the correct flavor — a bare opt-out without a reason is
-a future-reader hazard.
+The opt-out applies to its own line and to the next non-blank line,
+with **at most one blank line separating them**. An opt-out at the
+top of a section cannot silence arbitrary triggers further down —
+the walk-back is bounded to one blank line by `is_optout_line` so
+a stray comment cannot globally disable the gate.
 
-Example of the imperative form (rendered inside a fenced block so the
-example does not itself trigger the scanner):
+Example of the imperative form (rendered inside a fenced block so
+the example does not itself trigger the scanner):
 
 ```markdown
 <!-- scope-enumeration: imperative -->
@@ -89,19 +126,47 @@ example does not itself trigger the scanner):
 
 Two mechanical enforcers back the rule:
 
-- `bin/flow plan-check` gates Plan phase completion. The standard
-  path invokes it from `skills/flow-plan/SKILL.md` Step 4 before
-  `phase-transition --action complete`; the pre-decomposed path
-  invokes it from `src/plan_extract.rs` before `complete_plan_phase`.
-  A non-empty violation list blocks phase completion.
-- `tests/scope_enumeration.rs` scans the committed prose corpus
-  (`CLAUDE.md`, `.claude/rules/*.md`, `skills/**/SKILL.md`,
-  `.claude/skills/**/SKILL.md`) once per CI run. A single new
-  unenumerated universal claim fails the build.
+- `bin/flow plan-check` gates Plan phase completion at three
+  callsites (the standard path via `skills/flow-plan/SKILL.md`
+  Step 4, the pre-decomposed extracted path in `src/plan_extract.rs`,
+  and the resume path in the same file). All three callsites share
+  `src/scope_enumeration.rs::scan` so the trigger vocabulary and the
+  enumeration-present heuristic cannot drift. A non-empty violation
+  list blocks phase completion; editing the plan file in place is
+  the only way through.
+- `tests/scope_enumeration.rs` runs during every `bin/flow ci`
+  invocation and scans the committed prose corpus (`CLAUDE.md`,
+  `.claude/rules/*.md`, `skills/**/SKILL.md`,
+  `.claude/skills/**/SKILL.md`). A single new unenumerated universal
+  claim fails the build automatically — this is a drift tripwire,
+  not a manual check.
 
 Both enforcers share `src/scope_enumeration.rs::scan` so the trigger
-vocabulary and the enumeration-present heuristic cannot drift between
-the plan-time gate and the prose-drift tripwire.
+vocabulary and the enumeration-present heuristic cannot drift
+between the plan-time gate and the prose-drift tripwire.
+
+## Enumeration Heuristic
+
+The scanner accepts three structural patterns as proof of a named
+enumeration near a trigger:
+
+- **Inline list after the trigger.** The trigger line itself
+  contains at least three backtick-quoted spans after the trigger
+  match — catches colon-delimited and parenthetical lists on the
+  same line.
+- **Forward bullet list.** Within the next eight non-blank lines
+  after the trigger, at least one line begins with `-` or `*` AND
+  the total backtick count is ≥ 2. Multi-line bullet continuations
+  contribute to the total.
+- **Backward bullet list.** Symmetric to the forward case, for
+  lists that precede the trigger.
+
+Loose backtick counts alone (two unrelated code references in the
+same paragraph) do NOT satisfy the heuristic — a real structured
+list is required. This is the stricter revision that replaced the
+initial "≥ 2 backticks anywhere in the window" heuristic after Code
+Review found that unrelated identifiers near a trigger defeated the
+check.
 
 ## Vocabulary Extensibility
 
@@ -112,5 +177,6 @@ documented for the backward-facing comment scanner in
 `.claude/rules/comment-quality.md`. The rule file is the primary
 instrument; the scanner is the merge-conflict trip-wire. When a
 reviewer finds a new phrasing that should have been caught, add it
-to `SCOPE_TRIGGER_PATTERN` in `src/scope_enumeration.rs` and note
-the addition in the commit message.
+to `SCOPE_TRIGGER_PATTERN` in `src/scope_enumeration.rs`, add the
+matching trigger unit test, update the Vocabulary section above,
+and note the addition in the commit message.

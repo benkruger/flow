@@ -54,19 +54,40 @@ pub fn run(args: Args) {
 
 /// Fallible entry point for plan-check.
 ///
-/// Returns structured JSON as `Ok(Value)` for all business responses
-/// (clean plan, violations found, gate failures, missing plan file).
-/// Returns `Err(String)` only for infrastructure failures (unreadable
-/// state file, corrupt JSON) — which `run()` converts to exit 1.
+/// ## Return value and exit code convention
 ///
-/// **Read-only — no `cwd_scope::enforce`.** Plan-check only reads the
-/// state file and plan file; it does not mutate state. Per
-/// `.claude/rules/rust-patterns.md` Guard Universality Across CLI
-/// Entry Points, read-only subcommands are exempt from the drift
-/// guard — `format-status` and `tombstone-audit` follow the same
-/// pattern. The guard exists to prevent silent state drift when a
-/// mutating subcommand runs from the wrong subdirectory; plan-check
-/// produces no side effects, so a wrong cwd is harmless.
+/// This function returns `Ok(Value)` for **all** business responses,
+/// including success and all user-actionable errors. The `run()`
+/// wrapper prints the returned JSON and exits with code 0. Business
+/// responses include:
+///
+/// - `{"status": "ok"}` — clean plan
+/// - `{"status": "error", "violations": [...]}` — violations found
+/// - `{"status": "error", "message": "No state file found..."}`
+/// - `{"status": "error", "message": "State file has no plan file set..."}`
+/// - `{"status": "error", "message": "Plan file not found..."}`
+///
+/// The SKILL.md caller branches on the `status` field; the shell
+/// exit code stays 0 for all of these so bash pipelines do not
+/// abort on a recoverable error.
+///
+/// `Err(String)` is reserved for **infrastructure failures only**:
+/// unreadable state file, corrupt JSON, I/O errors other than
+/// `NotFound`. Those cases exit with code 1 via `run()` — the
+/// `process::exit(1)` is explicit there, not implicit in `run_impl`.
+/// This matches the `plan_extract.rs` idiom used across every other
+/// `bin/flow` subcommand.
+///
+/// ## Read-only — no `cwd_scope::enforce`
+///
+/// Plan-check only reads the state file and plan file; it does not
+/// mutate state. Per `.claude/rules/rust-patterns.md` Guard
+/// Universality Across CLI Entry Points, read-only subcommands are
+/// exempt from the drift guard — `format-status`, `tombstone-audit`,
+/// and now `plan-check` follow the same pattern. The guard exists
+/// to prevent silent state drift when a mutating subcommand runs
+/// from the wrong subdirectory; plan-check produces no side effects,
+/// so a wrong cwd is harmless.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
 
