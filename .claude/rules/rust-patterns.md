@@ -230,6 +230,118 @@ code that writes files into a user-owned directory tree. Test cases
 must include a dangling-symlink scenario alongside the normal-file,
 directory, and missing-path cases.
 
+The rule is scoped to **writes and file-creation calls only**. Deletion
+paths (`fs::remove_file`, `fs::remove_dir`) do not have the same
+symlink-escape risk — `fs::remove_file` on a symlink removes the link
+itself, never its target. Citing this rule for a deletion-path concern
+is a false positive. For the separate concern of iterating a directory
+and deleting entries, see "Safe Directory Iteration and Deletion"
+below.
+
+## Safe Directory Iteration and Deletion
+
+When a helper iterates `fs::read_dir()` and deletes matching entries,
+three correctness failure modes are easy to miss and must be handled
+explicitly:
+
+1. **Non-file entries matching the filter.** `fs::read_dir` yields
+   files, directories, symlinks, and other filesystem entries. A
+   directory whose name matches the filter prefix will match the
+   filter test, but `fs::remove_file` on a directory returns
+   `EISDIR`/`EPERM`. Check `entry.file_type()` before calling
+   `fs::remove_file` and skip entries that are neither regular files
+   nor symlinks. `fs::remove_file` on a symlink removes the link
+   itself, so symlinks are safe to delete.
+2. **Early return on first deletion error.** A loop that returns on
+   the first `fs::remove_file` error leaves remaining matching
+   entries on disk. When the iterator yields a non-file entry or
+   hits a transient permission error before the real files, the loop
+   aborts and every subsequent file is orphaned. Use a continue-past-
+   error loop that tracks `any_matched`, `any_deleted`, and
+   `first_error: Option<String>` across iterations.
+3. **Partial success return shape.** With continue-past-error, the
+   return value must distinguish three states: no matches (`"skipped"`),
+   at least one file deleted successfully (`"deleted"`), and matches
+   existed but every attempt failed (`"failed: <first_error>"`). Do
+   NOT use `"deleted"` when only some matches were removed and
+   others failed — that hides the failures. The first-error-reporting
+   shape (only report failure when NO file was deleted) balances
+   signal strength against noise: a single transient error does not
+   block the entire cleanup, but a hard failure is still surfaced.
+
+Canonical shape:
+
+```rust
+fn try_delete_matching(dir: &Path, prefix: &str) -> String {
+    let entries = match fs::read_dir(dir) {
+        Ok(iter) => iter,
+        Err(_) => return "skipped".to_string(),
+    };
+    let mut any_matched = false;
+    let mut any_deleted = false;
+    let mut first_error: Option<String> = None;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if !name.to_string_lossy().starts_with(prefix) {
+            continue;
+        }
+        // Skip non-file entries (directories especially) so they
+        // don't abort the loop and they don't get deleted.
+        let is_candidate = match entry.file_type() {
+            Ok(ft) => ft.is_file() || ft.is_symlink(),
+            Err(_) => false,
+        };
+        if !is_candidate {
+            continue;
+        }
+        any_matched = true;
+        match fs::remove_file(entry.path()) {
+            Ok(()) => any_deleted = true,
+            Err(e) => {
+                if first_error.is_none() {
+                    first_error = Some(format!("{}", e));
+                }
+            }
+        }
+    }
+    if any_deleted {
+        "deleted".to_string()
+    } else if any_matched {
+        format!("failed: {}", first_error.unwrap_or_else(|| "unknown".to_string()))
+    } else {
+        "skipped".to_string()
+    }
+}
+```
+
+**Plan phase checklist for `fs::read_dir` + delete loops.** When a
+plan task describes a helper that iterates a directory and deletes
+matching entries, enumerate these three risks explicitly in the
+Risks section before Code Review catches them:
+
+- Non-file entries that happen to match the filter prefix (directories,
+  sockets, named pipes) — must be skipped, not deleted, not aborting
+  the loop
+- Partial failure aggregation — loop must continue past individual
+  errors so one bad entry cannot orphan the others
+- Return shape for partial success — distinct statuses for
+  no-match, any-deleted, all-failed
+
+**Test coverage for directory iteration helpers.** Every new helper
+of this shape must ship with tests covering:
+
+- Single matching file → `"deleted"`, file gone
+- No matching files → `"skipped"`
+- Multiple matching files → `"deleted"`, all gone
+- Directory entry matching the prefix alongside real files → directory
+  untouched, files still deleted, step returns `"deleted"`
+- Missing target directory (`read_dir` returns `Err`) → `"skipped"`,
+  no panic
+- Branch-scoped or prefix-scoped isolation (concurrent callers with
+  different prefixes do not interfere)
+- Trailing-separator precision when the prefix ends in a
+  character-class boundary (e.g., `"foo."` must not match `"foo_bar"`)
+
 ## Guard Universality Across CLI Entry Points
 
 When adding a process-level guard (recursion check, cwd drift check,

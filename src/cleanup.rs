@@ -112,6 +112,85 @@ fn try_delete_file(path: &Path) -> String {
     }
 }
 
+/// Remove every `{branch}-adversarial_test.*` file under `.flow-states/`.
+///
+/// The Phase 4 adversarial agent writes a single test file whose extension
+/// it chooses at runtime from the diff's language (`.rs`, `.py`, `.go`,
+/// `.swift`, `.ts`, `.rb`, etc.). Cleanup cannot know the extension ahead
+/// of time, so it matches every entry whose file name starts with the
+/// literal prefix `{branch}-adversarial_test.`.
+///
+/// The trailing dot in the prefix is load-bearing: without it, a file named
+/// `{branch}-adversarial_test_other.rs` would match. The dot anchors the
+/// match on the extension separator so only real adversarial test files
+/// are deleted. Other concurrent flows' files (e.g.
+/// `other-branch-adversarial_test.rs`) are prefixed with a different branch
+/// name and are untouched.
+///
+/// Directory entries that happen to match the prefix are skipped — only
+/// regular files and symlinks are candidates for deletion. `fs::remove_file`
+/// on a symlink removes the link itself, not its target.
+///
+/// The loop continues past individual deletion errors so a single failure
+/// (permission denied, directory entry, transient I/O error) does not
+/// leave the remaining matching files on disk. The function returns
+/// "skipped" if `.flow-states/` is missing or no regular-file entries
+/// matched, "deleted" if at least one regular file was successfully
+/// removed, or "failed: <reason>" when every matching regular file's
+/// deletion failed (reporting the first error encountered).
+fn try_delete_adversarial_test_files(flow_states: &Path, branch: &str) -> String {
+    let entries = match fs::read_dir(flow_states) {
+        Ok(iter) => iter,
+        Err(_) => return "skipped".to_string(),
+    };
+
+    let prefix = format!("{}-adversarial_test.", branch);
+    let mut any_matched = false;
+    let mut any_deleted = false;
+    let mut first_error: Option<String> = None;
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let name = file_name.to_string_lossy();
+        if !name.starts_with(&prefix) {
+            continue;
+        }
+        // Only delete regular files and symlinks. A directory entry whose
+        // name happens to match the prefix (e.g. a scratch folder created
+        // by an engineer or a future feature) must not be removed and
+        // must not abort the loop — other matching regular files in the
+        // same directory should still be cleaned up.
+        let is_candidate = match entry.file_type() {
+            Ok(ft) => ft.is_file() || ft.is_symlink(),
+            Err(_) => false,
+        };
+        if !is_candidate {
+            continue;
+        }
+        any_matched = true;
+        match fs::remove_file(entry.path()) {
+            Ok(()) => {
+                any_deleted = true;
+            }
+            Err(e) => {
+                if first_error.is_none() {
+                    first_error = Some(format!("{}", e));
+                }
+            }
+        }
+    }
+
+    if any_deleted {
+        "deleted".to_string()
+    } else if any_matched {
+        format!(
+            "failed: {}",
+            first_error.unwrap_or_else(|| "unknown error".to_string())
+        )
+    } else {
+        "skipped".to_string()
+    }
+}
+
 /// Perform cleanup steps. Returns an ordered map of step results.
 pub fn cleanup(
     project_root: &Path,
@@ -267,6 +346,16 @@ pub fn cleanup(
     steps.insert(
         "issues_file".to_string(),
         try_delete_file(&flow_states.join(format!("{}-issues.md", branch))),
+    );
+
+    // Delete adversarial test file(s) produced by the Phase 4 adversarial
+    // agent. The agent chooses the extension at runtime from the diff's
+    // language, so cleanup globs by the branch-scoped prefix instead of a
+    // fixed filename. Covers both complete (pr_number=None) and abort
+    // (pr_number=Some) paths since they share this function.
+    steps.insert(
+        "adversarial_test".to_string(),
+        try_delete_adversarial_test_files(&flow_states, branch),
     );
 
     // Pull latest main (after worktree removal — ordering matters)
@@ -574,6 +663,150 @@ mod tests {
         assert_eq!(steps["issues_file"], "skipped");
     }
 
+    // --- adversarial_test ---
+
+    #[test]
+    fn test_cleanup_deletes_adversarial_test_rs() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path());
+        let wt_rel = setup_feature(dir.path(), "test-feature");
+        let adv = dir
+            .path()
+            .join(".flow-states/test-feature-adversarial_test.rs");
+        fs::write(&adv, "// adversarial test\n").unwrap();
+
+        let steps = cleanup(dir.path(), "test-feature", &wt_rel, None, false);
+        assert_eq!(steps["adversarial_test"], "deleted");
+        assert!(!adv.exists());
+    }
+
+    #[test]
+    fn test_cleanup_skips_missing_adversarial_test() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path());
+        let wt_rel = setup_feature(dir.path(), "test-feature");
+
+        let steps = cleanup(dir.path(), "test-feature", &wt_rel, None, false);
+        assert_eq!(steps["adversarial_test"], "skipped");
+    }
+
+    #[test]
+    fn test_cleanup_deletes_adversarial_test_multiple_extensions() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path());
+        let wt_rel = setup_feature(dir.path(), "test-feature");
+        let adv_rs = dir
+            .path()
+            .join(".flow-states/test-feature-adversarial_test.rs");
+        let adv_py = dir
+            .path()
+            .join(".flow-states/test-feature-adversarial_test.py");
+        fs::write(&adv_rs, "// rs\n").unwrap();
+        fs::write(&adv_py, "# py\n").unwrap();
+
+        let steps = cleanup(dir.path(), "test-feature", &wt_rel, None, false);
+        assert_eq!(steps["adversarial_test"], "deleted");
+        assert!(!adv_rs.exists());
+        assert!(!adv_py.exists());
+    }
+
+    #[test]
+    fn test_abort_path_deletes_adversarial_test() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path());
+        let wt_rel = setup_feature(dir.path(), "test-feature");
+        let adv = dir
+            .path()
+            .join(".flow-states/test-feature-adversarial_test.rs");
+        fs::write(&adv, "// adversarial\n").unwrap();
+
+        // Abort path: pr_number=Some(...) exercises the remote_branch/pr_close
+        // branches alongside the new step, proving the step runs in both the
+        // complete (pr_number=None) and abort (pr_number=Some) entry points.
+        let steps = cleanup(dir.path(), "test-feature", &wt_rel, Some(999), false);
+        assert_eq!(steps["adversarial_test"], "deleted");
+        assert!(!adv.exists());
+    }
+
+    #[test]
+    fn test_cleanup_adversarial_test_respects_branch_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path());
+        let wt_rel = setup_feature(dir.path(), "test-feature");
+        // Another concurrent flow has its own adversarial test file in the
+        // same shared .flow-states/ directory. Cleanup for "test-feature" must
+        // leave it untouched — this is the N×N concurrent-flow safety invariant.
+        let other = dir
+            .path()
+            .join(".flow-states/other-branch-adversarial_test.rs");
+        fs::write(&other, "// other branch\n").unwrap();
+
+        let steps = cleanup(dir.path(), "test-feature", &wt_rel, None, false);
+        assert_eq!(steps["adversarial_test"], "skipped");
+        assert!(other.exists());
+    }
+
+    #[test]
+    fn test_cleanup_adversarial_test_trailing_dot_precision() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path());
+        let wt_rel = setup_feature(dir.path(), "test-feature");
+        // A file whose name shares the prefix up to `_test` but diverges
+        // before the extension dot. The match must use the literal
+        // `{branch}-adversarial_test.` (with trailing dot) so this file is
+        // NOT matched. Dropping the trailing dot would delete it.
+        let other = dir
+            .path()
+            .join(".flow-states/test-feature-adversarial_test_other.rs");
+        fs::write(&other, "// sibling\n").unwrap();
+
+        let steps = cleanup(dir.path(), "test-feature", &wt_rel, None, false);
+        assert_eq!(steps["adversarial_test"], "skipped");
+        assert!(other.exists());
+    }
+
+    #[test]
+    fn test_cleanup_skips_adversarial_test_when_flow_states_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path());
+        let wt_rel = setup_feature(dir.path(), "test-feature");
+        // Remove .flow-states/ entirely to exercise the defensive path where
+        // fs::read_dir returns Err. The step must return "skipped", not panic.
+        fs::remove_dir_all(dir.path().join(".flow-states")).unwrap();
+
+        let steps = cleanup(dir.path(), "test-feature", &wt_rel, None, false);
+        assert_eq!(steps["adversarial_test"], "skipped");
+    }
+
+    #[test]
+    fn test_cleanup_adversarial_test_skips_directory_and_deletes_files() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path());
+        let wt_rel = setup_feature(dir.path(), "test-feature");
+        let states = dir.path().join(".flow-states");
+        // Directory entry whose name matches the adversarial-test prefix.
+        // The helper must skip it without aborting the deletion loop so
+        // the real files below still get removed. Created first so it is
+        // likely to precede the regular files in read_dir iteration order.
+        let bad_dir = states.join("test-feature-adversarial_test.d");
+        fs::create_dir_all(&bad_dir).unwrap();
+        let adv_rs = states.join("test-feature-adversarial_test.rs");
+        let adv_py = states.join("test-feature-adversarial_test.py");
+        let adv_go = states.join("test-feature-adversarial_test.go");
+        fs::write(&adv_rs, "// rs\n").unwrap();
+        fs::write(&adv_py, "# py\n").unwrap();
+        fs::write(&adv_go, "// go\n").unwrap();
+
+        let steps = cleanup(dir.path(), "test-feature", &wt_rel, None, false);
+        assert_eq!(steps["adversarial_test"], "deleted");
+        assert!(!adv_rs.exists());
+        assert!(!adv_py.exists());
+        assert!(!adv_go.exists());
+        // The directory matching the prefix must remain — the helper only
+        // deletes regular files and symlinks.
+        assert!(bad_dir.exists());
+    }
+
     // --- PR close ---
 
     #[test]
@@ -700,6 +933,7 @@ mod tests {
         assert_eq!(steps["timings_file"], "skipped");
         assert_eq!(steps["closed_issues_file"], "skipped");
         assert_eq!(steps["issues_file"], "skipped");
+        assert_eq!(steps["adversarial_test"], "skipped");
 
         // Filesystem effects
         assert!(!dir.path().join(&wt_rel).exists());
@@ -802,6 +1036,7 @@ mod tests {
                 "timings_file",
                 "closed_issues_file",
                 "issues_file",
+                "adversarial_test",
             ]
         );
     }
@@ -832,6 +1067,7 @@ mod tests {
                 "timings_file",
                 "closed_issues_file",
                 "issues_file",
+                "adversarial_test",
                 "git_pull",
             ]
         );

@@ -115,7 +115,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup <project_root> --branch <branch> --worktr
 
 If `pr_number` is unknown, omit `--pr`. The cleanup script deletes local branches and attempts remote branch deletion when `--pr` is provided.
 
-The script outputs JSON with a `steps` dict showing what happened to each resource (pr\_close, worktree, remote\_branch, local\_branch, state\_file, log\_file, ci\_sentinel). Each step reports "closed"/"removed"/"deleted", "skipped", or "failed: reason".
+The script outputs JSON with a `steps` dict showing what happened to each resource (pr\_close, worktree\_tmp, worktree, remote\_branch, local\_branch, state\_file, plan\_file, dag\_file, log\_file, frozen\_phases, ci\_sentinel, timings\_file, closed\_issues\_file, issues\_file, adversarial\_test). Each step reports "closed"/"removed"/"deleted", "skipped", or "failed: reason". The `adversarial_test` step matches `.flow-states/<branch>-adversarial_test.*` so the Phase 4 adversarial agent's temp file is removed regardless of the runtime-chosen extension.
 
 ### Done
 
