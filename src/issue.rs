@@ -74,7 +74,9 @@ pub fn read_body_file(path: &str, root: &Path) -> Result<String, String> {
     let body = fs::read_to_string(&resolved)
         .map_err(|e| format!("Could not read body file '{}': {}", resolved.display(), e))?;
 
-    // Delete after reading — ignore errors (matches Python behavior)
+    // Best-effort cleanup of the temp body file. The caller has
+    // already received the body content, and the file is per-flow
+    // scoped, so a deletion error here is non-fatal.
     let _ = fs::remove_file(&resolved);
 
     Ok(body)

@@ -27,6 +27,17 @@ sensitive) followed by any text, then `PR #` and digits. The
 to extract PR numbers — comments that don't match this pattern are
 invisible to the audit.
 
+**Only `PR #<number>` is recognized.** Alternatives like
+`issue #<number>`, `commit <sha>`, `for ticket <N>`, or `per PR
+<N>` are invisible to the audit and will never be counted as stale
+no matter how old the underlying PR is. Use `PR #<number>` exactly,
+even if the conceptual "source" of the removal was an issue — cite
+the merge PR that performed the removal, not the issue that filed
+the request. If the removal landed outside a PR (e.g. a direct
+push, which should never happen in this repo but can in others),
+the tombstone is inauditable and should be accompanied by a doc
+comment explaining why.
+
 ```rust
 #[test]
 fn test_code_review_no_plugin_step() {

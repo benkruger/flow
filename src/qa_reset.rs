@@ -159,10 +159,10 @@ pub fn load_issue_template(
     }
 }
 
-/// Decode base64 string (standard encoding with optional whitespace).
-/// Custom implementation to avoid adding a crate dependency — consistent
-/// with FLOW's zero-dependency philosophy. Ports Python's base64.b64decode
-/// behavior used in the original qa-reset.py.
+/// Decode a standard base64 string (with optional embedded whitespace
+/// from the GitHub API content envelope). Inlined here so qa-reset
+/// stays consistent with FLOW's zero-dependency philosophy and does
+/// not pull in a base64 crate just for one call site.
 fn base64_decode(input: &str) -> Option<String> {
     // Strip whitespace that GitHub API may include
     let clean: String = input.chars().filter(|c| !c.is_whitespace()).collect();
@@ -302,8 +302,9 @@ pub fn reset_impl(
 ///
 /// Returns Ok(Value) for both success and status-error responses.
 /// Returns Err(String) only for infrastructure failures.
-/// The run() wrapper prints the result and exits 1 on status-error,
-/// matching Python's sys.exit(1) behavior.
+/// The run() wrapper prints the result and exits 1 on status-error
+/// so failed reset attempts surface as a non-zero exit to the calling
+/// QA skill, while successful resets always exit 0.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     Ok(reset_impl(
         &args.repo,

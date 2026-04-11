@@ -236,9 +236,10 @@ mod tests {
 
     #[test]
     fn test_compact_count_string_value_increments() {
-        // Older Python writes or foreign edits may have compact_count
-        // as a string "3". Accept it and increment to 4 instead of
-        // silently resetting to 1.
+        // A state file produced by a hand edit or a foreign tool may
+        // store `compact_count` as the string `"3"`. The hook must
+        // tolerate it and increment to 4 instead of silently
+        // resetting the counter to 1.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
         let initial = json!({"compact_count": "3"});

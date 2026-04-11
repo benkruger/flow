@@ -134,10 +134,14 @@ fn test_happy_path() {
     assert!(state["pr_url"].is_string());
 }
 
-/// Regression test for lock leak when description differs from branch name.
-/// Before the fix, release_lock used args.feature_name (the description)
-/// instead of args.branch, so the lock file was never deleted.
-/// Fixed in PR #964.
+/// Guards the contract that `release_lock` is invoked with the
+/// canonical branch name, not the human-readable feature description.
+/// When start-workspace is called with a description that differs
+/// from the branch (a common shape: title-cased PR title vs
+/// kebab-case branch), the lock file — named after the branch — must
+/// still be deleted at the end of the workflow. Without this
+/// guarantee, every mismatched-description run would leave an orphan
+/// lock that blocks subsequent flows for the 30-minute stale timeout.
 #[test]
 fn test_lock_released_with_mismatched_description() {
     let dir = tempfile::tempdir().unwrap();

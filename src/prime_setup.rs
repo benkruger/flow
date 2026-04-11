@@ -82,10 +82,10 @@ exec "$plugin_root/bin/flow" "$@"
 /// Resolve derived permissions from `frameworks/<name>/permissions.json`.
 ///
 /// Reads the optional `derived_permissions` array. Each entry has a glob
-/// pattern and a template with `{stem}` placeholder. The glob is matched
-/// against the project root (skipping dot-prefixed entries per Python
-/// `Path.glob()` convention), and `{stem}` is replaced with the matched
-/// path's stem.
+/// pattern and a template with a `{stem}` placeholder. The glob is
+/// matched against the project root (skipping dot-prefixed entries per
+/// the fnmatch convention where `*` does not match leading dots), and
+/// `{stem}` is replaced with the matched path's stem.
 ///
 /// Returns an empty vec if no derived permissions are configured or matched.
 pub fn derive_permissions(project_root: &Path, framework: &str, fw_dir: &Path) -> Vec<String> {
@@ -123,8 +123,10 @@ pub fn derive_permissions(project_root: &Path, framework: &str, fw_dir: &Path) -
             continue;
         };
 
-        // Read directory entries, filter dot-prefixed (Python Path.glob parity),
-        // match suffix, sort for determinism, take first match only.
+        // Read directory entries, filter out dot-prefixed names
+        // (fnmatch convention — `*` does not match leading dots),
+        // match the suffix, sort for determinism, and take the first
+        // match only.
         let entries = match fs::read_dir(project_root) {
             Ok(e) => e,
             Err(_) => continue,
@@ -133,7 +135,9 @@ pub fn derive_permissions(project_root: &Path, framework: &str, fw_dir: &Path) -
             .filter_map(|e| e.ok())
             .filter_map(|e| {
                 let name = e.file_name().to_string_lossy().into_owned();
-                // Python Path.glob("*.ext") skips dot-prefixed entries
+                // Skip dot-prefixed entries — `*.ext` follows the
+                // fnmatch convention where `*` does not match leading
+                // dots, so a stray `.local.xcodeproj` does not match.
                 if !name.starts_with('.') {
                     // strip_suffix is UTF-8 safe — no byte-index arithmetic
                     name.strip_suffix(suffix).map(|stem| stem.to_string())
@@ -145,7 +149,9 @@ pub fn derive_permissions(project_root: &Path, framework: &str, fw_dir: &Path) -
         matches.sort();
         if let Some(stem) = matches.first() {
             results.push(template.replace("{stem}", stem));
-            // Python takes only the first match per entry via `break`
+            // Only the first match per entry is used — derived
+            // permissions are 1:1 with their glob pattern, so a second
+            // match would produce a duplicate permission entry.
         }
     }
     results

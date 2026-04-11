@@ -5,9 +5,10 @@
 //! Checks post-Complete outcomes: cleanup (no leftover state files or
 //! worktrees) and at least one merged PR.
 //!
-//! Always exits 0 — the Python original has no error exit path.
-//! The consumer (flow-qa skill) parses JSON, so compact output is fine
-//! (Python used indent=2 but it's cosmetic).
+//! Always exits 0 — qa-verify is a pure reporting command that prints
+//! its assertions as JSON for the flow-qa skill to parse and decide
+//! pass/fail. Output is emitted compactly because the consumer is
+//! programmatic and pretty-printing would just bloat the log.
 
 use std::path::{Path, PathBuf};
 use std::process::{self, Command};
@@ -47,8 +48,10 @@ pub fn find_state_files(project_root: &Path) -> Vec<PathBuf> {
         for entry in entries.flatten() {
             let path = entry.path();
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                // Filter dot-prefixed entries to match Python's glob("*.json")
-                // behavior where * does not match leading dots.
+                // Skip dot-prefixed entries — `*.json` follows the
+                // fnmatch convention where `*` does not match a
+                // leading dot, so a stray `.local.json` from another
+                // tool does not get treated as a flow state file.
                 if name.ends_with(".json")
                     && !name.starts_with('.')
                     && !name.starts_with("orchestrate")

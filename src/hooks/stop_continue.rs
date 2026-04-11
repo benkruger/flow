@@ -69,7 +69,8 @@ fn derive_root_branch(state_path: &Path) -> (Option<&Path>, Option<&str>) {
 /// Fail-open with diagnostic: on any `mutate_state` error (corrupt
 /// JSON, locked file, I/O failure) the error is logged via
 /// `log_diag` to stderr and the branch log for post-mortem
-/// visibility, matching the Python `capture_session_id` contract.
+/// visibility. The hook must never block the SessionStart event, so
+/// errors are recorded rather than propagated.
 pub fn capture_session_id(hook_input: &Value, state_path: &Path) {
     let session_id = match hook_input.get("session_id").and_then(|v| v.as_str()) {
         Some(s) if !s.is_empty() => s.to_string(),
@@ -121,11 +122,12 @@ pub fn check_continue(hook_input: &Value, state_path: &Path) -> ContinueResult {
         };
     }
 
-    // Filter out empty session_id strings from the hook input: the
-    // Python original used `hook_input.get("session_id")` which is
-    // falsy on both missing keys AND empty strings, so the downstream
-    // `if state_sid and hook_sid` check skipped the mismatch logic in
-    // both cases. Preserve that backward-compat behavior.
+    // Treat both a missing `session_id` key and an empty-string
+    // `session_id` as "no session id" so the downstream session-id
+    // mismatch branch (which only fires when both `state_sid` and
+    // `hook_sid` are `Some`) is skipped in both cases. Without this
+    // filter, an empty-string session id would falsely look like a
+    // mismatch and clear pending state.
     let hook_sid = hook_input
         .get("session_id")
         .and_then(|v| v.as_str())
@@ -209,7 +211,9 @@ pub fn check_continue(hook_input: &Value, state_path: &Path) -> ContinueResult {
 /// Set `_blocked` flag when the session is going idle.
 ///
 /// Delegates to `commands::set_blocked::set_blocked` which writes
-/// `_blocked = now()`. Same effect as the Python `set_blocked_idle`.
+/// `_blocked = now()`. The flag is read by status displays so they
+/// can show "session idle since X" until the next phase action
+/// clears it.
 pub fn set_blocked_idle(state_path: &Path) {
     set_blocked(state_path);
 }
@@ -1053,9 +1057,10 @@ mod tests {
     }
 
     // --- capture_session_id error logging ---
-    // Closes the coverage gap flagged by the reviewer agent: the
-    // Python `capture_session_id` logged on mutate_state errors but
-    // the Rust port was silently dropping them.
+    // Guards the contract that any `mutate_state` error inside
+    // `capture_session_id` is recorded to the branch log via
+    // `log_diag`, so a corrupt state file produces a post-mortem
+    // entry instead of a silent drop.
 
     #[test]
     fn test_capture_session_id_corrupt_state_logs_error() {
@@ -1105,10 +1110,10 @@ mod tests {
 
     #[test]
     fn test_check_continue_empty_hook_session_id_still_blocks() {
-        // When the hook sends session_id="", it must be treated as
-        // "no session_id" (Python's falsy semantics), not as a
-        // session mismatch. A valid _continue_pending flag should
-        // still fire.
+        // When the hook sends `session_id=""`, the comparator must
+        // treat it as "no session id" rather than as a session
+        // mismatch — a valid `_continue_pending` flag should still
+        // fire instead of being silently cleared.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
         let initial = json!({

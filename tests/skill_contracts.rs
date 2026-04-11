@@ -3,8 +3,6 @@
 // Validates structural invariants in skill markdown files: phase gates,
 // state field references, cross-skill invocations, agent contracts,
 // banner formatting, tombstone tests, and more.
-//
-// 258 tests (2 format_panel tests remain in Python as test_format_status.py).
 
 mod common;
 

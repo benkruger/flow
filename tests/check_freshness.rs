@@ -1,9 +1,9 @@
 //! CLI integration tests for `flow-rs check-freshness`.
 //!
-//! Mirrors the five Python `test_cli_*` integration tests from
-//! `tests/test_check_freshness.py`. Each test spins up a real git
-//! repository with a bare remote and invokes the compiled flow-rs
-//! binary as a subprocess.
+//! Each test spins up a real git repository with a bare remote and
+//! invokes the compiled `flow-rs` binary as a subprocess to verify
+//! the end-to-end CLI contract: argument parsing, exit codes, JSON
+//! output shape, and the fetch → merge-base → merge state machine.
 
 use std::fs;
 use std::path::{Path, PathBuf};

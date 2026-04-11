@@ -36,7 +36,9 @@ pub struct Args {
 
 /// Insert or replace priming content in a project's CLAUDE.md.
 ///
-/// Returns a JSON Value matching the Python script's shape.
+/// Returns a JSON Value with the same `status`, `replaced`, and
+/// `message` fields the prime skill expects when reporting the
+/// outcome to the user.
 ///
 /// # Marker handling
 ///

@@ -429,7 +429,9 @@ where
 
 /// Fetch issue title and labels from GitHub in a single `gh` call.
 /// Returns None on fetch failure, parse failure, or empty title.
-/// Uses a 10-second timeout matching the Python implementation.
+/// Uses a 10-second timeout — short enough that an unreachable GitHub
+/// does not block flow-start indefinitely, long enough to tolerate
+/// normal API jitter.
 pub fn fetch_issue_info(issue_number: i64) -> Option<IssueInfo> {
     let dir = std::env::current_dir().ok()?;
     let (stdout, _) = run_cmd(

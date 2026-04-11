@@ -21,9 +21,10 @@ const MAX_RETRIES: i64 = 3;
 #[derive(Parser, Debug)]
 #[command(name = "check-freshness", about = "Pre-merge freshness check")]
 pub struct Args {
-    /// Raw args — parsed manually inside run() to silently skip unknown
-    /// flags matching Python's manual arg loop
-    /// (tested by test_cli_unknown_args_ignored).
+    /// Raw args — parsed manually inside `run()` so unknown flags are
+    /// silently skipped instead of triggering clap's strict-parse
+    /// error. The contract is exercised by
+    /// `test_cli_unknown_args_ignored`.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true, num_args = 0..)]
     pub raw_args: Vec<String>,
 }
@@ -79,9 +80,11 @@ pub fn check_freshness_impl(
     }
 
     // Step 2: git merge-base --is-ancestor origin/main HEAD
-    // Exit 0 → up_to_date. Non-zero or timeout → proceed to merge attempt
-    // (Python swallows the timeout intentionally — tested by
-    // test_merge_base_timeout).
+    // Exit 0 → up_to_date. Non-zero or timeout → proceed to merge
+    // attempt. Timeouts are deliberately swallowed (rather than
+    // returned as an error) so a slow `git merge-base` falls through
+    // to the merge step instead of aborting freshness — verified by
+    // `test_merge_base_timeout`.
     let mb = git_cmd(
         &["git", "merge-base", "--is-ancestor", "origin/main", "HEAD"],
         LOCAL_TIMEOUT,
@@ -269,11 +272,10 @@ pub fn check_freshness(state_file: Option<&Path>, cwd: &Path) -> Value {
     check_freshness_impl(state_file, &mut git)
 }
 
-/// CLI entry point. Parses `raw_args` manually (silently skipping
-/// unknowns, matching Python's manual loop — tested by
-/// `test_cli_unknown_args_ignored`), runs `check_freshness`, prints the
-/// JSON result, and exits with status 1 for any result other than
-/// `up_to_date` or `merged`.
+/// CLI entry point. Parses `raw_args` manually so unknown flags are
+/// silently skipped (verified by `test_cli_unknown_args_ignored`),
+/// runs `check_freshness`, prints the JSON result, and exits with
+/// status 1 for any result other than `up_to_date` or `merged`.
 pub fn run(args: Args) {
     let mut state_file: Option<PathBuf> = None;
     let mut i = 0;
@@ -286,16 +288,15 @@ pub fn run(args: Args) {
         }
     }
 
-    // Inherit CWD from the calling process — must match Python's behavior.
-    // Python's `subprocess.run` calls in check-freshness.py pass no `cwd=`
-    // argument, so git commands run in the shell's current directory (the
-    // feature worktree when invoked from complete-merge.py). Using
-    // `project_root()` here would return the MAIN repo root (the first
-    // entry of `git worktree list --porcelain`), causing git commands to
-    // run in the main worktree where HEAD=main — which would make
+    // Inherit CWD from the calling process — git commands must run in
+    // the feature worktree (the shell's current directory), not the
+    // main repo root. Using `project_root()` here would return the
+    // MAIN repo root (the first entry of `git worktree list
+    // --porcelain`), causing git commands to run in the main worktree
+    // where HEAD=main — which would make
     // `git merge-base --is-ancestor origin/main HEAD` trivially succeed
-    // and always return `up_to_date` regardless of the feature branch's
-    // actual state.
+    // and always return `up_to_date` regardless of the feature
+    // branch's actual state.
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let result = check_freshness(state_file.as_deref(), &cwd);
 
@@ -661,8 +662,9 @@ mod tests {
     fn test_retry_value_as_float() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
-        // Write freshness_retries as a float (e.g. from older Python code
-        // that did float arithmetic on the counter).
+        // Write freshness_retries as a float to verify the reader's
+        // type-tolerance fallback chain accepts a JSON number that
+        // arrived as `1.0` instead of `1`.
         fs::write(&path, r#"{"branch":"test","freshness_retries":1.0}"#).unwrap();
         let responses = vec![ok(), err(1, ""), ok()];
         let mut git = mock_runner(responses);

@@ -115,7 +115,9 @@ fn run_dispatcher(
     cmd.output().unwrap()
 }
 
-/// When Rust binary exits 127, dispatcher returns error JSON (no Python fallback).
+/// When the underlying flow-rs binary exits 127 (subcommand not found), the
+/// dispatcher must surface a structured error JSON to stdout instead of
+/// silently dropping the failure or printing raw shell text.
 #[test]
 fn rust_exit_127_returns_error_json() {
     let dir = tempfile::tempdir().unwrap();

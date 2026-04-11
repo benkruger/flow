@@ -297,10 +297,14 @@ fn test_no_flow_json_returns_error() {
 
 #[test]
 fn test_lock_uses_canonical_branch_not_feature_name() {
-    // Regression: when an issue prompt yields a different branch name than the
-    // feature name, the lock must be under the canonical (issue-derived) name.
-    // Before the fix in PR #968, the lock was acquired under args.feature_name
-    // but released under the canonical name, causing a lock leak.
+    // Guards the contract that the start lock is acquired and
+    // released under the same name. When an issue prompt resolves to
+    // a canonical branch name that differs from the raw feature name
+    // (e.g. "work on issue #42" → "add-dark-mode-toggle"), both
+    // `acquire_lock` and `release_lock` must use the canonical
+    // (issue-derived) name. Otherwise the lock file leaks under the
+    // raw feature name and blocks subsequent flows until the
+    // 30-minute stale timeout.
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), "python", None);

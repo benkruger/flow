@@ -1,4 +1,4 @@
-//! Tests for bin/dependencies — the framework dependency updater (Rust since PR #953).
+//! Tests for `bin/dependencies` — the framework-aware dependency updater script.
 
 mod common;
 

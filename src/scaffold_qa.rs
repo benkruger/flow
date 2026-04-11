@@ -223,8 +223,9 @@ pub fn scaffold_impl(
 ///
 /// Returns Ok(Value) for both success and status-error responses.
 /// Returns Err(String) only for infrastructure failures.
-/// The run() wrapper prints the result and exits 1 on status-error,
-/// matching Python's sys.exit(1) behavior.
+/// The run() wrapper prints the result and exits 1 on status-error
+/// so the calling QA skill can detect a failed scaffold via the
+/// non-zero exit code while a successful scaffold exits 0.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     Ok(scaffold_impl(
         &args.framework,
