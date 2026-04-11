@@ -331,7 +331,7 @@ to determine how to advance.
       only "Yes, start Phase 2 now" and "Not yet"
    d. If Yes → invoke `flow:flow-plan` using the Skill tool
    e. If Not yet → print the paused banner below, then report worktree
-      location, PR link, and any framework report items
+      location and PR link
    f. Do NOT invoke `flow:flow-plan` until the user responds
 
 Do NOT skip this check. Do NOT auto-advance when the mode is manual.
@@ -351,7 +351,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
 ## Hard Rules
 
-- Do not narrate internal operations to the user — no "The framework is Python", no "Proceeding to phase completion", no "No additional setup steps are needed". Just do the work silently and show results
+- Do not narrate internal operations to the user — no "Proceeding to phase completion", no "No additional setup steps are needed". Just do the work silently and show results
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories

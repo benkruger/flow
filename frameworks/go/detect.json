@@ -1,5 +1,0 @@
-{
-  "name": "go",
-  "display_name": "Go",
-  "detect_globs": ["go.mod"]
-}

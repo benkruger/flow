@@ -19,7 +19,6 @@ fn make_state() -> Value {
         "schema_version": 1,
         "branch": "test-feature",
         "current_phase": "flow-code",
-        "framework": "python",
         "started_at": "2026-01-01T00:00:00-08:00",
         "files": {
             "plan": null,

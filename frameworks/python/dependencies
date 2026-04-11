@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-# FLOW dependency updater for Python
-# Created by /flow:flow-prime — edit to match your project
-set -euo pipefail
-
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-
-"$REPO_ROOT/.venv/bin/pip" install -r requirements.txt -q

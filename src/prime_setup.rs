@@ -1,11 +1,12 @@
 //! Consolidated setup for FLOW Prime.
 //!
-//! Merges permissions into
-//! `.claude/settings.json`, writes `.flow.json` version marker,
-//! updates `.git/info/exclude`, installs hooks and launcher.
-//! Does NOT commit — the skill handles `git add` + `commit`.
+//! Merges permissions into `.claude/settings.json`, writes `.flow.json`
+//! version marker, updates `.git/info/exclude`, installs hooks and
+//! launcher, and copies the bin/* stubs from `assets/bin-stubs/` into
+//! `<project_root>/bin/`. Does NOT commit — the skill handles `git add`
+//! + `commit`.
 //!
-//! Usage: `bin/flow prime-setup <project_root> --framework <name>`
+//! Usage: `bin/flow prime-setup <project_root>`
 //!
 //! Output (JSON to stdout):
 //!   Success: `{"status": "ok", "settings_merged": true, ...}`
@@ -22,13 +23,10 @@ use clap::Args as ClapArgs;
 use regex::Regex;
 use serde_json::{json, Value};
 
-use crate::create_dependencies;
 use crate::prime_check::{
-    compute_config_hash, compute_setup_hash, load_framework_permissions, EXCLUDE_ENTRIES,
-    FLOW_DENY, UNIVERSAL_ALLOW,
+    compute_config_hash, compute_setup_hash, EXCLUDE_ENTRIES, FLOW_DENY, UNIVERSAL_ALLOW,
 };
-use crate::prime_project;
-use crate::utils::{frameworks_dir, permission_to_regex, plugin_root, read_version};
+use crate::utils::{permission_to_regex, plugin_root, read_version};
 
 /// Pre-commit hook script content — installed at `.git/hooks/pre-commit`.
 /// Blocks direct `git commit` when a FLOW feature is active on the
@@ -79,84 +77,6 @@ fi
 exec "$plugin_root/bin/flow" "$@"
 "#;
 
-/// Resolve derived permissions from `frameworks/<name>/permissions.json`.
-///
-/// Reads the optional `derived_permissions` array. Each entry has a glob
-/// pattern and a template with a `{stem}` placeholder. The glob is
-/// matched against the project root (skipping dot-prefixed entries per
-/// the fnmatch convention where `*` does not match leading dots), and
-/// `{stem}` is replaced with the matched path's stem.
-///
-/// Returns an empty vec if no derived permissions are configured or matched.
-pub fn derive_permissions(project_root: &Path, framework: &str, fw_dir: &Path) -> Vec<String> {
-    let permissions_path = fw_dir.join(framework).join("permissions.json");
-    if !permissions_path.exists() {
-        return Vec::new();
-    }
-    let content = match fs::read_to_string(&permissions_path) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-    let data: Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    let derived = match data.get("derived_permissions").and_then(|v| v.as_array()) {
-        Some(arr) => arr,
-        None => return Vec::new(),
-    };
-
-    let mut results = Vec::new();
-    for entry in derived {
-        let glob_pattern = match entry.get("glob").and_then(|v| v.as_str()) {
-            Some(g) => g,
-            None => continue,
-        };
-        let template = match entry.get("template").and_then(|v| v.as_str()) {
-            Some(t) => t,
-            None => continue,
-        };
-        // Extract the suffix from the glob pattern (e.g. "*.xcodeproj" -> ".xcodeproj")
-        let suffix = if let Some(s) = glob_pattern.strip_prefix('*') {
-            s
-        } else {
-            continue;
-        };
-
-        // Read directory entries, filter out dot-prefixed names
-        // (fnmatch convention — `*` does not match leading dots),
-        // match the suffix, sort for determinism, and take the first
-        // match only.
-        let entries = match fs::read_dir(project_root) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        let mut matches: Vec<String> = entries
-            .filter_map(|e| e.ok())
-            .filter_map(|e| {
-                let name = e.file_name().to_string_lossy().into_owned();
-                // Skip dot-prefixed entries — `*.ext` follows the
-                // fnmatch convention where `*` does not match leading
-                // dots, so a stray `.local.xcodeproj` does not match.
-                if !name.starts_with('.') {
-                    // strip_suffix is UTF-8 safe — no byte-index arithmetic
-                    name.strip_suffix(suffix).map(|stem| stem.to_string())
-                } else {
-                    None
-                }
-            })
-            .collect();
-        matches.sort();
-        if let Some(stem) = matches.first() {
-            results.push(template.replace("{stem}", stem));
-            // Only the first match per entry is used — derived
-            // permissions are 1:1 with their glob pattern, so a second
-            // match would produce a duplicate permission entry.
-        }
-    }
-    results
-}
-
 /// Check if any entry in `existing_set` pattern-subsumes `candidate`.
 ///
 /// Uses `permission_to_regex()` to test whether an existing broader pattern
@@ -194,22 +114,11 @@ pub fn is_subsumed(candidate: &str, existing_set: &HashSet<String>) -> bool {
     false
 }
 
-/// Build the merged allow list for the given framework.
-fn allow_list(framework: &str, fw_dir: &Path) -> Vec<String> {
-    let mut list: Vec<String> = UNIVERSAL_ALLOW.iter().map(|s| s.to_string()).collect();
-    list.extend(load_framework_permissions(framework, fw_dir));
-    list
-}
-
-/// Merge FLOW permissions into `.claude/settings.json`.
+/// Merge FLOW universal permissions into `.claude/settings.json`.
 ///
 /// Additive merge — only adds entries not already present or subsumed
 /// by broader patterns. Returns the merged settings dict as a JSON Value.
-pub fn merge_settings(
-    project_root: &Path,
-    framework: &str,
-    fw_dir: &Path,
-) -> Result<Value, String> {
+pub fn merge_settings(project_root: &Path) -> Result<Value, String> {
     let settings_dir = project_root.join(".claude");
     let settings_path = settings_dir.join("settings.json");
 
@@ -246,18 +155,11 @@ pub fn merge_settings(
 
     let mut allow_array: Vec<Value> = settings["permissions"]["allow"].as_array().unwrap().clone();
 
-    for entry in allow_list(framework, fw_dir) {
-        if !existing_allow.contains(&entry) && !is_subsumed(&entry, &existing_allow) {
-            allow_array.push(Value::String(entry.clone()));
-            existing_allow.insert(entry);
-        }
-    }
-
-    // Merge derived permissions
-    for entry in derive_permissions(project_root, framework, fw_dir) {
-        if !existing_allow.contains(&entry) && !is_subsumed(&entry, &existing_allow) {
-            allow_array.push(Value::String(entry.clone()));
-            existing_allow.insert(entry);
+    for entry in UNIVERSAL_ALLOW {
+        let e = entry.to_string();
+        if !existing_allow.contains(&e) && !is_subsumed(&e, &existing_allow) {
+            allow_array.push(Value::String(e.clone()));
+            existing_allow.insert(e);
         }
     }
 
@@ -316,12 +218,15 @@ pub fn merge_settings(
     Ok(settings)
 }
 
-/// Write `.flow.json` with the plugin version, framework, and optional fields.
-#[allow(clippy::too_many_arguments)]
+/// Write `.flow.json` with the plugin version and optional fields.
+///
+/// `.flow.json` is the per-project FLOW marker file. It is gitignored
+/// and rewritten on every prime/upgrade. Consumers ignore unknown
+/// fields, so older `.flow.json` files with extra keys continue to
+/// parse cleanly during an in-place upgrade.
 pub fn write_version_marker(
     project_root: &Path,
     version: &str,
-    framework: &str,
     config_hash: Option<&str>,
     setup_hash: Option<&str>,
     commit_format: Option<&str>,
@@ -330,7 +235,6 @@ pub fn write_version_marker(
 ) -> Result<(), String> {
     let mut data = json!({
         "flow_version": version,
-        "framework": framework,
     });
     if let Some(h) = config_hash {
         data["config_hash"] = json!(h);
@@ -463,10 +367,6 @@ pub struct Args {
     /// Project root directory
     pub project_root: String,
 
-    /// Framework name (rails, python, ios, go, rust)
-    #[arg(long)]
-    pub framework: Option<String>,
-
     /// JSON string of skills configuration
     #[arg(long = "skills-json")]
     pub skills_json: Option<String>,
@@ -485,46 +385,19 @@ pub struct Args {
 /// Returns `Err(Value)` for all error cases (printed as JSON, exit 1).
 /// `Ok(Value)` for success.
 ///
-/// `--framework` is optional. When omitted (or empty), prime skips
-/// the framework-specific operations: it does not load
-/// `frameworks/<name>/permissions.json`, does not run
-/// `prime_project::prime` (CLAUDE.md is left as-is — the user is
-/// responsible for their own conventions), and does not copy a
-/// `bin/dependencies` template. The bin/* stub installer always runs
-/// regardless of framework, copying `assets/bin-stubs/<tool>.sh` into
-/// `<project>/bin/<tool>` when absent.
+/// Writes universal permissions to `.claude/settings.json`, writes
+/// the version marker to `.flow.json`, updates `.git/info/exclude`,
+/// installs the pre-commit hook and global launcher, and copies the
+/// `bin/*` stubs from `assets/bin-stubs/<tool>.sh` into
+/// `<project_root>/bin/<tool>` when absent. Pre-existing user `bin/*`
+/// files are never overwritten so users who already configured their
+/// own toolchain keep their work.
 pub fn run_impl(args: &Args) -> Result<Value, Value> {
     let project_root = PathBuf::from(&args.project_root);
     if !project_root.is_dir() {
         return Err(json!({
             "status": "error",
             "message": format!("Project root not found: {}", args.project_root),
-        }));
-    }
-
-    // Framework is optional. Empty string disables the framework-specific
-    // code paths below. Non-empty values must match a frameworks/<name>/
-    // directory; unknown frameworks still error so users get a clear
-    // signal that they typo'd a name rather than silently skipping.
-    let framework = match &args.framework {
-        Some(f) if !f.is_empty() => f.clone(),
-        _ => String::new(),
-    };
-
-    let fw_dir = match frameworks_dir() {
-        Some(d) => d,
-        None => {
-            return Err(json!({
-                "status": "error",
-                "message": "Frameworks directory not found",
-            }));
-        }
-    };
-
-    if !framework.is_empty() && !fw_dir.join(&framework).is_dir() {
-        return Err(json!({
-            "status": "error",
-            "message": format!("Unknown framework: {}", framework),
         }));
     }
 
@@ -559,18 +432,16 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
         }));
     }
 
-    let config_hash = compute_config_hash(&framework, &fw_dir)
-        .map_err(|e| json!({"status": "error", "message": e}))?;
+    let config_hash =
+        compute_config_hash().map_err(|e| json!({"status": "error", "message": e}))?;
     let setup_hash =
         compute_setup_hash(&p_root).map_err(|e| json!({"status": "error", "message": e}))?;
 
-    merge_settings(&project_root, &framework, &fw_dir)
-        .map_err(|e| json!({"status": "error", "message": e}))?;
+    merge_settings(&project_root).map_err(|e| json!({"status": "error", "message": e}))?;
 
     write_version_marker(
         &project_root,
         &version,
-        &framework,
         Some(&config_hash),
         Some(&setup_hash),
         args.commit_format.as_deref(),
@@ -594,50 +465,12 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
         }
     }
 
-    // Framework-specific operations only run when --framework was provided.
-    // Empty framework means the project owns its own CLAUDE.md and
-    // bin/dependencies; FLOW does not generate them.
-    let prime_result = if framework.is_empty() {
-        "skipped".to_string()
-    } else {
-        let prime_project_args = prime_project::Args {
-            project_root: args.project_root.clone(),
-            framework: framework.clone(),
-        };
-        match prime_project::run_impl(&prime_project_args) {
-            Ok(v) => v
-                .get("status")
-                .and_then(|s| s.as_str())
-                .unwrap_or("error")
-                .to_string(),
-            Err(v) => v
-                .get("status")
-                .and_then(|s| s.as_str())
-                .unwrap_or("error")
-                .to_string(),
-        }
-    };
-
-    let deps_status = if framework.is_empty() {
-        "skipped".to_string()
-    } else {
-        let deps_result =
-            create_dependencies::create(&args.project_root, &framework, Some(&fw_dir));
-        deps_result
-            .get("status")
-            .and_then(|s| s.as_str())
-            .unwrap_or("error")
-            .to_string()
-    };
-
-    // bin/* stub installer runs unconditionally. Copies
-    // assets/bin-stubs/<tool>.sh into <project_root>/bin/<tool> when
-    // absent so every primed project gets a working delegation surface
-    // for `bin/flow ci`. Pre-existing bin/* files are never overwritten.
-    let stubs_installed = match plugin_root() {
-        Some(p) => install_bin_stubs(&project_root, &p),
-        None => Vec::new(),
-    };
+    // bin/* stub installer copies assets/bin-stubs/<tool>.sh into
+    // <project_root>/bin/<tool> for any of [format, lint, build, test]
+    // that does not already exist. Pre-existing files are never
+    // overwritten so users who already configured their own bin/* keep
+    // their work.
+    let stubs_installed = install_bin_stubs(&project_root, &p_root);
 
     Ok(json!({
         "status": "ok",
@@ -646,9 +479,6 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
         "version_marker": true,
         "hook_installed": true,
         "launcher_installed": launcher_installed,
-        "framework": framework,
-        "prime_project": prime_result,
-        "dependencies": deps_status,
         "stubs_installed": stubs_installed,
     }))
 }

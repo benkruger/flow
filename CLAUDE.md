@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-FLOW is a Claude Code plugin (`flow:` namespace) that enforces an opinionated 6-phase development lifecycle: Start, Plan, Code, Code Review, Learn, Complete. Each phase is a skill that Claude reads and follows. Phase gates prevent skipping ahead — you must complete each phase before entering the next. Supports Rails, Python, iOS, Go, and Rust.
+FLOW is a Claude Code plugin (`flow:` namespace) that enforces an opinionated 6-phase development lifecycle: Start, Plan, Code, Code Review, Learn, Complete. Each phase is a skill that Claude reads and follows. Phase gates prevent skipping ahead — you must complete each phase before entering the next. Language-agnostic — every project owns its toolchain via repo-local `bin/format`, `bin/lint`, `bin/build`, `bin/test` scripts that FLOW orchestrates without dispatching by language.
 
 This repo is the plugin source code. When installed in a target project, skills and hooks run in the target project's working directory, not here. State files, worktrees, and logs all live in the target project. If you are developing FLOW itself, you are modifying the plugin — not using it.
 
@@ -8,18 +8,18 @@ This repo is the plugin source code. When installed in a target project, skills 
 
 Four core tenets guide every design decision:
 
-1. **Unobtrusive** — zero dependencies. Prime commits `.claude/settings.json` and `CLAUDE.md` as project config. `.flow.json` is always git-excluded. Everything else lives in `.git/` or is gitignored.
+1. **Unobtrusive** — zero dependencies. Prime commits `.claude/settings.json` and the four `bin/*` stubs as project config. `.flow.json` is always git-excluded. Everything else lives in `.git/` or is gitignored.
 2. **As autonomous or manual as you want** — configurable autonomy via `.flow.json` skills settings.
 3. **Safe for local env** — no containers needed, no permission prompts ever. Native tools only, no external dependencies.
 4. **N×N×N concurrent** — N engineers running N flows on N boxes at the same time is the primary use case, not an edge case. Every feature, fix, and design decision must work when multiple flows are active simultaneously — on the same machine (multiple worktrees) and across machines (shared GitHub state). Local state (`.flow-states/`, worktrees) is per-machine. Shared state (PRs, issues, labels) is coordinated through GitHub. Nothing assumes a single active flow.
 
 In the target project:
 
-- `.claude/settings.json` and `CLAUDE.md` are committed during prime. `.flow.json` is always git-excluded
+- `.claude/settings.json` and the `bin/*` stubs are committed during prime. `.flow.json` is always git-excluded
 - `.flow-states/` is gitignored and deleted at Complete
 - After Complete, the only permanent artifacts are the merged PR and any CLAUDE.md learnings
 - Skills are pure Markdown instructions, not executable code
-- Framework support is data-driven via `frameworks/<name>/` directories — adding a language means adding a directory, not editing skills
+- Tool dispatch is repo-local: `bin/flow ci` runs `./bin/format`, `./bin/lint`, `./bin/build`, `./bin/test` from cwd. Each repo owns its commands; FLOW provides the orchestration layer (sentinel, retry/flaky classification, recursion guard, fail-fast ordering, JSON contract). Adding a language means writing the four `bin/*` scripts in your project, not editing FLOW
 - Multiple flows run simultaneously via branch-scoped worktrees and state files — nothing assumes a single active flow
 
 ## The 6 Phases
@@ -67,11 +67,12 @@ CI will fail if these are missing:
 - `hooks/session-start.sh` — writes terminal tab colors
 - `.claude/settings.json` — project permissions (git rebase denied)
 - `docs/` — GitHub Pages site (static HTML); `docs/reference/flow-state-schema.md` for state file schema
-- `frameworks/<name>/` — per-framework data: `detect.json`, `permissions.json`, `dependencies`, `priming.md`
 - `agents/*.md` — six custom plugin sub-agents: ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, documentation
 - `src/*.rs` — Rust source implementing all `bin/flow` subcommands
 - `bin/flow` — Rust dispatcher: resolves the Rust binary (`target/release/flow-rs` or `target/debug/flow-rs`), auto-rebuilds when source is newer than binary
-- `qa/templates/<framework>/` — per-framework QA repo templates (rails, python, ios, go, rust)
+- `bin/{format,lint,build,test}` — FLOW's own dogfood scripts; each repo gets its own copies installed by `/flow:flow-prime` from `assets/bin-stubs/`
+- `assets/bin-stubs/` — self-documenting bash stubs that prime copies into target projects when absent
+- `qa/templates/<name>/` — QA repo templates used by `/flow-qa`
 - `.claude-plugin/marketplace.json` — marketplace registry (version must match plugin.json)
 
 ## Development Environment
@@ -90,6 +91,23 @@ This repo is the plugin source. When installed, skills and hooks run in the targ
 ### Skills Are Markdown, Not Code
 
 Skills are pure Markdown instructions (`skills/<name>/SKILL.md`). The only executable code is `bin/flow` (dispatcher) and `src/*.rs` (Rust source). Everything else is instructions that Claude reads and follows.
+
+### Repo-Local Tool Delegation
+
+`bin/flow ci`, `bin/flow build`, `bin/flow lint`, `bin/flow format`, and `bin/flow test` all spawn `./bin/<tool>` from cwd. The user's `bin/<tool>` script owns the actual command (cargo, pytest, go test, etc.). FLOW contributes:
+
+- Sentinel-based dirty-check optimization (`tree_snapshot` SHA-256 over HEAD + diff + untracked)
+- Retry/flaky classification (test only)
+- `FLOW_CI_RUNNING=1` recursion guard
+- Fail-fast tool ordering (format → lint → build → test)
+- Stable JSON output contract
+- Cwd-drift guard via `cwd_scope::enforce` so subdirectory-scoped flows can't be run from the wrong directory
+
+The four `bin/*` stubs are installed by `/flow:flow-prime` from `assets/bin-stubs/<tool>.sh` when absent. Pre-existing user scripts are never overwritten. Each stub defaults to `exit 0` with a stderr reminder so a fresh prime never blocks CI; users uncomment one of the example invocations to wire their toolchain.
+
+### Subdirectory Context
+
+State files capture `relative_cwd` at flow-start time — the path inside the project root where the user invoked `/flow:flow-start`. For root-level flows this is the empty string and behavior is unchanged. For mono-repo flows started inside `api/` (or `packages/api/`), `start-workspace` returns a `worktree_cwd` that includes the suffix so the agent lands in `.worktrees/<branch>/api/` after the worktree is created. Every `bin/flow` subcommand calls `cwd_scope::enforce` as its first action, hard-erroring with the expected directory if the user has cd'd outside it. The mechanism is additive: empty `relative_cwd` preserves all pre-existing behavior.
 
 ### State File
 
@@ -134,7 +152,7 @@ The version lives in 3 places (across 2 files), all must match: `.claude-plugin/
 
 ### Checksum → Version Invariant
 
-`config_hash` covers permission structure (allow/deny lists, defaultMode, exclude entries). `setup_hash` is a SHA-256 of `src/prime_setup.rs`, covering all installation artifacts (hooks, excludes, priming, dependencies). Both hashes are stored in `.flow.json` and compared by `prime_check.rs` when a version mismatch is detected. Matching hashes allow auto-upgrade (just update the version in `.flow.json`); mismatching hashes force a full `/flow:flow-prime` re-run. Hash changes during development do not require version bumps — version bumps are a release decision via `/flow-release`. The hashes ensure that users get the right upgrade path when they update to a new release.
+`config_hash` covers permission structure (allow/deny lists, defaultMode, exclude entries). `setup_hash` is a SHA-256 of `src/prime_setup.rs`, covering all installation artifacts (hooks, excludes, launcher, bin/* stub installer). Both hashes are stored in `.flow.json` and compared by `prime_check.rs` when a version mismatch is detected. Matching hashes allow auto-upgrade (just update the version in `.flow.json`); mismatching hashes force a full `/flow:flow-prime` re-run. Hash changes during development do not require version bumps — version bumps are a release decision via `/flow-release`. The hashes ensure that users get the right upgrade path when they update to a new release.
 
 ### State Mutations
 
@@ -142,7 +160,7 @@ Claude never computes timestamps, time differences, or counter increments. All s
 
 ### Start-Init → Init-State Contract
 
-`start-init` derives the canonical branch name (issue-aware via `fetch_issue_info` + `branch_name`) BEFORE acquiring the start lock. It then passes `--branch <canonical>` to the `init-state` subprocess, which skips its own derivation and uses the provided name directly. This two-step design ensures the lock is acquired and released under the same name (the canonical branch name). `init-state` retains its full derivation path for backwards compatibility when called directly via `bin/flow init-state` without `--branch`.
+`start-init` derives the canonical branch name (issue-aware via `fetch_issue_info` + `branch_name`) BEFORE acquiring the start lock. It also computes `relative_cwd` from `cwd.canonicalize().strip_prefix(project_root.canonicalize())` so the captured subdirectory is symlink-stable. It then passes `--branch <canonical> --relative-cwd <rel>` to the `init-state` subprocess, which skips its own derivation and uses the provided values directly. This two-step design ensures the lock is acquired and released under the same name (the canonical branch name). `init-state` retains its full derivation path for backwards compatibility when called directly via `bin/flow init-state` without `--branch`.
 
 ### Auto-Advance Architecture
 
@@ -158,7 +176,7 @@ Tombstone tests prevent merge conflicts from silently resurrecting deleted code.
 
 ## Test Architecture
 
-All tests are Rust integration tests in `tests/*.rs`. Shared helpers in `tests/common/mod.rs` provide `repo_root()`, `bin_dir()`, `hooks_dir()`, `skills_dir()`, `docs_dir()`, `frameworks_dir()`, `agents_dir()`, `load_phases()`, `load_hooks()`, `plugin_version()`, `phase_order()`, `utility_skills()`, `read_skill()`, `collect_md_files()`, and `create_git_repo_with_remote()`.
+All tests are Rust integration tests in `tests/*.rs`. Shared helpers in `tests/common/mod.rs` provide `repo_root()`, `bin_dir()`, `hooks_dir()`, `skills_dir()`, `docs_dir()`, `agents_dir()`, `load_phases()`, `load_hooks()`, `plugin_version()`, `phase_order()`, `utility_skills()`, `read_skill()`, `collect_md_files()`, and `create_git_repo_with_remote()`.
 
 Key test files: `tests/structural.rs` (config invariants, version consistency), `tests/skill_contracts.rs` (SKILL.md content via glob-based discovery — new skills auto-covered), `tests/permissions.rs` (allow/deny simulation, placeholder validation), `tests/docs_sync.rs` (docs completeness), `tests/concurrency.rs` (real-process concurrency).
 

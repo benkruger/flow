@@ -59,7 +59,6 @@ fn create_state_file(repo: &Path, branch: &str, skills_continue: &str) {
         "pr_url": "https://github.com/test/repo/pull/42",
         "started_at": "2026-01-01T00:00:00-08:00",
         "current_phase": "flow-start",
-        "framework": "python",
         "files": {
             "plan": null,
             "dag": null,

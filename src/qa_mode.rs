@@ -259,7 +259,7 @@ mod tests {
             &flow_json,
             &json!({
                 "flow_version": "0.39.0",
-                "framework": "python",
+                "commit_format": "full",
                 "plugin_root": "/original/cache/path"
             }),
         );
@@ -303,7 +303,7 @@ mod tests {
             &flow_json,
             &json!({
                 "flow_version": "0.39.0",
-                "framework": "python"
+                "commit_format": "full"
             }),
         );
 
@@ -390,7 +390,7 @@ mod tests {
             &flow_json,
             &json!({
                 "flow_version": "0.39.0",
-                "framework": "python",
+                "extra_unknown_field": "preserve me",
                 "config_hash": "abc123",
                 "setup_hash": "def456",
                 "commit_format": "conventional",
@@ -403,7 +403,7 @@ mod tests {
 
         let data = read_flow_json(&flow_json);
         assert_eq!(data["flow_version"], "0.39.0");
-        assert_eq!(data["framework"], "python");
+        assert_eq!(data["extra_unknown_field"], "preserve me");
         assert_eq!(data["config_hash"], "abc123");
         assert_eq!(data["setup_hash"], "def456");
         assert_eq!(data["commit_format"], "conventional");
@@ -479,7 +479,7 @@ mod tests {
             &flow_json,
             &json!({
                 "flow_version": "0.39.0",
-                "framework": "python",
+                "commit_format": "full",
                 "config_hash": "abc123",
                 "plugin_root": "/local/dev/path",
                 "plugin_root_backup": "/original/cache/path",
@@ -491,7 +491,7 @@ mod tests {
 
         let data = read_flow_json(&flow_json);
         assert_eq!(data["flow_version"], "0.39.0");
-        assert_eq!(data["framework"], "python");
+        assert_eq!(data["commit_format"], "full");
         assert_eq!(data["config_hash"], "abc123");
         assert_eq!(data["skills"]["flow-code"]["commit"], "auto");
         assert_eq!(data["plugin_root"], "/original/cache/path");

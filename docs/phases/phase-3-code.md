@@ -42,9 +42,9 @@ but CI and commit happen once after the last task in the group.
 
 ---
 
-## Framework Testing Rules
+## Project Testing Rules
 
-Architecture checks and testing conventions are defined by the framework instructions in the skill. Each framework enforces its own rules (e.g., Rails requires test helpers and full class hierarchy reads; Python requires fixture checks and import analysis).
+Architecture checks and testing conventions are defined by the project's CLAUDE.md. Each project documents its own rules — fixture patterns, helper conventions, the order tests must be read in — and the Code phase enforces them when writing new tests.
 
 ---
 
@@ -61,7 +61,7 @@ in the state file via `bin/flow add-issue`. The task continues after filing.
 
 During the TDD cycle, run the specific file for fast feedback:
 
-The targeted test command is defined by the framework instructions (e.g., `bin/flow test -- <file>`).
+The targeted test command is `bin/flow test --file <path>`, which spawns the project's `bin/test --file <path>` (the user-owned script). For language-agnostic dispatch, see `Repo-Local Tool Delegation` in the project CLAUDE.md.
 
 `bin/flow ci` only runs when the task is done and the diff is approved.
 
@@ -80,7 +80,7 @@ By the end of Phase 3:
 - Every planned task complete and committed
 - Full TDD — every implementation has a test that was written first
 - `bin/flow ci` green with 100% coverage
-- All framework architecture standards followed
+- All project architecture standards followed
 
 ---
 

@@ -207,13 +207,6 @@ pub fn bin_flow_path() -> String {
         .unwrap_or_else(|| "bin/flow".to_string())
 }
 
-/// Return the frameworks directory inside the plugin root.
-///
-/// Returns `<plugin_root>/frameworks` or None if plugin root cannot be found.
-pub fn frameworks_dir() -> Option<std::path::PathBuf> {
-    plugin_root().map(|r| r.join("frameworks"))
-}
-
 // --- Tab color constants ---
 
 /// Terminal tab colors (firebrick, teal, indigo, dark goldenrod, dark green,

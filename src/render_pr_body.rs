@@ -317,7 +317,6 @@ mod tests {
             "pr_url": "https://github.com/test/repo/pull/1",
             "started_at": "2026-01-01T00:00:00Z",
             "current_phase": "flow-start",
-            "framework": "python",
             "files": {
                 "plan": null,
                 "dag": null,

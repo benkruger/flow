@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# FLOW dependency updater for Rails
-# Created by /flow:flow-prime — edit to match your project
-set -euo pipefail
-bundle update --all

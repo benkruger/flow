@@ -33,8 +33,7 @@ Parse the JSON output. If `"status": "error"`, STOP and show the error.
 
 If `"status": "ok"`, capture the returned fields:
 `project_root`, `branch`, `worktree_path`, `pr_number`, `pr_url`,
-`feature`, `slack_thread_ts`, `plan_file`, `framework`, and `mode`
-(commit + continue).
+`feature`, `slack_thread_ts`, `plan_file`, and `mode` (commit + continue).
 
 </HARD-GATE>
 
@@ -170,23 +169,26 @@ prettier, black) reformat many files, the substantive diff excludes
 formatting noise and preserves the agents' turn budget for behavioral
 analysis.
 
-**Derive adversarial test setup from framework.**
+**Derive adversarial test setup.**
 
-The `framework` field from `phase-enter` determines the adversarial
-agent's temp file path and test command. This ensures tests are written
-in the project's language and run with the correct tool.
+The adversarial agent writes a single test file under
+`.flow-states/<branch>-adversarial_test.<ext>` and runs it via the
+project's `bin/test --file <path>`. The agent picks the extension
+itself by looking at the diff (`.rs`, `.py`, `.rb`, `.go`, `.swift`,
+`.ts`, etc.) — FLOW no longer dispatches by language, so the choice
+lives where the language information actually lives: in the file
+contents the agent is reviewing.
 
-| Framework | Temp file | Test command | Skip? |
-|-----------|-----------|-------------|-------|
-| rust | `.flow-states/<branch>-adversarial_test.rs` | `${CLAUDE_PLUGIN_ROOT}/bin/flow test --file <temp_test_file>` | No |
-| python | `.flow-states/<branch>-adversarial_test.py` | `bin/test <path>` | No |
-| rails | `.flow-states/<branch>-adversarial_test.rb` | `bin/test <path>` | No |
-| go | — | — | Yes |
-| ios | — | — | Yes |
-| (missing/unknown) | — | — | Yes |
+Capture these two values for Step 2:
 
-Capture `<temp_test_file>` and `<test_command>` for Step 2. If the
-framework is skipped, do not launch the adversarial agent in Step 2.
+- `<temp_test_file>` = `.flow-states/<branch>-adversarial_test` (the
+  agent appends the extension)
+- `<test_command>` = `${CLAUDE_PLUGIN_ROOT}/bin/flow test --file <temp_test_file>`
+
+The adversarial agent always launches. If the project's `bin/test`
+does not support a `--file` flag (or cannot compile a single file in
+isolation), the agent will surface that as a finding rather than
+silently skipping.
 
 **Audit tombstone staleness.**
 
@@ -271,8 +273,7 @@ Provide the substantive diff output in the prompt, prefixed with:
 > explicitly in scope."
 
 **Adversarial agent** — context-sparse (receives substantive diff, temp
-file path, test command, CLAUDE.md path, branch name). Only launch if the
-framework supports adversarial testing (see the table in Step 1).
+file path, test command, CLAUDE.md path, branch name). Always launch.
 
 Use the `<temp_test_file>` and `<test_command>` derived in Step 1.
 

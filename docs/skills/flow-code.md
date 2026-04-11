@@ -50,9 +50,9 @@ by exactly 1 per task; only the commit is deferred.
 
 ---
 
-## Framework Architecture Enforced
+## Project Architecture Enforced
 
-Architecture checks are defined by the framework instructions in the skill. Each framework enforces its own rules for reading code before writing, using test infrastructure correctly, and following framework conventions.
+Architecture checks are defined by the project's CLAUDE.md. Each project documents its own conventions for reading code before writing, using test infrastructure correctly, and following its own architecture rules.
 
 ---
 
@@ -67,7 +67,7 @@ The task continues after filing — flaky tests do not block progress.
 
 ## Test Runs
 
-- **During TDD**: targeted test command from framework instructions — fast feedback
+- **During TDD**: targeted test command via `bin/test --file <path>` — fast feedback
 - **Before commit**: `bin/flow ci` — full suite, must be green
 - **End of phase**: `coverage/uncovered.txt` must be empty
 

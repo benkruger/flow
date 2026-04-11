@@ -139,7 +139,6 @@ const PLACEHOLDER_SUBS: &[(&str, &str)] = &[
     ("<feature-name>", "test-feature"),
     ("<branch>", "test-branch"),
     ("<project_root>", "/tmp/test"),
-    ("<framework>", "rails"),
     ("<worktree_path>", ".worktrees/test-branch"),
     ("<worktree_cwd>", ".worktrees/test-branch"),
     ("<pr_number>", "123"),
@@ -999,28 +998,8 @@ fn prime_setup_lists_match_skill_md_reference() {
     let universal_allow = extract_const(&prime_check, "UNIVERSAL_ALLOW");
     let flow_deny = extract_const(&prime_check, "FLOW_DENY");
 
-    // Collect all framework permissions
-    let mut all_framework_perms = Vec::new();
-    let frameworks_dir = common::frameworks_dir();
-    for entry in fs::read_dir(&frameworks_dir).unwrap().flatten() {
-        if entry.path().is_dir() {
-            let perms_file = entry.path().join("permissions.json");
-            if perms_file.exists() {
-                let data: Value =
-                    serde_json::from_str(&fs::read_to_string(&perms_file).unwrap()).unwrap();
-                if let Some(allow) = data["allow"].as_array() {
-                    for v in allow {
-                        all_framework_perms.push(v.as_str().unwrap().to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    let code_allow: HashSet<String> = universal_allow
-        .into_iter()
-        .chain(all_framework_perms)
-        .collect();
+    // Allow list is just UNIVERSAL_ALLOW; no per-language merge.
+    let code_allow: HashSet<String> = universal_allow.into_iter().collect();
     let code_deny: HashSet<String> = flow_deny.into_iter().collect();
 
     let perms = extract_prime_permissions_block();

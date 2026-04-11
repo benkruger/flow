@@ -385,12 +385,13 @@ If a DAG was produced in Step 2, use it as the foundation:
 - Check whether the dependencies the DAG identified make sense
 - Look for patterns or constraints the DAG missed
 
-### Framework Conventions
+### Project Conventions
 
-Read the project's CLAUDE.md for framework-specific conventions (architecture
-patterns, test conventions, CI fix order). The CLAUDE.md is primed with
-framework knowledge during `/flow:flow-prime`. Follow those conventions when
-writing the Tasks section of the plan.
+Read the project's CLAUDE.md for project-specific conventions (architecture
+patterns, test conventions, CI fix order). Each project owns its own
+toolchain inside the `bin/{format,lint,build,test}` scripts, so the
+plan should refer to those scripts (and the conventions documented in
+CLAUDE.md) when describing how to run tests or builds.
 
 Always include TDD order — test task before every implementation task.
 

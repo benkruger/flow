@@ -38,7 +38,6 @@ fn make_state() -> Value {
         "pr_url": "https://github.com/test/repo/pull/1",
         "started_at": "2026-01-15T10:00:00-08:00",
         "current_phase": "flow-code",
-        "framework": "python",
         "files": {
             "plan": null,
             "dag": null,

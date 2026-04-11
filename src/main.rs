@@ -23,10 +23,8 @@ use flow_rs::complete_finalize;
 use flow_rs::complete_merge;
 use flow_rs::complete_post_merge;
 use flow_rs::complete_preflight;
-use flow_rs::create_dependencies;
 use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
-use flow_rs::detect_framework;
 use flow_rs::extract_release_notes;
 use flow_rs::finalize_commit;
 use flow_rs::format_check;
@@ -51,7 +49,6 @@ use flow_rs::phase_finalize;
 use flow_rs::phase_transition::{phase_complete, phase_enter as phase_enter_fn};
 use flow_rs::plan_extract;
 use flow_rs::prime_check;
-use flow_rs::prime_project;
 use flow_rs::prime_setup;
 use flow_rs::promote_permissions;
 use flow_rs::qa_mode;
@@ -123,16 +120,16 @@ enum Commands {
     /// Run bin/ci with dirty-check optimization, retry logic, and CI sentinel management.
     Ci(ci::Args),
 
-    /// Run framework build tool.
+    /// Spawn the repo-local ./bin/build script with FLOW_CI_RUNNING set.
     Build(build::Args),
 
-    /// Run framework test tool.
+    /// Spawn the repo-local ./bin/test script with --file and trailing args forwarded.
     Test(test_runner::Args),
 
-    /// Run framework linter.
+    /// Spawn the repo-local ./bin/lint script with FLOW_CI_RUNNING set.
     Lint(lint::Args),
 
-    /// Run framework format checker.
+    /// Spawn the repo-local ./bin/format script with FLOW_CI_RUNNING set.
     Format(format_check::Args),
 
     /// Run bin/dependencies with a configurable timeout and report git status changes.
@@ -173,13 +170,6 @@ enum Commands {
     /// Create a GitHub milestone.
     #[command(name = "create-milestone")]
     CreateMilestone(create_milestone::Args),
-    /// Copy framework dependency template to bin/dependencies.
-    #[command(name = "create-dependencies")]
-    CreateDependencies(create_dependencies::Args),
-
-    /// Detect supported frameworks in a project directory.
-    #[command(name = "detect-framework")]
-    DetectFramework(detect_framework::Args),
 
     /// Extract release notes for a specific version from RELEASE-NOTES.md.
     #[command(name = "extract-release-notes")]
@@ -188,10 +178,6 @@ enum Commands {
     /// Verify /flow:flow-prime has been run with a matching version.
     #[command(name = "prime-check")]
     PrimeCheck(prime_check::Args),
-
-    /// Insert or replace FLOW priming content in a project's CLAUDE.md.
-    #[command(name = "prime-project")]
-    PrimeProject(prime_project::Args),
 
     /// Consolidated prime setup: permissions, version marker, hooks, launcher.
     #[command(name = "prime-setup")]
@@ -439,7 +425,7 @@ enum Commands {
     #[command(name = "qa-verify")]
     QaVerify(qa_verify::Args),
 
-    /// Create a QA repo from per-framework templates.
+    /// Create a QA repo from a named template directory under qa/templates/.
     #[command(name = "scaffold-qa")]
     ScaffoldQa(scaffold_qa::Args),
 
@@ -525,11 +511,8 @@ fn main() {
         Some(Commands::CreateSubIssue(args)) => create_sub_issue::run(args),
         Some(Commands::LinkBlockedBy(args)) => link_blocked_by::run(args),
         Some(Commands::CreateMilestone(args)) => create_milestone::run(args),
-        Some(Commands::CreateDependencies(args)) => create_dependencies::run(args),
-        Some(Commands::DetectFramework(args)) => detect_framework::run(args),
         Some(Commands::ExtractReleaseNotes(args)) => extract_release_notes::run(args),
         Some(Commands::PrimeCheck(args)) => prime_check::run(args),
-        Some(Commands::PrimeProject(args)) => prime_project::run(args),
         Some(Commands::PrimeSetup(args)) => prime_setup::run(args),
         Some(Commands::PromotePermissions(args)) => promote_permissions::run(args),
         Some(Commands::AutoCloseParent(args)) => auto_close_parent::run(args),

@@ -10,26 +10,33 @@ parent: Skills
 
 **Usage:** `/flow-prime` or `/flow-prime --reprime`
 
-One-time project setup. Configures workspace permissions in `.claude/settings.json`, sets up git excludes, and writes a version marker. Run once after installing FLOW and again after each upgrade.
+One-time project setup. Configures workspace permissions in `.claude/settings.json`, sets up git excludes, installs the `bin/{format,lint,build,test}` delegation stubs, and writes a version marker. Run once after installing FLOW and again after each upgrade.
 
-`--reprime` skips all questions and reuses the existing `.flow.json` config — same framework, autonomy, and commit format, just new artifacts installed. Use this for upgrades where your config hasn't changed.
+`--reprime` skips all questions and reuses the existing `.flow.json` config — same autonomy and commit format, just new artifacts installed. Use this for upgrades where your config hasn't changed.
 
 ---
 
 ## What It Does
 
-1. Auto-detects framework using data-driven detection (`frameworks/*/detect.json`) and checks plugin availability in parallel
-2. Asks the user to choose an autonomy level (fully autonomous, fully manual, recommended, or customize per skill)
-3. Asks the user to choose a commit message format (title-only or full)
-4. Runs a single setup script that handles all configuration in one call:
-   - Reads or creates `.claude/settings.json` and merges FLOW allow/deny permissions (universal + framework-specific + derived)
-   - Writes `.flow.json` with version, framework, config hash, commit format, and skills configuration
+1. Asks the user to choose an autonomy level (fully autonomous, fully manual, recommended, or customize per skill)
+2. Asks the user to choose a commit message format (title-only or full)
+3. Runs a single setup script that handles all configuration in one call:
+   - Reads or creates `.claude/settings.json` and merges FLOW universal allow/deny permissions
+   - Writes `.flow.json` with version, config hash, commit format, and skills configuration
    - Adds `.flow-states/`, `.worktrees/`, `.flow.json`, `.claude/cost/`, and `.claude/scheduled_tasks.lock` to `.git/info/exclude`
    - Installs a pre-commit hook that blocks direct `git commit` during active FLOW features and requires `/flow:flow-commit`
-   - Primes the project CLAUDE.md with framework conventions from `frameworks/<name>/priming.md`
-   - Creates `bin/dependencies` from the framework template
-5. Installs the `decompose` plugin from the `matt-k-wong/mkw-DAG-architect` marketplace
-6. Commits generated files (`CLAUDE.md`, `.claude/settings.json`, `bin/dependencies`) to version control
+   - Installs a global launcher at `~/.local/bin/flow`
+   - Installs `bin/{format,lint,build,test}` stubs from `assets/bin-stubs/<tool>.sh` into `<project_root>/bin/<tool>` when absent. Pre-existing `bin/*` scripts are never overwritten so users who already configured their own toolchain keep their work.
+4. Installs the `decompose` plugin from the `matt-k-wong/mkw-DAG-architect` marketplace
+5. Commits generated files (`.claude/settings.json` and any newly-installed `bin/<tool>` stubs) to version control
+
+After prime, the user is responsible for editing each `bin/<tool>` to wire it to their actual toolchain (cargo, pytest, go test, npm, etc.). The default stubs exit 0 with a stderr reminder so a fresh prime never blocks CI.
+
+---
+
+## Repo-Local Tool Delegation
+
+FLOW does not dispatch by language. Every project owns its toolchain inside the four `bin/<tool>` scripts. `bin/flow ci` runs `./bin/format`, `./bin/lint`, `./bin/build`, `./bin/test` in sequence (format first for fail-fast). FLOW contributes the orchestration layer (sentinel-based dirty-check, retry/flaky classification, `FLOW_CI_RUNNING` recursion guard, JSON contract) and stays out of the command-string business.
 
 ---
 
@@ -45,7 +52,6 @@ The chosen configuration is stored in `.flow.json` under a `skills` key:
 ```json
 {
   "flow_version": "1.1.0",
-  "framework": "python",
   "skills": {
     "flow-start": {"continue": "manual"},
     "flow-plan": {"continue": "auto"},
@@ -61,14 +67,6 @@ The chosen configuration is stored in `.flow.json` under a `skills` key:
 Phase skills that commit (Code, Code Review, Learn) have both axes as a nested object. Phase skills that don't commit (Start, Plan) have only the continue axis. Utility skills (Abort, Complete) have a single string value.
 
 Phase skills can be overridden at invocation time with `--auto` or `--manual` flags, regardless of the `.flow.json` configuration.
-
----
-
-## Derived Permissions
-
-Some permissions are project-specific but can be automatically determined from project files. Frameworks can declare `derived_permissions` in `frameworks/<name>/permissions.json` with glob patterns and templates. For example, iOS derives `Bash(killall AppName)` from the `*.xcodeproj` directory name — no user input needed.
-
-Derived permissions are merged into `.claude/settings.json` automatically during setup alongside universal and framework permissions.
 
 ---
 

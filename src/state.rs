@@ -29,21 +29,6 @@ pub enum PhaseStatus {
     Complete,
 }
 
-/// Supported frameworks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Framework {
-    #[serde(rename = "rails")]
-    Rails,
-    #[serde(rename = "python")]
-    Python,
-    #[serde(rename = "ios")]
-    Ios,
-    #[serde(rename = "go")]
-    Go,
-    #[serde(rename = "rust")]
-    Rust,
-}
-
 /// Per-phase state tracking.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PhaseState {
@@ -148,7 +133,6 @@ pub struct FlowState {
     pub pr_url: Option<String>,
     pub started_at: String,
     pub current_phase: String,
-    pub framework: Framework,
     pub files: StateFiles,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_tty: Option<String>,
@@ -290,23 +274,6 @@ mod tests {
             let json = serde_json::to_string(&variant).unwrap();
             assert_eq!(json, expected, "serialize {:?}", variant);
             let back: PhaseStatus = serde_json::from_str(&json).unwrap();
-            assert_eq!(back, variant, "roundtrip {:?}", variant);
-        }
-    }
-
-    #[test]
-    fn framework_serialize_all_variants() {
-        let cases = [
-            (Framework::Rails, "\"rails\""),
-            (Framework::Python, "\"python\""),
-            (Framework::Ios, "\"ios\""),
-            (Framework::Go, "\"go\""),
-            (Framework::Rust, "\"rust\""),
-        ];
-        for (variant, expected) in cases {
-            let json = serde_json::to_string(&variant).unwrap();
-            assert_eq!(json, expected, "serialize {:?}", variant);
-            let back: Framework = serde_json::from_str(&json).unwrap();
             assert_eq!(back, variant, "roundtrip {:?}", variant);
         }
     }

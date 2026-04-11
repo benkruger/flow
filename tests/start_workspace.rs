@@ -39,7 +39,6 @@ fn create_state_file(repo: &Path, branch: &str) {
         "pr_url": null,
         "started_at": "2026-01-01T00:00:00-08:00",
         "current_phase": "flow-start",
-        "framework": "python",
         "files": {
             "plan": null,
             "dag": null,
@@ -97,7 +96,7 @@ fn run_start_workspace(repo: &Path, feature: &str, branch: &str, stub_dir: &Path
 fn test_happy_path() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
     let stub_dir = create_default_gh_stub(&repo);
     create_state_file(&repo, "test-branch");
     // Lock entry uses branch name (what start-init creates).
@@ -146,7 +145,7 @@ fn test_happy_path() {
 fn test_lock_released_with_mismatched_description() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
     let stub_dir = create_default_gh_stub(&repo);
     create_state_file(&repo, "mismatch-branch");
     // Lock acquired under branch name (by start-init)
@@ -187,7 +186,7 @@ fn test_lock_released_with_mismatched_description() {
 fn test_worktree_failure_releases_lock() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
     let stub_dir = create_default_gh_stub(&repo);
     create_state_file(&repo, "test-branch");
     // Lock under branch name (what start-init creates)
@@ -219,7 +218,7 @@ fn test_worktree_failure_releases_lock() {
 fn test_pr_creation_failure_releases_lock() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
     // gh stub that fails on pr create
     let stub_dir = create_gh_stub(&repo, "#!/bin/bash\nexit 1\n");
     create_state_file(&repo, "pr-fail-branch");
@@ -242,7 +241,7 @@ fn test_pr_creation_failure_releases_lock() {
 fn test_venv_symlinked() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
     let stub_dir = create_default_gh_stub(&repo);
     create_state_file(&repo, "venv-branch");
     create_lock_entry(&repo, "venv-branch");
@@ -268,7 +267,7 @@ fn test_venv_symlinked() {
 fn test_state_backfill_preserves_existing_fields() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
     let stub_dir = create_default_gh_stub(&repo);
     create_state_file(&repo, "backfill-branch");
     create_lock_entry(&repo, "backfill-branch");
@@ -303,7 +302,7 @@ fn test_worktree_cwd_root_when_relative_cwd_empty() {
     // into this path; an empty relative_cwd means cd to .worktrees/<branch>.
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
     let stub_dir = create_default_gh_stub(&repo);
     create_state_file(&repo, "root-flow");
     create_lock_entry(&repo, "root-flow");
@@ -330,7 +329,7 @@ fn test_worktree_cwd_includes_relative_cwd_suffix() {
     // the agent into the same subdirectory after the worktree is created.
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
     let stub_dir = create_default_gh_stub(&repo);
 
     // Pre-create state file with non-empty relative_cwd
@@ -342,7 +341,6 @@ fn test_worktree_cwd_includes_relative_cwd_suffix() {
         "relative_cwd": "api",
         "started_at": "2026-01-01T00:00:00-08:00",
         "current_phase": "flow-start",
-        "framework": "python",
         "files": {
             "plan": null,
             "dag": null,
@@ -382,7 +380,7 @@ fn test_worktree_partial_failure_recovery_after_cleanup() {
     // the blocking directory, the retry succeeds.
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
     let stub_dir = create_default_gh_stub(&repo);
     create_state_file(&repo, "recovery-branch");
     create_lock_entry(&repo, "recovery-branch");

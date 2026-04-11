@@ -1,6 +1,6 @@
 ---
 name: flow-config
-description: "Display the current FLOW configuration from .flow.json — version, framework, and per-skill autonomy settings."
+description: "Display the current FLOW configuration from .flow.json — version and per-skill autonomy settings."
 ---
 
 # FLOW Config — Display Configuration
@@ -35,8 +35,6 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ```text
 ──────────────────────────────────────────────────
   FLOW v<version> — Config
-──────────────────────────────────────────────────
-  Framework: <framework>
 ──────────────────────────────────────────────────
 ```
 ````

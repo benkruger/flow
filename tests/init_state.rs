@@ -8,7 +8,7 @@ fn flow_rs() -> Command {
     Command::new(env!("CARGO_BIN_EXE_flow-rs"))
 }
 
-fn setup_project(dir: &std::path::Path, framework: &str, skills: Option<Value>) {
+fn setup_project(dir: &std::path::Path, _legacy_unused: &str, skills: Option<Value>) {
     // Init git repo (needed for project_root())
     Command::new("git")
         .args(["init"])
@@ -22,7 +22,7 @@ fn setup_project(dir: &std::path::Path, framework: &str, skills: Option<Value>) 
         .unwrap();
 
     // Write .flow.json
-    let mut data = json!({"flow_version": "1.1.0", "framework": framework});
+    let mut data = json!({"flow_version": "1.1.0"});
     if let Some(s) = skills {
         data["skills"] = s;
     }
@@ -192,17 +192,6 @@ fn relative_cwd_supports_nested_paths() {
     );
     let state = read_state_file(dir.path(), "nested-test");
     assert_eq!(state["relative_cwd"], "packages/api");
-}
-
-// --- Framework ---
-
-#[test]
-fn framework_from_flow_json() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_project(dir.path(), "python", None);
-    run_init_state(dir.path(), &["python framework"]);
-    let state = read_state_file(dir.path(), "python-framework");
-    assert_eq!(state["framework"], "python");
 }
 
 // --- Skills ---

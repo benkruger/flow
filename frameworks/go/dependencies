@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# FLOW dependency updater for Go
-# Created by /flow:flow-prime — edit to match your project
-set -euo pipefail
-go mod tidy

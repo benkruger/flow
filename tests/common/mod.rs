@@ -31,11 +31,6 @@ pub fn docs_dir() -> PathBuf {
     repo_root().join("docs")
 }
 
-/// Returns the frameworks/ directory path.
-pub fn frameworks_dir() -> PathBuf {
-    repo_root().join("frameworks")
-}
-
 /// Returns the hooks/ directory path.
 pub fn hooks_dir() -> PathBuf {
     repo_root().join("hooks")
@@ -265,11 +260,14 @@ pub fn create_git_repo_with_remote(parent: &Path) -> PathBuf {
     repo
 }
 
-/// Write .flow.json with version, framework, and optional skills config.
-pub fn write_flow_json(repo: &Path, version: &str, framework: &str, skills: Option<&Value>) {
+/// Write .flow.json with version and optional skills config.
+///
+/// `prime_setup` writes the file with these two keys (plus hashes,
+/// commit_format, and plugin_root when provided). Older callers that
+/// passed a positional language name should drop the argument.
+pub fn write_flow_json(repo: &Path, version: &str, skills: Option<&Value>) {
     let mut data = json!({
         "flow_version": version,
-        "framework": framework,
     });
     if let Some(sk) = skills {
         data["skills"] = sk.clone();

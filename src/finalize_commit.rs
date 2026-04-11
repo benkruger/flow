@@ -893,8 +893,8 @@ exit 0
         let msg_path = clone_path.join(".flow-commit-msg");
         fs::write(&msg_path, "Add feature.rs").unwrap();
 
-        // Write sentinel directly for this tree state — bypasses framework
-        // detection (no framework marker files in the fixture).
+        // Write sentinel directly for this tree state so ci::run_impl
+        // takes the fast skip path without spawning bin/* scripts.
         let snapshot = crate::ci::tree_snapshot(clone_path, None);
         let sentinel = crate::ci::sentinel_path(clone_path, "main");
         fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
@@ -1037,7 +1037,8 @@ exit 0
     }
 
     /// Helper: write a CI sentinel for the current tree state so
-    /// `ci::run_impl` skips without needing framework detection.
+    /// `ci::run_impl` takes the fast skip path without spawning any
+    /// `bin/*` scripts.
     fn write_ci_sentinel(clone_path: &std::path::Path, branch: &str) {
         let snapshot = crate::ci::tree_snapshot(clone_path, None);
         let sentinel = crate::ci::sentinel_path(clone_path, branch);
@@ -1146,7 +1147,7 @@ exit 0
         let msg_path = clone_path.join(".flow-commit-msg");
         fs::write(&msg_path, "Add feature.rs").unwrap();
 
-        // Write CI sentinel so ci::run_impl skips without needing framework detection
+        // Write CI sentinel so ci::run_impl takes the fast skip path
         write_ci_sentinel(clone_path, "main");
 
         let args = Args {
@@ -1273,7 +1274,7 @@ exit 0
                 .unwrap(),
         );
 
-        // Write CI sentinel so ci::run_impl skips without needing framework detection
+        // Write CI sentinel so ci::run_impl takes the fast skip path
         write_ci_sentinel(clone_path, "main");
 
         let args = Args {
@@ -1317,7 +1318,7 @@ exit 0
         let msg_path = clone_dir.path().join(".flow-commit-msg");
         fs::write(&msg_path, "Add src.rs").unwrap();
 
-        // Write CI sentinel so ci::run_impl skips without needing framework detection
+        // Write CI sentinel so ci::run_impl takes the fast skip path
         write_ci_sentinel(clone_dir.path(), "main");
 
         let args = Args {
@@ -1443,7 +1444,7 @@ exit 0
         let msg_path = clone_dir.path().join(".flow-commit-msg");
         fs::write(&msg_path, "Add local.txt").unwrap();
 
-        // Write CI sentinel so ci::run_impl skips without needing framework detection
+        // Write CI sentinel so ci::run_impl takes the fast skip path
         write_ci_sentinel(clone_dir.path(), "main");
 
         let args = Args {

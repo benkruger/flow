@@ -15,23 +15,26 @@ in the FLOW source repo against dedicated QA repos cloned to `.qa-repos/`.
 /flow-qa <python|rails|ios|go|all>
 ```
 
-- `/flow-qa` — asks which framework to test (recommends `all`)
+- `/flow-qa` — asks which target to test (recommends `all`)
 - `/flow-qa python` — runs directly against python
-- `/flow-qa all` — runs against all supported frameworks sequentially
+- `/flow-qa all` — runs against all targets sequentially
 
 If no argument is given, use AskUserQuestion with these options
 (in this order): **all**, **python**, **rails**, **ios**, **go**.
 
 ## QA Repos
 
-| Framework | Repo | Local path |
-|-----------|------|------------|
+| Target | Repo | Local path |
+|--------|------|------------|
 | python | `benkruger/flow-qa-python` | `.qa-repos/python` |
 | rails | `benkruger/flow-qa-rails` | `.qa-repos/rails` |
 | ios | `benkruger/flow-qa-ios` | `.qa-repos/ios` |
 | go | `benkruger/flow-qa-go` | `.qa-repos/go` |
 
-All four frameworks are supported: `python`, `rails`, `ios`, and `go`.
+All four targets are supported: `python`, `rails`, `ios`, and `go`.
+The target name is just a label for which QA repo to clone — FLOW
+itself is language-agnostic and the prime command no longer takes a
+language argument.
 
 ## Steps
 
@@ -43,11 +46,11 @@ Delete any stale clone, clone fresh, prime, run a full FLOW lifecycle
 Remove any existing clone and clone fresh:
 
 ```bash
-rm -rf .qa-repos/<framework>
+rm -rf .qa-repos/<target>
 ```
 
 ```bash
-gh repo clone <owner/repo> .qa-repos/<framework>
+gh repo clone <owner/repo> .qa-repos/<target>
 ```
 
 ### Step 2 — Prime
@@ -55,10 +58,15 @@ gh repo clone <owner/repo> .qa-repos/<framework>
 Run `prime-setup` with fully autonomous settings:
 
 ```bash
-bin/flow prime-setup .qa-repos/<framework> --framework <framework> --skills-json '{"flow-start":{"continue":"auto"},"flow-plan":{"continue":"auto","dag":"auto"},"flow-code":{"commit":"auto","continue":"auto"},"flow-code-review":{"commit":"auto","continue":"auto"},"flow-learn":{"commit":"auto","continue":"auto"},"flow-abort":"auto","flow-complete":"auto"}' --plugin-root $PWD
+bin/flow prime-setup .qa-repos/<target> --skills-json '{"flow-start":{"continue":"auto"},"flow-plan":{"continue":"auto","dag":"auto"},"flow-code":{"commit":"auto","continue":"auto"},"flow-code-review":{"commit":"auto","continue":"auto"},"flow-learn":{"commit":"auto","continue":"auto"},"flow-abort":"auto","flow-complete":"auto"}' --plugin-root $PWD
 ```
 
 If the JSON output has `"status": "error"`, print the error and stop.
+
+After prime, the QA repo's pre-existing `bin/*` scripts (committed in
+the seed) are kept as-is. The bin/* stub installer skips them because
+they already exist — that's the point: each QA repo ships its own
+working bin/* scripts as part of the seed.
 
 ### Step 3 — Fetch an issue
 
@@ -79,13 +87,13 @@ so this breadcrumb is the only thing that survives):
 Use the Write tool to write `.flow-states/qa-pending.json` with:
 
 ```json
-{"_continue_context": "QA flow complete. Return to FLOW repo at <absolute-path-to-flow-repo>, delete .flow-states/qa-pending.json via the Write tool (overwrite with empty), then run qa-verify and report results for <framework> against <owner/repo>."}
+{"_continue_context": "QA flow complete. Return to FLOW repo at <absolute-path-to-flow-repo>, delete .flow-states/qa-pending.json via the Write tool (overwrite with empty), then run qa-verify and report results for <target> against <owner/repo>."}
 ```
 
 Change directory to the QA repo:
 
 ```bash
-cd .qa-repos/<framework>
+cd .qa-repos/<target>
 ```
 
 Invoke the FLOW lifecycle using the Skill tool:
@@ -120,7 +128,7 @@ rm .flow-states/qa-pending.json
 Run verification:
 
 ```bash
-bin/flow qa-verify --framework <framework> --repo <owner/repo> --project-root .qa-repos/<framework>
+bin/flow qa-verify --repo <owner/repo> --project-root .qa-repos/<target>
 ```
 
 Parse the JSON output. Report each check's pass/fail status.
@@ -132,7 +140,7 @@ If all checks passed, print:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW QA — PASSED (<framework>)
+  ✓ FLOW QA — PASSED (<target>)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
@@ -142,7 +150,7 @@ If any check failed, print:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✗ FLOW QA — FAILED (<framework>)
+  ✗ FLOW QA — FAILED (<target>)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
@@ -151,6 +159,6 @@ If any check failed, print:
 
 - Never run QA against the FLOW repo itself — only against QA repos in `.qa-repos/`
 - Report pass/fail for each check individually
-- Stop on first framework failure when running `all`
+- Stop on first target failure when running `all`
 - QA repos test the FLOW lifecycle, not project code quality — `bin/ci` should run tests only, no linters. If `bin/ci` fails on seed code, fix the seed (remove what doesn't belong), don't debug the linter.
-- When fixing a QA repo (e.g. broken file permissions, missing files), always update the `seed` tag after pushing the fix: `git -C .qa-repos/<framework> tag -f seed` then `git -C .qa-repos/<framework> push -f origin seed`. The `qa-reset` script resets to the seed tag — if the tag points to the broken state, the fix is lost on every reset.
+- When fixing a QA repo (e.g. broken file permissions, missing files), always update the `seed` tag after pushing the fix: `git -C .qa-repos/<target> tag -f seed` then `git -C .qa-repos/<target> push -f origin seed`. The `qa-reset` script resets to the seed tag — if the tag points to the broken state, the fix is lost on every reset.
