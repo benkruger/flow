@@ -365,6 +365,14 @@ pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<i64>>) ->
         let blocked_by = blocker_map.get(&number).cloned().unwrap_or_default();
         let native_blocked = !blocked_by.is_empty();
 
+        let milestone = issue
+            .get("milestone")
+            .and_then(|m| m.get("title"))
+            .and_then(|t| t.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| Value::String(s.to_string()))
+            .unwrap_or(Value::Null);
+
         available.push(serde_json::json!({
             "number": number,
             "title": issue["title"],
@@ -380,6 +388,7 @@ pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<i64>>) ->
             "stale_missing": stale_info.stale_missing,
             "file_paths": file_paths,
             "brief": truncate_body(body, 200),
+            "milestone": milestone,
         }));
     }
 
@@ -431,6 +440,14 @@ pub struct Args {
     /// Show only decomposed issues without Blocked label
     #[arg(long = "quick-start", group = "filter_group")]
     pub quick_start: bool,
+
+    /// Filter by GitHub label (server-side, repeatable)
+    #[arg(long, short = 'l')]
+    pub label: Vec<String>,
+
+    /// Filter by GitHub milestone (server-side, by title or number)
+    #[arg(long, short = 'm')]
+    pub milestone: Option<String>,
 }
 
 /// Run the analyze-issues CLI.
@@ -445,17 +462,26 @@ pub fn run(args: Args) {
         }
     } else {
         // Call gh issue list
+        let mut gh_args = vec![
+            "issue".to_string(),
+            "list".to_string(),
+            "--state".to_string(),
+            "open".to_string(),
+            "--json".to_string(),
+            "number,title,labels,createdAt,body,url,milestone".to_string(),
+            "--limit".to_string(),
+            "100".to_string(),
+        ];
+        for l in &args.label {
+            gh_args.push("--label".to_string());
+            gh_args.push(l.clone());
+        }
+        if let Some(ref m) = args.milestone {
+            gh_args.push("--milestone".to_string());
+            gh_args.push(m.clone());
+        }
         let mut child = match std::process::Command::new("gh")
-            .args([
-                "issue",
-                "list",
-                "--state",
-                "open",
-                "--json",
-                "number,title,labels,createdAt,body,url",
-                "--limit",
-                "100",
-            ])
+            .args(&gh_args)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
@@ -926,10 +952,26 @@ mod tests {
         labels: &[&str],
         created_at: &str,
     ) -> Value {
+        make_issue_opt(number, title, body, labels, created_at, None)
+    }
+
+    /// Create an issue with an optional milestone object.
+    fn make_issue_opt(
+        number: i64,
+        title: &str,
+        body: &str,
+        labels: &[&str],
+        created_at: &str,
+        milestone_title: Option<&str>,
+    ) -> Value {
         let label_arr: Vec<Value> = labels
             .iter()
             .map(|n| serde_json::json!({"name": n}))
             .collect();
+        let milestone = match milestone_title {
+            Some(t) => serde_json::json!({"title": t, "number": 1}),
+            None => Value::Null,
+        };
         serde_json::json!({
             "number": number,
             "title": title,
@@ -937,6 +979,7 @@ mod tests {
             "labels": label_arr,
             "createdAt": created_at,
             "url": format!("https://github.com/test/repo/issues/{}", number),
+            "milestone": milestone,
         })
     }
 
@@ -1233,5 +1276,114 @@ mod tests {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let parsed: Value = serde_json::from_str(&stdout).unwrap();
         assert_eq!(parsed["status"], "error");
+    }
+
+    // --- --label and --milestone CLI args ---
+
+    #[test]
+    fn cli_label_single() {
+        let issues =
+            serde_json::to_string(&vec![make_issue(1, "Bug fix", "", &["Bug"], &now_iso())])
+                .unwrap();
+        let (code, stdout) = run_with_file(&issues, &["--label", "Bug"]);
+        assert_eq!(code, 0, "stdout: {}", stdout);
+    }
+
+    #[test]
+    fn cli_label_multiple() {
+        let issues =
+            serde_json::to_string(&vec![make_issue(1, "Bug fix", "", &["Bug"], &now_iso())])
+                .unwrap();
+        let (code, stdout) = run_with_file(&issues, &["--label", "Bug", "--label", "Enhancement"]);
+        assert_eq!(code, 0, "stdout: {}", stdout);
+    }
+
+    #[test]
+    fn cli_milestone() {
+        let issues =
+            serde_json::to_string(&vec![make_issue(1, "Feature", "", &[], &now_iso())]).unwrap();
+        let (code, stdout) = run_with_file(&issues, &["--milestone", "v1.0"]);
+        assert_eq!(code, 0, "stdout: {}", stdout);
+    }
+
+    #[test]
+    fn cli_label_combines_with_ready() {
+        let issues = serde_json::to_string(&vec![
+            make_issue(1, "Ready bug", "", &["Bug"], &now_iso()),
+            make_issue(2, "Blocked bug", "", &["Bug", "Blocked"], &now_iso()),
+        ])
+        .unwrap();
+        let (code, stdout) = run_with_file(&issues, &["--label", "Bug", "--ready"]);
+        assert_eq!(code, 0, "stdout: {}", stdout);
+        let output: Value = serde_json::from_str(&stdout).unwrap();
+        let numbers: Vec<i64> = output["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["number"].as_i64().unwrap())
+            .collect();
+        assert!(numbers.contains(&1));
+        assert!(!numbers.contains(&2));
+    }
+
+    // --- milestone in analyze_issues output ---
+
+    #[test]
+    fn analyze_milestone_present() {
+        let issues = vec![make_issue_opt(
+            1,
+            "Milestone issue",
+            "",
+            &[],
+            &now_iso(),
+            Some("v1.2.0"),
+        )];
+        let result = analyze_issues(&issues, &HashMap::new());
+        let issue = &result["issues"][0];
+        assert_eq!(issue["milestone"], "v1.2.0");
+    }
+
+    #[test]
+    fn analyze_milestone_null() {
+        let issues = vec![make_issue_opt(1, "No milestone", "", &[], &now_iso(), None)];
+        let result = analyze_issues(&issues, &HashMap::new());
+        let issue = &result["issues"][0];
+        assert!(issue["milestone"].is_null());
+    }
+
+    #[test]
+    fn analyze_milestone_empty_string_is_null() {
+        let label_arr: Vec<Value> = vec![];
+        let issue = serde_json::json!({
+            "number": 1,
+            "title": "Empty milestone title",
+            "body": "",
+            "labels": label_arr,
+            "createdAt": now_iso(),
+            "url": "https://github.com/test/repo/issues/1",
+            "milestone": {"title": "", "number": 1},
+        });
+        let result = analyze_issues(&[issue], &HashMap::new());
+        assert!(
+            result["issues"][0]["milestone"].is_null(),
+            "Empty milestone title should be null"
+        );
+    }
+
+    #[test]
+    fn cli_issues_json_with_milestone() {
+        let issues = serde_json::to_string(&vec![make_issue_opt(
+            1,
+            "With milestone",
+            "",
+            &[],
+            &now_iso(),
+            Some("v2.0"),
+        )])
+        .unwrap();
+        let (code, stdout) = run_with_file(&issues, &[]);
+        assert_eq!(code, 0, "stdout: {}", stdout);
+        let output: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(output["issues"][0]["milestone"], "v2.0");
     }
 }
