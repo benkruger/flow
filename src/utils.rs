@@ -321,6 +321,10 @@ pub fn branch_name(feature_words: &str) -> String {
         .collect::<Vec<_>>()
         .join("-");
 
+    // Fallback for feature descriptions with no alphanumeric characters
+    // (empty input, pure punctuation, or all-unicode). Returns a safe
+    // placeholder rather than an empty string that would break downstream
+    // worktree creation and git operations.
     if name.is_empty() {
         return "unnamed".to_string();
     }

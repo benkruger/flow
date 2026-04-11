@@ -114,6 +114,15 @@ pub fn phase_complete(
         }
     };
 
+    // Guard: reset "phases" to an empty object if it is not an object or null.
+    // Mirrors the same guard in phase_enter — both functions access
+    // state["phases"][phase] via IndexMut, which panics on non-object types.
+    if let Some(phases) = state.get("phases") {
+        if !phases.is_object() && !phases.is_null() {
+            state["phases"] = json!({});
+        }
+    }
+
     // Compute elapsed time
     let session_started = state["phases"][phase]["session_started_at"]
         .as_str()
