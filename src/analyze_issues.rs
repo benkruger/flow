@@ -369,6 +369,7 @@ pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<i64>>) ->
             .get("milestone")
             .and_then(|m| m.get("title"))
             .and_then(|t| t.as_str())
+            .filter(|s| !s.is_empty())
             .map(|s| Value::String(s.to_string()))
             .unwrap_or(Value::Null);
 
@@ -951,26 +952,11 @@ mod tests {
         labels: &[&str],
         created_at: &str,
     ) -> Value {
-        let label_arr: Vec<Value> = labels
-            .iter()
-            .map(|n| serde_json::json!({"name": n}))
-            .collect();
-        serde_json::json!({
-            "number": number,
-            "title": title,
-            "body": body,
-            "labels": label_arr,
-            "createdAt": created_at,
-            "url": format!("https://github.com/test/repo/issues/{}", number),
-        })
-    }
-
-    fn now_iso() -> String {
-        chrono::Local::now().to_rfc3339()
+        make_issue_opt(number, title, body, labels, created_at, None)
     }
 
     /// Create an issue with an optional milestone object.
-    fn make_issue_with_milestone(
+    fn make_issue_opt(
         number: i64,
         title: &str,
         body: &str,
@@ -995,6 +981,10 @@ mod tests {
             "url": format!("https://github.com/test/repo/issues/{}", number),
             "milestone": milestone,
         })
+    }
+
+    fn now_iso() -> String {
+        chrono::Local::now().to_rfc3339()
     }
 
     // --- analyze_issues ---
@@ -1340,7 +1330,7 @@ mod tests {
 
     #[test]
     fn analyze_milestone_present() {
-        let issues = vec![make_issue_with_milestone(
+        let issues = vec![make_issue_opt(
             1,
             "Milestone issue",
             "",
@@ -1355,22 +1345,34 @@ mod tests {
 
     #[test]
     fn analyze_milestone_null() {
-        let issues = vec![make_issue_with_milestone(
-            1,
-            "No milestone",
-            "",
-            &[],
-            &now_iso(),
-            None,
-        )];
+        let issues = vec![make_issue_opt(1, "No milestone", "", &[], &now_iso(), None)];
         let result = analyze_issues(&issues, &HashMap::new());
         let issue = &result["issues"][0];
         assert!(issue["milestone"].is_null());
     }
 
     #[test]
+    fn analyze_milestone_empty_string_is_null() {
+        let label_arr: Vec<Value> = vec![];
+        let issue = serde_json::json!({
+            "number": 1,
+            "title": "Empty milestone title",
+            "body": "",
+            "labels": label_arr,
+            "createdAt": now_iso(),
+            "url": "https://github.com/test/repo/issues/1",
+            "milestone": {"title": "", "number": 1},
+        });
+        let result = analyze_issues(&[issue], &HashMap::new());
+        assert!(
+            result["issues"][0]["milestone"].is_null(),
+            "Empty milestone title should be null"
+        );
+    }
+
+    #[test]
     fn cli_issues_json_with_milestone() {
-        let issues = serde_json::to_string(&vec![make_issue_with_milestone(
+        let issues = serde_json::to_string(&vec![make_issue_opt(
             1,
             "With milestone",
             "",

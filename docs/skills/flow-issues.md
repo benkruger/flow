@@ -58,7 +58,7 @@ Server-side filters passed directly to `gh issue list` that reduce the issue set
 | Flag | Shows |
 |------|-------|
 | `--label <name>` | Issues with the specified GitHub label (repeatable; multiple labels use AND logic) |
-| `--milestone <title>` | Issues in the specified milestone (by title or number) |
+| `--milestone <title>` | Issues in the specified milestone (by title or number; single value only) |
 
 Narrowing filters compose with readiness filters. For example, `--label Bug --ready` fetches only "Bug"-labeled issues, then shows only the non-blocked ones.
 

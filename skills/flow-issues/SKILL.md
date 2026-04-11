@@ -44,8 +44,8 @@ the number of issues fetched, not just displayed.
 
 - `--label <name>` — filter by GitHub label (repeatable; multiple labels
   use AND logic). Can combine with any readiness filter.
-- `--milestone <title>` — filter by GitHub milestone (by title or number).
-  Can combine with any readiness filter.
+- `--milestone <title>` — filter by GitHub milestone (by title or number;
+  single value only). Can combine with any readiness filter.
 
 Narrowing filters compose with readiness filters. For example,
 `--label Bug --ready` fetches only issues labeled "Bug" from GitHub,
