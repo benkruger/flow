@@ -171,7 +171,7 @@ fn increment_retries(state_path: &Path) -> i64 {
         if !(state.is_object() || state.is_null()) {
             return;
         }
-        let next = tolerant_i64(&state["freshness_retries"]) + 1;
+        let next = tolerant_i64(&state["freshness_retries"]).saturating_add(1);
         state["freshness_retries"] = json!(next);
         cell.set(next);
     });

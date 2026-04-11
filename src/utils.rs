@@ -1410,7 +1410,7 @@ mod tests {
         assert_eq!(read_version_from(&path), "?");
     }
 
-    // --- tolerant_i64_opt() / tolerant_i64() ---
+    // --- tolerant_i64 ---
 
     #[test]
     fn tolerant_i64_opt_accepts_int() {
@@ -1477,7 +1477,7 @@ mod tests {
 
     #[test]
     fn tolerant_i64_zero_for_missing_via_index() {
-        // `IndexMut` on a missing key returns Value::Null; tolerant_i64 should
+        // `Index` on a missing key returns &Value::Null; tolerant_i64 should
         // coerce to 0 so callers can use `state["missing"]` directly.
         let state = serde_json::json!({"branch": "test"});
         assert_eq!(tolerant_i64(&state["missing_key"]), 0);

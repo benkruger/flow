@@ -31,7 +31,7 @@ pub fn phase_enter(state: &mut Value, phase: &str, reason: Option<&str>) -> Valu
     }
     phase_data["session_started_at"] = json!(now());
 
-    let visit_count = tolerant_i64(&phase_data["visit_count"]) + 1;
+    let visit_count = tolerant_i64(&phase_data["visit_count"]).saturating_add(1);
     phase_data["visit_count"] = json!(visit_count);
 
     state["current_phase"] = json!(phase);
@@ -118,7 +118,7 @@ pub fn phase_complete(
     let elapsed = elapsed_since(session_started.as_deref(), None);
 
     let existing = tolerant_i64(&state["phases"][phase]["cumulative_seconds"]);
-    let cumulative = existing + elapsed;
+    let cumulative = existing.saturating_add(elapsed);
 
     // Update phase state
     state["phases"][phase]["cumulative_seconds"] = json!(cumulative);

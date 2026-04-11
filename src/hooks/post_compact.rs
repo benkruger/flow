@@ -39,7 +39,7 @@ pub fn capture_compact_data(hook_input: &Value, state_path: &Path) {
         // legacy writers. All three resolve to the same canonical i64
         // increment instead of silently resetting to 1.
         let count = state.get("compact_count").map(tolerant_i64).unwrap_or(0);
-        state["compact_count"] = Value::Number((count + 1).into());
+        state["compact_count"] = Value::Number(count.saturating_add(1).into());
     });
 }
 
