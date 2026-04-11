@@ -216,7 +216,9 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow create-milestone --repo <repo> --title "<project_
 
 Parse the JSON output. Record the milestone number.
 
-Create the parent epic issue. Write the epic body to
+Create the parent epic issue. The `--milestone` flag accepts the milestone
+title (not the numeric ID) — use the same `<project_name>` that was passed
+to `create-milestone --title`. Write the epic body to
 `.flow-states/decompose-project-<id>-epic-body` using the Write tool, then:
 
 ```bash
