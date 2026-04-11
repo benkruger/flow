@@ -202,6 +202,13 @@ on the child will fire. Tests in this situation must call
 `.env_remove("FLOW_CI_RUNNING")` on the `Command` to simulate a
 fresh invocation.
 
+The two family lists above are also the canonical enumeration used
+by `.claude/rules/scope-enumeration.md` — the prose-side rule that
+requires every universal-quantifier claim about a code family to
+carry a named sibling list. When you add a new member to either
+family, update both this section and any plan prose that references
+the family by its universal noun so the named list stays in sync.
+
 ## Local Doc Comments
 
 Any non-obvious design decision (custom formatters, shared constants,
