@@ -321,6 +321,10 @@ pub fn branch_name(feature_words: &str) -> String {
         .collect::<Vec<_>>()
         .join("-");
 
+    if name.is_empty() {
+        return "unnamed".to_string();
+    }
+
     if name.chars().count() <= 32 {
         return name;
     }
@@ -855,6 +859,26 @@ mod tests {
         assert!(result.len() <= 32, "Got: {} ({})", result, result.len());
         assert!(result.is_ascii());
         assert!(!result.ends_with('-'));
+    }
+
+    #[test]
+    fn branch_name_empty_string() {
+        let result = branch_name("");
+        assert_eq!(result, "unnamed");
+    }
+
+    #[test]
+    fn branch_name_all_special_chars() {
+        let result = branch_name("!@#$%");
+        assert_eq!(result, "unnamed");
+    }
+
+    #[test]
+    fn branch_name_reserved_words_pass_through() {
+        // Reserved words like HEAD and main are valid branch components
+        // when used as feature descriptions
+        assert_eq!(branch_name("HEAD"), "head");
+        assert_eq!(branch_name("main"), "main");
     }
 
     // --- derive_feature() ---
