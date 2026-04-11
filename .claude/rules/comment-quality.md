@@ -51,6 +51,39 @@ When writing or reviewing comments:
 4. For non-obvious values (timeouts, limits, thresholds), explain
    why the value was chosen — not what another system used
 
+## Rewriting Existing Comments
+
+When fixing a backward-facing comment flagged by the scanner or a
+reviewer, do not paraphrase the old comment. Paraphrasing preserves
+the backward-facing structure — the reference to a deleted thing is
+still load-bearing in the new wording, just hidden. A paraphrased
+rewrite typically substitutes a vague phrase ("the previous
+implementation", "the original approach", "how it used to be") for
+the specific prohibited phrase and passes the scanner while still
+violating the rule.
+
+The correct rewrite discipline:
+
+1. **Read the surrounding code first.** Open the file to the cited
+   line and read ~10 lines of context. Understand what the code
+   currently does before writing anything.
+2. **Describe what you see.** Write the new comment from the code,
+   not from the old comment. State the contract, the invariant, the
+   constraint, or the non-obvious choice — whatever the reader
+   actually needs.
+3. **Do not read the old comment to paraphrase it.** Reading the old
+   comment is fine for orientation, but the rewrite must come from
+   the code, not from the old wording.
+4. **Re-read your rewrite with a forward-facing eye.** Apply the
+   Forward-Facing Test above to your own output. If the new comment
+   only makes sense to a reader who has read the old comment, it is
+   still backward-facing — go back to step 1.
+
+Rewrites that miss this discipline produce a second round of
+violations: the scanner or a reviewer flags the rewrite, another
+Code Review cycle fixes it, and the fix commit doubles the work.
+Read the code first, write from the code.
+
 ## Enforcement
 
 `tests/tombstones.rs::test_no_backward_facing_comments_in_rust_source`
