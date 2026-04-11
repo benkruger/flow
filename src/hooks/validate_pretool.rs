@@ -228,6 +228,17 @@ where
                     i += 1;
                 }
                 b'"' => state = State::Normal,
+                // Bash expands `$(...)` and backtick substitution INSIDE
+                // double quotes — single quotes are the only context
+                // that fully suppresses expansion. These are always
+                // blocked in any non-single-quoted position regardless
+                // of which predicate is running.
+                b'$' if bytes.get(i + 1) == Some(&b'(') => {
+                    return Ok(Some("$("));
+                }
+                b'`' => {
+                    return Ok(Some("`"));
+                }
                 _ => {}
             },
         }
@@ -241,16 +252,32 @@ where
 }
 
 /// Compound-operator predicate for `scan_unquoted`. Returns the matched
-/// operator when the byte at `i` begins a structural compound operator,
-/// command substitution (`$(`), or backtick substitution. The scanner
-/// only calls this in Normal state, so operator characters inside
-/// quoted arguments are inert by construction.
+/// operator when the byte at `i` begins a structural shell operator:
+/// compound commands (`&&`, `||`, `|`, `;`), backgrounding (bare `&`),
+/// input redirection (`<`, `<<`, `<<<`, `<(`), or command substitution
+/// (`$(`, backtick). The scanner only calls this in Normal state, so
+/// operator characters inside single-quoted arguments are inert by
+/// construction. `$(` and backticks are also caught inside double
+/// quotes by `scan_unquoted` itself, because bash expands both there.
 fn compound_op_predicate(bytes: &[u8], i: usize) -> Option<&'static str> {
     match bytes[i] {
         b'&' if bytes.get(i + 1) == Some(&b'&') => Some("&&"),
+        // Bare `&` is the shell backgrounding operator. It is always
+        // structural in Normal state — bash spawns the command as a
+        // detached process, defeating the CI gate and race-free state
+        // mutations that `bin/flow` subcommands require.
+        b'&' => Some("&"),
         b'|' if bytes.get(i + 1) == Some(&b'|') => Some("||"),
         b'|' => Some("|"),
         b';' => Some(";"),
+        // Any unquoted `<` is the start of an input redirection
+        // (`< file`, `<< HEREDOC`, `<<< here-string`, `<(...)` process
+        // substitution). None of these are supported by FLOW's
+        // dedicated-tool discipline, and `<(...)` in particular
+        // launches a subprocess whose output becomes a named pipe —
+        // the same risk class as `$(...)`. Blocking the single byte
+        // catches every variant.
+        b'<' => Some("<"),
         b'$' if bytes.get(i + 1) == Some(&b'(') => Some("$("),
         b'`' => Some("`"),
         _ => None,
@@ -258,14 +285,16 @@ fn compound_op_predicate(bytes: &[u8], i: usize) -> Option<&'static str> {
 }
 
 /// Redirect predicate for `scan_unquoted`. Returns `Some(">")` when the
-/// byte at `i` is an unquoted `>` that is NOT preceded by `=` or `-`
-/// (the existing carve-out for patterns like `git log --format=>%s` and
-/// `--option->value`).
+/// byte at `i` is an unquoted `>` that is NOT immediately preceded by
+/// `=` (the carve-out for flag-value patterns like
+/// `git log --format=>%s`). The `-` carve-out the original byte scanner
+/// allowed is gone — an adversarial case like `echo foo-->/tmp/out`
+/// exploited it to slip an unquoted redirect past Layer 2.
 fn redirect_predicate(bytes: &[u8], i: usize) -> Option<&'static str> {
     if bytes[i] != b'>' {
         return None;
     }
-    if i > 0 && (bytes[i - 1] == b'=' || bytes[i - 1] == b'-') {
+    if i > 0 && bytes[i - 1] == b'=' {
         return None;
     }
     Some(">")
@@ -1349,12 +1378,12 @@ mod tests {
         );
     }
 
-    // T19-T22: command substitution. The scanner adds a free pessimistic
-    // block for $(...) and backticks in Normal state. Task 0 confirmed no
-    // skill bash block uses unquoted command substitution — Claude Code
-    // itself flags $() with a security warning and the project has a
-    // zero-$( policy in bash blocks. Quoted substitution inside a string
-    // argument must still be allowed since no command executes.
+    // T19-T22: command substitution. Single quotes fully suppress
+    // expansion, so backticks and `$(...)` inside single-quoted args are
+    // literal. Double quotes do NOT suppress expansion — bash runs the
+    // inner command and interpolates the result. Both Normal-state and
+    // Double-state substitution must be blocked; only Single-quoted
+    // substitution passes through.
 
     #[test]
     fn test_blocks_dollar_paren_command_substitution() {
@@ -1364,11 +1393,11 @@ mod tests {
     }
 
     #[test]
-    fn test_allows_dollar_paren_inside_quoted_arg() {
+    fn test_blocks_dollar_paren_inside_double_quoted_arg() {
         let (allowed, msg) = validate("echo \"the $(cmd) pattern\"", None, true);
         assert!(
-            allowed,
-            "$() inside double quotes must be inert; got: {msg}"
+            !allowed,
+            "$() inside double quotes must be blocked — bash expands it; got: {msg}"
         );
     }
 
@@ -1380,7 +1409,26 @@ mod tests {
     }
 
     #[test]
-    fn test_allows_backtick_inside_quoted_arg() {
+    fn test_blocks_backtick_inside_double_quoted_arg() {
+        let (allowed, msg) = validate("echo \"look: `date`\"", None, true);
+        assert!(
+            !allowed,
+            "backtick inside double quotes must be blocked — bash expands it; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_allows_dollar_paren_inside_single_quoted_arg() {
+        let cmd = "echo 'literal $(cmd) text'";
+        let (allowed, msg) = validate(cmd, None, true);
+        assert!(
+            allowed,
+            "$() inside single quotes must be inert; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_allows_backtick_inside_single_quoted_arg() {
         let (allowed, msg) = validate("echo 'look: `tick`'", None, true);
         assert!(
             allowed,
@@ -1388,9 +1436,9 @@ mod tests {
         );
     }
 
-    // T23: the redirect carve-out for `=>` and `->` must survive when the
-    // pattern appears inside a quoted argument. Guards against a naive
-    // rewrite that drops the existing carve-out.
+    // T23: the redirect carve-out for `=>` must survive when the pattern
+    // appears inside a quoted argument. Guards against a naive rewrite
+    // that drops the existing carve-out.
 
     #[test]
     fn test_allows_quoted_arg_with_redirect_char_after_equals() {
@@ -1399,5 +1447,81 @@ mod tests {
             allowed,
             "> inside a double-quoted format string must be inert; got: {msg}"
         );
+    }
+
+    // --- adversarial_scan_gaps ---
+
+    // Code Review Step 2 adversarial testing surfaced six structural
+    // operators the initial scanner missed: bare `&` backgrounding,
+    // input redirect `<` (with its heredoc, here-string, and process-
+    // substitution variants), and a carve-out exploit where a `-`
+    // immediately before `>` let `foo-->/tmp/out` slip past Layer 2.
+    // These tests lock the fixes in.
+
+    #[test]
+    fn test_blocks_input_redirect() {
+        let (allowed, msg) = validate("python3 < /etc/passwd", None, true);
+        assert!(!allowed, "input redirect must be blocked");
+        assert!(msg.contains("BLOCKED"));
+    }
+
+    #[test]
+    fn test_blocks_here_string() {
+        let (allowed, msg) = validate("python3 <<< 'code'", None, true);
+        assert!(!allowed, "here-string must be blocked");
+        assert!(msg.contains("BLOCKED"));
+    }
+
+    #[test]
+    fn test_blocks_heredoc() {
+        let (allowed, msg) = validate("python3 <<EOF\ncode\nEOF", None, true);
+        assert!(!allowed, "heredoc must be blocked");
+        assert!(msg.contains("BLOCKED"));
+    }
+
+    #[test]
+    fn test_blocks_process_substitution_input() {
+        let (allowed, msg) = validate("diff <(echo a) <(echo b)", None, true);
+        assert!(!allowed, "input process substitution must be blocked");
+        assert!(msg.contains("BLOCKED"));
+    }
+
+    #[test]
+    fn test_blocks_trailing_ampersand_background() {
+        let (allowed, msg) = validate("sleep 100 &", None, true);
+        assert!(
+            !allowed,
+            "trailing & background operator must be blocked; got: {msg}"
+        );
+        assert!(msg.contains("BLOCKED"));
+    }
+
+    #[test]
+    fn test_blocks_double_dash_redirect() {
+        let (allowed, msg) = validate("echo foo-->/tmp/out", None, true);
+        assert!(
+            !allowed,
+            "foo-->/tmp/out must be blocked — the dash carve-out was a bypass vector; got: {msg}"
+        );
+        assert!(msg.to_lowercase().contains("redirection"));
+    }
+
+    #[test]
+    fn test_allows_input_redirect_char_in_single_quoted_arg() {
+        let (allowed, msg) = validate("echo 'hello <world>'", None, true);
+        assert!(allowed, "< inside single quotes must be inert; got: {msg}");
+    }
+
+    #[test]
+    fn test_allows_input_redirect_char_in_double_quoted_arg() {
+        let (allowed, msg) = validate("echo \"hello <world>\"", None, true);
+        assert!(allowed, "< inside double quotes must be inert; got: {msg}");
+    }
+
+    #[test]
+    fn test_allows_ampersand_in_flag_name() {
+        // bare & inside a quoted argument is inert.
+        let (allowed, msg) = validate("mysql -u root -p'p&w0rd'", None, true);
+        assert!(allowed, "& inside single quotes must be inert; got: {msg}");
     }
 }

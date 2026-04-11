@@ -200,94 +200,46 @@ fn test_no_backward_facing_comments_in_rust_source() {
     );
 }
 
-// --- Framework concept removal tombstones (PR #1032) ---
+// --- validate-pretool quote-aware scanner removal tombstones (PR #1035) ---
 //
-// PR #1032 deleted the entire "framework concept": language dispatch
-// via frameworks/<name>/ data directories, the Framework enum, the
-// framework_tools::tool_command dispatch map, detect_framework's
-// glob-based marker-file detection, and the prime_project /
-// create_dependencies template copiers. These tombstones assert each
-// removed file stays removed — a three-way merge that resurrects
-// them along with their original tests would otherwise silently
-// reintroduce the framework concept.
+// PR #1035 replaced two byte-level scanners in
+// src/hooks/validate_pretool.rs with a single quote-aware state
+// machine (scan_unquoted) plus two predicates (compound_op_predicate,
+// redirect_predicate). The old functions were quote-unaware and
+// produced false positives whenever operator characters appeared
+// inside quoted arguments. These source-content tombstones assert the
+// old function names do not reappear in the source file — a merge
+// conflict that reintroduces them alongside the new scanner would
+// silently revert the fix.
 
-/// Tombstone: src/framework_tools.rs removed in PR #1032. Must not return.
+/// Tombstone: has_unescaped_semicolon removed in PR #1035. Must not return.
 #[test]
-fn test_no_framework_tools_module() {
-    let path = common::repo_root().join("src").join("framework_tools.rs");
-    assert!(
-        !path.exists(),
-        "src/framework_tools.rs was deleted in PR #1032 and must not return. \
-         Framework-based command dispatch was replaced by repo-local bin/* delegation."
-    );
-}
-
-/// Tombstone: src/detect_framework.rs removed in PR #1032. Must not return.
-#[test]
-fn test_no_detect_framework_module() {
-    let path = common::repo_root().join("src").join("detect_framework.rs");
-    assert!(
-        !path.exists(),
-        "src/detect_framework.rs was deleted in PR #1032 and must not return. \
-         Glob-based marker-file detection was removed along with the framework concept."
-    );
-}
-
-/// Tombstone: src/prime_project.rs removed in PR #1032. Must not return.
-#[test]
-fn test_no_prime_project_module() {
-    let path = common::repo_root().join("src").join("prime_project.rs");
-    assert!(
-        !path.exists(),
-        "src/prime_project.rs was deleted in PR #1032 and must not return. \
-         Framework-specific priming.md template copying was removed; prime now \
-         installs generic bin/* stubs from assets/bin-stubs/."
-    );
-}
-
-/// Tombstone: src/create_dependencies.rs removed in PR #1032. Must not return.
-#[test]
-fn test_no_create_dependencies_module() {
+fn test_no_has_unescaped_semicolon_function() {
     let path = common::repo_root()
         .join("src")
-        .join("create_dependencies.rs");
+        .join("hooks")
+        .join("validate_pretool.rs");
+    let content = fs::read_to_string(&path).expect("validate_pretool.rs must exist");
     assert!(
-        !path.exists(),
-        "src/create_dependencies.rs was deleted in PR #1032 and must not return. \
-         The bin/dependencies template installer was removed with the framework concept."
+        !content.contains("fn has_unescaped_semicolon"),
+        "fn has_unescaped_semicolon was deleted in PR #1035 and must not return. \
+         Semicolon detection now goes through compound_op_predicate + scan_unquoted \
+         which tracks bash quote state."
     );
 }
 
-/// Tombstone: frameworks/ directory removed in PR #1032. Must not return.
+/// Tombstone: has_redirect removed in PR #1035. Must not return.
 #[test]
-fn test_no_frameworks_directory() {
-    let path = common::repo_root().join("frameworks");
-    assert!(
-        !path.exists(),
-        "frameworks/ directory was deleted in PR #1032 and must not return. \
-         Per-framework data directories (detect.json, permissions.json, \
-         dependencies, priming.md) are no longer part of FLOW."
-    );
-}
-
-/// Tombstone: tests/detect_framework.rs removed in PR #1032. Must not return.
-#[test]
-fn test_no_detect_framework_tests() {
+fn test_no_has_redirect_function() {
     let path = common::repo_root()
-        .join("tests")
-        .join("detect_framework.rs");
+        .join("src")
+        .join("hooks")
+        .join("validate_pretool.rs");
+    let content = fs::read_to_string(&path).expect("validate_pretool.rs must exist");
     assert!(
-        !path.exists(),
-        "tests/detect_framework.rs was deleted in PR #1032 and must not return."
-    );
-}
-
-/// Tombstone: tests/prime_project.rs removed in PR #1032. Must not return.
-#[test]
-fn test_no_prime_project_tests() {
-    let path = common::repo_root().join("tests").join("prime_project.rs");
-    assert!(
-        !path.exists(),
-        "tests/prime_project.rs was deleted in PR #1032 and must not return."
+        !content.contains("fn has_redirect"),
+        "fn has_redirect was deleted in PR #1035 and must not return. \
+         Redirection detection now goes through redirect_predicate + scan_unquoted \
+         which tracks bash quote state."
     );
 }

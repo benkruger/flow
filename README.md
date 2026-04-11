@@ -279,8 +279,8 @@ The learnings don't evaporate at session end. They compound.
 
 A global `PreToolUse` hook (`bin/flow hook validate-pretool`) fires on every Bash call in any FLOW-primed project. It enforces 6 validation layers in order:
 
-1. **Compound commands** — blocks `&&`, `;`, `|` (use separate Bash calls)
-2. **Shell redirection** — blocks `>`, `>>`, `2>` (use Read/Write tools)
+1. **Compound commands and command substitution** — blocks `&&`, `||`, `|`, `;`, lone `&` (backgrounding), input redirection `<` / `<<` / `<<<` / `<(...)`, and command substitution `$()` / backticks. Operator characters inside single-quoted (`'...'`) or double-quoted (`"..."`) arguments are treated as literal data and pass through. Unclosed quotes are pessimistically blocked so a bypass cannot hide structural operators inside a dangling quote. Use separate Bash calls for each command.
+2. **Shell output redirection** — blocks `>`, `>>`, `2>` (use Read/Write tools). Also quote-aware.
 3. **Blanket restore** — blocks `git restore .` (restore files individually)
 4. **Deny list** — blocks commands matching deny patterns in `.claude/settings.json`
 5. **File-read commands** — blocks `cat`, `head`, `tail`, `grep`, `rg`, `find`, `ls` (use dedicated tools)
