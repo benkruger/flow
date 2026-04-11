@@ -86,17 +86,34 @@ fn fails_when_flow_version_mismatch_no_hashes() {
 }
 
 #[test]
-fn fails_when_framework_missing() {
+fn ok_when_framework_missing() {
+    // Framework is optional in .flow.json. When prime was run without
+    // --framework, the field is absent and prime-check returns ok with
+    // an empty framework string. The plan removes framework as a
+    // mandatory concept; this test guards the optional default.
     let tmp = tempfile::tempdir().unwrap();
     let version = current_plugin_version();
     write_flow_json(tmp.path(), json!({"flow_version": version}));
     let (data, code) = run_prime_check(tmp.path());
-    assert_eq!(data["status"], "error");
-    assert!(data["message"]
-        .as_str()
-        .unwrap()
-        .to_lowercase()
-        .contains("framework"));
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["framework"], "");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn ok_when_framework_empty_string() {
+    // Same as above but with an explicit empty string in .flow.json.
+    // This is the shape `prime-setup` writes when invoked without
+    // --framework.
+    let tmp = tempfile::tempdir().unwrap();
+    let version = current_plugin_version();
+    write_flow_json(
+        tmp.path(),
+        json!({"flow_version": version, "framework": ""}),
+    );
+    let (data, code) = run_prime_check(tmp.path());
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["framework"], "");
     assert_eq!(code, 0);
 }
 
@@ -142,9 +159,10 @@ fn happy_path_go() {
 
 #[test]
 fn fails_on_invalid_framework() {
-    // Plan check: explicit invalid framework name must hit the same
-    // "Missing framework" error as an absent framework key. Covers the
-    // non-default branch of `matches!(framework, "rails"|...)` in run_impl.
+    // A non-empty framework value must be one of the recognized names.
+    // An empty string is allowed (covered by ok_when_framework_empty_string)
+    // but a typo like "nonexistent-framework" still errors so users get
+    // a clear signal that the value in .flow.json is wrong.
     let tmp = tempfile::tempdir().unwrap();
     let version = current_plugin_version();
     write_flow_json(

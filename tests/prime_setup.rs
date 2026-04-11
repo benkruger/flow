@@ -839,14 +839,30 @@ fn cli_invalid_project_root() {
 }
 
 #[test]
-fn cli_missing_framework() {
+fn cli_missing_framework_succeeds() {
+    // --framework is now optional. Calling prime-setup without it
+    // succeeds — framework is treated as empty, framework-specific
+    // operations (prime_project, create_dependencies, framework
+    // permissions) are skipped, and bin/* stubs are still installed
+    // when assets/bin-stubs/ exists.
     let tmp = tempfile::tempdir().unwrap();
+    make_git_repo(tmp.path());
     let output = flow_rs()
         .arg("prime-setup")
         .arg(tmp.path())
         .output()
         .unwrap();
-    assert_ne!(output.status.code(), Some(0));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"status\":\"ok\""));
+    assert!(stdout.contains("\"framework\":\"\""));
+    assert!(stdout.contains("\"prime_project\":\"skipped\""));
+    assert!(stdout.contains("\"dependencies\":\"skipped\""));
 }
 
 #[test]

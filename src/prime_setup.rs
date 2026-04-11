@@ -484,6 +484,15 @@ pub struct Args {
 ///
 /// Returns `Err(Value)` for all error cases (printed as JSON, exit 1).
 /// `Ok(Value)` for success.
+///
+/// `--framework` is optional. When omitted (or empty), prime skips
+/// the framework-specific operations: it does not load
+/// `frameworks/<name>/permissions.json`, does not run
+/// `prime_project::prime` (CLAUDE.md is left as-is — the user is
+/// responsible for their own conventions), and does not copy a
+/// `bin/dependencies` template. The bin/* stub installer always runs
+/// regardless of framework, copying `assets/bin-stubs/<tool>.sh` into
+/// `<project>/bin/<tool>` when absent.
 pub fn run_impl(args: &Args) -> Result<Value, Value> {
     let project_root = PathBuf::from(&args.project_root);
     if !project_root.is_dir() {
@@ -493,14 +502,13 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
         }));
     }
 
+    // Framework is optional. Empty string disables the framework-specific
+    // code paths below. Non-empty values must match a frameworks/<name>/
+    // directory; unknown frameworks still error so users get a clear
+    // signal that they typo'd a name rather than silently skipping.
     let framework = match &args.framework {
         Some(f) if !f.is_empty() => f.clone(),
-        _ => {
-            return Err(json!({
-                "status": "error",
-                "message": format!("Missing or invalid --framework argument: {:?}", args.framework),
-            }));
-        }
+        _ => String::new(),
     };
 
     let fw_dir = match frameworks_dir() {
@@ -513,10 +521,10 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
         }
     };
 
-    if !fw_dir.join(&framework).is_dir() {
+    if !framework.is_empty() && !fw_dir.join(&framework).is_dir() {
         return Err(json!({
             "status": "error",
-            "message": format!("Missing or invalid --framework argument: {}", framework),
+            "message": format!("Unknown framework: {}", framework),
         }));
     }
 
@@ -586,31 +594,50 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
         }
     }
 
-    // Call prime-project in-process
-    let prime_project_args = prime_project::Args {
-        project_root: args.project_root.clone(),
-        framework: framework.clone(),
-    };
-    let prime_result = match prime_project::run_impl(&prime_project_args) {
-        Ok(v) => v
-            .get("status")
-            .and_then(|s| s.as_str())
-            .unwrap_or("error")
-            .to_string(),
-        Err(v) => v
-            .get("status")
-            .and_then(|s| s.as_str())
-            .unwrap_or("error")
-            .to_string(),
+    // Framework-specific operations only run when --framework was provided.
+    // Empty framework means the project owns its own CLAUDE.md and
+    // bin/dependencies; FLOW does not generate them.
+    let prime_result = if framework.is_empty() {
+        "skipped".to_string()
+    } else {
+        let prime_project_args = prime_project::Args {
+            project_root: args.project_root.clone(),
+            framework: framework.clone(),
+        };
+        match prime_project::run_impl(&prime_project_args) {
+            Ok(v) => v
+                .get("status")
+                .and_then(|s| s.as_str())
+                .unwrap_or("error")
+                .to_string(),
+            Err(v) => v
+                .get("status")
+                .and_then(|s| s.as_str())
+                .unwrap_or("error")
+                .to_string(),
+        }
     };
 
-    // Call create-dependencies in-process
-    let deps_result = create_dependencies::create(&args.project_root, &framework, Some(&fw_dir));
-    let deps_status = deps_result
-        .get("status")
-        .and_then(|s| s.as_str())
-        .unwrap_or("error")
-        .to_string();
+    let deps_status = if framework.is_empty() {
+        "skipped".to_string()
+    } else {
+        let deps_result =
+            create_dependencies::create(&args.project_root, &framework, Some(&fw_dir));
+        deps_result
+            .get("status")
+            .and_then(|s| s.as_str())
+            .unwrap_or("error")
+            .to_string()
+    };
+
+    // bin/* stub installer runs unconditionally. Copies
+    // assets/bin-stubs/<tool>.sh into <project_root>/bin/<tool> when
+    // absent so every primed project gets a working delegation surface
+    // for `bin/flow ci`. Pre-existing bin/* files are never overwritten.
+    let stubs_installed = match plugin_root() {
+        Some(p) => install_bin_stubs(&project_root, &p),
+        None => Vec::new(),
+    };
 
     Ok(json!({
         "status": "ok",
@@ -622,7 +649,50 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
         "framework": framework,
         "prime_project": prime_result,
         "dependencies": deps_status,
+        "stubs_installed": stubs_installed,
     }))
+}
+
+/// Install the four FLOW bin/* stubs into `<project_root>/bin/` when absent.
+///
+/// Reads each `assets/bin-stubs/<tool>.sh` from the plugin root, writes
+/// it to `<project_root>/bin/<tool>` (creating `bin/` if needed), and
+/// chmods 0o755. Pre-existing files are never overwritten — the stub
+/// installer only fills in the gaps so users who already configured
+/// their own bin/* scripts (or migrated by hand) keep their work.
+///
+/// Returns the list of tool names that were actually installed.
+pub fn install_bin_stubs(project_root: &Path, plugin_root: &Path) -> Vec<String> {
+    let stubs_dir = plugin_root.join("assets").join("bin-stubs");
+    let bin_dir = project_root.join("bin");
+    let mut installed = Vec::new();
+    for tool in ["format", "lint", "build", "test"] {
+        let target = bin_dir.join(tool);
+        if target.exists() {
+            continue;
+        }
+        let source = stubs_dir.join(format!("{}.sh", tool));
+        if !source.exists() {
+            continue;
+        }
+        if fs::create_dir_all(&bin_dir).is_err() {
+            continue;
+        }
+        let content = match fs::read_to_string(&source) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        if fs::write(&target, &content).is_err() {
+            continue;
+        }
+        if let Ok(meta) = fs::metadata(&target) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            let _ = fs::set_permissions(&target, perms);
+        }
+        installed.push(tool.to_string());
+    }
+    installed
 }
 
 pub fn run(args: Args) {

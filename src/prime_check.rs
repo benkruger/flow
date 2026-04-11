@@ -375,14 +375,18 @@ pub fn run_impl(cwd: &Path, plugin_root: &Path) -> Result<Value, String> {
         }));
     }
 
+    // Framework is optional. When prime was run without --framework,
+    // .flow.json has no framework field (or empty string). Both shapes
+    // pass prime-check; only an unknown non-empty value errors so users
+    // get a clear signal that they hand-edited a typo.
     let framework = init_data
         .get("framework")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    if !matches!(framework, "rails" | "python" | "ios" | "go" | "rust") {
+    if !framework.is_empty() && !matches!(framework, "rails" | "python" | "ios" | "go" | "rust") {
         return Ok(json!({
             "status": "error",
-            "message": "Missing framework in .flow.json. Run /flow:flow-prime to configure.",
+            "message": format!("Unknown framework in .flow.json: {}. Run /flow:flow-prime to reconfigure.", framework),
         }));
     }
 
