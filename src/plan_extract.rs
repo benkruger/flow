@@ -28,6 +28,7 @@ use crate::output::json_error;
 use crate::phase_config::load_phase_config;
 use crate::phase_transition::{phase_complete, phase_enter};
 use crate::render_pr_body::render_body;
+use crate::scope_enumeration::{scan as scope_scan, Violation};
 use crate::update_pr_body::gh_set_body;
 use crate::utils::extract_issue_numbers;
 
@@ -305,6 +306,39 @@ pub fn count_tasks(content: &str) -> usize {
     count
 }
 
+/// Build the plan-check violation response that both the extracted
+/// path and the resume path return when the promoted plan content
+/// contains universal-coverage prose without a named enumeration.
+///
+/// Mirrors the `bin/flow plan-check` error shape so downstream
+/// consumers (the `flow-plan` skill, model prompts) can handle both
+/// callsites with one parser.
+fn violations_response(violations: &[Violation], path_label: &str) -> Value {
+    let violations_json: Vec<Value> = violations
+        .iter()
+        .map(|v| {
+            json!({
+                "file": v.file.display().to_string(),
+                "line": v.line,
+                "phrase": v.phrase,
+                "context": v.context,
+            })
+        })
+        .collect();
+    json!({
+        "status": "error",
+        "path": path_label,
+        "violations": violations_json,
+        "message": format!(
+            "{} universal-coverage claim(s) in the plan file lack a named enumeration. \
+             Edit the plan file to add a named list of the concrete siblings next to each \
+             flagged phrase, then re-run /flow:flow-plan. See \
+             .claude/rules/scope-enumeration.md for the rule.",
+            violations.len()
+        ),
+    })
+}
+
 /// Run phase_complete via mutate_state and return the result JSON.
 fn complete_plan_phase(state_path: &Path, root: &Path, branch: &str) -> Result<Value, String> {
     let (frozen_order, frozen_commands) = load_frozen_config(root, branch);
@@ -362,6 +396,16 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         // Read plan file FIRST — fail early before any state mutations
         let plan_content = std::fs::read_to_string(&plan_abs)
             .map_err(|e| format!("Could not read plan file: {}", e))?;
+
+        // Gate resume on the scope-enumeration rule. The plan file
+        // may have been written by a prior plan-extract run that
+        // left `files.plan` set despite violations (see extracted
+        // path below); scanning on resume ensures the phase cannot
+        // complete until the user edits the plan to add named lists.
+        let violations = scope_scan(&plan_content, &plan_abs);
+        if !violations.is_empty() {
+            return Ok(violations_response(&violations, "resumed"));
+        }
 
         // Enter the phase (safe to call if already in_progress — updates timestamps and visit_count)
         mutate_state(&state_path, |state| {
@@ -533,7 +577,14 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     std::fs::write(&plan_abs, &promoted)
         .map_err(|e| format!("Failed to write plan file: {}", e))?;
 
-    // Update state: files.plan, code_tasks_total, plan_step
+    // Update state: files.plan, code_tasks_total, plan_step.
+    // Set files.plan BEFORE the scope-enumeration check so that a
+    // failed check leaves the state in a shape the resume path can
+    // pick up on the next invocation (the user edits the plan file
+    // in place; re-running plan-extract takes the resume path and
+    // re-scans). Without this ordering, a violation would unset the
+    // plan path and the next run would re-extract from the issue
+    // body, clobbering the user's edits.
     mutate_state(&state_path, |state| {
         if !(state.is_object() || state.is_null()) {
             return;
@@ -547,6 +598,26 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         state["plan_step"] = json!(3);
     })
     .map_err(|e| format!("Failed to update state: {}", e))?;
+
+    // Gate completion on the scope-enumeration rule. Universal-
+    // coverage claims without a named enumeration of the concrete
+    // siblings fail the phase — the model must edit the plan file
+    // to add a named list and re-run. See
+    // `.claude/rules/scope-enumeration.md` for the rule and the
+    // opt-out comment vocabulary.
+    let violations = scope_scan(&promoted, &plan_abs);
+    if !violations.is_empty() {
+        let _ = append_log(
+            &root,
+            &branch,
+            &format!(
+                "[Phase 2] plan-extract — scope-enumeration violations ({}) in {} (exit 0)",
+                violations.len(),
+                plan_rel
+            ),
+        );
+        return Ok(violations_response(&violations, "extracted"));
+    }
 
     // --- Logging ---
     let _ = append_log(

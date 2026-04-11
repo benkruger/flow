@@ -10,13 +10,12 @@
 //! `src/scope_enumeration.rs` for the trigger vocabulary and the
 //! enumeration-present heuristic.
 //!
-//! **Ignore status.** These tests are currently `#[ignore]`-gated
-//! because the `plan-check` subcommand does not yet exist. The
-//! `#[ignore]` markers are removed in the commit that lands
-//! `src/plan_check.rs`, `Commands::PlanCheck`, and the
-//! `src/plan_extract.rs` integration. Until that commit, `bin/flow
-//! test -- --ignored plan_check` surfaces these as the next TDD
-//! target.
+//! **Exit code convention.** Infrastructure errors (unreadable state
+//! file, corrupt JSON) return `Err(String)` from `run_impl` and exit
+//! the process with code 1. Business responses (clean plan,
+//! violations found, missing state, missing plan file) return
+//! `Ok(Value)` with a `status` field and exit 0 — the skill consumer
+//! branches on the JSON, not the shell exit code.
 
 use std::fs;
 use std::process::Command;
@@ -124,7 +123,6 @@ fn run_plan_check(dir: &std::path::Path, extra_args: &[&str]) -> (i32, serde_jso
 // --- OK path: enumerated or empty ---
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_passes_on_inline_parenthetical_enumeration() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
@@ -145,7 +143,6 @@ fn plan_check_passes_on_inline_parenthetical_enumeration() {
 }
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_passes_on_forward_bullet_list_enumeration() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
@@ -167,7 +164,6 @@ fn plan_check_passes_on_forward_bullet_list_enumeration() {
 }
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_passes_on_backward_bullet_list_enumeration() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
@@ -189,7 +185,6 @@ fn plan_check_passes_on_backward_bullet_list_enumeration() {
 }
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_passes_on_empty_plan() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
@@ -206,7 +201,6 @@ fn plan_check_passes_on_empty_plan() {
 }
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_passes_on_plan_without_universal_prose() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
@@ -226,7 +220,6 @@ fn plan_check_passes_on_plan_without_universal_prose() {
 // --- OK path: negation and opt-out skips ---
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_skips_negation() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
@@ -244,7 +237,6 @@ fn plan_check_skips_negation() {
 }
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_skips_fenced_code_block() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
@@ -262,7 +254,6 @@ fn plan_check_skips_fenced_code_block() {
 }
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_skips_with_open_ended_optout_comment() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
@@ -282,7 +273,6 @@ fn plan_check_skips_with_open_ended_optout_comment() {
 }
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_skips_with_imperative_optout_comment() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
@@ -304,7 +294,6 @@ fn plan_check_skips_with_imperative_optout_comment() {
 // --- Error path: unenumerated universal claim ---
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_fails_on_unenumerated_universal_claim() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
@@ -318,9 +307,9 @@ fn plan_check_fails_on_unenumerated_universal_claim() {
 
     let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
     assert_eq!(
-        code, 1,
-        "expected exit 1 for unenumerated plan, got {}",
-        code
+        code, 0,
+        "business errors exit 0 with status=error, got code={} json={}",
+        code, json
     );
     assert_eq!(json["status"], "error");
     let violations = json["violations"]
@@ -343,7 +332,6 @@ fn plan_check_fails_on_unenumerated_universal_claim() {
 }
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_fails_on_all_runners_without_list() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
@@ -356,12 +344,11 @@ fn plan_check_fails_on_all_runners_without_list() {
     );
 
     let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
-    assert_eq!(code, 1);
+    assert_eq!(code, 0);
     assert_eq!(json["status"], "error");
 }
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_fails_on_each_entry_point_without_list() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
@@ -374,20 +361,19 @@ fn plan_check_fails_on_each_entry_point_without_list() {
     );
 
     let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
-    assert_eq!(code, 1);
+    assert_eq!(code, 0);
     assert_eq!(json["status"], "error");
 }
 
-// --- Error path: infrastructure failures ---
+// --- Error path: business error (missing state / plan file) ---
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_errors_when_state_file_missing() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
 
     let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
-    assert_eq!(code, 1);
+    assert_eq!(code, 0, "business errors exit 0, got code={}", code);
     assert_eq!(json["status"], "error");
     assert!(json["message"]
         .as_str()
@@ -397,14 +383,13 @@ fn plan_check_errors_when_state_file_missing() {
 }
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_errors_when_files_plan_null() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
     write_state(dir.path(), "test-feature", None);
 
     let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
-    assert_eq!(code, 1);
+    assert_eq!(code, 0);
     assert_eq!(json["status"], "error");
     assert!(json["message"]
         .as_str()
@@ -414,7 +399,6 @@ fn plan_check_errors_when_files_plan_null() {
 }
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_errors_when_plan_file_missing() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
@@ -425,14 +409,18 @@ fn plan_check_errors_when_plan_file_missing() {
     );
 
     let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
-    assert_eq!(code, 1);
+    assert_eq!(code, 0);
     assert_eq!(json["status"], "error");
+    assert!(json["message"]
+        .as_str()
+        .unwrap_or("")
+        .to_lowercase()
+        .contains("not found"));
 }
 
 // --- --plan-file override ---
 
 #[test]
-#[ignore = "Enabled by the commit that lands src/plan_check.rs"]
 fn plan_check_accepts_plan_file_override() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");

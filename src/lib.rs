@@ -45,6 +45,7 @@ pub mod phase_config;
 pub mod phase_enter;
 pub mod phase_finalize;
 pub mod phase_transition;
+pub mod plan_check;
 pub mod plan_extract;
 pub mod prime_check;
 pub mod prime_setup;
