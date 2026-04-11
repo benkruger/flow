@@ -137,10 +137,11 @@ pub fn upgrade_check_impl(
     let installed_tuple = match parse_version(&installed) {
         Some(t) => t,
         None => {
-            // Intentional divergence from Python: the Python original used
-            // `tag` here (copy-paste from the latest branch above), which
-            // misattributes the problem to the remote tag when the
-            // locally-stored installed version is the actual culprit.
+            // The error message must cite the locally-stored installed
+            // version (not the remote tag) so the user sees which value
+            // is malformed and where to fix it (their plugin.json, not
+            // GitHub). The matching test below trip-wires regressions
+            // that swap these two values.
             return json!({
                 "status": "unknown",
                 "reason": format!("Could not parse version: {}", installed),
@@ -159,8 +160,10 @@ pub fn upgrade_check_impl(
     }
 }
 
-/// Parse `"1.2.3"` into `(1, 2, 3)`. Requires exactly 3 dotted integers —
-/// returns `None` on any parse error to match Python's strict tuple parse.
+/// Parse `"1.2.3"` into `(1, 2, 3)`. Requires exactly 3 dotted
+/// integers; any deviation (extra parts, non-numeric segment,
+/// missing parts) returns `None` so callers can decide how to handle
+/// a malformed version string.
 fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
     let parts: Vec<&str> = s.split('.').collect();
     if parts.len() != 3 {
@@ -180,9 +183,10 @@ fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
 /// status, then join the readers. Compliant reference: see
 /// `src/analyze_issues.rs` lines 472-518.
 ///
-/// Any spawn failure (NotFound, PermissionDenied, etc.) is mapped to
-/// `GhResult::NotFound` — a deliberate improvement over Python's
-/// `FileNotFoundError`-only handler which would panic on other errors.
+/// Any spawn failure (NotFound, PermissionDenied, etc.) collapses to
+/// `GhResult::NotFound` so the caller treats every spawn-failure
+/// shape uniformly as "gh is unavailable" instead of crashing on
+/// unexpected error variants.
 /// Public wrapper for start-init to compose upgrade-check inline.
 pub fn run_gh_cmd(owner_repo: &str, timeout_secs: u64) -> GhResult {
     use std::io::Read;
@@ -423,10 +427,10 @@ mod tests {
         assert!(result["reason"].as_str().unwrap().contains("timed out"));
     }
 
-    /// Regression: when the INSTALLED version (from plugin.json) fails to
-    /// parse, the error message must cite the installed value — not the
-    /// remote tag. The Python original had a copy-paste bug that reported
-    /// the remote tag in both error branches; the Rust port corrects it.
+    /// Guards the contract that, when the locally-stored installed
+    /// version fails to parse, the error message names the installed
+    /// value — not the remote tag. Swapping these two values would
+    /// misdirect the user to debug the wrong field in the wrong file.
     #[test]
     fn malformed_installed_version_error_cites_installed() {
         let dir = tempfile::tempdir().unwrap();

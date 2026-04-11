@@ -106,13 +106,16 @@ pub fn run(args: Args) {
 
 #[cfg(test)]
 mod tests {
-    // close_issue_by_number calls gh subprocess — tested via Python integration tests.
-    // Unit tests here cover the helper functions.
+    // close_issue_by_number shells out to `gh` and is therefore not
+    // unit-testable without process mocking. Unit tests in this module
+    // cover the pure helper functions instead; the gh path is exercised
+    // end-to-end by the QA harness.
 
     #[test]
     fn detect_repo_or_fail_returns_some() {
         // This test just validates the function signature — the actual
-        // detection runs against git remote which we can't mock in Rust.
-        // Python integration tests cover the detect_repo_or_fail path.
+        // detection runs against `git remote`, which we cannot mock in
+        // a unit test without spawning a real git process. End-to-end
+        // coverage of detect_repo_or_fail lives in the QA harness.
     }
 }

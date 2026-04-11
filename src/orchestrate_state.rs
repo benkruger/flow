@@ -336,8 +336,11 @@ pub struct Args {
 /// Testable implementation — returns the JSON Value to print.
 ///
 /// Returns `Ok(value)` for both success and application-error responses
-/// (matching Python's always-exit-0 behavior). Returns `Err(msg)` only
-/// for infrastructure failures.
+/// so the CLI prints the result and exits 0 in either case; orchestration
+/// state mutations are best-effort and a malformed queue entry must not
+/// halt the orchestrator. `Err(msg)` is reserved for infrastructure
+/// failures (filesystem errors, unreadable plugin root) that should
+/// exit 1.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     if args.create {
         let queue_path = match &args.queue_file {

@@ -33,10 +33,12 @@ pub fn capture_compact_data(hook_input: &Value, state_path: &Path) {
         if let Some(cwd) = hook_input.get("cwd").and_then(|v| v.as_str()) {
             state["compact_cwd"] = Value::String(cwd.to_string());
         }
-        // Accept compact_count written by any prior version: integers,
-        // floats (3.0 from older Python writes), or strings ("3" from
-        // corrupted/foreign edits). All resolve to the same canonical
-        // i64 increment instead of silently resetting to 1.
+        // Accept `compact_count` written by any prior version of the
+        // hook: integers, floats (e.g. `3.0` from a writer that
+        // serialized counters as floats), or strings (e.g. `"3"` from
+        // a hand-edited or foreign-tool-edited state file). All
+        // resolve to the same canonical i64 increment instead of
+        // silently resetting the counter to 1.
         let count = state
             .get("compact_count")
             .and_then(|v| {
@@ -242,9 +244,10 @@ mod tests {
 
     #[test]
     fn test_compact_count_string_value_increments() {
-        // Older Python writes or foreign edits may have compact_count
-        // as a string "3". Accept it and increment to 4 instead of
-        // silently resetting to 1.
+        // A state file produced by a hand edit or a foreign tool may
+        // store `compact_count` as the string `"3"`. The hook must
+        // tolerate it and increment to 4 instead of silently
+        // resetting the counter to 1.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
         let initial = json!({"compact_count": "3"});

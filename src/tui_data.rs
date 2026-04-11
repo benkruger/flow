@@ -237,7 +237,9 @@ pub fn phase_timeline(state: &Value, now: Option<DateTime<FixedOffset>>) -> Vec<
                 format!("task {}", current_task)
             };
             let task_str = if !code_task_name.is_empty() {
-                // Truncate by char count, not byte count (Python parity)
+                // Truncate by char count so multi-byte UTF-8 names
+                // (emoji, CJK) cannot land mid-codepoint and panic the
+                // formatter on display.
                 let truncated: String = if code_task_name.chars().count() > 30 {
                     let prefix: String = code_task_name.chars().take(27).collect();
                     format!("{}...", prefix)
@@ -354,7 +356,9 @@ pub struct IssueSummary {
     pub label: String,
     pub title: String,
     pub url: String,
-    /// Serializes as "ref" for Python parity. `ref` is a Rust keyword.
+    /// Serializes to JSON as "ref" — the field name the TUI display
+    /// layer expects in its issue summary schema. The Rust field is
+    /// named `ref_str` because `ref` is a reserved keyword.
     #[serde(rename = "ref")]
     pub ref_str: String,
     pub phase_name: String,
@@ -472,7 +476,9 @@ pub fn flow_summary(state: &Value, now: Option<DateTime<FixedOffset>>) -> FlowSu
     let blocked = state
         .get("_blocked")
         .map(|v| {
-            // Python: bool(state.get("_blocked")) — truthy for non-empty strings, false for ""
+            // Treat the `_blocked` field as set when it is a non-empty
+            // string, a true bool, or any non-null compound value.
+            // Empty strings and null are explicitly "not blocked".
             match v {
                 Value::String(s) => !s.is_empty(),
                 Value::Null => false,
@@ -753,7 +759,10 @@ pub fn load_account_metrics(repo_root: &Path, home_override: Option<&Path>) -> A
                 if age.as_secs() <= STALE_THRESHOLD_SECONDS {
                     if let Ok(content) = std::fs::read_to_string(&rl_path) {
                         if let Ok(data) = serde_json::from_str::<Value>(&content) {
-                            // int(data["five_hour_pct"]) — handle null via TypeError parity
+                            // Accept either int or float JSON values.
+                            // Missing or unparseable fields leave the
+                            // value as `None`, which the staleness check
+                            // below treats as a stale rate-limit pair.
                             if let Some(v) = data.get("five_hour_pct") {
                                 if let Some(n) = v.as_i64().or_else(|| v.as_f64().map(|f| f as i64))
                                 {

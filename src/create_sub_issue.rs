@@ -104,9 +104,10 @@ pub fn run(args: Args) {
 mod tests {
     use super::*;
 
-    // create_sub_issue calls gh subprocess — cannot be unit tested without mocking.
-    // Integration testing happens via bin/flow create-sub-issue in the Python test suite.
-    // Unit tests here cover argument structure and output format.
+    // create_sub_issue shells out to `gh` and cannot be unit-tested
+    // without process mocking. End-to-end coverage runs through the
+    // QA harness invoking `bin/flow create-sub-issue`. Unit tests in
+    // this module focus on argument parsing and output formatting.
 
     #[test]
     fn args_parse_all_required() {

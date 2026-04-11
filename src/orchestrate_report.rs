@@ -15,7 +15,9 @@ use crate::utils::format_time;
 /// Compute duration in seconds between two ISO 8601 timestamps.
 ///
 /// Returns 0 when `completed_at` is None, empty, or either timestamp
-/// fails to parse — matching the Python original's graceful fallback.
+/// fails to parse. The 0 sentinel lets the morning report render as
+/// "0s" instead of failing the whole orchestration summary on a
+/// malformed timestamp from a partially-written queue entry.
 pub fn compute_duration_seconds(started_at: &str, completed_at: Option<&str>) -> i64 {
     let completed = match completed_at {
         Some(s) if !s.is_empty() => s,
@@ -219,9 +221,11 @@ pub struct Args {
 
 /// Testable implementation — returns the JSON Value to print.
 ///
-/// Returns `Ok(value)` for both success and application-error responses
-/// (matching Python's always-exit-0 behavior). Returns `Err(msg)` only
-/// for infrastructure failures.
+/// Returns `Ok(value)` for both success and application-error
+/// responses so the CLI prints the result and exits 0 in either case;
+/// the morning-report flow keeps running even when one orchestration
+/// queue file is malformed. `Err(msg)` is reserved for infrastructure
+/// failures (unreadable plugin root, etc.) that should exit 1.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     Ok(generate_and_write_report(
         Path::new(&args.state_file),

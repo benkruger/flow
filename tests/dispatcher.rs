@@ -98,7 +98,7 @@ fn unknown_subcommand_no_stdout() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.is_empty(),
-        "Unknown subcommand must produce no stdout (would mix with Python fallback). Got: {:?}",
+        "Unknown subcommand must produce no stdout — callers parse stdout for JSON results, so any extra output here would corrupt the result. Got: {:?}",
         stdout
     );
 }
@@ -313,56 +313,56 @@ fn help_flag_exits_0() {
     assert_eq!(output.status.code(), Some(0), "--help should exit 0");
 }
 
-// --- tombstone tests: Python files ported to Rust in issue #785 ---
+// --- tombstone tests: deleted lib/*.py and tests/*.py source files ---
 
 #[test]
 fn tombstone_no_python_check_freshness() {
-    // Tombstone: removed for issue #785. Must not return.
+    // Tombstone: lib/check-freshness.py must not exist in this repo (issue #785).
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = std::path::PathBuf::from(manifest_dir)
         .join("lib")
         .join("check-freshness.py");
     assert!(
         !path.exists(),
-        "lib/check-freshness.py was ported to Rust and must not be re-added"
+        "lib/check-freshness.py must not exist in this repo"
     );
 }
 
 #[test]
 fn tombstone_no_python_test_check_freshness() {
-    // Tombstone: removed for issue #785. Must not return.
+    // Tombstone: tests/test_check_freshness.py must not exist in this repo (issue #785).
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = std::path::PathBuf::from(manifest_dir)
         .join("tests")
         .join("test_check_freshness.py");
     assert!(
         !path.exists(),
-        "tests/test_check_freshness.py was ported to Rust and must not be re-added"
+        "tests/test_check_freshness.py must not exist in this repo"
     );
 }
 
 #[test]
 fn tombstone_no_python_upgrade_check() {
-    // Tombstone: removed for issue #785. Must not return.
+    // Tombstone: lib/upgrade-check.py must not exist in this repo (issue #785).
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = std::path::PathBuf::from(manifest_dir)
         .join("lib")
         .join("upgrade-check.py");
     assert!(
         !path.exists(),
-        "lib/upgrade-check.py was ported to Rust and must not be re-added"
+        "lib/upgrade-check.py must not exist in this repo"
     );
 }
 
 #[test]
 fn tombstone_no_python_test_upgrade_check() {
-    // Tombstone: removed for issue #785. Must not return.
+    // Tombstone: tests/test_upgrade_check.py must not exist in this repo (issue #785).
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = std::path::PathBuf::from(manifest_dir)
         .join("tests")
         .join("test_upgrade_check.py");
     assert!(
         !path.exists(),
-        "tests/test_upgrade_check.py was ported to Rust and must not be re-added"
+        "tests/test_upgrade_check.py must not exist in this repo"
     );
 }

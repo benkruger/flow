@@ -246,7 +246,9 @@ pub fn parse_blocker_response(json_str: &str, issue_numbers: &[i64]) -> HashMap<
 /// Uses `blockedBy(first: 10)` connection with batched aliased queries.
 /// Returns HashMap mapping issue number to list of open blocker issue numbers.
 /// Returns empty HashMap on any failure (graceful degradation).
-/// Timeout: 30 seconds (matches Python).
+/// Timeout: 30 seconds — long enough for the GraphQL endpoint to
+/// respond on a slow link, short enough to keep the analyze step
+/// from hanging the calling skill.
 pub fn fetch_blockers(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<i64>> {
     if issue_numbers.is_empty() {
         return HashMap::new();
@@ -282,7 +284,8 @@ pub fn fetch_blockers(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<i64
     };
 
     // Drain stdout in a thread to prevent pipe buffer deadlock, then
-    // poll for exit with a 30s timeout (matches Python timeout=30).
+    // poll for exit with a 30-second timeout (the same budget the
+    // outer fetch_blockers contract documents).
     let stdout_handle = child.stdout.take();
     let reader = std::thread::spawn(move || {
         let mut buf = String::new();
@@ -514,8 +517,9 @@ pub fn run(args: Args) {
             }
         };
 
-        // Drain stdout in a thread to prevent pipe buffer deadlock, then
-        // poll for exit with a 30s timeout (matches Python timeout=30).
+        // Drain stdout in a thread to prevent pipe buffer deadlock,
+        // then poll for exit with a 30-second timeout — the analyze
+        // path's outer budget is documented on the caller above.
         let stdout_handle = child.stdout.take();
         let stderr_handle = child.stderr.take();
         let stdout_reader = std::thread::spawn(move || {

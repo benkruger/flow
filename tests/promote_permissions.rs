@@ -379,12 +379,13 @@ fn cli_no_local_skipped() {
 
 #[test]
 fn settings_permissions_as_array_does_not_panic() {
-    // Adversarial regression (PR #882): if settings.json has `permissions`
-    // as an array instead of an object, assigning
-    // `settings_data["permissions"]["allow"]` would trigger a serde_json
-    // IndexMut panic (exit 101). The promote() guard now replaces a
-    // malformed permissions value with an empty object so the merge
-    // proceeds without panicking.
+    // Guards the contract that `promote()` tolerates a malformed
+    // `permissions` value: if `settings.json` stores `permissions` as
+    // an array instead of an object, assigning
+    // `settings_data["permissions"]["allow"]` would otherwise trigger
+    // a `serde_json` `IndexMut` panic (exit 101). The guard replaces
+    // a malformed permissions value with an empty object so the
+    // merge proceeds without panicking.
     let tmp = tempfile::tempdir().unwrap();
     let claude_dir = tmp.path().join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();

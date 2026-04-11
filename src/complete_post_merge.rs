@@ -86,7 +86,9 @@ pub fn post_merge_inner(
         json!({})
     };
 
-    // Filter repo: null and empty are both falsy (matches Python truthy check)
+    // Treat both `null` and the empty string `""` as "no repo set" so
+    // downstream issue-closing and Slack steps short-circuit cleanly
+    // when the state file lacks a repo.
     let repo: Option<String> = state
         .get("repo")
         .and_then(|v| v.as_str())
@@ -148,7 +150,10 @@ pub fn post_merge_inner(
                     log("[Phase 6] complete-post-merge — phase-transition (ok)");
                 }
                 _ => {
-                    // Python: pt_err or pt_result.stderr.strip()
+                    // Prefer the structured parse error when present;
+                    // fall back to the raw stderr text from the
+                    // subprocess so the failure surfaces something
+                    // human-readable in either case.
                     let msg = parse_err.unwrap_or_else(|| stderr.trim().to_string());
                     log("[Phase 6] complete-post-merge — phase-transition (failed)");
                     failures.insert("phase_transition".to_string(), json!(msg));
@@ -209,7 +214,9 @@ pub fn post_merge_inner(
             }
         }
     }
-    // Transport errors on format-issues-summary are silently ignored (Python matches)
+    // Transport errors on format-issues-summary are silently ignored:
+    // the issues banner is decorative, and post-merge should not fail
+    // because the formatter subprocess returned a non-zero status.
 
     // --- Step 9: Close referenced issues ---
 
@@ -331,7 +338,9 @@ pub fn post_merge_inner(
     }
     result.insert("parents_closed".to_string(), json!(parents_closed));
 
-    // Slack notification — filter null and empty string (Python falsy equivalence)
+    // Slack notification — only post if a non-empty thread_ts is set;
+    // both `null` and the empty string `""` mean "no Slack thread to
+    // reply to" and skip the notification entirely.
     let slack_thread_ts: Option<String> = state
         .get("slack_thread_ts")
         .and_then(|v| v.as_str())
@@ -384,7 +393,9 @@ pub fn post_merge_inner(
                                     "--message",
                                     &msg,
                                 ];
-                                // Fire and forget — Python ignores the result
+                                // Fire-and-forget: the notification
+                                // record is best-effort and a failure
+                                // here must not roll back the merge.
                                 let _ = runner(&add_args, LOCAL_TIMEOUT);
                             }
                         }
@@ -422,7 +433,10 @@ pub fn post_merge(pr_number: i64, state_file: &str, branch: &str) -> Value {
     )
 }
 
-/// CLI entry point. Always exits 0 (best-effort — matches Python main()).
+/// CLI entry point. Always exits 0 — post-merge is best-effort and any
+/// downstream failures (Slack, label cleanup, parent issue close) are
+/// surfaced inside the JSON `failures` map rather than via the exit
+/// code, so the calling skill can continue cleaning up.
 pub fn run(args: Args) {
     let result = post_merge(args.pr, &args.state_file, &args.branch);
     println!("{}", result);

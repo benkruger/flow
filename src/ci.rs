@@ -871,7 +871,8 @@ exit 0
 
     #[test]
     fn tool_sequence_python_has_three_tools() {
-        // Python: build is no-op
+        // Python projects skip the build step (no compile phase),
+        // leaving format → lint → test as the three-tool sequence.
         let tools = build_tool_sequence("python").unwrap();
         assert_eq!(tools.len(), 3);
         assert_eq!(tools[0].name, "format");

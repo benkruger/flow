@@ -164,7 +164,9 @@ pub fn complete_merge(pr_number: i64, state_file: &str) -> Value {
     )
 }
 
-/// CLI entry point. Exits 1 if status != "merged" (matches Python behavior).
+/// CLI entry point. Exits 1 when the merge attempt did not reach the
+/// `merged` status — the calling skill treats a non-zero exit as a
+/// signal to halt the Complete phase before post-merge cleanup runs.
 pub fn run(args: Args) {
     let result = complete_merge(args.pr, &args.state_file);
     println!("{}", result);

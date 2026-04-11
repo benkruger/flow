@@ -22,7 +22,8 @@
 //! a custom formatter the digests differ, breaking hash comparisons
 //! on upgrade. `PythonDefaultFormatter` below implements the three
 //! `serde_json::ser::Formatter` methods needed to emit the expected
-//! separators.
+//! separators. The struct name preserves continuity with existing
+//! `.flow.json` hashes generated under the previous formatter.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -195,8 +196,9 @@ pub fn load_framework_permissions(framework: &str, fw_dir: &Path) -> Vec<String>
 }
 
 /// Build the canonical config map for a framework.
-/// Top-level keys are in a BTreeMap so serialization is alphabetically
-/// sorted, matching Python's `json.dumps(sort_keys=True)`.
+/// Top-level keys are stored in a `BTreeMap` so serialization is
+/// alphabetically sorted — required for the SHA-256 hash to be
+/// stable across runs and machines.
 fn canonical_config(framework: &str, fw_dir: &Path) -> BTreeMap<String, Value> {
     let mut allow: Vec<String> = UNIVERSAL_ALLOW.iter().map(|s| s.to_string()).collect();
     allow.extend(load_framework_permissions(framework, fw_dir));
@@ -217,8 +219,11 @@ fn canonical_config(framework: &str, fw_dir: &Path) -> BTreeMap<String, Value> {
 }
 
 /// Compute a deterministic 12-char hex digest of the canonical config.
-/// Must produce output byte-identical to Python's
-/// `hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()[:12]`.
+/// The byte sequence fed to SHA-256 must remain stable across plugin
+/// versions because users' stored `.flow.json` config_hash values are
+/// compared against this output to decide whether a re-prime is needed.
+/// Any change to the formatter, key order, or value shape invalidates
+/// every existing hash.
 pub fn compute_config_hash(framework: &str, fw_dir: &Path) -> Result<String, String> {
     let canonical = canonical_config(framework, fw_dir);
     let mut buf: Vec<u8> = Vec::new();
@@ -233,9 +238,11 @@ pub fn compute_config_hash(framework: &str, fw_dir: &Path) -> Result<String, Str
 }
 
 /// Compute a 12-char hex digest of src/prime_setup.rs bytes.
-/// Changed from lib/prime-setup.py in PR #894 (Rust port). Existing
-/// users with Python-era hashes will be forced to re-prime, which is
-/// correct for this major infrastructure change.
+/// The hash covers every installation artifact (hooks, excludes,
+/// priming, dependencies). When the source file changes, the hash
+/// changes and `prime_check` forces a re-prime so users pick up the
+/// new setup. Pre-existing stored hashes that no longer match will
+/// trigger a forced re-prime, which is the intended behavior.
 pub fn compute_setup_hash(plugin_root: &Path) -> Result<String, String> {
     let path = plugin_root.join("src").join("prime_setup.rs");
     let bytes = fs::read(&path).map_err(|e| format!("Could not read {}: {}", path.display(), e))?;
@@ -258,9 +265,10 @@ fn hex_prefix(bytes: &[u8], n: usize) -> String {
     s
 }
 
-/// Read and parse `.flow.json` from the given directory. Returns None
-/// on any I/O or parse error — matches `flow_utils.read_flow_json`
-/// Python semantics where the caller decides error policy.
+/// Read and parse `.flow.json` from the given directory. Returns
+/// `None` on any I/O or parse error so the caller decides whether
+/// the missing or malformed file is fatal — most callers treat it
+/// as "FLOW not initialized in this project".
 fn read_flow_json(cwd: &Path) -> Option<Value> {
     let content = fs::read_to_string(cwd.join(".flow.json")).ok()?;
     serde_json::from_str(&content).ok()
@@ -278,10 +286,12 @@ pub struct Args {}
 
 /// Build the prime-check result as a JSON value.
 ///
-/// Returns `Ok` for `status: ok` results (happy path, auto-upgrade) and
-/// for `status: error` results that Python prints with `sys.exit(0)`.
-/// Returns `Err` only for infrastructure failures (plugin root not
-/// found, plugin.json unreadable) that should exit 1.
+/// Returns `Ok` for both `status: ok` (happy path, auto-upgrade) and
+/// `status: error` results so the CLI prints the result and exits 0
+/// in either case — the caller skill always parses the JSON regardless
+/// of whether the prime check passed. `Err` is reserved for
+/// infrastructure failures (plugin root not found, plugin.json
+/// unreadable) that should exit 1.
 pub fn run_impl(cwd: &Path, plugin_root: &Path) -> Result<Value, String> {
     let init_data = match read_flow_json(cwd) {
         Some(v) => v,

@@ -132,7 +132,9 @@ pub fn run_impl(args: &Args, repo_root: &Path) -> Result<String, String> {
                 !name.starts_with('.') && e.path().join("SKILL.md").exists()
             })
             .collect();
-        // Sort for deterministic output matching Python's sorted()
+        // Sort by file name so the bump output is byte-stable across
+        // runs and machines. Without this, version-bump diffs would
+        // shuffle skill order based on filesystem iteration order.
         entries.sort_by_key(|e| e.file_name());
 
         for entry in entries {

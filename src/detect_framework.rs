@@ -27,16 +27,16 @@ pub struct Args {
 
 /// Return true if at least one entry in `dir` matches `pattern`.
 ///
-/// Pattern semantics mirror Python `Path.glob(pattern)` for the small
-/// set of patterns actually used in `frameworks/*/detect.json`:
-/// literal filenames (e.g. "Gemfile", "go.mod") and `*.ext` wildcards
-/// (e.g. "*.xcodeproj"). Both file and directory entries match by name.
+/// Supports the small set of patterns used in
+/// `frameworks/*/detect.json`: literal filenames (e.g. `Gemfile`,
+/// `go.mod`) and `*.ext` wildcards (e.g. `*.xcodeproj`). Both file
+/// and directory entries match by name.
 ///
 /// Hidden entries (dot-prefixed names) are skipped when the pattern
-/// does not itself start with a dot — this matches Python
-/// `Path.glob`, whose `*` wildcard does not match leading dots.
-/// Without this filter a project containing a stray `.xcodeproj`
-/// directory would falsely detect as iOS.
+/// does not itself start with a dot — `*` wildcards follow the
+/// fnmatch convention of not matching leading dots. Without this
+/// filter, a project containing a stray `.xcodeproj` directory would
+/// falsely detect as iOS.
 fn matches_glob(dir: &Path, pattern: &str) -> bool {
     if let Some(ext) = pattern.strip_prefix("*.") {
         let suffix = format!(".{}", ext);

@@ -29,10 +29,11 @@ pub struct Args {
 
 /// Merge settings.local.json allow entries into settings.json.
 ///
-/// Returns a JSON Value matching the Python script's output shape:
-/// skipped (no local file), ok (merged), or error (parse/write/etc.).
-/// The local file is deleted on success; deletion failures are silent
-/// to match Python behavior.
+/// Returns one of three result shapes: `skipped` (no local file present),
+/// `ok` (merged successfully with the list of newly promoted entries),
+/// or `error` (parse, write, or shape failure with a displayable message).
+/// The local file is deleted on success; deletion failures are swallowed
+/// because the next promote() call will retry.
 pub fn promote(worktree_path: &Path) -> Value {
     let local_path = worktree_path.join(".claude").join("settings.local.json");
     let settings_path = worktree_path.join(".claude").join("settings.json");
@@ -138,7 +139,8 @@ pub fn promote(worktree_path: &Path) -> Value {
         });
     }
 
-    // Silent on failure — matches Python `except OSError: pass`
+    // Best-effort cleanup: tolerate I/O errors here because the next
+    // promote() call retries the merge and the deletion.
     let _ = fs::remove_file(&local_path);
 
     json!({
@@ -150,7 +152,8 @@ pub fn promote(worktree_path: &Path) -> Value {
 
 /// Read a JSON file and parse it. Bundles `io::Error` and
 /// `serde_json::Error` into a single displayable error string so the
-/// caller can emit the Python-parity "Could not parse ..." message.
+/// caller can emit a unified `"Could not parse <path>: <reason>"`
+/// message without inspecting which layer failed.
 fn read_json(path: &Path) -> Result<Value, String> {
     let bytes = fs::read(path).map_err(|e| e.to_string())?;
     serde_json::from_slice(&bytes).map_err(|e| e.to_string())

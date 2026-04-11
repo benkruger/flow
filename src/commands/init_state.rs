@@ -17,8 +17,10 @@ use crate::utils::{
 
 /// Create the initial FLOW state file with null PR fields.
 ///
-/// Builds the state as a serde_json::Value to match Python key ordering
-/// exactly. Writes to `.flow-states/<branch>.json`.
+/// Builds the state as a `serde_json::Value` so the top-level key
+/// order is fixed and predictable across runs — tests and hand-edited
+/// state files rely on the deterministic order. Writes to
+/// `.flow-states/<branch>.json`.
 ///
 /// `commit_format` — optional commit message format (`"full"` or `"title-only"`)
 /// extracted from `.flow.json` during prime. Written to state file when present;
@@ -672,7 +674,10 @@ mod tests {
             "start_step",
             "start_steps_total",
         ];
-        assert_eq!(keys, expected, "Key order must match Python output");
+        assert_eq!(
+            keys, expected,
+            "Key order must remain stable across serialization runs"
+        );
     }
 
     // --- Directory creation ---

@@ -337,9 +337,11 @@ fn cli_invalid_project_root_errors() {
 
 #[test]
 fn hidden_xcodeproj_dir_does_not_detect_ios() {
-    // Adversarial regression (PR #882): Python `Path.glob("*.xcodeproj")`
-    // skips dot-prefixed entries. The Rust port must match — otherwise a
-    // stray `.xcodeproj` directory falsely detects as iOS.
+    // Guards the contract that the iOS detector follows the fnmatch
+    // convention where `*` does not match leading dots — a stray
+    // `.xcodeproj` directory must NOT trigger iOS detection. The
+    // adversarial fixture below creates one to trip-wire any
+    // regression of the dot-prefix filter.
     let tmp = tempfile::tempdir().unwrap();
     let project = make_project(tmp.path());
     fs::create_dir(project.join(".xcodeproj")).unwrap();
