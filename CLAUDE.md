@@ -109,7 +109,7 @@ The four `bin/*` stubs are installed by `/flow:flow-prime` from `assets/bin-stub
 
 State files capture `relative_cwd` at flow-start time — the path inside the project root where the user invoked `/flow:flow-start`. For root-level flows this is the empty string and behavior is unchanged. For mono-repo flows started inside `api/` (or `packages/api/`), `start-workspace` returns a `worktree_cwd` that includes the suffix so the agent lands in `.worktrees/<branch>/api/` after the worktree is created.
 
-`cwd_scope::enforce` runs as the first action in every subcommand that either runs tools or mutates state: `ci`, `build`, `lint`, `format`, `test` (tool runners) and `phase-enter`, `phase-finalize`, `phase-transition`, `set-timestamp`, `add-finding` (state mutators). Read-only subcommands (e.g. `format-status`, `tombstone-audit`) do not enforce because they cannot drift the flow. The guard compares the canonicalized cwd against `<worktree_root>/<relative_cwd>` as a prefix match: cwd must be equal to or a descendant of the expected directory, so agents can cd into sub-modules of `api/` without tripping the guard, but cannot cd into a sibling `ios/` subdirectory. The mechanism is additive: empty `relative_cwd` preserves all pre-existing behavior.
+`cwd_scope::enforce` runs as the first action in every subcommand that either runs tools or mutates state: `ci`, `build`, `lint`, `format`, `test` (tool runners) and `phase-enter`, `phase-finalize`, `phase-transition`, `set-timestamp`, `add-finding` (state mutators). Read-only subcommands (e.g. `format-status`, `tombstone-audit`, `plan-check`) do not enforce because they cannot drift the flow. The guard compares the canonicalized cwd against `<worktree_root>/<relative_cwd>` as a prefix match: cwd must be equal to or a descendant of the expected directory, so agents can cd into sub-modules of `api/` without tripping the guard, but cannot cd into a sibling `ios/` subdirectory. The mechanism is additive: empty `relative_cwd` preserves all pre-existing behavior.
 
 ### State File
 
@@ -201,5 +201,6 @@ Key test files: `tests/structural.rs` (config invariants, version consistency), 
 - **Prefer dedicated tools over Bash** — see `.claude/rules/worktree-commands.md`
 - **Issue filing** — see `.claude/rules/filing-issues.md`
 - **Repo-level targets only** — see `.claude/rules/repo-level-only.md`
+- **Scope enumeration for universal-coverage claims** — see `.claude/rules/scope-enumeration.md`
 - **No `run_in_background` during FLOW phases**; `bin/flow` (any subcommand) is never allowed in the background regardless of mode — see `.claude/rules/ci-is-a-gate.md`. Enforced by `bin/flow hook validate-pretool`.
 - **User evidence is ground truth** — when a user provides screenshots, error output, or logs that contradict your code analysis, trust the evidence. Your code reading is a hypothesis; the user's evidence is an observation. Never explain away evidence to preserve your analysis.

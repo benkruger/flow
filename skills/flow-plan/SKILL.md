@@ -429,17 +429,73 @@ Proceed to Step 4.
 
 ## Step 4 — Store plan file and complete phase
 
+Store the plan file path in the state file BEFORE running the
+scope-enumeration gate below — `bin/flow plan-check` resolves the
+plan file from `files.plan`, so the state pointer must be populated
+first:
+
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_step=4
 ```
-
-Store the plan file path in the state file:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.plan=<plan_file_path>
 ```
 
 Replace `<plan_file_path>` with the relative path `.flow-states/<branch>-plan.md`.
+
+### Scope enumeration gate
+
+Gate phase completion on the scope-enumeration rule. The plan file
+must not contain universal-coverage language (`every subcommand`,
+`all runners`, `each CLI entry point`, `every state mutator`, …)
+without a named list of the concrete siblings nearby — see
+`.claude/rules/scope-enumeration.md` for the rule, the opt-out
+comment vocabulary, and the motivating incidents.
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow plan-check
+```
+
+Parse the JSON output:
+
+- **If `"status": "ok"`** — the plan has no unenumerated
+  universal-coverage claims. Proceed to the task-count and
+  PR-render steps below.
+- **If `"status": "error"`** — the response contains a `violations`
+  array with `file`, `line`, `phrase`, and `context` fields. Render
+  the violations inline in your response so the user can see each
+  flagged phrase, then use the Edit tool on the plan file to add a
+  named list (inline parenthetical with backtick-quoted identifiers,
+  or a bullet list with backtick-quoted identifiers immediately
+  before or after the phrase) next to each violation. If a flagged
+  phrase is genuinely open-ended or purely instructional, add a
+  line-level opt-out comment as documented in the rule file. Re-run
+  `bin/flow plan-check` and loop until the response is `"status":
+  "ok"`. Only then proceed to the task-count and PR-render steps.
+
+### Enforcement topology
+
+The gate is enforced at three independent callsites that share
+`src/scope_enumeration.rs::scan`, so the model cannot bypass the
+rule by choosing a different plan path:
+
+- **Standard plan path** — the `bin/flow plan-check` block above is
+  the gate. This is the only call that runs for plans the model
+  writes from scratch.
+- **Pre-decomposed extracted path** — `src/plan_extract.rs` runs
+  the same scanner on the promoted plan content before
+  `complete_plan_phase`. If violations are found, the phase is not
+  completed and the plan file is left on disk for the user to edit.
+- **Resume path** — when `files.plan` is already set, `plan_extract.rs`
+  re-runs the scanner on the existing file before re-entering the
+  phase. A plan that was edited to fix violations passes the gate
+  here and the phase completes; a plan still in violation fails
+  again with the same message.
+
+All three callsites return the same JSON error shape (`status`,
+`violations[]`, `message`) so the repair loop is identical
+regardless of which path triggered the failure.
 
 Count the total number of implementation tasks in the Tasks section of
 the plan file and store the count for TUI progress display:

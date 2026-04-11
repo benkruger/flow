@@ -50,7 +50,17 @@ Separate commits within the same PR are not sufficient: if the PR
 is reviewed commit-by-commit, the intermediate state shows stale
 documentation.
 
-## Scope Enumeration
+## Scope Enumeration (Rename Side)
+
+This section covers the **rename side** of enumeration — when
+fixing drift caused by a renamed or removed identifier. For the
+sibling rule covering **coverage claims** — plan prose that
+asserts a guard applies universally to a code family without
+naming its members — see `.claude/rules/scope-enumeration.md`.
+The two rules are complementary: the rename-side grep finds every
+file that still mentions the old identifier, while the
+coverage-side scanner catches universal-quantifier claims that
+lack a named sibling list.
 
 When renaming a command, replacing a subcommand, or fixing
 documentation drift, grep all files for the old identifier before
