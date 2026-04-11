@@ -66,6 +66,8 @@ merging.
 - **Enforcement escalation** — rules clearly stated but ignored, recommending HARD-GATE or hook
 
 All filed issues are recorded in the state file via `bin/flow add-issue`.
+All triage findings (dismissed, rules written/clarified, issues filed)
+are recorded via `bin/flow add-finding` for the Complete phase banner.
 
 **Report** — presented after all changes are applied:
 

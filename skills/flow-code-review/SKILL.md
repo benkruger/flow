@@ -348,7 +348,7 @@ file was created or modified by this PR.
 covered by tests. Discard with rationale. After classifying each false positive, record it:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<why dismissed>" --outcome "dismissed" --phase "flow-code-review"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "dismissed" --phase "flow-code-review"
 ```
 
 ### Truncation check
@@ -388,7 +388,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Tech Debt" --title "<issue_tit
 After each filed issue, also record the finding:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<why out of scope>" --outcome "filed" --phase "flow-code-review" --issue-url "<issue_url>"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "filed" --phase "flow-code-review" --issue-url "<issue_url>"
 ```
 
 ### Triage summary
@@ -456,7 +456,7 @@ If no real in-scope findings exist, skip this step and proceed to Done.
 For each real in-scope finding, fix the issue in code. After fixing each finding, record it:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<what was wrong and how it was fixed>" --outcome "fixed" --phase "flow-code-review"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "fixed" --phase "flow-code-review"
 ```
 
 After fixing all findings, run CI once:
