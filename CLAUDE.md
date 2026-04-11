@@ -170,7 +170,7 @@ Phase auto-advance uses two layers. Layer 1: the phase completion command (`phas
 
 ### Permission Invariant
 
-Every bash block in every skill must run without triggering a permission prompt. `tests/permissions.rs` enforces at test time (placeholder substitution, allow/deny matching); `bin/flow hook validate-pretool` enforces at runtime via global PreToolUse hook (compound commands, redirection, file-read commands blocked; whitelist enforced when a flow is active; `general-purpose` sub-agents blocked during active FLOW phases). See `.claude/rules/permissions.md` for the pattern-adding protocol.
+Every bash block in every skill must run without triggering a permission prompt. `tests/permissions.rs` enforces at test time (placeholder substitution, allow/deny matching); `bin/flow hook validate-pretool` enforces at runtime via global PreToolUse hook (compound commands, command substitution, redirection, and file-read commands blocked — the compound and redirect matchers are quote-aware, so operator characters inside single- or double-quoted arguments pass through, and unclosed quotes are pessimistically blocked; whitelist enforced when a flow is active; `general-purpose` sub-agents blocked during active FLOW phases). See `.claude/rules/permissions.md` for the pattern-adding protocol.
 
 ### Tombstone Lifecycle
 

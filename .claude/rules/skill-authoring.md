@@ -79,6 +79,8 @@ tool restriction rules in their prompts. Use custom plugin
 sub-agents with the global `PreToolUse` hook for system-level
 enforcement. The hook (`bin/flow hook validate-pretool`) is
 registered in `hooks/hooks.json` and blocks compound commands,
+command substitution (quote-aware — operators inside single- or
+double-quoted arguments pass through), shell redirection,
 file-read commands, and `general-purpose` Agent calls during
 active FLOW phases with exit code 2, feeding helpful error
 messages back to the sub-agent so it adapts.
@@ -100,12 +102,20 @@ Every plan must include test tasks — even for pure-markdown skills,
 add contract tests in `tests/skill_contracts.rs`. TDD means the test
 task comes before the implementation task it validates.
 
-When a plan removes a command, pattern, or feature from skill files,
-include a tombstone test task before the removal tasks. The tombstone
-test asserts the removed identifier does NOT appear in the modified
-files. Without this, the removal has no CI-visible protection —
-Code Review catches the gap, but the Plan phase should have prevented
-it. See `.claude/rules/tombstone-tests.md` for the test pattern.
+When a plan removes a named feature from any source file — SKILL.md
+content, Rust functions, Rust structs or enums, `.claude/rules/`
+files, config axes, external dependencies — include a tombstone test
+task before the removal tasks. The tombstone test asserts the
+removed identifier does NOT appear in the modified files. This
+applies equally to skill removals and Rust source removals — the
+`.claude/rules/tombstone-tests.md` "When to Add" criterion is
+universal and covers every intentional removal of a named feature,
+not just skill-scoped ones. Without a tombstone, the removal has no
+CI-visible protection — Code Review catches the gap, but the Plan
+phase should have prevented it. See `.claude/rules/tombstone-tests.md`
+for the test pattern and consolidation guidance (standalone tombstones
+live in `tests/tombstones.rs`; topical tombstones integral to a test
+domain stay in their respective test files).
 
 ## Decompose Completeness
 

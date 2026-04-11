@@ -27,6 +27,69 @@ scanning: iterate `command.as_bytes()` and check `bytes[i-1]` manually.
 Pure byte scanning is safe for ASCII operators (`;`, `>`, `&`, `|`).
 For non-ASCII contexts, use the `fancy-regex` crate.
 
+## Stateful Predicate-Based Scanners
+
+When a byte-level scanner tracks state (quote context, escape state,
+bracket depth) and accepts caller-supplied predicates, the scanner and
+predicate must have an explicit contract about WHICH states the
+predicate runs in and WHICH states the scanner matches internally.
+`scan_unquoted` in `src/hooks/validate_pretool.rs` is the reference
+implementation for this pattern.
+
+**Contract requirements:**
+
+- **Predicate state scope.** Document explicitly which scanner states
+  invoke the predicate. `scan_unquoted` calls its predicate only in
+  Normal state — quoted bytes are inert by construction. A caller who
+  expected the predicate to run inside double quotes would be surprised,
+  so the scanner's doc comment must say so outright.
+
+- **Scanner-internal universal matches.** When a match is universal
+  across multiple states (e.g. `$(` and backticks are structural in
+  both Normal and Double state because bash expands them in both), the
+  scanner itself must perform the match rather than relying on
+  predicates to agree. `scan_unquoted` hardcodes `$(` and backtick
+  detection inside the Double state arm because every predicate would
+  otherwise have to duplicate that logic — duplication invites drift.
+  Only Single-quoted state fully suppresses expansion in bash; the
+  scanner encodes this invariant once.
+
+- **Shared scanner, multiple predicates.** When the same state machine
+  backs multiple CLI layers (Layer 1 compound operators and Layer 2
+  redirection in `validate_pretool::validate`), both layers must go
+  through the same scanner function so a quote-semantics bug fix in
+  the scanner automatically applies to every layer. Layering two
+  independent scanners produces drift.
+
+- **Unclosed-state fallback.** When the scanner finishes inside a
+  non-Normal state (unclosed quote, unterminated escape), return a
+  distinct `Err(ScanError::Unclosed)` variant rather than silently
+  returning `Ok(None)`. An unclosed quote is malformed input and
+  could otherwise hide a structural operator from the scanner — a
+  security-relevant bypass vector.
+
+**How to apply:**
+
+<!-- scope-enumeration: imperative -->
+When designing a new stateful scanner that accepts predicates:
+
+1. Enumerate every scanner state the predicate will run in. Pick one
+   (typically "outside all non-literal contexts") and document it.
+2. List every operator class the scanner must catch. Split them into
+   "predicate-supplied" (caller-customizable) and "universal"
+   (hardcoded in the scanner). Universal matches go in the scanner.
+3. Treat the state machine as shared infrastructure, not caller-owned.
+   Do NOT let consumers bring their own state machine — that defeats
+   the shared-scanner guarantee.
+4. Add an explicit error variant for each malformed-input class
+   (unclosed quote, unterminated escape, unbalanced bracket). Consumers
+   must match on the error type, not treat it as "no match."
+
+When reviewing an existing predicate-based scanner, check that the
+predicates are consistent about which states they run in. If one
+predicate assumes it runs in Normal only and another assumes it runs
+everywhere, the scanner has a silent contract gap.
+
 ## State Mutation Object Guards
 
 `serde_json::Value::IndexMut` for string keys panics on arrays, bools,
