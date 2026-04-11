@@ -130,6 +130,78 @@ sub-functions, place that guard in `run_impl` — not in the individual
 sub-functions. This avoids divergent error behavior across dispatch
 paths.
 
+## Symlink-Safe Existence Checks Before Writes
+
+Never guard a file write with `Path::exists()` (or equivalent
+`Path::try_exists()`, `Path::metadata()`) followed by `fs::write` or
+any other file-creation call. `exists()` follows symlinks, so a
+dangling symlink at the target path returns `false` — and the
+subsequent `fs::write` then follows the symlink to write to its
+pointed-at target, which can be anywhere on the filesystem the
+current user has access to. This is a real symlink-escape bug surface
+for any priming, templating, or install step that writes files into
+user-controlled directories.
+
+Use `fs::symlink_metadata(&path).is_ok()` for the existence check
+instead. `symlink_metadata` does not follow symlinks, so it returns
+`Ok` for files, directories, valid symlinks, AND dangling symlinks —
+every entry the filesystem considers present. The installer then
+skips the path without writing, preserving whatever is already there.
+
+```rust
+// Correct
+if fs::symlink_metadata(&target).is_ok() {
+    continue; // file, dir, valid symlink, or dangling symlink — skip
+}
+fs::write(&target, &content)?;
+
+// Wrong — dangling symlink would cause fs::write to escape the dir
+if target.exists() {
+    continue;
+}
+fs::write(&target, &content)?;
+```
+
+This pattern applies to every installer in `src/prime_setup.rs`,
+`src/start_workspace.rs`, any `write_rule`-style helper, and any future
+code that writes files into a user-owned directory tree. Test cases
+must include a dangling-symlink scenario alongside the normal-file,
+directory, and missing-path cases.
+
+## Guard Universality Across CLI Entry Points
+
+When adding a process-level guard (recursion check, cwd drift check,
+permission check) to ONE entry point in a CLI command family, the
+same guard must be added to every sibling entry point in the same
+family. FLOW has two relevant families:
+
+- **CI-tier runners:** `bin/flow ci`, `bin/flow build`, `bin/flow lint`,
+  `bin/flow format`, `bin/flow test` (`src/ci.rs`, `src/build.rs`,
+  `src/lint.rs`, `src/format_check.rs`, `src/test_runner.rs`).
+- **State mutators:** `bin/flow phase-enter`, `bin/flow phase-finalize`,
+  `bin/flow phase-transition`, `bin/flow set-timestamp`,
+  `bin/flow add-finding`, `bin/flow add-issue`,
+  `bin/flow add-notification`, `bin/flow append-note`
+  (`src/phase_enter.rs`, `src/phase_finalize.rs`, the
+  `PhaseTransition` branch in `src/main.rs`, `src/commands/*.rs`,
+  `src/add_finding.rs`, etc.).
+
+Before merging a PR that adds a guard, grep `src/main.rs` for every
+`Commands::` variant in the target family and verify the guard lands
+in every `run_impl` or `run()` entry. A guard that exists in only one
+runner creates divergent behavior: the user hits the same failure
+mode in the unguarded sibling. The class of bug is invisible to
+individual unit tests — only a contract test that enumerates every
+variant can catch it mechanically. Consider adding such a contract
+test whenever a new guard is introduced.
+
+When tests spawn `CARGO_BIN_EXE_flow-rs` subprocesses while the test
+suite itself is running inside a `bin/flow ci` invocation,
+`FLOW_CI_RUNNING=1` is inherited from the parent and recursion guards
+on the child will fire. Tests in this situation must call
+`.env_remove("FLOW_CI_RUNNING")` on the `Command` to simulate a
+fresh invocation.
+
 ## Local Doc Comments
 
 Any non-obvious design decision (custom formatters, shared constants,

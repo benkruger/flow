@@ -19,6 +19,15 @@ to write the same updates you could write now.
   must match the Rust constants)
 - Changed what a skill passes to a sub-agent → the agent's
   `## Input` section in `agents/<name>.md`
+- New field, line, or widget in a formatter's output → the
+  user-facing SKILL.md that describes the formatter's panel. The
+  mapping is explicit: `src/format_status.rs` is described by
+  `skills/flow-status/SKILL.md`, `src/format_complete_summary.rs`
+  is described by `skills/flow-complete/SKILL.md`, and so on.
+  Every conditional line or field shown by the formatter must be
+  listed in that SKILL.md's Panel Fields / Output section so a
+  future session reading the skill knows what the panel can
+  contain.
 
 ## Agent Input Section Sync
 
@@ -55,6 +64,15 @@ Every matching file is in-scope regardless of what the issue body
 or plan names. This applies both reactively (fixing drift) and
 proactively (renaming a command as part of a feature). The Plan
 phase must enumerate the full scope, not echo the issue's file list.
+
+When adding a NEW concept (field, panel line, widget, configuration
+axis), scope enumeration runs the other direction: there is no "old
+identifier" to grep for, so the Plan phase must trace every consumer
+of the module being changed. For a formatter module, that means
+every SKILL.md that invokes `format-status` or `format-complete-summary`
+in a bash block. For a state field, that means `flow-state-schema.md`,
+every SKILL.md that reads the field in a bash block, and every agent
+`## Input` section that may reference it.
 
 ## How to Apply
 
