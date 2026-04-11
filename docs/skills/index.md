@@ -40,7 +40,7 @@ These skills are available at any point in the workflow, regardless of phase.
 | [`/flow-reset`](flow-reset.md) | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files/lock entries |
 | [`/flow-config`](flow-config.md) | Display current configuration — version, framework, per-skill autonomy |
 | [`/flow-doc-sync`](flow-doc-sync.md) | Full codebase documentation accuracy review — reports drift between code and docs |
-| [`/flow-issues`](flow-issues.md) | Fetch open issues, categorize, prioritize, and display a dashboard with recommended work order. Supports readiness filters (`--ready`, `--blocked`, `--decomposed`, `--quick-start`) |
+| [`/flow-issues`](flow-issues.md) | Fetch open issues, categorize, prioritize, and display a dashboard with recommended work order. Supports readiness filters (`--ready`, `--blocked`, `--decomposed`, `--quick-start`) and narrowing filters (`--label`, `--milestone`) |
 | [`/flow-create-issue`](flow-create-issue.md) | Capture a brainstormed solution as a pre-planned issue with an Implementation Plan for fast-tracking through Plan |
 | [`/flow-decompose-project`](flow-decompose-project.md) | Decompose a large project into linked GitHub issues with sub-issue relationships, blocked-by dependencies, and milestones |
 | [`/flow-orchestrate`](flow-orchestrate.md) | Process decomposed issues sequentially overnight via flow-start --auto |
