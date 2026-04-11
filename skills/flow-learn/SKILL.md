@@ -202,7 +202,12 @@ matching the three tenants.
 principle, applicable to future work in this project, would prevent this
 class of problem?" If a finding cannot be expressed as a forward-looking
 principle — if it only describes the specific code that was just fixed —
-drop it. It is a description of what happened, not a learning.
+drop it. It is a description of what happened, not a learning. For each
+dropped finding, record it:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<why not generalizable>" --outcome "dismissed" --phase "flow-learn"
+```
 
 **Tenant 1 — Process gaps.** Findings where the FLOW plugin's workflow
 broke or was missing something, including dangling async operations
@@ -308,6 +313,12 @@ using the Write tool.
 ${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <worktree_path>/CLAUDE.md --content-file .flow-states/<branch>-rule-content.md
 ```
 
+After each CLAUDE.md write, record the finding. Use `rule_written` for new content, `rule_clarified` for updates to existing content:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<what was learned>" --reason "<why this rule is needed>" --outcome "rule_written" --phase "flow-learn" --path "CLAUDE.md"
+```
+
 ### Apply rules changes
 
 For each item routed to `.claude/rules/` (domain-specific gotchas,
@@ -331,6 +342,12 @@ the Write tool.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <worktree_path>/.claude/rules/<topic>.md --content-file .flow-states/<branch>-rule-content.md
+```
+
+After each rules file write, record the finding. Use `rule_written` for new files, `rule_clarified` for updates:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<what was learned>" --reason "<why this rule is needed>" --outcome "rule_written" --phase "flow-learn" --path ".claude/rules/<topic>.md"
 ```
 
 ---
@@ -451,6 +468,12 @@ After each successful issue, record it:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_title>" --url "<issue_url>" --phase "flow-learn"
+```
+
+After each filed issue, also record the finding:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<process gap or enforcement issue>" --reason "<why this is a plugin issue>" --outcome "filed" --phase "flow-learn" --issue-url "<issue_url>"
 ```
 
 If there are no findings to file, skip this step.
