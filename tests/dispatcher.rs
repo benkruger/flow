@@ -312,3 +312,57 @@ fn help_flag_exits_0() {
         .unwrap();
     assert_eq!(output.status.code(), Some(0), "--help should exit 0");
 }
+
+// --- tombstone tests: deleted lib/*.py and tests/*.py source files ---
+
+#[test]
+fn tombstone_no_python_check_freshness() {
+    // Tombstone: lib/check-freshness.py must not exist in this repo. PR #873.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir)
+        .join("lib")
+        .join("check-freshness.py");
+    assert!(
+        !path.exists(),
+        "lib/check-freshness.py must not exist in this repo"
+    );
+}
+
+#[test]
+fn tombstone_no_python_test_check_freshness() {
+    // Tombstone: tests/test_check_freshness.py must not exist in this repo. PR #873.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir)
+        .join("tests")
+        .join("test_check_freshness.py");
+    assert!(
+        !path.exists(),
+        "tests/test_check_freshness.py must not exist in this repo"
+    );
+}
+
+#[test]
+fn tombstone_no_python_upgrade_check() {
+    // Tombstone: lib/upgrade-check.py must not exist in this repo. PR #873.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir)
+        .join("lib")
+        .join("upgrade-check.py");
+    assert!(
+        !path.exists(),
+        "lib/upgrade-check.py must not exist in this repo"
+    );
+}
+
+#[test]
+fn tombstone_no_python_test_upgrade_check() {
+    // Tombstone: tests/test_upgrade_check.py must not exist in this repo. PR #873.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(manifest_dir)
+        .join("tests")
+        .join("test_upgrade_check.py");
+    assert!(
+        !path.exists(),
+        "tests/test_upgrade_check.py must not exist in this repo"
+    );
+}

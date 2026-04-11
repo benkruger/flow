@@ -81,42 +81,6 @@ is someone else's responsibility. A reader whose first exposure to
 the test is its name should find the comment affirmatively supporting
 the name, not contradicting it.
 
-## Test Semantic Drift on Refactoring
-
-When a refactor changes the code path a named test exercises — even
-if the test's assertion still passes — the test's name may no longer
-describe what it actually verifies. The classic shape: a test named
-`X_from_Y` was written when `Y` was the only data source, then a
-refactor added a `Z`-first path with a `Y` fallback, so the test now
-exercises the fallback path (because the fixture happens to miss the
-`Z`-path markers) while its name still implies the primary path.
-
-A clarifying inline comment is **not always sufficient**. The test
-name is load-bearing for navigation — a reader grepping for
-"framework_from_flow_json" expects a test of the primary path, and
-may add new tests or reason about coverage incorrectly if the name
-lies about semantics. The refactor author must choose one of two
-explicit remediations:
-
-- **Rename the test** to reflect the path it now exercises
-  (e.g., `framework_falls_back_to_flow_json_when_no_markers`). This
-  is the preferred option when the new semantic is stable and the
-  old name is actively misleading.
-- **Add a doc comment that connects the new exercise path to the
-  test name's claim.** Comments that merely list what the test does
-  without connecting it to the name are insufficient — the comment
-  must explicitly state "this test continues to validate X because
-  the fixture's Y configuration still exercises the X path." If you
-  cannot write that sentence, the rename is required.
-
-How to apply: during Plan phase, enumerate every existing test that
-touches the refactor's affected code paths. For each, predict which
-path the test will exercise post-refactor. If the predicted path
-differs from what the test name implies, mark the test for rename or
-explanatory comment in the Tasks list. Do not defer the decision to
-Code Review — by then the name drift is a finding that costs a
-triage cycle to resolve.
-
 ## Message Content Assertions — Per Variant, Not Just Presence
 
 When a function returns a human-readable message that names a specific
