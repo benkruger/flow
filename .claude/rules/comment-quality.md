@@ -50,3 +50,28 @@ When writing or reviewing comments:
    what was broken before
 4. For non-obvious values (timeouts, limits, thresholds), explain
    why the value was chosen — not what another system used
+
+## Enforcement
+
+`tests/tombstones.rs::test_no_backward_facing_comments_in_rust_source`
+mechanically enforces this rule at CI time. The scanner walks every
+`*.rs` file under `src/` and `tests/`, filters out lines matching the
+tombstone exception (`Tombstone:.*?PR #`), and asserts no line contains
+any phrase from a curated prohibited-pattern list (covering parity
+references to a deleted Python codebase, historical PR provenance,
+origin stories, "Before the fix" narratives, and dead section markers).
+The scanner self-excludes its own file via canonicalized-path
+comparison because it must contain the prohibited patterns as search
+input.
+
+The pattern list is curated rather than regex-based: it captures every
+phrasing the rule explicitly prohibits, plus the phrasings observed in
+the repo at the time the rule was first enforced. Novel phrasings
+introduced by future commits are not caught automatically — the rule
+itself remains the primary instrument, and the scanner is the
+merge-conflict trip-wire that locks in the cleanup. When CI fails on a
+new prohibited pattern, prefer rewriting the comment to describe
+current behavior over expanding the pattern list. When CI fails on a
+legitimate forward-facing comment that nonetheless contains a
+prohibited substring, narrow the comment's wording or add a more
+specific rule exception in the same commit.

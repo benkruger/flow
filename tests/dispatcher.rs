@@ -317,7 +317,7 @@ fn help_flag_exits_0() {
 
 #[test]
 fn tombstone_no_python_check_freshness() {
-    // Tombstone: lib/check-freshness.py must not exist in this repo (issue #785).
+    // Tombstone: lib/check-freshness.py must not exist in this repo. PR #873.
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = std::path::PathBuf::from(manifest_dir)
         .join("lib")
@@ -330,7 +330,7 @@ fn tombstone_no_python_check_freshness() {
 
 #[test]
 fn tombstone_no_python_test_check_freshness() {
-    // Tombstone: tests/test_check_freshness.py must not exist in this repo (issue #785).
+    // Tombstone: tests/test_check_freshness.py must not exist in this repo. PR #873.
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = std::path::PathBuf::from(manifest_dir)
         .join("tests")
@@ -343,7 +343,7 @@ fn tombstone_no_python_test_check_freshness() {
 
 #[test]
 fn tombstone_no_python_upgrade_check() {
-    // Tombstone: lib/upgrade-check.py must not exist in this repo (issue #785).
+    // Tombstone: lib/upgrade-check.py must not exist in this repo. PR #873.
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = std::path::PathBuf::from(manifest_dir)
         .join("lib")
@@ -356,7 +356,7 @@ fn tombstone_no_python_upgrade_check() {
 
 #[test]
 fn tombstone_no_python_test_upgrade_check() {
-    // Tombstone: tests/test_upgrade_check.py must not exist in this repo (issue #785).
+    // Tombstone: tests/test_upgrade_check.py must not exist in this repo. PR #873.
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = std::path::PathBuf::from(manifest_dir)
         .join("tests")

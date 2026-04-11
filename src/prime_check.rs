@@ -22,8 +22,9 @@
 //! a custom formatter the digests differ, breaking hash comparisons
 //! on upgrade. `PythonDefaultFormatter` below implements the three
 //! `serde_json::ser::Formatter` methods needed to emit the expected
-//! separators. The struct name preserves continuity with existing
-//! `.flow.json` hashes generated under the previous formatter.
+//! separators. Renaming the struct or changing its method bodies
+//! would alter the SHA-256 output and invalidate every stored
+//! `config_hash` in users' `.flow.json` files, forcing a re-prime.
 
 use std::collections::BTreeMap;
 use std::fs;

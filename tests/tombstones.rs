@@ -22,14 +22,17 @@ use regex::Regex;
 /// contain these strings as search input).
 ///
 /// Lines protected by the tombstone exception (lines that match
-/// `Tombstone:.*PR #\d+`) are skipped before this list is consulted, so
-/// tombstone fixtures and tombstone assertion messages remain valid.
+/// `Tombstone:.*?PR #`) are skipped before this list is consulted, so
+/// tombstone fixtures, tombstone assertion messages, and the
+/// `tombstone-audit` source remain valid even when they reference the
+/// `removed in PR` substring as fixture or documentation content.
 ///
 /// The list is curated rather than regex-based: it captures every
-/// phrasing observed in this repo at the time the rule was enforced.
-/// New phrasings introduced by future commits will not be caught
-/// automatically; the rule itself is the primary instrument, and this
-/// scanner is the merge-conflict trip-wire that locks in the cleanup.
+/// phrasing the rule explicitly prohibits, plus the phrasings observed
+/// in this repo at the time the rule was enforced. New phrasings
+/// introduced by future commits will not be caught automatically — the
+/// rule itself is the primary instrument, and this scanner is the
+/// merge-conflict trip-wire that locks in the cleanup.
 const PROHIBITED: &[&str] = &[
     // Parity references to a deleted Python codebase.
     "Python parity",
@@ -77,14 +80,18 @@ const PROHIBITED: &[&str] = &[
     "was ported",
     "Ports Python",
     "Port Python",
+    "Port of ",
     "Rust port",
     "mirror Python",
+    "based on the old",
     // Historical PR / before-the-fix narratives.
     "Adversarial regression (PR",
     "Before the fix",
+    "Before this fix",
     "Rust since PR",
-    "Changed from",
     "Fixed in PR #",
+    "Removed in PR #",
+    "removed in PR ",
 ];
 
 /// Walk a directory recursively, appending every `.rs` file path to `out`.
@@ -111,8 +118,14 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
 /// Walks every `*.rs` file under `src/` and `tests/` and asserts that no
 /// line contains a backward-facing parity reference, historical-PR
 /// provenance, or "Before the fix" narrative. Lines that match the
-/// tombstone exception (`Tombstone:.*PR #\d+`) are skipped — they are
-/// intentional per the rule.
+/// tombstone exception (`Tombstone:.*?PR #`) are skipped — they are
+/// intentional per the rule. The exception regex matches any line where
+/// `Tombstone:` is followed (lazily) by `PR #`, regardless of whether
+/// the next characters are literal digits, a `{}` format placeholder,
+/// or the regex literal `(\d+)` itself. This keeps tombstone fixture
+/// generators in `tests/tombstone_audit.rs` and the parsing source in
+/// `src/tombstone_audit.rs` valid without requiring per-file
+/// exclusions.
 ///
 /// The scanner self-excludes `tests/tombstones.rs` (this file) by
 /// canonicalized-path comparison, because the prohibited pattern strings
@@ -131,7 +144,7 @@ fn test_no_backward_facing_comments_in_rust_source() {
         .canonicalize()
         .expect("scanner path must canonicalize");
 
-    let tombstone_re = Regex::new(r"Tombstone:.*PR #\d+").unwrap();
+    let tombstone_re = Regex::new(r"Tombstone:.*?PR #").unwrap();
 
     let mut files: Vec<PathBuf> = Vec::new();
     collect_rs_files(&root.join("src"), &mut files);

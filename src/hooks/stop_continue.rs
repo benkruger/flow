@@ -123,11 +123,11 @@ pub fn check_continue(hook_input: &Value, state_path: &Path) -> ContinueResult {
     }
 
     // Treat both a missing `session_id` key and an empty-string
-    // `session_id` as "no session id" so the downstream
-    // `if state_sid and hook_sid` mismatch check skips the comparison
-    // in both cases. Without this filter, an empty-string session id
-    // would falsely look like a session mismatch and clear pending
-    // state.
+    // `session_id` as "no session id" so the downstream session-id
+    // mismatch branch (which only fires when both `state_sid` and
+    // `hook_sid` are `Some`) is skipped in both cases. Without this
+    // filter, an empty-string session id would falsely look like a
+    // mismatch and clear pending state.
     let hook_sid = hook_input
         .get("session_id")
         .and_then(|v| v.as_str())
