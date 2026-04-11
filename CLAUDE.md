@@ -177,7 +177,7 @@ Key test files: `tests/structural.rs` (config invariants, version consistency), 
 - Namespace is `flow:` — plugin.json name is `"flow"`
 - Never rebase — merge only (denied in `.claude/settings.json`)
 - **Skills must never instruct Claude to compute values** — no timestamp generation, no time arithmetic, no counter increments, no `date -u`. All computation goes through `bin/flow` subcommands. Skills say "run this command", never "calculate this value". `tests/skill_contracts.rs` enforces this: `phase_skills_no_inline_time_computation` fails if any phase skill contains computational instruction patterns.
-- **All timestamps use Pacific Time** — `src/utils.rs` provides `now_pacific()` which returns Pacific Time ISO 8601 timestamps. All Rust code uses this function — never generate timestamps via other means.
+- **All timestamps use Pacific Time** — `src/utils.rs` provides `now()` which returns Pacific Time ISO 8601 timestamps. All Rust code uses this function — never generate timestamps via other means.
 - **Prefer dedicated tools over Bash** — see `.claude/rules/worktree-commands.md`
 - **Issue filing** — see `.claude/rules/filing-issues.md`
 - **Repo-level targets only** — see `.claude/rules/repo-level-only.md`
