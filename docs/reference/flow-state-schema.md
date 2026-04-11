@@ -89,6 +89,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
   },
   "phase_transitions": [],
   "issues_filed": [],
+  "findings": [],
   "slack_thread_ts": null,
   "slack_notifications": []
 }
@@ -136,6 +137,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `notes` | array | Corrections captured via `/flow-note` — see [Notes Array](#notes-array) |
 | `phase_transitions` | array | Phase entry log recording every `phase_enter()` call with from/to/timestamp and optional reason — see [Phase Transitions Array](#phase-transitions-array) |
 | `issues_filed` | array | GitHub issues filed during the feature — see [Issues Filed Array](#issues-filed-array) |
+| `findings` | array | Triage findings from Code Review and Learn phases — see [Findings Array](#findings-array) |
 | `compact_summary` | string / null | Conversation summary from last compaction. Written by PostCompact hook. Currently has no consumer (session-start consumer removed in PR #938). Transient. |
 | `compact_cwd` | string / null | CWD at last compaction time. Written by PostCompact hook. Currently has no consumer (session-start consumer removed in PR #938). Transient. |
 | `compact_count` | integer | Total number of context compactions during this feature. Incremented by PostCompact hook. Permanent. |
@@ -281,6 +283,48 @@ via `bin/flow issue`. Surfaced in the Complete phase PR body and Done banner.
 | `phase` | string | Phase key where the issue was filed (e.g. `"flow-learn"`) |
 | `phase_name` | string | Human-readable phase name |
 | `timestamp` | ISO 8601 | When the issue was filed |
+
+---
+
+## Findings Array
+
+Populated by `bin/flow add-finding` during Code Review (Phase 4) and Learn
+(Phase 5) triage. Each entry records a finding, its triage outcome, and the
+reasoning. Rendered in the Complete phase Done banner as "Code Review Findings"
+and "Learn Findings" sections.
+
+```json
+"findings": [
+  {
+    "finding": "Unused import in parser.rs",
+    "reason": "False positive — import used in macro expansion",
+    "outcome": "dismissed",
+    "phase": "flow-code-review",
+    "phase_name": "Code Review",
+    "timestamp": "2026-03-12T10:30:00-07:00"
+  },
+  {
+    "finding": "No rule for error handling pattern",
+    "reason": "Gap identified during learn analysis",
+    "outcome": "rule_written",
+    "phase": "flow-learn",
+    "phase_name": "Learn",
+    "path": ".claude/rules/error-handling.md",
+    "timestamp": "2026-03-12T10:45:00-07:00"
+  }
+]
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `finding` | string | Description of what was found |
+| `reason` | string | Why this outcome was chosen |
+| `outcome` | string | Triage outcome: `fixed`, `dismissed`, `filed`, `rule_written`, or `rule_clarified` |
+| `phase` | string | Phase key where the finding was triaged (e.g. `"flow-code-review"`, `"flow-learn"`) |
+| `phase_name` | string | Human-readable phase name |
+| `timestamp` | ISO 8601 | When the finding was recorded |
+| `issue_url` | string (optional) | GitHub issue URL — present when outcome is `filed` |
+| `path` | string (optional) | Rule file path — present when outcome is `rule_written` or `rule_clarified` |
 
 ---
 
