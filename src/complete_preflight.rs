@@ -1409,4 +1409,28 @@ mod tests {
         assert!(result.get("worktree").is_none());
         assert!(result.get("pr_number").is_none());
     }
+
+    // --- run_cmd_with_timeout kill path ---
+
+    #[test]
+    fn run_cmd_with_timeout_kills_on_expiry() {
+        // Exercises the timeout kill path: spawn a long-running process with
+        // a short timeout. Verifies the error message and wall-clock time.
+        let start = std::time::Instant::now();
+        let result = run_cmd_with_timeout(&["sleep", "60"], 1);
+        let elapsed = start.elapsed();
+
+        assert!(result.is_err(), "Expected Err for timed-out command");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("Timed out"),
+            "Error should mention timeout, got: {}",
+            msg
+        );
+        assert!(
+            elapsed.as_secs() < 5,
+            "Should complete in <5s after kill, took {:?}",
+            elapsed
+        );
+    }
 }
