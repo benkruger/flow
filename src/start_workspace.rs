@@ -344,4 +344,15 @@ mod tests {
     fn extract_pr_number_non_numeric() {
         assert_eq!(extract_pr_number("https://github.com/org/repo/pull/abc"), 0);
     }
+
+    #[test]
+    fn extract_pr_number_empty_string() {
+        assert_eq!(extract_pr_number(""), 0);
+    }
+
+    #[test]
+    fn extract_pr_number_pull_with_no_number() {
+        // URL ends at "pull/" with nothing parseable after it
+        assert_eq!(extract_pr_number("https://github.com/org/repo/pull/"), 0);
+    }
 }

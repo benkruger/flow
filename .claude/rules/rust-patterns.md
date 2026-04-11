@@ -36,6 +36,11 @@ string keys must guard with
 
 Nested assignments (`state["outer"]["inner"] = v`) require per-level
 guards — check the type of each intermediate level before assigning.
+When a nested field like `state["phases"]` must be an object for
+downstream IndexMut access, reset it to `json!({})` if its type is
+wrong. This auto-heal approach prevents panics from corrupted or
+legacy state files while allowing the operation to proceed with
+empty data rather than failing entirely.
 
 ## Hook Input Boolean Field Tolerance
 
@@ -74,6 +79,11 @@ return value, not the caller's interpretation.
 State files can outlive the code that writes them. Accept int, float,
 and string representations when reading counters:
 `.as_i64().or_else(|| v.as_f64().map(|f| f as i64)).or_else(|| v.as_str().and_then(|s| s.parse().ok()))`.
+
+`phase_transition.rs` defines `tolerant_i64()` as a named helper
+encapsulating this pattern for `visit_count` and `cumulative_seconds`.
+When other modules need the same tolerance, extract a shared helper
+or reference this implementation.
 
 ## Empty-String vs Missing-Key Equivalence
 

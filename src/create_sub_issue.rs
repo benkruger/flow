@@ -47,6 +47,13 @@ pub fn create_sub_issue(
     parent_number: i64,
     child_number: i64,
 ) -> Result<(i64, i64), String> {
+    if parent_number == child_number {
+        return Err(format!(
+            "Cannot create self-reference: issue #{} as both parent and child",
+            parent_number
+        ));
+    }
+
     // Resolve parent to verify it exists (API URL uses parent_number, not the DB ID)
     let (_, err) = fetch_database_id(repo, parent_number);
     if let Some(e) = err {
@@ -154,6 +161,19 @@ mod tests {
             "1",
         ]);
         assert!(args.is_err());
+    }
+
+    #[test]
+    fn self_reference_rejected() {
+        // parent == child should be rejected before any API call
+        let result = create_sub_issue("owner/repo", 42, 42);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("self-reference"),
+            "Error should mention self-reference, got: {}",
+            msg
+        );
     }
 
     #[test]

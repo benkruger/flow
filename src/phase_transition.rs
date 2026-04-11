@@ -6,6 +6,18 @@ use serde_json::{json, Value};
 use crate::phase_config::{self, PHASE_ORDER};
 use crate::utils::{elapsed_since, format_time, now};
 
+/// Read a JSON value as i64, tolerating int, float, and string representations.
+///
+/// State files can outlive the code that writes them. This function accepts
+/// all three representations so counter fields survive round-trips through
+/// external editors or legacy writers that store numbers as strings or floats.
+fn tolerant_i64(v: &Value) -> i64 {
+    v.as_i64()
+        .or_else(|| v.as_f64().map(|f| f as i64))
+        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        .unwrap_or(0)
+}
+
 /// Apply phase entry mutations to the state Value in-place.
 ///
 /// Returns the result JSON to print to stdout.
@@ -15,6 +27,14 @@ pub fn phase_enter(state: &mut Value, phase: &str, reason: Option<&str>) -> Valu
         .and_then(|v| v.as_str())
         .map(String::from);
 
+    // Guard: reset "phases" to an empty object if it is not an object or null.
+    // IndexMut panics on string key access to arrays, strings, bools, and numbers.
+    if let Some(phases) = state.get("phases") {
+        if !phases.is_object() && !phases.is_null() {
+            state["phases"] = json!({});
+        }
+    }
+
     let phase_data = &mut state["phases"][phase];
 
     phase_data["status"] = json!("in_progress");
@@ -23,7 +43,7 @@ pub fn phase_enter(state: &mut Value, phase: &str, reason: Option<&str>) -> Valu
     }
     phase_data["session_started_at"] = json!(now());
 
-    let visit_count = phase_data["visit_count"].as_i64().unwrap_or(0) + 1;
+    let visit_count = tolerant_i64(&phase_data["visit_count"]) + 1;
     phase_data["visit_count"] = json!(visit_count);
 
     state["current_phase"] = json!(phase);
@@ -94,15 +114,22 @@ pub fn phase_complete(
         }
     };
 
+    // Guard: reset "phases" to an empty object if it is not an object or null.
+    // Mirrors the same guard in phase_enter — both functions access
+    // state["phases"][phase] via IndexMut, which panics on non-object types.
+    if let Some(phases) = state.get("phases") {
+        if !phases.is_object() && !phases.is_null() {
+            state["phases"] = json!({});
+        }
+    }
+
     // Compute elapsed time
     let session_started = state["phases"][phase]["session_started_at"]
         .as_str()
         .map(String::from);
     let elapsed = elapsed_since(session_started.as_deref(), None);
 
-    let existing = state["phases"][phase]["cumulative_seconds"]
-        .as_i64()
-        .unwrap_or(0);
+    let existing = tolerant_i64(&state["phases"][phase]["cumulative_seconds"]);
     let cumulative = existing + elapsed;
 
     // Update phase state
@@ -810,6 +837,124 @@ mod tests {
         let result = phase_complete(&mut state, "flow-plan", None, None, None);
 
         assert_eq!(result["cumulative_seconds"], 50);
+    }
+
+    // ===== counter type tolerance tests =====
+
+    #[test]
+    fn enter_visit_count_string_tolerance() {
+        let mut state = make_state(
+            "flow-plan",
+            &[("flow-start", "complete"), ("flow-plan", "complete")],
+        );
+        // Simulate a state file where visit_count was stored as a string
+        state["phases"]["flow-plan"]["visit_count"] = json!("3");
+
+        let result = phase_enter(&mut state, "flow-plan", None);
+
+        // Should read "3" as 3 and increment to 4
+        assert_eq!(result["visit_count"], 4);
+        assert_eq!(state["phases"]["flow-plan"]["visit_count"], 4);
+    }
+
+    #[test]
+    fn enter_visit_count_float_tolerance() {
+        let mut state = make_state(
+            "flow-plan",
+            &[("flow-start", "complete"), ("flow-plan", "complete")],
+        );
+        // Simulate a state file where visit_count was stored as a float
+        state["phases"]["flow-plan"]["visit_count"] = json!(3.0);
+
+        let result = phase_enter(&mut state, "flow-plan", None);
+
+        // Should read 3.0 as 3 and increment to 4
+        assert_eq!(result["visit_count"], 4);
+        assert_eq!(state["phases"]["flow-plan"]["visit_count"], 4);
+    }
+
+    #[test]
+    fn complete_cumulative_seconds_string_tolerance() {
+        let mut state = make_state(
+            "flow-plan",
+            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        );
+        // Simulate a state file where cumulative_seconds was stored as a string
+        state["phases"]["flow-plan"]["cumulative_seconds"] = json!("120");
+        state["phases"]["flow-plan"]["session_started_at"] = json!("2099-12-31T23:59:59Z");
+
+        let result = phase_complete(&mut state, "flow-plan", None, None, None);
+
+        // Should read "120" as 120 and preserve it (future session clamps elapsed to 0)
+        assert_eq!(result["cumulative_seconds"], 120);
+    }
+
+    #[test]
+    fn complete_cumulative_seconds_float_tolerance() {
+        let mut state = make_state(
+            "flow-plan",
+            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        );
+        // Simulate a state file where cumulative_seconds was stored as a float
+        state["phases"]["flow-plan"]["cumulative_seconds"] = json!(120.0);
+        state["phases"]["flow-plan"]["session_started_at"] = json!("2099-12-31T23:59:59Z");
+
+        let result = phase_complete(&mut state, "flow-plan", None, None, None);
+
+        // Should read 120.0 as 120 and preserve it (future session clamps elapsed to 0)
+        assert_eq!(result["cumulative_seconds"], 120);
+    }
+
+    // ===== phase_enter schema robustness tests =====
+
+    #[test]
+    fn enter_phases_key_absent() {
+        // State has no "phases" key at all — auto-vivification should handle it
+        let mut state = json!({
+            "branch": "test-feature",
+            "current_phase": "flow-start",
+        });
+        let result = phase_enter(&mut state, "flow-plan", None);
+        assert_eq!(result["status"], "ok");
+        assert_eq!(state["phases"]["flow-plan"]["status"], "in_progress");
+    }
+
+    #[test]
+    fn enter_phases_key_null() {
+        // State has "phases": null — auto-vivification should handle it
+        let mut state = json!({
+            "branch": "test-feature",
+            "current_phase": "flow-start",
+            "phases": null,
+        });
+        let result = phase_enter(&mut state, "flow-plan", None);
+        assert_eq!(result["status"], "ok");
+        assert_eq!(state["phases"]["flow-plan"]["status"], "in_progress");
+    }
+
+    #[test]
+    fn enter_phases_wrong_type_string() {
+        // State has "phases" as a string — must not panic
+        let mut state = json!({
+            "branch": "test-feature",
+            "current_phase": "flow-start",
+            "phases": "corrupted",
+        });
+        let result = phase_enter(&mut state, "flow-plan", None);
+        // After the guard resets the wrong type, entry should succeed
+        assert_eq!(result["status"], "ok");
+    }
+
+    #[test]
+    fn enter_phases_wrong_type_array() {
+        // State has "phases" as an array — must not panic
+        let mut state = json!({
+            "branch": "test-feature",
+            "current_phase": "flow-start",
+            "phases": [1, 2, 3],
+        });
+        let result = phase_enter(&mut state, "flow-plan", None);
+        assert_eq!(result["status"], "ok");
     }
 
     // ===== capture_diff_stats tests =====

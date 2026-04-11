@@ -148,6 +148,47 @@ mod tests {
     }
 
     #[test]
+    fn mutate_state_array_root_type() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let content = "[1, 2, 3]";
+        fs::write(&path, content).unwrap();
+        // Array root is valid JSON but mutate_state should still parse it.
+        // The transform may not do anything useful, but it should not panic.
+        let result = mutate_state(&path, |_state| {});
+        assert!(result.is_ok());
+        // File content is rewritten (pretty-printed array)
+        let after = fs::read_to_string(&path).unwrap();
+        let parsed: Value = serde_json::from_str(&after).unwrap();
+        assert!(parsed.is_array());
+    }
+
+    #[test]
+    fn mutate_state_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, "").unwrap();
+        let result = mutate_state(&path, |_| {});
+        assert!(result.is_err());
+        // File must be unchanged (still empty)
+        let after = fs::read_to_string(&path).unwrap();
+        assert_eq!(after, "");
+    }
+
+    #[test]
+    fn mutate_state_non_json_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let content = "hello world";
+        fs::write(&path, content).unwrap();
+        let result = mutate_state(&path, |_| {});
+        assert!(result.is_err());
+        // File must be unchanged
+        let after = fs::read_to_string(&path).unwrap();
+        assert_eq!(after, content);
+    }
+
+    #[test]
     fn mutate_state_truncates_when_shorter() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
