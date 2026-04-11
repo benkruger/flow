@@ -27,6 +27,14 @@ pub fn phase_enter(state: &mut Value, phase: &str, reason: Option<&str>) -> Valu
         .and_then(|v| v.as_str())
         .map(String::from);
 
+    // Guard: reset "phases" to an empty object if it is not an object or null.
+    // IndexMut panics on string key access to arrays, strings, bools, and numbers.
+    if let Some(phases) = state.get("phases") {
+        if !phases.is_object() && !phases.is_null() {
+            state["phases"] = json!({});
+        }
+    }
+
     let phase_data = &mut state["phases"][phase];
 
     phase_data["status"] = json!("in_progress");
@@ -886,6 +894,58 @@ mod tests {
 
         // Should read 120.0 as 120 and preserve it (future session clamps elapsed to 0)
         assert_eq!(result["cumulative_seconds"], 120);
+    }
+
+    // ===== phase_enter schema robustness tests =====
+
+    #[test]
+    fn enter_phases_key_absent() {
+        // State has no "phases" key at all — auto-vivification should handle it
+        let mut state = json!({
+            "branch": "test-feature",
+            "current_phase": "flow-start",
+        });
+        let result = phase_enter(&mut state, "flow-plan", None);
+        assert_eq!(result["status"], "ok");
+        assert_eq!(state["phases"]["flow-plan"]["status"], "in_progress");
+    }
+
+    #[test]
+    fn enter_phases_key_null() {
+        // State has "phases": null — auto-vivification should handle it
+        let mut state = json!({
+            "branch": "test-feature",
+            "current_phase": "flow-start",
+            "phases": null,
+        });
+        let result = phase_enter(&mut state, "flow-plan", None);
+        assert_eq!(result["status"], "ok");
+        assert_eq!(state["phases"]["flow-plan"]["status"], "in_progress");
+    }
+
+    #[test]
+    fn enter_phases_wrong_type_string() {
+        // State has "phases" as a string — must not panic
+        let mut state = json!({
+            "branch": "test-feature",
+            "current_phase": "flow-start",
+            "phases": "corrupted",
+        });
+        let result = phase_enter(&mut state, "flow-plan", None);
+        // After the guard resets the wrong type, entry should succeed
+        assert_eq!(result["status"], "ok");
+    }
+
+    #[test]
+    fn enter_phases_wrong_type_array() {
+        // State has "phases" as an array — must not panic
+        let mut state = json!({
+            "branch": "test-feature",
+            "current_phase": "flow-start",
+            "phases": [1, 2, 3],
+        });
+        let result = phase_enter(&mut state, "flow-plan", None);
+        assert_eq!(result["status"], "ok");
     }
 
     // ===== capture_diff_stats tests =====
