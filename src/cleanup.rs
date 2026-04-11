@@ -127,10 +127,17 @@ fn try_delete_file(path: &Path) -> String {
 /// `other-branch-adversarial_test.rs`) are prefixed with a different branch
 /// name and are untouched.
 ///
-/// Returns "skipped" if `.flow-states/` is missing or no entries match,
-/// "deleted" if one or more files were removed, or "failed: <reason>" on
-/// the first deletion error. Partial success is acceptable — the next
-/// cleanup pass catches any leftovers.
+/// Directory entries that happen to match the prefix are skipped — only
+/// regular files and symlinks are candidates for deletion. `fs::remove_file`
+/// on a symlink removes the link itself, not its target.
+///
+/// The loop continues past individual deletion errors so a single failure
+/// (permission denied, directory entry, transient I/O error) does not
+/// leave the remaining matching files on disk. The function returns
+/// "skipped" if `.flow-states/` is missing or no regular-file entries
+/// matched, "deleted" if at least one regular file was successfully
+/// removed, or "failed: <reason>" when every matching regular file's
+/// deletion failed (reporting the first error encountered).
 fn try_delete_adversarial_test_files(flow_states: &Path, branch: &str) -> String {
     let entries = match fs::read_dir(flow_states) {
         Ok(iter) => iter,
@@ -139,20 +146,46 @@ fn try_delete_adversarial_test_files(flow_states: &Path, branch: &str) -> String
 
     let prefix = format!("{}-adversarial_test.", branch);
     let mut any_matched = false;
+    let mut any_deleted = false;
+    let mut first_error: Option<String> = None;
     for entry in entries.flatten() {
         let file_name = entry.file_name();
         let name = file_name.to_string_lossy();
         if !name.starts_with(&prefix) {
             continue;
         }
+        // Only delete regular files and symlinks. A directory entry whose
+        // name happens to match the prefix (e.g. a scratch folder created
+        // by an engineer or a future feature) must not be removed and
+        // must not abort the loop — other matching regular files in the
+        // same directory should still be cleaned up.
+        let is_candidate = match entry.file_type() {
+            Ok(ft) => ft.is_file() || ft.is_symlink(),
+            Err(_) => false,
+        };
+        if !is_candidate {
+            continue;
+        }
         any_matched = true;
-        if let Err(e) = fs::remove_file(entry.path()) {
-            return format!("failed: {}", e);
+        match fs::remove_file(entry.path()) {
+            Ok(()) => {
+                any_deleted = true;
+            }
+            Err(e) => {
+                if first_error.is_none() {
+                    first_error = Some(format!("{}", e));
+                }
+            }
         }
     }
 
-    if any_matched {
+    if any_deleted {
         "deleted".to_string()
+    } else if any_matched {
+        format!(
+            "failed: {}",
+            first_error.unwrap_or_else(|| "unknown error".to_string())
+        )
     } else {
         "skipped".to_string()
     }
@@ -743,6 +776,35 @@ mod tests {
 
         let steps = cleanup(dir.path(), "test-feature", &wt_rel, None, false);
         assert_eq!(steps["adversarial_test"], "skipped");
+    }
+
+    #[test]
+    fn test_cleanup_adversarial_test_skips_directory_and_deletes_files() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path());
+        let wt_rel = setup_feature(dir.path(), "test-feature");
+        let states = dir.path().join(".flow-states");
+        // Directory entry whose name matches the adversarial-test prefix.
+        // The helper must skip it without aborting the deletion loop so
+        // the real files below still get removed. Created first so it is
+        // likely to precede the regular files in read_dir iteration order.
+        let bad_dir = states.join("test-feature-adversarial_test.d");
+        fs::create_dir_all(&bad_dir).unwrap();
+        let adv_rs = states.join("test-feature-adversarial_test.rs");
+        let adv_py = states.join("test-feature-adversarial_test.py");
+        let adv_go = states.join("test-feature-adversarial_test.go");
+        fs::write(&adv_rs, "// rs\n").unwrap();
+        fs::write(&adv_py, "# py\n").unwrap();
+        fs::write(&adv_go, "// go\n").unwrap();
+
+        let steps = cleanup(dir.path(), "test-feature", &wt_rel, None, false);
+        assert_eq!(steps["adversarial_test"], "deleted");
+        assert!(!adv_rs.exists());
+        assert!(!adv_py.exists());
+        assert!(!adv_go.exists());
+        // The directory matching the prefix must remain — the helper only
+        // deletes regular files and symlinks.
+        assert!(bad_dir.exists());
     }
 
     // --- PR close ---

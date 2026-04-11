@@ -556,7 +556,8 @@ call in Step 6. The `cleanup` field in the JSON output shows what
 happened to each resource (pr\_close, worktree\_tmp, worktree,
 remote\_branch, local\_branch, state\_file, plan\_file, dag\_file,
 log\_file, frozen\_phases, ci\_sentinel, timings\_file,
-closed\_issues\_file, issues\_file, adversarial\_test, git\_pull).
+closed\_issues\_file, issues\_file, adversarial\_test — plus
+git\_pull when the Complete path runs with `--pull`).
 Each step reports "closed"/"removed"/"deleted"/"pulled", "skipped", or
 "failed: reason". The `adversarial_test` step matches
 `.flow-states/<branch>-adversarial_test.*` so the Phase 4 adversarial
