@@ -180,3 +180,37 @@ reviewer finds a new phrasing that should have been caught, add it
 to `SCOPE_TRIGGER_PATTERN` in `src/scope_enumeration.rs`, add the
 matching trigger unit test, update the Vocabulary section above,
 and note the addition in the commit message.
+
+### False-positive sweep before expanding the vocabulary
+
+Before accepting a proposed vocabulary expansion, run a mandatory
+false-positive sweep. The protocol is:
+
+1. Add the candidate noun to `SCOPE_TRIGGER_PATTERN` on a scratch
+   branch (or via a local `git stash` edit) and run
+   `bin/flow test -- scope_enumeration`. The contract test in
+   `tests/scope_enumeration.rs` will report every pre-existing
+   prose line in `CLAUDE.md`, `.claude/rules/*.md`, `skills/**/SKILL.md`,
+   and `.claude/skills/**/SKILL.md` that now triggers.
+2. Count the new violations. If the count is **zero or low** (≤ 4),
+   audit each flagged line — if they are genuine missing enumerations,
+   fix them in the same commit as the vocabulary expansion. If they
+   are imperative or negation phrasings, add the appropriate opt-out
+   comment to the line in question.
+3. If the count is **high** (≥ 5), the new noun has a false-positive
+   problem intrinsic to the project's existing prose — revert the
+   vocabulary expansion and instead add an explicit unit test that
+   locks the gap in (e.g., `trigger_rejects_bare_<noun>_intentionally`).
+   Update the Intentional Gaps note above to document the decision
+   and cite the unit test.
+4. Never ship a vocabulary expansion that requires a sweeping
+   opt-out cleanup across unrelated files. That expansion is not
+   an improvement — it is a forced rewrite with a pass-the-buck
+   disguise. The curated-closed philosophy prefers to miss a novel
+   phrasing over introducing mass false positives.
+
+The false-positive sweep converts an adversarial finding about a
+missing noun (e.g. Adversarial A1/A3 for `command` and `module`)
+from a one-line fix into a deliberate decision with evidence. It
+also makes gap documentation cheap: the unit test and the
+Intentional Gaps note are the entire artifact.

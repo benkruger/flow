@@ -215,6 +215,64 @@ Before finalizing the dependency graph, check every removal task against
 presence of the removed content, pair the removal with the re-addition
 task.
 
+## State-Dependent Gate Ordering in Multi-Step Skills
+
+When a SKILL.md step invokes a gate command (`bin/flow plan-check`,
+`bin/flow check-phase`, `bin/flow <anything that reads state>`), the
+gate has an implicit precondition: every state field the gate reads
+must already be written by a prior step. Instruction-level gates do
+not assert this precondition — they run the command, parse the output,
+and branch on the result. If the field was never set, the gate sees an
+empty value and either passes trivially or errors in a way the skill
+does not anticipate.
+
+Two real incidents shaped this rule:
+
+- The Phase 2 Plan skill's scope-enumeration gate in
+  `bin/flow plan-check` reads `files.plan` from the state file to
+  locate the plan. An earlier revision of Step 4 invoked `plan-check`
+  BEFORE `set-timestamp --set files.plan`, so on the standard plan
+  path the gate never had a plan file to scan. Code Review Reviewer
+  Finding 1 caught the reachability bug. A Plan-phase risk check
+  that enumerated "state fields read by this gate" would have
+  caught it before Code phase.
+- Any new gate that consumes a state field exposes the same class of
+  bug: the gate runs but reads an empty field and passes silently.
+  The failure is invisible until a downstream phase fails to find
+  the artifact the gate was supposed to protect.
+
+**Plan-phase verification.** When a plan task adds a gate command to a
+SKILL.md step, the plan's Risks section must enumerate (a) every state
+field the gate reads, and (b) every prior step that must write that
+field. The Code phase task description must state the textual order
+explicitly: "After `set-timestamp --set <field>`, before any gate that
+reads `<field>`."
+
+**Contract test discipline.** Every state-dependent gate needs a
+contract test in `tests/skill_contracts.rs` that asserts BOTH
+orderings hold in the committed SKILL.md:
+
+1. **Textual ordering.** The `set-timestamp --set <field>` invocation
+   must appear in the SKILL.md content BEFORE the gate command that
+   reads `<field>`.
+2. **Adjacency check.** No numbered `### Step` heading may sit
+   between the state mutation and the gate. An intermediate step
+   could fail, halting the skill between "state written" and "gate
+   runs" — the invariant the test locks in is that both actions land
+   inside the same step so a failure cannot separate them.
+
+A textual-only ordering test catches regression A (someone moves the
+gate above the state mutation). The adjacency check catches regression
+B (someone inserts a new step in the middle). Both are mechanical
+regressions that instructional prose cannot prevent.
+
+**How to apply.** When adding a gate command to a SKILL.md, search the
+file for every `set-timestamp --set` call that writes a field the gate
+reads, verify textual and adjacent ordering, and write the contract
+test in the same commit as the gate. Do not rely on Code Review to
+catch ordering bugs — the contract test is the merge-conflict
+trip-wire, the Plan-phase risk audit is the authoring-time trip-wire.
+
 ## Destination Renumbering
 
 When renumbering destinations or steps within a SKILL.md, grep for the
