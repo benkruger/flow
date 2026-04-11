@@ -4,19 +4,7 @@ use indexmap::IndexMap;
 use serde_json::{json, Value};
 
 use crate::phase_config::{self, PHASE_ORDER};
-use crate::utils::{elapsed_since, format_time, now};
-
-/// Read a JSON value as i64, tolerating int, float, and string representations.
-///
-/// State files can outlive the code that writes them. This function accepts
-/// all three representations so counter fields survive round-trips through
-/// external editors or legacy writers that store numbers as strings or floats.
-fn tolerant_i64(v: &Value) -> i64 {
-    v.as_i64()
-        .or_else(|| v.as_f64().map(|f| f as i64))
-        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-        .unwrap_or(0)
-}
+use crate::utils::{elapsed_since, format_time, now, tolerant_i64};
 
 /// Apply phase entry mutations to the state Value in-place.
 ///
