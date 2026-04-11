@@ -1,6 +1,6 @@
 ---
 title: /flow-hygiene
-nav_order: 15
+nav_order: 19
 parent: Skills
 ---
 
@@ -49,4 +49,5 @@ Each finding includes the source file, specific content, and an actionable recom
 
 - Read-only — never fixes, edits, or commits anything
 - No state file mutations — stateless utility skill
+- No sub-agents — all comparison runs inline
 - Display-only — no AskUserQuestion prompts

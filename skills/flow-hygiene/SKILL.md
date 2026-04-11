@@ -50,6 +50,10 @@ Six finding types, each with a severity tag:
 
 ### Step 1 — Discover surfaces
 
+Instruction surfaces are scattered across multiple files and formats.
+Before any analysis can happen, the skill needs a complete inventory of
+what exists and what each surface claims.
+
 Identify and read all instruction surfaces in the project.
 
 Use the Glob tool to find:
@@ -73,19 +77,21 @@ for every project.
 
 ### Step 2 — Structural verification
 
+Instruction surfaces routinely drift from the codebase they describe as
+files are renamed, functions deleted, and commands refactored. A
+mechanical reference check is the only way to detect this without
+reading every file manually.
+
 Verify that references in instruction surfaces point to things that
 exist. This is a mechanical pass — each check is a Grep or Glob call.
 
 **File path references.** For each file path mentioned in backticks in
-any surface (e.g., `src/utils.rs`, `tests/structural.rs`,
-`hooks/hooks.json`), use the Glob tool to verify the file exists in the
-current working directory. Tag missing files as `[STALE]`.
+any surface, use the Glob tool to verify the file exists in the current
+working directory. Tag missing files as `[STALE]`.
 
 **Function and test name references.** For each function name or test
-name mentioned in backticks (e.g., `utility_skills()`,
-`test_agent_frontmatter_only_supported_keys`), use the Grep tool to
-verify it exists as a definition in the codebase. Tag missing
-definitions as `[STALE]`.
+name mentioned in backticks, use the Grep tool to verify it exists as a
+definition in the codebase. Tag missing definitions as `[STALE]`.
 
 **Command references.** For each `bin/flow` subcommand mentioned (e.g.,
 `bin/flow check-phase`, `bin/flow tombstone-audit`), use the Grep tool
@@ -109,6 +115,11 @@ rule file's primary subject (the feature, hook, or pattern it describes)
 no longer exists, tag the entire file as `[ORPHANED]`.
 
 ### Step 3 — Classification audit
+
+Content placed in the wrong persistence layer creates maintenance burden
+— a constraint in CLAUDE.md instead of a rule file must be updated in
+two places when it changes, and a memory entry that duplicates a rule
+silently diverges over time.
 
 Apply the persistence routing decision tree to each content block.
 
@@ -141,6 +152,11 @@ and do not belong in memory. Tag as `[MISPLACED]`.
 
 ### Step 4 — Cross-reference audit
 
+When the same constraint lives in multiple surfaces, a change to one
+copy leaves the others stale. When two surfaces prescribe opposite
+behavior, the model follows whichever it reads last — producing
+unpredictable results.
+
 Compare all surfaces pairwise for duplicates and contradictions.
 
 **Duplicate detection.** For each behavioral constraint found in
@@ -164,6 +180,10 @@ Tag as `[CONTRADICTION]` with both source locations and the specific
 conflict.
 
 ### Step 5 — Report
+
+The audit is only useful if its findings are actionable. Grouping by
+source file lets the user address all issues in one file at a time,
+and severity tags help prioritize what to fix first.
 
 Produce the findings report inline in the response.
 
