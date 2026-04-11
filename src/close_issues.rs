@@ -15,10 +15,9 @@ use std::time::Duration;
 use clap::Parser;
 use serde_json::json;
 
+use crate::complete_preflight::LOCAL_TIMEOUT;
 use crate::output::{json_error, json_ok};
 use crate::utils::extract_issue_numbers;
-
-const LOCAL_TIMEOUT: u64 = 30;
 
 #[derive(Parser, Debug)]
 #[command(name = "close-issues", about = "Close issues from FLOW prompt")]

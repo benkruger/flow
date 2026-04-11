@@ -12,13 +12,10 @@ use clap::Parser;
 use serde_json::{json, Map, Value};
 
 use crate::commands::log::append_log;
-use crate::complete_preflight::{run_cmd_with_timeout, CmdResult};
+use crate::complete_preflight::{run_cmd_with_timeout, CmdResult, LOCAL_TIMEOUT, NETWORK_TIMEOUT};
 use crate::git::project_root;
 use crate::lock::mutate_state;
 use crate::utils::bin_flow_path;
-
-const LOCAL_TIMEOUT: u64 = 30;
-const NETWORK_TIMEOUT: u64 = 60;
 const POST_MERGE_STEP: i64 = 6;
 
 #[derive(Parser, Debug)]

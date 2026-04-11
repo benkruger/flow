@@ -13,11 +13,9 @@ use std::time::{Duration, Instant};
 use clap::Parser;
 use serde_json::{json, Value};
 
+use crate::complete_preflight::{LOCAL_TIMEOUT, NETWORK_TIMEOUT};
 use crate::lock::mutate_state;
 use crate::utils::parse_conflict_files;
-
-const LOCAL_TIMEOUT_SECS: u64 = 30;
-const NETWORK_TIMEOUT_SECS: u64 = 60;
 const MAX_RETRIES: i64 = 3;
 
 #[derive(Parser, Debug)]
@@ -60,12 +58,12 @@ pub fn check_freshness_impl(
     }
 
     // Step 1: git fetch origin main
-    match git_cmd(&["git", "fetch", "origin", "main"], NETWORK_TIMEOUT_SECS) {
+    match git_cmd(&["git", "fetch", "origin", "main"], NETWORK_TIMEOUT) {
         CmdResult::Timeout => {
             return json!({
                 "status": "error",
                 "step": "fetch",
-                "message": format!("git fetch timed out after {}s", NETWORK_TIMEOUT_SECS),
+                "message": format!("git fetch timed out after {}s", NETWORK_TIMEOUT),
             });
         }
         CmdResult::Ok {
@@ -86,20 +84,20 @@ pub fn check_freshness_impl(
     // test_merge_base_timeout).
     let mb = git_cmd(
         &["git", "merge-base", "--is-ancestor", "origin/main", "HEAD"],
-        LOCAL_TIMEOUT_SECS,
+        LOCAL_TIMEOUT,
     );
     if let CmdResult::Ok { returncode: 0, .. } = mb {
         return json!({"status": "up_to_date"});
     }
 
     // Step 3: git merge origin/main
-    let merge_result = git_cmd(&["git", "merge", "origin/main"], NETWORK_TIMEOUT_SECS);
+    let merge_result = git_cmd(&["git", "merge", "origin/main"], NETWORK_TIMEOUT);
     match &merge_result {
         CmdResult::Timeout => {
             return json!({
                 "status": "error",
                 "step": "merge",
-                "message": format!("git merge timed out after {}s", NETWORK_TIMEOUT_SECS),
+                "message": format!("git merge timed out after {}s", NETWORK_TIMEOUT),
             });
         }
         CmdResult::Ok { returncode: 0, .. } => {
@@ -120,7 +118,7 @@ pub fn check_freshness_impl(
     };
 
     // Step 4: git status --porcelain to detect conflicts.
-    match git_cmd(&["git", "status", "--porcelain"], LOCAL_TIMEOUT_SECS) {
+    match git_cmd(&["git", "status", "--porcelain"], LOCAL_TIMEOUT) {
         CmdResult::Ok { stdout, .. } => {
             let files = parse_conflict_files(&stdout);
             if !files.is_empty() {

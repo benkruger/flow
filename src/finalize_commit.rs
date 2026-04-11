@@ -22,13 +22,11 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::commands::log::append_log;
+use crate::complete_preflight::{LOCAL_TIMEOUT, NETWORK_TIMEOUT};
 use crate::lock::mutate_state;
 use crate::output::json_error;
 use crate::phase_config::phase_number;
 use crate::utils::parse_conflict_files;
-
-const LOCAL_TIMEOUT: u64 = 30;
-const NETWORK_TIMEOUT: u64 = 60;
 
 #[derive(Parser, Debug)]
 #[command(

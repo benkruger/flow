@@ -17,11 +17,9 @@ use std::path::Path;
 use clap::Parser;
 use serde_json::{json, Value};
 
-use crate::complete_preflight::{run_cmd_with_timeout, CmdResult};
+use crate::complete_preflight::{run_cmd_with_timeout, CmdResult, NETWORK_TIMEOUT};
 use crate::lock::mutate_state;
 use crate::utils::bin_flow_path;
-
-const NETWORK_TIMEOUT: u64 = 60;
 const MERGE_STEP: i64 = 5;
 
 #[derive(Parser, Debug)]

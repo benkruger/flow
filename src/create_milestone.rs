@@ -12,10 +12,9 @@ use std::time::Duration;
 use clap::Parser;
 use serde_json::json;
 
+use crate::complete_preflight::LOCAL_TIMEOUT;
 use crate::issue::run_gh_cmd;
 use crate::output::{json_error, json_ok};
-
-const LOCAL_TIMEOUT: u64 = 30;
 
 #[derive(Parser, Debug)]
 #[command(name = "create-milestone", about = "Create a GitHub milestone")]

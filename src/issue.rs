@@ -20,11 +20,10 @@ use clap::Parser;
 use regex::Regex;
 use serde_json::json;
 
+use crate::complete_preflight::LOCAL_TIMEOUT;
 use crate::git::project_root;
 use crate::github::detect_repo;
 use crate::output::{json_error, json_ok};
-
-const LOCAL_TIMEOUT: u64 = 30;
 
 #[derive(Parser, Debug)]
 #[command(name = "issue", about = "Create a GitHub issue")]

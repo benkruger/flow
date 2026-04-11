@@ -25,6 +25,7 @@ use serde_json::{json, Value};
 use crate::ci;
 use crate::complete_preflight::{
     check_learn_phase, check_pr_status, merge_main, resolve_mode, run_cmd_with_timeout, CmdResult,
+    NETWORK_TIMEOUT,
 };
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
@@ -34,7 +35,6 @@ use crate::utils::{bin_flow_path, derive_worktree};
 /// Step counter total for complete phase: 6 steps (running checks, local CI,
 /// GitHub CI, confirming, merging PR, finalizing).
 const COMPLETE_STEPS_TOTAL: i64 = 6;
-const NETWORK_TIMEOUT: u64 = 60;
 
 #[derive(Parser, Debug)]
 #[command(name = "complete-fast", about = "FLOW Complete phase fast path")]

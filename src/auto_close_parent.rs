@@ -19,11 +19,9 @@ use std::time::Duration;
 use clap::Parser;
 use serde_json::json;
 
+use crate::complete_preflight::LOCAL_TIMEOUT;
 use crate::output::json_ok;
 use crate::utils::run_cmd;
-
-/// Timeout for local subprocess calls (matches Python LOCAL_TIMEOUT = 30).
-const LOCAL_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Parser, Debug)]
 #[command(
@@ -42,7 +40,7 @@ pub struct Args {
 
 /// Run a gh command, returning stdout on success or an error string on failure.
 fn run_api(args: &[&str], cwd: &Path) -> Result<String, String> {
-    match run_cmd(args, cwd, "api", Some(LOCAL_TIMEOUT)) {
+    match run_cmd(args, cwd, "api", Some(Duration::from_secs(LOCAL_TIMEOUT))) {
         Ok((stdout, _stderr)) => Ok(stdout),
         Err(e) => Err(e.message),
     }
