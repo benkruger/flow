@@ -7,13 +7,12 @@
 //! Usage: bin/flow complete-post-merge --pr <N> --state-file <path> --branch <name>
 
 use std::path::Path;
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
 
 use clap::Parser;
 use serde_json::{json, Map, Value};
 
 use crate::commands::log::append_log;
+use crate::complete_preflight::{run_cmd_with_timeout, CmdResult};
 use crate::git::project_root;
 use crate::lock::mutate_state;
 use crate::utils::bin_flow_path;
@@ -21,8 +20,6 @@ use crate::utils::bin_flow_path;
 const LOCAL_TIMEOUT: u64 = 30;
 const NETWORK_TIMEOUT: u64 = 60;
 const POST_MERGE_STEP: i64 = 6;
-
-type CmdResult = Result<(i32, String, String), String>;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -39,75 +36,6 @@ pub struct Args {
     /// Branch name
     #[arg(long, required = true)]
     pub branch: String,
-}
-
-/// Run a subprocess command with a timeout. `args[0]` is the program.
-///
-/// Drains stdout and stderr in spawned threads to prevent pipe buffer
-/// deadlock — children writing >64KB to a piped stream would otherwise
-/// block forever when the kernel buffer fills and `try_wait()` would
-/// never observe the child exiting.
-fn run_cmd_with_timeout(args: &[&str], timeout_secs: u64) -> CmdResult {
-    let (program, rest) = match args.split_first() {
-        Some(p) => p,
-        None => return Err("empty command".to_string()),
-    };
-    let mut child = Command::new(program)
-        .args(rest)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn {}: {}", program, e))?;
-
-    let stdout_handle = child.stdout.take();
-    let stderr_handle = child.stderr.take();
-    let stdout_reader = std::thread::spawn(move || {
-        let mut buf = String::new();
-        if let Some(mut pipe) = stdout_handle {
-            use std::io::Read;
-            let _ = pipe.read_to_string(&mut buf);
-        }
-        buf
-    });
-    let stderr_reader = std::thread::spawn(move || {
-        let mut buf = String::new();
-        if let Some(mut pipe) = stderr_handle {
-            use std::io::Read;
-            let _ = pipe.read_to_string(&mut buf);
-        }
-        buf
-    });
-
-    let timeout = Duration::from_secs(timeout_secs);
-    let start = Instant::now();
-    let poll_interval = Duration::from_millis(50);
-
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(s)) => break s,
-            Ok(None) => {
-                if start.elapsed() >= timeout {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    let _ = stdout_reader.join();
-                    let _ = stderr_reader.join();
-                    return Err(format!("Timed out after {}s", timeout_secs));
-                }
-                let remaining = timeout.saturating_sub(start.elapsed());
-                std::thread::sleep(poll_interval.min(remaining));
-            }
-            Err(e) => {
-                let _ = stdout_reader.join();
-                let _ = stderr_reader.join();
-                return Err(e.to_string());
-            }
-        }
-    };
-
-    let stdout = stdout_reader.join().unwrap_or_default();
-    let stderr = stderr_reader.join().unwrap_or_default();
-    let code = status.code().unwrap_or(1);
-    Ok((code, stdout, stderr))
 }
 
 /// Parse JSON from stdout. Returns (parsed_value, parse_error).
