@@ -731,6 +731,31 @@ pub fn detect_dev_mode(root: &Path) -> bool {
     }
 }
 
+// --- tolerant_i64 ---
+
+/// Read a JSON value as i64, tolerating int, float, and string representations.
+///
+/// State files can outlive the code that writes them. Accepts all three
+/// representations so counter fields survive round-trips through external
+/// editors or legacy writers that store numbers as strings or floats.
+/// Returns `None` when the value cannot be interpreted as a number (bool,
+/// null, object, array, or unparseable string). Callers that need "data
+/// not available" vs "present with value 0" should use this function.
+pub fn tolerant_i64_opt(v: &serde_json::Value) -> Option<i64> {
+    v.as_i64()
+        .or_else(|| v.as_f64().map(|f| f as i64))
+        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+}
+
+/// Read a JSON value as i64 with 0 as the default.
+///
+/// Thin `unwrap_or(0)` wrapper over [`tolerant_i64_opt`] for counter fields
+/// where a missing or unparseable value should mean zero rather than "data
+/// not available".
+pub fn tolerant_i64(v: &serde_json::Value) -> i64 {
+    tolerant_i64_opt(v).unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1383,5 +1408,78 @@ mod tests {
         let path = dir.path().join("plugin.json");
         fs::write(&path, r#"{"name": "flow"}"#).unwrap();
         assert_eq!(read_version_from(&path), "?");
+    }
+
+    // --- tolerant_i64_opt() / tolerant_i64() ---
+
+    #[test]
+    fn tolerant_i64_opt_accepts_int() {
+        assert_eq!(tolerant_i64_opt(&serde_json::json!(42)), Some(42));
+        assert_eq!(tolerant_i64_opt(&serde_json::json!(-7)), Some(-7));
+        assert_eq!(tolerant_i64_opt(&serde_json::json!(0)), Some(0));
+    }
+
+    #[test]
+    fn tolerant_i64_opt_accepts_float_truncates() {
+        assert_eq!(tolerant_i64_opt(&serde_json::json!(3.7)), Some(3));
+        assert_eq!(tolerant_i64_opt(&serde_json::json!(1.0)), Some(1));
+        assert_eq!(tolerant_i64_opt(&serde_json::json!(-2.9)), Some(-2));
+    }
+
+    #[test]
+    fn tolerant_i64_opt_accepts_string_numeric() {
+        assert_eq!(tolerant_i64_opt(&serde_json::json!("123")), Some(123));
+        assert_eq!(tolerant_i64_opt(&serde_json::json!("0")), Some(0));
+    }
+
+    #[test]
+    fn tolerant_i64_opt_accepts_negative_string() {
+        assert_eq!(tolerant_i64_opt(&serde_json::json!("-5")), Some(-5));
+    }
+
+    #[test]
+    fn tolerant_i64_opt_returns_none_for_bool() {
+        assert_eq!(tolerant_i64_opt(&serde_json::json!(true)), None);
+        assert_eq!(tolerant_i64_opt(&serde_json::json!(false)), None);
+    }
+
+    #[test]
+    fn tolerant_i64_opt_returns_none_for_null() {
+        assert_eq!(tolerant_i64_opt(&serde_json::json!(null)), None);
+    }
+
+    #[test]
+    fn tolerant_i64_opt_returns_none_for_unparseable_string() {
+        assert_eq!(tolerant_i64_opt(&serde_json::json!("garbage")), None);
+        assert_eq!(tolerant_i64_opt(&serde_json::json!("")), None);
+    }
+
+    #[test]
+    fn tolerant_i64_opt_returns_none_for_array() {
+        assert_eq!(tolerant_i64_opt(&serde_json::json!([1, 2, 3])), None);
+        assert_eq!(tolerant_i64_opt(&serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn tolerant_i64_passes_through_when_opt_returns_some() {
+        assert_eq!(tolerant_i64(&serde_json::json!(42)), 42);
+        assert_eq!(tolerant_i64(&serde_json::json!("5")), 5);
+        assert_eq!(tolerant_i64(&serde_json::json!(7.9)), 7);
+    }
+
+    #[test]
+    fn tolerant_i64_defaults_zero_when_opt_returns_none() {
+        assert_eq!(tolerant_i64(&serde_json::json!(null)), 0);
+        assert_eq!(tolerant_i64(&serde_json::json!(true)), 0);
+        assert_eq!(tolerant_i64(&serde_json::json!("garbage")), 0);
+        assert_eq!(tolerant_i64(&serde_json::json!([])), 0);
+    }
+
+    #[test]
+    fn tolerant_i64_zero_for_missing_via_index() {
+        // `IndexMut` on a missing key returns Value::Null; tolerant_i64 should
+        // coerce to 0 so callers can use `state["missing"]` directly.
+        let state = serde_json::json!({"branch": "test"});
+        assert_eq!(tolerant_i64(&state["missing_key"]), 0);
     }
 }

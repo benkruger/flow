@@ -77,13 +77,20 @@ return value, not the caller's interpretation.
 ## Counter and State Field Type Tolerance
 
 State files can outlive the code that writes them. Accept int, float,
-and string representations when reading counters:
-`.as_i64().or_else(|| v.as_f64().map(|f| f as i64)).or_else(|| v.as_str().and_then(|s| s.parse().ok()))`.
+and string representations when reading counters.
 
-`phase_transition.rs` defines `tolerant_i64()` as a named helper
-encapsulating this pattern for `visit_count` and `cumulative_seconds`.
-When other modules need the same tolerance, extract a shared helper
-or reference this implementation.
+`src/utils.rs` exposes two functions for this tolerance:
+
+- `tolerant_i64_opt(v: &Value) -> Option<i64>` — primary form. Returns
+  `None` when the value cannot be interpreted as a number. Use when the
+  caller needs to distinguish "field missing / unparseable" from "present
+  with value 0".
+- `tolerant_i64(v: &Value) -> i64` — thin `unwrap_or(0)` wrapper over
+  `tolerant_i64_opt`. Use for counter fields where a missing or
+  unparseable value should mean zero.
+
+When other modules need the same tolerance, import from `crate::utils`
+— do not inline the fallback chain.
 
 ## Empty-String vs Missing-Key Equivalence
 
