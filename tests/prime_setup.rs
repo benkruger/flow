@@ -1,9 +1,9 @@
 //! Integration tests for `flow-rs prime-setup`.
 //!
 //! Tests cover:
-//! - Pure function tests (merge_settings, is_subsumed, derive_permissions,
+//! - Pure function tests (merge_settings, is_subsumed,
 //!   write_version_marker, update_git_exclude, install_script,
-//!   install_pre_commit_hook, install_launcher, check_launcher_path)
+//!   install_pre_commit_hook, install_launcher, install_bin_stubs)
 //! - CLI tests via run_impl
 //!
 //! All subprocess calls use Command::output() to avoid leaking child
@@ -12,17 +12,13 @@
 use std::collections::HashSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use serde_json::{json, Value};
 
 use flow_rs::prime_check::{EXCLUDE_ENTRIES, FLOW_DENY, UNIVERSAL_ALLOW};
 use flow_rs::prime_setup;
-
-fn fw_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("frameworks")
-}
 
 fn read_settings(project: &Path) -> Value {
     let content = fs::read_to_string(project.join(".claude").join("settings.json")).unwrap();
@@ -37,21 +33,6 @@ fn write_settings(project: &Path, data: &Value) {
         serde_json::to_string_pretty(data).unwrap(),
     )
     .unwrap();
-}
-
-/// Load expected framework permissions from frameworks/<name>/permissions.json.
-fn load_framework_perms(framework: &str) -> Vec<String> {
-    let path = fw_dir().join(framework).join("permissions.json");
-    if !path.exists() {
-        return Vec::new();
-    }
-    let data: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-    data["allow"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect()
 }
 
 fn make_git_repo(path: &Path) {
@@ -72,16 +53,19 @@ fn make_git_repo(path: &Path) {
 #[test]
 fn creates_settings_from_scratch() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
+    prime_setup::merge_settings(tmp.path()).unwrap();
     let settings = read_settings(tmp.path());
     assert!(settings["permissions"]["allow"].is_array());
     assert!(settings["permissions"]["deny"].is_array());
 }
 
 #[test]
-fn settings_has_all_allow_entries_rails() {
+fn settings_has_all_universal_allow_entries() {
+    // Prime writes the full UNIVERSAL_ALLOW set into the merged
+    // settings unless an existing broader pattern subsumes a specific
+    // entry. Allow list is universal-only — no per-language merge.
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
+    prime_setup::merge_settings(tmp.path()).unwrap();
     let settings = read_settings(tmp.path());
     let allow: Vec<String> = settings["permissions"]["allow"]
         .as_array()
@@ -90,38 +74,10 @@ fn settings_has_all_allow_entries_rails() {
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
     let allow_set: HashSet<String> = allow.iter().cloned().collect();
-    let expected: Vec<String> = UNIVERSAL_ALLOW
-        .iter()
-        .map(|s| s.to_string())
-        .chain(load_framework_perms("rails"))
-        .collect();
-    for entry in &expected {
-        if !prime_setup::is_subsumed(entry, &allow_set) {
-            assert!(allow.contains(entry), "Missing allow entry: {}", entry);
-        }
-    }
-}
-
-#[test]
-fn settings_has_all_allow_entries_python() {
-    let tmp = tempfile::tempdir().unwrap();
-    prime_setup::merge_settings(tmp.path(), "python", &fw_dir()).unwrap();
-    let settings = read_settings(tmp.path());
-    let allow: Vec<String> = settings["permissions"]["allow"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect();
-    let allow_set: HashSet<String> = allow.iter().cloned().collect();
-    let expected: Vec<String> = UNIVERSAL_ALLOW
-        .iter()
-        .map(|s| s.to_string())
-        .chain(load_framework_perms("python"))
-        .collect();
-    for entry in &expected {
-        if !prime_setup::is_subsumed(entry, &allow_set) {
-            assert!(allow.contains(entry), "Missing allow entry: {}", entry);
+    for entry in UNIVERSAL_ALLOW {
+        let s = entry.to_string();
+        if !prime_setup::is_subsumed(&s, &allow_set) {
+            assert!(allow.contains(&s), "Missing allow entry: {}", entry);
         }
     }
 }
@@ -129,7 +85,7 @@ fn settings_has_all_allow_entries_python() {
 #[test]
 fn settings_has_all_deny_entries() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
+    prime_setup::merge_settings(tmp.path()).unwrap();
     let settings = read_settings(tmp.path());
     let deny: Vec<String> = settings["permissions"]["deny"]
         .as_array()
@@ -145,7 +101,7 @@ fn settings_has_all_deny_entries() {
 #[test]
 fn deny_list_includes_git_commit() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
+    prime_setup::merge_settings(tmp.path()).unwrap();
     let settings = read_settings(tmp.path());
     let deny: Vec<String> = settings["permissions"]["deny"]
         .as_array()
@@ -162,7 +118,7 @@ fn deny_list_includes_git_commit() {
 #[test]
 fn allow_list_excludes_git_commit() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
+    prime_setup::merge_settings(tmp.path()).unwrap();
     let settings = read_settings(tmp.path());
     let allow: Vec<String> = settings["permissions"]["allow"]
         .as_array()
@@ -179,7 +135,7 @@ fn allow_list_excludes_git_commit() {
 #[test]
 fn settings_sets_default_mode() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
+    prime_setup::merge_settings(tmp.path()).unwrap();
     let settings = read_settings(tmp.path());
     assert_eq!(settings["permissions"]["defaultMode"], "acceptEdits");
 }
@@ -196,7 +152,7 @@ fn settings_preserves_existing_entries() {
             }
         }),
     );
-    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
+    prime_setup::merge_settings(tmp.path()).unwrap();
     let settings = read_settings(tmp.path());
     let allow: Vec<String> = settings["permissions"]["allow"]
         .as_array()
@@ -227,7 +183,7 @@ fn settings_overrides_existing_default_mode() {
             }
         }),
     );
-    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
+    prime_setup::merge_settings(tmp.path()).unwrap();
     let settings = read_settings(tmp.path());
     assert_eq!(settings["permissions"]["defaultMode"], "acceptEdits");
 }
@@ -235,8 +191,8 @@ fn settings_overrides_existing_default_mode() {
 #[test]
 fn settings_no_duplicate_entries() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
-    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
+    prime_setup::merge_settings(tmp.path()).unwrap();
+    prime_setup::merge_settings(tmp.path()).unwrap();
     let settings = read_settings(tmp.path());
     let allow: Vec<String> = settings["permissions"]["allow"]
         .as_array()
@@ -259,7 +215,7 @@ fn settings_no_duplicate_entries() {
 #[test]
 fn settings_file_has_trailing_newline() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
+    prime_setup::merge_settings(tmp.path()).unwrap();
     let content = fs::read_to_string(tmp.path().join(".claude").join("settings.json")).unwrap();
     assert!(content.ends_with('\n'));
 }
@@ -273,7 +229,7 @@ fn broad_pattern_subsumes_narrow() {
         tmp.path(),
         &json!({"permissions": {"allow": ["Bash(git *)"]}}),
     );
-    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
+    prime_setup::merge_settings(tmp.path()).unwrap();
     let settings = read_settings(tmp.path());
     let allow: Vec<String> = settings["permissions"]["allow"]
         .as_array()
@@ -294,7 +250,7 @@ fn broad_gh_pattern_subsumes_narrow() {
         tmp.path(),
         &json!({"permissions": {"allow": ["Bash(gh pr *)"]}}),
     );
-    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
+    prime_setup::merge_settings(tmp.path()).unwrap();
     let settings = read_settings(tmp.path());
     let allow: Vec<String> = settings["permissions"]["allow"]
         .as_array()
@@ -310,7 +266,7 @@ fn broad_gh_pattern_subsumes_narrow() {
 fn cross_type_no_subsumption() {
     let tmp = tempfile::tempdir().unwrap();
     write_settings(tmp.path(), &json!({"permissions": {"allow": ["Agent(*)"]}}));
-    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
+    prime_setup::merge_settings(tmp.path()).unwrap();
     let settings = read_settings(tmp.path());
     let allow: Vec<String> = settings["permissions"]["allow"]
         .as_array()
@@ -369,119 +325,39 @@ fn is_subsumed_cross_type_no_match() {
     ));
 }
 
-// ── Derived permissions ─────────────────────────────────────
-
-#[test]
-fn derive_permissions_ios_xcodeproj() {
-    let tmp = tempfile::tempdir().unwrap();
-    fs::create_dir(tmp.path().join("MyApp.xcodeproj")).unwrap();
-    let result = prime_setup::derive_permissions(tmp.path(), "ios", &fw_dir());
-    assert!(result.contains(&"Bash(killall MyApp)".to_string()));
-}
-
-#[test]
-fn derive_permissions_no_xcodeproj() {
-    let tmp = tempfile::tempdir().unwrap();
-    let result = prime_setup::derive_permissions(tmp.path(), "ios", &fw_dir());
-    assert!(result.is_empty());
-}
-
-#[test]
-fn derive_permissions_rails_has_none() {
-    let tmp = tempfile::tempdir().unwrap();
-    let result = prime_setup::derive_permissions(tmp.path(), "rails", &fw_dir());
-    assert!(result.is_empty());
-}
-
-#[test]
-fn derive_permissions_unknown_framework() {
-    let tmp = tempfile::tempdir().unwrap();
-    let result = prime_setup::derive_permissions(tmp.path(), "nonexistent", &fw_dir());
-    assert!(result.is_empty());
-}
-
-#[test]
-fn derive_permissions_dot_prefix_skipped() {
-    let tmp = tempfile::tempdir().unwrap();
-    // Dot-prefixed entry should be skipped (fnmatch convention)
-    fs::create_dir(tmp.path().join(".xcodeproj")).unwrap();
-    let result = prime_setup::derive_permissions(tmp.path(), "ios", &fw_dir());
-    assert!(result.is_empty());
-}
-
-#[test]
-fn derived_permissions_merged_into_settings() {
-    let tmp = tempfile::tempdir().unwrap();
-    fs::create_dir(tmp.path().join("SaltedKitchen.xcodeproj")).unwrap();
-    prime_setup::merge_settings(tmp.path(), "ios", &fw_dir()).unwrap();
-    let settings = read_settings(tmp.path());
-    let allow: Vec<String> = settings["permissions"]["allow"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect();
-    assert!(allow.contains(&"Bash(killall SaltedKitchen)".to_string()));
-}
-
-#[test]
-fn derived_permissions_no_duplicates() {
-    let tmp = tempfile::tempdir().unwrap();
-    fs::create_dir(tmp.path().join("SaltedKitchen.xcodeproj")).unwrap();
-    prime_setup::merge_settings(tmp.path(), "ios", &fw_dir()).unwrap();
-    prime_setup::merge_settings(tmp.path(), "ios", &fw_dir()).unwrap();
-    let settings = read_settings(tmp.path());
-    let allow: Vec<String> = settings["permissions"]["allow"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect();
-    let count = allow
-        .iter()
-        .filter(|e| *e == "Bash(killall SaltedKitchen)")
-        .count();
-    assert_eq!(count, 1);
-}
-
-#[test]
-fn derived_permissions_subsumed() {
-    let tmp = tempfile::tempdir().unwrap();
-    fs::create_dir(tmp.path().join("MyApp.xcodeproj")).unwrap();
-    write_settings(
-        tmp.path(),
-        &json!({"permissions": {"allow": ["Bash(killall *)"]}}),
-    );
-    prime_setup::merge_settings(tmp.path(), "ios", &fw_dir()).unwrap();
-    let settings = read_settings(tmp.path());
-    let allow: Vec<String> = settings["permissions"]["allow"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect();
-    assert!(!allow.contains(&"Bash(killall MyApp)".to_string()));
-}
-
 // ── write_version_marker ────────────────────────────────────
 
 #[test]
 fn version_marker_created() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None)
-        .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None).unwrap();
     assert!(tmp.path().join(".flow.json").exists());
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert_eq!(data["flow_version"], "1.0.0");
-    assert_eq!(data["framework"], "rails");
+}
+
+#[test]
+fn version_marker_writes_minimal_json() {
+    // Tombstone: write_version_marker produces a minimal `.flow.json`
+    // with only the keys it was asked to set. The legacy `framework`
+    // key (rails/python/ios/go/rust) is never written; older files
+    // with the key still parse cleanly because every consumer ignores
+    // unknown JSON fields.
+    let tmp = tempfile::tempdir().unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None).unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
+    assert!(
+        data.get("framework").is_none(),
+        "framework key must not be written to .flow.json"
+    );
 }
 
 #[test]
 fn version_marker_trailing_newline() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None)
-        .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None).unwrap();
     let content = fs::read_to_string(tmp.path().join(".flow.json")).unwrap();
     assert!(content.ends_with('\n'));
 }
@@ -492,7 +368,6 @@ fn version_marker_with_config_hash() {
     prime_setup::write_version_marker(
         tmp.path(),
         "1.0.0",
-        "rails",
         Some("abc123def456"),
         None,
         None,
@@ -508,8 +383,7 @@ fn version_marker_with_config_hash() {
 #[test]
 fn version_marker_without_config_hash() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None)
-        .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None).unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert!(data.get("config_hash").is_none());
@@ -521,7 +395,6 @@ fn version_marker_with_setup_hash() {
     prime_setup::write_version_marker(
         tmp.path(),
         "1.0.0",
-        "rails",
         None,
         Some("abc123def456"),
         None,
@@ -538,17 +411,8 @@ fn version_marker_with_setup_hash() {
 fn version_marker_with_skills() {
     let tmp = tempfile::tempdir().unwrap();
     let skills = json!({"flow-start": "manual", "flow-code": "auto"});
-    prime_setup::write_version_marker(
-        tmp.path(),
-        "1.0.0",
-        "python",
-        None,
-        None,
-        None,
-        None,
-        Some(&skills),
-    )
-    .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, Some(&skills))
+        .unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert_eq!(data["skills"], skills);
@@ -557,8 +421,7 @@ fn version_marker_with_skills() {
 #[test]
 fn version_marker_without_skills() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", "rails", None, None, None, None, None)
-        .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None).unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert!(data.get("skills").is_none());
@@ -567,17 +430,8 @@ fn version_marker_without_skills() {
 #[test]
 fn version_marker_with_commit_format() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(
-        tmp.path(),
-        "1.0.0",
-        "rails",
-        None,
-        None,
-        Some("full"),
-        None,
-        None,
-    )
-    .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, Some("full"), None, None)
+        .unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert_eq!(data["commit_format"], "full");
@@ -589,7 +443,6 @@ fn version_marker_with_plugin_root() {
     prime_setup::write_version_marker(
         tmp.path(),
         "1.0.0",
-        "rails",
         None,
         None,
         None,
@@ -799,6 +652,44 @@ fn install_launcher_creates_directory() {
     assert!(tmp.path().join(".local").join("bin").join("flow").exists());
 }
 
+// ── install_bin_stubs ───────────────────────────────────────
+
+#[test]
+fn install_bin_stubs_copies_all_four() {
+    // The plugin root for tests is the FLOW repo manifest dir, which
+    // contains assets/bin-stubs/<tool>.sh for all four tools.
+    let tmp = tempfile::tempdir().unwrap();
+    let plugin_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let installed = prime_setup::install_bin_stubs(tmp.path(), plugin_root);
+    assert_eq!(installed.len(), 4);
+    for tool in &["format", "lint", "build", "test"] {
+        let path = tmp.path().join("bin").join(tool);
+        assert!(path.exists(), "expected {} to be installed", tool);
+        let mode = fs::metadata(&path).unwrap().permissions().mode();
+        assert!(mode & 0o111 != 0, "{} not executable", tool);
+    }
+}
+
+#[test]
+fn install_bin_stubs_skips_existing() {
+    // Pre-existing user scripts must never be overwritten so users
+    // who already configured their own bin/* keep their work.
+    let tmp = tempfile::tempdir().unwrap();
+    let plugin_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let bin_dir = tmp.path().join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    fs::write(bin_dir.join("test"), "#!/bin/bash\nexit 99\n").unwrap();
+    let installed = prime_setup::install_bin_stubs(tmp.path(), plugin_root);
+    // test was skipped; format/lint/build were installed
+    assert_eq!(installed.len(), 3);
+    assert!(!installed.contains(&"test".to_string()));
+    let test_content = fs::read_to_string(bin_dir.join("test")).unwrap();
+    assert!(
+        test_content.contains("exit 99"),
+        "user's test script must be preserved"
+    );
+}
+
 // ── CLI via subprocess ──────────────────────────────────────
 
 fn flow_rs() -> Command {
@@ -817,14 +708,8 @@ fn parse_stdout(stdout: &[u8]) -> Value {
         .unwrap_or_else(|e| panic!("JSON parse failed: {} (line: {:?})", e, last_line))
 }
 
-fn run_setup(project: &Path, framework: &str) -> (Value, i32) {
-    let output = flow_rs()
-        .arg("prime-setup")
-        .arg(project)
-        .arg("--framework")
-        .arg(framework)
-        .output()
-        .unwrap();
+fn run_setup(project: &Path) -> (Value, i32) {
+    let output = flow_rs().arg("prime-setup").arg(project).output().unwrap();
     let value = parse_stdout(&output.stdout);
     let code = output.status.code().unwrap_or(-1);
     (value, code)
@@ -833,33 +718,8 @@ fn run_setup(project: &Path, framework: &str) -> (Value, i32) {
 #[test]
 fn cli_invalid_project_root() {
     let tmp = tempfile::tempdir().unwrap();
-    let (data, code) = run_setup(&tmp.path().join("nonexistent"), "rails");
+    let (data, code) = run_setup(&tmp.path().join("nonexistent"));
     assert_eq!(data["status"], "error");
-    assert_eq!(code, 1);
-}
-
-#[test]
-fn cli_missing_framework() {
-    let tmp = tempfile::tempdir().unwrap();
-    let output = flow_rs()
-        .arg("prime-setup")
-        .arg(tmp.path())
-        .output()
-        .unwrap();
-    assert_ne!(output.status.code(), Some(0));
-}
-
-#[test]
-fn cli_invalid_framework() {
-    let tmp = tempfile::tempdir().unwrap();
-    make_git_repo(tmp.path());
-    let (data, code) = run_setup(tmp.path(), "django");
-    assert_eq!(data["status"], "error");
-    assert!(data["message"]
-        .as_str()
-        .unwrap()
-        .to_lowercase()
-        .contains("framework"));
     assert_eq!(code, 1);
 }
 
@@ -867,13 +727,12 @@ fn cli_invalid_framework() {
 fn cli_happy_path() {
     let tmp = tempfile::tempdir().unwrap();
     make_git_repo(tmp.path());
-    let (data, code) = run_setup(tmp.path(), "rails");
+    let (data, code) = run_setup(tmp.path());
     assert_eq!(code, 0);
     assert_eq!(data["status"], "ok");
     assert_eq!(data["settings_merged"], true);
     assert_eq!(data["version_marker"], true);
     assert_eq!(data["hook_installed"], true);
-    assert_eq!(data["framework"], "rails");
 }
 
 #[test]
@@ -884,8 +743,6 @@ fn cli_skills_json_written() {
     let output = flow_rs()
         .arg("prime-setup")
         .arg(tmp.path())
-        .arg("--framework")
-        .arg("rails")
         .arg("--skills-json")
         .arg(serde_json::to_string(&skills).unwrap())
         .output()
@@ -904,8 +761,6 @@ fn cli_commit_format_written() {
     let output = flow_rs()
         .arg("prime-setup")
         .arg(tmp.path())
-        .arg("--framework")
-        .arg("rails")
         .arg("--commit-format")
         .arg("title-only")
         .output()
@@ -926,8 +781,6 @@ fn cli_plugin_root_written_and_launcher_installed() {
     let output = flow_rs()
         .arg("prime-setup")
         .arg(tmp.path())
-        .arg("--framework")
-        .arg("rails")
         .arg("--plugin-root")
         .arg("/some/cache/path")
         .env("HOME", &fake_home)
@@ -945,7 +798,7 @@ fn cli_plugin_root_written_and_launcher_installed() {
 fn cli_no_plugin_root_no_launcher() {
     let tmp = tempfile::tempdir().unwrap();
     make_git_repo(tmp.path());
-    let (data, code) = run_setup(tmp.path(), "rails");
+    let (data, code) = run_setup(tmp.path());
     assert_eq!(code, 0);
     assert_eq!(data["launcher_installed"], false);
     let flow_data: Value =
@@ -960,8 +813,6 @@ fn cli_invalid_skills_json() {
     let output = flow_rs()
         .arg("prime-setup")
         .arg(tmp.path())
-        .arg("--framework")
-        .arg("rails")
         .arg("--skills-json")
         .arg("not valid json")
         .output()
@@ -980,7 +831,7 @@ fn cli_invalid_skills_json() {
 fn cli_happy_path_stores_config_hash() {
     let tmp = tempfile::tempdir().unwrap();
     make_git_repo(tmp.path());
-    let (data, code) = run_setup(tmp.path(), "rails");
+    let (data, code) = run_setup(tmp.path());
     assert_eq!(code, 0);
     assert_eq!(data["status"], "ok");
     let flow_data: Value =
@@ -994,7 +845,7 @@ fn cli_happy_path_stores_config_hash() {
 fn cli_happy_path_stores_setup_hash() {
     let tmp = tempfile::tempdir().unwrap();
     make_git_repo(tmp.path());
-    let (data, code) = run_setup(tmp.path(), "rails");
+    let (data, code) = run_setup(tmp.path());
     assert_eq!(code, 0);
     assert_eq!(data["status"], "ok");
     let flow_data: Value =
@@ -1005,81 +856,15 @@ fn cli_happy_path_stores_setup_hash() {
 }
 
 #[test]
-fn cli_primes_project_claude_md() {
+fn cli_installs_bin_stubs() {
     let tmp = tempfile::tempdir().unwrap();
     make_git_repo(tmp.path());
-    fs::write(tmp.path().join("CLAUDE.md"), "# Project\n").unwrap();
-    let (data, code) = run_setup(tmp.path(), "rails");
+    let (data, code) = run_setup(tmp.path());
     assert_eq!(code, 0);
-    assert_eq!(data["prime_project"], "ok");
-    let content = fs::read_to_string(tmp.path().join("CLAUDE.md")).unwrap();
-    assert!(content.contains("<!-- FLOW:BEGIN -->"));
-}
-
-#[test]
-fn cli_creates_bin_dependencies() {
-    let tmp = tempfile::tempdir().unwrap();
-    make_git_repo(tmp.path());
-    let (data, code) = run_setup(tmp.path(), "rails");
-    assert_eq!(code, 0);
-    assert_eq!(data["dependencies"], "ok");
-    assert!(tmp.path().join("bin").join("dependencies").exists());
-}
-
-#[test]
-fn cli_dependencies_skipped_when_exists() {
-    let tmp = tempfile::tempdir().unwrap();
-    make_git_repo(tmp.path());
-    let bin_dir = tmp.path().join("bin");
-    fs::create_dir_all(&bin_dir).unwrap();
-    fs::write(bin_dir.join("dependencies"), "#!/bin/bash\ncustom\n").unwrap();
-    let (data, code) = run_setup(tmp.path(), "rails");
-    assert_eq!(code, 0);
-    assert_eq!(data["dependencies"], "skipped");
-    assert_eq!(
-        fs::read_to_string(bin_dir.join("dependencies")).unwrap(),
-        "#!/bin/bash\ncustom\n"
-    );
-}
-
-// ── Framework exclusion ─────────────────────────────────────
-
-#[test]
-fn rails_excludes_python_permissions() {
-    let tmp = tempfile::tempdir().unwrap();
-    prime_setup::merge_settings(tmp.path(), "rails", &fw_dir()).unwrap();
-    let settings = read_settings(tmp.path());
-    let allow: Vec<String> = settings["permissions"]["allow"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect();
-    for entry in load_framework_perms("python") {
-        assert!(
-            !allow.contains(&entry),
-            "Rails settings should not contain Python permission: {}",
-            entry
-        );
-    }
-}
-
-#[test]
-fn python_excludes_rails_permissions() {
-    let tmp = tempfile::tempdir().unwrap();
-    prime_setup::merge_settings(tmp.path(), "python", &fw_dir()).unwrap();
-    let settings = read_settings(tmp.path());
-    let allow: Vec<String> = settings["permissions"]["allow"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect();
-    for entry in load_framework_perms("rails") {
-        assert!(
-            !allow.contains(&entry),
-            "Python settings should not contain Rails permission: {}",
-            entry
-        );
+    let installed = data["stubs_installed"].as_array().unwrap();
+    assert_eq!(installed.len(), 4);
+    for tool in &["format", "lint", "build", "test"] {
+        let path = tmp.path().join("bin").join(tool);
+        assert!(path.exists(), "expected bin/{} installed", tool);
     }
 }

@@ -33,12 +33,12 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 {
   "schema_version": 1,
   "branch": "app-payment-webhooks",
+  "relative_cwd": "",
   "repo": "org/repo",
   "pr_number": 42,
   "pr_url": "https://github.com/org/repo/pull/42",
   "started_at": "2026-02-20T10:00:00-08:00",
   "current_phase": "flow-plan",
-  "framework": "rails",
   "prompt": "fix #83 and #89 — close issues at complete time",
   "files": {
     "plan": null,
@@ -103,12 +103,12 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 |-------|------|-------------|
 | `schema_version` | integer | Schema version marker — currently `1` |
 | `branch` | string | Git branch name — slug format. Canonical identity field. Feature name and worktree path are derived from this at read time |
+| `relative_cwd` | string | Subdirectory inside the project root where the user started the flow, captured by `start-init` from `cwd.strip_prefix(project_root())`. Empty string means the flow operates at the worktree root (the common case). Non-empty values (e.g. `"api"` or `"packages/api"`) tell `start-workspace` to return a `worktree_cwd` that includes the suffix so the agent lands in the same subdirectory after the worktree is created, and tell every `bin/flow` subcommand's cwd-drift guard which directory to enforce. Defaults to empty for state files written before this field existed |
 | `repo` | string / null | GitHub repo in `owner/repo` format, cached during `/flow-start`. Used by `bin/flow issue` to avoid repeated `git remote` calls. Null if detection fails |
 | `pr_number` | integer / null | GitHub PR number. Null during early Start (before PR creation) when created by `init-state` — backfilled by `start-workspace` after PR creation |
 | `pr_url` | string / null | Full GitHub PR URL. Null during early Start — backfilled by `start-workspace` after PR creation |
 | `started_at` | ISO 8601 | When the feature was started (Phase 1 entry) |
 | `current_phase` | string | The currently active phase key (e.g. `"flow-code"`) |
-| `framework` | string | `"rails"`, `"python"`, `"ios"`, `"go"`, or `"rust"` — set during `/flow-prime`, copied to state by `/flow-start` |
 | `files` | object | Structured artifact file paths — see [Files Object](#files-object) |
 | `plan_file` | string / null | Legacy: absolute path to the plan file. Superseded by `files.plan` — kept for backward compatibility |
 | `session_id` | string / null | Claude Code session UUID — set by Stop hook from hook stdin |

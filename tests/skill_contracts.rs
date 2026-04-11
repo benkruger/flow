@@ -1112,7 +1112,11 @@ fn flow_qa_has_setup_commands() {
 }
 
 #[test]
-fn flow_qa_asks_for_framework() {
+fn flow_qa_asks_for_target() {
+    // The flow-qa skill must prompt the user to pick which QA repo to
+    // exercise. Originally framed as a "framework" question; the
+    // framework concept has been removed but the choice itself
+    // remains — different QA repos still test different toolchains.
     let c = fs::read_to_string(
         common::repo_root()
             .join(".claude")
@@ -1121,7 +1125,14 @@ fn flow_qa_asks_for_framework() {
             .join("SKILL.md"),
     )
     .unwrap();
-    assert!(c.contains("framework"), "flow-qa must prompt for framework");
+    assert!(
+        c.contains("AskUserQuestion"),
+        "flow-qa must prompt for which QA target to run"
+    );
+    assert!(
+        c.contains("python") && c.contains("rails"),
+        "flow-qa must list at least the python and rails targets"
+    );
 }
 
 #[test]
@@ -1212,19 +1223,20 @@ fn prime_supports_reprime_flag() {
     assert!(c.contains("--reprime"), "Prime must support --reprime flag");
 }
 
-// --- Framework and learning ---
+// --- Skill structure and learning ---
 
 #[test]
-fn no_framework_fragment_files() {
+fn no_skill_fragment_files() {
+    // Each skill directory must contain only SKILL.md, never split
+    // into multiple .md fragments. The original phrasing called these
+    // "framework fragments" — the rule itself was always about
+    // skill fragmentation, not framework dispatch.
     for name in common::all_skill_names() {
         let dir = common::skills_dir().join(&name);
         for entry in fs::read_dir(&dir).unwrap().flatten() {
             let fname = entry.file_name().to_string_lossy().to_string();
             if fname != "SKILL.md" && fname.ends_with(".md") {
-                panic!(
-                    "No framework fragment files should exist: {}/{}",
-                    name, fname
-                );
+                panic!("No skill fragment files should exist: {}/{}", name, fname);
             }
         }
     }
@@ -1361,7 +1373,11 @@ fn skills_record_issues_via_add_issue() {
 }
 
 #[test]
-fn generic_skills_have_no_framework_conditionals() {
+fn generic_skills_have_no_language_conditionals() {
+    // Generic skills (the always-available utility skills) must stay
+    // language-agnostic. They never branch on "If Rails", "If Python",
+    // etc. — every project owns its toolchain via bin/* and the skill
+    // itself is the same shape regardless of language.
     let _phase_names: HashSet<String> = common::phase_order().into_iter().collect();
     let generic = vec![
         "flow-commit",
@@ -1385,7 +1401,7 @@ fn generic_skills_have_no_framework_conditionals() {
             !content.contains("If Rails")
                 && !content.contains("If Python")
                 && !content.contains("If iOS"),
-            "Generic skill {} must not have framework conditionals",
+            "Generic skill {} must not have language conditionals",
             name
         );
     }
@@ -2870,11 +2886,19 @@ fn adversarial_agent_has_verify_step() {
 }
 
 #[test]
-fn code_review_step_2_references_framework() {
+fn code_review_adversarial_uses_temp_test_file_placeholder() {
+    // The adversarial step parameterizes the temp file path so the
+    // agent can write a single test file under .flow-states/ without
+    // hardcoding language. The framework concept is gone; the agent
+    // picks the file extension itself by inspecting the diff.
     let c = common::read_skill("flow-code-review");
     assert!(
-        c.contains("framework"),
-        "SKILL.md Step 2 must reference framework for adversarial setup"
+        c.contains("<temp_test_file>"),
+        "SKILL.md must parameterize the adversarial temp file path"
+    );
+    assert!(
+        c.contains("<test_command>"),
+        "SKILL.md must parameterize the adversarial test command"
     );
 }
 

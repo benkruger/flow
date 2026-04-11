@@ -9,7 +9,7 @@ nav_order: 2
 
 **Example:** `/flow-start app payment webhooks`
 
-This is always the first phase, for every feature without exception. It establishes an isolated workspace, verifies the health of the codebase, configures workspace permissions, and opens the PR before any feature work begins. Framework-specific setup (dependency upgrades, CI fixes) is handled by the framework instructions in the skill.
+This is always the first phase, for every feature without exception. It establishes an isolated workspace, verifies the health of the codebase, configures workspace permissions, and opens the PR before any feature work begins. Project-specific setup (dependency upgrades, CI fixes) is handled by the project's `bin/dependencies` script and CLAUDE.md conventions.
 
 ---
 

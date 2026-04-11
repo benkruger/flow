@@ -45,18 +45,8 @@ static ENHANCEMENT_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 /// Known directory prefixes for file path extraction.
 const DIR_PREFIXES: &[&str] = &[
-    "lib/",
-    "skills/",
-    "tests/",
-    "docs/",
-    "hooks/",
-    "frameworks/",
-    ".claude/",
-    "bin/",
-    "agents/",
-    "src/",
-    "config/",
-    "app/",
+    "lib/", "skills/", "tests/", "docs/", "hooks/", ".claude/", "bin/", "agents/", "src/",
+    "config/", "app/",
 ];
 
 /// Extract file paths from issue body text.

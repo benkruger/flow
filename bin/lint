@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# FLOW linter — called by `bin/flow lint` and `bin/flow ci`.
+# Treats every clippy warning as an error so CI gates on lint cleanliness.
+set -euo pipefail
+exec cargo clippy --all-targets --quiet -- -D warnings

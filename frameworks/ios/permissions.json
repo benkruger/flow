@@ -1,9 +1,0 @@
-{
-  "allow": [],
-  "derived_permissions": [
-    {
-      "glob": "*.xcodeproj",
-      "template": "Bash(killall {stem})"
-    }
-  ]
-}

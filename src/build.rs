@@ -1,12 +1,13 @@
 //! `bin/flow build` subcommand.
 //!
-//! Detects the project framework, resolves the build command via
-//! [`framework_tools::tool_command`], and spawns it with inherited stdio.
-//! No-op frameworks (Python, Rails) return a skipped status.
+//! Delegates to the repo-local `./bin/build` script in the current
+//! working directory. The user's `bin/build` owns the actual build
+//! command (cargo build, go build, npm build, etc.); FLOW only
+//! provides the entry point, exit code propagation, and the
+//! `FLOW_CI_RUNNING` recursion guard.
 //!
 //! Output (JSON to stdout):
 //!   `{"status": "ok"}`
-//!   `{"status": "skipped", "reason": "..."}`
 //!   `{"status": "error", "message": "..."}`
 
 use std::path::Path;
@@ -15,58 +16,61 @@ use std::process::Command;
 use clap::Parser;
 use serde_json::{json, Value};
 
-use crate::framework_tools::{self, ToolType};
-
 #[derive(Parser, Debug)]
-#[command(name = "build", about = "Run framework build tool")]
+#[command(name = "build", about = "Run repo-local bin/build")]
 pub struct Args {
-    /// Override branch for state file framework lookup
+    /// Reserved for future use; currently ignored.
     #[arg(long)]
     pub branch: Option<String>,
 }
 
 /// Testable entry point.
-pub fn run_impl(args: &Args, cwd: &Path, root: &Path) -> (Value, i32) {
-    let branch = crate::git::resolve_branch_in(args.branch.as_deref(), cwd, root);
-    let framework =
-        match framework_tools::detect_framework_for_project(cwd, root, branch.as_deref()) {
-            Ok(fw) => fw,
-            Err(msg) => return (json!({"status": "error", "message": msg}), 1),
-        };
+pub fn run_impl(_args: &Args, cwd: &Path, root: &Path) -> (Value, i32) {
+    if let Err(msg) = crate::cwd_scope::enforce(cwd, root) {
+        return (json!({"status": "error", "message": msg}), 1);
+    }
 
-    let tool_cmd = match framework_tools::tool_command(&framework, ToolType::Build) {
-        Ok(Some(cmd)) => cmd,
-        Ok(None) => {
-            return (
-                json!({
-                    "status": "skipped",
-                    "reason": format!("build is a no-op for {}", framework),
-                }),
-                0,
-            );
-        }
-        Err(msg) => return (json!({"status": "error", "message": msg}), 1),
-    };
+    let bin_build = cwd.join("bin").join("build");
+    if !bin_build.is_file() {
+        return (
+            json!({
+                "status": "error",
+                "message": format!("./bin/build not found in {}", cwd.display()),
+            }),
+            1,
+        );
+    }
 
-    let status = Command::new(&tool_cmd.program)
-        .args(&tool_cmd.args)
+    let status = Command::new(&bin_build)
         .current_dir(cwd)
+        .env("FLOW_CI_RUNNING", "1")
         .status();
 
     match status {
         Ok(s) if s.success() => (json!({"status": "ok"}), 0),
         Ok(_) => (
-            json!({"status": "error", "message": format!("{} build failed", framework)}),
+            json!({"status": "error", "message": "./bin/build failed"}),
             1,
         ),
         Err(e) => (
-            json!({"status": "error", "message": format!("failed to run {}: {}", tool_cmd.program, e)}),
+            json!({"status": "error", "message": format!("failed to run ./bin/build: {}", e)}),
             1,
         ),
     }
 }
 
 pub fn run(args: Args) {
+    // Recursion guard: when this is spawned from `bin/flow ci` (or a
+    // user script already inside the CI chain), FLOW_CI_RUNNING is
+    // set and we must not re-enter the tool chain. Return "ok
+    // skipped" so the outer caller keeps going.
+    if std::env::var("FLOW_CI_RUNNING").is_ok() {
+        println!(
+            r#"{{"status":"ok","skipped":true,"reason":"FLOW_CI_RUNNING set (recursion guard)"}}"#
+        );
+        std::process::exit(0);
+    }
+
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let root = crate::git::project_root();
     let (result, code) = run_impl(&args, &cwd, &root);

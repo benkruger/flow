@@ -1,6 +1,6 @@
 {
   "name": "flow",
-  "description": "Opinionated development lifecycle for Claude Code — data-driven framework support",
+  "description": "Opinionated 6-phase development lifecycle for Claude Code — language-agnostic, repo-local bin/* delegation",
   "version": "1.1.0",
   "author": {
     "name": "Ben Kruger"

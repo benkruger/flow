@@ -4,8 +4,8 @@
 //! Usage: `bin/flow prime-check`
 //!
 //! Output (JSON to stdout):
-//!   Success: `{"status": "ok", "framework": "rails|python|ios|go|rust"}`
-//!   Auto-upgrade: `{"status": "ok", "framework": "...", "auto_upgraded": true, "old_version": "...", "new_version": "..."}`
+//!   Success: `{"status": "ok"}`
+//!   Auto-upgrade: `{"status": "ok", "auto_upgraded": true, "old_version": "...", "new_version": "..."}`
 //!   Failure: `{"status": "error", "message": "..."}`
 //!
 //! # Constants
@@ -38,7 +38,7 @@ use serde_json::ser::Formatter;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use crate::utils::{frameworks_dir, plugin_root};
+use crate::utils::plugin_root;
 
 /// Universal allow list — canonical source for all permission merging.
 /// Shared with `prime_setup.rs` via pub import.
@@ -171,38 +171,14 @@ impl Formatter for PythonDefaultFormatter {
     }
 }
 
-/// Load framework-specific permissions from frameworks/<name>/permissions.json.
-/// Returns an empty vec if the file is missing — not all frameworks define permissions.
-pub fn load_framework_permissions(framework: &str, fw_dir: &Path) -> Vec<String> {
-    let path = fw_dir.join(framework).join("permissions.json");
-    if !path.exists() {
-        return Vec::new();
-    }
-    let content = match fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-    let data: Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    data.get("allow")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// Build the canonical config map for a framework.
+/// Build the canonical config map for hashing.
+///
 /// Top-level keys are stored in a `BTreeMap` so serialization is
 /// alphabetically sorted — required for the SHA-256 hash to be
-/// stable across runs and machines.
-fn canonical_config(framework: &str, fw_dir: &Path) -> BTreeMap<String, Value> {
+/// stable across runs and machines. The canonical config is derived
+/// from `UNIVERSAL_ALLOW`, `FLOW_DENY`, and `EXCLUDE_ENTRIES`.
+fn canonical_config() -> BTreeMap<String, Value> {
     let mut allow: Vec<String> = UNIVERSAL_ALLOW.iter().map(|s| s.to_string()).collect();
-    allow.extend(load_framework_permissions(framework, fw_dir));
     allow.sort();
 
     let mut deny: Vec<String> = FLOW_DENY.iter().map(|s| s.to_string()).collect();
@@ -225,8 +201,8 @@ fn canonical_config(framework: &str, fw_dir: &Path) -> BTreeMap<String, Value> {
 /// compared against this output to decide whether a re-prime is needed.
 /// Any change to the formatter, key order, or value shape invalidates
 /// every existing hash.
-pub fn compute_config_hash(framework: &str, fw_dir: &Path) -> Result<String, String> {
-    let canonical = canonical_config(framework, fw_dir);
+pub fn compute_config_hash() -> Result<String, String> {
+    let canonical = canonical_config();
     let mut buf: Vec<u8> = Vec::new();
     let mut ser = serde_json::Serializer::with_formatter(&mut buf, PythonDefaultFormatter);
     canonical
@@ -324,14 +300,8 @@ pub fn run_impl(cwd: &Path, plugin_root: &Path) -> Result<Value, String> {
         let stored_display = stored_flow_version.clone().unwrap_or_default();
         let stored_config = init_data.get("config_hash").and_then(as_nonempty_str);
         let stored_setup = init_data.get("setup_hash").and_then(as_nonempty_str);
-        let framework = init_data
-            .get("framework")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
 
-        let fw_dir =
-            frameworks_dir().ok_or_else(|| "Frameworks directory not found".to_string())?;
-        let plugin_config_hash = compute_config_hash(framework, &fw_dir)?;
+        let plugin_config_hash = compute_config_hash()?;
         let plugin_setup_hash = compute_setup_hash(plugin_root)?;
 
         let config_match = stored_config
@@ -358,7 +328,6 @@ pub fn run_impl(cwd: &Path, plugin_root: &Path) -> Result<Value, String> {
 
             return Ok(json!({
                 "status": "ok",
-                "framework": framework,
                 "auto_upgraded": true,
                 "old_version": old_version,
                 "new_version": plugin_version,
@@ -375,20 +344,8 @@ pub fn run_impl(cwd: &Path, plugin_root: &Path) -> Result<Value, String> {
         }));
     }
 
-    let framework = init_data
-        .get("framework")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    if !matches!(framework, "rails" | "python" | "ios" | "go" | "rust") {
-        return Ok(json!({
-            "status": "error",
-            "message": "Missing framework in .flow.json. Run /flow:flow-prime to configure.",
-        }));
-    }
-
     Ok(json!({
         "status": "ok",
-        "framework": framework,
     }))
 }
 

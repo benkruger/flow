@@ -28,6 +28,22 @@ At the very start, output the following banner in your response (not via Bash) i
 ```
 ````
 
+## Panel Fields
+
+The status panel includes:
+
+- **Feature** — derived from the branch name
+- **Branch** — the git branch the flow is running on
+- **Subdir** — the `relative_cwd` from the state file, shown only when
+  non-empty. For a mono-repo flow started inside `api/`, this reads
+  `api`. Root-level flows (empty `relative_cwd`) omit the line.
+- **PR** — the PR URL if one exists
+- **Elapsed** — total time since the flow started
+- **Notes** — count of session notes (omitted when zero)
+- Phase list with completion state and cumulative time
+- Time in current phase + visit count for the active phase
+- Continue/Next command to run
+
 ## Steps
 
 ### Step 1 — Run the status formatter

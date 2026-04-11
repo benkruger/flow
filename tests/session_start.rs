@@ -55,7 +55,6 @@ fn make_state_json(branch: &str, current_phase: &str) -> String {
         "pr_url": "https://github.com/test/test/pull/1",
         "started_at": "2026-01-01T00:00:00-08:00",
         "current_phase": current_phase,
-        "framework": "rust",
         "files": {
             "plan": null,
             "dag": null,

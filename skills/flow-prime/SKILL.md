@@ -1,6 +1,6 @@
 ---
 name: flow-prime
-description: "One-time project setup — configure and commit workspace permissions, framework conventions, and version marker. Run once after installing or upgrading FLOW. Usage: /flow:flow-prime"
+description: "One-time project setup — configure and commit workspace permissions, install bin/* stubs, and write the version marker. Run once after installing or upgrading FLOW. Usage: /flow:flow-prime"
 ---
 
 # FLOW Prime — One-Time Project Setup
@@ -12,9 +12,9 @@ description: "One-time project setup — configure and commit workspace permissi
 /flow:flow-prime --reprime
 ```
 
-Run once after installing FLOW, and again after each FLOW upgrade. Configures workspace permissions, git excludes, and writes a version marker so `/flow:flow-start` knows the project is initialized.
+Run once after installing FLOW, and again after each FLOW upgrade. Configures workspace permissions, git excludes, installs the bin/* delegation stubs, and writes a version marker so `/flow:flow-start` knows the project is initialized.
 
-`--reprime` skips all questions and reuses the existing `.flow.json` config. Use this for upgrades where you want the same framework, autonomy, and commit format — just new artifacts installed.
+`--reprime` skips all questions and reuses the existing `.flow.json` config. Use this for upgrades where you want the same autonomy and commit format — just new artifacts installed.
 
 ## Announce
 
@@ -34,43 +34,13 @@ If `--reprime` was passed:
 
 1. Use the Read tool to read `.flow.json` from the project root.
    - If the file does not exist, stop with: "No existing config to reprime from. Run `/flow:flow-prime` instead."
-2. Extract `framework`, `skills`, and `commit_format` from the JSON.
-3. Run `claude plugin list` to check plugin state (needed for Step 5).
-4. Skip Steps 1–3 entirely. Jump to Step 4 with the extracted values.
+2. Extract `skills` and `commit_format` from the JSON.
+3. Run `claude plugin list` to check plugin state (needed for Step 4).
+4. Skip Steps 1–2 entirely. Jump to Step 3 with the extracted values.
 
 ## Steps
 
-### Step 1 — Detect framework and check plugins
-
-Run both in parallel (one response, two Bash calls):
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow detect-framework <project_root>
-```
-
-```bash
-claude plugin list
-```
-
-Keep the plugin list output for Step 6 — do not re-run it.
-
-Parse the detect-framework JSON output. The `detected` array contains frameworks matched
-by file presence, and `available` lists all supported frameworks.
-
-If exactly one framework is detected, confirm with AskUserQuestion:
-
-> "Detected **<display_name>** project. Is this correct?"
->
-> - **Yes, <display_name>** — "Proceed with <display_name> setup"
-> - One option per other available framework — "<display_name>"
-
-If no frameworks detected, or multiple detected, ask the user to choose
-from the available list using AskUserQuestion with one option per
-available framework.
-
-Store the answer as `framework` (lowercase name from the JSON).
-
-### Step 2 — Choose autonomy level
+### Step 1 — Choose autonomy level
 
 FLOW has two independent axes for skills that support them:
 
@@ -100,7 +70,7 @@ Ask the user how much autonomy FLOW should have using AskUserQuestion:
 {"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "manual", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "manual", "continue": "manual"}, "flow-learn": {"commit": "manual", "continue": "manual"}, "flow-complete": "manual", "flow-abort": "manual"}
 ```
 
-**Recommended** — safe defaults for all frameworks:
+**Recommended** — safe defaults:
 
 ```json
 {"flow-start": {"continue": "manual"}, "flow-plan": {"continue": "auto", "dag": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-code-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-complete": "auto", "flow-abort": "auto"}
@@ -187,9 +157,9 @@ For **complete** and **abort** (single mode), ask one AskUserQuestion each:
 > - **Auto (Recommended)** — "Skip confirmation prompt"
 > - **Manual** — "Require confirmation prompt"
 
-Store the result as `skills_dict` for Step 4.
+Store the result as `skills_dict` for Step 3.
 
-### Step 3 — Choose commit message format
+### Step 2 — Choose commit message format
 
 FLOW supports two commit message formats:
 
@@ -208,38 +178,35 @@ Store the result as `commit_format`:
 - "Title only" → `"title-only"`
 - "Full format" → `"full"`
 
-### Step 4 — Run prime setup script
+### Step 3 — Run prime setup script
 
-Serialize `skills_dict` from Step 2 as a JSON string for the `--skills-json` argument.
-Pass the `commit_format` value from Step 3 via `--commit-format`.
+Serialize `skills_dict` from Step 1 as a JSON string for the `--skills-json` argument.
+Pass the `commit_format` value from Step 2 via `--commit-format`.
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --framework <framework> --skills-json '<skills_dict_json>' --commit-format <commit_format> --plugin-root ${CLAUDE_PLUGIN_ROOT}
+${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --skills-json '<skills_dict_json>' --commit-format <commit_format> --plugin-root ${CLAUDE_PLUGIN_ROOT}
 ```
 
 The script handles everything in a single call:
 
 - Reading or creating `.claude/settings.json`
-- Merging FLOW permissions (additive only — preserves existing entries)
+- Merging FLOW universal permissions (additive only — preserves existing entries)
 - Setting `defaultMode` to `acceptEdits` (overrides existing values — FLOW requires this for state file writes without prompts)
-- Writing `.flow.json` with version marker, framework, config hash, skills config, and commit format
+- Writing `.flow.json` with version marker, config hash, skills config, and commit format
 - Adding `.flow-states/`, `.worktrees/`, `.flow.json`, `.claude/cost/`, and `.claude/scheduled_tasks.lock` to `.git/info/exclude`
 - Installing a pre-commit hook at `.git/hooks/pre-commit` that blocks direct `git commit` during active FLOW features and requires commits to go through `/flow:flow-commit`
 - Installing a global `flow` launcher at `~/.local/bin/flow` that delegates to the plugin cache, and warning if `~/.local/bin` is not in PATH
-- Priming the project CLAUDE.md with framework conventions (if CLAUDE.md exists)
-- Creating `bin/dependencies` from the framework template (skips if already exists)
+- Installing the bin/* delegation stubs (`bin/format`, `bin/lint`, `bin/build`, `bin/test`) into `<project_root>/bin/` from the FLOW asset templates. Pre-existing `bin/*` scripts are never overwritten — the stubs only fill in the gaps so `bin/flow ci` always has something to call.
 
-Output JSON: `{"status": "ok", "settings_merged": true, "exclude_updated": true, "version_marker": true, "hook_installed": true, "launcher_installed": true, "framework": "rails|python|ios|go|rust", "prime_project": "ok|error", "dependencies": "ok|skipped"}`
+Output JSON: `{"status": "ok", "settings_merged": true, "exclude_updated": true, "version_marker": true, "hook_installed": true, "launcher_installed": true, "stubs_installed": ["format", "lint", "build", "test"]}`
 
 If the script returns an error, show the message and stop.
 
-`.flow.json` stores two hashes: `config_hash` (permission structure) and `setup_hash` (entire `prime-setup.py` file content), both 12-character hex digests. When the plugin version changes, `/flow-start` recomputes both hashes and compares against stored values. If both match, the version is auto-upgraded. If either mismatches, `/flow-prime` must be re-run.
+`.flow.json` stores two hashes: `config_hash` (permission structure) and `setup_hash` (entire `prime_setup.rs` file content), both 12-character hex digests. When the plugin version changes, `/flow-start` recomputes both hashes and compares against stored values. If both match, the version is auto-upgraded. If either mismatches, `/flow-prime` must be re-run.
 
-The permissions merged depend on the framework. Universal permissions are
-always merged. Framework-specific permissions are loaded from
-`frameworks/<name>/permissions.json` and added based on the chosen framework.
+After prime, the user is responsible for editing each `bin/<tool>` to point at their actual toolchain (cargo, pytest, go test, etc.). The default stubs exit 0 with a stderr reminder so a fresh prime never blocks CI.
 
-All permissions (universal + all framework sets) for reference:
+All universal permissions written to `.claude/settings.json` for reference:
 
 ```json
 {
@@ -327,9 +294,9 @@ All permissions (universal + all framework sets) for reference:
 }
 ```
 
-### Step 5 — Install plugins
+### Step 4 — Install plugins
 
-Use the `claude plugin list` output from Step 1 (do not re-run it).
+Run `claude plugin list` to check the current plugin state.
 
 **Decompose plugin (DAG planning):**
 
@@ -347,11 +314,11 @@ claude plugin install decompose@decompose-marketplace
 
 If all plugins are already present, skip silently.
 
-### Step 6 — Commit generated files
+### Step 5 — Commit generated files
 
 Check if the working tree has changes by running `git status`. If the output contains "working tree clean", skip to Done.
 
-Otherwise, invoke `/flow:flow-commit` to commit and push the generated files (`CLAUDE.md`, `.claude/settings.json`, `bin/dependencies`).
+Otherwise, invoke `/flow:flow-commit` to commit and push the generated files (`.claude/settings.json` and any newly-installed `bin/<tool>` stubs).
 
 ### Done — Complete
 
@@ -367,12 +334,12 @@ Output the following banner in your response (not via Bash) inside a fenced code
 
 Report:
 
-- Framework: `<framework>`
 - Settings written to `.claude/settings.json`
 - Version marker written to `.flow.json` (git-excluded)
 - Git excludes configured for `.flow-states/`, `.worktrees/`, `.flow.json`, `.claude/cost/`, and `.claude/scheduled_tasks.lock`
 - Pre-commit hook installed — blocks direct `git commit`, requires `/flow:flow-commit`
 - Global launcher installed at `~/.local/bin/flow` — run `flow tui` from any primed project
+- bin/* stubs installed (list whichever names appear in `stubs_installed` from Step 3); remind the user to edit each one to wire it to their actual toolchain
 - Slack notifications: configured via plugin userConfig (token in system keychain)
 - Generated files committed and pushed
 
@@ -390,6 +357,6 @@ Display the skills configuration as a pipe-delimited markdown table with exactly
 | abort       | auto   | —        |
 ```
 
-Use the actual values from `skills_dict` (Step 2). The table above is just an example. Show `—` for axes that don't apply to a skill. The table must use pipe `|` delimiters — never render as a bullet list.
+Use the actual values from `skills_dict` (Step 1). The table above is just an example. Show `—` for axes that don't apply to a skill. The table must use pipe `|` delimiters — never render as a bullet list.
 
 Tell the user to start a new Claude Code session so the permissions take effect, then run `/flow-start <feature name>`.

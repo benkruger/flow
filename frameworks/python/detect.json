@@ -1,5 +1,0 @@
-{
-  "name": "python",
-  "display_name": "Python",
-  "detect_globs": ["pyproject.toml", "setup.py", "requirements.txt"]
-}

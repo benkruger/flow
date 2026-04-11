@@ -10,7 +10,7 @@ parent: Skills
 
 **Usage:** `/flow-config`
 
-Display-only. Reads `.flow.json` from the project root and shows the current FLOW configuration: version, framework, and per-skill autonomy settings.
+Display-only. Reads `.flow.json` from the project root and shows the current FLOW configuration: version and per-skill autonomy settings.
 
 ---
 

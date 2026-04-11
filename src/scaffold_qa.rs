@@ -1,9 +1,12 @@
-//! Create a QA repo from per-framework templates.
+//! Create a QA repo from a named template directory under qa/templates/.
 //!
-//! Usage: bin/flow scaffold-qa --framework <name> --repo <owner/repo>
+//! Usage: bin/flow scaffold-qa --template <name> --repo <owner/repo>
 //!
-//! Reads template files from qa/templates/<framework>/, creates a GitHub repo,
+//! Reads template files from qa/templates/<name>/, creates a GitHub repo,
 //! writes the files, tags seed, and creates issues from .qa/issues.json.
+//! The `<name>` selects a directory under qa/templates/. Each template
+//! ships its own bin/* scripts so the QA repo exercises a real
+//! toolchain end-to-end.
 
 use std::collections::BTreeMap;
 use std::os::unix::fs::PermissionsExt;
@@ -18,21 +21,21 @@ use crate::qa_reset::CmdResult;
 #[derive(Parser, Debug)]
 #[command(name = "scaffold-qa", about = "Create a QA repo from templates")]
 pub struct Args {
-    /// Framework name (rails, python, ios, go, rust)
+    /// Template directory name under qa/templates/
     #[arg(long)]
-    pub framework: String,
+    pub template: String,
 
     /// GitHub repo (owner/name)
     #[arg(long)]
     pub repo: String,
 }
 
-/// Find all template files for a framework.
+/// Find all files in the named template directory.
 ///
 /// Returns BTreeMap of {relative_path: content} for deterministic ordering.
 /// templates_dir defaults to qa/templates/ relative to the binary's repo root.
 pub fn find_templates(
-    framework: &str,
+    template: &str,
     templates_dir: Option<&Path>,
 ) -> Result<BTreeMap<String, String>, String> {
     let dir = match templates_dir {
@@ -52,13 +55,13 @@ pub fn find_templates(
         }
     };
 
-    let framework_dir = dir.join(framework);
-    if !framework_dir.is_dir() {
-        return Err(format!("Unknown framework: {}", framework));
+    let template_dir = dir.join(template);
+    if !template_dir.is_dir() {
+        return Err(format!("Unknown template: {}", template));
     }
 
     let mut templates = BTreeMap::new();
-    collect_files(&framework_dir, &framework_dir, &mut templates)?;
+    collect_files(&template_dir, &template_dir, &mut templates)?;
     Ok(templates)
 }
 
@@ -95,13 +98,13 @@ fn collect_files(
 /// 3. git init, add, commit, tag seed, push
 /// 4. Create issues from .qa/issues.json
 pub fn scaffold_impl(
-    framework: &str,
+    template: &str,
     repo: &str,
     templates_dir: Option<&Path>,
     clone_dir: Option<&Path>,
     runner: &dyn Fn(&[&str], Option<&Path>) -> CmdResult,
 ) -> Value {
-    let templates = match find_templates(framework, templates_dir) {
+    let templates = match find_templates(template, templates_dir) {
         Ok(t) => t,
         Err(e) => return json!({"status": "error", "message": e}),
     };
@@ -228,7 +231,7 @@ pub fn scaffold_impl(
 /// non-zero exit code while a successful scaffold exits 0.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     Ok(scaffold_impl(
-        &args.framework,
+        &args.template,
         &args.repo,
         None,
         None,
@@ -312,10 +315,10 @@ mod tests {
     }
 
     #[test]
-    fn test_find_templates_unknown_framework() {
+    fn test_find_templates_unknown_template() {
         let result = find_templates("unknown", Some(&templates_dir()));
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unknown framework"));
+        assert!(result.unwrap_err().contains("Unknown template"));
     }
 
     #[test]

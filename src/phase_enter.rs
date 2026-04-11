@@ -149,6 +149,14 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         Err(err_json) => return Ok(err_json),
     };
 
+    // Drift guard: phase entry is a state mutation, so it must run
+    // from inside the subdirectory the flow was started in. See
+    // [`crate::cwd_scope::enforce`].
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    if let Err(msg) = crate::cwd_scope::enforce(&cwd, &root) {
+        return Ok(json!({"status": "error", "message": msg}));
+    }
+
     // Read state for gate check and data extraction
     let state_content = std::fs::read_to_string(&state_path)
         .map_err(|e| format!("Could not read state file: {}", e))?;
@@ -176,12 +184,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let slack_thread_ts = state
         .get("slack_thread_ts")
         .and_then(|v| v.as_str())
-        .map(String::from);
-
-    let framework = state
-        .get("framework")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
         .map(String::from);
 
     // Plan file: check files.plan first, fall back to plan_file
@@ -278,9 +280,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
     if let Some(ref pf) = plan_file {
         response["plan_file"] = json!(pf);
-    }
-    if let Some(ref fw) = framework {
-        response["framework"] = json!(fw);
     }
 
     Ok(response)

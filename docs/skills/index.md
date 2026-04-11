@@ -32,13 +32,13 @@ These skills are available at any point in the workflow, regardless of phase.
 
 | Skill | Description |
 |-------|-------------|
-| [`/flow-prime`](flow-prime.md) | One-time setup — configure and commit permissions, framework conventions, and git excludes |
+| [`/flow-prime`](flow-prime.md) | One-time setup — configure and commit permissions, install bin/* delegation stubs, and git excludes |
 | [`/flow-commit`](flow-commit.md) | Review the full diff, then git add + commit + push |
 | [`/flow-status`](flow-status.md) | Show current phase, PR link, phase checklist, and what comes next |
 | [`/flow-note`](flow-note.md) | Capture a correction or learning — invoked automatically on corrections |
 | [`/flow-abort`](flow-abort.md) | Abandon the current feature — close PR, delete branch, remove worktree |
 | [`/flow-reset`](flow-reset.md) | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files/lock entries |
-| [`/flow-config`](flow-config.md) | Display current configuration — version, framework, per-skill autonomy |
+| [`/flow-config`](flow-config.md) | Display current configuration — version and per-skill autonomy |
 | [`/flow-doc-sync`](flow-doc-sync.md) | Full codebase documentation accuracy review — reports drift between code and docs |
 | [`/flow-hygiene`](flow-hygiene.md) | Audit instruction corpus health — CLAUDE.md, rules, and memory for staleness, misplacement, duplication, and contradictions |
 | [`/flow-issues`](flow-issues.md) | Fetch open issues, categorize, prioritize, and display a dashboard with recommended work order. Supports readiness filters (`--ready`, `--blocked`, `--decomposed`, `--quick-start`) and narrowing filters (`--label`, `--milestone`) |

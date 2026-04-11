@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# FLOW dependency updater for Rust
-# Created by /flow:flow-prime — edit to match your project
-set -euo pipefail
-cargo update

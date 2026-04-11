@@ -56,6 +56,17 @@ pub fn format_panel(
     let branch = state.get("branch").and_then(|b| b.as_str()).unwrap_or("");
     lines.push(format!("  Feature : {}", derive_feature(branch)));
     lines.push(format!("  Branch  : {}", branch));
+    // Subdirectory scope (only shown when non-empty). When the user
+    // started the flow inside a mono-repo subdir, relative_cwd records
+    // the path so the agent (and the panel reader) can see which
+    // subdirectory the flow operates in.
+    let relative_cwd = state
+        .get("relative_cwd")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if !relative_cwd.is_empty() {
+        lines.push(format!("  Subdir  : {}", relative_cwd));
+    }
     lines.push(format!(
         "  PR      : {}",
         state
@@ -205,6 +216,17 @@ pub fn format_all_complete(
 
     let branch = state.get("branch").and_then(|b| b.as_str()).unwrap_or("");
     lines.push(format!("  Feature : {}", derive_feature(branch)));
+    // Subdirectory scope (only shown when non-empty). Mirrors the
+    // in-progress panel in format_panel: when a flow was started
+    // inside a mono-repo subdirectory, the user needs to see which
+    // one even after the flow is complete.
+    let relative_cwd = state
+        .get("relative_cwd")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if !relative_cwd.is_empty() {
+        lines.push(format!("  Subdir  : {}", relative_cwd));
+    }
     lines.push(format!(
         "  PR      : {}",
         state

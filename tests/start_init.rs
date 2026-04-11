@@ -57,7 +57,7 @@ fn run_start_init(repo: &Path, feature_name: &str, extra_args: &[&str], stub_dir
 fn test_ready_path_happy() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
     let stub_dir = create_default_gh_stub(&repo);
 
     let output = run_start_init(&repo, "test-feature", &[], &stub_dir);
@@ -92,7 +92,7 @@ fn test_ready_path_happy() {
 fn test_locked_path() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
     let stub_dir = create_default_gh_stub(&repo);
 
     // Pre-create a lock entry for another feature
@@ -118,7 +118,7 @@ fn test_prime_check_failed() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     // Write .flow.json with wrong version to trigger prime-check failure
-    write_flow_json(&repo, "0.0.1", "python", None);
+    write_flow_json(&repo, "0.0.1", None);
     let stub_dir = create_default_gh_stub(&repo);
 
     let output = run_start_init(&repo, "prime-fail", &[], &stub_dir);
@@ -141,7 +141,7 @@ fn test_prime_check_failed() {
 fn test_init_state_error() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
 
     // Create gh stub that fails on issue view (to simulate issue fetch failure)
     // but with a prompt that contains #999 (nonexistent issue)
@@ -198,7 +198,7 @@ fn test_auto_upgraded() {
     // Write .flow.json with old version but matching hashes to trigger auto-upgrade.
     // We need to compute the actual hashes. Easier: write with current version first,
     // read the hashes, then rewrite with an old version but same hashes.
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
 
     // Verify that when prime-check passes normally (versions match),
     // auto_upgraded is absent in the response.
@@ -218,7 +218,7 @@ fn test_auto_upgraded() {
 fn test_upgrade_available() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
 
     // Create gh stub that returns a newer version for upgrade-check
     let stub_dir = create_gh_stub(
@@ -248,7 +248,7 @@ fn test_upgrade_available() {
 fn test_labels_best_effort() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
 
     // Create gh stub that fails on issue edit (label failure)
     let stub_dir = create_gh_stub(
@@ -307,7 +307,7 @@ fn test_lock_uses_canonical_branch_not_feature_name() {
     // 30-minute stale timeout.
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    write_flow_json(&repo, &current_plugin_version(), None);
 
     // gh stub: issue view returns a title different from feature_name,
     // pr create returns a fake URL

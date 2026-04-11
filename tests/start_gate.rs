@@ -80,9 +80,10 @@ fn create_state_file(repo: &Path, branch: &str) {
     .unwrap();
 }
 
-/// Write a CI sentinel so ci::run_impl skips without framework detection.
-/// Excludes `.flow-states/` from git so the sentinel itself doesn't
-/// change the tree snapshot (chicken-and-egg problem).
+/// Write a CI sentinel so ci::run_impl takes the fast skip path
+/// without spawning any bin/* scripts. Excludes `.flow-states/` from
+/// git so the sentinel itself doesn't change the tree snapshot
+/// (chicken-and-egg problem).
 fn write_ci_sentinel(repo: &Path) {
     // Exclude .flow-states/ from untracked file list
     let exclude_dir = repo.join(".git").join("info");
@@ -130,7 +131,7 @@ fn test_clean_path() {
 }
 
 #[test]
-#[ignore] // Needs restructuring for framework-aware CI (PR #972 Task 15)
+#[ignore] // Needs restructuring for the bin/{format,lint,build,test} delegation contract (issue #1031)
 fn test_ci_flaky_baseline() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
@@ -152,7 +153,7 @@ fn test_ci_flaky_baseline() {
 }
 
 #[test]
-#[ignore] // Needs restructuring for framework-aware CI (PR #972 Task 15)
+#[ignore] // Needs restructuring for the bin/{format,lint,build,test} delegation contract (issue #1031)
 fn test_ci_failed_baseline() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
@@ -166,7 +167,7 @@ fn test_ci_failed_baseline() {
 }
 
 #[test]
-#[ignore] // Needs restructuring for framework-aware CI (PR #972 Task 15)
+#[ignore] // Needs restructuring for the bin/{format,lint,build,test} delegation contract (issue #1031)
 fn test_deps_changed_ci_passes() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
@@ -215,7 +216,7 @@ fn test_deps_error() {
 }
 
 #[test]
-#[ignore] // Needs restructuring for framework-aware CI (PR #972 Task 15)
+#[ignore] // Needs restructuring for the bin/{format,lint,build,test} delegation contract (issue #1031)
 fn test_deps_ci_failed() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
@@ -249,7 +250,7 @@ fn test_deps_ci_failed() {
 }
 
 #[test]
-#[ignore] // Needs restructuring for framework-aware CI (PR #972 Task 15)
+#[ignore] // Needs restructuring for the bin/{format,lint,build,test} delegation contract (issue #1031)
 fn test_deps_ci_flaky() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());

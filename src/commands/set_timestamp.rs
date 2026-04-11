@@ -154,6 +154,18 @@ pub fn apply_updates(state: &mut Value, set_args: &[String]) -> Result<Vec<Updat
 /// Run the set-timestamp command.
 pub fn run(set_args: Vec<String>, branch_override: Option<String>) {
     let root = project_root();
+
+    // Drift guard: set-timestamp is the general-purpose state mutator
+    // for mid-phase fields. Writing to the state file from the wrong
+    // subdirectory of a mono-repo would silently record values
+    // against the wrong assumed scope. See
+    // [`crate::cwd_scope::enforce`].
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    if let Err(msg) = crate::cwd_scope::enforce(&cwd, &root) {
+        json_error(&msg, &[]);
+        process::exit(1);
+    }
+
     let branch = match resolve_branch(branch_override.as_deref(), &root) {
         Some(b) => b,
         None => {

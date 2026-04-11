@@ -202,6 +202,21 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         ),
     );
 
+    // Compute relative_cwd: where inside the project root the user
+    // started the flow. Empty string means project root (the common
+    // case). When the user runs `/flow:flow-start` from a subdirectory
+    // of a mono-repo (e.g. `api/`), this captures `api` so the agent
+    // lands back in the same subdirectory after the worktree is created.
+    // canonicalize() handles symlinks; strip_prefix returns relative.
+    let relative_cwd = {
+        let cwd_canon = cwd.canonicalize().unwrap_or_else(|_| cwd.clone());
+        let root_canon = root.canonicalize().unwrap_or_else(|_| root.clone());
+        match cwd_canon.strip_prefix(&root_canon) {
+            Ok(rel) => rel.to_string_lossy().into_owned(),
+            Err(_) => String::new(),
+        }
+    };
+
     // Step 4: Call init-state as subprocess
     let self_exe = std::env::current_exe()
         .map_err(|e| format!("Could not determine current executable: {}", e))?;
@@ -214,6 +229,8 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         "1".to_string(),
         "--start-steps-total".to_string(),
         "5".to_string(),
+        "--relative-cwd".to_string(),
+        relative_cwd.clone(),
     ];
     if let Some(ref pf) = args.prompt_file {
         cmd_args.push("--prompt-file".to_string());

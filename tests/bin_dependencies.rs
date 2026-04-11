@@ -1,4 +1,4 @@
-//! Tests for `bin/dependencies` — the framework-aware dependency updater script.
+//! Tests for `bin/dependencies` — the project's dependency updater script.
 
 mod common;
 

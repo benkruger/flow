@@ -224,9 +224,9 @@ and 4") are easy to miss because they sit far from the destination table
 they reference. A grep for the old number catches these stale references.
 
 Also audit spelled-out step counts in prose sections (e.g. "six review
-steps" in a Framework Conventions paragraph). These do not follow the
-`Step N` pattern and are invisible to number-based grep. Search for the
-old count as a word ("six", "three", etc.) in addition to as a digit.
+steps" buried inside a paragraph). These do not follow the `Step N`
+pattern and are invisible to number-based grep. Search for the old
+count as a word ("six", "three", etc.) in addition to as a digit.
 
 Also audit skip/jump targets — instructions like "Skip directly to
 Step 8 (cleanup)" that reference steps by number. When inserting a new
@@ -296,11 +296,12 @@ is the last action, never a mid-response call.
 
 Every bash block, subprocess call, and file path in a plugin skill
 or Rust module runs in a target project, not this repo. Before
-adding any command, ask: "Does this work in a Rails project with
-no `bin/flow` and non-bash `bin/` scripts?" Integration tests for
-Rust modules that run in target projects should simulate a target
-project layout (git repo with a non-bash `bin/ci`, no `bin/flow`)
-using `create_git_repo_with_remote()` and manual fixture setup.
+adding any command, ask: "Does this work in a fresh project that has
+no `bin/flow` and only the four `bin/{format,lint,build,test}` stubs
+the user installed via prime?" Integration tests for Rust modules
+that run in target projects should simulate a target project layout
+(git repo with non-bash `bin/*` scripts, no `bin/flow`) using
+`create_git_repo_with_remote()` and manual fixture setup.
 
 ## Plugin User Reachability
 
@@ -400,27 +401,12 @@ cover the new delegation path. If yes, replace the migration task
 with a single verification task (run the existing tests and confirm
 they pass against the new implementation).
 
-## Cross-Framework Completeness
+## Placeholder Consistency in Parameterized Tables
 
-When a skill instruction references framework-specific syntax (test
-function names, import statements, class definitions, build commands),
-enumerate patterns for all supported frameworks — not just the one
-the current task targets. FLOW supports Rails, Python, iOS, Go, and
-Rust. An instruction that shows examples for two frameworks silently
-breaks for the other three.
-
-How to apply: during the Code phase, when writing a skill instruction
-that includes framework-specific syntax examples, check the
-`frameworks/` directory for the full list of supported frameworks and
-add a pattern for each. If a framework's convention cannot be expressed
-concisely, note the framework name and link to its convention.
-
-## Framework Table Placeholder Consistency
-
-When a SKILL.md includes a framework table that parameterizes behavior
-(paths, commands, configuration), every framework row must use the
-same placeholder names for equivalent columns. If one framework uses
-`<temp_test_file>` in a command column, all frameworks that include a
+When a SKILL.md includes a table that parameterizes behavior (paths,
+commands, configuration) across multiple rows, every row must use the
+same placeholder names for equivalent columns. If one row uses
+`<temp_test_file>` in a command column, all rows that include a
 command must use the same placeholder — not `<path>` or other aliases.
 
 Why: placeholder names are contracts with downstream consumers (agents,
@@ -428,7 +414,7 @@ permission tests, placeholder substitution in `tests/permissions.rs`).
 Inconsistent naming means only one variant gets tested and the others
 silently substitute wrong values or skip validation entirely.
 
-How to apply: after writing a framework table, scan every cell for
+How to apply: after writing a parameterized table, scan every cell for
 angle-bracket placeholders and verify every row uses identical names
 for the same semantic value. If Code Review fixes a placeholder in one
 row, verify all rows in the same pass.

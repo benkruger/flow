@@ -1,6 +1,6 @@
 //! Verify QA assertions after a completed flow.
 //!
-//! Usage: bin/flow qa-verify --framework <name> --repo <owner/repo>
+//! Usage: bin/flow qa-verify --repo <owner/repo>
 //!
 //! Checks post-Complete outcomes: cleanup (no leftover state files or
 //! worktrees) and at least one merged PR.
@@ -22,10 +22,6 @@ use serde_json::{json, Value};
     about = "Verify QA assertions after a completed flow"
 )]
 pub struct Args {
-    /// Framework name (reserved for future use)
-    #[arg(long)]
-    pub framework: Option<String>,
-
     /// GitHub repo (owner/name)
     #[arg(long)]
     pub repo: String,
@@ -70,7 +66,6 @@ pub fn find_state_files(project_root: &Path) -> Vec<PathBuf> {
 /// The runner takes a slice of command args and returns Some(stdout) on
 /// success, None on failure.
 pub fn verify_impl(
-    _framework: Option<&str>,
     repo: &str,
     project_root: &Path,
     runner: &dyn Fn(&[&str]) -> Option<String>,
@@ -161,12 +156,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }
     };
 
-    Ok(verify_impl(
-        args.framework.as_deref(),
-        &args.repo,
-        project_root,
-        &runner,
-    ))
+    Ok(verify_impl(&args.repo, project_root, &runner))
 }
 
 pub fn run(args: Args) {
@@ -198,7 +188,7 @@ mod tests {
     fn test_verify_all_pass() {
         let dir = tempfile::tempdir().unwrap();
 
-        let result = verify_impl(Some("python"), "owner/repo", dir.path(), &|_| mock_ok_pr());
+        let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
 
         assert_eq!(result["status"], "ok");
         let checks = result["checks"].as_array().unwrap();
@@ -212,7 +202,7 @@ mod tests {
         fs::create_dir(&state_dir).unwrap();
         fs::write(state_dir.join("leftover.json"), r#"{"branch":"leftover"}"#).unwrap();
 
-        let result = verify_impl(Some("python"), "owner/repo", dir.path(), &|_| mock_ok_pr());
+        let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
 
         let checks = result["checks"].as_array().unwrap();
         let state_check: Vec<&Value> = checks
@@ -229,7 +219,7 @@ mod tests {
         let wt_dir = dir.path().join(".worktrees").join("some-feature");
         fs::create_dir_all(&wt_dir).unwrap();
 
-        let result = verify_impl(Some("python"), "owner/repo", dir.path(), &|_| mock_ok_pr());
+        let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
 
         let checks = result["checks"].as_array().unwrap();
         let wt_check: Vec<&Value> = checks
@@ -250,9 +240,7 @@ mod tests {
     fn test_verify_no_merged_pr() {
         let dir = tempfile::tempdir().unwrap();
 
-        let result = verify_impl(Some("python"), "owner/repo", dir.path(), &|_| {
-            mock_empty_list()
-        });
+        let result = verify_impl("owner/repo", dir.path(), &|_| mock_empty_list());
 
         let checks = result["checks"].as_array().unwrap();
         let pr_check: Vec<&Value> = checks
@@ -267,7 +255,7 @@ mod tests {
     fn test_verify_pr_fetch_failure() {
         let dir = tempfile::tempdir().unwrap();
 
-        let result = verify_impl(Some("python"), "owner/repo", dir.path(), &|_| None);
+        let result = verify_impl("owner/repo", dir.path(), &|_| None);
 
         let checks = result["checks"].as_array().unwrap();
         let pr_check: Vec<&Value> = checks
@@ -283,7 +271,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // No .flow-states dir created
 
-        let result = verify_impl(Some("python"), "owner/repo", dir.path(), &|_| mock_ok_pr());
+        let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
 
         let checks = result["checks"].as_array().unwrap();
         let state_check: Vec<&Value> = checks
@@ -301,7 +289,7 @@ mod tests {
         fs::create_dir(&state_dir).unwrap();
         fs::write(state_dir.join("orchestrate-queue.json"), "{}").unwrap();
 
-        let result = verify_impl(Some("python"), "owner/repo", dir.path(), &|_| mock_ok_pr());
+        let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
 
         let checks = result["checks"].as_array().unwrap();
         let state_check: Vec<&Value> = checks
@@ -318,7 +306,7 @@ mod tests {
         fs::create_dir(&state_dir).unwrap();
         fs::write(state_dir.join("feature-phases.json"), "{}").unwrap();
 
-        let result = verify_impl(Some("python"), "owner/repo", dir.path(), &|_| mock_ok_pr());
+        let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
 
         let checks = result["checks"].as_array().unwrap();
         let state_check: Vec<&Value> = checks
@@ -335,7 +323,7 @@ mod tests {
         fs::create_dir(&state_dir).unwrap();
         fs::write(state_dir.join(".hidden-state.json"), "{}").unwrap();
 
-        let result = verify_impl(Some("python"), "owner/repo", dir.path(), &|_| mock_ok_pr());
+        let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
 
         let checks = result["checks"].as_array().unwrap();
         let state_check: Vec<&Value> = checks

@@ -1,6 +1,6 @@
 ---
 name: flow-code
-description: "Phase 3: Code — execute plan tasks one at a time with TDD. Review diff before each commit. bin/flow ci must pass before moving to the next task. Framework architecture standards enforced."
+description: "Phase 3: Code — execute plan tasks one at a time with TDD. Review diff before each commit. bin/flow ci must pass before moving to the next task. Project architecture standards enforced."
 ---
 
 # FLOW Code — Phase 3: Code
@@ -78,17 +78,17 @@ At the very start, output the following banner in your response (not via Bash) i
 ```
 ````
 
-## Framework Conventions
+## Project Conventions
 
-Read the project's CLAUDE.md for framework-specific conventions. The CLAUDE.md
-is primed with architecture patterns, test conventions, CI failure fix order,
-and hard rules during `/flow:flow-prime`. Follow those conventions for:
+Read the project's CLAUDE.md for project-specific conventions. Each
+project owns its own toolchain via `bin/{format,lint,build,test}` and
+documents its conventions in CLAUDE.md. Follow those conventions for:
 
 - **Architecture checks** — what to read before writing code
 - **Test patterns** — existing fixtures, helpers, and test conventions
-- **Targeted test command** — how to run a single test file
+- **Targeted test command** — how to run a single test file (typically `bin/test --file <path>`)
 - **CI failure fix order** — how to diagnose and fix CI failures
-- **Hard rules** — framework-specific constraints
+- **Hard rules** — project-specific constraints
 
 ## Logging
 
@@ -372,17 +372,17 @@ the plan explicitly names for this task exists in the codebase.
 Re-read the current task's description from the plan file. Look for
 explicitly named test functions. These appear as comma-separated lists,
 under headings like "Rust tests:" or "Tests:", or inline in the task
-description. Test naming conventions vary by framework:
+description. Test naming conventions vary by language:
 
 - **Rust** — `test_` prefix (e.g., `test_parser_handles_empty_input`)
 - **Python** — `test_` prefix (e.g., `test_login_timeout`)
 - **Go** — `Test` prefix with capital T (e.g., `TestParseConfig`)
-- **Swift/iOS** — `test` prefix in camelCase (e.g., `testLoginTimeout`)
-- **Rails/Ruby** — `test_` prefix for minitest; `it` or `describe` blocks for RSpec
+- **Swift** — `test` prefix in camelCase (e.g., `testLoginTimeout`)
+- **Ruby** — `test_` prefix for minitest; `it` or `describe` blocks for RSpec
 
 If the task description names specific test functions, use the Grep
 tool to verify each one exists as a function or method definition in
-the codebase. Match the framework convention: `fn <name>` for Rust,
+the codebase. Match the language convention: `fn <name>` for Rust,
 `def <name>` for Python/Ruby, `func <name>` for Go/Swift.
 
 - If all named tests are found → proceed to Commit
@@ -543,7 +543,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 - **Never skip `bin/flow ci`** — must be green before every commit
 - **Never move to the next task** until the current task is committed
 - **Never rebase** — always merge
-- Plus the **Framework-Specific Hard Rules** from the project CLAUDE.md
+- Plus the **Project-Specific Hard Rules** from the project CLAUDE.md
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories

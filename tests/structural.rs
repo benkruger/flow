@@ -1,6 +1,6 @@
 //! Structural invariant tests for FLOW plugin configuration files.
 //!
-//! These tests verify config consistency, hook registration, framework
+//! These tests verify config consistency, hook registration, version
 //! definitions, agent frontmatter, version parity, and tombstone guards.
 
 mod common;
@@ -535,137 +535,7 @@ fn test_claude_md_has_no_lessons_learned_section() {
     );
 }
 
-// --- Framework definition directory ---
-
-const FRAMEWORK_REQUIRED_FILES: &[&str] = &[
-    "detect.json",
-    "permissions.json",
-    "dependencies",
-    "priming.md",
-];
-
-fn load_frameworks() -> Vec<(String, PathBuf)> {
-    let fw_dir = common::frameworks_dir();
-    assert!(
-        fw_dir.is_dir(),
-        "frameworks/ directory does not exist at {}",
-        fw_dir.display()
-    );
-    let mut frameworks: Vec<(String, PathBuf)> = fs::read_dir(&fw_dir)
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
-        .map(|e| (e.file_name().to_string_lossy().into_owned(), e.path()))
-        .collect();
-    frameworks.sort_by(|a, b| a.0.cmp(&b.0));
-    assert!(
-        !frameworks.is_empty(),
-        "frameworks/ directory has no framework subdirectories"
-    );
-    frameworks
-}
-
-#[test]
-fn test_frameworks_directory_has_required_files() {
-    for (name, path) in load_frameworks() {
-        for filename in FRAMEWORK_REQUIRED_FILES {
-            assert!(
-                path.join(filename).exists(),
-                "frameworks/{}/ missing required file: {}",
-                name,
-                filename
-            );
-        }
-    }
-}
-
-#[test]
-fn test_framework_detect_json_schema() {
-    for (name, path) in load_frameworks() {
-        let content = fs::read_to_string(path.join("detect.json")).unwrap();
-        let data: Value = serde_json::from_str(&content).unwrap();
-        assert!(
-            data.get("name").is_some(),
-            "frameworks/{}/detect.json missing 'name'",
-            name
-        );
-        assert!(
-            data.get("display_name").is_some(),
-            "frameworks/{}/detect.json missing 'display_name'",
-            name
-        );
-        assert!(
-            data.get("detect_globs").is_some(),
-            "frameworks/{}/detect.json missing 'detect_globs'",
-            name
-        );
-        let globs = data["detect_globs"].as_array();
-        assert!(
-            globs.is_some(),
-            "frameworks/{}/detect.json 'detect_globs' must be a list",
-            name
-        );
-        let globs = globs.unwrap();
-        assert!(
-            !globs.is_empty(),
-            "frameworks/{}/detect.json 'detect_globs' must have at least one entry",
-            name
-        );
-        assert_eq!(
-            data["name"].as_str().unwrap(),
-            name,
-            "frameworks/{}/detect.json 'name' is '{}' but directory is '{}'",
-            name,
-            data["name"].as_str().unwrap(),
-            name
-        );
-    }
-}
-
-#[test]
-fn test_framework_permissions_json_schema() {
-    for (name, path) in load_frameworks() {
-        let content = fs::read_to_string(path.join("permissions.json")).unwrap();
-        let data: Value = serde_json::from_str(&content).unwrap();
-        assert!(
-            data.get("allow").is_some(),
-            "frameworks/{}/permissions.json missing 'allow'",
-            name
-        );
-        let allow = data["allow"].as_array();
-        assert!(
-            allow.is_some(),
-            "frameworks/{}/permissions.json 'allow' must be a list",
-            name
-        );
-        for entry in allow.unwrap() {
-            let s = entry.as_str();
-            assert!(
-                s.is_some(),
-                "frameworks/{}/permissions.json 'allow' entries must be strings",
-                name
-            );
-            assert!(
-                s.unwrap().starts_with("Bash("),
-                "frameworks/{}/permissions.json entry '{}' must start with 'Bash('",
-                name,
-                s.unwrap()
-            );
-        }
-    }
-}
-
-#[test]
-fn test_framework_dependencies_is_executable_script() {
-    for (name, path) in load_frameworks() {
-        let content = fs::read_to_string(path.join("dependencies")).unwrap();
-        assert!(
-            content.starts_with("#!"),
-            "frameworks/{}/dependencies must start with a shebang (#!/...)",
-            name
-        );
-    }
-}
+// --- Plugin invariants ---
 
 // --- plugin.json invariants ---
 
@@ -875,12 +745,7 @@ fn test_checksum_version_invariant() {
     assert!(git_commit.status.success(), "git commit failed");
 
     let result = std::process::Command::new(root.join("bin/flow").to_str().unwrap())
-        .args([
-            "prime-setup",
-            tmp_path.to_str().unwrap(),
-            "--framework",
-            "python",
-        ])
+        .args(["prime-setup", tmp_path.to_str().unwrap()])
         .output()
         .expect("Failed to run bin/flow prime-setup");
     assert!(

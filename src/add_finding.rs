@@ -62,6 +62,15 @@ pub fn run_impl(args: &Args) -> Result<usize, String> {
     }
 
     let root = project_root();
+
+    // Drift guard: state mutations must happen from inside the
+    // subdirectory the flow was started in. Without this, a user who
+    // cds out of an `api/`-scoped flow into `ios/` could record
+    // findings against the wrong subtree. See
+    // [`crate::cwd_scope::enforce`].
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    crate::cwd_scope::enforce(&cwd, &root)?;
+
     let branch = resolve_branch(args.branch.as_deref(), &root)
         .ok_or_else(|| "Could not determine current branch".to_string())?;
     let state_path = root.join(".flow-states").join(format!("{}.json", branch));

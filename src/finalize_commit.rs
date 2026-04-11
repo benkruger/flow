@@ -736,11 +736,16 @@ mod tests {
 
     // --- Integration tests for run_impl CI enforcement ---
 
-    /// Set up a bare remote + clone with a configurable bin/ci script and .flow-states dir.
+    /// Set up a bare remote + clone with a configurable `bin/test` script and `.flow-states` dir.
     ///
-    /// The bin/ci script checks `.ci-should-fail` in the project root:
-    /// - If the file exists and contains "1", bin/ci exits 1 (CI fails).
-    /// - Otherwise, bin/ci exits 0 (CI passes).
+    /// `bin/flow ci` scans `cwd/bin/{format,lint,build,test}` for executable
+    /// scripts and runs whichever exist. The fixture installs a single
+    /// `bin/test` so the CI sequence has exactly one step whose pass/fail
+    /// behavior tests can control via `.ci-should-fail`.
+    ///
+    /// The script checks `.ci-should-fail` in the project root:
+    /// - If the file exists and contains "1", `bin/test` exits 1 (CI fails).
+    /// - Otherwise, `bin/test` exits 0 (CI passes).
     ///
     /// Additionally, each invocation appends a line to `.ci-invocation-marker`
     /// so tests can verify whether CI actually ran (vs. being skipped by sentinel).
@@ -750,10 +755,10 @@ mod tests {
         let (clone_dir, bare_dir) = setup_integration_repo();
         let clone_str = clone_dir.path().to_str().unwrap();
 
-        // Create bin/ci script with pass/fail control and invocation marker
+        // Create bin/test script with pass/fail control and invocation marker
         let bin_dir = clone_dir.path().join("bin");
         fs::create_dir_all(&bin_dir).unwrap();
-        let bin_ci = bin_dir.join("ci");
+        let bin_test = bin_dir.join("test");
         let script = r#"#!/usr/bin/env bash
 # Append to marker file so tests can count invocations
 echo "invoked" >> "$(dirname "$0")/../.ci-invocation-marker"
@@ -763,11 +768,11 @@ if [ -f "$(dirname "$0")/../.ci-should-fail" ] && [ "$(cat "$(dirname "$0")/../.
 fi
 exit 0
 "#;
-        fs::write(&bin_ci, script).unwrap();
+        fs::write(&bin_test, script).unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&bin_ci, fs::Permissions::from_mode(0o755)).unwrap();
+            fs::set_permissions(&bin_test, fs::Permissions::from_mode(0o755)).unwrap();
         }
 
         // Exclude CI control/marker files from git so they don't affect
@@ -780,10 +785,10 @@ exit 0
         )
         .unwrap();
 
-        // Commit bin/ci so it's tracked (avoids untracked-file snapshot changes)
+        // Commit bin/test so it's tracked (avoids untracked-file snapshot changes)
         git_assert_ok(
             &Command::new("git")
-                .args(["-C", clone_str, "add", "bin/ci"])
+                .args(["-C", clone_str, "add", "bin/test"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
@@ -791,7 +796,7 @@ exit 0
         );
         git_assert_ok(
             &Command::new("git")
-                .args(["-C", clone_str, "commit", "-m", "Add bin/ci"])
+                .args(["-C", clone_str, "commit", "-m", "Add bin/test"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
@@ -888,8 +893,8 @@ exit 0
         let msg_path = clone_path.join(".flow-commit-msg");
         fs::write(&msg_path, "Add feature.rs").unwrap();
 
-        // Write sentinel directly for this tree state — bypasses framework
-        // detection (no framework marker files in the fixture).
+        // Write sentinel directly for this tree state so ci::run_impl
+        // takes the fast skip path without spawning bin/* scripts.
         let snapshot = crate::ci::tree_snapshot(clone_path, None);
         let sentinel = crate::ci::sentinel_path(clone_path, "main");
         fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
@@ -1032,7 +1037,8 @@ exit 0
     }
 
     /// Helper: write a CI sentinel for the current tree state so
-    /// `ci::run_impl` skips without needing framework detection.
+    /// `ci::run_impl` takes the fast skip path without spawning any
+    /// `bin/*` scripts.
     fn write_ci_sentinel(clone_path: &std::path::Path, branch: &str) {
         let snapshot = crate::ci::tree_snapshot(clone_path, None);
         let sentinel = crate::ci::sentinel_path(clone_path, branch);
@@ -1141,7 +1147,7 @@ exit 0
         let msg_path = clone_path.join(".flow-commit-msg");
         fs::write(&msg_path, "Add feature.rs").unwrap();
 
-        // Write CI sentinel so ci::run_impl skips without needing framework detection
+        // Write CI sentinel so ci::run_impl takes the fast skip path
         write_ci_sentinel(clone_path, "main");
 
         let args = Args {
@@ -1268,7 +1274,7 @@ exit 0
                 .unwrap(),
         );
 
-        // Write CI sentinel so ci::run_impl skips without needing framework detection
+        // Write CI sentinel so ci::run_impl takes the fast skip path
         write_ci_sentinel(clone_path, "main");
 
         let args = Args {
@@ -1312,7 +1318,7 @@ exit 0
         let msg_path = clone_dir.path().join(".flow-commit-msg");
         fs::write(&msg_path, "Add src.rs").unwrap();
 
-        // Write CI sentinel so ci::run_impl skips without needing framework detection
+        // Write CI sentinel so ci::run_impl takes the fast skip path
         write_ci_sentinel(clone_dir.path(), "main");
 
         let args = Args {
@@ -1438,7 +1444,7 @@ exit 0
         let msg_path = clone_dir.path().join(".flow-commit-msg");
         fs::write(&msg_path, "Add local.txt").unwrap();
 
-        // Write CI sentinel so ci::run_impl skips without needing framework detection
+        // Write CI sentinel so ci::run_impl takes the fast skip path
         write_ci_sentinel(clone_dir.path(), "main");
 
         let args = Args {

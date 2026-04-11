@@ -18,7 +18,7 @@ Claude Code is powerful, but undisciplined by default. FLOW imposes structure. N
 
 ### Unobtrusive
 
-Zero dependencies — pure Markdown skills with a Rust dispatcher. Prime commits `.claude/settings.json` and `CLAUDE.md` as project config — shared permissions and framework conventions. `.flow.json` and `.flow-states/` are git-excluded. During active development, a single gitignored JSON state file exists at `.flow-states/<branch>.json`. When the feature completes, that file is deleted too. Three commands to set up. One file while you work. Zero when you're done.
+Zero dependencies — pure Markdown skills with a Rust dispatcher. Prime commits `.claude/settings.json` and the four `bin/*` delegation stubs (`bin/format`, `bin/lint`, `bin/build`, `bin/test`) as project config. Each project owns its own toolchain inside those scripts; FLOW provides only the orchestration layer. `.flow.json` and `.flow-states/` are git-excluded. During active development, a single gitignored JSON state file exists at `.flow-states/<branch>.json`. When the feature completes, that file is deleted too. Three commands to set up. One file while you work. Zero when you're done.
 
 ### Autonomous or Manual
 
@@ -146,7 +146,7 @@ Available at any point in the workflow:
 | `/flow-note` | Captures corrections to state file — auto-invoked when Claude is wrong |
 | `/flow-abort` | Abandon feature — close PR, delete remote branch, remove worktree, delete state |
 | `/flow-reset` | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files |
-| `/flow-config` | Display current configuration — version, framework, per-skill autonomy |
+| `/flow-config` | Display current configuration — version and per-skill autonomy |
 | `/flow-doc-sync` | Full codebase documentation accuracy review — reports drift between code and docs |
 | `/flow-hygiene` | Audit instruction corpus health — CLAUDE.md, rules, and memory for staleness, misplacement, duplication, and contradictions |
 | `/flow-issues` | Fetch open issues, categorize, prioritize, and display a dashboard. Supports readiness filters |
@@ -226,7 +226,7 @@ Phase 1 uses the **ci-fixer sub-agent** when `bin/ci` fails — at the baseline 
 
 Every feature has a state file at `.flow-states/<branch>.json`. Key fields include:
 
-- **Identity** — `branch`, `repo`, `pr_number`, `pr_url`, `prompt`, `framework`
+- **Identity** — `branch`, `relative_cwd`, `repo`, `pr_number`, `pr_url`, `prompt`
 - **Phase tracking** — `current_phase`, per-phase `status`/`started_at`/`completed_at`/`cumulative_seconds`/`visit_count`, `phase_transitions` history
 - **Artifact paths** — `files.plan`, `files.dag`, `files.log`, `files.state`
 - **Progress** — `code_task` counter, `code_review_step`, `learn_step`, `complete_step`
@@ -348,10 +348,10 @@ Every plugin change can be tested end-to-end before releasing. `/flow-qa` clones
 /flow-qa python       # test against Python QA repo
 /flow-qa rails        # test against Rails QA repo
 /flow-qa ios          # test against iOS QA repo
-/flow-qa all          # test all frameworks sequentially
+/flow-qa all          # test all QA repos sequentially
 ```
 
-Each framework has a dedicated QA repo (`benkruger/flow-qa-python`, `flow-qa-rails`, `flow-qa-ios`, `flow-qa-go`) with a minimal Calculator class, tests, `bin/ci`, and seed issues. The QA skill clones fresh, primes with `--plugin-root $PWD` to test the local source, runs a flow against a seed issue, and then verifies: worktree removed, state file deleted, PR merged, no stale artifacts.
+Each QA repo (`benkruger/flow-qa-python`, `flow-qa-rails`, `flow-qa-ios`, `flow-qa-go`) ships its own `bin/{format,lint,build,test}` scripts wired to the repo's toolchain, plus a minimal Calculator class, tests, and seed issues. The QA skill clones fresh, primes with `--plugin-root $PWD` to test the local source, runs a flow against a seed issue, and then verifies: worktree removed, state file deleted, PR merged, no stale artifacts.
 
 Supporting scripts: `bin/flow scaffold-qa` (create QA repos from templates), `bin/flow qa-reset` (reset repos to seed state), `bin/flow qa-verify` (verify post-Complete assertions).
 

@@ -75,10 +75,7 @@ fn fails_when_flow_json_missing() {
 #[test]
 fn fails_when_flow_version_mismatch_no_hashes() {
     let tmp = tempfile::tempdir().unwrap();
-    write_flow_json(
-        tmp.path(),
-        json!({"flow_version": "0.0.0", "framework": "rails"}),
-    );
+    write_flow_json(tmp.path(), json!({"flow_version": "0.0.0"}));
     let (data, code) = run_prime_check(tmp.path());
     assert_eq!(data["status"], "error");
     assert!(data["message"].as_str().unwrap().contains("mismatch"));
@@ -86,22 +83,24 @@ fn fails_when_flow_version_mismatch_no_hashes() {
 }
 
 #[test]
-fn fails_when_framework_missing() {
+fn happy_path_minimal() {
+    // A minimal version-only marker is sufficient for prime-check
+    // to return ok. .flow.json no longer requires any other fields.
     let tmp = tempfile::tempdir().unwrap();
     let version = current_plugin_version();
     write_flow_json(tmp.path(), json!({"flow_version": version}));
     let (data, code) = run_prime_check(tmp.path());
-    assert_eq!(data["status"], "error");
-    assert!(data["message"]
-        .as_str()
-        .unwrap()
-        .to_lowercase()
-        .contains("framework"));
+    assert_eq!(data["status"], "ok");
     assert_eq!(code, 0);
 }
 
 #[test]
-fn happy_path_rails() {
+fn happy_path_unknown_legacy_keys_ignored() {
+    // Tombstone for the legacy `framework` key in `.flow.json`. Older
+    // versions wrote rails/python/ios/go/rust here; current consumers
+    // must ignore the key cleanly so an upgrade does not require a
+    // re-prime. This test pins that contract by feeding the key in
+    // and asserting prime-check still returns ok.
     let tmp = tempfile::tempdir().unwrap();
     let version = current_plugin_version();
     write_flow_json(
@@ -110,54 +109,6 @@ fn happy_path_rails() {
     );
     let (data, code) = run_prime_check(tmp.path());
     assert_eq!(data["status"], "ok");
-    assert_eq!(data["framework"], "rails");
-    assert_eq!(code, 0);
-}
-
-#[test]
-fn happy_path_python() {
-    let tmp = tempfile::tempdir().unwrap();
-    let version = current_plugin_version();
-    write_flow_json(
-        tmp.path(),
-        json!({"flow_version": version, "framework": "python"}),
-    );
-    let (data, _code) = run_prime_check(tmp.path());
-    assert_eq!(data["status"], "ok");
-    assert_eq!(data["framework"], "python");
-}
-
-#[test]
-fn happy_path_go() {
-    let tmp = tempfile::tempdir().unwrap();
-    let version = current_plugin_version();
-    write_flow_json(
-        tmp.path(),
-        json!({"flow_version": version, "framework": "go"}),
-    );
-    let (data, _code) = run_prime_check(tmp.path());
-    assert_eq!(data["status"], "ok");
-    assert_eq!(data["framework"], "go");
-}
-
-#[test]
-fn fails_on_invalid_framework() {
-    // Plan check: explicit invalid framework name must hit the same
-    // "Missing framework" error as an absent framework key. Covers the
-    // non-default branch of `matches!(framework, "rails"|...)` in run_impl.
-    let tmp = tempfile::tempdir().unwrap();
-    let version = current_plugin_version();
-    write_flow_json(
-        tmp.path(),
-        json!({"flow_version": version, "framework": "nonexistent-framework"}),
-    );
-    let (data, code) = run_prime_check(tmp.path());
-    assert_eq!(data["status"], "error");
-    assert!(data["message"]
-        .as_str()
-        .unwrap()
-        .to_lowercase()
-        .contains("framework"));
     assert_eq!(code, 0);
 }
 
@@ -168,9 +119,8 @@ fn fails_on_invalid_framework() {
 // can verify them. This is a self-consistency test — the hashes built
 // here must match what prime-check computes at runtime.
 
-fn computed_config_hash(framework: &str) -> String {
-    let fw_dir = plugin_root().join("frameworks");
-    flow_rs::prime_check::compute_config_hash(framework, &fw_dir).unwrap()
+fn computed_config_hash() -> String {
+    flow_rs::prime_check::compute_config_hash().unwrap()
 }
 
 fn computed_setup_hash() -> String {
@@ -180,13 +130,12 @@ fn computed_setup_hash() -> String {
 #[test]
 fn auto_upgrades_when_both_hashes_match() {
     let tmp = tempfile::tempdir().unwrap();
-    let config_hash = computed_config_hash("rails");
+    let config_hash = computed_config_hash();
     let setup_hash = computed_setup_hash();
     write_flow_json(
         tmp.path(),
         json!({
             "flow_version": "0.0.1",
-            "framework": "rails",
             "config_hash": config_hash,
             "setup_hash": setup_hash,
         }),
@@ -196,19 +145,17 @@ fn auto_upgrades_when_both_hashes_match() {
     assert_eq!(data["auto_upgraded"], true);
     assert_eq!(data["old_version"], "0.0.1");
     assert_eq!(data["new_version"], current_plugin_version());
-    assert_eq!(data["framework"], "rails");
 }
 
 #[test]
 fn auto_upgrade_updates_version_in_file() {
     let tmp = tempfile::tempdir().unwrap();
-    let config_hash = computed_config_hash("python");
+    let config_hash = computed_config_hash();
     let setup_hash = computed_setup_hash();
     write_flow_json(
         tmp.path(),
         json!({
             "flow_version": "0.0.1",
-            "framework": "python",
             "config_hash": config_hash,
             "setup_hash": setup_hash,
         }),
@@ -222,14 +169,13 @@ fn auto_upgrade_updates_version_in_file() {
 #[test]
 fn auto_upgrade_preserves_existing_fields() {
     let tmp = tempfile::tempdir().unwrap();
-    let config_hash = computed_config_hash("rails");
+    let config_hash = computed_config_hash();
     let setup_hash = computed_setup_hash();
     let skills = json!({"flow-start": {"continue": "auto"}});
     write_flow_json(
         tmp.path(),
         json!({
             "flow_version": "0.0.1",
-            "framework": "rails",
             "config_hash": config_hash,
             "setup_hash": setup_hash,
             "skills": skills,
@@ -238,7 +184,6 @@ fn auto_upgrade_preserves_existing_fields() {
     run_prime_check(tmp.path());
     let updated: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
-    assert_eq!(updated["framework"], "rails");
     assert_eq!(updated["config_hash"], config_hash);
     assert_eq!(updated["setup_hash"], setup_hash);
     assert_eq!(
@@ -254,7 +199,6 @@ fn requires_reinit_when_config_hash_missing() {
         tmp.path(),
         json!({
             "flow_version": "0.0.1",
-            "framework": "rails",
         }),
     );
     let (data, _code) = run_prime_check(tmp.path());
@@ -270,7 +214,6 @@ fn requires_reinit_when_config_hash_mismatches() {
         tmp.path(),
         json!({
             "flow_version": "0.0.1",
-            "framework": "rails",
             "config_hash": "000000000000",
             "setup_hash": setup_hash,
         }),
@@ -286,12 +229,11 @@ fn requires_reinit_when_config_hash_mismatches() {
 #[test]
 fn requires_reinit_when_setup_hash_missing() {
     let tmp = tempfile::tempdir().unwrap();
-    let config_hash = computed_config_hash("rails");
+    let config_hash = computed_config_hash();
     write_flow_json(
         tmp.path(),
         json!({
             "flow_version": "0.0.1",
-            "framework": "rails",
             "config_hash": config_hash,
         }),
     );
@@ -303,12 +245,11 @@ fn requires_reinit_when_setup_hash_missing() {
 #[test]
 fn requires_reinit_when_setup_hash_mismatches() {
     let tmp = tempfile::tempdir().unwrap();
-    let config_hash = computed_config_hash("rails");
+    let config_hash = computed_config_hash();
     write_flow_json(
         tmp.path(),
         json!({
             "flow_version": "0.0.1",
-            "framework": "rails",
             "config_hash": config_hash,
             "setup_hash": "000000000000",
         }),

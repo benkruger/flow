@@ -1,4 +1,4 @@
-use flow_rs::state::{FlowState, Framework, Phase, PhaseStatus, SkillConfig};
+use flow_rs::state::{FlowState, Phase, PhaseStatus, SkillConfig};
 
 const STATE_JSON: &str = r#"{
   "schema_version": 1,
@@ -8,7 +8,6 @@ const STATE_JSON: &str = r#"{
   "pr_url": "https://github.com/org/repo/pull/42",
   "started_at": "2026-02-20T10:00:00-08:00",
   "current_phase": "flow-code",
-  "framework": "rails",
   "files": {
     "plan": ".flow-states/app-payment-webhooks-plan.md",
     "dag": ".flow-states/app-payment-webhooks-dag.md",
@@ -114,7 +113,6 @@ fn deserialize_real_state_file() {
     assert_eq!(state.branch, "app-payment-webhooks");
     assert_eq!(state.repo, Some("org/repo".into()));
     assert_eq!(state.pr_number, Some(42));
-    assert_eq!(state.framework, Framework::Rails);
     assert_eq!(state.current_phase, "flow-code");
     assert_eq!(state.prompt, Some("fix #83 payment webhooks".into()));
 
@@ -181,7 +179,6 @@ fn minimal_state_deserializes() {
       "branch": "test",
       "started_at": "2026-01-01T00:00:00Z",
       "current_phase": "flow-start",
-      "framework": "python",
       "files": {
         "plan": null,
         "dag": null,
@@ -203,7 +200,6 @@ fn minimal_state_deserializes() {
     }"#;
     let state: FlowState = serde_json::from_str(json).unwrap();
     assert_eq!(state.branch, "test");
-    assert_eq!(state.framework, Framework::Python);
     assert!(state.skills.is_none());
     assert!(state.notes.is_empty());
     assert!(state.pr_number.is_none());
