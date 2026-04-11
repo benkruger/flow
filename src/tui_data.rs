@@ -13,7 +13,7 @@ use serde_json::Value;
 use crate::phase_config::{self, PHASE_ORDER};
 use crate::utils::{
     derive_feature, derive_worktree, elapsed_since, extract_issue_numbers, format_time,
-    short_issue_ref,
+    short_issue_ref, tolerant_i64_opt,
 };
 
 /// Static mapping of (phase_key, display_step_number) → short step name.
@@ -759,22 +759,8 @@ pub fn load_account_metrics(repo_root: &Path, home_override: Option<&Path>) -> A
                 if age.as_secs() <= STALE_THRESHOLD_SECONDS {
                     if let Ok(content) = std::fs::read_to_string(&rl_path) {
                         if let Ok(data) = serde_json::from_str::<Value>(&content) {
-                            // Accept either int or float JSON values.
-                            // Missing or unparseable fields leave the
-                            // value as `None`, which the staleness check
-                            // below treats as a stale rate-limit pair.
-                            if let Some(v) = data.get("five_hour_pct") {
-                                if let Some(n) = v.as_i64().or_else(|| v.as_f64().map(|f| f as i64))
-                                {
-                                    rl_5h = Some(n);
-                                }
-                            }
-                            if let Some(v) = data.get("seven_day_pct") {
-                                if let Some(n) = v.as_i64().or_else(|| v.as_f64().map(|f| f as i64))
-                                {
-                                    rl_7d = Some(n);
-                                }
-                            }
+                            rl_5h = data.get("five_hour_pct").and_then(tolerant_i64_opt);
+                            rl_7d = data.get("seven_day_pct").and_then(tolerant_i64_opt);
                             if rl_5h.is_some() && rl_7d.is_some() {
                                 stale = false;
                             }
