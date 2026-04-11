@@ -16,9 +16,13 @@ parent: Skills
 /flow-issues --blocked
 /flow-issues --decomposed
 /flow-issues --quick-start
+/flow-issues --label Bug
+/flow-issues --label Bug --label "Tech Debt"
+/flow-issues --milestone v1.2
+/flow-issues --label Bug --ready
 ```
 
-Fetches all open issues for the current repository, analyzes them via `bin/flow analyze-issues` (file paths, labels, stale detection), ranks by impact using LLM judgment, and displays a dashboard with a recommended work order. Supports optional readiness filters to narrow results. Read-only — never creates, edits, or closes issues.
+Fetches all open issues for the current repository, analyzes them via `bin/flow analyze-issues` (file paths, labels, stale detection), ranks by impact using LLM judgment, and displays a dashboard with a recommended work order. Supports optional readiness filters and server-side narrowing filters (`--label`, `--milestone`) to focus results. Read-only — never creates, edits, or closes issues.
 
 ---
 
@@ -44,6 +48,19 @@ Optional flags filter the issue list by readiness. Flags are mutually exclusive 
 | `--quick-start` | Decomposed issues that are not blocked — best candidates for autonomous execution |
 
 No flag returns all issues (default behavior).
+
+---
+
+## Narrowing Filters
+
+Server-side filters passed directly to `gh issue list` that reduce the issue set before analysis.
+
+| Flag | Shows |
+|------|-------|
+| `--label <name>` | Issues with the specified GitHub label (repeatable; multiple labels use AND logic) |
+| `--milestone <title>` | Issues in the specified milestone (by title or number) |
+
+Narrowing filters compose with readiness filters. For example, `--label Bug --ready` fetches only "Bug"-labeled issues, then shows only the non-blocked ones.
 
 ---
 

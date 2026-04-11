@@ -18,6 +18,10 @@ close issues.
 /flow:flow-issues --blocked
 /flow:flow-issues --decomposed
 /flow:flow-issues --quick-start
+/flow:flow-issues --label Bug
+/flow:flow-issues --label Bug --label "Tech Debt"
+/flow:flow-issues --milestone v1.2
+/flow:flow-issues --label Bug --ready
 ```
 
 ## Readiness Filters
@@ -31,6 +35,21 @@ exclusive — pass at most one.
 - `--quick-start` — decomposed issues that are not blocked (best candidates for autonomous execution)
 
 No flag returns all issues (current default behavior).
+
+## Narrowing Filters
+
+Optional flags that narrow the issue set before analysis. These are
+server-side filters passed directly to `gh issue list` — they reduce
+the number of issues fetched, not just displayed.
+
+- `--label <name>` — filter by GitHub label (repeatable; multiple labels
+  use AND logic). Can combine with any readiness filter.
+- `--milestone <title>` — filter by GitHub milestone (by title or number).
+  Can combine with any readiness filter.
+
+Narrowing filters compose with readiness filters. For example,
+`--label Bug --ready` fetches only issues labeled "Bug" from GitHub,
+then shows only the non-blocked ones.
 
 ## Concurrency
 
@@ -83,8 +102,25 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --decomposed
 ${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --quick-start
 ```
 
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --label Bug
+```
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --label Bug --label "Tech Debt"
+```
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --milestone v1.2
+```
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow analyze-issues --label Bug --ready
+```
+
 Use the first form when no filter flag was passed. Use the matching form
-when a flag was passed.
+when a flag was passed. Narrowing filters (`--label`, `--milestone`) can
+be combined with each other and with any readiness filter.
 
 Parse the JSON output. The structure is:
 
@@ -108,7 +144,8 @@ Parse the JSON output. The structure is:
       "stale": false,
       "stale_missing": 0,
       "file_paths": ["lib/foo.py"],
-      "brief": "First ~200 chars of body..."
+      "brief": "First ~200 chars of body...",
+      "milestone": "v1.2.0"
     }
   ]
 }
