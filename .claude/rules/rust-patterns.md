@@ -70,6 +70,7 @@ implementation for this pattern.
 
 **How to apply:**
 
+<!-- scope-enumeration: imperative -->
 When designing a new stateful scanner that accepts predicates:
 
 1. Enumerate every scanner state the predicate will run in. Pick one
@@ -77,11 +78,11 @@ When designing a new stateful scanner that accepts predicates:
 2. List every operator class the scanner must catch. Split them into
    "predicate-supplied" (caller-customizable) and "universal"
    (hardcoded in the scanner). Universal matches go in the scanner.
-3. Pick the "every caller runs the same state machine" invariant as
-   non-negotiable. Do NOT allow callers to bring their own state
-   machine — that defeats the shared-scanner guarantee.
+3. Treat the state machine as shared infrastructure, not caller-owned.
+   Do NOT let consumers bring their own state machine — that defeats
+   the shared-scanner guarantee.
 4. Add an explicit error variant for each malformed-input class
-   (unclosed quote, unterminated escape, unbalanced bracket). Callers
+   (unclosed quote, unterminated escape, unbalanced bracket). Consumers
    must match on the error type, not treat it as "no match."
 
 When reviewing an existing predicate-based scanner, check that the
