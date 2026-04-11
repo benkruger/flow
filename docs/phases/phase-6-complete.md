@@ -73,8 +73,12 @@ best-effort call:
 - Remove "Flow In-Progress" labels
 - Auto-close parent issues and milestones
 - Post Slack notification
-- Worktree removal, state file deletion, log file deletion, CI
-  sentinel deletion, and git pull
+- Worktree tmp directory removal, worktree removal, remote and
+  local branch deletion, and deletion of the state file, plan file,
+  DAG file, log file, frozen-phases file, CI sentinel, timings
+  file, closed-issues file, issues file, and adversarial test file
+  (glob-matched as `.flow-states/<branch>-adversarial_test.*`),
+  followed by `git pull origin main`
 
 Each cleanup step is best-effort — if one fails, the rest still run.
 
