@@ -1,10 +1,11 @@
-//! `bin/flow ci` — framework-aware CI orchestrator.
+//! `bin/flow ci` — repo-local CI orchestrator.
 //!
-//! Runs format → lint → build → test in sequence with dirty-check
-//! optimization. Detects the project framework from the state file
-//! or project marker files, resolves tool commands via
-//! [`framework_tools`], and spawns each in order. Stops on the first
-//! failure.
+//! Runs format → lint → build → test in sequence by execing the
+//! corresponding `./bin/<tool>` scripts in the current working
+//! directory. Each repo owns its actual command strings; FLOW
+//! contributes the sentinel-based dirty-check optimization,
+//! retry/flaky classification, the `FLOW_CI_RUNNING` recursion
+//! guard, and a stable JSON output contract.
 //!
 //! By default, skips if nothing changed since the last passing run.
 //! With `--force`, always runs regardless of sentinel state.
@@ -33,8 +34,6 @@ use clap::Parser;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use crate::framework_tools::{self, ToolType};
-
 /// CLI arguments for `bin/flow ci`.
 #[derive(Parser, Debug)]
 #[command(name = "ci", about = "Run CI with dirty-check optimization")]
@@ -60,29 +59,32 @@ pub struct CiTool {
     pub args: Vec<String>,
 }
 
-/// Build the ordered CI tool sequence for a framework.
+/// The four tool names FLOW orchestrates, in execution order.
 ///
-/// Returns format → lint → build → test, skipping no-ops.
 /// Format runs first for fail-fast (instant check catches trivial errors
 /// before compilation).
-pub fn build_tool_sequence(framework: &str) -> Result<Vec<CiTool>, String> {
-    let steps = [
-        (ToolType::Format, "format"),
-        (ToolType::Lint, "lint"),
-        (ToolType::Build, "build"),
-        (ToolType::Test, "test"),
-    ];
+const TOOL_NAMES: [&str; 4] = ["format", "lint", "build", "test"];
+
+/// Build the CI tool sequence by scanning `cwd/bin/` for executables.
+///
+/// For each name in [format, lint, build, test], if `cwd/bin/<name>`
+/// exists as a file, add a CiTool that execs it directly. Missing
+/// scripts are skipped — a repo without a `bin/test` simply has no
+/// test step. The user owns the commands; FLOW orchestrates the
+/// sequence and the gates.
+pub fn bin_tool_sequence(cwd: &Path) -> Vec<CiTool> {
     let mut tools = Vec::new();
-    for (tool_type, name) in &steps {
-        if let Some(cmd) = framework_tools::tool_command(framework, *tool_type)? {
+    for name in TOOL_NAMES {
+        let path = cwd.join("bin").join(name);
+        if path.is_file() {
             tools.push(CiTool {
                 name: name.to_string(),
-                program: cmd.program,
-                args: cmd.args,
+                program: path.to_string_lossy().to_string(),
+                args: Vec::new(),
             });
         }
     }
-    Ok(tools)
+    tools
 }
 
 /// Build the sentinel file path for a given branch: `<root>/.flow-states/<branch>-ci-passed`.
@@ -192,7 +194,7 @@ pub fn run_once(
 ) -> (Value, i32) {
     if tools.is_empty() {
         return (
-            json!({"status": "ok", "skipped": true, "reason": "no CI tools for this framework"}),
+            json!({"status": "ok", "skipped": true, "reason": "no ./bin/<tool> scripts found"}),
             0,
         );
     }
@@ -356,13 +358,10 @@ pub fn run_with_retry(
 
 /// Testable CLI entry point.
 ///
-/// Checks the sentinel BEFORE framework detection so callers like
-/// `finalize_commit` skip instantly when the tree state is clean —
-/// no framework marker files needed for the skip path.
-///
-/// When the sentinel does not match (or force/retry mode), detects the
-/// project framework, builds the CI tool sequence, then dispatches to
-/// [`run_once`] or [`run_with_retry`].
+/// Checks the sentinel BEFORE building the tool sequence so callers like
+/// `finalize_commit` skip instantly when the tree state is clean. When
+/// the sentinel does not match (or force/retry mode), scans `cwd/bin/`
+/// for tool scripts and dispatches to [`run_once`] or [`run_with_retry`].
 pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> (Value, i32) {
     if flow_ci_running {
         return (
@@ -377,12 +376,10 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
 
     let resolved_branch = crate::git::resolve_branch_in(args.branch.as_deref(), cwd, root);
 
-    // Sentinel skip check — before framework detection.
+    // Sentinel skip check — before tool discovery.
     // This allows callers like finalize_commit to skip instantly when the
-    // tree state hasn't changed, even in projects without framework marker
-    // files (the sentinel was written by a previous successful run).
-    // Applies to both retry and non-retry paths: if CI already passed for
-    // this exact tree state, retrying would produce the same result.
+    // tree state hasn't changed, even before any bin/<tool> scripts are
+    // checked. Applies to both retry and non-retry paths.
     if !args.force {
         if let Some(ref branch) = resolved_branch {
             let snapshot = tree_snapshot(cwd, args.simulate_branch.as_deref());
@@ -404,19 +401,7 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
         }
     }
 
-    let framework = match framework_tools::detect_framework_for_project(
-        cwd,
-        root,
-        resolved_branch.as_deref(),
-    ) {
-        Ok(fw) => fw,
-        Err(msg) => return (json!({"status": "error", "message": msg}), 1),
-    };
-
-    let tools = match build_tool_sequence(&framework) {
-        Ok(t) => t,
-        Err(msg) => return (json!({"status": "error", "message": msg}), 1),
-    };
+    let tools = bin_tool_sequence(cwd);
 
     if args.retry > 0 {
         run_with_retry(
@@ -471,7 +456,7 @@ mod tests {
         run(&["commit", "--allow-empty", "-m", "init"]);
     }
 
-    // --- tree_snapshot tests (unchanged from before) ---
+    // --- tree_snapshot tests ---
 
     #[test]
     fn tree_snapshot_empty_repo_returns_64_char_hex() {
@@ -627,6 +612,63 @@ mod tests {
 
     fn fixture_sentinel(f: &CiFixture) -> PathBuf {
         sentinel_path(&f.path, &f.branch)
+    }
+
+    // --- bin_tool_sequence tests ---
+
+    #[test]
+    fn bin_tool_sequence_empty_when_no_scripts() {
+        let f = make_ci_fixture();
+        let tools = bin_tool_sequence(&f.path);
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn bin_tool_sequence_picks_up_present_scripts() {
+        let f = make_ci_fixture();
+        write_script(
+            &f.path.join("bin").join("format"),
+            "#!/usr/bin/env bash\nexit 0\n",
+        );
+        write_script(
+            &f.path.join("bin").join("test"),
+            "#!/usr/bin/env bash\nexit 0\n",
+        );
+        let tools = bin_tool_sequence(&f.path);
+        assert_eq!(tools.len(), 2);
+        assert_eq!(tools[0].name, "format");
+        assert_eq!(tools[1].name, "test");
+    }
+
+    #[test]
+    fn bin_tool_sequence_preserves_order() {
+        let f = make_ci_fixture();
+        for name in ["test", "build", "lint", "format"] {
+            write_script(
+                &f.path.join("bin").join(name),
+                "#!/usr/bin/env bash\nexit 0\n",
+            );
+        }
+        let tools = bin_tool_sequence(&f.path);
+        assert_eq!(tools.len(), 4);
+        assert_eq!(tools[0].name, "format");
+        assert_eq!(tools[1].name, "lint");
+        assert_eq!(tools[2].name, "build");
+        assert_eq!(tools[3].name, "test");
+    }
+
+    #[test]
+    fn bin_tool_sequence_skips_directories() {
+        let f = make_ci_fixture();
+        // bin/format is a directory, not a file — should be skipped
+        fs::create_dir_all(f.path.join("bin").join("format")).unwrap();
+        write_script(
+            &f.path.join("bin").join("test"),
+            "#!/usr/bin/env bash\nexit 0\n",
+        );
+        let tools = bin_tool_sequence(&f.path);
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].name, "test");
     }
 
     // --- run_once tests ---
@@ -857,47 +899,35 @@ exit 0
         assert_eq!(out["reason"], "recursion guard");
     }
 
-    // --- build_tool_sequence tests ---
-
     #[test]
-    fn tool_sequence_rust_has_four_tools() {
-        let tools = build_tool_sequence("rust").unwrap();
-        assert_eq!(tools.len(), 4);
-        assert_eq!(tools[0].name, "format");
-        assert_eq!(tools[1].name, "lint");
-        assert_eq!(tools[2].name, "build");
-        assert_eq!(tools[3].name, "test");
+    fn run_impl_no_bin_scripts_returns_skipped_ok() {
+        let f = make_ci_fixture();
+        let args = Args {
+            branch: Some(f.branch.clone()),
+            force: true,
+            ..default_args()
+        };
+        let (out, code) = run_impl(&args, &f.path, &f.path, false);
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+        assert_eq!(out["skipped"], true);
     }
 
     #[test]
-    fn tool_sequence_python_has_three_tools() {
-        // Python projects skip the build step (no compile phase),
-        // leaving format → lint → test as the three-tool sequence.
-        let tools = build_tool_sequence("python").unwrap();
-        assert_eq!(tools.len(), 3);
-        assert_eq!(tools[0].name, "format");
-        assert_eq!(tools[1].name, "lint");
-        assert_eq!(tools[2].name, "test");
-    }
-
-    #[test]
-    fn tool_sequence_rails_has_two_tools() {
-        // Rails: build and format are no-ops
-        let tools = build_tool_sequence("rails").unwrap();
-        assert_eq!(tools.len(), 2);
-        assert_eq!(tools[0].name, "lint");
-        assert_eq!(tools[1].name, "test");
-    }
-
-    #[test]
-    fn tool_sequence_format_is_first() {
-        let tools = build_tool_sequence("rust").unwrap();
-        assert_eq!(tools[0].name, "format");
-    }
-
-    #[test]
-    fn tool_sequence_unknown_framework_errors() {
-        let result = build_tool_sequence("cobol");
-        assert!(result.is_err());
+    fn run_impl_runs_present_bin_scripts() {
+        let f = make_ci_fixture();
+        write_script(
+            &f.path.join("bin").join("format"),
+            "#!/usr/bin/env bash\nexit 0\n",
+        );
+        let args = Args {
+            branch: Some(f.branch.clone()),
+            force: true,
+            ..default_args()
+        };
+        let (out, code) = run_impl(&args, &f.path, &f.path, false);
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+        assert_eq!(out["skipped"], false);
     }
 }

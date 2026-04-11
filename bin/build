@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# FLOW build — called by `bin/flow build` and `bin/flow ci`.
+# Compiles the workspace; nonzero exit blocks downstream CI steps.
+set -euo pipefail
+exec cargo build --quiet

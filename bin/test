@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# FLOW test runner — called by `bin/flow test` and `bin/flow ci`.
+#
+# Two modes:
+#   bin/test                                 — full suite via cargo nextest
+#   bin/test --file <path> [extra args...]   — single test file via rustc --test
+#
+# Trailing args after `--` are forwarded to nextest as filter expressions.
+set -euo pipefail
+
+if [ "${1:-}" = "--file" ]; then
+  shift
+  file="$1"
+  shift
+  temp_bin=".flow-test-binary"
+  trap 'rm -f "$temp_bin"' EXIT
+  rustc --test "$file" -o "$temp_bin"
+  ./"$temp_bin" "$@"
+  exit
+fi
+
+exec cargo nextest run --status-level none --final-status-level fail "$@"
