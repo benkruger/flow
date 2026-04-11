@@ -12,6 +12,7 @@ use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use flow_rs::lock::mutate_state;
 use fs2::FileExt;
 use serde_json::{self, json, Value};
 
@@ -548,5 +549,48 @@ fn cleanup_isolation() {
         data["branch"].as_str().unwrap(),
         "branch-b",
         "branch-b branch field should be preserved"
+    );
+}
+
+#[test]
+fn mutate_state_api_under_contention() {
+    // 20 threads call flow_rs::lock::mutate_state simultaneously to increment
+    // a counter. Unlike mutate_state_under_contention (which reimplements the
+    // locking pattern manually), this test exercises the actual mutate_state API.
+    // A regression where the lock is acquired after reading would surface here.
+    let tmp = tempfile::tempdir().expect("Failed to create tempdir");
+    let state_path = tmp.path().join("contention.json");
+    fs::write(&state_path, r#"{"count": 0}"#).expect("Failed to write initial state");
+
+    let state_path = Arc::new(state_path);
+    let barrier = Arc::new(Barrier::new(20));
+
+    let handles: Vec<_> = (0..20)
+        .map(|_| {
+            let path = Arc::clone(&state_path);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                mutate_state(&path, |state| {
+                    let count = state["count"].as_i64().unwrap_or(0);
+                    state["count"] = json!(count + 1);
+                })
+                .expect("mutate_state failed");
+            })
+        })
+        .collect();
+
+    for handle in handles {
+        handle.join().expect("Worker thread panicked");
+    }
+
+    let final_content =
+        fs::read_to_string(state_path.as_ref()).expect("Failed to read final state");
+    let final_data: Value =
+        serde_json::from_str(&final_content).expect("Failed to parse final state");
+    assert_eq!(
+        final_data["count"].as_i64().unwrap(),
+        20,
+        "Expected count=20 after 20 concurrent mutate_state calls"
     );
 }
