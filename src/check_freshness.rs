@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 
 use crate::complete_preflight::{LOCAL_TIMEOUT, NETWORK_TIMEOUT};
 use crate::lock::mutate_state;
-use crate::utils::parse_conflict_files;
+use crate::utils::{parse_conflict_files, tolerant_i64};
 const MAX_RETRIES: i64 = 3;
 
 #[derive(Parser, Debug)]
@@ -157,7 +157,7 @@ fn read_retries(state_path: &Path) -> i64 {
         if !(state.is_object() || state.is_null()) {
             return;
         }
-        cell.set(read_retries_value(state));
+        cell.set(tolerant_i64(&state["freshness_retries"]));
     });
     cell.get()
 }
@@ -171,25 +171,11 @@ fn increment_retries(state_path: &Path) -> i64 {
         if !(state.is_object() || state.is_null()) {
             return;
         }
-        let next = read_retries_value(state) + 1;
+        let next = tolerant_i64(&state["freshness_retries"]).saturating_add(1);
         state["freshness_retries"] = json!(next);
         cell.set(next);
     });
     cell.get()
-}
-
-/// Counter type tolerance — state files in the wild may store
-/// `freshness_retries` as int, float, or string (older versions or hand
-/// edits). Accepts all three representations for backwards compatibility.
-fn read_retries_value(state: &Value) -> i64 {
-    state
-        .get("freshness_retries")
-        .and_then(|v| {
-            v.as_i64()
-                .or_else(|| v.as_f64().map(|f| f as i64))
-                .or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
-        })
-        .unwrap_or(0)
 }
 
 /// Real git subprocess runner with polling-based timeout and thread-drain.
@@ -667,9 +653,9 @@ mod tests {
         assert_eq!(state["freshness_retries"], 1);
     }
 
-    // Counter type tolerance tests: the fallback chain in `read_retries_value`
-    // accepts int, float, and string representations because state files can
-    // outlive the code that writes them.
+    // Counter type tolerance tests: `tolerant_i64` (imported from utils)
+    // accepts int, float, and string representations for `freshness_retries`
+    // because state files can outlive the code that writes them.
 
     #[test]
     fn test_retry_value_as_float() {

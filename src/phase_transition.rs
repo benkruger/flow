@@ -4,19 +4,7 @@ use indexmap::IndexMap;
 use serde_json::{json, Value};
 
 use crate::phase_config::{self, PHASE_ORDER};
-use crate::utils::{elapsed_since, format_time, now};
-
-/// Read a JSON value as i64, tolerating int, float, and string representations.
-///
-/// State files can outlive the code that writes them. This function accepts
-/// all three representations so counter fields survive round-trips through
-/// external editors or legacy writers that store numbers as strings or floats.
-fn tolerant_i64(v: &Value) -> i64 {
-    v.as_i64()
-        .or_else(|| v.as_f64().map(|f| f as i64))
-        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-        .unwrap_or(0)
-}
+use crate::utils::{elapsed_since, format_time, now, tolerant_i64};
 
 /// Apply phase entry mutations to the state Value in-place.
 ///
@@ -43,7 +31,7 @@ pub fn phase_enter(state: &mut Value, phase: &str, reason: Option<&str>) -> Valu
     }
     phase_data["session_started_at"] = json!(now());
 
-    let visit_count = tolerant_i64(&phase_data["visit_count"]) + 1;
+    let visit_count = tolerant_i64(&phase_data["visit_count"]).saturating_add(1);
     phase_data["visit_count"] = json!(visit_count);
 
     state["current_phase"] = json!(phase);
@@ -130,7 +118,7 @@ pub fn phase_complete(
     let elapsed = elapsed_since(session_started.as_deref(), None);
 
     let existing = tolerant_i64(&state["phases"][phase]["cumulative_seconds"]);
-    let cumulative = existing + elapsed;
+    let cumulative = existing.saturating_add(elapsed);
 
     // Update phase state
     state["phases"][phase]["cumulative_seconds"] = json!(cumulative);

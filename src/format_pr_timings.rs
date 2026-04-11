@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 use crate::output::{json_error, json_ok};
 use crate::phase_config::{self, PHASE_ORDER};
-use crate::utils::format_time;
+use crate::utils::{format_time, tolerant_i64};
 
 /// Build a markdown timings table from state dict.
 ///
@@ -38,7 +38,7 @@ pub fn format_timings_table(state: &Value, started_only: bool) -> String {
             .filter(|s| !s.is_empty());
         let seconds = phase
             .and_then(|p| p.get("cumulative_seconds"))
-            .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
+            .map(tolerant_i64)
             .unwrap_or(0);
 
         if started_only && started.is_none() && seconds == 0 {
@@ -260,6 +260,29 @@ mod tests {
         let result = format_timings_table(&state, false);
         // 3700 seconds = 1h 1m
         assert!(result.contains("1h 1m"), "Result:\n{}", result);
+    }
+
+    #[test]
+    fn test_cumulative_seconds_as_string() {
+        // tolerant_i64 accepts string-numeric counter values, so a state
+        // file with cumulative_seconds stored as "945" (e.g. from an
+        // external edit or legacy writer) must render the same timing
+        // as the integer 945.
+        let all_phases = [
+            "flow-start",
+            "flow-plan",
+            "flow-code",
+            "flow-code-review",
+            "flow-learn",
+            "flow-complete",
+        ];
+        let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
+        let mut state = make_state("flow-complete", &statuses);
+        state["phases"]["flow-plan"]["cumulative_seconds"] = json!("945");
+
+        let result = format_timings_table(&state, false);
+        // 945 seconds = 15m
+        assert!(result.contains("15m"), "Result:\n{}", result);
     }
 
     #[test]

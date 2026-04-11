@@ -5,6 +5,7 @@ use serde_json::Value;
 
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
+use crate::utils::tolerant_i64;
 
 /// Capture compaction data into the state file.
 ///
@@ -33,19 +34,12 @@ pub fn capture_compact_data(hook_input: &Value, state_path: &Path) {
         if let Some(cwd) = hook_input.get("cwd").and_then(|v| v.as_str()) {
             state["compact_cwd"] = Value::String(cwd.to_string());
         }
-        // Accept compact_count written by any prior version: integers,
-        // floats (3.0 from older Python writes), or strings ("3" from
-        // corrupted/foreign edits). All resolve to the same canonical
-        // i64 increment instead of silently resetting to 1.
-        let count = state
-            .get("compact_count")
-            .and_then(|v| {
-                v.as_i64()
-                    .or_else(|| v.as_f64().map(|f| f as i64))
-                    .or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
-            })
-            .unwrap_or(0);
-        state["compact_count"] = Value::Number((count + 1).into());
+        // Accept compact_count stored as int, float, or string — state
+        // files may carry any of these shapes from external edits or
+        // legacy writers. All three resolve to the same canonical i64
+        // increment instead of silently resetting to 1.
+        let count = state.get("compact_count").map(tolerant_i64).unwrap_or(0);
+        state["compact_count"] = Value::Number(count.saturating_add(1).into());
     });
 }
 

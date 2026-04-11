@@ -77,13 +77,39 @@ return value, not the caller's interpretation.
 ## Counter and State Field Type Tolerance
 
 State files can outlive the code that writes them. Accept int, float,
-and string representations when reading counters:
-`.as_i64().or_else(|| v.as_f64().map(|f| f as i64)).or_else(|| v.as_str().and_then(|s| s.parse().ok()))`.
+and string representations when reading counters.
 
-`phase_transition.rs` defines `tolerant_i64()` as a named helper
-encapsulating this pattern for `visit_count` and `cumulative_seconds`.
-When other modules need the same tolerance, extract a shared helper
-or reference this implementation.
+`src/utils.rs` exposes two functions for this tolerance:
+
+- `tolerant_i64_opt(v: &Value) -> Option<i64>` — primary form. Returns
+  `None` when the value cannot be interpreted as a number. Use when the
+  caller needs to distinguish "field missing / unparseable" from "present
+  with value 0".
+- `tolerant_i64(v: &Value) -> i64` — thin `unwrap_or(0)` wrapper over
+  `tolerant_i64_opt`. Use for counter fields where a missing or
+  unparseable value should mean zero.
+
+When other modules need the same tolerance, import from `crate::utils`
+— do not inline the fallback chain.
+
+## Saturating Arithmetic on Counter Reads
+
+Counter reads via `tolerant_i64` can return values at or near `i64::MAX`
+when state files carry corrupt or legacy values (hand edits, external
+writers, or integer overflow from a prior session). Raw `+ 1` or
+`+ elapsed` arithmetic on those values panics in debug builds and wraps
+silently to `i64::MIN` in release builds, corrupting the counter.
+
+Use `saturating_add` at every counter-increment callsite:
+
+```rust
+let visit_count = tolerant_i64(&phase_data["visit_count"]).saturating_add(1);
+let cumulative = existing.saturating_add(elapsed);
+```
+
+The helper itself cannot defend against this — the caller chooses the
+arithmetic. Apply the guard wherever a counter read is followed by an
+increment or accumulation.
 
 ## Empty-String vs Missing-Key Equivalence
 
@@ -109,6 +135,25 @@ paths.
 Any non-obvious design decision (custom formatters, shared constants,
 unusual return types) must have a local doc comment on the definition
 site summarizing why it exists in one sentence.
+
+## Test Module Section Markers
+
+Group related tests inside a `#[cfg(test)] mod tests` block using
+single-topic section markers: `// --- primary_name ---` where
+`primary_name` is the core function or feature being tested. When a
+test group covers multiple related functions (e.g. a helper and its
+wrapper), use the top-level abstraction name, not a slash-separated
+list or a parenthesized signature.
+
+- Correct: `// --- tolerant_i64 ---` (covers `tolerant_i64` and
+  `tolerant_i64_opt`)
+- Wrong: `// --- tolerant_i64_opt() / tolerant_i64() ---`
+- Wrong: `// --- tolerant_i64(v: &Value) ---`
+
+Before adding a new marker, grep the file for existing `// --- ` lines
+and match their style. A marker that deviates from the file's
+convention is a maintainability regression — the pattern is
+discoverable only by reading the file, so consistency matters.
 
 ## Session Log Message Format
 
