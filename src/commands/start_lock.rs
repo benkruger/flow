@@ -699,4 +699,33 @@ mod tests {
         assert_eq!(result["status"], "free");
         assert!(stale.exists());
     }
+
+    #[test]
+    fn test_list_queue_future_mtime_not_stale() {
+        // A queue entry with mtime in the future (clock skew) must not be
+        // classified as stale. The stale check computes (now - mtime); a future
+        // mtime produces a negative value which is always < STALE_TIMEOUT_SECONDS.
+        let dir = tempfile::tempdir().unwrap();
+        let queue_dir = dir.path();
+
+        let future_entry = queue_dir.join("future-feature");
+        fs::write(&future_entry, "").unwrap();
+        set_file_mtime(
+            &future_entry,
+            FileTime::from_system_time(SystemTime::now() + Duration::from_secs(3600)),
+        )
+        .unwrap();
+
+        let (entries, stale_found) = list_queue(queue_dir, true);
+        assert_eq!(entries.len(), 1, "Future-mtime entry should be in the list");
+        assert_eq!(entries[0].1, "future-feature");
+        assert!(
+            !stale_found,
+            "Future mtime should not trigger stale detection"
+        );
+        assert!(
+            future_entry.exists(),
+            "Future-mtime entry must not be deleted"
+        );
+    }
 }

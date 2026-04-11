@@ -1,3 +1,4 @@
+pub mod add_finding;
 pub mod add_issue;
 pub mod add_notification;
 pub mod analyze_issues;

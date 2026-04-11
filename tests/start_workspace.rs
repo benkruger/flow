@@ -291,3 +291,61 @@ fn test_state_backfill_preserves_existing_fields() {
     assert_eq!(state["pr_number"], 42);
     assert!(state["pr_url"].as_str().unwrap().contains("pull/42"));
 }
+
+#[test]
+fn test_worktree_partial_failure_recovery_after_cleanup() {
+    // Simulates a partial failure where a directory exists at the worktree path
+    // (e.g., from a crashed start-workspace). First attempt fails. After removing
+    // the blocking directory, the retry succeeds.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), "python", None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "recovery-branch");
+    create_lock_entry(&repo, "recovery-branch");
+
+    // Pre-create the worktree directory to simulate partial failure residue
+    let wt_path = repo.join(".worktrees").join("recovery-branch");
+    fs::create_dir_all(&wt_path).unwrap();
+    // Create a branch so git worktree add -b fails (branch exists + dir exists)
+    Command::new("git")
+        .args(["branch", "recovery-branch"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+
+    // First attempt: fails because directory exists
+    let output = run_start_workspace(&repo, "Recovery Feature", "recovery-branch", &stub_dir);
+    let data = parse_output(&output);
+    assert_eq!(
+        data["status"], "error",
+        "First attempt should fail with existing directory"
+    );
+
+    // Cleanup: remove the blocking directory and stale branch
+    fs::remove_dir_all(&wt_path).unwrap();
+    Command::new("git")
+        .args(["branch", "-D", "recovery-branch"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+
+    // Re-create state and lock (first attempt consumed them)
+    create_state_file(&repo, "recovery-branch");
+    create_lock_entry(&repo, "recovery-branch");
+
+    // Retry: should succeed now
+    let output = run_start_workspace(&repo, "Recovery Feature", "recovery-branch", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "Retry after cleanup should succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert!(
+        wt_path.is_dir(),
+        "Worktree directory should exist after successful retry"
+    );
+}

@@ -2018,6 +2018,15 @@ fn complete_commit_points_self_invoke() {
     );
 }
 
+#[test]
+fn complete_done_banner_mentions_findings() {
+    let c = common::read_skill("flow-complete");
+    assert!(
+        c.contains("Findings"),
+        "Complete Done section must mention findings sections in the summary description"
+    );
+}
+
 // --- Complete tombstones ---
 
 #[test]
