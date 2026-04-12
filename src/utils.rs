@@ -10,6 +10,8 @@ use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::flow_paths::FlowPaths;
+
 // --- SetupError + run_cmd ---
 
 /// Error type for start-phase subprocess operations (start-workspace, auto-close-parent).
@@ -461,7 +463,7 @@ pub fn check_duplicate_issue(
     if issue_numbers.is_empty() {
         return None;
     }
-    let state_dir = project_root.join(".flow-states");
+    let state_dir = FlowPaths::new(project_root, "").flow_states_dir();
     if !state_dir.is_dir() {
         return None;
     }

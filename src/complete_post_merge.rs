@@ -13,6 +13,7 @@ use serde_json::{json, Map, Value};
 
 use crate::commands::log::append_log;
 use crate::complete_preflight::{run_cmd_with_timeout, CmdResult, LOCAL_TIMEOUT, NETWORK_TIMEOUT};
+use crate::flow_paths::FlowPaths;
 use crate::git::project_root;
 use crate::lock::mutate_state;
 use crate::utils::bin_flow_path;
@@ -57,8 +58,9 @@ pub fn post_merge_inner(
     // Best-effort logging — only log when .flow-states/ already exists.
     // append_log creates the directory if missing, which would break test
     // fixtures that deliberately omit it.
+    let paths = FlowPaths::new(root, branch);
     let log = |msg: &str| {
-        if root.join(".flow-states").is_dir() {
+        if paths.flow_states_dir().is_dir() {
             let _ = append_log(root, branch, msg);
         }
     };
@@ -190,9 +192,7 @@ pub fn post_merge_inner(
     }
 
     // Format issues summary
-    let issues_output_path = root
-        .join(".flow-states")
-        .join(format!("{}-issues.md", branch));
+    let issues_output_path = paths.issues_file();
     let issues_output = issues_output_path.to_string_lossy().to_string();
     let iss_args = [
         bin_flow,
@@ -238,9 +238,7 @@ pub fn post_merge_inner(
 
     // Write closed-issues file if non-empty
     if !closed_issues.is_empty() {
-        let closed_path = root
-            .join(".flow-states")
-            .join(format!("{}-closed-issues.json", branch));
+        let closed_path = paths.closed_issues();
         let closed_json =
             serde_json::to_string(&closed_issues).unwrap_or_else(|_| "[]".to_string());
         if let Err(e) = std::fs::write(&closed_path, closed_json) {
@@ -251,9 +249,7 @@ pub fn post_merge_inner(
     // --- Step 10: Parallel post-merge operations ---
 
     // Format complete summary
-    let closed_file_path_buf = root
-        .join(".flow-states")
-        .join(format!("{}-closed-issues.json", branch));
+    let closed_file_path_buf = paths.closed_issues();
     let closed_file_path = closed_file_path_buf.to_string_lossy().to_string();
     let mut sum_args: Vec<&str> = vec![
         bin_flow,

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use serde_json::json;
 
+use crate::flow_paths::FlowPaths;
 use crate::format_issues_summary::format_issues_summary;
 use crate::format_pr_timings::format_timings_table;
 use crate::git::{current_branch, project_root};
@@ -245,7 +246,7 @@ pub fn run(args: Args) {
     } else {
         let root = project_root();
         let branch = current_branch().unwrap_or_default();
-        root.join(".flow-states").join(format!("{}.json", branch))
+        FlowPaths::new(&root, &branch).state_file()
     };
 
     if !state_path.exists() {

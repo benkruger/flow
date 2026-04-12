@@ -34,6 +34,8 @@ use clap::Parser;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+use crate::flow_paths::FlowPaths;
+
 /// CLI arguments for `bin/flow ci`.
 #[derive(Parser, Debug)]
 #[command(name = "ci", about = "Run CI with dirty-check optimization")]
@@ -126,8 +128,7 @@ pub fn any_tool_is_stub(tools: &[CiTool]) -> bool {
 ///
 /// Also used by [`crate::finalize_commit::run_impl`] to refresh the sentinel after a clean commit.
 pub fn sentinel_path(root: &Path, branch: &str) -> PathBuf {
-    root.join(".flow-states")
-        .join(format!("{}-ci-passed", branch))
+    FlowPaths::new(root, branch).ci_sentinel()
 }
 
 /// Run a git command in `cwd`, returning its stdout as a lossy UTF-8 string.
