@@ -12,3 +12,11 @@ tmp/
 .claude/scheduled_tasks.lock
 .envrc
 .qa-repos/
+
+# Ephemeral FLOW staging files — written by commit / issue skills and
+# deleted by their respective Rust commands after use. Tracking these
+# is always an accident (see git history: two prior incidents where
+# a stale .flow-commit-msg landed on main).
+.flow-commit-msg
+.flow-issue-body
+.flow-issue-body-*
