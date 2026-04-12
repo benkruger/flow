@@ -199,3 +199,15 @@ fn test_no_backward_facing_comments_in_rust_source() {
         violations.join("\n")
     );
 }
+
+#[test]
+fn code_review_no_file_out_of_scope_subsection() {
+    // Tombstone: removed in PR #1051. Code Review has no filing path;
+    // all real findings are fixed in Step 4. See
+    // .claude/rules/code-review-scope.md.
+    let content = common::read_skill("flow-code-review");
+    assert!(
+        !content.contains("### File out-of-scope issues"),
+        "Code Review skill must not contain the deleted filing subsection"
+    );
+}

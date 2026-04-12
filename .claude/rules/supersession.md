@@ -49,19 +49,20 @@ task itself.
 ## Code Review Phase
 
 When triaging findings from agents, apply the supersession test
-BEFORE the diff-boundary test (see `.claude/rules/code-review-scope.md`).
+BEFORE the Real / False positive classification (see
+`.claude/rules/code-review-scope.md`).
 
 For every real finding, ask: **"Would deleting the code this finding
 describes leave the PR's behavior unchanged?"**
 
 - **If yes** → the finding is in-scope for deletion regardless of
-  which file the code lives in. Route to the Fix step. Do not file
-  an issue.
-- **If no** → apply the diff-boundary test as usual.
+  which file the code lives in. Route to the Fix step.
+- **If no** → classify as Real (fix in Step 4) or False positive
+  (dismiss with rationale).
 
-The supersession test overrides the diff-boundary test. A file that
-is not in the PR diff can still be in-scope if its contents are dead
-code the PR created.
+The supersession test runs before classification. A file that is not
+in the PR diff can still be in-scope if its contents are dead code the
+PR created.
 
 ## Why Not Track as Follow-Up
 
