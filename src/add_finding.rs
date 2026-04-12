@@ -51,6 +51,27 @@ pub struct Args {
     pub branch: Option<String>,
 }
 
+/// Returns a rejection message when the (outcome, phase) tuple violates
+/// the Code Review filing ban: outcome "filed" during phase
+/// "flow-code-review" is not allowed. Every other combination passes.
+///
+/// See `.claude/rules/code-review-scope.md` — Code Review triage has two
+/// outcomes (Real / False positive); there is no filing path.
+fn code_review_filing_gate(outcome: &str, phase: &str) -> Option<String> {
+    if outcome == "filed" && phase == "flow-code-review" {
+        Some(
+            "Outcome 'filed' is not valid for phase 'flow-code-review'. \
+             Code Review triage has two outcomes: 'fixed' (real findings, \
+             fix in Step 4) and 'dismissed' (false positives). All real \
+             findings are fixed during Code Review — there is no filing \
+             path."
+                .to_string(),
+        )
+    } else {
+        None
+    }
+}
+
 /// Fallible implementation — returns `Ok(finding_count)` on success,
 /// `Err("no_state")` when no state file exists, or `Err(message)` on failure.
 pub fn run_impl(args: &Args) -> Result<usize, String> {
@@ -60,6 +81,10 @@ pub fn run_impl(args: &Args) -> Result<usize, String> {
             args.outcome,
             VALID_OUTCOMES.join(", ")
         ));
+    }
+
+    if let Some(msg) = code_review_filing_gate(&args.outcome, &args.phase) {
+        return Err(msg);
     }
 
     let root = project_root();
@@ -373,6 +398,49 @@ mod tests {
             ts.contains("-07:00") || ts.contains("-08:00"),
             "Timestamp {} should be Pacific Time",
             ts
+        );
+    }
+
+    // --- code_review_filing_gate ---
+
+    #[test]
+    fn filed_outcome_rejected_for_code_review() {
+        let msg = code_review_filing_gate("filed", "flow-code-review");
+        assert!(msg.is_some(), "filed + flow-code-review must be rejected");
+        let text = msg.unwrap();
+        assert!(text.contains("flow-code-review"));
+        assert!(text.contains("filed"));
+    }
+
+    #[test]
+    fn filed_outcome_accepted_for_learn() {
+        assert!(
+            code_review_filing_gate("filed", "flow-learn").is_none(),
+            "filed + flow-learn must pass the gate — Learn files process gaps"
+        );
+    }
+
+    #[test]
+    fn dismissed_outcome_accepted_for_code_review() {
+        assert!(
+            code_review_filing_gate("dismissed", "flow-code-review").is_none(),
+            "dismissed + flow-code-review must pass — False positive path"
+        );
+    }
+
+    #[test]
+    fn fixed_outcome_accepted_for_code_review() {
+        assert!(
+            code_review_filing_gate("fixed", "flow-code-review").is_none(),
+            "fixed + flow-code-review must pass — Real finding path"
+        );
+    }
+
+    #[test]
+    fn filed_outcome_accepted_for_flow_code() {
+        assert!(
+            code_review_filing_gate("filed", "flow-code").is_none(),
+            "flow-code files Flaky Test issues — must pass"
         );
     }
 }
