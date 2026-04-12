@@ -2889,6 +2889,17 @@ fn code_review_step_3_has_triage() {
 }
 
 #[test]
+fn code_review_has_supersession_check() {
+    let c = common::read_skill("flow-code-review");
+    let lower = c.to_lowercase();
+    assert!(
+        lower.contains("supersession"),
+        "flow-code-review/SKILL.md Step 3 Triage must include a supersession check \
+         per .claude/rules/supersession.md (Code Review Phase section)"
+    );
+}
+
+#[test]
 fn code_review_step_2_launches_four_agents() {
     let c = common::read_skill("flow-code-review");
     assert!(

@@ -50,7 +50,10 @@ independently).
 Classify each finding: real in-scope (fix), real out-of-scope (file
 issue), or false positive (discard). Each triage decision is recorded
 via `bin/flow add-finding` with the outcome and reasoning. Shows triage
-summary table.
+summary table. For each real finding, the supersession test from
+`.claude/rules/supersession.md` runs before the diff-boundary test —
+code the PR has made permanently redundant is in-scope for deletion
+regardless of file location.
 
 ### Step 4 — Fix
 

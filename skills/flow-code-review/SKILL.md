@@ -310,12 +310,7 @@ Prefix the prompt with:
 
 Wait for all agents to return.
 
-If the adversarial agent was launched, verify the temp test file was
-deleted. If it still exists, delete it:
-
-```bash
-rm <temp_test_file>
-```
+The Phase 6 complete/abort cleanup (`src/cleanup.rs::try_delete_adversarial_test_files`) deletes the adversarial test file by prefix match, so no mid-phase cleanup is needed here.
 
 Record step completion:
 
@@ -333,6 +328,30 @@ pass `--auto` as well. Do not output anything else after this invocation.
 
 Triage findings from each agent in order: reviewer, pre-mortem,
 adversarial, documentation. For each finding, classify it:
+
+### Supersession check
+
+The supersession test catches code that the current PR makes permanently
+redundant — code that would leave the PR's behavior unchanged if deleted.
+Running it before the diff-boundary test lets the triage route such code
+to Step 4 for deletion regardless of file location. Without this check,
+dead-on-merge code slips through as "out-of-scope" and becomes tech debt
+that every future reader must re-classify.
+
+Before applying the diff-boundary test, run the supersession test from
+`.claude/rules/supersession.md`. For every finding classified as real,
+ask: **"Would deleting the code this finding describes leave the PR's
+behavior unchanged?"**
+
+If yes, the finding is in-scope for deletion regardless of which file
+the code lives in — route it to Step 4 for deletion. Do not file an
+issue. Do not apply the diff-boundary test.
+
+If no, proceed with the diff-boundary test below.
+
+The supersession test overrides the diff-boundary test. A file that is
+not in the PR diff can still be in-scope if its contents are dead code
+the PR created.
 
 **Real + in-scope** — a credible issue supported by evidence. Apply the
 diff-boundary test: if the finding is in a file that appears in

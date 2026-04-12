@@ -63,6 +63,10 @@ For each finding from all agents, classify as:
 - **Real + out-of-scope** — file as Tech Debt or Documentation Drift issue
 - **False positive** — discard with rationale
 
+The supersession test from `.claude/rules/supersession.md` runs before
+the in-scope/out-of-scope decision — code the PR has made permanently
+redundant is routed to in-scope deletion regardless of file location.
+
 ### Step 4 — Fix
 
 Fix all real in-scope findings, run `bin/flow ci`, commit once.

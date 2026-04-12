@@ -243,3 +243,36 @@ fn test_no_has_redirect_function() {
          which tracks bash quote state."
     );
 }
+
+/// Tombstone: mid-phase `rm <temp_test_file>` in flow-code-review SKILL.md
+/// removed in PR #1040. Must not return.
+#[test]
+fn test_code_review_no_mid_phase_adversarial_rm() {
+    let path = common::repo_root()
+        .join("skills")
+        .join("flow-code-review")
+        .join("SKILL.md");
+    let content = fs::read_to_string(&path).expect("flow-code-review SKILL.md must exist");
+    assert!(
+        !content.contains("rm <temp_test_file>"),
+        "Mid-phase `rm <temp_test_file>` block was deleted in PR #1040 and must not return. \
+         Phase 6 cleanup (src/cleanup.rs::try_delete_adversarial_test_files) is the \
+         authoritative cleanup — mid-phase rm targets an extensionless path that never \
+         exists and silently no-ops."
+    );
+}
+
+/// Tombstone: mid-phase `rm <temp_test_file>` in adversarial.md Round 2
+/// removed in PR #1040. Must not return.
+#[test]
+fn test_adversarial_agent_no_mid_phase_rm() {
+    let path = common::repo_root().join("agents").join("adversarial.md");
+    let content = fs::read_to_string(&path).expect("agents/adversarial.md must exist");
+    assert!(
+        !content.contains("rm <temp_test_file>"),
+        "Mid-phase `rm <temp_test_file>` block in Round 2 was deleted in PR #1040 and must \
+         not return. Phase 6 cleanup (src/cleanup.rs::try_delete_adversarial_test_files) is \
+         the authoritative cleanup — the agent's mid-phase rm targets an extensionless path \
+         that never exists and silently no-ops."
+    );
+}
