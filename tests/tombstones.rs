@@ -199,3 +199,84 @@ fn test_no_backward_facing_comments_in_rust_source() {
         violations.join("\n")
     );
 }
+
+/// Tombstone: removed in PR #1054. Must not return.
+///
+/// `FlowPaths::new` now rejects branches containing '/' via `assert!`.
+/// The prior test documented the unsafe slash-preservation behavior;
+/// its name is the merge-conflict tripwire — a resolution that
+/// re-introduced the test alongside the panic `assert!` would fail at
+/// runtime instead of compile time, so the name must stay absent.
+#[test]
+fn test_flow_paths_no_slash_preservation_test() {
+    let content = fs::read_to_string(common::repo_root().join("src/flow_paths.rs"))
+        .expect("src/flow_paths.rs must be readable");
+    assert!(
+        !content.contains("branch_with_slashes_is_preserved_literally"),
+        "src/flow_paths.rs must not resurrect the slash-preservation test"
+    );
+}
+
+/// Tombstone: removed in PR #1054. Must not return.
+///
+/// Every empty-branch caller was migrated to `FlowStatesDir::new`;
+/// `FlowPaths::new` now panics on empty branches via `assert!`. A merge
+/// conflict that re-introduced a `FlowPaths::new(..., "")` callsite
+/// would compile but panic at first execution — this scanner catches
+/// it at CI time instead.
+///
+/// The pattern list covers the five call-site shapes observed in the
+/// codebase before the migration. The scanner self-excludes this file
+/// via canonicalized-path comparison because the patterns must appear
+/// here as search input.
+#[test]
+fn test_no_flow_paths_new_with_empty_branch() {
+    let root = common::repo_root();
+    let scanner_path = root
+        .join("tests")
+        .join("tombstones.rs")
+        .canonicalize()
+        .expect("scanner path must canonicalize");
+
+    let patterns = [
+        "FlowPaths::new(&root, \"\")",
+        "FlowPaths::new(root, \"\")",
+        "FlowPaths::new(project_root, \"\")",
+        "FlowPaths::new(&current, \"\")",
+        "FlowPaths::new(Path::new(project_root), \"\")",
+    ];
+
+    let mut files: Vec<PathBuf> = Vec::new();
+    collect_rs_files(&root.join("src"), &mut files);
+    collect_rs_files(&root.join("tests"), &mut files);
+
+    let mut violations: Vec<String> = Vec::new();
+
+    for file in &files {
+        if file
+            .canonicalize()
+            .map(|p| p == scanner_path)
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        let content = match fs::read_to_string(file) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let rel = file.strip_prefix(&root).unwrap_or(file);
+        for (idx, line) in content.lines().enumerate() {
+            for pat in &patterns {
+                if line.contains(pat) {
+                    violations.push(format!("{}:{} — {}", rel.display(), idx + 1, pat));
+                }
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "Empty-branch FlowPaths::new callsites found — migrate to FlowStatesDir:\n\n{}",
+        violations.join("\n")
+    );
+}

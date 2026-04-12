@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 use serde_json::Value;
 
-use crate::flow_paths::FlowPaths;
+use crate::flow_paths::{FlowPaths, FlowStatesDir};
 use crate::state::{Phase, PhaseState, PhaseStatus, SkillConfig};
 
 /// Phase configuration loaded from flow-phases.json.
@@ -215,19 +215,26 @@ pub fn build_initial_phases(current_time: &str) -> IndexMap<Phase, PhaseState> {
 /// Returns list of (PathBuf, Value, String) tuples: (path, state, branch_name).
 /// Empty list = nothing found. Single item = unambiguous match.
 /// Multiple items = caller must disambiguate.
+///
+/// An empty `branch` skips the exact-match lookup and scans the
+/// `.flow-states/` directory directly — callers that want to list all
+/// active flows (e.g. the format-status multi-flow fallback) pass `""`
+/// for this branch-free scan.
 pub fn find_state_files(root: &Path, branch: &str) -> Vec<(PathBuf, Value, String)> {
-    let paths = FlowPaths::new(root, branch);
-    let state_dir = paths.flow_states_dir();
+    let state_dir = FlowStatesDir::new(root).path().to_path_buf();
 
-    // Exact match
-    let exact_path = paths.state_file();
-    if exact_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&exact_path) {
-            if let Ok(state) = serde_json::from_str::<Value>(&content) {
-                return vec![(exact_path, state, branch.to_string())];
+    // Exact match (only when a branch was given).
+    if !branch.is_empty() {
+        let paths = FlowPaths::new(root, branch);
+        let exact_path = paths.state_file();
+        if exact_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&exact_path) {
+                if let Ok(state) = serde_json::from_str::<Value>(&content) {
+                    return vec![(exact_path, state, branch.to_string())];
+                }
             }
+            return vec![];
         }
-        return vec![];
     }
 
     if !state_dir.is_dir() {

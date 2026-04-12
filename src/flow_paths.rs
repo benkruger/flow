@@ -45,10 +45,25 @@ pub struct FlowPaths {
 impl FlowPaths {
     /// Construct a new `FlowPaths` rooted at `<project_root>/.flow-states`
     /// for the given branch.
+    ///
+    /// Panics if `branch` is empty or contains '/'. Branch sanitization
+    /// belongs upstream (see `src/utils.rs::branch_name`); an invalid
+    /// branch reaching this constructor indicates a logic bug in the
+    /// caller. Use `FlowStatesDir` when an operation is genuinely
+    /// branch-free.
     pub fn new(project_root: impl AsRef<Path>, branch: impl Into<String>) -> Self {
+        let branch = branch.into();
+        assert!(
+            !branch.is_empty(),
+            "FlowPaths::new: branch must be non-empty"
+        );
+        assert!(
+            !branch.contains('/'),
+            "FlowPaths::new: branch must not contain '/': {branch}"
+        );
         Self {
             flow_states_dir: project_root.as_ref().join(".flow-states"),
-            branch: branch.into(),
+            branch,
         }
     }
 
@@ -288,15 +303,39 @@ mod tests {
     }
 
     #[test]
-    fn branch_with_slashes_is_preserved_literally() {
-        // Branch names with slashes (e.g. "user/fix") would produce
-        // subdirectory-shaped filenames. FlowPaths passes the branch
-        // through unchanged; sanitization belongs upstream.
-        let p = FlowPaths::new("/p", "user/fix");
-        assert_eq!(
-            p.state_file(),
-            PathBuf::from("/p/.flow-states/user/fix.json")
-        );
+    #[should_panic(expected = "non-empty")]
+    fn new_panics_on_empty_branch() {
+        let _ = FlowPaths::new("/p", "");
+    }
+
+    #[test]
+    #[should_panic(expected = "must not contain")]
+    fn new_panics_on_branch_with_single_slash() {
+        let _ = FlowPaths::new("/p", "user/fix");
+    }
+
+    #[test]
+    #[should_panic]
+    fn new_panics_on_branch_with_multiple_slashes() {
+        let _ = FlowPaths::new("/p", "a/b/c");
+    }
+
+    #[test]
+    #[should_panic]
+    fn new_panics_on_branch_that_is_just_a_slash() {
+        let _ = FlowPaths::new("/p", "/");
+    }
+
+    #[test]
+    #[should_panic]
+    fn new_panics_on_trailing_slash() {
+        let _ = FlowPaths::new("/p", "a/");
+    }
+
+    #[test]
+    #[should_panic]
+    fn new_panics_on_leading_slash() {
+        let _ = FlowPaths::new("/p", "/a");
     }
 
     // --- FlowStatesDir ---
