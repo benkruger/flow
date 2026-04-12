@@ -128,14 +128,16 @@ worse than one extra question.
 
 ## Dependencies
 
-When filing an issue that depends on another issue, add the
-"Blocked" label to the issue. `flow-issues` reads this label
-to determine blocked status.
+When filing an issue that depends on another issue, set the native
+blocked-by relationship with `bin/flow link-blocked-by`:
 
-- `bin/flow link-blocked-by` sets GitHub's native blocked-by
-  relationships for decomposed issues (independent of the label)
-- For manually filed issues, add the "Blocked" label when the
-  issue cannot proceed until another issue is resolved
+```bash
+bin/flow link-blocked-by --repo <owner/repo> \
+  --blocked-number <blocked> --blocking-number <blocking>
+```
+
+`flow-issues` detects blocked status from GitHub's native
+`blockedBy` relationship — no "Blocked" label is required.
 
 ## Never Include
 
