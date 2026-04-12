@@ -21,7 +21,8 @@ use regex::Regex;
 use serde_json::json;
 
 use crate::complete_preflight::LOCAL_TIMEOUT;
-use crate::git::project_root;
+use crate::flow_paths::FlowPaths;
+use crate::git::{project_root, resolve_branch};
 use crate::github::detect_repo;
 use crate::output::{json_error, json_ok};
 
@@ -51,6 +52,45 @@ pub struct Args {
     /// Milestone title to assign the issue to
     #[arg(long)]
     pub milestone: Option<String>,
+
+    /// Override the Code Review filing ban (requires explicit reason)
+    #[arg(long = "override-code-review-ban")]
+    pub override_code_review_ban: bool,
+}
+
+/// Returns a rejection message when the active flow is in Phase 4
+/// Code Review and the override flag is not set. Every other case
+/// passes.
+///
+/// - `state_json` is the raw contents of the current branch's state
+///   file (`None` when no flow is active, malformed content, etc.).
+/// - `override_flag` is the value of `--override-code-review-ban`.
+///
+/// See `.claude/rules/code-review-scope.md` — Code Review triage has
+/// two outcomes (Real / False positive); there is no filing path.
+/// The override is the deliberate-friction escape hatch.
+pub(crate) fn should_reject_for_code_review(
+    state_json: Option<&str>,
+    override_flag: bool,
+) -> Option<String> {
+    if override_flag {
+        return None;
+    }
+    let content = state_json?;
+    let state: serde_json::Value = serde_json::from_str(content).ok()?;
+    let phase = state.get("current_phase").and_then(|v| v.as_str())?;
+    if phase == "flow-code-review" {
+        Some(
+            "bin/flow issue is disabled during Code Review. All real \
+             findings must be fixed in Step 4. If this is a FLOW \
+             process gap, file it during Phase 5 Learn. If truly \
+             needed, pass --override-code-review-ban with an \
+             explicit reason."
+                .to_string(),
+        )
+    } else {
+        None
+    }
 }
 
 pub struct IssueResult {
@@ -292,6 +332,22 @@ fn detect_repo_or_fail(root: &Path) -> String {
 
 pub fn run(args: Args) {
     let root = project_root();
+
+    // Code Review filing gate: load the current branch's state file
+    // (if any) and reject filing when current_phase is flow-code-review,
+    // unless --override-code-review-ban was passed. Missing / malformed
+    // state file passes through — this command is also used outside an
+    // active flow.
+    let state_json: Option<String> = resolve_branch(None, &root).and_then(|branch| {
+        let state_path = FlowPaths::new(&root, &branch).state_file();
+        fs::read_to_string(&state_path).ok()
+    });
+    if let Some(msg) =
+        should_reject_for_code_review(state_json.as_deref(), args.override_code_review_ban)
+    {
+        json_error(&msg, &[]);
+        std::process::exit(1);
+    }
 
     // Resolve repo: --repo > --state-file > detect_repo
     let repo = if let Some(r) = args.repo {
@@ -541,5 +597,77 @@ mod tests {
     fn args_milestone_defaults_to_none() {
         let args = Args::try_parse_from(["issue", "--title", "Test issue"]).unwrap();
         assert!(args.milestone.is_none());
+    }
+
+    // --- should_reject_for_code_review ---
+
+    #[test]
+    fn gate_blocks_when_current_phase_is_code_review() {
+        let state = r#"{"current_phase":"flow-code-review"}"#;
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(msg.is_some());
+        let text = msg.unwrap();
+        assert!(text.contains("Code Review"));
+        assert!(text.contains("override-code-review-ban"));
+    }
+
+    #[test]
+    fn gate_allows_with_override_in_code_review() {
+        let state = r#"{"current_phase":"flow-code-review"}"#;
+        assert!(should_reject_for_code_review(Some(state), true).is_none());
+    }
+
+    #[test]
+    fn gate_allows_in_learn_phase() {
+        let state = r#"{"current_phase":"flow-learn"}"#;
+        assert!(should_reject_for_code_review(Some(state), false).is_none());
+    }
+
+    #[test]
+    fn gate_allows_in_code_phase() {
+        let state = r#"{"current_phase":"flow-code"}"#;
+        assert!(should_reject_for_code_review(Some(state), false).is_none());
+    }
+
+    #[test]
+    fn gate_allows_in_start_phase() {
+        let state = r#"{"current_phase":"flow-start"}"#;
+        assert!(should_reject_for_code_review(Some(state), false).is_none());
+    }
+
+    #[test]
+    fn gate_allows_when_no_state_file() {
+        assert!(should_reject_for_code_review(None, false).is_none());
+    }
+
+    #[test]
+    fn gate_allows_when_state_malformed() {
+        assert!(should_reject_for_code_review(Some("not json"), false).is_none());
+    }
+
+    #[test]
+    fn gate_allows_when_current_phase_missing() {
+        let state = r#"{"branch":"x"}"#;
+        assert!(should_reject_for_code_review(Some(state), false).is_none());
+    }
+
+    #[test]
+    fn gate_allows_when_state_is_empty_string() {
+        assert!(should_reject_for_code_review(Some(""), false).is_none());
+    }
+
+    // --- Args override flag ---
+
+    #[test]
+    fn args_parses_override_code_review_ban() {
+        let args = Args::try_parse_from(["issue", "--title", "Test", "--override-code-review-ban"])
+            .unwrap();
+        assert!(args.override_code_review_ban);
+    }
+
+    #[test]
+    fn args_override_defaults_to_false() {
+        let args = Args::try_parse_from(["issue", "--title", "Test"]).unwrap();
+        assert!(!args.override_code_review_ban);
     }
 }
