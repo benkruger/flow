@@ -21,8 +21,14 @@ during Code Review.
 
 ## How to Apply
 
-During Code Review Step 3 (Triage), for every finding classified
-as "real":
+Before applying the diff-boundary test, run the supersession test
+from `.claude/rules/supersession.md`. If a finding describes code
+the PR has made redundant, it is in-scope for deletion regardless
+of file location and the diff-boundary test does not apply.
+
+If the supersession test does not apply, proceed with the
+diff-boundary test. During Code Review Step 3 (Triage), for every
+finding classified as "real":
 
 1. Check whether the file appears in the PR diff
 2. If yes → in-scope, route to Step 4
