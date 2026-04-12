@@ -65,3 +65,23 @@ This rule applies to every phase that can be autonomous: Start,
 Plan, Code, Code Review, Learn, Complete. The `continue: auto`
 configuration is readable in every phase's `phase-enter`
 response.
+
+## Enforcement
+
+The prose rule above is backed by a mechanical PreToolUse hook.
+The `validate-ask-user` hook
+(`src/hooks/validate_ask_user.rs::validate()`) refuses
+`AskUserQuestion` tool calls with exit 2 when the state file
+records `skills.<current_phase>.continue == "auto"` — both the
+Simple form (`skills.<phase> = "auto"`) and the Detailed form
+(`skills.<phase> = {"continue": "auto", ...}`) are recognized.
+The block path precedes the existing `_auto_continue` auto-answer
+path in the same hook, so the user's explicit per-skill
+continue=auto config wins over any transient transition-boundary
+state. The blocked tool call returns the rejection message to the
+model via stderr so the session adapts instead of stalling.
+
+This is the hook-level escalation described by
+`.claude/rules/hook-vs-instruction.md` — the rule exists because
+the user-visible pauses observed during PR #1046 proved that
+instruction-level enforcement alone was insufficient.

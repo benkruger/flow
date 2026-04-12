@@ -55,6 +55,40 @@ pub fn validate(state_path: Option<&Path>) -> (bool, String, Option<Value>) {
         Err(_) => return (true, String::new(), None),
     };
 
+    // Block path: when the current phase is configured autonomous
+    // (`skills.<current_phase>.continue == "auto"`), refuse the
+    // AskUserQuestion tool call. This precedes the `_auto_continue`
+    // auto-answer path so the user's explicit per-skill continue=auto
+    // config wins over any transient transition-boundary state.
+    let current_phase = state
+        .get("current_phase")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if !current_phase.is_empty() {
+        let skill_entry = state.get("skills").and_then(|s| s.get(current_phase));
+        let is_auto = match skill_entry {
+            // SkillConfig::Simple — `skills.<phase> = "auto"`.
+            Some(v) if v.as_str() == Some("auto") => true,
+            // SkillConfig::Detailed — `skills.<phase> = {"continue": "auto", ...}`.
+            Some(v) => v.get("continue").and_then(|c| c.as_str()) == Some("auto"),
+            None => false,
+        };
+        if is_auto {
+            return (
+                false,
+                format!(
+                    "BLOCKED: AskUserQuestion is disabled in autonomous phase \
+                     `{}`. Autonomous flows must not pause for user input. \
+                     Commit any in-flight work at a natural boundary and \
+                     continue with the next skill instruction. To capture a \
+                     correction, the user can run `/flow:flow-note`.",
+                    current_phase
+                ),
+                None,
+            );
+        }
+    }
+
     let auto_cmd = state
         .get("_auto_continue")
         .and_then(|v| v.as_str())
@@ -87,7 +121,14 @@ pub fn run() {
 
     let state_path = FlowPaths::new(project_root(), &branch).state_file();
 
-    let (_allowed, _message, hook_response) = validate(Some(&state_path));
+    let (allowed, message, hook_response) = validate(Some(&state_path));
+    // Block path: exit 2 with stderr message so Claude Code feeds it
+    // back to the model as a blocked tool call (matches the
+    // `validate_pretool::run()` pattern).
+    if !allowed {
+        eprintln!("{}", message);
+        std::process::exit(2);
+    }
     if let Some(response) = hook_response {
         println!("{}", serde_json::to_string(&response).unwrap());
         std::process::exit(0);
@@ -206,6 +247,171 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("/flow:flow-code-review"));
+    }
+
+    // --- validate BLOCK path tests ---
+
+    #[test]
+    fn test_validate_blocks_when_skills_continue_auto_detailed() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = json!({
+            "current_phase": "flow-code",
+            "branch": "test",
+            "skills": {"flow-code": {"continue": "auto", "commit": "auto"}},
+        });
+        let path = write_state(dir.path(), "test", &state);
+        let (allowed, msg, resp) = validate(Some(&path));
+        assert!(!allowed, "Detailed skills.continue=auto must block");
+        assert!(
+            msg.contains("flow-code"),
+            "block message must name the phase: {}",
+            msg
+        );
+        assert!(resp.is_none(), "block path must not return hook_response");
+    }
+
+    #[test]
+    fn test_validate_blocks_when_skills_continue_auto_simple() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = json!({
+            "current_phase": "flow-code",
+            "branch": "test",
+            "skills": {"flow-code": "auto"},
+        });
+        let path = write_state(dir.path(), "test", &state);
+        let (allowed, msg, resp) = validate(Some(&path));
+        assert!(!allowed, "Simple skills=auto must block");
+        assert!(msg.contains("flow-code"));
+        assert!(resp.is_none());
+    }
+
+    #[test]
+    fn test_validate_allows_when_skills_continue_manual() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = json!({
+            "current_phase": "flow-code",
+            "branch": "test",
+            "skills": {"flow-code": {"continue": "manual"}},
+        });
+        let path = write_state(dir.path(), "test", &state);
+        let (allowed, msg, resp) = validate(Some(&path));
+        assert!(allowed);
+        assert!(msg.is_empty());
+        assert!(resp.is_none());
+    }
+
+    #[test]
+    fn test_validate_allows_when_skills_key_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = json!({"current_phase": "flow-code", "branch": "test"});
+        let path = write_state(dir.path(), "test", &state);
+        let (allowed, msg, resp) = validate(Some(&path));
+        assert!(allowed, "missing skills key must fail-open (legacy state)");
+        assert!(msg.is_empty());
+        assert!(resp.is_none());
+    }
+
+    #[test]
+    fn test_validate_allows_when_current_phase_not_in_skills() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = json!({
+            "current_phase": "flow-code",
+            "branch": "test",
+            "skills": {"flow-start": {"continue": "auto"}},
+        });
+        let path = write_state(dir.path(), "test", &state);
+        let (allowed, _msg, resp) = validate(Some(&path));
+        assert!(allowed, "current_phase missing from skills must allow");
+        assert!(resp.is_none());
+    }
+
+    #[test]
+    fn test_validate_block_precedes_auto_continue() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = json!({
+            "current_phase": "flow-code",
+            "branch": "test",
+            "skills": {"flow-code": {"continue": "auto"}},
+            "_auto_continue": "/flow:flow-code-review",
+        });
+        let path = write_state(dir.path(), "test", &state);
+        let (allowed, msg, resp) = validate(Some(&path));
+        assert!(
+            !allowed,
+            "block must take precedence over _auto_continue auto-answer"
+        );
+        assert!(msg.contains("flow-code"));
+        assert!(resp.is_none(), "block path must not auto-answer");
+    }
+
+    #[test]
+    fn test_validate_auto_continue_without_skills_auto() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = json!({
+            "current_phase": "flow-code",
+            "branch": "test",
+            "skills": {"flow-code": {"continue": "manual"}},
+            "_auto_continue": "/flow:flow-code-review",
+        });
+        let path = write_state(dir.path(), "test", &state);
+        let (allowed, _msg, resp) = validate(Some(&path));
+        assert!(
+            allowed,
+            "_auto_continue without skills-auto must auto-answer"
+        );
+        assert!(
+            resp.is_some(),
+            "manual skills + _auto_continue must auto-answer"
+        );
+        let resp = resp.unwrap();
+        assert_eq!(resp["permissionDecision"], "allow");
+    }
+
+    #[test]
+    fn test_validate_block_message_names_phase() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = json!({
+            "current_phase": "flow-learn",
+            "branch": "test",
+            "skills": {"flow-learn": {"continue": "auto"}},
+        });
+        let path = write_state(dir.path(), "test", &state);
+        let (_allowed, msg, _resp) = validate(Some(&path));
+        assert!(
+            msg.contains("flow-learn"),
+            "message must name the configured phase for diagnosis: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_validate_allows_no_current_phase() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = json!({
+            "branch": "test",
+            "skills": {"flow-code": {"continue": "auto"}},
+        });
+        let path = write_state(dir.path(), "test", &state);
+        let (allowed, _msg, resp) = validate(Some(&path));
+        assert!(
+            allowed,
+            "missing current_phase must fail-open — no phase to gate on"
+        );
+        assert!(resp.is_none());
+    }
+
+    #[test]
+    fn test_validate_corrupt_skills_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = json!({
+            "current_phase": "flow-code",
+            "branch": "test",
+            "skills": [1, 2, 3],
+        });
+        let path = write_state(dir.path(), "test", &state);
+        let (allowed, _msg, resp) = validate(Some(&path));
+        assert!(allowed, "corrupt skills value must fail-open");
+        assert!(resp.is_none());
     }
 
     // --- set_blocked tests ---
