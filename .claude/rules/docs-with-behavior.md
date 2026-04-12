@@ -91,6 +91,8 @@ adds a new `bin/flow` subcommand, check whether any doc file
 describes the old behavior. If so, update it in the same task —
 do not defer to Code Review or Learn.
 
-During Code Review triage, documentation findings caused by the
-PR's own changes are always in-scope. Never classify them as
-"out-of-scope" or file them as issues.
+During Code Review triage, every documentation finding caused by
+the PR's own changes is fixed in the same PR. The Code Review rule
+(`.claude/rules/code-review-scope.md`) removes the filing path
+entirely — documentation drift introduced by the PR's changes is
+a Real finding that gets fixed in Step 4.

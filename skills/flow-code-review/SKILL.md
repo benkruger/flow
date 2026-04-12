@@ -327,47 +327,38 @@ pass `--auto` as well. Do not output anything else after this invocation.
 ## Step 3 — Triage
 
 Triage findings from each agent in order: reviewer, pre-mortem,
-adversarial, documentation. For each finding, classify it:
+adversarial, documentation. For each finding, classify it as **Real**
+(fix in Step 4) or **False positive** (dismiss with rationale).
+
+There is no filing path. All real findings are fixed during Code
+Review — see `.claude/rules/code-review-scope.md`.
 
 ### Supersession check
 
-The supersession test catches code that the current PR makes permanently
-redundant — code that would leave the PR's behavior unchanged if deleted.
-Running it before the diff-boundary test lets the triage route such code
-to Step 4 for deletion regardless of file location. Without this check,
-dead-on-merge code slips through as "out-of-scope" and becomes tech debt
-that every future reader must re-classify.
+Run the supersession check before classification. The supersession
+test catches code that the current PR has made permanently redundant
+— code that would leave the PR's behavior unchanged if deleted.
+Routing such code to Step 4 for deletion regardless of file location
+keeps dead-on-merge code from surviving into main.
 
-Before applying the diff-boundary test, run the supersession test from
-`.claude/rules/supersession.md`. For every finding classified as real,
-ask: **"Would deleting the code this finding describes leave the PR's
-behavior unchanged?"**
+Run the supersession test from `.claude/rules/supersession.md`. For
+every finding, ask: **"Would deleting the code this finding describes
+leave the PR's behavior unchanged?"**
 
 If yes, the finding is in-scope for deletion regardless of which file
-the code lives in — route it to Step 4 for deletion. Do not file an
-issue. Do not apply the diff-boundary test.
+the code lives in — route it to Step 4 for deletion.
 
-If no, proceed with the diff-boundary test below.
+If no, proceed with the Real / False positive classification below.
 
 If uncertain whether the code is superseded, treat as "no" and proceed
-with the diff-boundary test. The safe default is the conservative path —
-filing an issue for code that turns out to be dead is recoverable;
-deleting code that turns out to be live is not.
+with the classification.
 
-The supersession test overrides the diff-boundary test. A file that is
-not in the PR diff can still be in-scope if its contents are dead code
-the PR created.
+### Classification
 
-**Real + in-scope** — a credible issue supported by evidence. Apply the
-diff-boundary test: if the finding is in a file that appears in
-`git diff origin/main...HEAD`, it is in-scope — fix it. This includes
-structural issues like duplicate code, missing abstractions, and naming
-problems in files the PR created or modified. Route to Step 4 for fixing.
-
-**Real + out-of-scope** — a credible issue in a file that does NOT
-appear in the PR diff. The problem pre-dates this PR. File an issue and
-move on — do not fix. Never classify a finding as out-of-scope when the
-file was created or modified by this PR.
+**Real** — a credible issue supported by evidence. Includes structural
+issues like duplicate code, missing abstractions, and naming problems.
+Route to Step 4 for fixing. All real findings are fixed in this PR —
+regardless of which file they live in.
 
 **False positive** — speculative, not supported by the code, or already
 covered by tests. Discard with rationale. After classifying each false positive, record it:
@@ -383,38 +374,6 @@ Examine each agent's output for expected structure. Valid output contains
 If an agent's output ends mid-sentence or is missing expected categories,
 the agent exhausted its turn budget. Note the incomplete agent in the
 triage table so the user knows coverage was partial.
-
-### File out-of-scope issues
-
-For each real + out-of-scope finding, classify as one of:
-
-- **Tech Debt** — working but fragile, duplicated, or convention-violating code
-- **Documentation Drift** — docs out of sync with actual behavior
-
-Write the issue body to `.flow-issue-body` in the project root using the
-Write tool, then file:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Tech Debt" --title "<issue_title>" --body-file .flow-issue-body
-```
-
-Or for documentation:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Documentation Drift" --title "<issue_title>" --body-file .flow-issue-body
-```
-
-After filing, record it:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Tech Debt" --title "<issue_title>" --url "<issue_url>" --phase "flow-code-review"
-```
-
-After each filed issue, also record the finding:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "filed" --phase "flow-code-review" --issue-url "<issue_url>"
-```
 
 ### Triage summary
 
@@ -443,13 +402,11 @@ rationale inside a fenced code block:
   Documentation
   -------------
   - [T6 Documentation] [REAL] <finding description>
-  - [T3 Maintainability] [OUT OF SCOPE] filed #123
 
   Truncated agents: none
 
   Real findings to fix : N
-  Out-of-scope filed   : N
-  False positives       : N
+  False positives      : N
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -472,13 +429,13 @@ pass `--auto` as well. Do not output anything else after this invocation.
 
 ## Step 4 — Fix
 
-Fix all real in-scope findings from Step 3.
+Fix all real findings from Step 3.
 
-If no real in-scope findings exist, skip this step and proceed to Done.
+If no real findings exist, skip this step and proceed to Done.
 
 ### Fix each finding
 
-For each real in-scope finding, fix the issue in code. After fixing each finding, record it:
+For each real finding, fix the issue in code. After fixing each finding, record it:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "fixed" --phase "flow-code-review"
@@ -633,7 +590,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
 - Always run `bin/flow ci` after any fix made during Code Review
 - Never transition to Learn unless `bin/flow ci` is green
-- Fix every real in-scope finding from agent triage — do not leave findings unaddressed
+- Fix every real finding from agent triage — do not leave findings unaddressed
 - Follow the project CLAUDE.md conventions when fixing
 - All analysis comes from cognitively isolated agents — the parent session never reviews the diff itself
 - Parent session gathers, launches, triages, and fixes — it does not analyze

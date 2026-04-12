@@ -47,29 +47,24 @@ independently).
 
 ### Step 3 — Triage
 
-Classify each finding: real in-scope (fix), real out-of-scope (file
-issue), or false positive (discard). Each triage decision is recorded
-via `bin/flow add-finding` with the outcome and reasoning. Shows triage
-summary table. For each real finding, the supersession test from
-`.claude/rules/supersession.md` runs before the diff-boundary test —
-code the PR has made permanently redundant is in-scope for deletion
-regardless of file location.
+Classify each finding as **Real** (fix) or **False positive**
+(dismiss with rationale). Each dismissal is recorded via
+`bin/flow add-finding --outcome "dismissed"`. Shows triage summary
+table. The supersession test from `.claude/rules/supersession.md`
+runs before classification — code the PR has made permanently
+redundant is routed to Step 4 for deletion regardless of file
+location.
+
+There is no filing path. All real findings are fixed in Step 4 —
+see `.claude/rules/code-review-scope.md`. `bin/flow add-finding`
+rejects `--outcome filed` during Code Review, and `bin/flow issue`
+refuses to create issues while `current_phase == "flow-code-review"`
+unless `--override-code-review-ban` is passed.
 
 ### Step 4 — Fix
 
-Fix all real in-scope findings, recording each fix via
-`bin/flow add-finding`. Run `bin/flow ci`, commit once via
-`/flow-commit`.
-
----
-
-## Out-of-Scope Findings
-
-Each finding is classified during triage:
-
-- **In-scope** — related to the feature, fixed as normal
-- **Tech Debt** — pre-existing, unrelated. Filed as a "Tech Debt" issue via `bin/flow issue`, recorded via `bin/flow add-issue`, then skipped
-- **Documentation Drift** — stale docs, unrelated. Filed as a "Documentation Drift" issue, recorded, then skipped
+Fix all real findings, recording each fix via `bin/flow add-finding`.
+Run `bin/flow ci`, commit once via `/flow-commit`.
 
 ---
 
