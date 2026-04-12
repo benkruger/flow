@@ -28,6 +28,15 @@ to write the same updates you could write now.
   listed in that SKILL.md's Panel Fields / Output section so a
   future session reading the skill knows what the panel can
   contain.
+- **Changed type signatures or module architecture → the module-
+  level doc comment and every affected item's doc comment in the
+  same source file.** This is where PR #1054 missed: splitting
+  `FlowPaths` into two types changed the architecture of
+  `src/flow_paths.rs`, but the module doc still described the
+  single-type model until Code Review caught the drift.
+  Source-local doc comments are documentation too — they bind
+  the type to its purpose for future readers who arrive via
+  grep or rustdoc rather than through the module's external docs.
 
 ## Agent Input Section Sync
 
@@ -86,11 +95,21 @@ every SKILL.md that reads the field in a bash block, and every agent
 
 ## How to Apply
 
+During the Plan phase, when the Exploration lists source files
+that will be modified, open each file and note every module-level
+doc comment and every public item's doc comment. If the planned
+change alters the described behavior, add a task — or extend an
+existing task — to update those doc comments in the same commit
+as the code change. Do not leave source-local doc updates to Code
+Review.
+
 During the Code phase, when a task modifies a skill SKILL.md or
 adds a new `bin/flow` subcommand, check whether any doc file
 describes the old behavior. If so, update it in the same task —
 do not defer to Code Review or Learn.
 
-During Code Review triage, documentation findings caused by the
-PR's own changes are always in-scope. Never classify them as
-"out-of-scope" or file them as issues.
+During Code Review triage, every documentation finding caused by
+the PR's own changes is fixed in the same PR. The Code Review rule
+(`.claude/rules/code-review-scope.md`) removes the filing path
+entirely — documentation drift introduced by the PR's changes is
+a Real finding that gets fixed in Step 4.
