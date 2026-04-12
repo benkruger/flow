@@ -85,7 +85,7 @@ pub const UNIVERSAL_ALLOW: &[&str] = &[
     "Bash(claude plugin install *)",
     "Bash(curl *)",
     "Read(~/.claude/rules/*)",
-    "Read(~/.claude/projects/**/tool-results/*)",
+    "Read(~/.claude/projects/*/memory/*)",
     "Read(//tmp/*.txt)",
     "Read(//tmp/*.diff)",
     "Read(//tmp/*.patch)",
