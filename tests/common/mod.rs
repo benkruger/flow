@@ -49,24 +49,6 @@ pub fn agents_dir() -> PathBuf {
 
 // --- FlowPaths test fixtures ---
 
-/// Construct a `FlowPaths` for a test fixture project root and branch.
-/// Tests that write branch-scoped files under `.flow-states/` should
-/// route every path through this instance rather than assembling the
-/// suffixes inline — the layout is owned by `FlowPaths`.
-pub fn flow_paths(project_root: &Path, branch: &str) -> FlowPaths {
-    FlowPaths::new(project_root, branch)
-}
-
-/// Construct a `FlowPaths` and eagerly create the `.flow-states/`
-/// directory. Use this variant in tests whose first operation is a
-/// write (state file, log, plan, etc.) so the parent directory is
-/// guaranteed to exist.
-pub fn flow_paths_with_dir(project_root: &Path, branch: &str) -> FlowPaths {
-    let fp = FlowPaths::new(project_root, branch);
-    fs::create_dir_all(fp.flow_states_dir()).expect("create .flow-states/");
-    fp
-}
-
 /// Returns the `.flow-states/` directory under `project_root` without
 /// creating it. Equivalent to `FlowPaths::new(project_root, "").flow_states_dir()`
 /// but shorter at callsites — test fixtures use this in place of the

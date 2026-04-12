@@ -293,7 +293,12 @@ mod tests {
         let root = dir.path().canonicalize().unwrap();
         let qp = queue_path(&root);
         assert!(qp.is_dir());
-        assert_eq!(qp, root.join(".flow-states").join(QUEUE_DIRNAME));
+        assert_eq!(
+            qp,
+            FlowPaths::new(&root, "")
+                .flow_states_dir()
+                .join(QUEUE_DIRNAME)
+        );
     }
 
     #[test]
