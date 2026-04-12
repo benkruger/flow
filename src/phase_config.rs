@@ -216,16 +216,19 @@ pub fn build_initial_phases(current_time: &str) -> IndexMap<Phase, PhaseState> {
 /// Empty list = nothing found. Single item = unambiguous match.
 /// Multiple items = caller must disambiguate.
 ///
-/// An empty `branch` skips the exact-match lookup and scans the
-/// `.flow-states/` directory directly — callers that want to list all
-/// active flows (e.g. the format-status multi-flow fallback) pass `""`
-/// for this branch-free scan.
+/// A `branch` that fails `FlowPaths::is_valid_branch` (empty or
+/// containing '/') skips the exact-match lookup and scans the
+/// `.flow-states/` directory directly. This covers both the format-
+/// status multi-flow fallback (which passes `""`) and users running
+/// `bin/flow` subcommands on a slash-containing git branch
+/// (`feature/foo`, `dependabot/*`) where FLOW has no state file.
 pub fn find_state_files(root: &Path, branch: &str) -> Vec<(PathBuf, Value, String)> {
     let state_dir = FlowStatesDir::new(root).path().to_path_buf();
 
-    // Exact match (only when a branch was given).
-    if !branch.is_empty() {
-        let paths = FlowPaths::new(root, branch);
+    // Exact match — skip when the branch isn't a valid FLOW branch
+    // name (empty, or slash-containing). FlowPaths::try_new returns
+    // None in those cases so we fall through to the directory scan.
+    if let Some(paths) = FlowPaths::try_new(root, branch) {
         let exact_path = paths.state_file();
         if exact_path.exists() {
             if let Ok(content) = std::fs::read_to_string(&exact_path) {
@@ -579,6 +582,55 @@ mod tests {
         fs::write(state_dir.join("other.json"), r#"{"branch": "other"}"#).unwrap();
 
         let results = find_state_files(dir.path(), "main");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn find_state_files_empty_branch_scans_directory() {
+        // Empty branch skips the exact-match lookup and scans the
+        // directory — this is the branch-free path used by
+        // format-status's multi-flow fallback.
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir(&state_dir).unwrap();
+        fs::write(state_dir.join("a.json"), r#"{"branch": "a"}"#).unwrap();
+        fs::write(state_dir.join("b.json"), r#"{"branch": "b"}"#).unwrap();
+
+        let results = find_state_files(dir.path(), "");
+        let mut branches: Vec<_> = results.iter().map(|(_, _, b)| b.clone()).collect();
+        branches.sort();
+        assert_eq!(branches, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn find_state_files_slash_branch_does_not_panic() {
+        // Slash-containing git branches (`feature/foo`, `dependabot/*`)
+        // reach find_state_files via `run_format_status` and the
+        // stop-continue hook. FlowPaths::try_new filters them out so
+        // the function scans the directory rather than panicking.
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir(&state_dir).unwrap();
+        fs::write(
+            state_dir.join("other-feature.json"),
+            r#"{"branch": "other-feature"}"#,
+        )
+        .unwrap();
+
+        let results = find_state_files(dir.path(), "feature/foo");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].2, "other-feature");
+    }
+
+    #[test]
+    fn find_state_files_multi_slash_branch_does_not_panic() {
+        // Dependabot-style refs contain multiple slashes — same
+        // handling as single-slash.
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir(&state_dir).unwrap();
+
+        let results = find_state_files(dir.path(), "dependabot/npm_and_yarn/acme-1.2.3");
         assert!(results.is_empty());
     }
 

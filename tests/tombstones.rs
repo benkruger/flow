@@ -225,10 +225,20 @@ fn test_flow_paths_no_slash_preservation_test() {
 /// would compile but panic at first execution — this scanner catches
 /// it at CI time instead.
 ///
-/// The pattern list covers the five call-site shapes observed in the
-/// codebase before the migration. The scanner self-excludes this file
-/// via canonicalized-path comparison because the patterns must appear
-/// here as search input.
+/// Uses a regex (`FlowPaths::new\([^,]+,\s*""\s*\)`) rather than a
+/// literal pattern list so callsites with any root expression — not
+/// just the five shapes observed at migration time — are detected.
+/// `[^,]+` keeps the root argument on one balanced side of the comma;
+/// a caller embedding a comma (e.g. a tuple argument) would not
+/// match, but no such callsite exists or is plausible.
+///
+/// Lines tagged with the `// tombstone-allow-empty-branch` comment are
+/// skipped — this is the explicit opt-out for negative-assertion tests
+/// (`#[should_panic]`) that deliberately call `FlowPaths::new("")` to
+/// verify the panic. Without the opt-out the scanner would flag those
+/// tests as violations. The scanner self-excludes this file via
+/// canonicalized-path comparison because the regex source itself
+/// would otherwise self-match.
 #[test]
 fn test_no_flow_paths_new_with_empty_branch() {
     let root = common::repo_root();
@@ -238,13 +248,8 @@ fn test_no_flow_paths_new_with_empty_branch() {
         .canonicalize()
         .expect("scanner path must canonicalize");
 
-    let patterns = [
-        "FlowPaths::new(&root, \"\")",
-        "FlowPaths::new(root, \"\")",
-        "FlowPaths::new(project_root, \"\")",
-        "FlowPaths::new(&current, \"\")",
-        "FlowPaths::new(Path::new(project_root), \"\")",
-    ];
+    let empty_branch_re =
+        Regex::new(r#"FlowPaths::new\([^,]+,\s*""\s*\)"#).expect("regex must compile");
 
     let mut files: Vec<PathBuf> = Vec::new();
     collect_rs_files(&root.join("src"), &mut files);
@@ -266,10 +271,11 @@ fn test_no_flow_paths_new_with_empty_branch() {
         };
         let rel = file.strip_prefix(&root).unwrap_or(file);
         for (idx, line) in content.lines().enumerate() {
-            for pat in &patterns {
-                if line.contains(pat) {
-                    violations.push(format!("{}:{} — {}", rel.display(), idx + 1, pat));
-                }
+            if line.contains("tombstone-allow-empty-branch") {
+                continue;
+            }
+            if let Some(m) = empty_branch_re.find(line) {
+                violations.push(format!("{}:{} — {}", rel.display(), idx + 1, m.as_str()));
             }
         }
     }

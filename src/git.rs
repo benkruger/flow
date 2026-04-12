@@ -120,10 +120,16 @@ fn resolve_branch_impl(
         return Some(b.to_string());
     }
 
-    // Exact match — current branch has a state file
+    // Exact match — current branch has a state file. `try_new` filters
+    // out slash-containing branches (`feature/foo`, `dependabot/*`)
+    // which git permits but FLOW's flat state-file layout cannot
+    // address; those branches skip the exact-match check and fall
+    // through to the "return it anyway" path below.
     if let Some(ref b) = branch {
-        if FlowPaths::new(root, b).state_file().exists() {
-            return Some(b.clone());
+        if let Some(paths) = FlowPaths::try_new(root, b) {
+            if paths.state_file().exists() {
+                return Some(b.clone());
+            }
         }
     }
 

@@ -65,7 +65,12 @@ pub fn run() {
         None => return,
     };
 
-    let state_path = FlowPaths::new(&root, &branch).state_file();
+    // Slash-containing git branches are not valid FLOW branches —
+    // treat as "no active flow" and return rather than panicking.
+    let state_path = match FlowPaths::try_new(&root, &branch) {
+        Some(p) => p.state_file(),
+        None => return,
+    };
 
     if !state_path.exists() {
         return;
