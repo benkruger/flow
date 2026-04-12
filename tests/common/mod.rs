@@ -67,6 +67,15 @@ pub fn flow_paths_with_dir(project_root: &Path, branch: &str) -> FlowPaths {
     fp
 }
 
+/// Returns the `.flow-states/` directory under `project_root` without
+/// creating it. Equivalent to `FlowPaths::new(project_root, "").flow_states_dir()`
+/// but shorter at callsites — test fixtures use this in place of the
+/// old `dir.path().join(".flow-states")` literal so the directory
+/// name stays owned by `FlowPaths`.
+pub fn flow_states_dir(project_root: &Path) -> std::path::PathBuf {
+    FlowPaths::new(project_root, "").flow_states_dir()
+}
+
 // --- File reading helpers ---
 
 /// Reads and returns the content of `skills/{name}/SKILL.md`.

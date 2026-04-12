@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use common::{
-    create_gh_stub, create_git_repo_with_remote, current_plugin_version, parse_output,
-    write_flow_json,
+    create_gh_stub, create_git_repo_with_remote, current_plugin_version, flow_states_dir,
+    parse_output, write_flow_json,
 };
 
 // --- Test helpers ---
@@ -73,7 +73,7 @@ fn test_ready_path_happy() {
     assert!(data["branch"].is_string(), "branch field must be present");
 
     // Lock should be acquired (still held — start-workspace releases it)
-    let queue_dir = repo.join(".flow-states").join("start-queue");
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
     assert!(
         queue_dir.join("test-feature").exists(),
         "Lock queue entry must exist after start-init"
@@ -81,7 +81,7 @@ fn test_ready_path_happy() {
 
     // State file should be created by init-state subprocess
     let branch = data["branch"].as_str().unwrap();
-    let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
     assert!(
         state_path.exists(),
         "State file must be created by init-state"
@@ -96,7 +96,7 @@ fn test_locked_path() {
     let stub_dir = create_default_gh_stub(&repo);
 
     // Pre-create a lock entry for another feature
-    let queue_dir = repo.join(".flow-states").join("start-queue");
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
     fs::create_dir_all(&queue_dir).unwrap();
     fs::write(queue_dir.join("other-feature"), "").unwrap();
 
@@ -130,7 +130,7 @@ fn test_prime_check_failed() {
     );
 
     // Lock must be released after prime-check failure
-    let queue_dir = repo.join(".flow-states").join("start-queue");
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
     assert!(
         !queue_dir.join("prime-fail").exists(),
         "Lock must be released on prime-check error"
@@ -156,8 +156,8 @@ fn test_init_state_error() {
     );
 
     // Write a prompt file that references a nonexistent issue
-    let prompt_path = repo.join(".flow-states").join("init-error-start-prompt");
-    fs::create_dir_all(repo.join(".flow-states")).unwrap();
+    let prompt_path = flow_states_dir(&repo).join("init-error-start-prompt");
+    fs::create_dir_all(flow_states_dir(&repo)).unwrap();
     fs::write(&prompt_path, "work on issue #999").unwrap();
 
     let output = run_start_init(
@@ -170,7 +170,7 @@ fn test_init_state_error() {
     assert_eq!(data["status"], "error");
 
     // Issue fetch fails before lock acquisition — no lock was ever acquired
-    let queue_dir = repo.join(".flow-states").join("start-queue");
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
     // No lock under the feature name
     assert!(
         !queue_dir.join("init-error").exists(),
@@ -286,7 +286,7 @@ fn test_no_flow_json_returns_error() {
     );
 
     // Lock must be released (under canonical branch name)
-    let queue_dir = repo.join(".flow-states").join("start-queue");
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
     assert!(
         !queue_dir.join("no-flow-json").exists(),
         "Lock must be released on prime-check error"
@@ -323,8 +323,8 @@ fn test_lock_uses_canonical_branch_not_feature_name() {
     );
 
     // Prompt references issue #42
-    let prompt_path = repo.join(".flow-states").join("regression-start-prompt");
-    fs::create_dir_all(repo.join(".flow-states")).unwrap();
+    let prompt_path = flow_states_dir(&repo).join("regression-start-prompt");
+    fs::create_dir_all(flow_states_dir(&repo)).unwrap();
     fs::write(&prompt_path, "work on issue #42").unwrap();
 
     let output = run_start_init(
@@ -343,7 +343,7 @@ fn test_lock_uses_canonical_branch_not_feature_name() {
     );
 
     // Lock must be under the canonical branch name
-    let queue_dir = repo.join(".flow-states").join("start-queue");
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
     assert!(
         queue_dir.join("add-dark-mode-toggle").exists(),
         "Lock must be under canonical branch name (issue-derived)"

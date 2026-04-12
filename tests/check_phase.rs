@@ -1,5 +1,9 @@
+mod common;
+
 use std::fs;
 use std::process::Command;
+
+use common::flow_states_dir;
 
 fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> String {
     let order = [
@@ -48,7 +52,7 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> String {
 }
 
 fn setup_state(dir: &std::path::Path, branch: &str, state_json: &str) {
-    let state_dir = dir.join(".flow-states");
+    let state_dir = flow_states_dir(dir);
     fs::create_dir_all(&state_dir).unwrap();
     fs::write(state_dir.join(format!("{}.json", branch)), state_json).unwrap();
 }
@@ -215,10 +219,7 @@ fn frozen_phases_file_is_loaded() {
     // Copy flow-phases.json as frozen phases
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let source = std::path::PathBuf::from(manifest_dir).join("flow-phases.json");
-    let dest = dir
-        .path()
-        .join(".flow-states")
-        .join("test-feature-phases.json");
+    let dest = flow_states_dir(dir.path()).join("test-feature-phases.json");
     fs::copy(source, dest).unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))

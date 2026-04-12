@@ -5,6 +5,8 @@ mod common;
 use std::fs;
 use std::process::Command;
 
+use common::flow_states_dir;
+
 fn run_session_start(cwd: &std::path::Path) -> std::process::Output {
     let script = common::hooks_dir().join("session-start.sh");
     Command::new("bash")
@@ -97,7 +99,7 @@ fn no_state_directory_exits_0_silent() {
 #[test]
 fn empty_state_directory_exits_0_silent() {
     let dir = tempfile::tempdir().unwrap();
-    fs::create_dir_all(dir.path().join(".flow-states")).unwrap();
+    fs::create_dir_all(flow_states_dir(dir.path())).unwrap();
     let output = run_session_start(dir.path());
     assert!(output.status.success());
     assert_eq!(
@@ -133,7 +135,7 @@ fn flow_json_no_state_files_exits_0() {
 fn active_flow_color_sequences_not_in_stdout() {
     let dir = tempfile::tempdir().unwrap();
     init_git_repo(dir.path());
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     fs::create_dir_all(&state_dir).unwrap();
     fs::write(
         state_dir.join("color-test.json"),
@@ -161,7 +163,7 @@ fn active_flow_color_sequences_not_in_stdout() {
 fn state_files_present_exits_0_no_json() {
     let dir = tempfile::tempdir().unwrap();
     init_git_repo(dir.path());
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     fs::create_dir_all(&state_dir).unwrap();
     fs::write(
         state_dir.join("my-feature.json"),
@@ -184,7 +186,7 @@ fn state_files_present_exits_0_no_json() {
 fn on_main_with_state_files_exits_0_no_json() {
     let dir = tempfile::tempdir().unwrap();
     init_git_repo(dir.path());
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     fs::create_dir_all(&state_dir).unwrap();
     fs::write(
         state_dir.join("some-feature.json"),
@@ -206,7 +208,7 @@ fn on_main_with_state_files_exits_0_no_json() {
 fn state_files_not_mutated() {
     let dir = tempfile::tempdir().unwrap();
     init_git_repo(dir.path());
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     fs::create_dir_all(&state_dir).unwrap();
 
     let mut state: serde_json::Value =

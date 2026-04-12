@@ -12,6 +12,7 @@ use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use common::flow_states_dir;
 use flow_rs::lock::mutate_state;
 use fs2::FileExt;
 use serde_json::{self, json, Value};
@@ -126,7 +127,7 @@ fn log_append_under_contention() {
     let tmp = tempfile::tempdir().expect("Failed to create tempdir");
     let repo = tmp.path().to_path_buf();
     init_git_repo(&repo);
-    fs::create_dir_all(repo.join(".flow-states")).expect("Failed to create .flow-states");
+    fs::create_dir_all(flow_states_dir(&repo)).expect("Failed to create .flow-states");
 
     let repo = Arc::new(repo);
     let barrier = Arc::new(Barrier::new(20));
@@ -156,7 +157,7 @@ fn log_append_under_contention() {
         handle.join().expect("Worker thread panicked");
     }
 
-    let log_file = repo.join(".flow-states").join("test-branch.log");
+    let log_file = flow_states_dir(&repo).join("test-branch.log");
     assert!(log_file.exists(), "Log file was not created");
 
     let content = fs::read_to_string(&log_file).expect("Failed to read log file");
@@ -192,7 +193,7 @@ fn start_lock_serialization() {
     let tmp = tempfile::tempdir().expect("Failed to create tempdir");
     let repo = tmp.path().to_path_buf();
     init_git_repo(&repo);
-    fs::create_dir_all(repo.join(".flow-states")).expect("Failed to create .flow-states");
+    fs::create_dir_all(flow_states_dir(&repo)).expect("Failed to create .flow-states");
 
     let repo = Arc::new(repo);
     let timings: Arc<Mutex<Vec<Timing>>> = Arc::new(Mutex::new(Vec::new()));
@@ -305,7 +306,7 @@ fn thundering_herd_zero_delay() {
     let tmp = tempfile::tempdir().expect("Failed to create tempdir");
     let repo = tmp.path().to_path_buf();
     init_git_repo(&repo);
-    fs::create_dir_all(repo.join(".flow-states")).expect("Failed to create .flow-states");
+    fs::create_dir_all(flow_states_dir(&repo)).expect("Failed to create .flow-states");
 
     let repo = Arc::new(repo);
     let timings: Arc<Mutex<Vec<Timing>>> = Arc::new(Mutex::new(Vec::new()));
@@ -422,7 +423,7 @@ fn parallel_state_file_creation() {
     //5 threads each write a state file for a different branch.
     //All must succeed with correct content.
     let tmp = tempfile::tempdir().expect("Failed to create tempdir");
-    let state_dir = tmp.path().join(".flow-states");
+    let state_dir = flow_states_dir(tmp.path());
     fs::create_dir_all(&state_dir).expect("Failed to create .flow-states");
 
     let state_dir = Arc::new(state_dir);
@@ -480,7 +481,7 @@ fn cleanup_isolation() {
     let tmp = tempfile::tempdir().expect("Failed to create tempdir");
     let repo = tmp.path().to_path_buf();
     init_git_repo(&repo);
-    let state_dir = repo.join(".flow-states");
+    let state_dir = flow_states_dir(&repo);
     fs::create_dir_all(&state_dir).expect("Failed to create .flow-states");
 
     let state_a = state_dir.join("branch-a.json");

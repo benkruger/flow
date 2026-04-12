@@ -1,6 +1,9 @@
+mod common;
+
 use std::fs;
 use std::process::Command;
 
+use common::flow_states_dir;
 use serde_json::{json, Value};
 
 fn flow_rs() -> Command {
@@ -125,7 +128,7 @@ fn no_state_directory_exits_0_silent() {
 fn empty_state_directory_exits_0_silent() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
-    fs::create_dir(dir.path().join(".flow-states")).unwrap();
+    fs::create_dir(flow_states_dir(dir.path())).unwrap();
     let result = run_session_context(dir.path());
     assert_eq!(result.status.code(), Some(0));
     assert_eq!(result.stdout.len(), 0, "No stdout when state dir is empty");
@@ -137,7 +140,7 @@ fn empty_state_directory_exits_0_silent() {
 fn state_files_present_exits_0_no_json() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     fs::create_dir(&state_dir).unwrap();
 
     let state = make_state();
@@ -166,7 +169,7 @@ fn state_files_present_exits_0_no_json() {
 fn on_main_with_state_files_exits_0_no_json() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     fs::create_dir(&state_dir).unwrap();
 
     let state = make_state();
@@ -190,7 +193,7 @@ fn on_main_with_state_files_exits_0_no_json() {
 fn state_files_not_mutated() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     fs::create_dir(&state_dir).unwrap();
 
     let state = make_state();

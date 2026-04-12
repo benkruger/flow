@@ -3,10 +3,13 @@
 //! phase-enter consolidates: gate check + phase_enter() + step counters +
 //! state data return into a single command parameterized by --phase.
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use common::flow_states_dir;
 use serde_json::{json, Value};
 
 // --- Test helpers ---
@@ -58,7 +61,7 @@ fn create_state(
     prev_status: &str,
     skills: Option<Value>,
 ) {
-    let state_dir = repo.join(".flow-states");
+    let state_dir = flow_states_dir(repo);
     fs::create_dir_all(&state_dir).unwrap();
 
     let skills_val = skills.unwrap_or(json!({}));
@@ -202,7 +205,7 @@ fn test_code_phase_happy_path() {
     assert_eq!(data["mode"]["continue"], "manual");
 
     // State should be updated — phase entered
-    let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-code"]["status"], "in_progress");
     assert_eq!(state["current_phase"], "flow-code");
@@ -236,7 +239,7 @@ fn test_code_review_phase_happy_path() {
     assert_eq!(data["phase"], "flow-code-review");
 
     // State should have step counters set
-    let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-code-review"]["status"], "in_progress");
     assert_eq!(state["code_review_steps_total"], 4);
@@ -267,7 +270,7 @@ fn test_learn_phase_happy_path() {
     assert_eq!(data["phase"], "flow-learn");
 
     // State should have step counters set
-    let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-learn"]["status"], "in_progress");
     assert_eq!(state["learn_steps_total"], 7);
@@ -422,7 +425,7 @@ fn test_step_counter_field_names() {
     );
     assert_eq!(parse_output(&output)["status"], "ok");
     let state: Value = serde_json::from_str(
-        &fs::read_to_string(repo.join(".flow-states").join(format!("{}.json", branch))).unwrap(),
+        &fs::read_to_string(flow_states_dir(&repo).join(format!("{}.json", branch))).unwrap(),
     )
     .unwrap();
     assert_eq!(state["code_review_steps_total"], 4);
@@ -466,7 +469,7 @@ fn test_no_steps_total_flag() {
     assert_eq!(parse_output(&output)["status"], "ok");
 
     let state: Value = serde_json::from_str(
-        &fs::read_to_string(repo.join(".flow-states").join(format!("{}.json", branch))).unwrap(),
+        &fs::read_to_string(flow_states_dir(&repo).join(format!("{}.json", branch))).unwrap(),
     )
     .unwrap();
     // No step counter fields should be set

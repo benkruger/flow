@@ -3,10 +3,14 @@
 //! These tests target edge cases in the new Agent tool blocking logic
 //! that blocks general-purpose sub-agents during active FLOW phases.
 
+mod common;
+
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
+
+use common::flow_states_dir;
 
 use serde_json::{json, Value};
 
@@ -54,7 +58,7 @@ fn setup_flow_active_repo(dir: &Path, branch_name: &str, state: &Value) {
     .unwrap();
 
     // Create state file matching the branch name
-    let state_dir = dir.join(".flow-states");
+    let state_dir = flow_states_dir(dir);
     fs::create_dir_all(&state_dir).unwrap();
     fs::write(
         state_dir.join(format!("{}.json", branch_name)),

@@ -3,10 +3,13 @@
 //! phase-finalize consolidates: phase_complete() + Slack notification +
 //! add-notification into a single command parameterized by --phase.
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use common::flow_states_dir;
 use serde_json::{json, Value};
 
 // --- Test helpers ---
@@ -45,7 +48,7 @@ fn create_git_repo(parent: &Path) -> PathBuf {
 
 /// Create a state file with a specified phase in_progress.
 fn create_state(repo: &Path, branch: &str, current_phase: &str, skills_continue: &str) {
-    let state_dir = repo.join(".flow-states");
+    let state_dir = flow_states_dir(repo);
     fs::create_dir_all(&state_dir).unwrap();
 
     let state = json!({
@@ -204,7 +207,7 @@ fn test_learn_with_slack_reply_skipped() {
     assert!(data["continue_action"].is_string());
 
     // State should be updated — phase completed
-    let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-learn"]["status"], "complete");
 }
@@ -234,7 +237,7 @@ fn test_start_creates_slack_thread_skipped() {
     assert!(data["formatted_time"].is_string());
 
     // State should show Start complete
-    let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-start"]["status"], "complete");
 }
@@ -257,7 +260,7 @@ fn test_no_slack_config() {
     );
 
     // Phase still completes
-    let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-code"]["status"], "complete");
 }
@@ -305,7 +308,7 @@ fn test_code_phase() {
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
 
-    let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-code"]["status"], "complete");
     assert_eq!(state["current_phase"], "flow-code-review");
@@ -322,7 +325,7 @@ fn test_code_review_phase() {
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
 
-    let state_path = repo.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-code-review"]["status"], "complete");
     assert_eq!(state["current_phase"], "flow-learn");

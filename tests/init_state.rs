@@ -1,7 +1,10 @@
+mod common;
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
+use common::flow_states_dir;
 use serde_json::{json, Value};
 
 fn flow_rs() -> Command {
@@ -60,7 +63,7 @@ fn parse_stdout(output: &std::process::Output) -> Value {
 }
 
 fn read_state_file(dir: &std::path::Path, branch: &str) -> Value {
-    let path = dir.join(".flow-states").join(format!("{}.json", branch));
+    let path = flow_states_dir(dir).join(format!("{}.json", branch));
     let content = fs::read_to_string(&path).unwrap();
     serde_json::from_str(&content).unwrap()
 }
@@ -233,7 +236,7 @@ fn auto_flag_overrides_skills() {
 fn prompt_from_prompt_file() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
-    let prompt_path = dir.path().join(".flow-states");
+    let prompt_path = flow_states_dir(dir.path());
     fs::create_dir_all(&prompt_path).unwrap();
     let prompt_file = prompt_path.join("test-prompt-file");
     fs::write(&prompt_file, "fix login timeout with special chars: && | ;").unwrap();
@@ -385,7 +388,7 @@ fn log_file_created() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
     run_init_state(dir.path(), &["log test"]);
-    let log_path = dir.path().join(".flow-states").join("log-test.log");
+    let log_path = flow_states_dir(dir.path()).join("log-test.log");
     assert!(log_path.exists());
     let log = fs::read_to_string(&log_path).unwrap();
     assert!(log.contains("[Phase 1]"));
@@ -398,10 +401,7 @@ fn frozen_phases_file_created() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
     run_init_state(dir.path(), &["frozen phases"]);
-    let frozen = dir
-        .path()
-        .join(".flow-states")
-        .join("frozen-phases-phases.json");
+    let frozen = flow_states_dir(dir.path()).join("frozen-phases-phases.json");
     assert!(frozen.exists());
 }
 
@@ -410,10 +410,7 @@ fn frozen_phases_file_matches_source() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
     run_init_state(dir.path(), &["phases match"]);
-    let frozen = dir
-        .path()
-        .join(".flow-states")
-        .join("phases-match-phases.json");
+    let frozen = flow_states_dir(dir.path()).join("phases-match-phases.json");
     let frozen_data: Value = serde_json::from_str(&fs::read_to_string(&frozen).unwrap()).unwrap();
     let source_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("flow-phases.json");
     let source_data: Value =
@@ -463,7 +460,7 @@ fn fetch_issue_title_failure_returns_error() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
 
-    let prompt_path = dir.path().join(".flow-states");
+    let prompt_path = flow_states_dir(dir.path());
     fs::create_dir_all(&prompt_path).unwrap();
     let prompt_file = prompt_path.join("test-prompt");
     fs::write(&prompt_file, "work on issue #999").unwrap();
@@ -491,10 +488,7 @@ fn fetch_issue_title_failure_returns_error() {
     assert_eq!(data["step"], "fetch_issue_title");
 
     // No state file should be created
-    let state_path = dir
-        .path()
-        .join(".flow-states")
-        .join("fetch-failure-test.json");
+    let state_path = flow_states_dir(dir.path()).join("fetch-failure-test.json");
     assert!(
         !state_path.exists(),
         "State file should not be created when fetch fails"
@@ -509,7 +503,7 @@ fn duplicate_issue_detected_before_state_creation() {
     setup_project(dir.path(), "rails", None);
 
     // Pre-create an existing state file referencing issue #777
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     fs::create_dir_all(&state_dir).unwrap();
     fs::write(
         state_dir.join("existing-flow.json"),
@@ -593,7 +587,7 @@ fn flow_in_progress_label_blocks_start() {
         dir.path(),
         r#"{"title": "Some Issue", "labels": ["Flow In-Progress"]}"#,
     );
-    let prompt_file = write_prompt_file(&dir.path().join(".flow-states"), "work on issue #100");
+    let prompt_file = write_prompt_file(&flow_states_dir(dir.path()), "work on issue #100");
 
     let output = flow_rs()
         .arg("init-state")
@@ -633,7 +627,7 @@ fn flow_in_progress_label_blocks_start() {
     );
 
     // No state file should be created when the guard fires
-    let state_path = dir.path().join(".flow-states").join("some-issue.json");
+    let state_path = flow_states_dir(dir.path()).join("some-issue.json");
     assert!(
         !state_path.exists(),
         "state file must not be created when label guard fires"
@@ -649,7 +643,7 @@ fn flow_in_progress_label_absent_allows_start() {
     setup_project(dir.path(), "rails", None);
 
     let stub_dir = write_gh_stub(dir.path(), r#"{"title": "Some Issue", "labels": []}"#);
-    let prompt_file = write_prompt_file(&dir.path().join(".flow-states"), "work on issue #100");
+    let prompt_file = write_prompt_file(&flow_states_dir(dir.path()), "work on issue #100");
 
     let output = flow_rs()
         .arg("init-state")
@@ -673,7 +667,7 @@ fn flow_in_progress_label_absent_allows_start() {
     assert_eq!(data["status"], "ok");
     assert_eq!(data["branch"], "some-issue");
 
-    let state_path = dir.path().join(".flow-states").join("some-issue.json");
+    let state_path = flow_states_dir(dir.path()).join("some-issue.json");
     assert!(
         state_path.exists(),
         "state file should be created when label is absent"
@@ -693,7 +687,7 @@ fn flow_in_progress_label_case_sensitive_match() {
         dir.path(),
         r#"{"title": "Some Issue", "labels": ["flow in-progress"]}"#,
     );
-    let prompt_file = write_prompt_file(&dir.path().join(".flow-states"), "work on issue #100");
+    let prompt_file = write_prompt_file(&flow_states_dir(dir.path()), "work on issue #100");
 
     let output = flow_rs()
         .arg("init-state")
@@ -728,7 +722,7 @@ fn flow_in_progress_label_with_other_labels() {
         dir.path(),
         r#"{"title": "Multi Label", "labels": ["bug", "Flow In-Progress", "decomposed"]}"#,
     );
-    let prompt_file = write_prompt_file(&dir.path().join(".flow-states"), "work on issue #100");
+    let prompt_file = write_prompt_file(&flow_states_dir(dir.path()), "work on issue #100");
 
     let output = flow_rs()
         .arg("init-state")
@@ -763,7 +757,7 @@ fn flow_in_progress_label_checked_before_duplicate_issue() {
     setup_project(dir.path(), "rails", None);
 
     // Pre-create a local state file targeting the same issue
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     fs::create_dir_all(&state_dir).unwrap();
     fs::write(
         state_dir.join("existing-flow.json"),

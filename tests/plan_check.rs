@@ -22,6 +22,8 @@ use std::process::Command;
 
 mod common;
 
+use common::flow_states_dir;
+
 /// Initialize a bare git repo in `dir` with a `main` branch and a dummy
 /// commit. Plan-check only needs the state file, but `project_root()`
 /// requires `.git/` to exist.
@@ -60,7 +62,7 @@ fn setup_git_repo(dir: &std::path::Path, branch: &str) {
 
 /// Write the state file under `.flow-states/<branch>.json`.
 fn write_state(dir: &std::path::Path, branch: &str, plan_rel: Option<&str>) {
-    let state_dir = dir.join(".flow-states");
+    let state_dir = flow_states_dir(dir);
     fs::create_dir_all(&state_dir).unwrap();
     let state = serde_json::json!({
         "branch": branch,

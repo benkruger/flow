@@ -12,7 +12,7 @@ use std::process::{Command, Output};
 
 use serde_json::json;
 
-use common::{create_git_repo_with_remote, parse_output};
+use common::{create_git_repo_with_remote, flow_states_dir, parse_output};
 
 // --- Test helpers ---
 
@@ -63,7 +63,7 @@ fn create_bin_deps(repo: &Path, script_body: &str) {
 
 /// Set up a state file so start-gate can find the branch.
 fn create_state_file(repo: &Path, branch: &str) {
-    let state_dir = repo.join(".flow-states");
+    let state_dir = flow_states_dir(repo);
     fs::create_dir_all(&state_dir).unwrap();
     let state = json!({
         "schema_version": 1,
