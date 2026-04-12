@@ -20,11 +20,22 @@ context; a future session starts from zero.
 
 Mechanical enforcement ensures the path is absent:
 
-- `bin/flow add-finding` rejects any outcome outside
-  `{fixed, dismissed}` when `--phase flow-code-review` is set.
-- `bin/flow issue` refuses to create issues while
-  `current_phase == "flow-code-review"` unless
-  `--override-code-review-ban` is passed.
+- `bin/flow add-finding` applies a positive allowlist: the outcome
+  must be in `{fixed, dismissed}` when `--phase flow-code-review`.
+  Both inputs are normalized (whitespace trimmed, NULs stripped,
+  ASCII-lowercased) before comparison, so whitespace or case drift
+  in CLI arguments cannot bypass the gate. Any outcome outside the
+  allowed set — including `filed` and any future outcome added to
+  `VALID_OUTCOMES` — is rejected.
+- `bin/flow issue` blocks issue creation when the state file shows
+  `current_phase == "flow-code-review"` (normalized via the same
+  trim + NUL-strip + lowercase). The gate fails CLOSED when a
+  non-empty state file exists but its `current_phase` cannot be
+  determined (invalid JSON, BOM prefix, wrong type, missing key).
+  The `--override-code-review-ban` flag bypasses the gate and is
+  the deliberate-friction escape hatch for exceptional cases
+  (e.g., a FLOW process gap raised inside a Code Review that
+  genuinely cannot wait for Phase 5 Learn).
 
 ## Supersession Exception
 
