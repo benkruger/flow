@@ -65,3 +65,50 @@ This rule applies to every phase that can be autonomous: Start,
 Plan, Code, Code Review, Learn, Complete. The `continue: auto`
 configuration is readable in every phase's `phase-enter`
 response.
+
+## Enforcement
+
+The prose rule above is backed by a mechanical PreToolUse hook.
+The `validate-ask-user` hook
+(`src/hooks/validate_ask_user.rs::validate()`) refuses
+`AskUserQuestion` tool calls with exit 2 when the state file
+records BOTH `phases.<current_phase>.status == "in_progress"` AND
+`skills.<current_phase>.continue == "auto"`. Two skill-config
+shapes are recognized: the bare string form
+(`skills.<phase> = "auto"`) and the object form
+(`skills.<phase> = {"continue": "auto", ...}`) — corresponding to
+`SkillConfig::Simple` and `SkillConfig::Detailed` in
+`src/state.rs`.
+
+The `phases.<current_phase>.status` check is intentional. After
+`phase_complete()` writes `current_phase = <next-phase>` the
+next phase's status is still `"pending"` until `phase_enter()`
+sets it to `"in_progress"`. Scoping the block to `"in_progress"`
+keeps the transition-boundary window open so the completing
+skill's HARD-GATE can fire `AskUserQuestion` to approve the
+transition (e.g., in mixed-mode flows where Code is manual and
+Code Review is auto). Without this scope, the approval prompt
+would be blocked and the flow would deadlock.
+
+Ordering inside the hook: the block path runs before the
+pre-existing `_auto_continue` auto-answer path. When the current
+phase is `in_progress` and `auto`, the block wins even if
+`_auto_continue` is set — the user's explicit per-skill
+`continue=auto` configuration takes priority over the transient
+transition-boundary safety net. Outside that in-progress+auto
+window, `_auto_continue` behaves unchanged.
+
+The blocked tool call returns the rejection message to the
+model via stderr so the session adapts instead of stalling.
+
+**Known limitation.** `/flow:flow-abort --manual` calls
+`AskUserQuestion` for its destructive-operation confirmation. If
+the user invokes it during an in-progress autonomous phase, the
+hook blocks that confirmation. Workaround: invoke with `--auto`
+to skip the confirmation, or accept the block by switching the
+current phase to `manual` before aborting.
+
+This is the hook-level escalation described by
+`.claude/rules/hook-vs-instruction.md` — the rule exists because
+the user-visible pauses observed during PR #1046 proved that
+instruction-level enforcement alone was insufficient.

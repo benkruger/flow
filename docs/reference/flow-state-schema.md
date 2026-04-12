@@ -177,6 +177,8 @@ Copied from `.flow.json` into the state file by `/flow-start`. Phase skills read
 
 Present only when `.flow.json` contains a `skills` key (i.e., after running `/flow-prime` with Customize or a preset). Phase skills that don't find a `skills` key in the state file fall back to built-in defaults.
 
+Each value is either a **bare string** (`"auto"` or `"manual"`) or an **object** with per-axis settings (e.g. `{"continue": "auto", "commit": "manual"}`). Skills with a single autonomy axis — `flow-abort`, `flow-complete` — typically use the bare form. Phase skills that expose both a commit axis (per-task commit approval) and a continue axis (phase transition approval) — `flow-code`, `flow-code-review`, `flow-learn` — use the object form. The two shapes are represented in Rust as `SkillConfig::Simple(String)` and `SkillConfig::Detailed(IndexMap<String, String>)` in `src/state.rs`; consumers that read the config via `serde_json::Value` (like the `validate-ask-user` PreToolUse hook) accept both shapes by checking `Value::as_str() == Some("auto")` OR `Value::get("continue").and_then(|c| c.as_str()) == Some("auto")`.
+
 ```json
 "skills": {
   "flow-start": {"continue": "manual"},
