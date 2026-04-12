@@ -2900,6 +2900,17 @@ fn code_review_has_supersession_check() {
 }
 
 #[test]
+fn plan_has_supersession_enumeration() {
+    let c = common::read_skill("flow-plan");
+    let lower = c.to_lowercase();
+    assert!(
+        lower.contains("supersession"),
+        "flow-plan/SKILL.md Step 3 must include supersession enumeration instructions \
+         per .claude/rules/supersession.md (Plan Phase section)"
+    );
+}
+
+#[test]
 fn code_review_step_2_launches_four_agents() {
     let c = common::read_skill("flow-code-review");
     assert!(

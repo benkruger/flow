@@ -39,12 +39,15 @@ skipped.
    reading the relevant source code
 7. Claude enforces that risks marked "Must verify" or "Must confirm"
    have corresponding verification tasks in the plan
-8. Claude writes the plan file with a Dependency Graph section and
+8. Claude enumerates code the PR will supersede — replacements,
+   backstops, guards, or unified handlers trigger deletion tasks
+   for the superseded code
+9. Claude writes the plan file with a Dependency Graph section and
    ordered tasks derived from the DAG
-9. `bin/flow plan-check` scans the plan for universal-coverage prose
-   that lacks a named enumeration — phase completion is blocked
-   until the plan passes the gate (see Gates below)
-10. The plan file path is stored in the state file and the phase completes
+10. `bin/flow plan-check` scans the plan for universal-coverage prose
+    that lacks a named enumeration — phase completion is blocked
+    until the plan passes the gate (see Gates below)
+11. The plan file path is stored in the state file and the phase completes
 
 DAG decomposition is configurable via `skills.flow-plan.dag` in
 `.flow.json` — set to `"never"` to skip it.

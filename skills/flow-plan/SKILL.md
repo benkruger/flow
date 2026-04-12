@@ -375,6 +375,38 @@ A plan with unaddressed verification risks is incomplete. Every risk
 that says something must be verified needs at least one task that
 produces evidence the verification happened.
 
+### Supersession Enumeration
+
+`.claude/rules/supersession.md` requires plans that add replacements,
+backstops, guards, or unified handlers to enumerate the code they will
+supersede. Catching supersession during planning is cheaper than catching
+it during Code Review — the exploration budget is already spent, and
+deletion is a mechanical task no different from the implementation itself.
+
+When the plan introduces any of these shapes, enumerate superseded code:
+
+- **Authoritative replacement** — a new correct implementation of a
+  behavior previously attempted by broken or best-effort code elsewhere
+- **Deterministic guard** — a new check at an entry point that makes
+  downstream defensive handling of the same invalid state impossible
+  to trigger
+- **Unified handler** — a new code path that replaces multiple
+  specialized code paths
+- **Deprecated API** — a new API that supersedes an old API once the
+  switchover lands in the same PR
+
+For each shape recognized, apply the supersession test: **if deleting the
+code leaves the PR's behavior unchanged, the code is superseded.**
+
+Three obligations follow:
+
+- List superseded files in the **Exploration** section alongside
+  newly-authored files
+- Include deletion tasks in the **Tasks** section for every file
+  containing superseded code
+- A plan that describes a new implementation without listing the code
+  it makes redundant is incomplete
+
 ### Standard Exploration
 
 Explore the codebase, validate the DAG against reality (if DAG was
