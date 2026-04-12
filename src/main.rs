@@ -27,6 +27,7 @@ use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
 use flow_rs::extract_release_notes;
 use flow_rs::finalize_commit;
+use flow_rs::flow_paths::FlowPaths;
 use flow_rs::format_check;
 use flow_rs::format_complete_summary;
 use flow_rs::format_issues_summary;
@@ -702,7 +703,8 @@ fn run_check_phase(phase: &str, branch_override: Option<&str>) {
         }
     };
 
-    let state_file = root.join(".flow-states").join(format!("{}.json", branch));
+    let paths = FlowPaths::new(&root, &branch);
+    let state_file = paths.state_file();
     if !state_file.exists() {
         println!(
             "BLOCKED: No FLOW feature in progress on branch \"{}\".",
@@ -729,9 +731,7 @@ fn run_check_phase(phase: &str, branch_override: Option<&str>) {
     };
 
     // Load frozen phase config if available
-    let frozen_path = root
-        .join(".flow-states")
-        .join(format!("{}-phases.json", branch));
+    let frozen_path = paths.frozen_phases();
     let frozen_config = if frozen_path.exists() {
         load_phase_config(&frozen_path).ok()
     } else {
@@ -797,7 +797,8 @@ fn run_phase_transition(
             process::exit(1);
         }
     };
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let paths = FlowPaths::new(&root, &branch);
+    let state_path = paths.state_file();
 
     if !state_path.exists() {
         json_error(
@@ -831,9 +832,7 @@ fn run_phase_transition(
     }
 
     // Load frozen phase config if available
-    let frozen_path = root
-        .join(".flow-states")
-        .join(format!("{}-phases.json", branch));
+    let frozen_path = paths.frozen_phases();
     let frozen_config = if frozen_path.exists() {
         load_phase_config(&frozen_path).ok()
     } else {
@@ -929,9 +928,7 @@ fn run_format_status(branch_override: Option<&str>) {
     let (_state_path, state, matched_branch) = &results[0];
 
     // Load frozen phase config if available
-    let frozen_path = root
-        .join(".flow-states")
-        .join(format!("{}-phases.json", matched_branch));
+    let frozen_path = FlowPaths::new(&root, matched_branch).frozen_phases();
     let phase_config = if frozen_path.exists() {
         load_phase_config(&frozen_path).ok()
     } else {

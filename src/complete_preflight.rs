@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 use clap::Parser;
 use serde_json::{json, Value};
 
+use crate::flow_paths::FlowPaths;
 use crate::git::{current_branch, project_root};
 use crate::lock::mutate_state;
 use crate::utils::{bin_flow_path, derive_worktree, parse_conflict_files};
@@ -329,7 +330,7 @@ pub fn preflight_inner(
     };
 
     // Read state file
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = FlowPaths::new(root, &branch).state_file();
     let mut state: Option<Value> = None;
     let mut inferred = false;
 

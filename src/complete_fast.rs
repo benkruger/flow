@@ -27,6 +27,7 @@ use crate::complete_preflight::{
     check_learn_phase, check_pr_status, merge_main, resolve_mode, run_cmd_with_timeout, CmdResult,
     COMPLETE_STEPS_TOTAL, NETWORK_TIMEOUT,
 };
+use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
 use crate::phase_transition::phase_enter;
@@ -48,7 +49,7 @@ pub struct Args {
 
 /// Read and parse a state file, returning (state_value, state_path).
 fn read_state(root: &Path, branch: &str) -> Result<(Value, PathBuf), String> {
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = FlowPaths::new(root, branch).state_file();
     if !state_path.exists() {
         return Err(format!(
             "No state file found for branch '{}'. Run /flow:flow-start first.",

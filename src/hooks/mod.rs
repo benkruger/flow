@@ -9,6 +9,8 @@ use serde_json::Value;
 use std::env;
 use std::path::{Path, PathBuf};
 
+use crate::flow_paths::FlowPaths;
+
 /// Marker directory name for FLOW worktrees.
 const WORKTREE_MARKER: &str = ".worktrees/";
 
@@ -107,7 +109,7 @@ pub fn is_flow_active(branch: &str, root: &Path) -> bool {
     if branch.is_empty() || branch.contains('/') || branch.contains('\\') {
         return false;
     }
-    let state_file = root.join(".flow-states").join(format!("{}.json", branch));
+    let state_file = FlowPaths::new(root, branch).state_file();
     state_file.is_file()
 }
 

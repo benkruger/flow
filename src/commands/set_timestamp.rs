@@ -2,6 +2,7 @@ use std::process;
 
 use serde_json::{json, Value};
 
+use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
 use crate::output::{json_error, json_ok};
@@ -174,7 +175,7 @@ pub fn run(set_args: Vec<String>, branch_override: Option<String>) {
         }
     };
 
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = FlowPaths::new(&root, &branch).state_file();
 
     if !state_path.exists() {
         json_error(

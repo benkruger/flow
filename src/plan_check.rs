@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use serde_json::{json, Value};
 
+use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::output::json_error;
 use crate::scope_enumeration::{scan, Violation};
@@ -176,7 +177,7 @@ fn resolve_plan_file_from_state(
         }
     };
 
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = FlowPaths::new(root, &branch).state_file();
     if !state_path.exists() {
         return Ok(Err(json!({
             "status": "error",

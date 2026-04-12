@@ -3,6 +3,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
 use crate::utils::tolerant_i64;
@@ -63,7 +64,7 @@ pub fn run() {
         None => return,
     };
 
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = FlowPaths::new(&root, &branch).state_file();
 
     if !state_path.exists() {
         return;

@@ -2,6 +2,8 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::flow_paths::FlowPaths;
+
 /// Find the main git repository root.
 ///
 /// Uses `git worktree list --porcelain` to find the root, which works
@@ -118,11 +120,9 @@ fn resolve_branch_impl(
         return Some(b.to_string());
     }
 
-    let state_dir = root.join(".flow-states");
-
     // Exact match — current branch has a state file
     if let Some(ref b) = branch {
-        if state_dir.join(format!("{}.json", b)).exists() {
+        if FlowPaths::new(root, b).state_file().exists() {
             return Some(b.clone());
         }
     }

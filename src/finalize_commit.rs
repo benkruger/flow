@@ -23,6 +23,7 @@ use serde_json::{json, Value};
 
 use crate::commands::log::append_log;
 use crate::complete_preflight::{LOCAL_TIMEOUT, NETWORK_TIMEOUT};
+use crate::flow_paths::FlowPaths;
 use crate::lock::mutate_state;
 use crate::output::json_error;
 use crate::phase_config::phase_number;
@@ -238,9 +239,7 @@ pub fn run_impl(
 
     // Derive phase number from state file's current_phase for log prefixes.
     let pn = {
-        let state_path = root
-            .join(".flow-states")
-            .join(format!("{}.json", args.branch));
+        let state_path = FlowPaths::new(root, &args.branch).state_file();
         std::fs::read_to_string(&state_path)
             .ok()
             .and_then(|c| serde_json::from_str::<Value>(&c).ok())
@@ -305,9 +304,7 @@ pub fn run_impl(
     // does not force-advance the parent phase after a failed commit.
     // Conflict is NOT cleared — the commit skill retries after resolving.
     if result["status"] == "error" {
-        let state_path = root
-            .join(".flow-states")
-            .join(format!("{}.json", args.branch));
+        let state_path = FlowPaths::new(root, &args.branch).state_file();
         if state_path.exists() {
             let _ = mutate_state(&state_path, |state| {
                 if !(state.is_object() || state.is_null()) {

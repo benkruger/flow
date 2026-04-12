@@ -12,8 +12,8 @@ use std::process::{Command, Output};
 use serde_json::{json, Value};
 
 use common::{
-    create_gh_stub, create_git_repo_with_remote, current_plugin_version, parse_output,
-    write_flow_json,
+    create_gh_stub, create_git_repo_with_remote, current_plugin_version, flow_states_dir,
+    parse_output, write_flow_json,
 };
 
 // --- Test helpers ---
@@ -29,7 +29,7 @@ fn create_default_gh_stub(repo: &Path) -> PathBuf {
 
 /// Set up a pre-existing state file (simulating init-state already ran).
 fn create_state_file(repo: &Path, branch: &str) {
-    let state_dir = repo.join(".flow-states");
+    let state_dir = flow_states_dir(repo);
     fs::create_dir_all(&state_dir).unwrap();
     let state = json!({
         "schema_version": 1,
@@ -64,7 +64,7 @@ fn create_state_file(repo: &Path, branch: &str) {
 
 /// Create a lock queue entry for this feature.
 fn create_lock_entry(repo: &Path, feature: &str) {
-    let queue_dir = repo.join(".flow-states").join("start-queue");
+    let queue_dir = flow_states_dir(repo).join("start-queue");
     fs::create_dir_all(&queue_dir).unwrap();
     fs::write(queue_dir.join(feature), "").unwrap();
 }
@@ -120,14 +120,14 @@ fn test_happy_path() {
     assert!(repo.join(".worktrees").join("test-branch").is_dir());
 
     // Lock should be released (keyed by branch, not by description)
-    let queue_dir = repo.join(".flow-states").join("start-queue");
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
     assert!(
         !queue_dir.join("test-branch").exists(),
         "Lock must be released after start-workspace"
     );
 
     // State file should have PR fields backfilled
-    let state_path = repo.join(".flow-states").join("test-branch.json");
+    let state_path = flow_states_dir(&repo).join("test-branch.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert!(state["pr_number"].is_number());
     assert!(state["pr_url"].is_string());
@@ -168,7 +168,7 @@ fn test_lock_released_with_mismatched_description() {
     assert_eq!(data["status"], "ok");
 
     // Lock must be released under the BRANCH name, not the description
-    let queue_dir = repo.join(".flow-states").join("start-queue");
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
     assert!(
         !queue_dir.join("mismatch-branch").exists(),
         "Lock must be released using branch name, not description"
@@ -207,7 +207,7 @@ fn test_worktree_failure_releases_lock() {
     assert_eq!(data["status"], "error");
 
     // Lock MUST still be released on error
-    let queue_dir = repo.join(".flow-states").join("start-queue");
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
     assert!(
         !queue_dir.join("test-branch").exists(),
         "Lock must be released even on worktree failure"
@@ -230,7 +230,7 @@ fn test_pr_creation_failure_releases_lock() {
     assert_eq!(data["status"], "error");
 
     // Lock must be released
-    let queue_dir = repo.join(".flow-states").join("start-queue");
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
     assert!(
         !queue_dir.join("pr-fail-branch").exists(),
         "Lock must be released even on PR creation failure"
@@ -285,7 +285,7 @@ fn test_state_backfill_preserves_existing_fields() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let state_path = repo.join(".flow-states").join("backfill-branch.json");
+    let state_path = flow_states_dir(&repo).join("backfill-branch.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     // Original fields preserved
     assert_eq!(state["started_at"], "2026-01-01T00:00:00-08:00");
@@ -333,7 +333,7 @@ fn test_worktree_cwd_includes_relative_cwd_suffix() {
     let stub_dir = create_default_gh_stub(&repo);
 
     // Pre-create state file with non-empty relative_cwd
-    let state_dir = repo.join(".flow-states");
+    let state_dir = flow_states_dir(&repo);
     fs::create_dir_all(&state_dir).unwrap();
     let state = json!({
         "schema_version": 1,

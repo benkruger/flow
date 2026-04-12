@@ -12,6 +12,7 @@ use std::path::Path;
 use serde_json::{json, Value};
 
 use super::read_hook_input;
+use crate::flow_paths::FlowPaths;
 use crate::git::{current_branch, project_root};
 use crate::lock::mutate_state;
 use crate::utils::now;
@@ -84,9 +85,7 @@ pub fn run() {
         None => std::process::exit(0),
     };
 
-    let state_path = project_root()
-        .join(".flow-states")
-        .join(format!("{}.json", branch));
+    let state_path = FlowPaths::new(project_root(), &branch).state_file();
 
     let (_allowed, _message, hook_response) = validate(Some(&state_path));
     if let Some(response) = hook_response {

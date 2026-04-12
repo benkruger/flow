@@ -3,6 +3,7 @@ use std::process;
 use clap::Parser;
 use serde_json::json;
 
+use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
 use crate::output::{json_error, json_ok};
@@ -73,7 +74,7 @@ pub fn run_impl(args: &Args) -> Result<usize, String> {
 
     let branch = resolve_branch(args.branch.as_deref(), &root)
         .ok_or_else(|| "Could not determine current branch".to_string())?;
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = FlowPaths::new(&root, &branch).state_file();
 
     if !state_path.exists() {
         return Err("no_state".to_string());

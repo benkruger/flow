@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 use crate::cleanup;
 use crate::commands::log::append_log;
 use crate::complete_post_merge;
+use crate::flow_paths::FlowPaths;
 use crate::git::project_root;
 
 #[derive(Parser, Debug)]
@@ -146,7 +147,10 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     // Matches the guard pattern in complete_post_merge.rs to avoid
     // creating the directory in test fixtures that deliberately omit it.
     let log = |msg: &str| {
-        if root.join(".flow-states").is_dir() {
+        if FlowPaths::new(&root, &args.branch)
+            .flow_states_dir()
+            .is_dir()
+        {
             let _ = append_log(&root, &args.branch, msg);
         }
     };

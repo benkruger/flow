@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 use serde_json::Value;
 
+use crate::flow_paths::FlowPaths;
 use crate::state::{Phase, PhaseState, PhaseStatus, SkillConfig};
 
 /// Phase configuration loaded from flow-phases.json.
@@ -151,10 +152,9 @@ pub fn freeze_phases(
     project_root: &Path,
     branch: &str,
 ) -> std::io::Result<()> {
-    let dest_dir = project_root.join(".flow-states");
-    std::fs::create_dir_all(&dest_dir)?;
-    let dest = dest_dir.join(format!("{}-phases.json", branch));
-    std::fs::copy(phases_json_path, dest)?;
+    let paths = FlowPaths::new(project_root, branch);
+    std::fs::create_dir_all(paths.flow_states_dir())?;
+    std::fs::copy(phases_json_path, paths.frozen_phases())?;
     Ok(())
 }
 
@@ -216,10 +216,11 @@ pub fn build_initial_phases(current_time: &str) -> IndexMap<Phase, PhaseState> {
 /// Empty list = nothing found. Single item = unambiguous match.
 /// Multiple items = caller must disambiguate.
 pub fn find_state_files(root: &Path, branch: &str) -> Vec<(PathBuf, Value, String)> {
-    let state_dir = root.join(".flow-states");
+    let paths = FlowPaths::new(root, branch);
+    let state_dir = paths.flow_states_dir();
 
     // Exact match
-    let exact_path = state_dir.join(format!("{}.json", branch));
+    let exact_path = paths.state_file();
     if exact_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&exact_path) {
             if let Ok(state) = serde_json::from_str::<Value>(&content) {

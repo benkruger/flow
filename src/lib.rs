@@ -24,6 +24,7 @@ pub mod cwd_scope;
 pub mod error;
 pub mod extract_release_notes;
 pub mod finalize_commit;
+pub mod flow_paths;
 pub mod format_check;
 pub mod format_complete_summary;
 pub mod format_issues_summary;

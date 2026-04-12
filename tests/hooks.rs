@@ -8,10 +8,14 @@
 //! and `src/hooks/stop_continue.rs` were tested only via in-process unit tests
 //! that bypassed the clap wiring, stdin reading, and branch resolution layers.
 
+mod common;
+
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
+
+use common::flow_states_dir;
 
 use serde_json::{json, Value};
 
@@ -35,7 +39,7 @@ fn flow_rs() -> Command {
 /// resolution deterministic (same pattern as `tests/clear_blocked.rs`).
 fn setup_git_and_state(dir: &Path, branch: &str, state: &Value) {
     let _ = Command::new("git").args(["init"]).current_dir(dir).output();
-    let state_dir = dir.join(".flow-states");
+    let state_dir = flow_states_dir(dir);
     fs::create_dir_all(&state_dir).unwrap();
     fs::write(
         state_dir.join(format!("{}.json", branch)),
@@ -53,7 +57,7 @@ fn setup_git_and_state(dir: &Path, branch: &str, state: &Value) {
 /// risk that a branch-name typo in the path diverges from the
 /// `setup_git_and_state` call.
 fn read_state(dir: &Path, branch: &str) -> Value {
-    let path = dir.join(format!(".flow-states/{}.json", branch));
+    let path = flow_states_dir(dir).join(format!("{}.json", branch));
     serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
 }
 
@@ -468,7 +472,7 @@ fn test_stop_continue_qa_pending_fallback_blocks() {
     // No branch state file — only a qa-pending breadcrumb. The hook's
     // `check_qa_pending` fallback in `run()` should fire and produce block
     // output carrying the QA context.
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     fs::create_dir_all(&state_dir).unwrap();
     fs::write(
         state_dir.join("qa-pending.json"),

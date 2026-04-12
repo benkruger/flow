@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 use std::process::Command;
 
 use crate::commands::log::append_log;
+use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
 use crate::output::json_error;
@@ -72,7 +73,7 @@ fn resolve_state(args: &Args) -> Result<(PathBuf, String, PathBuf), Value> {
         }
     };
 
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = FlowPaths::new(&root, &branch).state_file();
     if !state_path.exists() {
         return Err(json!({
             "status": "error",
@@ -109,9 +110,7 @@ fn load_frozen_config(
     Option<Vec<String>>,
     Option<indexmap::IndexMap<String, String>>,
 ) {
-    let frozen_path = root
-        .join(".flow-states")
-        .join(format!("{}-phases.json", branch));
+    let frozen_path = FlowPaths::new(root, branch).frozen_phases();
     let frozen_config = if frozen_path.exists() {
         load_phase_config(&frozen_path).ok()
     } else {
@@ -568,8 +567,15 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         "# Pre-Decomposed Analysis: {}\n\n{}",
         feature_desc, issue_body
     );
-    let dag_rel = format!(".flow-states/{}-dag.md", branch);
-    let dag_abs = root.join(&dag_rel);
+    let dag_abs = FlowPaths::new(&root, &branch).dag_file();
+    // Derive the relative path from the absolute path so the value
+    // stored in state stays in sync with the on-disk location. If
+    // `FlowPaths::dag_file()` ever changes its suffix, the state
+    // file's `files.dag` entry follows automatically.
+    let dag_rel = dag_abs
+        .strip_prefix(&root)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| dag_abs.to_string_lossy().into_owned());
     std::fs::write(&dag_abs, &dag_content)
         .map_err(|e| format!("Failed to write DAG file: {}", e))?;
 
@@ -610,8 +616,13 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let promoted = promote_headings(&plan_section);
 
     // Write plan file
-    let plan_rel = format!(".flow-states/{}-plan.md", branch);
-    let plan_abs = root.join(&plan_rel);
+    let plan_abs = FlowPaths::new(&root, &branch).plan_file();
+    // Derive the relative path from the absolute path so the value
+    // stored in state stays in sync with the on-disk location.
+    let plan_rel = plan_abs
+        .strip_prefix(&root)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| plan_abs.to_string_lossy().into_owned());
     std::fs::write(&plan_abs, &promoted)
         .map_err(|e| format!("Failed to write plan file: {}", e))?;
 

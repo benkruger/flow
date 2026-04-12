@@ -1,10 +1,13 @@
 //! Tests for shared hook utilities (src/hooks/mod.rs).
 
+mod common;
+
 use std::fs;
 use std::path::Path;
 
 use serde_json::json;
 
+use common::flow_states_dir;
 use flow_rs::hooks;
 
 // === find_settings_and_root_from ===
@@ -113,7 +116,7 @@ fn test_detect_branch_not_in_worktree() {
 #[test]
 fn test_is_flow_active_with_state_file() {
     let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     fs::create_dir_all(&state_dir).unwrap();
     fs::write(state_dir.join("my-feature.json"), "{}").unwrap();
 
@@ -123,7 +126,7 @@ fn test_is_flow_active_with_state_file() {
 #[test]
 fn test_is_flow_active_no_state_file() {
     let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     fs::create_dir_all(&state_dir).unwrap();
 
     assert!(!hooks::is_flow_active("my-feature", dir.path()));
@@ -138,7 +141,7 @@ fn test_is_flow_active_empty_branch() {
 #[test]
 fn test_is_flow_active_rejects_path_separators() {
     let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     fs::create_dir_all(&state_dir).unwrap();
 
     assert!(!hooks::is_flow_active("../etc/passwd", dir.path()));

@@ -12,6 +12,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use flow_rs::flow_paths::FlowPaths;
 use serde_json::{json, Value};
 
 // --- Path helpers ---
@@ -44,6 +45,17 @@ pub fn bin_dir() -> PathBuf {
 /// Returns the agents/ directory path.
 pub fn agents_dir() -> PathBuf {
     repo_root().join("agents")
+}
+
+// --- FlowPaths test fixtures ---
+
+/// Returns the `.flow-states/` directory under `project_root` without
+/// creating it. Equivalent to `FlowPaths::new(project_root, "").flow_states_dir()`
+/// but shorter at callsites — test fixtures use this in place of the
+/// old `dir.path().join(".flow-states")` literal so the directory
+/// name stays owned by `FlowPaths`.
+pub fn flow_states_dir(project_root: &Path) -> std::path::PathBuf {
+    FlowPaths::new(project_root, "").flow_states_dir()
 }
 
 // --- File reading helpers ---

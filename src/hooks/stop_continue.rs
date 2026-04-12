@@ -18,6 +18,7 @@ use serde_json::{json, Value};
 
 use crate::commands::clear_blocked::clear_blocked;
 use crate::commands::set_blocked::set_blocked;
+use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::github::detect_repo;
 use crate::lock::mutate_state;
@@ -35,7 +36,7 @@ pub struct ContinueResult {
 fn log_diag(root: Option<&Path>, branch: Option<&str>, message: &str) {
     eprintln!("[FLOW stop-continue] {}", message);
     if let (Some(root), Some(branch)) = (root, branch) {
-        let log_path = root.join(".flow-states").join(format!("{}.log", branch));
+        let log_path = FlowPaths::new(root, branch).log_file();
         if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&log_path) {
             let _ = writeln!(f, "{} [stop-continue] {}", now(), message);
         }
@@ -556,7 +557,7 @@ pub fn run() {
         Some(b) => b,
         None => return,
     };
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = FlowPaths::new(&root, &branch).state_file();
 
     // First stop handler: on the first Stop event (no _stop_instructed),
     // handles both pending continuations (with conditional user-awareness)

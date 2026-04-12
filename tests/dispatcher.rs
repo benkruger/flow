@@ -1,4 +1,8 @@
+mod common;
+
 use std::process::Command;
+
+use common::flow_states_dir;
 
 // --- generate-id ---
 
@@ -33,7 +37,7 @@ fn generate_id_stdout_is_8_char_hex() {
 #[test]
 fn log_exits_0_and_writes_file() {
     let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     std::fs::create_dir(&state_dir).unwrap();
 
     // Initialize a git repo so project_root() works
@@ -166,7 +170,7 @@ fn format_status_valid_state_exits_0() {
         .trim()
         .to_string();
 
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     std::fs::create_dir(&state_dir).unwrap();
     let state = serde_json::json!({
         "branch": branch,
@@ -232,7 +236,7 @@ fn format_status_branch_flag() {
         .output()
         .unwrap();
 
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     std::fs::create_dir(&state_dir).unwrap();
     let state = serde_json::json!({
         "branch": "other-feature",
@@ -292,7 +296,7 @@ fn format_status_corrupt_json_exits_1() {
         .trim()
         .to_string();
 
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     std::fs::create_dir(&state_dir).unwrap();
     std::fs::write(state_dir.join(format!("{}.json", branch)), "{bad json").unwrap();
 

@@ -20,6 +20,7 @@ use clap::Parser;
 use indexmap::IndexMap;
 
 use crate::commands::log::append_log;
+use crate::flow_paths::FlowPaths;
 use crate::output::{json_error, json_ok};
 
 const CMD_TIMEOUT: Duration = Duration::from_secs(30);
@@ -279,23 +280,18 @@ pub fn cleanup(
     );
 
     // Delete state file
-    let flow_states = project_root.join(".flow-states");
+    let paths = FlowPaths::new(project_root, branch);
+    let flow_states = paths.flow_states_dir();
     steps.insert(
         "state_file".to_string(),
-        try_delete_file(&flow_states.join(format!("{}.json", branch))),
+        try_delete_file(&paths.state_file()),
     );
 
     // Delete plan file
-    steps.insert(
-        "plan_file".to_string(),
-        try_delete_file(&flow_states.join(format!("{}-plan.md", branch))),
-    );
+    steps.insert("plan_file".to_string(), try_delete_file(&paths.plan_file()));
 
     // Delete DAG file
-    steps.insert(
-        "dag_file".to_string(),
-        try_delete_file(&flow_states.join(format!("{}-dag.md", branch))),
-    );
+    steps.insert("dag_file".to_string(), try_delete_file(&paths.dag_file()));
 
     // Log cleanup progress before the log file is deleted.
     // Only log if the log file already exists — append_log creates the file
@@ -303,7 +299,7 @@ pub fn cleanup(
     // of "skipped" for test fixtures that intentionally remove the log file.
     // This entry is written mid-cleanup (before file deletions), so it cannot
     // report a total step count — the JSON output has the full step results.
-    let log_path = flow_states.join(format!("{}.log", branch));
+    let log_path = paths.log_file();
     if log_path.exists() {
         let _ = append_log(
             project_root,
@@ -313,39 +309,36 @@ pub fn cleanup(
     }
 
     // Delete log file
-    steps.insert(
-        "log_file".to_string(),
-        try_delete_file(&flow_states.join(format!("{}.log", branch))),
-    );
+    steps.insert("log_file".to_string(), try_delete_file(&paths.log_file()));
 
     // Delete frozen phases file
     steps.insert(
         "frozen_phases".to_string(),
-        try_delete_file(&flow_states.join(format!("{}-phases.json", branch))),
+        try_delete_file(&paths.frozen_phases()),
     );
 
     // Delete CI sentinel
     steps.insert(
         "ci_sentinel".to_string(),
-        try_delete_file(&flow_states.join(format!("{}-ci-passed", branch))),
+        try_delete_file(&paths.ci_sentinel()),
     );
 
     // Delete timings file
     steps.insert(
         "timings_file".to_string(),
-        try_delete_file(&flow_states.join(format!("{}-timings.md", branch))),
+        try_delete_file(&paths.timings_file()),
     );
 
     // Delete closed issues file
     steps.insert(
         "closed_issues_file".to_string(),
-        try_delete_file(&flow_states.join(format!("{}-closed-issues.json", branch))),
+        try_delete_file(&paths.closed_issues()),
     );
 
     // Delete issues file
     steps.insert(
         "issues_file".to_string(),
-        try_delete_file(&flow_states.join(format!("{}-issues.md", branch))),
+        try_delete_file(&paths.issues_file()),
     );
 
     // Delete adversarial test file(s) produced by the Phase 4 adversarial

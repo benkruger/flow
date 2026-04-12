@@ -32,6 +32,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::flow_paths::FlowPaths;
+
 /// Enforce that `cwd` is inside (or equal to) the expected subdirectory
 /// of the worktree for the current branch's flow.
 ///
@@ -63,9 +65,7 @@ pub fn enforce(cwd: &Path, project_root: &Path) -> Result<(), String> {
         None => return Ok(()),
     };
 
-    let state_path = project_root
-        .join(".flow-states")
-        .join(format!("{}.json", branch));
+    let state_path = FlowPaths::new(project_root, &branch).state_file();
     if !state_path.exists() {
         return Ok(());
     }

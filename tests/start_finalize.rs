@@ -11,7 +11,7 @@ use std::process::{Command, Output};
 
 use serde_json::{json, Value};
 
-use common::parse_output;
+use common::{flow_states_dir, parse_output};
 
 // --- Test helpers ---
 
@@ -49,7 +49,7 @@ fn create_git_repo(parent: &Path) -> PathBuf {
 
 /// Create a state file with flow-start in_progress (ready for completion).
 fn create_state_file(repo: &Path, branch: &str, skills_continue: &str) {
-    let state_dir = repo.join(".flow-states");
+    let state_dir = flow_states_dir(repo);
     fs::create_dir_all(&state_dir).unwrap();
     let state = json!({
         "schema_version": 1,
@@ -188,7 +188,7 @@ fn test_happy_path_no_slack() {
     );
 
     // State should be updated
-    let state_path = repo.join(".flow-states").join("finalize-branch.json");
+    let state_path = flow_states_dir(&repo).join("finalize-branch.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-start"]["status"], "complete");
     assert_eq!(state["current_phase"], "flow-plan");

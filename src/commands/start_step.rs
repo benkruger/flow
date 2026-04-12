@@ -9,6 +9,7 @@ use std::path::Path;
 
 use serde_json::json;
 
+use crate::flow_paths::FlowPaths;
 use crate::git::project_root;
 use crate::lock::mutate_state;
 use crate::output::json_ok;
@@ -34,7 +35,7 @@ pub fn update_step(state_path: &Path, step: i64) -> bool {
 /// execs into a subcommand via bin/flow.
 pub fn run(step: i64, branch: &str, subcommand: Vec<String>) {
     let root = project_root();
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = FlowPaths::new(&root, branch).state_file();
 
     let updated = update_step(&state_path, step);
 

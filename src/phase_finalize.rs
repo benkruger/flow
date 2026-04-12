@@ -10,6 +10,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::commands::log::append_log;
+use crate::flow_paths::FlowPaths;
 use crate::git::project_root;
 use crate::lock::mutate_state;
 use crate::notify_slack;
@@ -48,7 +49,8 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
     let branch = &args.branch;
     let phase_num = phase_config::phase_number(&args.phase);
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let paths = FlowPaths::new(&root, branch);
+    let state_path = paths.state_file();
 
     // Drift guard: phase transitions must happen from inside the
     // subdirectory the flow was started in. Running phase-finalize
@@ -68,9 +70,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
 
     // Load frozen phase config if available
-    let frozen_path = root
-        .join(".flow-states")
-        .join(format!("{}-phases.json", branch));
+    let frozen_path = paths.frozen_phases();
     let frozen_config = if frozen_path.exists() {
         phase_config::load_phase_config(&frozen_path).ok()
     } else {

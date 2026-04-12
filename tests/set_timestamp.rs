@@ -1,8 +1,11 @@
 //! Integration tests for `flow-rs set-timestamp` command.
 
+mod common;
+
 use std::fs;
 use std::process::Command;
 
+use common::flow_states_dir;
 use regex::Regex;
 use serde_json::{json, Value};
 
@@ -35,7 +38,7 @@ fn make_state() -> Value {
 }
 
 fn setup_state(dir: &std::path::Path, branch: &str, state: &Value) -> std::path::PathBuf {
-    let state_dir = dir.join(".flow-states");
+    let state_dir = flow_states_dir(dir);
     fs::create_dir_all(&state_dir).unwrap();
     let path = state_dir.join(format!("{}.json", branch));
     fs::write(&path, serde_json::to_string_pretty(state).unwrap()).unwrap();
@@ -78,7 +81,8 @@ fn test_cli_happy_path() {
     assert_eq!(output["updates"][0]["value"], "approved");
 
     // Verify file was updated
-    let content = fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap();
+    let content =
+        fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap();
     let on_disk: Value = serde_json::from_str(&content).unwrap();
     assert_eq!(on_disk["design"]["status"], "approved");
 }
@@ -155,7 +159,8 @@ fn test_cli_integer_coercion() {
     assert_eq!(code, 0);
     assert_eq!(output["updates"][0]["value"], 1);
 
-    let content = fs::read_to_string(dir.path().join(".flow-states/test-feature.json")).unwrap();
+    let content =
+        fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap();
     let on_disk: Value = serde_json::from_str(&content).unwrap();
     assert_eq!(on_disk["code_review_step"], 1);
     assert!(on_disk["code_review_step"].is_i64());
@@ -235,7 +240,7 @@ fn test_cli_error_no_state_file() {
         .output();
 
     // Create .flow-states dir but no state file
-    fs::create_dir_all(dir.path().join(".flow-states")).unwrap();
+    fs::create_dir_all(flow_states_dir(dir.path())).unwrap();
 
     let mut cmd = flow_rs();
     cmd.arg("set-timestamp")
@@ -299,7 +304,7 @@ fn test_cli_error_invalid_format() {
 #[test]
 fn test_cli_error_corrupt_json() {
     let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
+    let state_dir = flow_states_dir(dir.path());
     fs::create_dir_all(&state_dir).unwrap();
     fs::write(state_dir.join("test-feature.json"), "{bad json").unwrap();
 

@@ -10,6 +10,7 @@ use chrono::{DateTime, FixedOffset};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::flow_paths::FlowPaths;
 use crate::phase_config::{self, PHASE_ORDER};
 use crate::utils::{
     derive_feature, derive_worktree, elapsed_since, extract_issue_numbers, format_time,
@@ -529,7 +530,7 @@ pub fn flow_summary(state: &Value, now: Option<DateTime<FixedOffset>>) -> FlowSu
 /// then by feature name (alphabetical) as a tiebreaker.
 /// Skips corrupt JSON and non-state files (e.g., *-phases.json).
 pub fn load_all_flows(root: &Path) -> Vec<FlowSummary> {
-    let state_dir = root.join(".flow-states");
+    let state_dir = FlowPaths::new(root, "").flow_states_dir();
     if !state_dir.is_dir() {
         return vec![];
     }
@@ -573,7 +574,7 @@ pub fn load_all_flows(root: &Path) -> Vec<FlowSummary> {
 /// Returns None if the file does not exist, is corrupt, or the state
 /// directory does not exist.
 pub fn load_orchestration(root: &Path) -> Option<Value> {
-    let state_dir = root.join(".flow-states");
+    let state_dir = FlowPaths::new(root, "").flow_states_dir();
     if !state_dir.is_dir() {
         return None;
     }
