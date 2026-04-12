@@ -349,6 +349,11 @@ issue. Do not apply the diff-boundary test.
 
 If no, proceed with the diff-boundary test below.
 
+If uncertain whether the code is superseded, treat as "no" and proceed
+with the diff-boundary test. The safe default is the conservative path —
+filing an issue for code that turns out to be dead is recoverable;
+deleting code that turns out to be live is not.
+
 The supersession test overrides the diff-boundary test. A file that is
 not in the PR diff can still be in-scope if its contents are dead code
 the PR created.
