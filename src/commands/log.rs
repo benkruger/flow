@@ -5,6 +5,7 @@ use std::process;
 
 use fs2::FileExt;
 
+use crate::flow_paths::FlowPaths;
 use crate::git;
 use crate::utils;
 
@@ -13,9 +14,9 @@ use crate::utils;
 /// Creates the `.flow-states/` directory if it does not exist.
 /// Acquires an exclusive file lock before writing.
 pub fn append_log(root: &Path, branch: &str, message: &str) -> Result<(), std::io::Error> {
-    let log_dir = root.join(".flow-states");
-    fs::create_dir_all(&log_dir)?;
-    let log_path = log_dir.join(format!("{}.log", branch));
+    let paths = FlowPaths::new(root, branch);
+    fs::create_dir_all(paths.flow_states_dir())?;
+    let log_path = paths.log_file();
     let timestamp = utils::now();
 
     let file = OpenOptions::new()

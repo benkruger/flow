@@ -1,6 +1,7 @@
 use std::io::Read;
 use std::path::Path;
 
+use crate::flow_paths::FlowPaths;
 use crate::git::{current_branch, project_root};
 use crate::lock::mutate_state;
 
@@ -28,7 +29,7 @@ pub fn run() {
     };
 
     let root = project_root();
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = FlowPaths::new(&root, &branch).state_file();
 
     clear_blocked(&state_path);
 }
