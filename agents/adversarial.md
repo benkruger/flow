@@ -80,12 +80,6 @@ survive instead of zero output.
 your approach. Write harder tests targeting deeper edge cases. Overwrite
 the temp file and re-run. Maximum 3 rounds total.
 
-**Clean up.** Delete the temp test file before returning:
-
-```bash
-rm <temp_test_file>
-```
-
 ## Output Format
 
 For each finding (failing test), produce a structured block:
@@ -132,14 +126,13 @@ cases that the trace or verify step refutes.
 ## Rules
 
 - Only use the Write tool to write to `<temp_test_file>` — no other path
-- Only use Bash for `<test_command>`, `rm`, `git log`, `git show`, and `git diff`
+- Only use Bash for `<test_command>`, `git log`, `git show`, and `git diff`
 - Never use `cd <path> && git` — use `git -C <path>` if needed
 - Never use piped commands (|) — use separate Bash calls
 - Never use cat, head, tail, grep, rg, find, or ls via Bash
 - Never search or read outside the project directory
 - Do not speculate about intent — reason only from code evidence
 - Do not suggest fixes — only identify gaps via failing tests
-- Always delete the temp test file before returning
 
 ## Return Format
 

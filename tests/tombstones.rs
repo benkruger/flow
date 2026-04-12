@@ -200,46 +200,33 @@ fn test_no_backward_facing_comments_in_rust_source() {
     );
 }
 
-// --- validate-pretool quote-aware scanner removal tombstones (PR #1035) ---
-//
-// PR #1035 replaced two byte-level scanners in
-// src/hooks/validate_pretool.rs with a single quote-aware state
-// machine (scan_unquoted) plus two predicates (compound_op_predicate,
-// redirect_predicate). The old functions were quote-unaware and
-// produced false positives whenever operator characters appeared
-// inside quoted arguments. These source-content tombstones assert the
-// old function names do not reappear in the source file — a merge
-// conflict that reintroduces them alongside the new scanner would
-// silently revert the fix.
-
-/// Tombstone: has_unescaped_semicolon removed in PR #1035. Must not return.
+/// Tombstone: mid-phase rm in flow-code-review SKILL.md removed in PR #1040. Must not return.
 #[test]
-fn test_no_has_unescaped_semicolon_function() {
+fn test_code_review_no_mid_phase_adversarial_rm() {
     let path = common::repo_root()
-        .join("src")
-        .join("hooks")
-        .join("validate_pretool.rs");
-    let content = fs::read_to_string(&path).expect("validate_pretool.rs must exist");
+        .join("skills")
+        .join("flow-code-review")
+        .join("SKILL.md");
+    let content = fs::read_to_string(&path).expect("flow-code-review SKILL.md must exist");
     assert!(
-        !content.contains("fn has_unescaped_semicolon"),
-        "fn has_unescaped_semicolon was deleted in PR #1035 and must not return. \
-         Semicolon detection now goes through compound_op_predicate + scan_unquoted \
-         which tracks bash quote state."
+        !content.contains("rm <temp_test_file>"),
+        "Mid-phase `rm <temp_test_file>` block was deleted in PR #1040 and must not return. \
+         Phase 6 cleanup (src/cleanup.rs::try_delete_adversarial_test_files) is the \
+         authoritative cleanup — mid-phase rm targets an extensionless path that never \
+         exists and silently no-ops."
     );
 }
 
-/// Tombstone: has_redirect removed in PR #1035. Must not return.
+/// Tombstone: mid-phase rm in adversarial.md removed in PR #1040. Must not return.
 #[test]
-fn test_no_has_redirect_function() {
-    let path = common::repo_root()
-        .join("src")
-        .join("hooks")
-        .join("validate_pretool.rs");
-    let content = fs::read_to_string(&path).expect("validate_pretool.rs must exist");
+fn test_adversarial_agent_no_mid_phase_rm() {
+    let path = common::repo_root().join("agents").join("adversarial.md");
+    let content = fs::read_to_string(&path).expect("agents/adversarial.md must exist");
     assert!(
-        !content.contains("fn has_redirect"),
-        "fn has_redirect was deleted in PR #1035 and must not return. \
-         Redirection detection now goes through redirect_predicate + scan_unquoted \
-         which tracks bash quote state."
+        !content.contains("rm <temp_test_file>"),
+        "Mid-phase `rm <temp_test_file>` block in Round 2 was deleted in PR #1040 and must \
+         not return. Phase 6 cleanup (src/cleanup.rs::try_delete_adversarial_test_files) is \
+         the authoritative cleanup — the agent's mid-phase rm targets an extensionless path \
+         that never exists and silently no-ops."
     );
 }
