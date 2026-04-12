@@ -17,6 +17,7 @@ use std::time::Duration;
 use crate::commands::log::append_log;
 use crate::commands::start_lock::{queue_path, release};
 use crate::commands::start_step::update_step;
+use crate::flow_paths::FlowPaths;
 use crate::git::project_root;
 use crate::github::detect_repo;
 use crate::lock::mutate_state;
@@ -156,7 +157,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let feature_title = derive_feature(branch);
 
     // Update TUI step counter
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = FlowPaths::new(&root, branch).state_file();
     update_step(&state_path, 3);
 
     let queue_dir = queue_path(&root);

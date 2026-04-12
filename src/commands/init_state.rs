@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use serde_json::{json, Value};
 
 use crate::commands::log::append_log;
+use crate::flow_paths::FlowPaths;
 use crate::git::project_root;
 use crate::label_issues::LABEL;
 use crate::output::{json_error, json_ok};
@@ -96,9 +97,10 @@ pub fn create_state(
         state.insert("start_steps_total".into(), json!(total));
     }
 
-    let state_dir = project_root.join(".flow-states");
+    let paths = FlowPaths::new(project_root, branch);
+    let state_dir = paths.flow_states_dir();
     fs::create_dir_all(&state_dir).map_err(|e| format!("Cannot create .flow-states: {}", e))?;
-    let state_path = state_dir.join(format!("{}.json", branch));
+    let state_path = paths.state_file();
     let output = serde_json::to_string_pretty(&Value::Object(state))
         .map_err(|e| format!("JSON serialize error: {}", e))?;
     fs::write(&state_path, output).map_err(|e| format!("Cannot write state file: {}", e))?;

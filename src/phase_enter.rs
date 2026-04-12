@@ -11,6 +11,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::commands::log::append_log;
+use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
 use crate::output::json_error;
@@ -60,7 +61,7 @@ fn resolve_state(args: &Args) -> Result<(PathBuf, String, PathBuf), Value> {
         }
     };
 
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = FlowPaths::new(&root, &branch).state_file();
     if !state_path.exists() {
         return Err(json!({
             "status": "error",

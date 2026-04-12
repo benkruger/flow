@@ -17,6 +17,7 @@ use serde_json::{json, Value};
 use crate::ci;
 use crate::commands::log::append_log;
 use crate::commands::start_step::update_step;
+use crate::flow_paths::FlowPaths;
 use crate::git::project_root;
 use crate::output::json_error;
 use crate::update_deps::run_update_deps;
@@ -38,7 +39,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let branch = &args.branch;
 
     // Update TUI step counter
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let state_path = FlowPaths::new(&root, branch).state_file();
     update_step(&state_path, 2);
 
     // Step 1: git pull origin main
