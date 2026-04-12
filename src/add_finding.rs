@@ -51,25 +51,48 @@ pub struct Args {
     pub branch: Option<String>,
 }
 
+/// Outcomes the Code Review phase accepts. The gate enforces this as a
+/// positive allowlist so any outcome beyond the two-outcome triage model
+/// (Real → fixed, False positive → dismissed) is rejected — including
+/// new outcomes that might be added to `VALID_OUTCOMES` in the future.
+const CODE_REVIEW_ALLOWED_OUTCOMES: &[&str] = &["fixed", "dismissed"];
+
 /// Returns a rejection message when the (outcome, phase) tuple violates
-/// the Code Review filing ban: outcome "filed" during phase
-/// "flow-code-review" is not allowed. Every other combination passes.
+/// the Code Review filing ban. Inputs are normalized (trimmed, NULs
+/// stripped, ASCII-lowercased) so whitespace or case drift in CLI args
+/// cannot bypass the gate.
 ///
-/// See `.claude/rules/code-review-scope.md` — Code Review triage has two
-/// outcomes (Real / False positive); there is no filing path.
+/// During Code Review, only outcomes in `CODE_REVIEW_ALLOWED_OUTCOMES`
+/// pass. Any other outcome (including `"filed"`, and any outcome added
+/// to `VALID_OUTCOMES` later that semantically means "defer") is
+/// rejected. Other phases pass unchanged.
+///
+/// See `.claude/rules/code-review-scope.md` — Code Review triage has
+/// two outcomes (Real / False positive); there is no filing path.
 fn code_review_filing_gate(outcome: &str, phase: &str) -> Option<String> {
-    if outcome == "filed" && phase == "flow-code-review" {
-        Some(
-            "Outcome 'filed' is not valid for phase 'flow-code-review'. \
-             Code Review triage has two outcomes: 'fixed' (real findings, \
-             fix in Step 4) and 'dismissed' (false positives). All real \
-             findings are fixed during Code Review — there is no filing \
-             path."
-                .to_string(),
-        )
-    } else {
-        None
+    let phase_norm = normalize_gate_input(phase);
+    if phase_norm != "flow-code-review" {
+        return None;
     }
+    let outcome_norm = normalize_gate_input(outcome);
+    if CODE_REVIEW_ALLOWED_OUTCOMES.contains(&outcome_norm.as_str()) {
+        return None;
+    }
+    Some(format!(
+        "Outcome '{}' is not valid for phase 'flow-code-review'. \
+         Code Review triage has two outcomes: 'fixed' (real findings, \
+         fix in Step 4) and 'dismissed' (false positives). All real \
+         findings are fixed during Code Review — there is no filing \
+         path.",
+        outcome
+    ))
+}
+
+/// Strip NULs and surrounding whitespace, then lowercase. Used by the
+/// gate so that whitespace/case/NUL variants of "filed" or
+/// "flow-code-review" cannot bypass the check.
+fn normalize_gate_input(s: &str) -> String {
+    s.replace('\0', "").trim().to_ascii_lowercase()
 }
 
 /// Fallible implementation — returns `Ok(finding_count)` on success,
@@ -315,11 +338,11 @@ mod tests {
         mutate_state(&path, |s| {
             if let Some(arr) = s["findings"].as_array_mut() {
                 arr.push(json!({
-                    "finding": "Missing error handling",
-                    "reason": "Out of scope for this PR",
+                    "finding": "Process gap in Learn phase",
+                    "reason": "Filed as Flow issue",
                     "outcome": "filed",
-                    "phase": "flow-code-review",
-                    "phase_name": "Code Review",
+                    "phase": "flow-learn",
+                    "phase_name": "Learn",
                     "issue_url": "https://github.com/test/test/issues/42",
                     "timestamp": now(),
                 }));
@@ -441,6 +464,68 @@ mod tests {
         assert!(
             code_review_filing_gate("filed", "flow-code").is_none(),
             "flow-code files Flaky Test issues — must pass"
+        );
+    }
+
+    #[test]
+    fn leading_whitespace_phase_rejected_for_code_review() {
+        assert!(
+            code_review_filing_gate("filed", " flow-code-review").is_some(),
+            "whitespace drift must not bypass the gate"
+        );
+    }
+
+    #[test]
+    fn trailing_whitespace_phase_rejected_for_code_review() {
+        assert!(
+            code_review_filing_gate("filed", "flow-code-review ").is_some(),
+            "whitespace drift must not bypass the gate"
+        );
+    }
+
+    #[test]
+    fn uppercase_phase_rejected_for_code_review() {
+        assert!(
+            code_review_filing_gate("filed", "FLOW-CODE-REVIEW").is_some(),
+            "case drift must not bypass the gate"
+        );
+    }
+
+    #[test]
+    fn mixed_case_phase_rejected_for_code_review() {
+        assert!(
+            code_review_filing_gate("filed", "Flow-Code-Review").is_some(),
+            "mixed-case drift must not bypass the gate"
+        );
+    }
+
+    #[test]
+    fn uppercase_filed_outcome_rejected_for_code_review() {
+        assert!(
+            code_review_filing_gate("Filed", "flow-code-review").is_some(),
+            "case drift on outcome must not bypass the gate"
+        );
+    }
+
+    #[test]
+    fn embedded_nul_phase_rejected_for_code_review() {
+        assert!(
+            code_review_filing_gate("filed", "flow-code-review\0").is_some(),
+            "trailing NUL must not bypass the gate"
+        );
+    }
+
+    #[test]
+    fn future_outcome_rejected_for_code_review() {
+        // Forward-compat: if VALID_OUTCOMES is extended with a new
+        // "defer"-ish outcome, it must not silently pass the gate.
+        assert!(
+            code_review_filing_gate("deferred", "flow-code-review").is_some(),
+            "outcomes outside the allowlist must be rejected during Code Review"
+        );
+        assert!(
+            code_review_filing_gate("rule_written", "flow-code-review").is_some(),
+            "rule_written is a Learn-phase outcome, not Code Review"
         );
     }
 }

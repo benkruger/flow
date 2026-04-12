@@ -14,16 +14,14 @@ issue is not an option.
 ## Why
 
 Filing a real finding is effort optimization dressed up as scope
-discipline. A real finding sits in a file the current PR either
-created, modified, or surfaces through its changes — fixing it now
-costs less than filing, triaging later, and running a separate
-lifecycle on it. The current session has full context; a future
-session starts from zero.
+discipline. Fixing now costs less than filing, triaging later, and
+running a separate lifecycle on it. The current session has full
+context; a future session starts from zero.
 
 Mechanical enforcement ensures the path is absent:
 
-- `bin/flow add-finding` rejects `--outcome filed` when
-  `--phase flow-code-review` is set.
+- `bin/flow add-finding` rejects any outcome outside
+  `{fixed, dismissed}` when `--phase flow-code-review` is set.
 - `bin/flow issue` refuses to create issues while
   `current_phase == "flow-code-review"` unless
   `--override-code-review-ban` is passed.
@@ -37,10 +35,10 @@ in-scope action is deletion regardless of file location — not
 filing. The supersession check is complementary to this rule; it
 routes superseded code to Step 4 for deletion.
 
-## New Rules Introduced by This PR
+## New Rules Added Alongside Code
 
-When this PR adds a new `.claude/rules/*.md` file that retroactively
+When a PR adds a new `.claude/rules/*.md` file that retroactively
 flags pre-existing violations, the pre-existing violations are
-still Real findings and still get fixed in Step 4. A new rule that
-the PR introduces without sweeping the codebase is incomplete —
-see `.claude/rules/scope-expansion.md` for the decision tree.
+still Real findings and still get fixed in Step 4. A new rule
+without a sweep of the codebase is incomplete — see
+`.claude/rules/scope-expansion.md` for the decision tree.

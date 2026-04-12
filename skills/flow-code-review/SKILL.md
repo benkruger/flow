@@ -429,13 +429,13 @@ pass `--auto` as well. Do not output anything else after this invocation.
 
 ## Step 4 — Fix
 
-Fix all real in-scope findings from Step 3.
+Fix all real findings from Step 3.
 
-If no real in-scope findings exist, skip this step and proceed to Done.
+If no real findings exist, skip this step and proceed to Done.
 
 ### Fix each finding
 
-For each real in-scope finding, fix the issue in code. After fixing each finding, record it:
+For each real finding, fix the issue in code. After fixing each finding, record it:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "fixed" --phase "flow-code-review"
@@ -590,7 +590,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
 - Always run `bin/flow ci` after any fix made during Code Review
 - Never transition to Learn unless `bin/flow ci` is green
-- Fix every real in-scope finding from agent triage — do not leave findings unaddressed
+- Fix every real finding from agent triage — do not leave findings unaddressed
 - Follow the project CLAUDE.md conventions when fixing
 - All analysis comes from cognitively isolated agents — the parent session never reviews the diff itself
 - Parent session gathers, launches, triages, and fixes — it does not analyze

@@ -49,8 +49,10 @@ single response:
   investigates the codebase independently. Covers correctness failure
   modes including security (T4).
 - **Adversarial** (context-sparse): receives the substantive diff and
-  writes tests designed to fail. Covers test coverage (T5). Only
-  launched if `bin/flow test` exists.
+  writes tests designed to fail. Covers test coverage (T5). Always
+  launched — if the project's `bin/test` does not support
+  `--file <path>` for single-file execution, the agent surfaces that
+  as a finding instead of silently skipping.
 - **Documentation** (context-sparse): receives the substantive diff and
   doc paths, investigates the codebase. Covers maintainability (T3) and
   documentation accuracy (T6).
