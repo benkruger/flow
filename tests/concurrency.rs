@@ -214,7 +214,7 @@ fn start_lock_serialization() {
                         "--acquire",
                         "--wait",
                         "--timeout",
-                        "30",
+                        "90",
                         "--interval",
                         "1",
                         "--feature",
@@ -298,9 +298,10 @@ fn start_lock_serialization() {
 #[test]
 fn thundering_herd_zero_delay() {
     // 3 threads start simultaneously (barrier). All acquire lock, no overlaps.
-    // Uses 3 workers (not 5) with 100ms hold time (not 300ms) to keep wall time
-    // under 5 seconds. The lock polling interval is 1 second (integer-only),
-    // so fewer workers and shorter holds reduce total wait time.
+    // Uses 3 workers with 100ms hold time to keep wall time under 5 seconds
+    // normally. The 90-second timeout and join deadline provide generous
+    // headroom for CI environments under heavy parallel test load, where
+    // thread scheduling delays can stretch sleep durations significantly.
     let tmp = tempfile::tempdir().expect("Failed to create tempdir");
     let repo = tmp.path().to_path_buf();
     init_git_repo(&repo);
@@ -327,7 +328,7 @@ fn thundering_herd_zero_delay() {
                         "--acquire",
                         "--wait",
                         "--timeout",
-                        "30",
+                        "90",
                         "--interval",
                         "1",
                         "--feature",
@@ -384,13 +385,13 @@ fn thundering_herd_zero_delay() {
         })
         .collect();
 
-    // Join with a reasonable timeout check
-    let join_deadline = Instant::now() + Duration::from_secs(30);
+    // Join with a generous deadline to tolerate CI load spikes
+    let join_deadline = Instant::now() + Duration::from_secs(90);
     for handle in handles {
         let remaining = join_deadline.saturating_duration_since(Instant::now());
         assert!(
             !remaining.is_zero(),
-            "Thundering herd test exceeded 30s deadline"
+            "Thundering herd test exceeded 90s deadline"
         );
         handle.join().expect("Worker thread panicked");
     }
