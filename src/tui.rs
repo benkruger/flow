@@ -22,6 +22,7 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 use ratatui::Terminal;
 
+use crate::flow_paths::FlowPaths;
 use crate::tui_data::{self, AccountMetrics, FlowSummary, OrchestrationSummary};
 
 /// Auto-refresh interval.
@@ -946,10 +947,7 @@ impl TuiApp {
         );
 
         // Read log file
-        let log_path = self
-            .root
-            .join(".flow-states")
-            .join(format!("{}.log", flow.branch));
+        let log_path = FlowPaths::new(&self.root, &flow.branch).log_file();
         let log_content = std::fs::read_to_string(&log_path).ok();
         let entries = tui_data::parse_log_entries(
             log_content.as_deref().unwrap_or(""),
