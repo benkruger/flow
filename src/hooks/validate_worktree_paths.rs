@@ -6,9 +6,12 @@
 //! Exit 0 — allow (path is fine or not in a worktree)
 //! Exit 2 — block (path targets main repo instead of worktree)
 
+use std::path::Path;
+
 use serde_json::Value;
 
 use super::read_hook_input;
+use crate::flow_paths::FlowPaths;
 
 const WORKTREE_MARKER: &str = ".worktrees/";
 
@@ -53,7 +56,8 @@ pub fn validate(file_path: &str, cwd: &str) -> (bool, String) {
     }
 
     // .flow-states/ is the shared state directory at the main repo — always fine
-    let flow_states_prefix = format!("{}/.flow-states/", project_root);
+    let flow_states_dir = FlowPaths::new(Path::new(project_root), "").flow_states_dir();
+    let flow_states_prefix = format!("{}/", flow_states_dir.to_string_lossy());
     if file_path.starts_with(&flow_states_prefix) {
         return (true, String::new());
     }
