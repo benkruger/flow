@@ -391,7 +391,7 @@ fn thundering_herd_zero_delay() {
         let remaining = join_deadline.saturating_duration_since(Instant::now());
         assert!(
             !remaining.is_zero(),
-            "Thundering herd test exceeded 30s deadline"
+            "Thundering herd test exceeded 90s deadline"
         );
         handle.join().expect("Worker thread panicked");
     }
