@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use super::{detect_branch_from_cwd, is_flow_active, read_hook_input, resolve_main_root};
-use crate::flow_paths::FlowPaths;
+use crate::flow_paths::FlowStatesDir;
 
 /// Check if a file path targets a protected .claude/ location.
 ///
@@ -78,7 +78,7 @@ fn find_project_root() -> Option<std::path::PathBuf> {
     let cwd = std::env::current_dir().ok()?;
     let mut current = cwd.as_path().to_path_buf();
     loop {
-        if FlowPaths::new(&current, "").flow_states_dir().is_dir() {
+        if FlowStatesDir::new(&current).path().is_dir() {
             return Some(current);
         }
         if !current.pop() {

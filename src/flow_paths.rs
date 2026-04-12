@@ -11,6 +11,30 @@
 
 use std::path::{Path, PathBuf};
 
+/// Directory-only handle for the `.flow-states/` directory. Use this
+/// for cross-branch operations (discovery scans, hook prefix checks,
+/// pre-lock queue paths) that need the directory without a specific
+/// branch. Pairs with `FlowPaths` for branch-scoped access.
+#[derive(Debug, Clone)]
+pub struct FlowStatesDir {
+    path: PathBuf,
+}
+
+impl FlowStatesDir {
+    /// Construct a handle to `<project_root>/.flow-states/`.
+    pub fn new(project_root: impl AsRef<Path>) -> Self {
+        Self {
+            path: project_root.as_ref().join(".flow-states"),
+        }
+    }
+
+    /// Borrow the `.flow-states/` path. Callers that need an owned
+    /// `PathBuf` can `.to_path_buf()` it.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
 /// Branch-scoped `.flow-states/*` path builder.
 #[derive(Debug, Clone)]
 pub struct FlowPaths {
@@ -273,5 +297,36 @@ mod tests {
             p.state_file(),
             PathBuf::from("/p/.flow-states/user/fix.json")
         );
+    }
+
+    // --- FlowStatesDir ---
+
+    #[test]
+    fn flow_states_dir_new_returns_dot_flow_states_under_root() {
+        let d = FlowStatesDir::new("/tmp/project");
+        assert_eq!(d.path(), Path::new("/tmp/project/.flow-states"));
+    }
+
+    #[test]
+    fn flow_states_dir_accepts_path_and_pathbuf_for_root() {
+        let d1 = FlowStatesDir::new(PathBuf::from("/p"));
+        let d2 = FlowStatesDir::new(Path::new("/p"));
+        assert_eq!(d1.path(), d2.path());
+    }
+
+    #[test]
+    fn flow_states_dir_path_returns_borrowed_path() {
+        let d = FlowStatesDir::new("/p");
+        // path() returns &Path — borrow the same instance twice.
+        let p1: &Path = d.path();
+        let p2: &Path = d.path();
+        assert_eq!(p1, p2);
+    }
+
+    #[test]
+    fn flow_states_dir_clone_preserves_path() {
+        let original = FlowStatesDir::new("/tmp/project");
+        let cloned = original.clone();
+        assert_eq!(original.path(), cloned.path());
     }
 }
