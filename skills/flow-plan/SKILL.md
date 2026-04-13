@@ -375,6 +375,43 @@ A plan with unaddressed verification risks is incomplete. Every risk
 that says something must be verified needs at least one task that
 produces evidence the verification happened.
 
+### External-Input Audit for Panic/Assert Tightenings
+
+When a plan proposes adding a `panic!`, `assert!`, `assert_eq!`,
+`assert_ne!`, or constructor-level invariant check on a function
+parameter, the plan must include a callsite source-classification
+audit table. The rule exists because PR #1054 tightened
+`FlowPaths::new` to panic on slash-containing branches under a
+false "upstream sanitization" assumption — five hooks and
+`format-status` crashed for every user on a `feature/foo` or
+`dependabot/*` branch. Force-functioning the audit at Plan time
+catches the assumption while it is still cheap to fix.
+
+The audit table has four columns:
+
+| Caller | Source | Classification | Handling |
+|--------|--------|----------------|----------|
+| `current_branch()` (`src/git.rs`) | git subprocess output | Trusted-but-external | `try_new`, treat `None` as no-active-flow |
+| `state["branch"]` (`src/start_init.rs`) | state file written by `branch_name()` | Guaranteed valid | `new` directly |
+
+Place the table within a few lines of the trigger prose (above or
+below). The header may use the aliases `caller`/`callsite`,
+`classif*`/`class`, `handling`/`disposition`. The gate validates
+table presence, not row content — but row content is the rule's
+authority, so reviewers will catch placeholder rows.
+
+If the prose is discussing assertions rather than proposing new
+ones, add the opt-out comment
+`<!-- external-input-audit: not-a-tightening -->` on the trigger
+line itself, on the line directly above, or two lines above with a
+single blank line in between (no chaining across more than one
+blank line).
+
+See `.claude/rules/external-input-audit-gate.md` for the full
+trigger vocabulary, the table-detection heuristic, and the
+enforcement topology (`bin/flow plan-check` plus both
+`src/plan_extract.rs` callsites).
+
 ### Supersession Enumeration
 
 `.claude/rules/supersession.md` requires plans that add replacements,
@@ -462,8 +499,8 @@ Proceed to Step 4.
 ## Step 4 — Store plan file and complete phase
 
 Store the plan file path in the state file BEFORE running the
-scope-enumeration gate below — `bin/flow plan-check` resolves the
-plan file from `files.plan`, so the state pointer must be populated
+plan-check gate below — `bin/flow plan-check` resolves the plan
+file from `files.plan`, so the state pointer must be populated
 first:
 
 ```bash
@@ -476,14 +513,27 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.plan=<plan_file_path>
 
 Replace `<plan_file_path>` with the relative path `.flow-states/<branch>-plan.md`.
 
-### Scope enumeration gate
+### Plan-check gate
 
-Gate phase completion on the scope-enumeration rule. The plan file
-must not contain universal-coverage language (`every subcommand`,
-`all runners`, `each CLI entry point`, `every state mutator`, …)
-without a named list of the concrete siblings nearby — see
-`.claude/rules/scope-enumeration.md` for the rule, the opt-out
-comment vocabulary, and the motivating incidents.
+Gate phase completion on both Plan-phase rules — scope-enumeration
+and external-input-audit. The single `bin/flow plan-check`
+invocation runs both scanners and aggregates results into one
+response; each violation carries a `rule` field so the repair loop
+can render which rule fired.
+
+The scope-enumeration scanner flags universal-coverage language
+(quantifier-plus-code-family-noun phrasings) that lacks a named
+list of the concrete siblings nearby — see
+`.claude/rules/scope-enumeration.md` for the trigger vocabulary,
+the opt-out comment grammar, and the motivating incidents.
+
+The external-input-audit scanner flags proposals to add a
+`panic!`/`assert!`/invariant check on a function parameter without
+a paired callsite source-classification audit table — see
+`.claude/rules/external-input-audit-gate.md` for the trigger
+vocabulary, the required four-column table format, the
+not-a-tightening opt-out grammar, and the motivating PR #1054
+incident.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow plan-check
@@ -491,43 +541,56 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow plan-check
 
 Parse the JSON output:
 
-- **If `"status": "ok"`** — the plan has no unenumerated
-  universal-coverage claims. Proceed to the task-count and
-  PR-render steps below.
+- **If `"status": "ok"`** — the plan satisfies both scanners.
+  Proceed to the task-count and PR-render steps below.
 - **If `"status": "error"`** — the response contains a `violations`
-  array with `file`, `line`, `phrase`, and `context` fields. Render
-  the violations inline in your response so the user can see each
-  flagged phrase, then use the Edit tool on the plan file to add a
-  named list (inline parenthetical with backtick-quoted identifiers,
-  or a bullet list with backtick-quoted identifiers immediately
-  before or after the phrase) next to each violation. If a flagged
-  phrase is genuinely open-ended or purely instructional, add a
-  line-level opt-out comment as documented in the rule file. Re-run
-  `bin/flow plan-check` and loop until the response is `"status":
-  "ok"`. Only then proceed to the task-count and PR-render steps.
+  array with `file`, `line`, `phrase`, `context`, and `rule` fields.
+  Render the violations inline in your response so the user can see
+  each flagged phrase and which rule fired, then use the Edit tool
+  on the plan file to fix each violation according to the cited
+  `rule`:
+  - **`rule: "scope-enumeration"`** — add a named list (inline
+    parenthetical with backtick-quoted identifiers, or a bullet
+    list with backtick-quoted identifiers immediately before or
+    after the phrase) next to the flagged phrase, OR add a
+    line-level opt-out comment from
+    `.claude/rules/scope-enumeration.md` if the phrase is genuinely
+    open-ended or purely instructional.
+  - **`rule: "external-input-audit"`** — add a four-column audit
+    table (Caller, Source, Classification, Handling) within a few
+    lines of the trigger, OR add the
+    `<!-- external-input-audit: not-a-tightening -->` opt-out
+    comment if the prose is discussion rather than a proposal.
+
+  Re-run `bin/flow plan-check` and loop until the response is
+  `"status": "ok"`. Only then proceed to the task-count and
+  PR-render steps.
 
 ### Enforcement topology
 
-The gate is enforced at three independent callsites that share
-`src/scope_enumeration.rs::scan`, so the model cannot bypass the
-rule by choosing a different plan path:
+The gate is enforced at three independent callsites, each running
+both `src/scope_enumeration.rs::scan` and
+`src/external_input_audit.rs::scan` — so the model cannot bypass
+either rule by choosing a different plan path:
 
 - **Standard plan path** — the `bin/flow plan-check` block above is
   the gate. This is the only call that runs for plans the model
   writes from scratch.
 - **Pre-decomposed extracted path** — `src/plan_extract.rs` runs
-  the same scanner on the promoted plan content before
-  `complete_plan_phase`. If violations are found, the phase is not
-  completed and the plan file is left on disk for the user to edit.
-- **Resume path** — when `files.plan` is already set, `plan_extract.rs`
-  re-runs the scanner on the existing file before re-entering the
-  phase. A plan that was edited to fix violations passes the gate
-  here and the phase completes; a plan still in violation fails
-  again with the same message.
+  both scanners on the promoted plan content before
+  `complete_plan_phase`. If violations are found from either rule,
+  the phase is not completed and the plan file is left on disk for
+  the user to edit.
+- **Resume path** — when `files.plan` is already set,
+  `plan_extract.rs` re-runs both scanners on the existing file
+  before re-entering the phase. A plan that was edited to fix
+  violations passes the gate here and the phase completes; a plan
+  still in violation fails again with the same message.
 
 All three callsites return the same JSON error shape (`status`,
-`violations[]`, `message`) so the repair loop is identical
-regardless of which path triggered the failure.
+`violations[]` with per-entry `rule` tags, `message`) so the
+repair loop is identical regardless of which path or which rule
+triggered the failure.
 
 Count the total number of implementation tasks in the Tasks section of
 the plan file and store the count for TUI progress display:

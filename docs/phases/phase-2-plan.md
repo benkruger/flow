@@ -44,9 +44,12 @@ skipped.
    for the superseded code
 9. Claude writes the plan file with a Dependency Graph section and
    ordered tasks derived from the DAG
-10. `bin/flow plan-check` scans the plan for universal-coverage prose
-    that lacks a named enumeration — phase completion is blocked
-    until the plan passes the gate (see Gates below)
+10. `bin/flow plan-check` runs both Plan-phase scanners against the
+    plan: scope-enumeration (universal-coverage prose without a
+    named sibling list) and external-input audit (panic/assert
+    tightening proposals without a paired callsite source-
+    classification table). Phase completion is blocked until both
+    scanners pass (see Gates below)
 11. The plan file path is stored in the state file and the phase completes
 
 DAG decomposition is configurable via `skills.flow-plan.dag` in
@@ -92,18 +95,30 @@ By the end of Phase 2:
 ## Gates
 
 - **Start phase must be complete** before Plan can enter
-- **Scope-enumeration gate** — before the phase completes, the plan
-  file is scanned for universal-coverage language ("every subcommand",
-  "all runners", "each CLI entry point", …) that is not paired with
-  a named list of the concrete siblings the claim covers. Violations
-  block phase completion; the plan must be edited to add the
-  enumeration (inline parenthetical or bullet list with backtick
-  identifiers) or to add a line-level opt-out comment. The gate
-  applies to both the standard path (via `bin/flow plan-check` in
-  the skill's Step 4) and the fast path (via `src/plan_extract.rs`
-  before `complete_plan_phase`). The motivating incidents and the
-  opt-out vocabulary are documented in
-  `.claude/rules/scope-enumeration.md`.
+- **Plan-check gate** — before the phase completes, two scanners
+  run against the plan file:
+  - **Scope-enumeration** — flags universal-coverage language
+    ("every subcommand", "all runners", "each CLI entry point", …)
+    that is not paired with a named list of the concrete siblings.
+    Violations are fixed by adding an inline parenthetical or
+    bullet list of backtick identifiers, or by adding a line-level
+    opt-out comment. See `.claude/rules/scope-enumeration.md`.
+  - **External-input audit** — flags proposals to add a `panic!`,
+    `assert!`, `assert_eq!`, `assert_ne!`, or constructor-level
+    invariant check on a function parameter without a paired
+    callsite source-classification audit table (Caller, Source,
+    Classification, Handling). Violations are fixed by adding the
+    audit table within a few lines of the trigger or by adding the
+    `<!-- external-input-audit: not-a-tightening -->` opt-out for
+    discussion prose. See
+    `.claude/rules/external-input-audit-gate.md`.
+
+  The gate runs at three callsites — the standard path
+  (`bin/flow plan-check` in Step 4) and both `src/plan_extract.rs`
+  paths (extracted and resumed) — so neither scanner can be
+  bypassed by routing through the pre-decomposed or session-resume
+  entries. Each violation in the JSON response carries a `rule`
+  field naming the scanner that fired.
 
 ---
 
