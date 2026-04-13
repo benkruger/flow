@@ -176,7 +176,17 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 /// Build a human-readable summary message that names both scanners'
 /// counts when either is non-zero. The message must tell the author
 /// which rule file to consult for each violation class.
-fn build_violation_message(scope_count: usize, audit_count: usize, total: usize) -> String {
+///
+/// Shared with `src/plan_extract.rs::violations_response` — both
+/// callsites MUST produce the same message shape so the skill's
+/// repair loop renders consistent output regardless of which path
+/// triggered the failure. `pub(crate)` so `plan_extract.rs` can
+/// call it directly.
+pub(crate) fn build_violation_message(
+    scope_count: usize,
+    audit_count: usize,
+    total: usize,
+) -> String {
     let mut parts: Vec<String> = Vec::new();
     if scope_count > 0 {
         parts.push(format!(
@@ -251,7 +261,27 @@ fn resolve_plan_file_from_state(
         }
     };
 
-    let state_path = FlowPaths::new(root, &branch).state_file();
+    // Use `try_new` instead of `new` because `resolve_branch` can
+    // return raw git refs (`feature/foo`, `dependabot/*`) when no
+    // state file exists for the current branch — `FlowPaths::new`
+    // panics on slashes. This is the exact failure mode PR #1054
+    // introduced for hooks, which this PR was designed to prevent
+    // at the planning stage. Treat an invalid branch the same as a
+    // missing state file: the command is being run outside an
+    // active flow, so there is no plan to check.
+    let state_path = match FlowPaths::try_new(root, &branch) {
+        Some(paths) => paths.state_file(),
+        None => {
+            return Ok(Err(json!({
+                "status": "error",
+                "message": format!(
+                    "No active FLOW flow on branch '{}' (branch is not a valid FLOW branch name). \
+                     Pass --branch or --plan-file explicitly to check a specific plan.",
+                    branch
+                ),
+            })));
+        }
+    };
     if !state_path.exists() {
         return Ok(Err(json!({
             "status": "error",
@@ -413,6 +443,30 @@ mod tests {
             "message must summarize total: {:?}",
             result["message"]
         );
+    }
+
+    /// Regression: `run_impl` must NOT panic when the current git
+    /// branch contains a `/` (e.g. `feature/foo`, `dependabot/*`).
+    /// Pre-mortem caught that the original code used
+    /// `FlowPaths::new` on the resolved branch, which panics on
+    /// slashes — the same failure mode PR #1054 introduced for
+    /// hooks. The fallible `try_new` variant is now used so an
+    /// invalid-for-FLOW branch name is treated as "no active flow"
+    /// instead of crashing the command.
+    #[test]
+    fn run_impl_does_not_panic_on_slash_branch() {
+        let args = Args {
+            branch: Some("feature/foo".to_string()),
+            plan_file: None,
+        };
+        let result = run_impl(&args).expect("run_impl returns business response");
+        // The exact message depends on whether a state file exists
+        // at the FlowPaths path for "feature/foo" — which it
+        // cannot, because try_new rejects the branch before the
+        // state path is even constructed. Either way, the process
+        // must not panic and the response must be a business
+        // "error" status so the skill sees a clean JSON error.
+        assert_eq!(result["status"], "error");
     }
 
     /// Clean plan (no violations) returns `{"status": "ok"}` from

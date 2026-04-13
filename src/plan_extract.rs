@@ -369,31 +369,20 @@ fn violations_response(
         }));
     }
     let total = scope_violations.len() + audit_violations.len();
-    let mut parts: Vec<String> = Vec::new();
-    if !scope_violations.is_empty() {
-        parts.push(format!(
-            "{} universal-coverage claim(s) lack a named enumeration (see \
-             .claude/rules/scope-enumeration.md)",
-            scope_violations.len()
-        ));
-    }
-    if !audit_violations.is_empty() {
-        parts.push(format!(
-            "{} panic/assert tightening(s) lack a callsite audit table (see \
-             .claude/rules/external-input-audit-gate.md)",
-            audit_violations.len()
-        ));
-    }
+    // Reuse the message builder from plan_check so both gate
+    // callsites render identical wording. plan_extract adds the
+    // path-specific "Edit the plan, then re-run /flow:flow-plan"
+    // suffix that plan_check's bare-check variant omits.
+    let base = crate::plan_check::build_violation_message(
+        scope_violations.len(),
+        audit_violations.len(),
+        total,
+    );
     json!({
         "status": "error",
         "path": path_label,
         "violations": violations_json,
-        "message": format!(
-            "{} plan-check violation(s) in the plan file: {}. Edit the plan, \
-             then re-run /flow:flow-plan.",
-            total,
-            parts.join("; ")
-        ),
+        "message": format!("{} Edit the plan, then re-run /flow:flow-plan.", base),
     })
 }
 

@@ -515,11 +515,14 @@ Replace `<plan_file_path>` with the relative path `.flow-states/<branch>-plan.md
 
 ### Plan-check gate
 
-Gate phase completion on both Plan-phase rules — scope-enumeration
-and external-input-audit. The single `bin/flow plan-check`
-invocation runs both scanners and aggregates results into one
-response; each violation carries a `rule` field so the repair loop
-can render which rule fired.
+Gate phase completion with a single `bin/flow plan-check`
+invocation that runs both Plan-phase scanners (scope-enumeration
+and external-input-audit) and aggregates all violations into one
+unified response. There is only one command to run — do not
+invoke the scanners separately. Each violation in the response
+carries a `rule` field naming which scanner fired, so the repair
+loop below can point the author at the right rule file per
+violation.
 
 The scope-enumeration scanner flags universal-coverage language
 (quantifier-plus-code-family-noun phrasings) that lacks a named

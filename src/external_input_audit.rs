@@ -252,32 +252,77 @@ fn is_optout_line(lines: &[&str], idx: usize) -> bool {
     false
 }
 
-fn line_has_optout_comment(line: &str) -> bool {
-    line.contains("<!-- external-input-audit: not-a-tightening -->")
+/// Matches the opt-out comment tolerantly so author typos (extra
+/// internal whitespace, missing space after colon, tabs) do not
+/// silently disable the opt-out. The adversarial agent caught that
+/// a strict literal-contains check made the opt-out brittle: an
+/// author wrote the comment slightly differently, saw it in the
+/// plan file, assumed it worked, but the trigger still flagged
+/// because the byte sequence did not match exactly.
+fn optout_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"(?i)<!--\s*external-input-audit\s*:\s*not-a-tightening\s*-->")
+            .expect("external-input-audit opt-out regex")
+    })
 }
 
-/// Returns `true` when the prefix of `line` before `match_start`
+fn line_has_optout_comment(line: &str) -> bool {
+    optout_regex().is_match(line)
+}
+
+/// Returns `true` when the current sentence before `match_start`
 /// contains a negation word. Skips phrases like "do not tighten"
 /// or "never add a panic!" where the trigger is explicitly
-/// negated, not proposed.
+/// negated — including cases where the negation precedes an
+/// inner trigger via an intermediate verb (e.g. "do not tighten
+/// to panic on X" — the whole sentence is negated, so both the
+/// "tighten to panic" trigger AND the "panic on X" trigger are
+/// suppressed).
+///
+/// The adversarial agent (PR #1056 Code Review) caught that a naive
+/// `prefix.contains("not ")` check matches ANY occurrence of "not"
+/// earlier in the line — so "This is not the only rule. We will
+/// tighten to panic on empty." would silently pass the gate
+/// because "not " appears in an unrelated earlier sentence. The
+/// tightened check scopes the negation search to the CURRENT
+/// sentence (prefix after the last `. ` boundary), so unrelated
+/// negations in earlier sentences cannot bypass the gate while
+/// sentence-level negations like "do not tighten X to Y" still
+/// suppress every trigger in that sentence.
+///
+/// `"without "` was also removed from the negation set — it is
+/// not a clean grammatical negator and its presence here caused
+/// the same class of false-negative bypass. Discussion prose
+/// should use the opt-out comment instead.
 fn has_negation_prefix(line: &str, match_start: usize) -> bool {
     if match_start > line.len() {
         return false;
     }
     let prefix = line[..match_start].to_lowercase();
+    // Scope the search to the current sentence: truncate at the
+    // last sentence boundary (`. ` — period followed by space).
+    // Negations in earlier sentences do not suppress triggers in
+    // later sentences. If no boundary is found, the entire prefix
+    // is the current sentence.
+    let current_sentence = match prefix.rfind(". ") {
+        Some(i) => &prefix[i + 2..],
+        None => prefix.as_str(),
+    };
     const NEGATIONS: &[&str] = &[
-        "not ",
-        "never ",
-        "avoid ",
-        "don't ",
-        "won't ",
-        "cannot ",
-        "doesn't ",
-        "shouldn't ",
-        "mustn't ",
-        "without ",
+        "not",
+        "never",
+        "avoid",
+        "don't",
+        "won't",
+        "cannot",
+        "doesn't",
+        "shouldn't",
+        "mustn't",
     ];
-    NEGATIONS.iter().any(|n| prefix.contains(n))
+    current_sentence
+        .split_whitespace()
+        .any(|token| NEGATIONS.contains(&token))
 }
 
 /// Collect the lookaround window around line `idx`. Mirrors the
@@ -390,11 +435,12 @@ fn scan_for_table_forward(window: &[String], trigger_rel_idx: usize) -> bool {
     false
 }
 
-/// Walk backward from `trigger_rel_idx - 1`. Same contract as
-/// `scan_for_table_forward` but in reverse. Backward search looks
-/// for data row first (below the separator), then verifies the
-/// row above it is the separator and the row above THAT is the
-/// header.
+/// Walk backward from the trigger, scanning up to
+/// `WINDOW_NON_BLANK_LINES` non-blank lines. When a header row is
+/// found, verify a separator row and at least one data row follow
+/// it forward (header -> separator -> data is always top-down
+/// regardless of the window walk direction). Return `true` if a
+/// complete table is found above the trigger.
 fn scan_for_table_backward(window: &[String], trigger_rel_idx: usize) -> bool {
     if trigger_rel_idx == 0 {
         return false;
@@ -797,6 +843,35 @@ mod tests {
         );
     }
 
+    /// Regression: the opt-out must tolerate author-typo whitespace
+    /// variations (extra internal whitespace, missing space after
+    /// colon). The adversarial agent caught that a strict literal
+    /// match silently disabled the opt-out on typos, misleading
+    /// authors who saw their comment in the plan file and assumed
+    /// it worked.
+    #[test]
+    fn scan_opt_out_tolerates_extra_internal_whitespace() {
+        let content =
+            "<!--  external-input-audit: not-a-tightening  -->\ntighten to panic on empty\n";
+        let v = scan(content, &dummy_path());
+        assert!(
+            v.is_empty(),
+            "opt-out with extra whitespace must still match, got {:?}",
+            v
+        );
+    }
+
+    #[test]
+    fn scan_opt_out_tolerates_missing_space_after_colon() {
+        let content = "<!-- external-input-audit:not-a-tightening -->\ntighten to panic on empty\n";
+        let v = scan(content, &dummy_path());
+        assert!(
+            v.is_empty(),
+            "opt-out without space after colon must match, got {:?}",
+            v
+        );
+    }
+
     #[test]
     fn scan_opt_out_does_not_leak_to_later_lines() {
         let content = "<!-- external-input-audit: not-a-tightening -->\ntighten to panic on empty (covered by opt-out)\n\ntighten FlowPaths::new to panic on empty (not covered)\n";
@@ -855,6 +930,40 @@ mod tests {
         let content = "never add a panic! to hook entry points.\n";
         let v = scan(content, &dummy_path());
         assert!(v.is_empty(), "negation must skip, got {:?}", v);
+    }
+
+    /// Regression: a "not" in an unrelated earlier clause must NOT
+    /// suppress a downstream trigger. The adversarial agent caught
+    /// that `prefix.contains("not ")` was matching unrelated earlier
+    /// uses of "not", producing a silent gate bypass. The tightened
+    /// check only accepts a negation as the word immediately before
+    /// the trigger.
+    #[test]
+    fn scan_does_not_skip_unrelated_not_earlier_in_line() {
+        let content = "This is not the only rule. We will tighten to panic on empty input.\n";
+        let v = scan(content, &dummy_path());
+        assert!(
+            !v.is_empty(),
+            "unrelated 'not' earlier in the line must not suppress the trigger, got {:?}",
+            v
+        );
+    }
+
+    /// Same class as above: "without" earlier in the line used to
+    /// suppress the trigger. "without " was removed from the
+    /// negation set entirely because it is not a clean grammatical
+    /// negator — opt-out comments are the correct mechanism for
+    /// discussion prose.
+    #[test]
+    fn scan_does_not_skip_unrelated_without_earlier_in_line() {
+        let content =
+            "We proceed without intermediate checks; we then tighten to panic on empty.\n";
+        let v = scan(content, &dummy_path());
+        assert!(
+            !v.is_empty(),
+            "unrelated 'without' earlier in the line must not suppress the trigger, got {:?}",
+            v
+        );
     }
 
     // --- integration: Violation fields ---
