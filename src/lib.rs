@@ -22,6 +22,7 @@ pub mod create_milestone;
 pub mod create_sub_issue;
 pub mod cwd_scope;
 pub mod error;
+pub mod external_input_audit;
 pub mod extract_release_notes;
 pub mod finalize_commit;
 pub mod flow_paths;
