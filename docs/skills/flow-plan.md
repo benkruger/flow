@@ -148,16 +148,26 @@ override the configured mode.
 
 - Requires Phase 1: Start to be complete
 - Plan file path must be stored in state before phase completion
-- **Scope-enumeration gate** — before the phase completes, `bin/flow
-  plan-check` scans the plan file for universal-coverage language
-  ("every subcommand", "all runners", "each CLI entry point", …)
-  that is not paired with a named list of the concrete siblings the
-  claim covers. Violations block phase completion until the plan is
-  edited to add the enumeration or a line-level opt-out comment. The
-  gate applies to both plan-file paths: the standard skill invocation
-  at Step 4 and the pre-decomposed fast path inside `plan-extract`.
-  See `.claude/rules/scope-enumeration.md` for the rule and the
-  motivating incidents.
+- **Plan-check gate** — before the phase completes, `bin/flow
+  plan-check` runs two scanners against the plan file:
+  - **Scope-enumeration** flags universal-coverage language ("every
+    subcommand", "all runners", "each CLI entry point", …) that is
+    not paired with a named list of the concrete siblings the claim
+    covers. See `.claude/rules/scope-enumeration.md`.
+  - **External-input audit** flags proposals to add a `panic!`,
+    `assert!`, `assert_eq!`, `assert_ne!`, or constructor-level
+    invariant check on a function parameter without a paired
+    callsite source-classification audit table (Caller, Source,
+    Classification, Handling). See
+    `.claude/rules/external-input-audit-gate.md`.
+
+  Each violation in the JSON response carries a `rule` field naming
+  the scanner that fired so the repair loop points the author at
+  the right rule file. The gate applies at all three plan-scanning
+  callsites — the standard skill invocation at Step 4, the
+  pre-decomposed fast path inside `plan-extract` (extracted), and
+  the resume path inside `plan-extract` (resumed) — so the model
+  cannot bypass the gate by routing through an alternative entry.
 
 ---
 

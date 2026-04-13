@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 use std::process::Command;
 
 use crate::commands::log::append_log;
+use crate::external_input_audit::{scan as audit_scan, Violation as AuditViolation};
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
@@ -335,34 +336,53 @@ pub fn count_tasks_any_level(content: &str) -> usize {
 
 /// Build the plan-check violation response that both the extracted
 /// path and the resume path return when the promoted plan content
-/// contains universal-coverage prose without a named enumeration.
+/// fails one or both Plan-phase scanners (scope-enumeration or
+/// external-input-audit).
 ///
 /// Mirrors the `bin/flow plan-check` error shape so downstream
-/// consumers (the `flow-plan` skill, model prompts) can handle both
-/// callsites with one parser.
-fn violations_response(violations: &[Violation], path_label: &str) -> Value {
-    let violations_json: Vec<Value> = violations
-        .iter()
-        .map(|v| {
-            json!({
-                "file": v.file.display().to_string(),
-                "line": v.line,
-                "phrase": v.phrase,
-                "context": v.context,
-            })
-        })
-        .collect();
+/// consumers (the `flow-plan` skill, model prompts) can handle every
+/// gate callsite with one parser. Each violation carries a `rule`
+/// field naming the scanner that fired so the repair loop can point
+/// the user at the right rule file.
+fn violations_response(
+    scope_violations: &[Violation],
+    audit_violations: &[AuditViolation],
+    path_label: &str,
+) -> Value {
+    let mut violations_json: Vec<Value> = Vec::new();
+    for v in scope_violations {
+        violations_json.push(json!({
+            "file": v.file.display().to_string(),
+            "line": v.line,
+            "phrase": v.phrase,
+            "context": v.context,
+            "rule": "scope-enumeration",
+        }));
+    }
+    for v in audit_violations {
+        violations_json.push(json!({
+            "file": v.file.display().to_string(),
+            "line": v.line,
+            "phrase": v.phrase,
+            "context": v.context,
+            "rule": "external-input-audit",
+        }));
+    }
+    let total = scope_violations.len() + audit_violations.len();
+    // Reuse the message builder from plan_check so both gate
+    // callsites render identical wording. plan_extract adds the
+    // path-specific "Edit the plan, then re-run /flow:flow-plan"
+    // suffix that plan_check's bare-check variant omits.
+    let base = crate::plan_check::build_violation_message(
+        scope_violations.len(),
+        audit_violations.len(),
+        total,
+    );
     json!({
         "status": "error",
         "path": path_label,
         "violations": violations_json,
-        "message": format!(
-            "{} universal-coverage claim(s) in the plan file lack a named enumeration. \
-             Edit the plan file to add a named list of the concrete siblings next to each \
-             flagged phrase, then re-run /flow:flow-plan. See \
-             .claude/rules/scope-enumeration.md for the rule.",
-            violations.len()
-        ),
+        "message": format!("{} Edit the plan, then re-run /flow:flow-plan.", base),
     })
 }
 
@@ -424,14 +444,22 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         let plan_content = std::fs::read_to_string(&plan_abs)
             .map_err(|e| format!("Could not read plan file: {}", e))?;
 
-        // Gate resume on the scope-enumeration rule. The plan file
-        // may have been written by a prior plan-extract run that
-        // left `files.plan` set despite violations (see extracted
-        // path below); scanning on resume ensures the phase cannot
-        // complete until the user edits the plan to add named lists.
-        let violations = scope_scan(&plan_content, &plan_abs);
-        if !violations.is_empty() {
-            return Ok(violations_response(&violations, "resumed"));
+        // Gate resume on BOTH Plan-phase rules. The plan file may
+        // have been written by a prior plan-extract run that left
+        // `files.plan` set despite violations (see extracted path
+        // below); scanning on resume ensures the phase cannot
+        // complete until the user edits the plan to satisfy both
+        // scanners. See `.claude/rules/scope-enumeration.md` and
+        // `.claude/rules/external-input-audit-gate.md` for the
+        // rules and the opt-out comment vocabularies.
+        let scope_violations = scope_scan(&plan_content, &plan_abs);
+        let audit_violations = audit_scan(&plan_content, &plan_abs);
+        if !scope_violations.is_empty() || !audit_violations.is_empty() {
+            return Ok(violations_response(
+                &scope_violations,
+                &audit_violations,
+                "resumed",
+            ));
         }
 
         // Re-count tasks from the post-edit plan file so that
@@ -648,24 +676,31 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     })
     .map_err(|e| format!("Failed to update state: {}", e))?;
 
-    // Gate completion on the scope-enumeration rule. Universal-
-    // coverage claims without a named enumeration of the concrete
-    // siblings fail the phase — the model must edit the plan file
-    // to add a named list and re-run. See
-    // `.claude/rules/scope-enumeration.md` for the rule and the
-    // opt-out comment vocabulary.
-    let violations = scope_scan(&promoted, &plan_abs);
-    if !violations.is_empty() {
+    // Gate completion on BOTH Plan-phase rules. Scope-enumeration
+    // violations and external-input-audit violations both block
+    // phase completion — the model must edit the plan file to
+    // satisfy both scanners and re-run. See
+    // `.claude/rules/scope-enumeration.md` and
+    // `.claude/rules/external-input-audit-gate.md` for the rules
+    // and their opt-out comment vocabularies.
+    let scope_violations = scope_scan(&promoted, &plan_abs);
+    let audit_violations = audit_scan(&promoted, &plan_abs);
+    if !scope_violations.is_empty() || !audit_violations.is_empty() {
         let _ = append_log(
             &root,
             &branch,
             &format!(
-                "[Phase 2] plan-extract — scope-enumeration violations ({}) in {} (exit 0)",
-                violations.len(),
+                "[Phase 2] plan-extract — plan-check violations (scope {} / audit {}) in {} (exit 0)",
+                scope_violations.len(),
+                audit_violations.len(),
                 plan_rel
             ),
         );
-        return Ok(violations_response(&violations, "extracted"));
+        return Ok(violations_response(
+            &scope_violations,
+            &audit_violations,
+            "extracted",
+        ));
     }
 
     // --- Logging ---
@@ -764,4 +799,67 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         "formatted_time": formatted_time,
         "continue_action": continue_action,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    // --- violations_response ---
+
+    /// Both scanners' violations land in one tagged `violations[]`
+    /// array. The `rule` field tells the repair loop which scanner
+    /// fired so the user can be pointed at the right rule file.
+    #[test]
+    fn violations_response_aggregates_both_scanners_with_rule_tags() {
+        let scope = vec![Violation {
+            file: PathBuf::from("/tmp/plan.md"),
+            line: 10,
+            phrase: "every subcommand".to_string(),
+            context: "Add guard to every subcommand.".to_string(),
+        }];
+        let audit = vec![AuditViolation {
+            file: PathBuf::from("/tmp/plan.md"),
+            line: 20,
+            phrase: "panic on empty".to_string(),
+            context: "tighten to panic on empty".to_string(),
+        }];
+        let resp = violations_response(&scope, &audit, "extracted");
+        assert_eq!(resp["status"], "error");
+        assert_eq!(resp["path"], "extracted");
+
+        let violations = resp["violations"].as_array().expect("array");
+        assert_eq!(violations.len(), 2);
+        let rules: Vec<String> = violations
+            .iter()
+            .map(|v| v["rule"].as_str().unwrap_or("").to_string())
+            .collect();
+        assert!(rules.contains(&"scope-enumeration".to_string()));
+        assert!(rules.contains(&"external-input-audit".to_string()));
+
+        let msg = resp["message"].as_str().unwrap_or("");
+        assert!(msg.contains("2 plan-check violation"));
+        assert!(msg.contains("scope-enumeration.md"));
+        assert!(msg.contains("external-input-audit-gate.md"));
+    }
+
+    /// When only the audit scanner finds a violation, the message
+    /// names only the audit rule file — not the scope-enumeration
+    /// one — so the user is not misdirected.
+    #[test]
+    fn violations_response_audit_only_omits_scope_message() {
+        let scope: Vec<Violation> = vec![];
+        let audit = vec![AuditViolation {
+            file: PathBuf::from("/tmp/plan.md"),
+            line: 5,
+            phrase: "panic on empty".to_string(),
+            context: "tighten to panic on empty".to_string(),
+        }];
+        let resp = violations_response(&scope, &audit, "resumed");
+        let msg = resp["message"].as_str().unwrap_or("");
+        assert!(msg.contains("external-input-audit-gate.md"));
+        assert!(!msg.contains("scope-enumeration.md"));
+        assert_eq!(resp["path"], "resumed");
+    }
 }

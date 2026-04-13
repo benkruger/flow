@@ -17,6 +17,7 @@ and does not validate upstream, the check is a denial-of-service
 vector for legitimate inputs the external system permits.
 
 Issue #1054 surfaced this exactly: `FlowPaths::new` was changed to
+<!-- external-input-audit: not-a-tightening -->
 panic on slash-containing branches, under the assumption that
 `branch_name()` sanitization applied to its inputs. The assumption
 was wrong — `branch_name()` only runs at flow-start, while
@@ -25,6 +26,15 @@ slashes (`feature/foo`, `dependabot/*`). Five hook entry points and
 `format-status` crashed with a Rust panic for every user on a
 standard git branch. Adversarial testing caught it; planning should
 have.
+
+## Mechanical Enforcement
+
+The Plan-phase prose audit gate (`bin/flow plan-check`) catches
+plans that propose adding a panic/assert validation without a
+paired callsite source-classification table. See
+`.claude/rules/external-input-audit-gate.md` for the gate's
+trigger vocabulary, the required audit table format, the opt-out
+grammar, and the three-callsite enforcement topology.
 
 ## How to Apply
 
