@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # FLOW build — called by `bin/flow build` and `bin/flow ci`.
 # Compiles the workspace; nonzero exit blocks downstream CI steps.
-# -D warnings: zero-tolerance policy — any compile warning fails the build.
 set -euo pipefail
+
+# === GATE 1: warnings-as-errors (ENABLED) ===
+# -D warnings: zero-tolerance policy — any compile warning fails the build.
 export RUSTFLAGS="${RUSTFLAGS:-} -D warnings"
-exec cargo build --quiet
+
+exec cargo build

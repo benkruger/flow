@@ -265,6 +265,8 @@ pub fn run_once(
     }
 
     for tool in tools {
+        eprintln!("\n=== {} ===", tool.name);
+
         let mut cmd = Command::new(&tool.program);
         cmd.args(&tool.args)
             .current_dir(cwd)

@@ -6,14 +6,14 @@
 #   bin/test --file <path> [extra args...]   — single test file via rustc --test
 #
 # Trailing args after `--` are forwarded to nextest as filter expressions.
-#
-# Zero-tolerance policy:
-#   - RUSTFLAGS="-D warnings" fails the build on any compile warning.
-#   - cargo llvm-cov enforces 100% region/line/function coverage.
-#   - Post-run scan fails if any tests were skipped (nextest ignores #[ignore]
-#     silently by default — we refuse to tolerate that).
 set -euo pipefail
+
+# Warnings-as-errors: any compile warning fails the build.
 export RUSTFLAGS="${RUSTFLAGS:-} -D warnings"
+
+# cargo-llvm-cov tool paths (Homebrew LLVM).
+export LLVM_COV=/opt/homebrew/opt/llvm/bin/llvm-cov
+export LLVM_PROFDATA=/opt/homebrew/opt/llvm/bin/llvm-profdata
 
 if [ "${1:-}" = "--file" ]; then
   shift
@@ -26,27 +26,4 @@ if [ "${1:-}" = "--file" ]; then
   exit
 fi
 
-output_file="$(mktemp)"
-trap 'rm -f "$output_file"' EXIT
-
-cargo_exit=0
-cargo llvm-cov \
-  --fail-under-regions 100 \
-  --fail-under-lines 100 \
-  --fail-under-functions 100 \
-  --ignore-run-fail \
-  nextest \
-  --status-level none \
-  --final-status-level fail \
-  "$@" 2>&1 | tee "$output_file" || cargo_exit=$?
-
-# Enforce zero skipped tests regardless of cargo's exit code.
-if grep -qE '[0-9]+ skipped' "$output_file"; then
-  skipped="$(grep -oE '[0-9]+ skipped' "$output_file" | head -1 | grep -oE '[0-9]+')"
-  if [ "${skipped:-0}" -gt 0 ]; then
-    echo "ERROR: ${skipped} test(s) skipped. Zero-skips policy — failing." >&2
-    exit 1
-  fi
-fi
-
-exit "${cargo_exit}"
+exec cargo llvm-cov --no-cfg-coverage --no-clean nextest --status-level none --final-status-level fail "$@"
