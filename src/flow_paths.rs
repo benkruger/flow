@@ -1,15 +1,48 @@
-//! Centralized construction for branch-scoped `.flow-states/*` paths.
+//! Centralized construction for `.flow-states/` paths.
 //!
-//! Every branch-scoped file under `.flow-states/` is addressed through a
-//! single `FlowPaths` instance constructed from the project root and the
-//! active branch name. Callers stay agnostic to the filename suffixes, so
-//! the on-disk layout can change by editing this module alone.
+//! Two types cover the two access patterns:
 //!
-//! The struct also exposes `flow_states_dir()` for consumers that need
-//! the parent directory (e.g. flow-discovery globs) and `branch()` for
-//! code that still needs the branch name after constructing paths.
+//! - `FlowStatesDir` — directory-only. Use for cross-branch operations
+//!   (discovery scans, hook prefix checks, pre-lock queue paths) that
+//!   need the `.flow-states/` directory without a specific branch.
+//! - `FlowPaths` — branch-scoped. Use when addressing a per-branch
+//!   file (`state_file`, `log_file`, `plan_file`, etc.). The
+//!   constructor panics on empty or slash-containing branches because
+//!   those shapes produce malformed paths; `try_new` is the fallible
+//!   variant for callers that receive branches from git and cannot
+//!   guarantee validity.
+//!
+//! `FlowPaths` also exposes `flow_states_dir()` for callers that
+//! already hold a branch-scoped instance and incidentally need the
+//! directory — standalone directory access belongs in `FlowStatesDir`.
+//! Filename suffixes live here so the on-disk layout can change by
+//! editing this module alone.
 
 use std::path::{Path, PathBuf};
+
+/// Directory-only handle for the `.flow-states/` directory. Use this
+/// for cross-branch operations (discovery scans, hook prefix checks,
+/// pre-lock queue paths) that need the directory without a specific
+/// branch. Pairs with `FlowPaths` for branch-scoped access.
+#[derive(Debug, Clone)]
+pub struct FlowStatesDir {
+    path: PathBuf,
+}
+
+impl FlowStatesDir {
+    /// Construct a handle to `<project_root>/.flow-states/`.
+    pub fn new(project_root: impl AsRef<Path>) -> Self {
+        Self {
+            path: project_root.as_ref().join(".flow-states"),
+        }
+    }
+
+    /// Borrow the `.flow-states/` path. Callers that need an owned
+    /// `PathBuf` can `.to_path_buf()` it.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
 
 /// Branch-scoped `.flow-states/*` path builder.
 #[derive(Debug, Clone)]
@@ -19,13 +52,52 @@ pub struct FlowPaths {
 }
 
 impl FlowPaths {
+    /// Returns true iff `branch` is a valid FLOW branch name — non-empty
+    /// and contains no '/'. FLOW branch-scoped files are flat filenames
+    /// under `.flow-states/`, so slashes would produce subdirectory paths
+    /// that discovery scanners iterating direct children cannot find.
+    pub fn is_valid_branch(branch: &str) -> bool {
+        !branch.is_empty() && !branch.contains('/')
+    }
+
     /// Construct a new `FlowPaths` rooted at `<project_root>/.flow-states`
     /// for the given branch.
+    ///
+    /// Panics if `branch` is empty or contains '/'. Use this when you
+    /// know the branch is valid (e.g., it came from state file keyspace
+    /// or was already checked). Use `try_new` for branches sourced from
+    /// git (`current_branch()`, `resolve_branch()`) — those can carry
+    /// slashes (`feature/foo`, `dependabot/*`) that must not panic.
+    /// Use `FlowStatesDir` when an operation is genuinely branch-free.
     pub fn new(project_root: impl AsRef<Path>, branch: impl Into<String>) -> Self {
+        let branch = branch.into();
+        assert!(
+            !branch.is_empty(),
+            "FlowPaths::new: branch must be non-empty"
+        );
+        assert!(
+            !branch.contains('/'),
+            "FlowPaths::new: branch must not contain '/': {branch}"
+        );
         Self {
             flow_states_dir: project_root.as_ref().join(".flow-states"),
-            branch: branch.into(),
+            branch,
         }
+    }
+
+    /// Fallible constructor — returns `None` when `branch` fails
+    /// `is_valid_branch`. Callers that receive branches from external
+    /// sources (git, user input) should use this instead of `new` to
+    /// treat invalid branches as "no active flow" rather than panicking.
+    pub fn try_new(project_root: impl AsRef<Path>, branch: impl Into<String>) -> Option<Self> {
+        let branch = branch.into();
+        if !Self::is_valid_branch(&branch) {
+            return None;
+        }
+        Some(Self {
+            flow_states_dir: project_root.as_ref().join(".flow-states"),
+            branch,
+        })
     }
 
     /// The branch this instance is scoped to.
@@ -33,9 +105,13 @@ impl FlowPaths {
         &self.branch
     }
 
-    /// The `.flow-states/` directory at the project root. Use this for
-    /// cross-branch discovery (e.g. globbing `*.json`) — prefer the
-    /// named file accessors for branch-scoped reads and writes.
+    /// The `.flow-states/` directory at the project root. Retained for
+    /// callers that already hold a `FlowPaths` instance and need the
+    /// directory incidentally (directory creation before writing a
+    /// branch-scoped file, directory listing alongside branch-scoped
+    /// cleanup). For standalone cross-branch directory access, use
+    /// `FlowStatesDir` directly — it avoids the need to pick a branch
+    /// just to reach the directory.
     pub fn flow_states_dir(&self) -> PathBuf {
         self.flow_states_dir.clone()
     }
@@ -264,14 +340,123 @@ mod tests {
     }
 
     #[test]
-    fn branch_with_slashes_is_preserved_literally() {
-        // Branch names with slashes (e.g. "user/fix") would produce
-        // subdirectory-shaped filenames. FlowPaths passes the branch
-        // through unchanged; sanitization belongs upstream.
-        let p = FlowPaths::new("/p", "user/fix");
+    #[should_panic(expected = "non-empty")]
+    fn new_panics_on_empty_branch() {
+        let _ = FlowPaths::new("/p", ""); // tombstone-allow-empty-branch
+    }
+
+    #[test]
+    #[should_panic(expected = "must not contain")]
+    fn new_panics_on_branch_with_single_slash() {
+        let _ = FlowPaths::new("/p", "user/fix");
+    }
+
+    #[test]
+    #[should_panic]
+    fn new_panics_on_branch_with_multiple_slashes() {
+        let _ = FlowPaths::new("/p", "a/b/c");
+    }
+
+    #[test]
+    #[should_panic]
+    fn new_panics_on_branch_that_is_just_a_slash() {
+        let _ = FlowPaths::new("/p", "/");
+    }
+
+    #[test]
+    #[should_panic]
+    fn new_panics_on_trailing_slash() {
+        let _ = FlowPaths::new("/p", "a/");
+    }
+
+    #[test]
+    #[should_panic]
+    fn new_panics_on_leading_slash() {
+        let _ = FlowPaths::new("/p", "/a");
+    }
+
+    // --- is_valid_branch + try_new ---
+
+    #[test]
+    fn is_valid_branch_accepts_plain_name() {
+        assert!(FlowPaths::is_valid_branch("my-feature"));
+    }
+
+    #[test]
+    fn is_valid_branch_rejects_empty_string() {
+        assert!(!FlowPaths::is_valid_branch(""));
+    }
+
+    #[test]
+    fn is_valid_branch_rejects_single_slash() {
+        assert!(!FlowPaths::is_valid_branch("feature/foo"));
+    }
+
+    #[test]
+    fn is_valid_branch_rejects_multi_slash() {
+        assert!(!FlowPaths::is_valid_branch("dependabot/npm/acme-1.2"));
+    }
+
+    #[test]
+    fn is_valid_branch_rejects_leading_and_trailing_slash() {
+        assert!(!FlowPaths::is_valid_branch("/a"));
+        assert!(!FlowPaths::is_valid_branch("a/"));
+        assert!(!FlowPaths::is_valid_branch("/"));
+    }
+
+    #[test]
+    fn try_new_returns_some_for_valid_branch() {
+        let p = FlowPaths::try_new("/p", "my-feature");
+        assert!(p.is_some());
         assert_eq!(
-            p.state_file(),
-            PathBuf::from("/p/.flow-states/user/fix.json")
+            p.unwrap().state_file(),
+            PathBuf::from("/p/.flow-states/my-feature.json")
         );
+    }
+
+    #[test]
+    fn try_new_returns_none_for_empty_branch() {
+        assert!(FlowPaths::try_new("/p", "").is_none());
+    }
+
+    #[test]
+    fn try_new_returns_none_for_slash_branch() {
+        assert!(FlowPaths::try_new("/p", "feature/foo").is_none());
+    }
+
+    #[test]
+    fn try_new_returns_none_for_multi_slash_branch() {
+        assert!(FlowPaths::try_new("/p", "a/b/c").is_none());
+    }
+
+    // --- FlowStatesDir ---
+
+    #[test]
+    fn flow_states_dir_new_returns_dot_flow_states_under_root() {
+        let d = FlowStatesDir::new("/tmp/project");
+        assert_eq!(d.path(), Path::new("/tmp/project/.flow-states"));
+    }
+
+    #[test]
+    fn flow_states_dir_accepts_path_and_pathbuf_for_root() {
+        let d1 = FlowStatesDir::new(PathBuf::from("/p"));
+        let d2 = FlowStatesDir::new(Path::new("/p"));
+        assert_eq!(d1.path(), d2.path());
+    }
+
+    #[test]
+    fn flow_states_dir_path_returns_borrowed_path() {
+        let d = FlowStatesDir::new("/p");
+        // path() returns &Path — borrow the same instance twice.
+        let p1: &Path = d.path();
+        let p2: &Path = d.path();
+        assert_eq!(p1, p2);
+    }
+
+    #[test]
+    fn flow_states_dir_clone_preserves_path() {
+        let original = FlowStatesDir::new("/tmp/project");
+        let cloned = original.clone();
+        assert_eq!(original.path(), cloned.path());
     }
 }

@@ -557,7 +557,12 @@ pub fn run() {
         Some(b) => b,
         None => return,
     };
-    let state_path = FlowPaths::new(&root, &branch).state_file();
+    // Slash-containing git branches (`feature/foo`) are not valid FLOW
+    // branches — treat them as "no active flow" rather than panicking.
+    let state_path = match FlowPaths::try_new(&root, &branch) {
+        Some(p) => p.state_file(),
+        None => return,
+    };
 
     // First stop handler: on the first Stop event (no _stop_instructed),
     // handles both pending continuations (with conditional user-awareness)

@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 use crate::commands::log::append_log;
 use crate::commands::start_lock::{acquire, queue_path, release};
 use crate::commands::start_step::update_step;
-use crate::flow_paths::FlowPaths;
+use crate::flow_paths::FlowStatesDir;
 use crate::git::project_root;
 use crate::label_issues::{label_issues, LABEL};
 use crate::output::json_error;
@@ -51,10 +51,9 @@ pub struct Args {
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
     let queue_dir = queue_path(&root);
-    // Construct FlowPaths with a placeholder branch solely to reach
-    // flow_states_dir() — the directory is shared across every branch
-    // on this machine.
-    let state_dir = FlowPaths::new(&root, "").flow_states_dir();
+    // The `.flow-states/` directory is shared across every branch on
+    // this machine; FlowStatesDir addresses it without a branch scope.
+    let state_dir = FlowStatesDir::new(&root).path().to_path_buf();
     let _ = fs::create_dir_all(&state_dir);
 
     let plug_root = plugin_root()

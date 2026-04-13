@@ -11,7 +11,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::read_hook_input;
-use crate::flow_paths::FlowPaths;
+use crate::flow_paths::FlowStatesDir;
 
 const WORKTREE_MARKER: &str = ".worktrees/";
 
@@ -56,8 +56,8 @@ pub fn validate(file_path: &str, cwd: &str) -> (bool, String) {
     }
 
     // .flow-states/ is the shared state directory at the main repo — always fine
-    let flow_states_dir = FlowPaths::new(Path::new(project_root), "").flow_states_dir();
-    let flow_states_prefix = format!("{}/", flow_states_dir.to_string_lossy());
+    let flow_states_dir = FlowStatesDir::new(Path::new(project_root));
+    let flow_states_prefix = format!("{}/", flow_states_dir.path().to_string_lossy());
     if file_path.starts_with(&flow_states_prefix) {
         return (true, String::new());
     }

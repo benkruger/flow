@@ -13,7 +13,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 
-use crate::flow_paths::FlowPaths;
+use crate::flow_paths::FlowStatesDir;
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -36,7 +36,7 @@ pub struct Args {
 /// Find all .flow-states/*.json files, excluding non-state files
 /// (orchestrate* and *-phases.json).
 pub fn find_state_files(project_root: &Path) -> Vec<PathBuf> {
-    let state_dir = FlowPaths::new(project_root, "").flow_states_dir();
+    let state_dir = FlowStatesDir::new(project_root).path().to_path_buf();
     if !state_dir.is_dir() {
         return Vec::new();
     }

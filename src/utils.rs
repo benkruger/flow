@@ -10,7 +10,7 @@ use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::flow_paths::FlowPaths;
+use crate::flow_paths::FlowStatesDir;
 
 // --- SetupError + run_cmd ---
 
@@ -463,7 +463,7 @@ pub fn check_duplicate_issue(
     if issue_numbers.is_empty() {
         return None;
     }
-    let state_dir = FlowPaths::new(project_root, "").flow_states_dir();
+    let state_dir = FlowStatesDir::new(project_root).path().to_path_buf();
     if !state_dir.is_dir() {
         return None;
     }

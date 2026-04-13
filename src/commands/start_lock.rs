@@ -11,7 +11,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
-use crate::flow_paths::FlowPaths;
+use crate::flow_paths::FlowStatesDir;
 use crate::git::project_root;
 use crate::output::json_error;
 
@@ -29,10 +29,10 @@ fn mtime_secs(path: &Path) -> Option<f64> {
 /// Create the queue directory if needed, return its path.
 pub fn queue_path(root: &Path) -> PathBuf {
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    // Use FlowPaths to locate `.flow-states/`; the queue lives
-    // under it but is shared across every branch on this machine,
-    // so the branch name is an unused placeholder here.
-    let state_dir = FlowPaths::new(&root, "").flow_states_dir();
+    // The queue lives under `.flow-states/` and is shared across every
+    // branch on this machine, so FlowStatesDir (branch-free) is the
+    // right address for it.
+    let state_dir = FlowStatesDir::new(&root).path().to_path_buf();
     let _ = fs::create_dir_all(&state_dir);
     let queue_dir = state_dir.join(QUEUE_DIRNAME);
     let _ = fs::create_dir_all(&queue_dir);
@@ -293,12 +293,7 @@ mod tests {
         let root = dir.path().canonicalize().unwrap();
         let qp = queue_path(&root);
         assert!(qp.is_dir());
-        assert_eq!(
-            qp,
-            FlowPaths::new(&root, "")
-                .flow_states_dir()
-                .join(QUEUE_DIRNAME)
-        );
+        assert_eq!(qp, FlowStatesDir::new(&root).path().join(QUEUE_DIRNAME));
     }
 
     #[test]

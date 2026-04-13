@@ -157,7 +157,12 @@ pub fn run() {
         None => std::process::exit(0),
     };
 
-    let state_path = FlowPaths::new(project_root(), &branch).state_file();
+    // Slash-containing git branches are not valid FLOW branches —
+    // treat as "no active flow" and exit 0 rather than panicking.
+    let state_path = match FlowPaths::try_new(project_root(), &branch) {
+        Some(p) => p.state_file(),
+        None => std::process::exit(0),
+    };
 
     let (allowed, message, hook_response) = validate(Some(&state_path));
     // Block path: exit 2 with stderr message so Claude Code feeds it

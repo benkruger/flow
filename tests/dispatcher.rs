@@ -146,6 +146,127 @@ fn format_status_no_state_exits_1() {
     assert!(stdout.is_empty(), "No stdout expected. Got: {}", stdout);
 }
 
+/// Regression guard: `format-status` must not panic when the user is
+/// on a slash-containing git branch. Before `FlowPaths::try_new`,
+/// FlowPaths::new panicked via assert! on slash-containing branches,
+/// crashing `run_format_status` for users with standard git branch
+/// naming conventions (`feature/foo`, `fix/*`, `user/*`).
+#[test]
+fn format_status_does_not_panic_on_slash_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    Command::new("git")
+        .args(["init", "-b", "feature/foo"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .arg("format-status")
+        .current_dir(dir.path())
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_ne!(
+        output.status.code(),
+        Some(101),
+        "format-status must not panic on slash-branch.\nstderr: {}\nstdout: {}",
+        stderr,
+        stdout
+    );
+    assert!(
+        !stderr.contains("must not contain"),
+        "format-status must not emit the slash-branch assert message.\nstderr: {}",
+        stderr
+    );
+}
+
+/// Regression guard: same as above for multi-slash (dependabot-style)
+/// branch names, which are produced by automated dependency bots.
+#[test]
+fn format_status_does_not_panic_on_multi_slash_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    Command::new("git")
+        .args(["init", "-b", "dependabot/npm_and_yarn/acme-1.2.3"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .arg("format-status")
+        .current_dir(dir.path())
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(101),
+        "format-status must not panic on multi-slash branch.\nstderr: {}",
+        stderr
+    );
+}
+
+/// Regression guard: the stop-continue hook fires on every Claude Code
+/// Stop event. A panic here would break the session for any user on a
+/// slash-containing branch, since the hook runs after every model turn.
+#[test]
+fn stop_continue_hook_does_not_panic_on_slash_branch() {
+    use std::io::Write;
+    let dir = tempfile::tempdir().unwrap();
+    Command::new("git")
+        .args(["init", "-b", "feature/foo"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["hook", "stop-continue"])
+        .current_dir(dir.path())
+        .env_remove("FLOW_CI_RUNNING")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        let stdin = child.stdin.as_mut().unwrap();
+        stdin.write_all(b"{}").unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(101),
+        "stop-continue hook must not panic on slash-branch.\nstderr: {}",
+        stderr
+    );
+    assert!(
+        !stderr.contains("must not contain"),
+        "stop-continue hook must not emit the slash-branch assert message.\nstderr: {}",
+        stderr
+    );
+}
+
 #[test]
 fn format_status_valid_state_exits_0() {
     let dir = tempfile::tempdir().unwrap();
