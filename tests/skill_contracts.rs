@@ -1332,15 +1332,6 @@ fn code_files_flaky_test_issues() {
 }
 
 #[test]
-fn code_review_files_tech_debt_issues() {
-    let c = common::read_skill("flow-code-review");
-    assert!(
-        c.contains("Tech Debt") || c.contains("tech debt"),
-        "Code Review must file Tech Debt issues"
-    );
-}
-
-#[test]
 fn code_review_no_inline_simplify_step() {
     let c = common::read_skill("flow-code-review");
     assert!(
@@ -1350,11 +1341,22 @@ fn code_review_no_inline_simplify_step() {
 }
 
 #[test]
-fn code_review_files_doc_drift_issues() {
+fn code_review_triage_two_outcomes_only() {
+    // Code Review has two triage outcomes: Real (fix in Step 4) and
+    // False positive (dismiss). The filing path was removed — see
+    // .claude/rules/code-review-scope.md.
     let c = common::read_skill("flow-code-review");
     assert!(
-        c.contains("Documentation Drift") || c.contains("documentation drift"),
-        "Code Review must file Documentation Drift issues"
+        !c.contains("bin/flow issue"),
+        "Code Review skill must not invoke issue creation"
+    );
+    assert!(
+        !c.contains("bin/flow add-issue"),
+        "Code Review skill must not record filed issues"
+    );
+    assert!(
+        !c.contains("--outcome \"filed\""),
+        "Code Review skill must not record findings with the filed outcome"
     );
 }
 

@@ -27,12 +27,14 @@ a new `match` arm, a new early-return guard) inside a function with
 a live production caller creates a path that never ran before —
 and therefore has no coverage and no proof it behaves as intended.
 
-When the plan modifies a function, the plan must enumerate:
+When the plan modifies a function, the plan must enumerate the
+callers and, for every row:
 
-1. Every caller of the function, with the conditions under which
-   each caller hits the new code path.
-2. The test that exercises each new path, using inputs that drive
-   the specific caller's conditions (not a contrived unit-test
+<!-- scope-enumeration: imperative -->
+1. Record the conditions under which the caller hits the new code
+   path.
+2. Name the test that exercises the new path, using inputs that
+   drive the caller's conditions (not a contrived unit-test
    fixture).
 
 PR #1054 surfaced this omission: `find_state_files` gained an
@@ -47,6 +49,7 @@ the start.
 
 ## Anti-Patterns
 
+<!-- scope-enumeration: imperative -->
 - Committing a fix without running it through the real path
 - Adding a second fix on top of an unverified first fix
 - Trusting unit tests as proof that runtime behavior is correct
@@ -54,5 +57,4 @@ the start.
 - Assuming which file creates/owns a piece of state without
   grepping for all writers
 - Adding a new branch to a function without listing the production
-  callers that will take it and the tests that prove each caller's
-  path
+  callers that will take it and the tests that prove the new paths

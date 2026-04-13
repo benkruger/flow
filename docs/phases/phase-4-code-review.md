@@ -49,8 +49,10 @@ single response:
   investigates the codebase independently. Covers correctness failure
   modes including security (T4).
 - **Adversarial** (context-sparse): receives the substantive diff and
-  writes tests designed to fail. Covers test coverage (T5). Only
-  launched if `bin/flow test` exists.
+  writes tests designed to fail. Covers test coverage (T5). Always
+  launched — if the project's `bin/test` does not support
+  `--file <path>` for single-file execution, the agent surfaces that
+  as a finding instead of silently skipping.
 - **Documentation** (context-sparse): receives the substantive diff and
   doc paths, investigates the codebase. Covers maintainability (T3) and
   documentation accuracy (T6).
@@ -59,29 +61,23 @@ single response:
 
 For each finding from all agents, classify as:
 
-- **Real + in-scope** — fix in Step 4
-- **Real + out-of-scope** — file as Tech Debt or Documentation Drift issue
-- **False positive** — discard with rationale
+- **Real** — fix in Step 4
+- **False positive** — dismiss with rationale citing code
 
-The supersession test from `.claude/rules/supersession.md` runs before
-the in-scope/out-of-scope decision — code the PR has made permanently
-redundant is routed to in-scope deletion regardless of file location.
+There is no filing path. All real findings are fixed during Code
+Review — see `.claude/rules/code-review-scope.md`. Mechanical
+enforcement blocks filing: `bin/flow add-finding` rejects
+`--outcome filed` for `--phase flow-code-review`, and `bin/flow issue`
+refuses to create issues while `current_phase == "flow-code-review"`
+unless `--override-code-review-ban` is passed.
+
+The supersession test from `.claude/rules/supersession.md` runs
+before classification — code the PR has made permanently redundant
+is routed to Step 4 for deletion regardless of file location.
 
 ### Step 4 — Fix
 
-Fix all real in-scope findings, run `bin/flow ci`, commit once.
-
----
-
-## Out-of-Scope Findings
-
-Each finding is classified during triage:
-
-- **In-scope** — related to the feature, fixed as normal
-- **Tech Debt** — pre-existing, unrelated to the feature. Filed as a "Tech Debt" issue via `bin/flow issue`, recorded via `bin/flow add-issue`, then skipped
-- **Documentation Drift** — stale docs unrelated to the feature. Filed as a "Documentation Drift" issue, recorded, then skipped
-
-This keeps reviews focused on the feature while ensuring nothing is lost.
+Fix all real findings, run `bin/flow ci`, commit once.
 
 ---
 

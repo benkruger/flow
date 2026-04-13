@@ -21,7 +21,8 @@ use regex::Regex;
 use serde_json::json;
 
 use crate::complete_preflight::LOCAL_TIMEOUT;
-use crate::git::project_root;
+use crate::flow_paths::FlowPaths;
+use crate::git::{project_root, resolve_branch};
 use crate::github::detect_repo;
 use crate::output::{json_error, json_ok};
 
@@ -51,6 +52,85 @@ pub struct Args {
     /// Milestone title to assign the issue to
     #[arg(long)]
     pub milestone: Option<String>,
+
+    /// Override the Code Review filing ban (requires explicit reason)
+    #[arg(long = "override-code-review-ban")]
+    pub override_code_review_ban: bool,
+}
+
+/// Returns a rejection message when the active flow is in Phase 4
+/// Code Review and the override flag is not set. Enforces the
+/// code-review-scope rule: Code Review triage has two outcomes (Real,
+/// False positive); there is no filing path. The ban ensures real
+/// findings are fixed while context is fresh — filing defers work that
+/// a future session would rediscover from zero at full lifecycle cost.
+/// The override exists as a deliberate-friction escape hatch for
+/// exceptional cases the rule allows (e.g., a FLOW process gap raised
+/// inside a Code Review that genuinely cannot wait for Phase 5 Learn).
+///
+/// - `state_json` is the raw contents of the current branch's state
+///   file. `None` when no flow is active — the command is also used
+///   outside FLOW, so that case passes.
+/// - `override_flag` is the value of `--override-code-review-ban`.
+///
+/// The gate fails CLOSED when a state file exists but its
+/// `current_phase` cannot be determined (parse failure, wrong type,
+/// missing key). A state file that exists but is unreadable means a
+/// flow is running — the safe default is reject, not silent pass.
+pub(crate) fn should_reject_for_code_review(
+    state_json: Option<&str>,
+    override_flag: bool,
+) -> Option<String> {
+    if override_flag {
+        return None;
+    }
+    let Some(content) = state_json else {
+        // No state file — command is running outside an active flow.
+        return None;
+    };
+    // Empty state is treated as "no flow"; any other non-empty content
+    // that fails to parse or lacks current_phase is treated as "flow
+    // state present but phase unknown" — fail CLOSED.
+    if content.trim().is_empty() {
+        return None;
+    }
+    let phase_norm = match serde_json::from_str::<serde_json::Value>(content) {
+        Ok(state) => match state.get("current_phase").and_then(|v| v.as_str()) {
+            Some(s) => s.replace('\0', "").trim().to_ascii_lowercase(),
+            None => {
+                return Some(fail_closed_message(
+                    "state file exists but current_phase is missing or not a string",
+                ));
+            }
+        },
+        Err(_) => {
+            return Some(fail_closed_message(
+                "state file exists but is not valid JSON",
+            ));
+        }
+    };
+    if phase_norm == "flow-code-review" {
+        Some(
+            "bin/flow issue is disabled during Code Review. All real \
+             findings must be fixed in Step 4. If this is a FLOW \
+             process gap, file it during Phase 5 Learn. If truly \
+             needed, pass --override-code-review-ban with an \
+             explicit reason."
+                .to_string(),
+        )
+    } else {
+        None
+    }
+}
+
+fn fail_closed_message(detail: &str) -> String {
+    format!(
+        "bin/flow issue cannot determine the current FLOW phase ({}). \
+         Refusing to file while phase is unknown. Fix the state file, \
+         finish the flow, or pass --override-code-review-ban with an \
+         explicit reason.",
+        detail
+    )
 }
 
 pub struct IssueResult {
@@ -292,6 +372,22 @@ fn detect_repo_or_fail(root: &Path) -> String {
 
 pub fn run(args: Args) {
     let root = project_root();
+
+    // Code Review filing gate: load the current branch's state file
+    // (if any) and reject filing when current_phase is flow-code-review,
+    // unless --override-code-review-ban was passed. Missing / malformed
+    // state file passes through — this command is also used outside an
+    // active flow.
+    let state_json: Option<String> = resolve_branch(None, &root).and_then(|branch| {
+        let state_path = FlowPaths::new(&root, &branch).state_file();
+        fs::read_to_string(&state_path).ok()
+    });
+    if let Some(msg) =
+        should_reject_for_code_review(state_json.as_deref(), args.override_code_review_ban)
+    {
+        json_error(&msg, &[]);
+        std::process::exit(1);
+    }
 
     // Resolve repo: --repo > --state-file > detect_repo
     let repo = if let Some(r) = args.repo {
@@ -541,5 +637,130 @@ mod tests {
     fn args_milestone_defaults_to_none() {
         let args = Args::try_parse_from(["issue", "--title", "Test issue"]).unwrap();
         assert!(args.milestone.is_none());
+    }
+
+    // --- should_reject_for_code_review ---
+
+    #[test]
+    fn gate_blocks_when_current_phase_is_code_review() {
+        let state = r#"{"current_phase":"flow-code-review"}"#;
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(msg.is_some());
+        let text = msg.unwrap();
+        assert!(text.contains("Code Review"));
+        assert!(text.contains("override-code-review-ban"));
+    }
+
+    #[test]
+    fn gate_allows_with_override_in_code_review() {
+        let state = r#"{"current_phase":"flow-code-review"}"#;
+        assert!(should_reject_for_code_review(Some(state), true).is_none());
+    }
+
+    #[test]
+    fn gate_allows_in_learn_phase() {
+        let state = r#"{"current_phase":"flow-learn"}"#;
+        assert!(should_reject_for_code_review(Some(state), false).is_none());
+    }
+
+    #[test]
+    fn gate_allows_in_code_phase() {
+        let state = r#"{"current_phase":"flow-code"}"#;
+        assert!(should_reject_for_code_review(Some(state), false).is_none());
+    }
+
+    #[test]
+    fn gate_allows_in_start_phase() {
+        let state = r#"{"current_phase":"flow-start"}"#;
+        assert!(should_reject_for_code_review(Some(state), false).is_none());
+    }
+
+    #[test]
+    fn gate_allows_when_no_state_file() {
+        // No state file means the command is running outside an active flow.
+        assert!(should_reject_for_code_review(None, false).is_none());
+    }
+
+    #[test]
+    fn gate_fails_closed_when_state_malformed() {
+        let msg = should_reject_for_code_review(Some("not json"), false);
+        assert!(msg.is_some(), "malformed state must fail CLOSED");
+        assert!(msg.unwrap().contains("not valid JSON"));
+    }
+
+    #[test]
+    fn gate_fails_closed_when_current_phase_missing() {
+        let state = r#"{"branch":"x"}"#;
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(msg.is_some(), "missing current_phase must fail CLOSED");
+        assert!(msg.unwrap().contains("missing or not a string"));
+    }
+
+    #[test]
+    fn gate_fails_closed_when_current_phase_is_array() {
+        let state = r#"{"current_phase":["flow-code-review"]}"#;
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(msg.is_some(), "non-string current_phase must fail CLOSED");
+        assert!(msg.unwrap().contains("missing or not a string"));
+    }
+
+    #[test]
+    fn gate_fails_closed_when_state_has_bom() {
+        // UTF-8 BOM prefix breaks serde_json parsing.
+        let state = "\u{feff}{\"current_phase\":\"flow-code-review\"}";
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(msg.is_some(), "BOM prefix must fail CLOSED");
+        assert!(msg.unwrap().contains("not valid JSON"));
+    }
+
+    #[test]
+    fn gate_allows_when_state_is_empty_string() {
+        // Empty content means "no flow" — the state file may be
+        // mid-creation or the file was truncated and rewritten.
+        assert!(should_reject_for_code_review(Some(""), false).is_none());
+    }
+
+    #[test]
+    fn gate_allows_when_state_is_whitespace_only() {
+        assert!(should_reject_for_code_review(Some("   \n  "), false).is_none());
+    }
+
+    #[test]
+    fn gate_blocks_when_current_phase_is_whitespace_padded() {
+        let state = r#"{"current_phase":" flow-code-review "}"#;
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(msg.is_some(), "whitespace drift must not bypass the gate");
+        assert!(msg.unwrap().contains("Code Review"));
+    }
+
+    #[test]
+    fn gate_blocks_when_current_phase_is_uppercase() {
+        let state = r#"{"current_phase":"FLOW-CODE-REVIEW"}"#;
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(msg.is_some(), "case drift must not bypass the gate");
+        assert!(msg.unwrap().contains("Code Review"));
+    }
+
+    #[test]
+    fn gate_blocks_when_current_phase_has_trailing_nul() {
+        let state = "{\"current_phase\":\"flow-code-review\\u0000\"}";
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(msg.is_some(), "embedded NUL must not bypass the gate");
+        assert!(msg.unwrap().contains("Code Review"));
+    }
+
+    // --- Args override flag ---
+
+    #[test]
+    fn args_parses_override_code_review_ban() {
+        let args = Args::try_parse_from(["issue", "--title", "Test", "--override-code-review-ban"])
+            .unwrap();
+        assert!(args.override_code_review_ban);
+    }
+
+    #[test]
+    fn args_override_defaults_to_false() {
+        let args = Args::try_parse_from(["issue", "--title", "Test"]).unwrap();
+        assert!(!args.override_code_review_ban);
     }
 }
