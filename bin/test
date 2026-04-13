@@ -2,11 +2,18 @@
 # FLOW test runner — called by `bin/flow test` and `bin/flow ci`.
 #
 # Two modes:
-#   bin/test                                 — full suite via cargo nextest
+#   bin/test                                 — full suite via cargo llvm-cov + nextest
 #   bin/test --file <path> [extra args...]   — single test file via rustc --test
 #
 # Trailing args after `--` are forwarded to nextest as filter expressions.
+#
+# Zero-tolerance policy:
+#   - RUSTFLAGS="-D warnings" fails the build on any compile warning.
+#   - cargo llvm-cov enforces 100% region/line/function coverage.
+#   - Post-run scan fails if any tests were skipped (nextest ignores #[ignore]
+#     silently by default — we refuse to tolerate that).
 set -euo pipefail
+export RUSTFLAGS="${RUSTFLAGS:-} -D warnings"
 
 if [ "${1:-}" = "--file" ]; then
   shift
@@ -19,4 +26,27 @@ if [ "${1:-}" = "--file" ]; then
   exit
 fi
 
-exec cargo nextest run --status-level none --final-status-level fail "$@"
+output_file="$(mktemp)"
+trap 'rm -f "$output_file"' EXIT
+
+cargo_exit=0
+cargo llvm-cov \
+  --fail-under-regions 100 \
+  --fail-under-lines 100 \
+  --fail-under-functions 100 \
+  --ignore-run-fail \
+  nextest \
+  --status-level none \
+  --final-status-level fail \
+  "$@" 2>&1 | tee "$output_file" || cargo_exit=$?
+
+# Enforce zero skipped tests regardless of cargo's exit code.
+if grep -qE '[0-9]+ skipped' "$output_file"; then
+  skipped="$(grep -oE '[0-9]+ skipped' "$output_file" | head -1 | grep -oE '[0-9]+')"
+  if [ "${skipped:-0}" -gt 0 ]; then
+    echo "ERROR: ${skipped} test(s) skipped. Zero-skips policy — failing." >&2
+    exit 1
+  fi
+fi
+
+exit "${cargo_exit}"
