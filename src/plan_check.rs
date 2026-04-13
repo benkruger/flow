@@ -22,10 +22,11 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use serde_json::{json, Value};
 
+use crate::external_input_audit;
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::output::json_error;
-use crate::scope_enumeration::{scan, Violation};
+use crate::scope_enumeration::scan;
 
 /// CLI arguments for the plan-check subcommand.
 #[derive(Parser, Debug)]
@@ -124,22 +125,95 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }
     };
 
-    // Scan and produce the response.
-    let violations = scan(&content, &plan_path);
-    if violations.is_empty() {
+    // Run BOTH Plan-phase scanners and aggregate violations into a
+    // single response. Each violation carries a `rule` field so the
+    // skill's repair loop can render which rule fired and point the
+    // user at the right fix. The scope-enumeration scanner fires on
+    // universal-coverage prose without a named sibling list. The
+    // external-input-audit scanner fires on panic/assert tightening
+    // proposals without a paired callsite source-classification
+    // table. Both scanners share the same call shape
+    // (`scan(content, source) -> Vec<Violation>`) but return
+    // distinct Violation types — we convert each to a tagged JSON
+    // payload at the boundary here.
+    let scope_violations = scan(&content, &plan_path);
+    let audit_violations = external_input_audit::scan(&content, &plan_path);
+
+    if scope_violations.is_empty() && audit_violations.is_empty() {
         return Ok(json!({"status": "ok"}));
     }
 
-    let violations_json: Vec<Value> = violations.iter().map(violation_to_json).collect();
+    let mut violations_json: Vec<Value> = Vec::new();
+    for v in &scope_violations {
+        violations_json.push(violation_to_tagged_json(
+            &v.file,
+            v.line,
+            &v.phrase,
+            &v.context,
+            "scope-enumeration",
+        ));
+    }
+    for v in &audit_violations {
+        violations_json.push(violation_to_tagged_json(
+            &v.file,
+            v.line,
+            &v.phrase,
+            &v.context,
+            "external-input-audit",
+        ));
+    }
+
+    let total = scope_violations.len() + audit_violations.len();
+    let message = build_violation_message(scope_violations.len(), audit_violations.len(), total);
+
     Ok(json!({
         "status": "error",
         "violations": violations_json,
-        "message": format!(
-            "{} universal-coverage claim(s) in the plan file lack a named enumeration. \
-             See .claude/rules/scope-enumeration.md for the rule and options.",
-            violations.len()
-        ),
+        "message": message,
     }))
+}
+
+/// Build a human-readable summary message that names both scanners'
+/// counts when either is non-zero. The message must tell the author
+/// which rule file to consult for each violation class.
+fn build_violation_message(scope_count: usize, audit_count: usize, total: usize) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if scope_count > 0 {
+        parts.push(format!(
+            "{} universal-coverage claim(s) lack a named enumeration (see \
+             .claude/rules/scope-enumeration.md)",
+            scope_count
+        ));
+    }
+    if audit_count > 0 {
+        parts.push(format!(
+            "{} panic/assert tightening(s) lack a callsite audit table (see \
+             .claude/rules/external-input-audit-gate.md)",
+            audit_count
+        ));
+    }
+    format!("{} plan-check violation(s): {}.", total, parts.join("; "))
+}
+
+/// Serialize an arbitrary violation shape into tagged JSON. The
+/// Violation types from `scope_enumeration` and
+/// `external_input_audit` have identical field layouts but are
+/// distinct types; this helper takes field-level inputs so it can
+/// serialize either source without a trait dance.
+fn violation_to_tagged_json(
+    file: &Path,
+    line: usize,
+    phrase: &str,
+    context: &str,
+    rule: &str,
+) -> Value {
+    json!({
+        "file": file.display().to_string(),
+        "line": line,
+        "phrase": phrase,
+        "context": context,
+        "rule": rule,
+    })
 }
 
 /// Resolve a `--plan-file` override against the project root.
@@ -213,20 +287,6 @@ fn resolve_plan_file_from_state(
     }
 }
 
-/// Serialize a `Violation` into the JSON shape consumed by the skill.
-///
-/// The skill renders the returned list inline so the model can edit
-/// the plan file at the cited line; keep every field a plain string
-/// or number so downstream formatters do not have to unwrap.
-fn violation_to_json(v: &Violation) -> Value {
-    json!({
-        "file": v.file.display().to_string(),
-        "line": v.line,
-        "phrase": v.phrase,
-        "context": v.context,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,20 +307,129 @@ mod tests {
         assert_eq!(resolved, PathBuf::from("/tmp/fake-root/custom/plan.md"));
     }
 
-    // --- violation_to_json ---
+    // --- violation_to_tagged_json ---
 
     #[test]
-    fn violation_serializes_all_fields() {
-        let v = Violation {
-            file: PathBuf::from("/tmp/plan.md"),
-            line: 42,
-            phrase: "every subcommand".to_string(),
-            context: "Add guard to every subcommand.".to_string(),
-        };
-        let json = violation_to_json(&v);
+    fn violation_serializes_all_fields_with_rule_tag() {
+        let path = PathBuf::from("/tmp/plan.md");
+        let json = violation_to_tagged_json(
+            &path,
+            42,
+            "every subcommand",
+            "Add guard to every subcommand.",
+            "scope-enumeration",
+        );
         assert_eq!(json["file"], "/tmp/plan.md");
         assert_eq!(json["line"], 42);
         assert_eq!(json["phrase"], "every subcommand");
         assert_eq!(json["context"], "Add guard to every subcommand.");
+        assert_eq!(json["rule"], "scope-enumeration");
+    }
+
+    #[test]
+    fn violation_to_tagged_json_carries_audit_rule_label() {
+        let path = PathBuf::from("/tmp/plan.md");
+        let json = violation_to_tagged_json(
+            &path,
+            10,
+            "panic on empty",
+            "tighten to panic on empty",
+            "external-input-audit",
+        );
+        assert_eq!(json["rule"], "external-input-audit");
+    }
+
+    // --- build_violation_message ---
+
+    #[test]
+    fn message_names_only_scope_when_audit_count_is_zero() {
+        let m = build_violation_message(2, 0, 2);
+        assert!(m.contains("2 universal-coverage"));
+        assert!(m.contains("scope-enumeration.md"));
+        assert!(!m.contains("panic/assert"));
+    }
+
+    #[test]
+    fn message_names_only_audit_when_scope_count_is_zero() {
+        let m = build_violation_message(0, 3, 3);
+        assert!(m.contains("3 panic/assert"));
+        assert!(m.contains("external-input-audit-gate.md"));
+        assert!(!m.contains("universal-coverage"));
+    }
+
+    #[test]
+    fn message_names_both_rules_when_both_have_violations() {
+        let m = build_violation_message(2, 1, 3);
+        assert!(m.contains("2 universal-coverage"));
+        assert!(m.contains("1 panic/assert"));
+        assert!(m.contains("scope-enumeration.md"));
+        assert!(m.contains("external-input-audit-gate.md"));
+        assert!(m.contains("3 plan-check violation"));
+    }
+
+    // --- run_impl dual-scanner aggregation ---
+
+    /// Both scanners run inside `run_impl` with `--plan-file`
+    /// override, and the response aggregates violations from both
+    /// with the correct `rule` tag per violation.
+    #[test]
+    fn run_impl_aggregates_violations_from_both_scanners() {
+        let tmp = std::env::temp_dir().join(format!("plan-check-dual-{}.md", std::process::id()));
+        let plan_content = "## Approach\n\n\
+            Add the drift guard to every state mutator.\n\n\
+            tighten FlowPaths::new to panic on empty branches.\n";
+        std::fs::write(&tmp, plan_content).expect("write fixture plan");
+
+        let args = Args {
+            branch: None,
+            plan_file: Some(tmp.to_string_lossy().to_string()),
+        };
+        let result = run_impl(&args).expect("run_impl returns business response");
+        let _ = std::fs::remove_file(&tmp);
+
+        assert_eq!(result["status"], "error");
+        let violations = result["violations"]
+            .as_array()
+            .expect("violations is an array");
+        let rules: Vec<String> = violations
+            .iter()
+            .map(|v| v["rule"].as_str().unwrap_or("").to_string())
+            .collect();
+        assert!(
+            rules.iter().any(|r| r == "scope-enumeration"),
+            "expected at least one scope-enumeration violation, got rules: {:?}",
+            rules
+        );
+        assert!(
+            rules.iter().any(|r| r == "external-input-audit"),
+            "expected at least one external-input-audit violation, got rules: {:?}",
+            rules
+        );
+        assert!(
+            result["message"]
+                .as_str()
+                .unwrap_or("")
+                .contains("plan-check violation"),
+            "message must summarize total: {:?}",
+            result["message"]
+        );
+    }
+
+    /// Clean plan (no violations) returns `{"status": "ok"}` from
+    /// the dual-scanner aggregation path.
+    #[test]
+    fn run_impl_returns_ok_when_both_scanners_clean() {
+        let tmp = std::env::temp_dir().join(format!("plan-check-clean-{}.md", std::process::id()));
+        std::fs::write(&tmp, "## Approach\n\nA plain plan with no triggers.\n")
+            .expect("write fixture plan");
+
+        let args = Args {
+            branch: None,
+            plan_file: Some(tmp.to_string_lossy().to_string()),
+        };
+        let result = run_impl(&args).expect("run_impl returns business response");
+        let _ = std::fs::remove_file(&tmp);
+
+        assert_eq!(result["status"], "ok");
     }
 }
