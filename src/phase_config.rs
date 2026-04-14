@@ -788,7 +788,7 @@ mod tests {
         use crate::flow_paths::FlowPaths;
         let dir = tempfile::tempdir().unwrap();
         let paths = FlowPaths::new(dir.path(), "my-feature");
-        fs::create_dir_all(&paths.state_file()).unwrap();
+        fs::create_dir_all(paths.state_file()).unwrap();
         let results = find_state_files(dir.path(), "my-feature");
         assert!(results.is_empty());
     }

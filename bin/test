@@ -26,4 +26,18 @@ if [ "${1:-}" = "--file" ]; then
   exit
 fi
 
-exec cargo llvm-cov --no-cfg-coverage --no-clean nextest --status-level none --final-status-level fail "$@"
+# Full-suite invocations (no filter args) wipe accumulated *.profraw files
+# before nextest runs. Without this, llvm-profdata merge after the test
+# summary stalls for tens of seconds chewing through gigabytes of stale
+# coverage data carried forward by `--no-clean`. Filtered runs
+# (`bin/flow test -- <filter>`) keep accumulated data so coverage
+# aggregates across the iterative `llvm-cov show` workflow.
+if [ $# -eq 0 ]; then
+  /usr/bin/find target/llvm-cov-target -maxdepth 1 -name "*.profraw" -delete 2>/dev/null || true
+fi
+
+exec cargo llvm-cov --no-cfg-coverage --no-clean \
+  --fail-under-lines 93 \
+  --fail-under-regions 93 \
+  --fail-under-functions 91 \
+  nextest --status-level none --final-status-level fail "$@"
