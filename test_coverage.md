@@ -76,3 +76,21 @@ tests (`gh_result_to_stdout_success_returns_stdout`,
 All other lines in `src/analyze_issues.rs` are covered by the
 inline unit test module and the integration CLI tests that spawn
 the compiled binary with `--issues-json` fixtures.
+
+### Note: `fetch_blockers` error-path coverage
+
+The plan (PR #1153, Task 5) originally listed named tests for
+`fetch_blockers` error branches (`fetch_blockers_returns_empty_on_spawn_failure`,
+`fetch_blockers_returns_empty_on_timeout`,
+`fetch_blockers_returns_empty_on_nonzero_exit`). Those named tests
+were not added as stand-alone cases because `fetch_blockers` now
+delegates its subprocess discipline to `run_with_drain_and_timeout`
+and its error-formatting to `gh_result_to_stdout` — both of which
+have full branch coverage via inline unit tests that exercise each
+failure mode with synthetic `sh -c` commands (see the
+`// --- run_with_drain_and_timeout ---` and `// --- gh_result_to_stdout ---`
+section markers). Combined with the `eprintln!` observability path
+added in this PR, every error branch `fetch_blockers` can take is
+exercised by existing tests; adding dedicated `fetch_blockers_*`
+variants would be duplicate coverage.
+

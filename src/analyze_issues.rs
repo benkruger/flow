@@ -255,21 +255,26 @@ fn run_with_drain_and_timeout(
 
     let stdout_handle = child.stdout.take();
     let stderr_handle = child.stderr.take();
+    // Drain into Vec<u8> and lossily decode. `read_to_string` returns Err
+    // and leaves the buffer empty on invalid UTF-8, which would silently
+    // drop a subprocess's diagnostic output (e.g., a locale-misconfigured
+    // `gh` emitting Latin-1). `from_utf8_lossy` preserves the payload by
+    // substituting U+FFFD for invalid sequences.
     let stdout_reader = std::thread::spawn(move || {
-        let mut buf = String::new();
+        let mut buf = Vec::new();
         if let Some(mut pipe) = stdout_handle {
             use std::io::Read;
-            let _ = pipe.read_to_string(&mut buf);
+            let _ = pipe.read_to_end(&mut buf);
         }
-        buf
+        String::from_utf8_lossy(&buf).into_owned()
     });
     let stderr_reader = std::thread::spawn(move || {
-        let mut buf = String::new();
+        let mut buf = Vec::new();
         if let Some(mut pipe) = stderr_handle {
             use std::io::Read;
-            let _ = pipe.read_to_string(&mut buf);
+            let _ = pipe.read_to_end(&mut buf);
         }
-        buf
+        String::from_utf8_lossy(&buf).into_owned()
     });
 
     let start = std::time::Instant::now();
@@ -296,25 +301,65 @@ fn run_with_drain_and_timeout(
     Ok((status, stdout, stderr))
 }
 
+/// Strip NULs, replace CR/LF with spaces, collapse runs of whitespace, and
+/// trim the result. Produces a single-line error-message-safe payload.
+///
+/// Error messages flow into JSON output consumed by the `flow-issues` skill
+/// and into operator-visible log lines; embedded control characters
+/// truncate C-string consumers (NUL), break line-oriented parsers (CR/LF),
+/// and leak internal formatting templates when the payload is whitespace
+/// only. Normalizing at the error-formatting boundary keeps downstream
+/// consumers robust without having to re-implement the same sanitization.
+fn normalize_error_payload(raw: &str) -> String {
+    let cleaned: String = raw
+        .chars()
+        .filter(|c| *c != '\0')
+        .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
+        .collect();
+    cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Interpret a `run_with_drain_and_timeout` result for consumers that need
 /// stdout bytes on success and a human-readable error message otherwise.
 ///
-/// Keeps `run()`'s error-formatting logic out of the subprocess block so it
-/// can be unit-tested without spawning `gh`. `command_label` appears in
-/// every error message so upstream users see which command produced the
-/// failure (e.g. `"gh issue list failed: ..."` or `"gh issue list timed
-/// out"`).
+/// Keeps error-formatting logic out of the subprocess block so it can be
+/// unit-tested without spawning `gh`. Despite the `gh_` prefix (reflecting
+/// the two current callers, `fetch_blockers` and `run()`), the helper is
+/// generic: `command_label` is emitted verbatim, so future callers can
+/// reuse it with any label (e.g. `"git fetch"`).
+///
+/// Error payloads are normalized via `normalize_error_payload` — NULs
+/// stripped, CR/LF collapsed to spaces, interior whitespace collapsed,
+/// and the result trimmed. When the normalized stderr is empty (whitespace
+/// only, non-UTF-8 that decoded to whitespace-equivalent replacements, or
+/// no output at all), the message falls back to "(no stderr output)" plus
+/// the exit code so users never see a dangling `"gh issue list failed: "`
+/// template leak.
 fn gh_result_to_stdout(
     result: std::io::Result<(std::process::ExitStatus, String, String)>,
     command_label: &str,
 ) -> Result<String, String> {
     match result {
         Ok((s, stdout, _)) if s.success() => Ok(stdout),
-        Ok((_, _, stderr)) => Err(format!("{} failed: {}", command_label, stderr.trim())),
+        Ok((status, _, stderr)) => {
+            let normalized = normalize_error_payload(&stderr);
+            let detail = if normalized.is_empty() {
+                match status.code() {
+                    Some(code) => format!("(no stderr output, exit code {})", code),
+                    None => "(no stderr output, terminated by signal)".to_string(),
+                }
+            } else {
+                normalized
+            };
+            Err(format!("{} failed: {}", command_label, detail))
+        }
         Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
             Err(format!("{} timed out", command_label))
         }
-        Err(e) => Err(format!("{} failed: {}", command_label, e)),
+        Err(e) => {
+            let msg = normalize_error_payload(&format!("{}", e));
+            Err(format!("{} failed: {}", command_label, msg))
+        }
     }
 }
 
@@ -322,10 +367,19 @@ fn gh_result_to_stdout(
 ///
 /// Uses `blockedBy(first: 10)` connection with batched aliased queries.
 /// Returns HashMap mapping issue number to list of open blocker issue numbers.
-/// Returns empty HashMap on any failure (graceful degradation).
-/// Timeout: 30 seconds — long enough for the GraphQL endpoint to
-/// respond on a slow link, short enough to keep the analyze step
-/// from hanging the calling skill.
+///
+/// Graceful degradation: returns an empty HashMap on every failure mode —
+/// the 30-second subprocess timeout firing, `gh` spawn failure (missing
+/// binary, permission denied), `gh` exiting non-zero (auth expiry, rate
+/// limit, malformed query, missing repo permission), or a `try_wait` I/O
+/// error mid-poll. In each non-success case the helper logs a single-line
+/// diagnostic to stderr via `eprintln!` so operators can see which
+/// failure mode occurred — without that log, auth expiry would silently
+/// report every issue as unblocked and the user would have no signal.
+///
+/// Timeout: 30 seconds — long enough for the GraphQL endpoint to respond
+/// on a slow link, short enough to keep the analyze step from hanging
+/// the calling skill.
 pub fn fetch_blockers(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<i64>> {
     if issue_numbers.is_empty() {
         return HashMap::new();
@@ -353,11 +407,18 @@ pub fn fetch_blockers(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<i64
         &format!("repo={}", name),
     ]);
 
-    match run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(30)) {
-        Ok((status, stdout, _)) if status.success() => {
-            parse_blocker_response(&stdout, issue_numbers)
+    match gh_result_to_stdout(
+        run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(30)),
+        "gh api graphql",
+    ) {
+        Ok(stdout) => parse_blocker_response(&stdout, issue_numbers),
+        Err(msg) => {
+            eprintln!(
+                "warning: blocker fetch failed, treating all issues as unblocked ({})",
+                msg
+            );
+            HashMap::new()
         }
-        _ => HashMap::new(),
     }
 }
 
@@ -1098,6 +1159,106 @@ mod tests {
         let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5));
         let err = gh_result_to_stdout(result, "custom label").unwrap_err();
         assert!(err.contains("custom label"), "err was: {}", err);
+    }
+
+    /// Whitespace-only stderr must not produce a dangling "failed: "
+    /// template leak. The fallback includes the exit code so the operator
+    /// has something actionable.
+    #[test]
+    fn gh_result_to_stdout_whitespace_stderr_includes_exit_code() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "printf '   \\n\\t\\n  ' 1>&2; exit 3"]);
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5));
+        let err = gh_result_to_stdout(result, "gh issue list").unwrap_err();
+        assert!(err.contains("gh issue list failed:"), "err was: {}", err);
+        assert!(err.contains("exit code 3"), "err was: {}", err);
+    }
+
+    /// Empty stderr (completely empty, not whitespace) falls back to the
+    /// same "(no stderr output, exit code N)" sentinel. Proves the empty
+    /// case is not distinguished from whitespace-only at the user-facing
+    /// layer.
+    #[test]
+    fn gh_result_to_stdout_empty_stderr_falls_back_to_exit_code() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "exit 9"]);
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5));
+        let err = gh_result_to_stdout(result, "gh issue list").unwrap_err();
+        assert!(err.contains("no stderr output"), "err was: {}", err);
+        assert!(err.contains("exit code 9"), "err was: {}", err);
+    }
+
+    /// Interior NUL in stderr must not leak into the user-visible message.
+    /// NULs truncate C-string consumers and log parsers silently.
+    #[test]
+    fn gh_result_to_stdout_strips_nuls_from_stderr() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "printf 'foo\\0bar' 1>&2; exit 4"]);
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5));
+        let err = gh_result_to_stdout(result, "gh issue list").unwrap_err();
+        assert!(!err.contains('\0'), "NUL leaked: {:?}", err);
+        assert!(err.contains("foobar"), "stderr content dropped: {:?}", err);
+    }
+
+    /// CR and LF in stderr collapse to single spaces so error messages
+    /// stay on one line for log-ingestion tools that split on newlines.
+    #[test]
+    fn gh_result_to_stdout_collapses_cr_lf_in_stderr() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "printf 'line1\\r\\nline2' 1>&2; exit 2"]);
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5));
+        let err = gh_result_to_stdout(result, "gh issue list").unwrap_err();
+        assert!(!err.contains('\r'), "CR leaked: {:?}", err);
+        assert!(!err.contains('\n'), "LF leaked: {:?}", err);
+        assert!(err.contains("line1 line2"), "err was: {:?}", err);
+    }
+
+    /// Non-UTF-8 stderr must preserve at least the replacement-character
+    /// payload rather than silently dropping to an empty string.
+    /// `read_to_end` + `from_utf8_lossy` in the drain thread substitutes
+    /// U+FFFD for invalid sequences.
+    #[test]
+    fn gh_result_to_stdout_preserves_nonutf8_stderr_lossily() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "printf '\\377\\376\\0' 1>&2; exit 9"]);
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5));
+        let err = gh_result_to_stdout(result, "gh issue list").unwrap_err();
+        // The NUL was stripped; the high bytes decoded to U+FFFD via
+        // from_utf8_lossy. Confirm the fallback did NOT fire (stderr
+        // had content, even if lossy).
+        assert!(!err.contains("no stderr output"), "err was: {:?}", err);
+        assert!(
+            err.contains('\u{FFFD}'),
+            "expected U+FFFD replacement char in {:?}",
+            err
+        );
+    }
+
+    // --- normalize_error_payload ---
+
+    #[test]
+    fn normalize_error_payload_strips_nuls() {
+        assert_eq!(normalize_error_payload("a\0b\0c"), "abc");
+    }
+
+    #[test]
+    fn normalize_error_payload_collapses_newlines() {
+        assert_eq!(normalize_error_payload("a\r\nb\nc"), "a b c");
+    }
+
+    #[test]
+    fn normalize_error_payload_trims_and_collapses_whitespace() {
+        assert_eq!(normalize_error_payload("  foo   bar  \n\t "), "foo bar");
+    }
+
+    #[test]
+    fn normalize_error_payload_empty_on_whitespace_only() {
+        assert_eq!(normalize_error_payload("   \n\t \r\n  "), "");
+    }
+
+    #[test]
+    fn normalize_error_payload_passes_through_normal_text() {
+        assert_eq!(normalize_error_payload("hello world"), "hello world");
     }
 
     // --- analyze_issues helpers ---
