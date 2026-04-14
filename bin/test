@@ -36,6 +36,13 @@ if [ $# -eq 0 ]; then
   /usr/bin/find target/llvm-cov-target -maxdepth 1 -name "*.profraw" -delete 2>/dev/null || true
 fi
 
+# Coverage floors. Each threshold sits roughly one percentage point
+# below the current aggregate TOTAL so normal day-to-day CI drift does
+# not block merges while genuine regressions do. Raise only when the
+# aggregate has comfortably moved above the current floor — use the
+# formula `floor(actual_whole_percent) - 1` after adding new coverage.
+# See `test_coverage.md` for the per-file waiver inventory when 100%
+# is not achievable.
 exec cargo llvm-cov --no-cfg-coverage --no-clean \
   --fail-under-lines 93 \
   --fail-under-regions 93 \

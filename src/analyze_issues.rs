@@ -231,14 +231,155 @@ pub fn parse_blocker_response(json_str: &str, issue_numbers: &[i64]) -> HashMap<
     blockers
 }
 
+/// Spawn a subprocess, drain stdout and stderr in background threads, and
+/// wait up to `timeout` for it to exit.
+///
+/// Single source of truth for the 30-second subprocess discipline used by
+/// every `gh`-invoking path in this module. Returns `Ok((status, stdout,
+/// stderr))` on normal exit (including non-zero status), `Err` of kind
+/// `TimedOut` when the child did not exit within `timeout` (the child is
+/// killed and reaped before returning), and `Err` for spawn failures or
+/// `try_wait` failures so callers can distinguish timeouts from other
+/// I/O errors.
+///
+/// The stdout and stderr drain threads are joined after the status is
+/// known so large outputs cannot deadlock on pipe-buffer backpressure.
+fn run_with_drain_and_timeout(
+    mut cmd: std::process::Command,
+    timeout: std::time::Duration,
+) -> std::io::Result<(std::process::ExitStatus, String, String)> {
+    let mut child = cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+
+    let stdout_handle = child.stdout.take();
+    let stderr_handle = child.stderr.take();
+    // Drain into Vec<u8> and lossily decode. `read_to_string` returns Err
+    // and leaves the buffer empty on invalid UTF-8, which would silently
+    // drop a subprocess's diagnostic output (e.g., a locale-misconfigured
+    // `gh` emitting Latin-1). `from_utf8_lossy` preserves the payload by
+    // substituting U+FFFD for invalid sequences.
+    let stdout_reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = stdout_handle {
+            use std::io::Read;
+            let _ = pipe.read_to_end(&mut buf);
+        }
+        String::from_utf8_lossy(&buf).into_owned()
+    });
+    let stderr_reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = stderr_handle {
+            use std::io::Read;
+            let _ = pipe.read_to_end(&mut buf);
+        }
+        String::from_utf8_lossy(&buf).into_owned()
+    });
+
+    let start = std::time::Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break s,
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "subprocess timed out",
+                    ));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(e) => return Err(e),
+        }
+    };
+
+    let stdout = stdout_reader.join().unwrap_or_default();
+    let stderr = stderr_reader.join().unwrap_or_default();
+    Ok((status, stdout, stderr))
+}
+
+/// Strip NULs, replace CR/LF with spaces, collapse runs of whitespace, and
+/// trim the result. Produces a single-line error-message-safe payload.
+///
+/// Error messages flow into JSON output consumed by the `flow-issues` skill
+/// and into operator-visible log lines; embedded control characters
+/// truncate C-string consumers (NUL), break line-oriented parsers (CR/LF),
+/// and leak internal formatting templates when the payload is whitespace
+/// only. Normalizing at the error-formatting boundary keeps downstream
+/// consumers robust without having to re-implement the same sanitization.
+fn normalize_error_payload(raw: &str) -> String {
+    let cleaned: String = raw
+        .chars()
+        .filter(|c| *c != '\0')
+        .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
+        .collect();
+    cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Interpret a `run_with_drain_and_timeout` result for consumers that need
+/// stdout bytes on success and a human-readable error message otherwise.
+///
+/// Keeps error-formatting logic out of the subprocess block so it can be
+/// unit-tested without spawning `gh`. Despite the `gh_` prefix (reflecting
+/// the two current callers, `fetch_blockers` and `run()`), the helper is
+/// generic: `command_label` is emitted verbatim, so future callers can
+/// reuse it with any label (e.g. `"git fetch"`).
+///
+/// Error payloads are normalized via `normalize_error_payload` — NULs
+/// stripped, CR/LF collapsed to spaces, interior whitespace collapsed,
+/// and the result trimmed. When the normalized stderr is empty (whitespace
+/// only, non-UTF-8 that decoded to whitespace-equivalent replacements, or
+/// no output at all), the message falls back to "(no stderr output)" plus
+/// the exit code so users never see a dangling `"gh issue list failed: "`
+/// template leak.
+fn gh_result_to_stdout(
+    result: std::io::Result<(std::process::ExitStatus, String, String)>,
+    command_label: &str,
+) -> Result<String, String> {
+    match result {
+        Ok((s, stdout, _)) if s.success() => Ok(stdout),
+        Ok((status, _, stderr)) => {
+            let normalized = normalize_error_payload(&stderr);
+            let detail = if normalized.is_empty() {
+                match status.code() {
+                    Some(code) => format!("(no stderr output, exit code {})", code),
+                    None => "(no stderr output, terminated by signal)".to_string(),
+                }
+            } else {
+                normalized
+            };
+            Err(format!("{} failed: {}", command_label, detail))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
+            Err(format!("{} timed out", command_label))
+        }
+        Err(e) => {
+            let msg = normalize_error_payload(&format!("{}", e));
+            Err(format!("{} failed: {}", command_label, msg))
+        }
+    }
+}
+
 /// Fetch native blocked-by details for issues via GitHub GraphQL API.
 ///
 /// Uses `blockedBy(first: 10)` connection with batched aliased queries.
 /// Returns HashMap mapping issue number to list of open blocker issue numbers.
-/// Returns empty HashMap on any failure (graceful degradation).
-/// Timeout: 30 seconds — long enough for the GraphQL endpoint to
-/// respond on a slow link, short enough to keep the analyze step
-/// from hanging the calling skill.
+///
+/// Graceful degradation: returns an empty HashMap on every failure mode —
+/// the 30-second subprocess timeout firing, `gh` spawn failure (missing
+/// binary, permission denied), `gh` exiting non-zero (auth expiry, rate
+/// limit, malformed query, missing repo permission), or a `try_wait` I/O
+/// error mid-poll. In each non-success case the helper logs a single-line
+/// diagnostic to stderr via `eprintln!` so operators can see which
+/// failure mode occurred — without that log, auth expiry would silently
+/// report every issue as unblocked and the user would have no signal.
+///
+/// Timeout: 30 seconds — long enough for the GraphQL endpoint to respond
+/// on a slow link, short enough to keep the analyze step from hanging
+/// the calling skill.
 pub fn fetch_blockers(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<i64>> {
     if issue_numbers.is_empty() {
         return HashMap::new();
@@ -254,60 +395,30 @@ pub fn fetch_blockers(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<i64
 
     let query = build_blocker_query(issue_numbers);
 
-    let mut child = match std::process::Command::new("gh")
-        .args([
-            "api",
-            "graphql",
-            "-f",
-            &format!("query={}", query),
-            "-f",
-            &format!("owner={}", owner),
-            "-f",
-            &format!("repo={}", name),
-        ])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(_) => return HashMap::new(),
-    };
+    let mut cmd = std::process::Command::new("gh");
+    cmd.args([
+        "api",
+        "graphql",
+        "-f",
+        &format!("query={}", query),
+        "-f",
+        &format!("owner={}", owner),
+        "-f",
+        &format!("repo={}", name),
+    ]);
 
-    // Drain stdout in a thread to prevent pipe buffer deadlock, then
-    // poll for exit with a 30-second timeout (the same budget the
-    // outer fetch_blockers contract documents).
-    let stdout_handle = child.stdout.take();
-    let reader = std::thread::spawn(move || {
-        let mut buf = String::new();
-        if let Some(mut pipe) = stdout_handle {
-            use std::io::Read;
-            let _ = pipe.read_to_string(&mut buf);
+    match gh_result_to_stdout(
+        run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(30)),
+        "gh api graphql",
+    ) {
+        Ok(stdout) => parse_blocker_response(&stdout, issue_numbers),
+        Err(msg) => {
+            eprintln!(
+                "warning: blocker fetch failed, treating all issues as unblocked ({})",
+                msg
+            );
+            HashMap::new()
         }
-        buf
-    });
-
-    let timeout = std::time::Duration::from_secs(30);
-    let start = std::time::Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(s)) => break Some(s),
-            Ok(None) => {
-                if start.elapsed() >= timeout {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return HashMap::new();
-                }
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            Err(_) => break None,
-        }
-    };
-
-    let stdout = reader.join().unwrap_or_default();
-
-    match status {
-        Some(s) if s.success() => parse_blocker_response(&stdout, issue_numbers),
-        _ => HashMap::new(),
     }
 }
 
@@ -494,72 +605,14 @@ pub fn run(args: Args) {
             gh_args.push("--milestone".to_string());
             gh_args.push(m.clone());
         }
-        let mut child = match std::process::Command::new("gh")
-            .args(&gh_args)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                crate::output::json_error(&format!("gh issue list failed: {}", e), &[]);
-                std::process::exit(1);
-            }
-        };
+        let mut cmd = std::process::Command::new("gh");
+        cmd.args(&gh_args);
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(30));
 
-        // Drain stdout in a thread to prevent pipe buffer deadlock,
-        // then poll for exit with a 30-second timeout — the analyze
-        // path's outer budget is documented on the caller above.
-        let stdout_handle = child.stdout.take();
-        let stderr_handle = child.stderr.take();
-        let stdout_reader = std::thread::spawn(move || {
-            let mut buf = String::new();
-            if let Some(mut pipe) = stdout_handle {
-                use std::io::Read;
-                let _ = pipe.read_to_string(&mut buf);
-            }
-            buf
-        });
-        let stderr_reader = std::thread::spawn(move || {
-            let mut buf = String::new();
-            if let Some(mut pipe) = stderr_handle {
-                use std::io::Read;
-                let _ = pipe.read_to_string(&mut buf);
-            }
-            buf
-        });
-
-        let timeout = std::time::Duration::from_secs(30);
-        let start = std::time::Instant::now();
-        let status = loop {
-            match child.try_wait() {
-                Ok(Some(s)) => break Some(s),
-                Ok(None) => {
-                    if start.elapsed() >= timeout {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        crate::output::json_error("gh issue list timed out", &[]);
-                        std::process::exit(1);
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                }
-                Err(e) => {
-                    crate::output::json_error(&format!("gh issue list failed: {}", e), &[]);
-                    std::process::exit(1);
-                }
-            }
-        };
-
-        let stdout_data = stdout_reader.join().unwrap_or_default();
-        let stderr_data = stderr_reader.join().unwrap_or_default();
-
-        match status {
-            Some(s) if s.success() => stdout_data,
-            _ => {
-                crate::output::json_error(
-                    &format!("gh issue list failed: {}", stderr_data.trim()),
-                    &[],
-                );
+        match gh_result_to_stdout(result, "gh issue list") {
+            Ok(s) => s,
+            Err(msg) => {
+                crate::output::json_error(&msg, &[]);
                 std::process::exit(1);
             }
         }
@@ -956,6 +1009,256 @@ mod tests {
     fn fetch_blockers_malformed_repo() {
         let result = fetch_blockers("noslash", &[10]);
         assert!(result.is_empty());
+    }
+
+    // --- run_with_drain_and_timeout ---
+
+    /// Success path: child exits 0 with stdout content; helper returns the
+    /// captured bytes and an empty stderr. Exercises the Ok((Some(s), ...))
+    /// branch plus both drain threads in the normal case.
+    #[test]
+    fn helper_success_returns_stdout() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "printf hello"]);
+        let (status, stdout, stderr) =
+            run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5)).unwrap();
+        assert!(status.success());
+        assert_eq!(stdout, "hello");
+        assert_eq!(stderr, "");
+    }
+
+    /// Empty stdout: confirms the drain thread joins cleanly when the child
+    /// produced no output at all.
+    #[test]
+    fn helper_success_with_empty_stdout() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "true"]);
+        let (status, stdout, _) =
+            run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5)).unwrap();
+        assert!(status.success());
+        assert_eq!(stdout, "");
+    }
+
+    /// Non-zero exit with stderr: helper must surface the exit code and the
+    /// stderr bytes so callers can decide whether to treat it as failure.
+    #[test]
+    fn helper_nonzero_exit_returns_stderr() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "printf oops 1>&2; exit 7"]);
+        let (status, stdout, stderr) =
+            run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5)).unwrap();
+        assert!(!status.success());
+        assert_eq!(status.code(), Some(7));
+        assert_eq!(stdout, "");
+        assert_eq!(stderr, "oops");
+    }
+
+    /// Timeout guards against a wedged subprocess: the helper kills the
+    /// child, reaps it, and returns an io::Error of kind TimedOut. The
+    /// wall-clock assertion trip-wires any regression that removes the
+    /// kill step (which would let the sleep run its full 5s).
+    #[test]
+    fn helper_timeout_kills_child_and_returns_timedout_error() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "sleep 5"]);
+        let start = std::time::Instant::now();
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_millis(200));
+        let elapsed = start.elapsed();
+        let err = result.expect_err("timeout path must return Err");
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "helper should kill the child instead of waiting for sleep 5 to finish; wall time {:?}",
+            elapsed
+        );
+    }
+
+    /// Spawn failure: targets the `spawn()?` path before any thread or
+    /// child exists. A non-existent binary returns io::Error of kind
+    /// NotFound, proving the helper propagates spawn errors as-is.
+    #[test]
+    fn helper_spawn_error_is_surfaced() {
+        let cmd = std::process::Command::new("/nonexistent/binary/path/flow-test");
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(1));
+        let err = result.expect_err("spawn of missing binary must return Err");
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    /// Large stdout must not deadlock: the drain thread keeps the pipe
+    /// clear so the child can finish writing. Without threaded draining,
+    /// outputs above the kernel pipe buffer (~64KB) would block the
+    /// child forever.
+    #[test]
+    fn helper_large_stdout_does_not_deadlock() {
+        let mut cmd = std::process::Command::new("sh");
+        // 200 KB of 'x' — safely above the typical 64KB pipe buffer.
+        cmd.args(["-c", "yes x | head -c 204800"]);
+        let (status, stdout, _) =
+            run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(10)).unwrap();
+        assert!(status.success());
+        assert_eq!(stdout.len(), 204800);
+    }
+
+    // --- gh_result_to_stdout ---
+
+    /// Success: stdout flows through unchanged.
+    #[test]
+    fn gh_result_to_stdout_success_returns_stdout() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "printf payload"]);
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5));
+        let out = gh_result_to_stdout(result, "gh issue list").unwrap();
+        assert_eq!(out, "payload");
+    }
+
+    /// Non-zero exit yields a labeled error containing the trimmed stderr.
+    /// Guards the "failed:" branch that `run()` converts to `json_error` +
+    /// `process::exit(1)`.
+    #[test]
+    fn gh_result_to_stdout_nonzero_exit_returns_labeled_error() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "printf 'oops\\n' 1>&2; exit 2"]);
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5));
+        let err = gh_result_to_stdout(result, "gh issue list").unwrap_err();
+        assert_eq!(err, "gh issue list failed: oops");
+    }
+
+    /// Timeout yields a distinct error message so `run()` can print
+    /// "gh issue list timed out" rather than a generic failure.
+    #[test]
+    fn gh_result_to_stdout_timeout_returns_timeout_error() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "sleep 5"]);
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_millis(200));
+        let err = gh_result_to_stdout(result, "gh issue list").unwrap_err();
+        assert_eq!(err, "gh issue list timed out");
+    }
+
+    /// Spawn failure yields a generic labeled error carrying the io::Error
+    /// `Display`. The exact message text is not asserted (platform-variable)
+    /// but the "failed:" prefix and the label are.
+    #[test]
+    fn gh_result_to_stdout_spawn_error_returns_labeled_error() {
+        let cmd = std::process::Command::new("/nonexistent/binary/path/flow-test");
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(1));
+        let err = gh_result_to_stdout(result, "gh issue list").unwrap_err();
+        assert!(
+            err.starts_with("gh issue list failed: "),
+            "err was: {}",
+            err
+        );
+    }
+
+    /// Command label appears verbatim in every error variant — proves the
+    /// formatter doesn't hard-code "gh issue list" and can be reused by
+    /// future consumers with their own label.
+    #[test]
+    fn gh_result_to_stdout_uses_command_label() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "exit 5"]);
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5));
+        let err = gh_result_to_stdout(result, "custom label").unwrap_err();
+        assert!(err.contains("custom label"), "err was: {}", err);
+    }
+
+    /// Whitespace-only stderr must not produce a dangling "failed: "
+    /// template leak. The fallback includes the exit code so the operator
+    /// has something actionable.
+    #[test]
+    fn gh_result_to_stdout_whitespace_stderr_includes_exit_code() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "printf '   \\n\\t\\n  ' 1>&2; exit 3"]);
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5));
+        let err = gh_result_to_stdout(result, "gh issue list").unwrap_err();
+        assert!(err.contains("gh issue list failed:"), "err was: {}", err);
+        assert!(err.contains("exit code 3"), "err was: {}", err);
+    }
+
+    /// Empty stderr (completely empty, not whitespace) falls back to the
+    /// same "(no stderr output, exit code N)" sentinel. Proves the empty
+    /// case is not distinguished from whitespace-only at the user-facing
+    /// layer.
+    #[test]
+    fn gh_result_to_stdout_empty_stderr_falls_back_to_exit_code() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "exit 9"]);
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5));
+        let err = gh_result_to_stdout(result, "gh issue list").unwrap_err();
+        assert!(err.contains("no stderr output"), "err was: {}", err);
+        assert!(err.contains("exit code 9"), "err was: {}", err);
+    }
+
+    /// Interior NUL in stderr must not leak into the user-visible message.
+    /// NULs truncate C-string consumers and log parsers silently.
+    #[test]
+    fn gh_result_to_stdout_strips_nuls_from_stderr() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "printf 'foo\\0bar' 1>&2; exit 4"]);
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5));
+        let err = gh_result_to_stdout(result, "gh issue list").unwrap_err();
+        assert!(!err.contains('\0'), "NUL leaked: {:?}", err);
+        assert!(err.contains("foobar"), "stderr content dropped: {:?}", err);
+    }
+
+    /// CR and LF in stderr collapse to single spaces so error messages
+    /// stay on one line for log-ingestion tools that split on newlines.
+    #[test]
+    fn gh_result_to_stdout_collapses_cr_lf_in_stderr() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "printf 'line1\\r\\nline2' 1>&2; exit 2"]);
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5));
+        let err = gh_result_to_stdout(result, "gh issue list").unwrap_err();
+        assert!(!err.contains('\r'), "CR leaked: {:?}", err);
+        assert!(!err.contains('\n'), "LF leaked: {:?}", err);
+        assert!(err.contains("line1 line2"), "err was: {:?}", err);
+    }
+
+    /// Non-UTF-8 stderr must preserve at least the replacement-character
+    /// payload rather than silently dropping to an empty string.
+    /// `read_to_end` + `from_utf8_lossy` in the drain thread substitutes
+    /// U+FFFD for invalid sequences.
+    #[test]
+    fn gh_result_to_stdout_preserves_nonutf8_stderr_lossily() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "printf '\\377\\376\\0' 1>&2; exit 9"]);
+        let result = run_with_drain_and_timeout(cmd, std::time::Duration::from_secs(5));
+        let err = gh_result_to_stdout(result, "gh issue list").unwrap_err();
+        // The NUL was stripped; the high bytes decoded to U+FFFD via
+        // from_utf8_lossy. Confirm the fallback did NOT fire (stderr
+        // had content, even if lossy).
+        assert!(!err.contains("no stderr output"), "err was: {:?}", err);
+        assert!(
+            err.contains('\u{FFFD}'),
+            "expected U+FFFD replacement char in {:?}",
+            err
+        );
+    }
+
+    // --- normalize_error_payload ---
+
+    #[test]
+    fn normalize_error_payload_strips_nuls() {
+        assert_eq!(normalize_error_payload("a\0b\0c"), "abc");
+    }
+
+    #[test]
+    fn normalize_error_payload_collapses_newlines() {
+        assert_eq!(normalize_error_payload("a\r\nb\nc"), "a b c");
+    }
+
+    #[test]
+    fn normalize_error_payload_trims_and_collapses_whitespace() {
+        assert_eq!(normalize_error_payload("  foo   bar  \n\t "), "foo bar");
+    }
+
+    #[test]
+    fn normalize_error_payload_empty_on_whitespace_only() {
+        assert_eq!(normalize_error_payload("   \n\t \r\n  "), "");
+    }
+
+    #[test]
+    fn normalize_error_payload_passes_through_normal_text() {
+        assert_eq!(normalize_error_payload("hello world"), "hello world");
     }
 
     // --- analyze_issues helpers ---
