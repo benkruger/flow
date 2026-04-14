@@ -195,3 +195,206 @@ pub fn run(args: Args) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn setup_repo(version: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let plugin_dir = root.join(".claude-plugin");
+        fs::create_dir_all(&plugin_dir).unwrap();
+        fs::write(
+            plugin_dir.join("plugin.json"),
+            format!("{{\"name\": \"flow\", \"version\": \"{}\"}}", version),
+        )
+        .unwrap();
+        (dir, root)
+    }
+
+    #[test]
+    fn validate_version_semver() {
+        assert!(validate_version("1.0.0"));
+        assert!(validate_version("10.20.30"));
+        assert!(!validate_version("1.0"));
+        assert!(!validate_version("1.0.0-rc1"));
+        assert!(!validate_version("v1.0.0"));
+        assert!(!validate_version(""));
+    }
+
+    #[test]
+    fn read_current_version_reads_plugin_json() {
+        let (_dir, root) = setup_repo("1.2.3");
+        let version =
+            read_current_version(&root.join(".claude-plugin").join("plugin.json")).unwrap();
+        assert_eq!(version, "1.2.3");
+    }
+
+    #[test]
+    fn read_current_version_missing_file_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = read_current_version(&dir.path().join("nonexistent.json")).unwrap_err();
+        assert!(err.contains("Failed to read"));
+    }
+
+    #[test]
+    fn read_current_version_invalid_json_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plugin.json");
+        fs::write(&path, "not json").unwrap();
+        let err = read_current_version(&path).unwrap_err();
+        assert!(err.contains("Invalid JSON"));
+    }
+
+    #[test]
+    fn read_current_version_missing_version_field_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plugin.json");
+        fs::write(&path, r#"{"name": "flow"}"#).unwrap();
+        let err = read_current_version(&path).unwrap_err();
+        assert!(err.contains("No \"version\" field"));
+    }
+
+    #[test]
+    fn bump_json_replaces_version_string() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plugin.json");
+        fs::write(&path, r#"{"version": "1.0.0", "name": "flow"}"#).unwrap();
+        let changed = bump_json(&path, "1.0.0", "2.0.0").unwrap();
+        assert!(changed);
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("\"version\": \"2.0.0\""));
+    }
+
+    #[test]
+    fn bump_json_no_change_when_version_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plugin.json");
+        fs::write(&path, r#"{"version": "1.0.0"}"#).unwrap();
+        let changed = bump_json(&path, "9.9.9", "2.0.0").unwrap();
+        assert!(!changed);
+    }
+
+    #[test]
+    fn bump_skill_replaces_banner() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("SKILL.md");
+        fs::write(&path, "FLOW v1.0.0 — Start\nbody").unwrap();
+        let changed = bump_skill(&path, "1.0.0", "2.0.0").unwrap();
+        assert!(changed);
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("FLOW v2.0.0"));
+    }
+
+    #[test]
+    fn bump_skill_no_change_when_banner_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("SKILL.md");
+        fs::write(&path, "no banner here").unwrap();
+        let changed = bump_skill(&path, "1.0.0", "2.0.0").unwrap();
+        assert!(!changed);
+    }
+
+    #[test]
+    fn run_impl_missing_version_arg_errors() {
+        let (_dir, root) = setup_repo("1.0.0");
+        let args = Args { version: None };
+        let err = run_impl(&args, &root).unwrap_err();
+        assert!(err.contains("Usage:"));
+    }
+
+    #[test]
+    fn run_impl_invalid_version_format_errors() {
+        let (_dir, root) = setup_repo("1.0.0");
+        let args = Args {
+            version: Some("not-a-version".to_string()),
+        };
+        let err = run_impl(&args, &root).unwrap_err();
+        assert!(err.contains("invalid version format"));
+    }
+
+    #[test]
+    fn run_impl_missing_plugin_json_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = Args {
+            version: Some("2.0.0".to_string()),
+        };
+        let err = run_impl(&args, dir.path()).unwrap_err();
+        assert!(err.contains("plugin.json"));
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn run_impl_same_version_errors() {
+        let (_dir, root) = setup_repo("1.0.0");
+        let args = Args {
+            version: Some("1.0.0".to_string()),
+        };
+        let err = run_impl(&args, &root).unwrap_err();
+        assert!(err.contains("already 1.0.0"));
+    }
+
+    #[test]
+    fn run_impl_bumps_plugin_json_and_reports() {
+        let (_dir, root) = setup_repo("1.0.0");
+        let args = Args {
+            version: Some("2.0.0".to_string()),
+        };
+        let output = run_impl(&args, &root).unwrap();
+        assert!(output.contains("Bumped 1.0.0 -> 2.0.0"));
+        assert!(output.contains("plugin.json"));
+        let contents = fs::read_to_string(root.join(".claude-plugin").join("plugin.json")).unwrap();
+        assert!(contents.contains("\"version\": \"2.0.0\""));
+    }
+
+    #[test]
+    fn run_impl_bumps_marketplace_json_when_present() {
+        let (_dir, root) = setup_repo("1.0.0");
+        let marketplace = root.join(".claude-plugin").join("marketplace.json");
+        fs::write(&marketplace, r#"{"version": "1.0.0"}"#).unwrap();
+        let args = Args {
+            version: Some("2.0.0".to_string()),
+        };
+        let output = run_impl(&args, &root).unwrap();
+        assert!(output.contains("marketplace.json"));
+    }
+
+    #[test]
+    fn run_impl_bumps_skill_banners_sorted_by_name() {
+        let (_dir, root) = setup_repo("1.0.0");
+        let skills_dir = root.join("skills");
+        for name in ["z-skill", "a-skill"] {
+            let skill_dir = skills_dir.join(name);
+            fs::create_dir_all(&skill_dir).unwrap();
+            fs::write(skill_dir.join("SKILL.md"), "FLOW v1.0.0 — Test\n").unwrap();
+        }
+        let hidden = skills_dir.join(".hidden");
+        fs::create_dir_all(&hidden).unwrap();
+        fs::write(hidden.join("SKILL.md"), "FLOW v1.0.0 — Hidden\n").unwrap();
+
+        let args = Args {
+            version: Some("2.0.0".to_string()),
+        };
+        let output = run_impl(&args, &root).unwrap();
+        assert!(output.contains("a-skill"));
+        assert!(output.contains("z-skill"));
+        assert!(!output.contains(".hidden"));
+        let hidden_content = fs::read_to_string(hidden.join("SKILL.md")).unwrap();
+        assert!(hidden_content.contains("FLOW v1.0.0"));
+    }
+
+    #[test]
+    fn run_impl_bumps_flow_release_skill_when_present() {
+        let (_dir, root) = setup_repo("1.0.0");
+        let release_dir = root.join(".claude").join("skills").join("flow-release");
+        fs::create_dir_all(&release_dir).unwrap();
+        fs::write(release_dir.join("SKILL.md"), "FLOW v1.0.0 — Release\n").unwrap();
+        let args = Args {
+            version: Some("2.0.0".to_string()),
+        };
+        let output = run_impl(&args, &root).unwrap();
+        assert!(output.contains("flow-release"));
+    }
+}

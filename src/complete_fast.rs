@@ -1037,4 +1037,85 @@ mod tests {
             .to_lowercase()
             .contains("push failed"));
     }
+
+    // --- parse_gh_checks_output ---
+
+    #[test]
+    fn parse_gh_checks_output_empty_returns_none() {
+        assert_eq!(parse_gh_checks_output(""), "none");
+    }
+
+    #[test]
+    fn parse_gh_checks_output_all_passing() {
+        let input = "CI/build\tpass\tok\nCI/test\tpass\tok\n";
+        assert_eq!(parse_gh_checks_output(input), "pass");
+    }
+
+    #[test]
+    fn parse_gh_checks_output_any_failing() {
+        let input = "CI/build\tpass\tok\nCI/test\tfail\terror\n";
+        assert_eq!(parse_gh_checks_output(input), "fail");
+    }
+
+    #[test]
+    fn parse_gh_checks_output_pending_without_fail() {
+        let input = "CI/build\tpass\tok\nCI/test\tpending\t\n";
+        assert_eq!(parse_gh_checks_output(input), "pending");
+    }
+
+    #[test]
+    fn parse_gh_checks_output_fail_outranks_pending() {
+        let input = "CI/a\tpending\t\nCI/b\tfail\t\n";
+        assert_eq!(parse_gh_checks_output(input), "fail");
+    }
+
+    #[test]
+    fn parse_gh_checks_output_skips_malformed_lines() {
+        // Lines without tabs are ignored (no 2+ parts → skipped).
+        let input = "no-tab-line\nCI/b\tpass\tok\n";
+        assert_eq!(parse_gh_checks_output(input), "pass");
+    }
+
+    // --- read_state ---
+
+    #[test]
+    fn read_state_missing_file_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = read_state(dir.path(), "missing-branch").unwrap_err();
+        assert!(err.contains("No state file found"));
+    }
+
+    #[test]
+    fn read_state_invalid_json_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("bad.json");
+        fs::write(&state_path, "not json").unwrap();
+        let err = read_state(dir.path(), "bad").unwrap_err();
+        assert!(err.contains("Could not parse state file"));
+    }
+
+    #[test]
+    fn read_state_non_object_root_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("arr.json");
+        fs::write(&state_path, "[]").unwrap();
+        let err = read_state(dir.path(), "arr").unwrap_err();
+        assert!(err.contains("Corrupt state file"));
+    }
+
+    #[test]
+    fn read_state_valid_object_returns_state_and_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("ok.json");
+        fs::write(&state_path, r#"{"branch": "ok", "foo": 1}"#).unwrap();
+        let (state, path) = read_state(dir.path(), "ok").unwrap();
+        assert_eq!(state["foo"], 1);
+        assert_eq!(path, state_path);
+    }
 }

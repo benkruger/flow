@@ -105,4 +105,29 @@ mod tests {
         assert_eq!(state["session_id"], "existing-session");
         assert_eq!(state["notes"][0]["note"], "a correction");
     }
+
+    #[test]
+    fn test_array_root_is_safe_noop() {
+        // mutate_state pretty-prints any valid JSON including arrays.
+        // clear_blocked uses state.as_object_mut() which returns None for
+        // arrays, so the closure skips the remove step cleanly.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, "[1, 2, 3]").unwrap();
+        // Must not panic — just no-ops.
+        clear_blocked(&path);
+        // File content is still a valid JSON array.
+        let after: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(after.is_array());
+    }
+
+    #[test]
+    fn test_null_root_is_safe_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, "null").unwrap();
+        // Must not panic — `null.as_object_mut()` returns None.
+        clear_blocked(&path);
+    }
 }

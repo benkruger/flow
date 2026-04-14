@@ -257,4 +257,52 @@ mod tests {
 
         assert_eq!(captured, 42);
     }
+
+    #[test]
+    fn mutate_error_display_formats_io() {
+        let err = MutateError::Io("disk full".to_string());
+        assert_eq!(err.to_string(), "I/O error: disk full");
+    }
+
+    #[test]
+    fn mutate_error_display_formats_lock() {
+        let err = MutateError::Lock("already locked".to_string());
+        assert_eq!(err.to_string(), "Lock error: already locked");
+    }
+
+    #[test]
+    fn mutate_error_display_formats_json() {
+        let err = MutateError::Json("parse failure".to_string());
+        assert_eq!(err.to_string(), "JSON error: parse failure");
+    }
+
+    #[test]
+    fn mutate_error_implements_std_error() {
+        // Ensures MutateError implements std::error::Error trait.
+        let err: Box<dyn std::error::Error> = Box::new(MutateError::Io("test".to_string()));
+        assert!(err.to_string().contains("test"));
+    }
+
+    #[test]
+    fn mutate_state_error_wraps_missing_file_as_io() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent.json");
+        let err = mutate_state(&path, |_| {}).unwrap_err();
+        match err {
+            MutateError::Io(_) => {}
+            other => panic!("Expected Io variant, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn mutate_state_error_wraps_invalid_json_as_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, "{invalid").unwrap();
+        let err = mutate_state(&path, |_| {}).unwrap_err();
+        match err {
+            MutateError::Json(_) => {}
+            other => panic!("Expected Json variant, got: {:?}", other),
+        }
+    }
 }

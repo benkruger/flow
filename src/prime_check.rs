@@ -394,3 +394,172 @@ pub fn run(_args: Args) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Use the real plugin root so compute_setup_hash and plugin.json
+    /// lookups succeed. The fixture cwd is a tempdir under our control.
+    fn real_plugin_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    }
+
+    fn write_flow_json(cwd: &Path, content: &str) {
+        fs::write(cwd.join(".flow.json"), content).unwrap();
+    }
+
+    #[test]
+    fn no_flow_json_returns_not_initialized_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = real_plugin_root();
+        let result = run_impl(dir.path(), &root).unwrap();
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("FLOW not initialized"));
+    }
+
+    #[test]
+    fn matching_version_returns_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = real_plugin_root();
+        // Read the actual plugin version so we're testing against truth.
+        let plugin_content =
+            fs::read_to_string(root.join(".claude-plugin").join("plugin.json")).unwrap();
+        let plugin_data: Value = serde_json::from_str(&plugin_content).unwrap();
+        let version = plugin_data["version"].as_str().unwrap();
+
+        write_flow_json(dir.path(), &format!(r#"{{"flow_version": "{}"}}"#, version));
+
+        let result = run_impl(dir.path(), &root).unwrap();
+        assert_eq!(result["status"], "ok");
+    }
+
+    #[test]
+    fn version_mismatch_with_no_hashes_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = real_plugin_root();
+        write_flow_json(dir.path(), r#"{"flow_version": "0.0.1-ancient"}"#);
+
+        let result = run_impl(dir.path(), &root).unwrap();
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("FLOW version mismatch"));
+    }
+
+    #[test]
+    fn version_mismatch_with_matching_hashes_auto_upgrades() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = real_plugin_root();
+        // Use the current hashes so the auto-upgrade path triggers.
+        let config_hash = compute_config_hash().unwrap();
+        let setup_hash = compute_setup_hash(&root).unwrap();
+        write_flow_json(
+            dir.path(),
+            &format!(
+                r#"{{"flow_version": "0.0.1-prior", "config_hash": "{}", "setup_hash": "{}"}}"#,
+                config_hash, setup_hash
+            ),
+        );
+
+        let result = run_impl(dir.path(), &root).unwrap();
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["auto_upgraded"], true);
+        assert_eq!(result["old_version"], "0.0.1-prior");
+
+        // The on-disk .flow.json should have the new version written.
+        let updated: Value =
+            serde_json::from_str(&fs::read_to_string(dir.path().join(".flow.json")).unwrap())
+                .unwrap();
+        // Read plugin version to verify it was written.
+        let plugin_content =
+            fs::read_to_string(root.join(".claude-plugin").join("plugin.json")).unwrap();
+        let plugin_data: Value = serde_json::from_str(&plugin_content).unwrap();
+        let expected_version = plugin_data["version"].as_str().unwrap();
+        assert_eq!(updated["flow_version"], expected_version);
+    }
+
+    #[test]
+    fn version_mismatch_with_stale_config_hash_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = real_plugin_root();
+        let setup_hash = compute_setup_hash(&root).unwrap();
+        // config_hash is bogus — auto-upgrade should not trigger.
+        write_flow_json(
+            dir.path(),
+            &format!(
+                r#"{{"flow_version": "0.0.1-prior", "config_hash": "deadbeef0000", "setup_hash": "{}"}}"#,
+                setup_hash
+            ),
+        );
+
+        let result = run_impl(dir.path(), &root).unwrap();
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("version mismatch"));
+    }
+
+    #[test]
+    fn as_nonempty_str_handles_empty_and_present() {
+        let with_value = json!("hello");
+        let empty = json!("");
+        let null = json!(null);
+        let num = json!(42);
+        assert_eq!(as_nonempty_str(&with_value), Some("hello"));
+        assert_eq!(as_nonempty_str(&empty), None);
+        assert_eq!(as_nonempty_str(&null), None);
+        assert_eq!(as_nonempty_str(&num), None);
+    }
+
+    #[test]
+    fn read_flow_json_missing_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(read_flow_json(dir.path()).is_none());
+    }
+
+    #[test]
+    fn read_flow_json_malformed_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        write_flow_json(dir.path(), "not json");
+        assert!(read_flow_json(dir.path()).is_none());
+    }
+
+    #[test]
+    fn read_flow_json_valid_returns_parsed() {
+        let dir = tempfile::tempdir().unwrap();
+        write_flow_json(dir.path(), r#"{"a": 1}"#);
+        let v = read_flow_json(dir.path()).unwrap();
+        assert_eq!(v["a"], 1);
+    }
+
+    #[test]
+    fn compute_config_hash_deterministic() {
+        let h1 = compute_config_hash().unwrap();
+        let h2 = compute_config_hash().unwrap();
+        assert_eq!(h1, h2);
+        assert_eq!(h1.len(), 12);
+        assert!(h1.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn compute_setup_hash_deterministic() {
+        let root = real_plugin_root();
+        let h1 = compute_setup_hash(&root).unwrap();
+        let h2 = compute_setup_hash(&root).unwrap();
+        assert_eq!(h1, h2);
+        assert_eq!(h1.len(), 12);
+    }
+
+    #[test]
+    fn compute_setup_hash_missing_file_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = compute_setup_hash(dir.path()).unwrap_err();
+        assert!(err.contains("Could not read"));
+    }
+}

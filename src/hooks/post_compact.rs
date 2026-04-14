@@ -272,6 +272,25 @@ mod tests {
     }
 
     #[test]
+    fn test_compact_summary_non_string_skips_summary_write() {
+        // hook_input passes `is_none()` (line 17) but the inner
+        // `and_then(|v| v.as_str())` returns None for a non-string value,
+        // so the if-let's None arm runs — compact_summary write is
+        // skipped while compact_count still increments.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = json!({"branch": "test"});
+        fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let input = json!({"compact_summary": 42});
+        capture_compact_data(&input, &path);
+
+        let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(state.get("compact_summary").is_none());
+        assert_eq!(state["compact_count"], 1);
+    }
+
+    #[test]
     fn test_compact_count_unparseable_string_defaults_to_one() {
         // A string that cannot be parsed as an integer falls through
         // to the default 0, producing a fresh count of 1. This is

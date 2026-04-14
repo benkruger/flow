@@ -129,3 +129,140 @@ pub fn run(args: Args) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_repo_with_notes(content: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        fs::write(root.join("RELEASE-NOTES.md"), content).unwrap();
+        (dir, root)
+    }
+
+    // --- header_matches_version ---
+
+    #[test]
+    fn header_matches_exact_version() {
+        assert!(header_matches_version("## v0.1.0 — Release", "v0.1.0"));
+    }
+
+    #[test]
+    fn header_does_not_match_longer_version() {
+        assert!(!header_matches_version("## v0.10.0 — Release", "v0.1.0"));
+    }
+
+    #[test]
+    fn header_matches_version_at_end_of_line() {
+        assert!(header_matches_version("## v0.1.0", "v0.1.0"));
+    }
+
+    #[test]
+    fn header_matches_version_followed_by_dash() {
+        assert!(header_matches_version("## v0.1.0-beta", "v0.1.0"));
+    }
+
+    #[test]
+    fn header_does_not_match_when_absent() {
+        assert!(!header_matches_version("## v0.2.0", "v0.1.0"));
+    }
+
+    // --- extract ---
+
+    #[test]
+    fn extract_returns_section_content() {
+        let content =
+            "# Release Notes\n\n## v0.1.0\n\nFirst release.\n\n## v0.2.0\n\nSecond release.";
+        let result = extract("v0.1.0", content);
+        assert!(result.contains("## v0.1.0"));
+        assert!(result.contains("First release."));
+        assert!(!result.contains("Second release."));
+    }
+
+    #[test]
+    fn extract_returns_empty_for_missing_version() {
+        let content = "## v0.1.0\n\nNotes.";
+        assert_eq!(extract("v0.9.9", content), "");
+    }
+
+    #[test]
+    fn extract_captures_last_section() {
+        let content = "## v0.1.0\n\nFirst.\n\n## v0.2.0\n\nLast section.";
+        let result = extract("v0.2.0", content);
+        assert!(result.contains("Last section."));
+    }
+
+    #[test]
+    fn extract_does_not_confuse_longer_version() {
+        let content = "## v0.1.0\n\nShort.\n\n## v0.10.0\n\nLong version.";
+        let result = extract("v0.1.0", content);
+        assert!(result.contains("Short."));
+        assert!(!result.contains("Long version."));
+    }
+
+    // --- run_impl ---
+
+    #[test]
+    fn run_impl_missing_version_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = Args { version: None };
+        let err = run_impl(&args, dir.path()).unwrap_err();
+        assert!(err.contains("Usage:"));
+    }
+
+    #[test]
+    fn run_impl_invalid_version_format_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = Args {
+            version: Some("not-a-version".to_string()),
+        };
+        let err = run_impl(&args, dir.path()).unwrap_err();
+        assert!(err.contains("invalid version format"));
+    }
+
+    #[test]
+    fn run_impl_missing_release_notes_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = Args {
+            version: Some("v0.1.0".to_string()),
+        };
+        let err = run_impl(&args, dir.path()).unwrap_err();
+        assert!(err.contains("RELEASE-NOTES.md"));
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn run_impl_version_not_in_notes_errors() {
+        let (_dir, root) = setup_repo_with_notes("## v0.1.0\n\nOnly this version.");
+        let args = Args {
+            version: Some("v9.9.9".to_string()),
+        };
+        let err = run_impl(&args, &root).unwrap_err();
+        assert!(err.contains("no section found"));
+    }
+
+    #[test]
+    fn run_impl_happy_path_writes_file() {
+        let (_dir, root) = setup_repo_with_notes("## v0.1.0\n\nFirst release content.");
+        let args = Args {
+            version: Some("v0.1.0".to_string()),
+        };
+        let output = run_impl(&args, &root).unwrap();
+        assert!(output.contains("Written to"));
+        let out_path = root.join("tmp").join("release-notes-v0.1.0.md");
+        assert!(out_path.exists());
+        let contents = fs::read_to_string(&out_path).unwrap();
+        assert!(contents.contains("First release content."));
+    }
+
+    #[test]
+    fn run_impl_accepts_version_with_or_without_v_prefix() {
+        let (_dir, root) = setup_repo_with_notes("## 0.5.0\n\nNotes here.");
+        let args = Args {
+            version: Some("0.5.0".to_string()),
+        };
+        let output = run_impl(&args, &root).unwrap();
+        assert!(output.contains("release-notes-0.5.0.md"));
+    }
+}

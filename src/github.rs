@@ -79,4 +79,33 @@ mod tests {
         // May or may not work depending on test context, just verify it returns Option
         let _ = result;
     }
+
+    #[test]
+    fn detect_repo_with_cwd_outside_git_returns_none() {
+        // /tmp is not a git repo, so detect_repo should return None.
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(detect_repo(Some(tmp.path())), None);
+    }
+
+    #[test]
+    fn detect_repo_with_nonexistent_cwd_returns_none() {
+        // A missing directory → git fails → None.
+        let nonexistent = std::path::Path::new("/definitely/not/a/real/path");
+        assert_eq!(detect_repo(Some(nonexistent)), None);
+    }
+
+    #[test]
+    fn extract_repo_with_trailing_slash() {
+        // github.com/owner/repo/ — trailing slash should still parse.
+        // Current regex doesn't match this — documents the limitation.
+        assert_eq!(extract_repo("https://github.com/owner/repo/"), None);
+    }
+
+    #[test]
+    fn extract_repo_http_not_https() {
+        assert_eq!(
+            extract_repo("http://github.com/owner/repo"),
+            Some("owner/repo".to_string())
+        );
+    }
 }

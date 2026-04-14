@@ -298,4 +298,30 @@ mod tests {
         let result = enforce(dir.path(), dir.path());
         assert!(result.is_ok(), "expected ok, got: {:?}", result);
     }
+
+    #[test]
+    fn enforce_state_path_is_directory_returns_ok() {
+        // When the state path exists but is a directory (corruption or
+        // manual test setup), `fs::read_to_string` fails. `enforce`
+        // treats the read failure the same as "no active flow" and
+        // returns Ok(()) rather than surfacing the error.
+        let dir = tempfile::tempdir().unwrap();
+        init_git_repo(dir.path(), "feature-x");
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        // Create a DIRECTORY where the state file would be — read fails
+        // with EISDIR while `state_path.exists()` still returns true.
+        fs::create_dir(state_dir.join("feature-x.json")).unwrap();
+        let result = enforce(dir.path(), dir.path());
+        assert!(result.is_ok(), "expected ok, got: {:?}", result);
+    }
+
+    #[test]
+    fn worktree_root_for_non_git_returns_none() {
+        // `git rev-parse --show-toplevel` in a non-git directory exits
+        // nonzero, so the helper must return None rather than panic.
+        let dir = tempfile::tempdir().unwrap();
+        // No `git init` — not a git directory.
+        assert!(worktree_root_for(dir.path()).is_none());
+    }
 }

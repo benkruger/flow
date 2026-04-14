@@ -147,17 +147,33 @@ pub fn read_version_from(path: &Path) -> String {
     }
 }
 
-/// Read plugin version from plugin.json next to the Rust binary.
+/// Read plugin version from `.claude-plugin/plugin.json`.
 ///
-/// Navigates up from the binary location (target/{release|debug}/flow-rs)
-/// to find .claude-plugin/plugin.json.
+/// Resolution order:
+///   1. If `CLAUDE_PLUGIN_ROOT` is set and its `.claude-plugin/plugin.json`
+///      exists, use that. Otherwise fall through.
+///   2. Walk up 3 levels from the binary: `flow-rs` → `{debug|release}`
+///      → `target` → plugin root. Read `.claude-plugin/plugin.json` there.
+///
+/// The env var check in (1) was added because cargo-llvm-cov builds the
+/// binary at `target/llvm-cov-target/debug/flow-rs` — one extra directory
+/// beyond what the 3-level walk assumes. Tests that need the version
+/// under coverage set `CLAUDE_PLUGIN_ROOT` explicitly and take path (1).
+/// When the env var is not set, production behavior is unchanged: the
+/// original 3-level walk.
 pub fn read_version() -> String {
+    if let Ok(root) = std::env::var("CLAUDE_PLUGIN_ROOT") {
+        let path = std::path::PathBuf::from(root)
+            .join(".claude-plugin")
+            .join("plugin.json");
+        if path.exists() {
+            return read_version_from(&path);
+        }
+    }
     let exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(_) => return "?".to_string(),
     };
-    // Binary is at <plugin_root>/target/{release|debug}/flow-rs
-    // Go up 3 levels: flow-rs -> {release|debug} -> target -> plugin_root
     let plugin_root = match exe
         .parent()
         .and_then(|p| p.parent())
@@ -1478,5 +1494,137 @@ mod tests {
         // coerce to 0 so callers can use `state["missing"]` directly.
         let state = serde_json::json!({"branch": "test"});
         assert_eq!(tolerant_i64(&state["missing_key"]), 0);
+    }
+
+    // --- detect_dev_mode ---
+
+    #[test]
+    fn detect_dev_mode_false_when_flow_json_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!detect_dev_mode(dir.path()));
+    }
+
+    #[test]
+    fn detect_dev_mode_true_when_backup_key_present() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(".flow.json"),
+            r#"{"plugin_root_backup": "/path/to/prod"}"#,
+        )
+        .unwrap();
+        assert!(detect_dev_mode(dir.path()));
+    }
+
+    #[test]
+    fn detect_dev_mode_false_when_backup_key_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(".flow.json"),
+            r#"{"plugin_root": "/path/to/plugin"}"#,
+        )
+        .unwrap();
+        assert!(!detect_dev_mode(dir.path()));
+    }
+
+    #[test]
+    fn detect_dev_mode_false_when_json_malformed() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(".flow.json"), "not json").unwrap();
+        assert!(!detect_dev_mode(dir.path()));
+    }
+
+    // --- read_flow_json_tab_color (tested via format_tab_color) ---
+
+    #[test]
+    fn read_flow_json_tab_color_valid_triplet() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(".flow.json"),
+            r#"{"tab_color": [100, 150, 200]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            read_flow_json_tab_color(Some(dir.path())),
+            Some((100, 150, 200))
+        );
+    }
+
+    #[test]
+    fn read_flow_json_tab_color_none_when_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(read_flow_json_tab_color(Some(dir.path())), None);
+    }
+
+    #[test]
+    fn read_flow_json_tab_color_none_when_key_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(".flow.json"), r#"{"other": "value"}"#).unwrap();
+        assert_eq!(read_flow_json_tab_color(Some(dir.path())), None);
+    }
+
+    #[test]
+    fn read_flow_json_tab_color_none_when_wrong_array_length() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(".flow.json"),
+            r#"{"tab_color": [100, 150]}"#,
+        )
+        .unwrap();
+        assert_eq!(read_flow_json_tab_color(Some(dir.path())), None);
+    }
+
+    #[test]
+    fn read_flow_json_tab_color_none_when_malformed_json() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(".flow.json"), "not json").unwrap();
+        assert_eq!(read_flow_json_tab_color(Some(dir.path())), None);
+    }
+
+    // --- format_time edge cases ---
+
+    #[test]
+    fn format_time_zero_seconds() {
+        assert_eq!(format_time(0), "<1m");
+    }
+
+    #[test]
+    fn format_time_exactly_one_hour() {
+        assert_eq!(format_time(3600), "1h 0m");
+    }
+
+    // --- derive_feature / derive_worktree edge cases ---
+
+    #[test]
+    fn derive_feature_multi_hyphen() {
+        let feature = derive_feature("some-multi-word-feature");
+        // Should produce human-readable words from branch name.
+        assert!(!feature.is_empty());
+    }
+
+    #[test]
+    fn derive_worktree_contains_branch() {
+        let wt = derive_worktree("my-branch");
+        assert!(wt.contains("my-branch"));
+    }
+
+    // --- branch_name normalization edge cases ---
+
+    #[test]
+    fn branch_name_trims_trailing_whitespace() {
+        assert_eq!(branch_name("hello world   "), "hello-world");
+    }
+
+    #[test]
+    fn branch_name_collapses_internal_whitespace() {
+        let result = branch_name("hello    world");
+        // Multiple spaces should collapse to a single hyphen.
+        assert_eq!(result, "hello-world");
+    }
+
+    // --- elapsed_since robustness ---
+
+    #[test]
+    fn elapsed_since_unparseable_string_returns_zero() {
+        assert_eq!(elapsed_since(Some("not-a-timestamp"), None), 0);
     }
 }

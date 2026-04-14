@@ -186,11 +186,14 @@ fn compute_fenced_mask(lines: &[&str]) -> Vec<bool> {
         }
         mask[i] = in_block;
     }
-    if in_block {
-        if let Some(start) = last_open_idx {
-            for m in &mut mask[start..] {
-                *m = false;
-            }
+    // Unclosed fence at EOF: rewind the mask from the stray opener
+    // onward so a typo doesn't silently suppress all violations past
+    // it. By construction `last_open_idx.is_some() <=> in_block`, so
+    // checking one condition is sufficient — gating on both just
+    // added a dead branch for coverage.
+    if let Some(start) = last_open_idx {
+        for m in &mut mask[start..] {
+            *m = false;
         }
     }
     mask
@@ -337,12 +340,12 @@ fn enumeration_present(
     // Pattern 1: inline list after the trigger on the same line.
     // A colon or parenthetical enumeration typically contains every
     // sibling inline, so ≥ 3 backticks after the match position is
-    // a strong signal.
-    if trigger_match_end <= trigger_line.len() {
-        let after = &trigger_line[trigger_match_end..];
-        if backtick_regex().find_iter(after).count() >= 3 {
-            return true;
-        }
+    // a strong signal. `trigger_match_end` is a regex match end into
+    // `trigger_line`, so it is always ≤ `trigger_line.len()` and the
+    // slice is infallible — no defensive bounds check is needed.
+    let after = &trigger_line[trigger_match_end..];
+    if backtick_regex().find_iter(after).count() >= 3 {
+        return true;
     }
 
     // Pattern 2: forward bullet list.
@@ -798,5 +801,58 @@ mod tests {
         let content = "Add guard to every subcommand.\n\nThe `foo` and `bar` are callers.\n";
         let v = scan(content, &dummy_path());
         assert_eq!(v.len(), 1, "{:?}", v);
+    }
+
+    // --- Window-limit and fenced-inclusion coverage ---
+
+    #[test]
+    fn has_structured_list_forward_stops_at_non_blank_limit() {
+        // Twelve non-blank prose lines after the trigger, no bullet — the
+        // forward scanner must break at `WINDOW_NON_BLANK_LINES` without
+        // finding a bullet, confirming the limit branch fires.
+        let mut content = String::from("Add guard to every subcommand.\n");
+        for i in 0..12 {
+            content.push_str(&format!("plain prose line {}\n", i));
+        }
+        let v = scan(&content, &dummy_path());
+        // No bullet-list enumeration present → violation reported.
+        assert_eq!(v.len(), 1, "{:?}", v);
+    }
+
+    #[test]
+    fn has_structured_list_backward_stops_at_non_blank_limit() {
+        // Twelve non-blank prose lines BEFORE the trigger, no bullet —
+        // the backward scanner must break at `WINDOW_NON_BLANK_LINES`
+        // without finding a bullet.
+        let mut content = String::new();
+        for i in 0..12 {
+            content.push_str(&format!("earlier prose line {}\n", i));
+        }
+        content.push_str("Add guard to every subcommand.\n");
+        let v = scan(&content, &dummy_path());
+        assert_eq!(v.len(), 1, "{:?}", v);
+    }
+
+    #[test]
+    fn collect_window_skips_fenced_lines_in_middle_of_window() {
+        // Trigger is AFTER a fenced code block. The fenced block lines
+        // sit inside the collected window and must be skipped by the
+        // `if fenced[i] { continue; }` branch rather than participating
+        // in enumeration detection.
+        let content = "\
+Intro paragraph explaining context.
+
+```bash
+# This fenced block sits in the scan window and must be skipped.
+echo hello
+```
+
+Add guard to every subcommand: `a`, `b`, `c`.
+";
+        let v = scan(content, &dummy_path());
+        // The trigger has an inline 3-backtick enumeration, so it passes.
+        // The important assertion is that scanning does not panic or
+        // misbehave when the window contains fenced lines.
+        assert_eq!(v.len(), 0, "{:?}", v);
     }
 }

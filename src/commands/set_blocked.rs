@@ -116,4 +116,17 @@ mod tests {
         // Should not panic
         set_blocked(&path);
     }
+
+    #[test]
+    fn test_set_blocked_array_root_skips_mutation() {
+        // An array root triggers the `!(state.is_object() || state.is_null())`
+        // guard inside the mutate closure. `set_blocked` must not panic;
+        // mutate_state pretty-prints the array back unchanged.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, "[1, 2, 3]").unwrap();
+        set_blocked(&path);
+        let after: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(after.is_array());
+    }
 }

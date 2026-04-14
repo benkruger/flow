@@ -520,4 +520,81 @@ mod tests {
         assert_eq!(result["status"], "error");
         assert!(result["message"].as_str().unwrap().contains("--local-path"));
     }
+
+    #[test]
+    fn test_cli_start_happy_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let flow_json = dir.path().join(".flow.json");
+        write_flow_json(
+            &flow_json,
+            &json!({"flow_version": "0.39.0", "plugin_root": "/original/path"}),
+        );
+        let local_source = dir.path().join("local-flow");
+        fs::create_dir_all(local_source.join("bin")).unwrap();
+        fs::write(local_source.join("bin").join("flow"), "").unwrap();
+
+        let args = Args {
+            start: true,
+            stop: false,
+            local_path: Some(local_source.to_string_lossy().to_string()),
+            flow_json: Some(flow_json.to_string_lossy().to_string()),
+        };
+
+        let result = run_impl(&args).unwrap();
+        assert_eq!(result["status"], "ok");
+        // Backup was recorded.
+        let disk = read_flow_json(&flow_json);
+        assert_eq!(disk["plugin_root_backup"], "/original/path");
+    }
+
+    #[test]
+    fn test_cli_stop_happy_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let flow_json = dir.path().join(".flow.json");
+        write_flow_json(
+            &flow_json,
+            &json!({
+                "flow_version": "0.39.0",
+                "plugin_root": "/local/dev",
+                "plugin_root_backup": "/original"
+            }),
+        );
+
+        let args = Args {
+            start: false,
+            stop: true,
+            local_path: None,
+            flow_json: Some(flow_json.to_string_lossy().to_string()),
+        };
+
+        let result = run_impl(&args).unwrap();
+        assert_eq!(result["status"], "ok");
+        let disk = read_flow_json(&flow_json);
+        assert_eq!(disk["plugin_root"], "/original");
+        assert!(disk.get("plugin_root_backup").is_none());
+    }
+
+    #[test]
+    fn test_cli_stop_when_not_in_dev_mode_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let flow_json = dir.path().join(".flow.json");
+        write_flow_json(
+            &flow_json,
+            &json!({"flow_version": "0.39.0", "plugin_root": "/original"}),
+        );
+
+        let args = Args {
+            start: false,
+            stop: true,
+            local_path: None,
+            flow_json: Some(flow_json.to_string_lossy().to_string()),
+        };
+
+        let result = run_impl(&args).unwrap();
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("Not in dev mode"));
+    }
 }

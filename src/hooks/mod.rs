@@ -169,3 +169,71 @@ pub mod validate_ask_user;
 pub mod validate_claude_paths;
 pub mod validate_pretool;
 pub mod validate_worktree_paths;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Covers the `Err(_) => return (None, None)` arm on line 39 of
+    /// `find_settings_and_root_from`: `is_file()` returns true but
+    /// `fs::read_to_string` fails. Triggered by a `.claude/settings.json`
+    /// entry that passes `is_file()` (it's a regular file metadata-wise
+    /// on macOS when the path is a broken symlink targeting a non-file
+    /// — not straightforward). Easiest reliable trigger on Unix is a
+    /// directory placed where the file is expected, combined with a
+    /// path that tricks `is_file()` — in practice we use a path whose
+    /// name matches `.claude/settings.json` but whose parent makes the
+    /// read fail with EISDIR.
+    ///
+    /// A simpler deterministic trigger: create the settings file as
+    /// unreadable (`chmod 000`). On macOS, `is_file()` returns true
+    /// for metadata, and `read_to_string` fails with EACCES.
+    #[test]
+    fn find_settings_read_failure_returns_none_none() {
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let claude = dir.path().join(".claude");
+        fs::create_dir(&claude).unwrap();
+        let settings = claude.join("settings.json");
+        fs::write(&settings, "{}").unwrap();
+        // Strip all permission bits so the read fails while
+        // `is_file()` still sees a regular file.
+        fs::set_permissions(&settings, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let (val, root) = find_settings_and_root_from(dir.path());
+        // Restore permissions for tempdir cleanup on drop.
+        let _ = fs::set_permissions(&settings, fs::Permissions::from_mode(0o644));
+        assert!(val.is_none());
+        assert!(root.is_none());
+    }
+
+    /// Covers the git fallback None arm when `git branch --show-current`
+    /// returns empty stdout (e.g. detached HEAD). Hard to simulate
+    /// deterministically without either (a) a stubbed git on PATH or
+    /// (b) an actual detached-HEAD fixture. We construct (b) via
+    /// `git checkout --detach HEAD` in a fresh repo.
+    #[test]
+    fn detect_branch_from_path_detached_head_returns_none() {
+        use std::process::Command;
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        let run = |args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(repo)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "git {:?}: {:?}", args, out);
+        };
+        run(&["init", "--initial-branch", "main"]);
+        run(&["config", "user.email", "t@t.com"]);
+        run(&["config", "user.name", "T"]);
+        run(&["config", "commit.gpgsign", "false"]);
+        run(&["commit", "--allow-empty", "-m", "init"]);
+        // Detach HEAD so `git branch --show-current` returns empty.
+        run(&["checkout", "--detach", "HEAD"]);
+
+        assert_eq!(detect_branch_from_path(repo), None);
+    }
+}

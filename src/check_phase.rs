@@ -349,4 +349,57 @@ mod tests {
         assert!(!allowed);
         assert!(output.contains("BLOCKED"));
     }
+
+    // --- First-phase fast path ---
+
+    #[test]
+    fn first_phase_has_no_prerequisites() {
+        // Targeting flow-start (phase_idx == 0) returns Ok((true, "")) via
+        // the early-return at `if phase_idx == 0`, short-circuiting the
+        // rest of the function.
+        let state = make_state("flow-start", &[]);
+        let (allowed, output) = check_phase(&state, "flow-start", None).unwrap();
+        assert!(allowed);
+        assert!(output.is_empty());
+    }
+
+    // --- Frozen-config lookup misses ---
+
+    #[test]
+    fn missing_prev_name_falls_back_to_key() {
+        // `names` is missing an entry for "flow-start" → the
+        // `.unwrap_or_else(|| prev.clone())` closure runs.
+        let config = PhaseConfig {
+            order: vec!["flow-start".into(), "flow-plan".into()],
+            names: IndexMap::new(),
+            numbers: IndexMap::new(),
+            commands: IndexMap::new(),
+        };
+        let state = make_state("flow-plan", &[("flow-start", "pending")]);
+        let (allowed, output) = check_phase(&state, "flow-plan", Some(&config)).unwrap();
+        assert!(!allowed);
+        // With no names registered, the error message falls back to the
+        // raw phase keys and command defaults like `/flow:flow-start`.
+        assert!(output.contains("flow-start"));
+        assert!(output.contains("/flow:flow-start"));
+    }
+
+    #[test]
+    fn missing_phase_name_falls_back_to_key() {
+        // `names` is missing the TARGET phase ("flow-plan") → the
+        // `.unwrap_or_else(|| phase.to_string())` closure runs.
+        let mut names = IndexMap::new();
+        names.insert("flow-start".into(), "Start".into());
+        let config = PhaseConfig {
+            order: vec!["flow-start".into(), "flow-plan".into()],
+            names,
+            numbers: IndexMap::new(),
+            commands: IndexMap::new(),
+        };
+        let state = make_state("flow-plan", &[("flow-start", "pending")]);
+        let (allowed, output) = check_phase(&state, "flow-plan", Some(&config)).unwrap();
+        assert!(!allowed);
+        // Target phase name falls back to its key.
+        assert!(output.contains("flow-plan"));
+    }
 }

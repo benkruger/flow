@@ -16,20 +16,34 @@ use common::{create_git_repo_with_remote, flow_states_dir, parse_output};
 
 // --- Test helpers ---
 
-/// Create a bin/ci script that exits with a given code.
-fn create_bin_ci(repo: &Path, exit_code: i32) {
+/// Create the four `bin/{format,lint,build,test}` stubs the CI dispatch
+/// looks for. All four exit with `exit_code`. Writing all four ensures
+/// `ci::run_impl` does not short-circuit on "no tools found" before
+/// encountering the failure we want to exercise.
+fn create_bin_tools(repo: &Path, exit_code: i32) {
     let bin_dir = repo.join("bin");
     fs::create_dir_all(&bin_dir).unwrap();
     let script = format!("#!/bin/bash\nexit {}\n", exit_code);
-    let ci_path = bin_dir.join("ci");
-    fs::write(&ci_path, script).unwrap();
-    fs::set_permissions(&ci_path, fs::Permissions::from_mode(0o755)).unwrap();
+    for tool in ["format", "lint", "build", "test"] {
+        let path = bin_dir.join(tool);
+        fs::write(&path, &script).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }
 
-/// Create a bin/ci script that fails N times then succeeds.
-fn create_flaky_bin_ci(repo: &Path, fail_count: u32) {
+/// Create the four `bin/*` stubs where format/lint/build always pass and
+/// `bin/test` fails `fail_count` times then succeeds. `bin/test` runs
+/// last in the dispatch order, so baseline CI sees the failures from it
+/// until the counter elapses.
+fn create_flaky_bin_tools(repo: &Path, fail_count: u32) {
     let bin_dir = repo.join("bin");
     fs::create_dir_all(&bin_dir).unwrap();
+    let pass = "#!/bin/bash\nexit 0\n";
+    for tool in ["format", "lint", "build"] {
+        let path = bin_dir.join(tool);
+        fs::write(&path, pass).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
     let counter_path = repo.join(".ci-counter");
     let script = format!(
         "#!/bin/bash\n\
@@ -46,9 +60,23 @@ fn create_flaky_bin_ci(repo: &Path, fail_count: u32) {
         counter_path.to_string_lossy(),
         fail_count
     );
-    let ci_path = bin_dir.join("ci");
-    fs::write(&ci_path, script).unwrap();
-    fs::set_permissions(&ci_path, fs::Permissions::from_mode(0o755)).unwrap();
+    let test_path = bin_dir.join("test");
+    fs::write(&test_path, script).unwrap();
+    fs::set_permissions(&test_path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// Install no-op `bin/{format,lint,build}` stubs that always pass. The
+/// caller is expected to install `bin/test` separately with the
+/// behavior it wants to exercise.
+fn install_passing_noncritical_tools(repo: &Path) {
+    let bin_dir = repo.join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    let pass = "#!/bin/bash\nexit 0\n";
+    for tool in ["format", "lint", "build"] {
+        let path = bin_dir.join(tool);
+        fs::write(&path, pass).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }
 
 /// Create a bin/dependencies script.
@@ -131,11 +159,10 @@ fn test_clean_path() {
 }
 
 #[test]
-#[ignore] // Needs restructuring for the bin/{format,lint,build,test} delegation contract (issue #1031)
 fn test_ci_flaky_baseline() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    create_flaky_bin_ci(&repo, 1); // fail once, then succeed
+    create_flaky_bin_tools(&repo, 1); // fail once, then succeed
     create_state_file(&repo, "flaky-branch");
 
     let output = run_start_gate(&repo, "flaky-branch");
@@ -153,11 +180,10 @@ fn test_ci_flaky_baseline() {
 }
 
 #[test]
-#[ignore] // Needs restructuring for the bin/{format,lint,build,test} delegation contract (issue #1031)
 fn test_ci_failed_baseline() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    create_bin_ci(&repo, 1); // always fail
+    create_bin_tools(&repo, 1); // always fail
     create_state_file(&repo, "failed-branch");
 
     let output = run_start_gate(&repo, "failed-branch");
@@ -167,11 +193,13 @@ fn test_ci_failed_baseline() {
 }
 
 #[test]
-#[ignore] // Needs restructuring for the bin/{format,lint,build,test} delegation contract (issue #1031)
 fn test_deps_changed_ci_passes() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_ci_sentinel(&repo);
+    // Provide the 4 bin/* stubs (all passing) so post-deps CI has tools
+    // to invoke after bin/dependencies modifies the tree.
+    create_bin_tools(&repo, 0);
     // bin/dependencies that creates a file (git status shows changes)
     create_bin_deps(&repo, "echo 'updated' > deps-output.txt");
     create_state_file(&repo, "deps-branch");
@@ -216,7 +244,6 @@ fn test_deps_error() {
 }
 
 #[test]
-#[ignore] // Needs restructuring for the bin/{format,lint,build,test} delegation contract (issue #1031)
 fn test_deps_ci_failed() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
@@ -224,8 +251,10 @@ fn test_deps_ci_failed() {
     create_bin_deps(&repo, "echo 'updated' > deps-output.txt");
     create_state_file(&repo, "deps-ci-fail-branch");
 
-    // CI needs to pass for baseline but fail for post-deps.
-    // Use a counter: first 3 calls pass (baseline retry 3), next 3 fail (post-deps).
+    // bin/{format,lint,build} always pass; bin/test passes on the
+    // first invocation (baseline) and fails on every subsequent
+    // invocation (post-deps gate, retries included).
+    install_passing_noncritical_tools(&repo);
     let bin_dir = repo.join("bin");
     let counter_path = repo.join(".ci-counter");
     let script = format!(
@@ -240,8 +269,8 @@ fn test_deps_ci_failed() {
          exit 1\n",
         counter_path.to_string_lossy()
     );
-    fs::write(bin_dir.join("ci"), script).unwrap();
-    fs::set_permissions(bin_dir.join("ci"), fs::Permissions::from_mode(0o755)).unwrap();
+    fs::write(bin_dir.join("test"), script).unwrap();
+    fs::set_permissions(bin_dir.join("test"), fs::Permissions::from_mode(0o755)).unwrap();
 
     let output = run_start_gate(&repo, "deps-ci-fail-branch");
     let data = parse_output(&output);
@@ -250,15 +279,16 @@ fn test_deps_ci_failed() {
 }
 
 #[test]
-#[ignore] // Needs restructuring for the bin/{format,lint,build,test} delegation contract (issue #1031)
 fn test_deps_ci_flaky() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     create_bin_deps(&repo, "echo 'updated' > deps-output.txt");
     create_state_file(&repo, "deps-flaky-branch");
 
-    // CI passes baseline (1st call), then fails once (2nd call = post-deps attempt 1),
-    // then passes (3rd call = post-deps attempt 2)
+    // bin/{format,lint,build} always pass. bin/test passes baseline
+    // (call #1), fails once on post-deps attempt 1 (call #2), then
+    // passes on post-deps attempt 2 (call #3).
+    install_passing_noncritical_tools(&repo);
     let bin_dir = repo.join("bin");
     let counter_path = repo.join(".ci-counter");
     let script = format!(
@@ -275,8 +305,8 @@ fn test_deps_ci_flaky() {
          exit 0\n",
         counter_path.to_string_lossy()
     );
-    fs::write(bin_dir.join("ci"), script).unwrap();
-    fs::set_permissions(bin_dir.join("ci"), fs::Permissions::from_mode(0o755)).unwrap();
+    fs::write(bin_dir.join("test"), script).unwrap();
+    fs::set_permissions(bin_dir.join("test"), fs::Permissions::from_mode(0o755)).unwrap();
 
     let output = run_start_gate(&repo, "deps-flaky-branch");
     let data = parse_output(&output);
@@ -323,7 +353,7 @@ fn test_pull_failure() {
         .output()
         .unwrap();
 
-    create_bin_ci(&repo, 0);
+    create_bin_tools(&repo, 0);
     create_state_file(&repo, "pull-fail-branch");
 
     let output = run_start_gate(&repo, "pull-fail-branch");

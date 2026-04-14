@@ -96,6 +96,30 @@ fn test_hook_malformed_stdin_exits_zero() {
 }
 
 #[test]
+fn test_hook_no_current_branch_exits_zero() {
+    // When neither FLOW_SIMULATE_BRANCH nor a git branch is available,
+    // `current_branch()` returns None and `run()` returns early via
+    // `None => return`. Must exit 0 without touching any state.
+    let dir = tempfile::tempdir().unwrap();
+    // No `git init` — current_branch() has no branch to report.
+    let mut cmd = flow_rs();
+    cmd.arg("clear-blocked")
+        .current_dir(dir.path())
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    {
+        use std::io::Write;
+        let stdin = child.stdin.as_mut().unwrap();
+        stdin.write_all(b"{}").unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
 fn test_hook_preserves_other_fields() {
     let dir = tempfile::tempdir().unwrap();
     let state = json!({

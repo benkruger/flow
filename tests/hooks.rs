@@ -209,6 +209,27 @@ fn test_post_compact_no_state_file_exits_zero() {
 }
 
 #[test]
+fn test_post_compact_no_branch_exits_zero() {
+    // No FLOW_SIMULATE_BRANCH, no git → resolve_branch returns None →
+    // `None => return` arm in run().
+    let dir = tempfile::tempdir().unwrap();
+    let stdin = br#"{"compact_summary":"test"}"#;
+    let output = run_hook_no_simulate("post-compact", dir.path(), stdin);
+    assert_eq!(output.status.code().unwrap(), 0);
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn test_post_compact_slash_branch_exits_zero() {
+    // Slash-branch → FlowPaths::try_new returns None → second None arm.
+    let dir = tempfile::tempdir().unwrap();
+    let stdin = br#"{"compact_summary":"test"}"#;
+    let output = run_hook("post-compact", dir.path(), "feature/slash/nope", stdin);
+    assert_eq!(output.status.code().unwrap(), 0);
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
 fn test_post_compact_empty_stdin_exits_zero() {
     let dir = tempfile::tempdir().unwrap();
     let branch = "test-feature";
@@ -287,6 +308,28 @@ fn test_stop_failure_no_state_file_exits_zero() {
     let stdin = br#"{"error_type":"rate_limit","error_message":"429"}"#;
     let output = run_hook("stop-failure", dir.path(), "test-feature", stdin);
 
+    assert_eq!(output.status.code().unwrap(), 0);
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn test_stop_failure_no_branch_exits_zero() {
+    // Non-git dir with no FLOW_SIMULATE_BRANCH → resolve_branch returns
+    // None → `None => return` arm in run().
+    let dir = tempfile::tempdir().unwrap();
+    let stdin = br#"{"error_type":"rate_limit","error_message":"429"}"#;
+    let output = run_hook_no_simulate("stop-failure", dir.path(), stdin);
+    assert_eq!(output.status.code().unwrap(), 0);
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn test_stop_failure_slash_branch_exits_zero() {
+    // A slash-containing branch is not a valid FLOW branch —
+    // `FlowPaths::try_new` returns None and `run()` returns early.
+    let dir = tempfile::tempdir().unwrap();
+    let stdin = br#"{"error_type":"rate_limit","error_message":"429"}"#;
+    let output = run_hook("stop-failure", dir.path(), "feature/with/slash", stdin);
     assert_eq!(output.status.code().unwrap(), 0);
     assert!(output.stdout.is_empty());
 }

@@ -295,4 +295,64 @@ mod tests {
         assert_eq!(result["cleanup"]["git_pull"], "pulled");
         assert_eq!(result["cleanup"]["worktree"], "removed");
     }
+
+    #[test]
+    fn test_cleanup_panic_captured_and_reported() {
+        let panicking_cleanup = || -> IndexMap<String, String> {
+            panic!("simulated cleanup crash");
+        };
+
+        let result = finalize_inner(&mock_post_merge_ok, &panicking_cleanup);
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["cleanup_error"], "cleanup panicked");
+        assert!(result["cleanup"].as_object().unwrap().is_empty());
+        // Post-merge data still populated.
+        assert_eq!(result["formatted_time"], "2m");
+    }
+
+    #[test]
+    fn test_both_post_merge_and_cleanup_panic() {
+        let panic_pm = || -> Value { panic!("pm boom") };
+        let panic_cleanup = || -> IndexMap<String, String> { panic!("cleanup boom") };
+
+        let result = finalize_inner(&panic_pm, &panic_cleanup);
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["post_merge_error"], "post-merge panicked");
+        assert_eq!(result["cleanup_error"], "cleanup panicked");
+    }
+
+    #[test]
+    fn test_empty_failures_object_not_included() {
+        let pm_empty_failures = || -> Value {
+            json!({
+                "status": "ok",
+                "formatted_time": "1m",
+                "cumulative_seconds": 60,
+                "summary": "done",
+                "issues_links": "",
+                "banner_line": "",
+                "failures": {},
+            })
+        };
+
+        let result = finalize_inner(&pm_empty_failures, &mock_cleanup_ok);
+
+        // Empty failures object should NOT be added to result.
+        assert!(result.get("post_merge_failures").is_none());
+    }
+
+    #[test]
+    fn test_missing_post_merge_fields_default_to_empty() {
+        let pm_minimal = || -> Value { json!({"status": "ok"}) };
+
+        let result = finalize_inner(&pm_minimal, &mock_cleanup_ok);
+
+        assert_eq!(result["formatted_time"], "");
+        assert_eq!(result["cumulative_seconds"], 0);
+        assert_eq!(result["summary"], "");
+        assert_eq!(result["issues_links"], "");
+        assert_eq!(result["banner_line"], "");
+    }
 }

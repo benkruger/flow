@@ -330,3 +330,166 @@ fn test_code_review_phase() {
     assert_eq!(state["phases"]["flow-code-review"]["status"], "complete");
     assert_eq!(state["current_phase"], "flow-learn");
 }
+
+#[test]
+fn test_missing_state_file_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo(dir.path());
+    // No state file written.
+
+    let output = run_phase_finalize(
+        &repo,
+        &["--phase", "flow-code", "--branch", "no-such-branch"],
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("No state file found"));
+}
+
+#[test]
+fn test_learn_phase_finalize() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "learn-fin";
+    let repo = create_git_repo(dir.path());
+    create_state(&repo, branch, "flow-learn", "auto");
+
+    let output = run_phase_finalize(&repo, &["--phase", "flow-learn", "--branch", branch]);
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+
+    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    assert_eq!(state["phases"]["flow-learn"]["status"], "complete");
+    assert_eq!(state["current_phase"], "flow-complete");
+}
+
+#[test]
+fn test_cwd_drift_error() {
+    // When cwd is outside the flow's relative_cwd, the cwd_scope guard
+    // returns an error JSON.
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "drift-branch";
+    let repo = create_git_repo(dir.path());
+    // Need a state file — but state must be scoped to "api" and run from "ios".
+    let state_dir = flow_states_dir(&repo);
+    fs::create_dir_all(&state_dir).unwrap();
+    // Get current branch of the fresh repo.
+    let branch_out = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    let real_branch = String::from_utf8_lossy(&branch_out.stdout)
+        .trim()
+        .to_string();
+    // Write a state file for the real branch with relative_cwd = "api"
+    fs::write(
+        state_dir.join(format!("{}.json", real_branch)),
+        json!({"branch": real_branch, "relative_cwd": "api"}).to_string(),
+    )
+    .unwrap();
+    let ios = repo.join("ios");
+    fs::create_dir(&ios).unwrap();
+
+    // Run phase-finalize from ios/ with --branch targeting a (different) state
+    // file. The cwd_scope check runs first against the CURRENT git branch which
+    // is real_branch scoped to "api/", so running from ios/ trips the drift guard.
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["phase-finalize", "--phase", "flow-code", "--branch", branch])
+        .current_dir(&ios)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("SLACK_BOT_TOKEN")
+        .env_remove("SLACK_CHANNEL")
+        .output()
+        .unwrap();
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(
+        data["message"].as_str().unwrap_or("").contains("cwd drift"),
+        "should report cwd drift: {:?}",
+        data
+    );
+}
+
+#[test]
+fn test_frozen_phase_config_used() {
+    // When frozen_phases.json exists, phase_complete uses the frozen order
+    // and commands. We test that the file is consumed without error.
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "frozen-branch";
+    let repo = create_git_repo(dir.path());
+    create_state(&repo, branch, "flow-code", "auto");
+
+    // Write a frozen_phases.json file (matches phase_config schema)
+    let frozen_path = flow_states_dir(&repo).join(format!("{}-frozen-phases.json", branch));
+    let frozen_config = json!({
+        "order": [
+            "flow-start",
+            "flow-plan",
+            "flow-code",
+            "flow-code-review",
+            "flow-learn",
+            "flow-complete"
+        ],
+        "commands": {
+            "flow-start": "/flow:flow-start",
+            "flow-plan": "/flow:flow-plan",
+            "flow-code": "/flow:flow-code",
+            "flow-code-review": "/flow:flow-code-review",
+            "flow-learn": "/flow:flow-learn",
+            "flow-complete": "/flow:flow-complete"
+        },
+        "phase_names": {
+            "flow-start": "Start",
+            "flow-plan": "Plan",
+            "flow-code": "Code",
+            "flow-code-review": "Code Review",
+            "flow-learn": "Learn",
+            "flow-complete": "Complete"
+        }
+    });
+    fs::write(
+        &frozen_path,
+        serde_json::to_string_pretty(&frozen_config).unwrap(),
+    )
+    .unwrap();
+
+    let output = run_phase_finalize(&repo, &["--phase", "flow-code", "--branch", branch]);
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+
+    // Phase still completes with frozen config
+    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    assert_eq!(state["phases"]["flow-code"]["status"], "complete");
+}
+
+#[test]
+fn test_pr_url_without_thread_ts_attempts_slack() {
+    // pr-url triggers Slack attempt path; no Slack config means the inner
+    // slack_result is "skipped", which the response branch omits.
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "pr-only";
+    let repo = create_git_repo(dir.path());
+    create_state(&repo, branch, "flow-code", "auto");
+
+    let output = run_phase_finalize(
+        &repo,
+        &[
+            "--phase",
+            "flow-code",
+            "--branch",
+            branch,
+            "--pr-url",
+            "https://github.com/test/repo/pull/99",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    // Skipped slack results are omitted from the response by design.
+    assert!(data.get("slack").is_none());
+}

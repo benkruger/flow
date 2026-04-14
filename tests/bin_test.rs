@@ -38,9 +38,9 @@ fn script_is_valid_bash() {
     );
 }
 
-/// `bin/test` (no args) invokes `cargo nextest run`.
+/// `bin/test` (no args) invokes `cargo llvm-cov nextest`.
 #[test]
-fn invokes_cargo_nextest_run_by_default() {
+fn invokes_cargo_llvm_cov_nextest_by_default() {
     let dir = tempfile::tempdir().unwrap();
     let bin_dir = dir.path().join("bin");
     fs::create_dir_all(&bin_dir).unwrap();
@@ -81,11 +81,15 @@ fn invokes_cargo_nextest_run_by_default() {
     );
     let logged = fs::read_to_string(&log_file).unwrap();
     assert!(
-        logged.contains("nextest"),
-        "expected cargo nextest, got: {}",
+        logged.contains("llvm-cov"),
+        "expected cargo llvm-cov wrapper, got: {}",
         logged
     );
-    assert!(logged.contains("run"), "expected run, got: {}", logged);
+    assert!(
+        logged.contains("nextest"),
+        "expected cargo llvm-cov nextest, got: {}",
+        logged
+    );
 }
 
 /// `bin/test` forwards trailing args to cargo nextest.

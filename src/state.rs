@@ -290,13 +290,13 @@ mod tests {
     fn skill_config_detailed() {
         let json = r#"{"commit":"auto","continue":"manual"}"#;
         let config: SkillConfig = serde_json::from_str(json).unwrap();
-        match &config {
-            SkillConfig::Detailed(map) => {
-                assert_eq!(map.get("commit").unwrap(), "auto");
-                assert_eq!(map.get("continue").unwrap(), "manual");
-            }
-            _ => panic!("expected Detailed variant"),
-        }
+        // Compare against the expected Detailed variant directly — this
+        // avoids a mismatch-arm `panic!()` branch that would never be
+        // exercised and therefore stays uncovered.
+        let mut expected = IndexMap::new();
+        expected.insert("commit".to_string(), "auto".to_string());
+        expected.insert("continue".to_string(), "manual".to_string());
+        assert_eq!(config, SkillConfig::Detailed(expected));
     }
 
     #[test]
@@ -307,5 +307,41 @@ mod tests {
         assert_eq!(map.get(&Phase::FlowStart), Some(&"start"));
         assert_eq!(map.get(&Phase::FlowCode), Some(&"code"));
         assert_eq!(map.get(&Phase::FlowPlan), None);
+    }
+
+    #[test]
+    fn phase_hash_consistent() {
+        // Two equal Phase values must have the same hash. Required for
+        // Phase to work as an IndexMap/HashMap key.
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut h1 = DefaultHasher::new();
+        let mut h2 = DefaultHasher::new();
+        Phase::FlowCode.hash(&mut h1);
+        Phase::FlowCode.hash(&mut h2);
+        assert_eq!(h1.finish(), h2.finish());
+    }
+
+    #[test]
+    fn phase_debug_format() {
+        assert_eq!(format!("{:?}", Phase::FlowStart), "FlowStart");
+        assert_eq!(format!("{:?}", Phase::FlowComplete), "FlowComplete");
+    }
+
+    #[test]
+    fn phase_copy_semantics() {
+        // Phase is Copy — ensure assignment doesn't move.
+        let p = Phase::FlowLearn;
+        let q = p;
+        assert_eq!(p, q);
+    }
+
+    #[test]
+    fn phase_status_debug_copy() {
+        // PhaseStatus is Debug + Copy but not Hash (not used as a map key).
+        assert_eq!(format!("{:?}", PhaseStatus::Pending), "Pending");
+        let s = PhaseStatus::Complete;
+        let t = s;
+        assert_eq!(s, t);
     }
 }
