@@ -168,3 +168,110 @@ fn invalid_subcommand_errors() {
         "invalid subcommand should exit non-zero"
     );
 }
+
+// --- Dispatch arms covered end-to-end via subprocess ---
+//
+// These tests exercise the match arms in `main.rs` that call
+// `dispatch::dispatch_json` / `dispatch::dispatch_text` /
+// `process::exit`. In-process unit tests of each module's
+// `run_impl_main` validate the return tuple; these subprocess tests
+// confirm that main.rs wires each `run_impl_main` result to the right
+// stdout/stderr/exit-code triple.
+
+fn flow_rs_no_recursion() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    // Prevent recursion-guard triggers when `bin/flow ci` spawns these
+    // subprocesses during the wider test suite run. Not strictly needed
+    // for these subcommands (they aren't CI-tier runners), but defensive
+    // per .claude/rules/rust-patterns.md "Guard Universality".
+    cmd.env_remove("FLOW_CI_RUNNING");
+    cmd
+}
+
+/// `flow-rs` invoked with no subcommand writes an error to stderr and
+/// exits 1 — covers the `None` arm in `fn main`.
+#[test]
+fn no_command_writes_stderr_and_exits_1() {
+    let output = flow_rs_no_recursion().output().expect("spawn flow-rs");
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("flow-rs: no command specified"),
+        "stderr: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("--help"),
+        "stderr should mention --help: {}",
+        stderr
+    );
+}
+
+/// A bare unknown token exits 127 via the `External(_)` arm — tighter
+/// than the sibling `invalid_subcommand_errors` test which only
+/// asserts non-zero.
+#[test]
+fn external_arm_exits_127() {
+    let output = flow_rs_no_recursion()
+        .arg("this-subcommand-does-not-exist-and-never-will")
+        .output()
+        .expect("spawn flow-rs");
+    assert_eq!(output.status.code(), Some(127));
+}
+
+/// `bin/flow check-phase --required flow-start` takes the first-phase
+/// short-circuit in `check_phase::run_impl_main` and exits 0 silently.
+/// Exercises the `dispatch_text` path end-to-end.
+#[test]
+fn check_phase_first_phase_exits_0() {
+    let output = flow_rs_no_recursion()
+        .args(["check-phase", "--required", "flow-start", "--branch", "any"])
+        .output()
+        .expect("spawn flow-rs");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "stdout should be empty on first-phase short-circuit, got: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+/// `bin/flow tui-data` with no flag writes a stderr error and exits 1
+/// — covers the `Err` branch of `tui_data::run_impl_main`.
+#[test]
+fn tui_data_no_flag_writes_stderr_and_exits_1() {
+    let output = flow_rs_no_recursion()
+        .arg("tui-data")
+        .output()
+        .expect("spawn flow-rs");
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("tui-data: specify one of"),
+        "stderr: {}",
+        stderr
+    );
+}
+
+/// `bin/flow tui-data --load-all-flows` exits 0 with a JSON array on
+/// stdout — covers the `Ok(Value, 0)` + `dispatch_json` path.
+#[test]
+fn tui_data_load_all_flows_exits_0_with_array() {
+    let output = flow_rs_no_recursion()
+        .args(["tui-data", "--load-all-flows"])
+        .output()
+        .expect("spawn flow-rs");
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.trim_start().starts_with('['),
+        "stdout should be a JSON array: {}",
+        stdout
+    );
+}

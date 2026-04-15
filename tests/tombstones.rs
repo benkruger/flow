@@ -200,6 +200,41 @@ fn test_no_backward_facing_comments_in_rust_source() {
     );
 }
 
+/// Four inline dispatch helpers were removed from `src/main.rs` in
+/// favor of module-level `run_impl_main` functions so the CLI
+/// dispatch paths are testable in-process. If a merge conflict
+/// resolution reintroduces any of them, this test fails.
+///
+/// Tombstone: removed in PR #1156. Dispatch lives in
+/// `check_phase::run_impl_main`, `phase_transition::run_impl_main`,
+/// `format_status::run_impl_main`, and `tui_data::run_impl_main`.
+#[test]
+fn test_main_no_inline_dispatch_fns() {
+    let root = common::repo_root();
+    let main_rs = root.join("src").join("main.rs");
+    let content = fs::read_to_string(&main_rs).expect("src/main.rs must be readable");
+
+    const REMOVED_FNS: &[&str] = &[
+        "fn run_check_phase(",
+        "fn run_phase_transition(",
+        "fn run_format_status(",
+        "fn run_tui_data(",
+    ];
+
+    let mut violations: Vec<&str> = Vec::new();
+    for needle in REMOVED_FNS {
+        if content.contains(needle) {
+            violations.push(needle);
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "Inline dispatch fn(s) returned to src/main.rs: {:?}. Each was replaced by a module-level run_impl_main. See PR #1156.",
+        violations
+    );
+}
+
 #[test]
 fn test_notify_slack_no_post_message_wrapper() {
     // Tombstone: removed in PR #1157. The three-line `post_message`

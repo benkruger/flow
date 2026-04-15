@@ -11,13 +11,12 @@ use flow_rs::auto_close_parent;
 use flow_rs::build;
 use flow_rs::bump_version;
 use flow_rs::check_freshness;
-use flow_rs::check_phase::check_phase;
+use flow_rs::check_phase;
 use flow_rs::ci;
 use flow_rs::cleanup;
 use flow_rs::close_issue;
 use flow_rs::close_issues;
 use flow_rs::commands;
-use flow_rs::commands::log::append_log;
 use flow_rs::complete_fast;
 use flow_rs::complete_finalize;
 use flow_rs::complete_merge;
@@ -27,27 +26,24 @@ use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
 use flow_rs::extract_release_notes;
 use flow_rs::finalize_commit;
-use flow_rs::flow_paths::FlowPaths;
 use flow_rs::format_check;
 use flow_rs::format_complete_summary;
 use flow_rs::format_issues_summary;
 use flow_rs::format_pr_timings;
 use flow_rs::format_status;
-use flow_rs::git::{project_root, resolve_branch};
+use flow_rs::git::project_root;
 use flow_rs::hooks;
 use flow_rs::issue;
 use flow_rs::label_issues;
 use flow_rs::link_blocked_by;
 use flow_rs::lint;
-use flow_rs::lock::mutate_state;
 use flow_rs::notify_slack;
 use flow_rs::orchestrate_report;
 use flow_rs::orchestrate_state;
 use flow_rs::output::json_error;
-use flow_rs::phase_config::{find_state_files, load_phase_config, phase_number, PHASE_ORDER};
 use flow_rs::phase_enter;
 use flow_rs::phase_finalize;
-use flow_rs::phase_transition::{phase_complete, phase_enter as phase_enter_fn};
+use flow_rs::phase_transition;
 use flow_rs::plan_check;
 use flow_rs::plan_extract;
 use flow_rs::prime_check;
@@ -68,7 +64,6 @@ use flow_rs::tui_data;
 use flow_rs::update_deps;
 use flow_rs::update_pr_body;
 use flow_rs::upgrade_check;
-use flow_rs::utils::{detect_dev_mode, read_version};
 use flow_rs::write_rule;
 
 #[derive(Parser)]
@@ -482,7 +477,9 @@ fn main() {
         Some(Commands::BumpVersion(args)) => bump_version::run(args),
         Some(Commands::CheckFreshness(args)) => check_freshness::run(args),
         Some(Commands::CheckPhase { required, branch }) => {
-            run_check_phase(&required, branch.as_deref());
+            let root = project_root();
+            let (out, code) = check_phase::run_impl_main(&required, branch.as_deref(), &root);
+            flow_rs::dispatch::dispatch_text(&out, code);
         }
         Some(Commands::PhaseTransition {
             phase,
@@ -491,13 +488,18 @@ fn main() {
             branch,
             reason,
         }) => {
-            run_phase_transition(
+            let root = project_root();
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let (out, code) = phase_transition::run_impl_main(
                 &phase,
                 &action,
                 next_phase.as_deref(),
                 branch.as_deref(),
                 reason.as_deref(),
+                &root,
+                &cwd,
             );
+            flow_rs::dispatch::dispatch_json(out, code);
         }
         Some(Commands::Ci(args)) => ci::run(args),
         Some(Commands::Build(args)) => build::run(args),
@@ -605,7 +607,14 @@ fn main() {
             start_workspace::run(args);
         }
         Some(Commands::FormatStatus { branch }) => {
-            run_format_status(branch.as_deref());
+            let root = project_root();
+            match format_status::run_impl_main(branch.as_deref(), &root) {
+                Ok((text, code)) => flow_rs::dispatch::dispatch_text(&text, code),
+                Err((msg, code)) => {
+                    eprintln!("{}", msg);
+                    process::exit(code);
+                }
+            }
         }
         Some(Commands::SessionContext) => {
             commands::session_context::run();
@@ -666,7 +675,19 @@ fn main() {
             load_orchestration,
             load_account_metrics,
         }) => {
-            run_tui_data(load_all_flows, load_orchestration, load_account_metrics);
+            let root = project_root();
+            match tui_data::run_impl_main(
+                load_all_flows,
+                load_orchestration,
+                load_account_metrics,
+                &root,
+            ) {
+                Ok((value, code)) => flow_rs::dispatch::dispatch_json(value, code),
+                Err((msg, code)) => {
+                    eprintln!("{}", msg);
+                    process::exit(code);
+                }
+            }
         }
         Some(Commands::UpgradeCheck(args)) => upgrade_check::run(args),
         Some(Commands::QaMode(args)) => qa_mode::run(args),
@@ -685,284 +706,5 @@ fn main() {
         Some(Commands::External(_)) => {
             process::exit(127);
         }
-    }
-}
-
-fn run_check_phase(phase: &str, branch_override: Option<&str>) {
-    // First phase has no prerequisites
-    if phase == PHASE_ORDER[0] {
-        process::exit(0);
-    }
-
-    let root = project_root();
-    let branch = match resolve_branch(branch_override, &root) {
-        Some(b) => b,
-        None => {
-            println!("BLOCKED: Could not determine current git branch.");
-            process::exit(1);
-        }
-    };
-
-    let paths = FlowPaths::new(&root, &branch);
-    let state_file = paths.state_file();
-    if !state_file.exists() {
-        println!(
-            "BLOCKED: No FLOW feature in progress on branch \"{}\".",
-            branch
-        );
-        println!("Run /flow:flow-start to begin a new feature.");
-        process::exit(1);
-    }
-
-    let content = match std::fs::read_to_string(&state_file) {
-        Ok(c) => c,
-        Err(e) => {
-            println!("BLOCKED: Could not read state file: {}", e);
-            process::exit(1);
-        }
-    };
-
-    let state: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(e) => {
-            println!("BLOCKED: Could not read state file: {}", e);
-            process::exit(1);
-        }
-    };
-
-    // Load frozen phase config if available
-    let frozen_path = paths.frozen_phases();
-    let frozen_config = if frozen_path.exists() {
-        load_phase_config(&frozen_path).ok()
-    } else {
-        None
-    };
-
-    match check_phase(&state, phase, frozen_config.as_ref()) {
-        Ok((allowed, output)) => {
-            if !output.is_empty() {
-                println!("{}", output);
-            }
-            process::exit(if allowed { 0 } else { 1 });
-        }
-        Err(msg) => {
-            json_error(&msg, &[]);
-            process::exit(1);
-        }
-    }
-}
-
-fn run_phase_transition(
-    phase: &str,
-    action: &str,
-    next_phase: Option<&str>,
-    branch_override: Option<&str>,
-    reason: Option<&str>,
-) {
-    if !PHASE_ORDER.contains(&phase) {
-        json_error(
-            &format!(
-                "Invalid phase: {}. Must be one of: {}",
-                phase,
-                PHASE_ORDER.join(", ")
-            ),
-            &[],
-        );
-        process::exit(1);
-    }
-
-    if action != "enter" && action != "complete" {
-        json_error(
-            &format!("Invalid action: {}. Must be 'enter' or 'complete'", action),
-            &[],
-        );
-        process::exit(1);
-    }
-
-    let root = project_root();
-
-    // Drift guard: phase-transition mutates the state file and must
-    // run from inside the subdirectory the flow was started in. See
-    // crate::cwd_scope::enforce.
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    if let Err(msg) = flow_rs::cwd_scope::enforce(&cwd, &root) {
-        json_error(&msg, &[]);
-        process::exit(1);
-    }
-
-    let branch = match resolve_branch(branch_override, &root) {
-        Some(b) => b,
-        None => {
-            json_error("Could not determine current branch", &[]);
-            process::exit(1);
-        }
-    };
-    let paths = FlowPaths::new(&root, &branch);
-    let state_path = paths.state_file();
-
-    if !state_path.exists() {
-        json_error(
-            &format!("No state file found: {}", state_path.display()),
-            &[],
-        );
-        process::exit(1);
-    }
-
-    // Read state to validate phase key exists
-    let content = match std::fs::read_to_string(&state_path) {
-        Ok(c) => c,
-        Err(e) => {
-            json_error(&format!("Could not read state file: {}", e), &[]);
-            process::exit(1);
-        }
-    };
-
-    let state: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(e) => {
-            json_error(&format!("Could not read state file: {}", e), &[]);
-            process::exit(1);
-        }
-    };
-
-    // Validate phase key exists in state
-    if state.get("phases").is_none() || state["phases"].get(phase).is_none() {
-        json_error(&format!("Phase {} not found in state file", phase), &[]);
-        process::exit(1);
-    }
-
-    // Load frozen phase config if available
-    let frozen_path = paths.frozen_phases();
-    let frozen_config = if frozen_path.exists() {
-        load_phase_config(&frozen_path).ok()
-    } else {
-        None
-    };
-
-    let frozen_order: Option<Vec<String>> = frozen_config.as_ref().map(|c| c.order.clone());
-    let frozen_commands = frozen_config.as_ref().map(|c| c.commands.clone());
-
-    // Use mutate_state for atomic read-lock-transform-write
-    let result_holder = std::cell::RefCell::new(serde_json::Value::Null);
-
-    let mutate_result = mutate_state(&state_path, |state| {
-        let result = if action == "enter" {
-            phase_enter_fn(state, phase, reason)
-        } else {
-            phase_complete(
-                state,
-                phase,
-                next_phase,
-                frozen_order.as_deref(),
-                frozen_commands.as_ref(),
-            )
-        };
-        *result_holder.borrow_mut() = result;
-    });
-
-    let pn = phase_number(phase);
-
-    match mutate_result {
-        Ok(_) => {
-            let result = result_holder.into_inner();
-            let status = result
-                .get("status")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
-            let _ = append_log(
-                &root,
-                &branch,
-                &format!(
-                    "[Phase {}] phase-transition --action {} --phase {} (\"{}\")",
-                    pn, action, phase, status
-                ),
-            );
-            println!("{}", serde_json::to_string(&result).unwrap());
-        }
-        Err(e) => {
-            let _ = append_log(
-                &root,
-                &branch,
-                &format!(
-                    "[Phase {}] phase-transition --action {} --phase {} (\"error\")",
-                    pn, action, phase
-                ),
-            );
-            json_error(&format!("State mutation failed: {}", e), &[]);
-            process::exit(1);
-        }
-    }
-}
-
-fn run_format_status(branch_override: Option<&str>) {
-    let root = project_root();
-    let branch = match resolve_branch(branch_override, &root) {
-        Some(b) => b,
-        None => {
-            eprintln!("Could not determine current branch");
-            process::exit(2);
-        }
-    };
-
-    let results = find_state_files(&root, &branch);
-    // No state file for this branch — show all active flows instead
-    let results = if results.is_empty() {
-        let all = find_state_files(&root, "");
-        if all.is_empty() {
-            process::exit(1);
-        }
-        all
-    } else {
-        results
-    };
-
-    let version = read_version();
-    let dev_mode = detect_dev_mode(&root);
-
-    if results.len() > 1 {
-        let panel = format_status::format_multi_panel(&results, &version, dev_mode);
-        println!("{}", panel);
-        process::exit(0);
-    }
-
-    let (_state_path, state, matched_branch) = &results[0];
-
-    // Load frozen phase config if available
-    let frozen_path = FlowPaths::new(&root, matched_branch).frozen_phases();
-    let phase_config = if frozen_path.exists() {
-        load_phase_config(&frozen_path).ok()
-    } else {
-        None
-    };
-
-    let panel = format_status::format_panel(state, &version, None, dev_mode, phase_config.as_ref());
-    println!("{}", panel);
-}
-
-fn run_tui_data(load_all: bool, load_orch: bool, load_metrics: bool) {
-    let root = project_root();
-
-    if load_all {
-        let flows = tui_data::load_all_flows(&root);
-        println!("{}", serde_json::to_string(&flows).unwrap());
-    } else if load_orch {
-        let orch = tui_data::load_orchestration(&root);
-        match orch {
-            Some(state) => {
-                let summary = tui_data::orchestration_summary(Some(&state), None);
-                let result = json!({
-                    "state": state,
-                    "summary": summary,
-                });
-                println!("{}", serde_json::to_string(&result).unwrap());
-            }
-            None => println!("null"),
-        }
-    } else if load_metrics {
-        let metrics = tui_data::load_account_metrics(&root, None);
-        println!("{}", serde_json::to_string(&metrics).unwrap());
-    } else {
-        eprintln!("tui-data: specify one of --load-all-flows, --load-orchestration, --load-account-metrics");
-        process::exit(1);
     }
 }

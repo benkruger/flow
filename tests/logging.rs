@@ -10,13 +10,13 @@ mod common;
 use std::fs;
 use std::process::Command;
 
-/// main.rs must call append_log for phase-transition logging.
+/// phase_transition.rs must call append_log for phase-transition logging.
 #[test]
-fn main_rs_uses_append_log() {
-    let src = fs::read_to_string(common::repo_root().join("src/main.rs")).unwrap();
+fn phase_transition_uses_append_log() {
+    let src = fs::read_to_string(common::repo_root().join("src/phase_transition.rs")).unwrap();
     assert!(
         src.contains("append_log("),
-        "src/main.rs must call append_log for phase-transition session logging"
+        "src/phase_transition.rs::run_impl_main must call append_log for phase-transition session logging"
     );
 }
 

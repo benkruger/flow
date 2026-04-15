@@ -69,6 +69,7 @@ CI will fail if these are missing:
 - `docs/` — GitHub Pages site (static HTML); `docs/reference/flow-state-schema.md` for state file schema
 - `agents/*.md` — six custom plugin sub-agents: ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, documentation
 - `src/*.rs` — Rust source implementing all `bin/flow` subcommands
+- `src/dispatch.rs` — centralized dispatch helpers (`dispatch_json`, `dispatch_text`) for `main.rs` match arms that delegate to module-level `run_impl_main` functions; both helpers print their result and then call `process::exit`
 - `bin/flow` — Rust dispatcher: resolves the Rust binary (`target/release/flow-rs` or `target/debug/flow-rs`), auto-rebuilds when source is newer than binary
 - `bin/{format,lint,build,test}` — FLOW's own dogfood scripts; each repo gets its own copies installed by `/flow:flow-prime` from `assets/bin-stubs/`
 - `assets/bin-stubs/` — self-documenting bash stubs that prime copies into target projects when absent
