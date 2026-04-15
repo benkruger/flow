@@ -193,9 +193,21 @@ pub fn post_message(bot_token: &str, channel: &str, text: &str, thread_ts: Optio
     post_message_inner(bot_token, channel, text, thread_ts, &run_curl_with_timeout)
 }
 
-/// Core notification logic. Returns result Value.
-pub fn notify(args: &Args) -> Value {
-    let config = match read_slack_config() {
+/// Core notification logic with injectable config reader and poster.
+///
+/// `config_reader` returns the Slack credentials (or `None` when unconfigured).
+/// `poster` accepts (bot_token, channel, text, thread_ts) and returns the JSON
+/// response Value Slack produced. This split lets tests drive every branch
+/// without touching env vars or spawning `curl`. Production `notify()` binds
+/// the closures to `read_slack_config` and `post_message_inner +
+/// run_curl_with_timeout`.
+#[allow(clippy::type_complexity)]
+pub fn notify_with_deps(
+    args: &Args,
+    config_reader: &dyn Fn() -> Option<SlackConfig>,
+    poster: &dyn Fn(&str, &str, &str, Option<&str>) -> Value,
+) -> Value {
+    let config = match config_reader() {
         None => return json!({"status": "skipped", "reason": "no slack config"}),
         Some(c) => c,
     };
@@ -206,12 +218,19 @@ pub fn notify(args: &Args) -> Value {
         args.feature.as_deref(),
         args.pr_url.as_deref(),
     );
-    post_message(
+    poster(
         &config.bot_token,
         &config.channel,
         &text,
         args.thread_ts.as_deref(),
     )
+}
+
+/// Core notification logic. Returns result Value.
+pub fn notify(args: &Args) -> Value {
+    notify_with_deps(args, &read_slack_config, &|bot, channel, text, tts| {
+        post_message_inner(bot, channel, text, tts, &run_curl_with_timeout)
+    })
 }
 
 pub fn run(args: Args) {
@@ -380,5 +399,118 @@ mod tests {
 
         let result = post_message_inner("xoxb-token", "C12345", "Hello", None, &curl);
         assert_eq!(result["status"], "error");
+    }
+
+    // --- notify_with_deps ---
+
+    fn test_args(
+        phase: &str,
+        message: &str,
+        thread_ts: Option<&str>,
+        feature: Option<&str>,
+        pr_url: Option<&str>,
+    ) -> Args {
+        Args {
+            phase: phase.to_string(),
+            message: message.to_string(),
+            thread_ts: thread_ts.map(|s| s.to_string()),
+            feature: feature.map(|s| s.to_string()),
+            pr_url: pr_url.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn notify_with_deps_no_config_returns_skipped() {
+        let args = test_args("flow-start", "Feature started", None, None, None);
+        let config_reader = || None;
+        let poster_called = RefCell::new(false);
+        let poster = |_: &str, _: &str, _: &str, _: Option<&str>| -> Value {
+            *poster_called.borrow_mut() = true;
+            json!({"status": "ok"})
+        };
+
+        let result = notify_with_deps(&args, &config_reader, &poster);
+        assert_eq!(result["status"], "skipped");
+        assert_eq!(result["reason"], "no slack config");
+        assert!(
+            !*poster_called.borrow(),
+            "poster must not be called when config is absent"
+        );
+    }
+
+    #[test]
+    fn notify_with_deps_success_formats_and_posts() {
+        type PosterCall = (String, String, String, Option<String>);
+        let args = test_args(
+            "flow-start",
+            "Feature started",
+            Some("1234567890.123456"),
+            None,
+            None,
+        );
+        let config_reader = || {
+            Some(SlackConfig {
+                bot_token: "xoxb-test-token".to_string(),
+                channel: "C12345".to_string(),
+            })
+        };
+        let poster_calls: RefCell<Vec<PosterCall>> = RefCell::new(Vec::new());
+        let poster = |bot: &str, channel: &str, text: &str, tts: Option<&str>| -> Value {
+            poster_calls.borrow_mut().push((
+                bot.to_string(),
+                channel.to_string(),
+                text.to_string(),
+                tts.map(|s| s.to_string()),
+            ));
+            json!({"status": "ok", "ts": "5555.6666"})
+        };
+
+        let result = notify_with_deps(&args, &config_reader, &poster);
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["ts"], "5555.6666");
+
+        let calls = poster_calls.borrow();
+        assert_eq!(calls.len(), 1);
+        let (bot, channel, text, tts) = &calls[0];
+        assert_eq!(bot, "xoxb-test-token");
+        assert_eq!(channel, "C12345");
+        assert!(text.contains("Feature started"));
+        assert!(text.contains("Start"));
+        assert_eq!(tts.as_deref(), Some("1234567890.123456"));
+    }
+
+    #[test]
+    fn notify_with_deps_with_feature_and_pr_url() {
+        let args = test_args(
+            "flow-start",
+            "Feature started",
+            None,
+            Some("Invoice Export"),
+            Some("https://github.com/org/repo/pull/42"),
+        );
+        let config_reader = || {
+            Some(SlackConfig {
+                bot_token: "xoxb-test-token".to_string(),
+                channel: "C12345".to_string(),
+            })
+        };
+        let posted_text: RefCell<String> = RefCell::new(String::new());
+        let poster = |_bot: &str, _channel: &str, text: &str, _tts: Option<&str>| -> Value {
+            *posted_text.borrow_mut() = text.to_string();
+            json!({"status": "ok", "ts": "5555.6666"})
+        };
+
+        let _ = notify_with_deps(&args, &config_reader, &poster);
+        let text = posted_text.borrow();
+        assert!(
+            text.contains("Invoice Export"),
+            "feature must flow into posted text: {}",
+            *text
+        );
+        assert!(
+            text.contains("https://github.com/org/repo/pull/42"),
+            "pr_url must flow into posted text: {}",
+            *text
+        );
     }
 }
