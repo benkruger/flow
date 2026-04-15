@@ -675,7 +675,19 @@ fn main() {
             load_orchestration,
             load_account_metrics,
         }) => {
-            run_tui_data(load_all_flows, load_orchestration, load_account_metrics);
+            let root = project_root();
+            match tui_data::run_impl_main(
+                load_all_flows,
+                load_orchestration,
+                load_account_metrics,
+                &root,
+            ) {
+                Ok((value, code)) => flow_rs::dispatch::dispatch_json(value, code),
+                Err((msg, code)) => {
+                    eprintln!("{}", msg);
+                    process::exit(code);
+                }
+            }
         }
         Some(Commands::UpgradeCheck(args)) => upgrade_check::run(args),
         Some(Commands::QaMode(args)) => qa_mode::run(args),
@@ -694,33 +706,5 @@ fn main() {
         Some(Commands::External(_)) => {
             process::exit(127);
         }
-    }
-}
-
-fn run_tui_data(load_all: bool, load_orch: bool, load_metrics: bool) {
-    let root = project_root();
-
-    if load_all {
-        let flows = tui_data::load_all_flows(&root);
-        println!("{}", serde_json::to_string(&flows).unwrap());
-    } else if load_orch {
-        let orch = tui_data::load_orchestration(&root);
-        match orch {
-            Some(state) => {
-                let summary = tui_data::orchestration_summary(Some(&state), None);
-                let result = json!({
-                    "state": state,
-                    "summary": summary,
-                });
-                println!("{}", serde_json::to_string(&result).unwrap());
-            }
-            None => println!("null"),
-        }
-    } else if load_metrics {
-        let metrics = tui_data::load_account_metrics(&root, None);
-        println!("{}", serde_json::to_string(&metrics).unwrap());
-    } else {
-        eprintln!("tui-data: specify one of --load-all-flows, --load-orchestration, --load-account-metrics");
-        process::exit(1);
     }
 }
