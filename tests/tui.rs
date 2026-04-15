@@ -701,3 +701,187 @@ fn test_render_tab_bar_with_flows_count() {
     let output = render_to_string(&app, 120, 40);
     assert!(output.contains("Active Flows (2)"));
 }
+
+// --- Render-branch coverage (Task 12) ---
+
+#[test]
+fn test_render_list_truncates_long_feature_name() {
+    // Feature name longer than the computed feature_width at 80 cols.
+    // The renderer emits `format!("{}...", truncated)` — ASCII dots.
+    let mut app = make_app();
+    let long_name = "A".repeat(80);
+    app.flows = vec![make_flow(&long_name, "Code", 3)];
+    let output = render_to_string(&app, 80, 40);
+    assert!(
+        output.contains("..."),
+        "expected truncation ellipsis in output:\n{}",
+        output
+    );
+}
+
+#[test]
+fn test_render_orch_truncates_long_item_title() {
+    // Long orchestration item title at narrow-ish width forces title
+    // truncation via `format!("{}...", truncated)`.
+    let mut app = make_app();
+    app.active_tab = 1;
+    app.orch_data = Some(OrchestrationSummary {
+        elapsed: "5m".to_string(),
+        completed_count: 0,
+        failed_count: 0,
+        total: 1,
+        is_running: true,
+        items: vec![OrchestrationItem {
+            icon: "\u{25b6}".to_string(),
+            issue_number: Some(1),
+            title: "X".repeat(80),
+            elapsed: "1m".to_string(),
+            pr_url: None,
+            reason: None,
+            status: "in_progress".to_string(),
+        }],
+    });
+    let output = render_to_string(&app, 80, 40);
+    assert!(
+        output.contains("..."),
+        "expected orch title truncation in output:\n{}",
+        output
+    );
+}
+
+#[test]
+fn test_render_metrics_suppressed_when_viewport_too_narrow() {
+    // Non-stale metrics at a narrow width should trip the
+    // total_width > max_x.saturating_sub(30) early-return and render
+    // no metrics text at all.
+    let mut app = make_app();
+    app.metrics = AccountMetrics {
+        cost_monthly: "12.50".to_string(),
+        rl_5h: Some(45),
+        rl_7d: Some(20),
+        stale: false,
+    };
+    let output = render_to_string(&app, 40, 40);
+    // At 40 cols, the metrics strip is dropped entirely.
+    assert!(!output.contains("$12.50/mo"));
+    assert!(!output.contains("5h:45%"));
+}
+
+#[test]
+fn test_render_metrics_suppressed_stale_when_viewport_too_narrow() {
+    // Symmetric: stale branch also has the narrow-width guard.
+    let mut app = make_app();
+    app.metrics = AccountMetrics {
+        cost_monthly: "8.00".to_string(),
+        rl_5h: None,
+        rl_7d: None,
+        stale: true,
+    };
+    let output = render_to_string(&app, 40, 40);
+    assert!(!output.contains("$8.00/mo"));
+    assert!(!output.contains("5h:--"));
+}
+
+#[test]
+fn test_render_log_view_with_entries() {
+    // Write a valid log file at .flow-states/<branch>.log so the Log
+    // view hits the entries-iteration branch.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join(".flow-states")).unwrap();
+    let log_content = "2026-01-01T12:34:56-08:00 [Phase 1] start-init — initializing (ok)\n";
+    std::fs::write(
+        root.join(".flow-states").join("test-feature.log"),
+        log_content,
+    )
+    .unwrap();
+
+    let mut app = TuiApp::new(root.to_path_buf(), "1.0.0".to_string(), None);
+    let mut flow = make_flow("Log Feature", "Code", 3);
+    flow.branch = "test-feature".to_string();
+    app.flows = vec![flow];
+    app.view = View::Log;
+    let output = render_to_string(&app, 80, 40);
+    assert!(
+        output.contains("12:34"),
+        "expected formatted log time in output:\n{}",
+        output
+    );
+    assert!(output.contains("start-init"));
+}
+
+#[test]
+fn test_render_tasks_view_with_plan_content() {
+    // Write a minimal plan file and point flow.plan_path at it so the
+    // Tasks view hits the content-iteration branch.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let plan_path = tmp.path().join("plan.md");
+    std::fs::write(&plan_path, "## Tasks\n- task 1\n- task 2\n").unwrap();
+
+    let mut app = make_app();
+    let mut flow = make_flow("Plan Feature", "Code", 3);
+    flow.plan_path = Some(plan_path.to_string_lossy().into_owned());
+    app.flows = vec![flow];
+    app.view = View::Tasks;
+    let output = render_to_string(&app, 80, 40);
+    assert!(output.contains("## Tasks"));
+    assert!(output.contains("task 1"));
+    assert!(output.contains("task 2"));
+}
+
+#[test]
+fn test_render_detail_panel_shows_notes_count() {
+    let mut app = make_app();
+    let mut flow = make_flow("Notes Feature", "Code", 3);
+    flow.notes_count = 3;
+    app.flows = vec![flow];
+    let output = render_to_string(&app, 80, 40);
+    assert!(output.contains("Notes: 3"));
+}
+
+#[test]
+fn test_render_list_shows_diamond_marker_for_orch_in_progress_issue() {
+    // When an orchestration item is in_progress and its issue_number
+    // matches a flow's issue_numbers, the flow row gets a ◆ marker
+    // (non-selected rows). Make the orch-linked flow *not* selected
+    // so the ◆ marker wins over the ▸ selected marker.
+    let mut app = make_app();
+    app.selected = 1;
+    let mut orch_flow = make_flow("Orch-Linked", "Code", 3);
+    orch_flow.issue_numbers = vec![42];
+    let other_flow = make_flow("Other", "Plan", 2);
+    app.flows = vec![orch_flow, other_flow];
+    app.orch_data = Some(OrchestrationSummary {
+        elapsed: "5m".to_string(),
+        completed_count: 0,
+        failed_count: 0,
+        total: 1,
+        is_running: true,
+        items: vec![OrchestrationItem {
+            icon: "\u{25b6}".to_string(),
+            issue_number: Some(42),
+            title: "Linked".to_string(),
+            elapsed: "1m".to_string(),
+            pr_url: None,
+            reason: None,
+            status: "in_progress".to_string(),
+        }],
+    });
+    let output = render_to_string(&app, 120, 40);
+    assert!(
+        output.contains("\u{25c6}"),
+        "expected diamond marker \u{25c6} in list output:\n{}",
+        output
+    );
+}
+
+#[test]
+fn test_render_list_feature_narrower_than_default_shows_full_name() {
+    // Short feature name at a wide viewport should NOT show `...`
+    // truncation — guards the non-truncation branch of the
+    // char-count comparison.
+    let mut app = make_app();
+    app.flows = vec![make_flow("Short", "Code", 3)];
+    let output = render_to_string(&app, 120, 40);
+    assert!(output.contains("Short"));
+}
