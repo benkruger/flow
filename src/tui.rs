@@ -22,6 +22,8 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 use ratatui::Terminal;
 
+use serde_json::Value;
+
 use crate::flow_paths::FlowPaths;
 use crate::tui_data::{self, AccountMetrics, FlowSummary, OrchestrationSummary};
 
@@ -264,8 +266,7 @@ impl TuiApp {
             return;
         }
         let flow = &self.flows[self.selected];
-        let session_tty = flow.state.get("session_tty").and_then(|v| v.as_str());
-        if let Some(tty) = session_tty {
+        if let Some(tty) = worktree_session_tty(flow) {
             activate_iterm_tab(tty);
         }
     }
@@ -276,7 +277,7 @@ impl TuiApp {
         }
         let flow = &self.flows[self.selected];
         if let Some(ref url) = flow.pr_url {
-            let files_url = format!("{}/files", url.trim_end_matches('/'));
+            let files_url = pr_files_url(url);
             open_url(&files_url);
         }
     }
@@ -286,28 +287,16 @@ impl TuiApp {
             return;
         }
         let flow = &self.flows[self.selected];
-        if let Some(&num) = flow.issue_numbers.iter().min() {
-            let repo = flow
-                .state
-                .get("repo")
-                .and_then(|r| r.as_str())
-                .or(self.repo.as_deref());
-            if let Some(repo) = repo {
-                let url = format!("https://github.com/{}/issues/{}", repo, num);
-                open_url(&url);
-            }
+        if let Some(url) = flow_issue_url(&flow.state, self.repo.as_deref(), &flow.issue_numbers) {
+            open_url(&url);
         }
     }
 
     fn open_orch_issue(&self) {
         if let Some(ref orch) = self.orch_data {
             if let Some(item) = orch.items.get(self.orch_selected) {
-                if let Some(num) = item.issue_number {
-                    let repo = self.repo.as_deref().unwrap_or("");
-                    if !repo.is_empty() {
-                        let url = format!("https://github.com/{}/issues/{}", repo, num);
-                        open_url(&url);
-                    }
+                if let Some(url) = orch_issue_url(self.repo.as_deref(), item.issue_number) {
+                    open_url(&url);
                 }
             }
         }
@@ -1125,6 +1114,60 @@ impl TuiApp {
 
 // --- Standalone helpers ---
 
+/// Build the "files view" URL for a PR by appending `/files` to the
+/// PR's canonical URL. Trailing slashes are normalized so we never
+/// emit `.../100//files`.
+///
+/// Pure helper — no IO. Used by `TuiApp::open_pr`.
+fn pr_files_url(pr_url: &str) -> String {
+    format!("{}/files", pr_url.trim_end_matches('/'))
+}
+
+/// Compose the GitHub issue URL for the smallest issue number a flow
+/// references. Returns `None` when the flow has no issues OR when no
+/// repo is available (neither the state's `repo` key nor the
+/// fallback). The state's `repo` field wins over the fallback when
+/// both are present.
+///
+/// Pure helper — no IO. Used by `TuiApp::open_flow_issue`.
+fn flow_issue_url(
+    state: &Value,
+    fallback_repo: Option<&str>,
+    issue_numbers: &[i64],
+) -> Option<String> {
+    let num = *issue_numbers.iter().min()?;
+    let repo = state
+        .get("repo")
+        .and_then(|r| r.as_str())
+        .or(fallback_repo)?;
+    Some(format!("https://github.com/{}/issues/{}", repo, num))
+}
+
+/// Compose the GitHub issue URL for an orchestration item. Returns
+/// `None` when either the issue number or the repo is missing or when
+/// the repo string is empty (the orchestration tab inherits its repo
+/// from the TuiApp and that field can legitimately be `None`).
+///
+/// Pure helper — no IO. Used by `TuiApp::open_orch_issue`.
+fn orch_issue_url(repo: Option<&str>, issue_number: Option<i64>) -> Option<String> {
+    let num = issue_number?;
+    let repo = repo?;
+    if repo.is_empty() {
+        return None;
+    }
+    Some(format!("https://github.com/{}/issues/{}", repo, num))
+}
+
+/// Read a flow's `session_tty` field from its raw state JSON.
+/// Returns `None` when the field is missing or non-string. Empty
+/// strings pass through as `Some("")` so the caller decides what to
+/// do with them — preserving the pre-extraction behaviour.
+///
+/// Pure helper — no IO. Used by `TuiApp::open_worktree`.
+fn worktree_session_tty(flow: &FlowSummary) -> Option<&str> {
+    flow.state.get("session_tty").and_then(|v| v.as_str())
+}
+
 /// Color for rate limit percentages.
 fn rl_color(pct: i64) -> Style {
     if pct >= 90 {
@@ -1383,6 +1426,174 @@ mod tests {
         let (program, args) = build_open_url_command("");
         assert_eq!(program, "open");
         assert_eq!(args, vec![String::new()]);
+    }
+
+    // --- pr_files_url ---
+
+    #[test]
+    fn pr_files_url_appends_files_to_canonical_url() {
+        assert_eq!(
+            pr_files_url("https://github.com/owner/repo/pull/100"),
+            "https://github.com/owner/repo/pull/100/files"
+        );
+    }
+
+    #[test]
+    fn pr_files_url_strips_trailing_slash_before_appending() {
+        // Avoids `.../100//files` when callers pre-normalize.
+        assert_eq!(
+            pr_files_url("https://github.com/owner/repo/pull/100/"),
+            "https://github.com/owner/repo/pull/100/files"
+        );
+    }
+
+    #[test]
+    fn pr_files_url_strips_multiple_trailing_slashes() {
+        assert_eq!(
+            pr_files_url("https://example.com/x///"),
+            "https://example.com/x/files"
+        );
+    }
+
+    #[test]
+    fn pr_files_url_with_empty_input_returns_files() {
+        // No input validation — the helper trusts the caller's URL
+        // shape. Empty input still produces a well-formed string.
+        assert_eq!(pr_files_url(""), "/files");
+    }
+
+    // --- flow_issue_url ---
+
+    #[test]
+    fn flow_issue_url_uses_state_repo_when_present() {
+        let state = serde_json::json!({"repo": "state/wins"});
+        let url = flow_issue_url(&state, Some("fallback/repo"), &[42]);
+        assert_eq!(
+            url,
+            Some("https://github.com/state/wins/issues/42".to_string())
+        );
+    }
+
+    #[test]
+    fn flow_issue_url_falls_back_when_state_lacks_repo() {
+        let state = serde_json::json!({});
+        let url = flow_issue_url(&state, Some("fallback/repo"), &[42]);
+        assert_eq!(
+            url,
+            Some("https://github.com/fallback/repo/issues/42".to_string())
+        );
+    }
+
+    #[test]
+    fn flow_issue_url_returns_none_when_no_issues() {
+        let state = serde_json::json!({"repo": "o/r"});
+        assert_eq!(flow_issue_url(&state, None, &[]), None);
+    }
+
+    #[test]
+    fn flow_issue_url_picks_smallest_issue_when_multiple() {
+        let state = serde_json::json!({"repo": "o/r"});
+        let url = flow_issue_url(&state, None, &[42, 7, 99]);
+        assert_eq!(url, Some("https://github.com/o/r/issues/7".to_string()));
+    }
+
+    #[test]
+    fn flow_issue_url_returns_none_when_no_repo_anywhere() {
+        let state = serde_json::json!({});
+        assert_eq!(flow_issue_url(&state, None, &[42]), None);
+    }
+
+    #[test]
+    fn flow_issue_url_treats_non_string_state_repo_as_missing() {
+        // Defensive: a corrupt state file with a non-string repo
+        // should not panic and should fall back to the parameter.
+        let state = serde_json::json!({"repo": 12345});
+        let url = flow_issue_url(&state, Some("fallback/repo"), &[1]);
+        assert_eq!(
+            url,
+            Some("https://github.com/fallback/repo/issues/1".to_string())
+        );
+    }
+
+    // --- orch_issue_url ---
+
+    #[test]
+    fn orch_issue_url_returns_url_when_repo_and_number_present() {
+        let url = orch_issue_url(Some("o/r"), Some(42));
+        assert_eq!(url, Some("https://github.com/o/r/issues/42".to_string()));
+    }
+
+    #[test]
+    fn orch_issue_url_returns_none_when_repo_missing() {
+        assert_eq!(orch_issue_url(None, Some(42)), None);
+    }
+
+    #[test]
+    fn orch_issue_url_returns_none_when_repo_empty_string() {
+        // Mirrors the original `unwrap_or("")` + is_empty guard so an
+        // unconfigured repo doesn't produce a malformed URL.
+        assert_eq!(orch_issue_url(Some(""), Some(42)), None);
+    }
+
+    #[test]
+    fn orch_issue_url_returns_none_when_issue_number_missing() {
+        assert_eq!(orch_issue_url(Some("o/r"), None), None);
+    }
+
+    // --- worktree_session_tty ---
+
+    fn make_flow_summary(state: serde_json::Value) -> FlowSummary {
+        // Minimal FlowSummary fixture — only `state` is read by the
+        // helper; the other fields are filled with sentinels so the
+        // struct is well-formed for the test.
+        FlowSummary {
+            feature: String::new(),
+            branch: String::new(),
+            worktree: String::new(),
+            pr_number: None,
+            pr_url: None,
+            phase_number: 0,
+            phase_name: String::new(),
+            elapsed: String::new(),
+            code_task: 0,
+            diff_stats: None,
+            notes_count: 0,
+            issues_count: 0,
+            issues: vec![],
+            blocked: false,
+            issue_numbers: vec![],
+            plan_path: None,
+            annotation: String::new(),
+            phase_elapsed: String::new(),
+            timeline: vec![],
+            state,
+        }
+    }
+
+    #[test]
+    fn worktree_tty_returns_some_when_state_has_string() {
+        let flow = make_flow_summary(serde_json::json!({"session_tty": "/dev/ttys003"}));
+        assert_eq!(worktree_session_tty(&flow), Some("/dev/ttys003"));
+    }
+
+    #[test]
+    fn worktree_tty_returns_none_when_state_lacks_field() {
+        let flow = make_flow_summary(serde_json::json!({}));
+        assert_eq!(worktree_session_tty(&flow), None);
+    }
+
+    #[test]
+    fn worktree_tty_returns_none_when_field_is_non_string() {
+        let flow = make_flow_summary(serde_json::json!({"session_tty": 12345}));
+        assert_eq!(worktree_session_tty(&flow), None);
+    }
+
+    #[test]
+    fn worktree_tty_passes_empty_string_through() {
+        // Empty-string returns Some("") — the caller (open_worktree)
+        // gets to decide what to do with that.
+        let flow = make_flow_summary(serde_json::json!({"session_tty": ""}));
+        assert_eq!(worktree_session_tty(&flow), Some(""));
     }
 
     // --- derive_bin_flow_path ---
