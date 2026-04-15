@@ -917,3 +917,188 @@ fn validate_ask_user_plain_allow_writes_blocked_timestamp_exits_zero() {
         post
     );
 }
+
+// --- validate-claude-paths integration tests (issue #1145 Task 4) ---
+//
+// validate_claude_paths::run() uses `detect_branch_from_cwd()` and
+// `find_project_root()` rather than FLOW_SIMULATE_BRANCH — both walk
+// the process cwd. Fixtures therefore create a tempdir with a
+// `.flow-states/<branch>.json` at the root and a `.worktrees/<branch>/`
+// subdir, then spawn the child subprocess with
+// `current_dir(<tempdir>/.worktrees/<branch>)` so both helpers succeed
+// and `is_flow_active` sees the state file.
+
+/// Prepare a `<tempdir>/.worktrees/<branch>/` subtree with
+/// `.flow-states/<branch>.json` at the project root when
+/// `with_state_file` is true. Returns the worktree cwd path.
+fn setup_worktree_fixture(dir: &Path, branch: &str, with_state_file: bool) -> std::path::PathBuf {
+    let worktree = dir.join(".worktrees").join(branch);
+    fs::create_dir_all(&worktree).unwrap();
+    // detect_branch_from_cwd walks the worktree ancestry looking for a
+    // `.git` file (the git-worktree convention — a regular file whose
+    // text points at the main repo's .git/worktrees/<name>). The hook
+    // only checks `is_file()`, so any content works; skipping this step
+    // sends detection into the `git branch --show-current` fallback
+    // which returns None without a real repo, and the hook then
+    // allow-short-circuits instead of exercising the block path.
+    fs::write(worktree.join(".git"), "gitdir: fake\n").unwrap();
+    if with_state_file {
+        let state_dir = flow_states_dir(dir);
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(
+            state_dir.join(format!("{}.json", branch)),
+            serde_json::to_string(&json!({"current_phase": "flow-code"})).unwrap(),
+        )
+        .unwrap();
+    }
+    worktree
+}
+
+fn run_hook_in(cwd: &Path, hook: &str, stdin_data: &[u8]) -> Output {
+    let mut cmd = flow_rs();
+    cmd.arg("hook")
+        .arg(hook)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("FLOW_CI_RUNNING")
+        .current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    {
+        let stdin = child.stdin.as_mut().unwrap();
+        stdin.write_all(stdin_data).unwrap();
+    }
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn validate_claude_paths_malformed_stdin_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_worktree_fixture(dir.path(), "feat", true);
+    let output = run_hook_in(&cwd, "validate-claude-paths", b"not json");
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_claude_paths_empty_file_path_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_worktree_fixture(dir.path(), "feat", true);
+    // `tool_input.file_path` missing entirely → empty string → exit 0.
+    let input = serde_json::to_vec(&json!({"tool_input": {}})).unwrap();
+    let output = run_hook_in(&cwd, "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_claude_paths_no_flow_states_dir_allows_any_path() {
+    // cwd has no `.flow-states/` anywhere above it → find_project_root
+    // returns None → flow_active=false → allow even a protected path.
+    let dir = tempfile::tempdir().unwrap();
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {
+            "file_path": dir.path().join(".claude/rules/foo.md").to_string_lossy(),
+        }
+    }))
+    .unwrap();
+    let output = run_hook_in(dir.path(), "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_claude_paths_worktree_blocks_claude_rules() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_worktree_fixture(dir.path(), "feat", true);
+    let target = cwd.join(".claude/rules/foo.md");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+    assert!(
+        stderr.contains("write-rule"),
+        "stderr must name the redirect command: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_claude_paths_worktree_blocks_claude_skills() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_worktree_fixture(dir.path(), "feat", true);
+    let target = cwd.join(".claude/skills/foo/SKILL.md");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+}
+
+#[test]
+fn validate_claude_paths_worktree_blocks_claude_md() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_worktree_fixture(dir.path(), "feat", true);
+    let target = cwd.join("CLAUDE.md");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+}
+
+#[test]
+fn validate_claude_paths_worktree_allows_settings_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_worktree_fixture(dir.path(), "feat", true);
+    let target = cwd.join(".claude/settings.json");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_claude_paths_worktree_allows_src_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_worktree_fixture(dir.path(), "feat", true);
+    let target = cwd.join("src/lib.rs");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_claude_paths_flow_state_file_missing_allows() {
+    // find_project_root finds `.flow-states/` at the project root, but
+    // no state file exists for this branch → is_flow_active returns
+    // false → allow even a protected path.
+    let dir = tempfile::tempdir().unwrap();
+    // Create `.flow-states/` so find_project_root succeeds, but skip
+    // the per-branch state file.
+    let states = flow_states_dir(dir.path());
+    fs::create_dir_all(&states).unwrap();
+    let cwd = dir.path().join(".worktrees").join("feat");
+    fs::create_dir_all(&cwd).unwrap();
+    fs::write(cwd.join(".git"), "gitdir: fake\n").unwrap();
+    let target = cwd.join(".claude/rules/foo.md");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
