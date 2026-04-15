@@ -234,3 +234,74 @@ fn test_main_no_inline_dispatch_fns() {
         violations
     );
 }
+
+#[test]
+fn test_notify_slack_no_post_message_wrapper() {
+    // Tombstone: removed in PR #1157. The three-line `post_message`
+    // closure-binder wrapper is superseded by `notify_with_deps`, which
+    // takes a `poster` closure and delegates directly to
+    // `post_message_inner`. Resurrection via merge conflict must fail.
+    let root = common::repo_root();
+    let path = root.join("src").join("notify_slack.rs");
+    let content = fs::read_to_string(&path).expect("notify_slack.rs must exist");
+    assert!(
+        !content.contains("pub fn post_message("),
+        "post_message wrapper must not return; callers use notify_with_deps + post_message_inner directly"
+    );
+}
+
+// --- Coverage waiver loophole closure ---
+//
+// Coverage waivers are forbidden. The `test_coverage.md` file, the
+// Waiver Discipline section in `.claude/rules/docs-with-behavior.md`,
+// and any reference to `test_coverage.md` from `CLAUDE.md` are the
+// three surfaces that, taken together, authorized future sessions to
+// classify inconvenient code as "uncoverable" and ship a justification
+// instead of a refactor. All three are removed; these tombstones fail
+// CI if a merge resolution or a future edit re-introduces any of them.
+
+#[test]
+fn test_coverage_md_must_not_exist() {
+    let root = common::repo_root();
+    let path = root.join("test_coverage.md");
+    assert!(
+        !path.exists(),
+        "test_coverage.md must not exist — coverage waivers are forbidden. \
+         Refactor the uncovered code instead (extract `process::exit` into \
+         a return-code wrapper, inject subprocess callers as `&dyn Fn` \
+         seams, split helpers until each branch is independently testable)."
+    );
+}
+
+#[test]
+fn docs_with_behavior_no_waiver_discipline_section() {
+    let root = common::repo_root();
+    let path = root.join(".claude/rules/docs-with-behavior.md");
+    let content = fs::read_to_string(&path).expect("docs-with-behavior.md must exist");
+    assert!(
+        !content.contains("Waiver Discipline"),
+        ".claude/rules/docs-with-behavior.md must not contain a 'Waiver Discipline' \
+         section — coverage waivers are forbidden. Refactor the code instead."
+    );
+    assert!(
+        !content.contains("test_coverage.md"),
+        ".claude/rules/docs-with-behavior.md must not reference test_coverage.md — \
+         the file is gone and waivers are forbidden."
+    );
+}
+
+#[test]
+fn claude_md_no_test_coverage_references() {
+    let root = common::repo_root();
+    let path = root.join("CLAUDE.md");
+    let content = fs::read_to_string(&path).expect("CLAUDE.md must exist");
+    assert!(
+        !content.contains("test_coverage.md"),
+        "CLAUDE.md must not reference test_coverage.md — coverage waivers are forbidden."
+    );
+    assert!(
+        !content.contains("architecturally-unreachable code"),
+        "CLAUDE.md must not contain the 'architecturally-unreachable code' waiver \
+         bullet — coverage waivers are forbidden."
+    );
+}

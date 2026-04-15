@@ -31,10 +31,10 @@ to write the same updates you could write now.
 - **New permanent on-main artifact → `CLAUDE.md` "Key Files"
   section.** "Permanent" here means a file that lives on main
   (not `.flow-states/`, not `.flow-issue-body`, not anything
-  under `/tmp/`, and not gitignored). Future-session readers rely
-  on Key Files as their index to the repository surface area; a
-  new permanent artifact that is absent from Key Files is
-  effectively invisible until a later PR rediscovers it.
+  under `/tmp/`, and not gitignored). Future-session readers
+  rely on Key Files as their index to the repository surface
+  area; a new permanent artifact that is absent from Key Files
+  is effectively invisible until a later PR rediscovers it.
 - **Changed type signatures or module architecture → the module-
   level doc comment and every affected item's doc comment in the
   same source file.** This is where PR #1054 missed: splitting
@@ -44,21 +44,6 @@ to write the same updates you could write now.
   Source-local doc comments are documentation too — they bind
   the type to its purpose for future readers who arrive via
   grep or rustdoc rather than through the module's external docs.
-
-## Coverage Discipline (Cross-Reference)
-
-Coverage is governed by `.claude/rules/no-waivers.md`. The summary:
-all Rust code must be covered by tests; `test_coverage.md` and any
-similar per-line waiver inventory file is forbidden; the only valid
-responses to a hard-to-reach branch are subprocess test, refactor,
-or design change. See that rule for the full discipline including
-forbidden plan prose patterns and per-phase enforcement.
-
-This rule (Docs With Behavior) does not override `no-waivers.md`.
-A documentation update describing a code change must land in the
-same commit as the code change, but a coverage waiver is never the
-documentation update — the documentation update is the test that
-covers the new behavior.
 
 ## Agent Input Section Sync
 
@@ -81,40 +66,27 @@ Separate commits within the same PR are not sufficient: if the PR
 is reviewed commit-by-commit, the intermediate state shows stale
 documentation.
 
-### Transitive Test Coverage After Refactor
+### Named Tests After Refactor
 
-When a plan names specific test functions (e.g.
-`fetch_blockers_returns_empty_on_spawn_failure`) that become
-redundant after an extract-helper refactor — because a shared
-helper now owns the logic the tests would have exercised and the
-helper has its own direct tests — the Code phase must keep the
-named tests, NOT skip them. Per `.claude/rules/no-waivers.md`,
-declaring "transitive coverage" via a `test_coverage.md` entry is
-forbidden. The two acceptable paths are:
+When a plan names specific test functions and a refactor lands
+that appears to make those tests redundant (e.g. a shared helper
+now owns the logic), the named tests are still required. Add
+them — driven through the refactored callsite via a test seam
+that accepts an injectable `Command` (or equivalent) — so the
+caller-level assertion that the delegation returns the expected
+value on each error class is preserved. Coverage waivers are
+forbidden; redundant-looking tests are not redundant in practice
+because they assert the delegation contract independently of the
+helper's internal behavior.
 
-1. **Keep the named tests.** Add the tests anyway, driving them
-   through the refactored callsite (e.g. via a test seam that
-   accepts an injectable `Command`). This preserves the
-   caller-level assertion that the delegation returns the
-   expected value on each error class.
-2. **Update the plan.** If the refactor genuinely makes the named
-   tests redundant, edit the plan's Tasks section to remove the
-   redundant test names and replace them with a single
-   verification task that asserts the helper's existing tests
-   cover the named branches. Do not leave the plan saying "add
-   test X" while the PR does not add test X — back-edit the plan
-   so the prose matches what was delivered.
-
-Silent omission is not acceptable. A plan that names tests and a
-PR that does not add them, without a plan back-edit, is a Code
-Review finding — the reviewer agent correctly flags "plan said add
-X but X is not there." Force-functioning the decision at plan or
-code time prevents that friction.
+A plan that names tests and a PR that does not add them is a
+Code Review finding — the reviewer agent correctly flags "plan
+said add X but X is not there."
 
 The rule applies equally to documentation tasks: if a plan task
 names a doc update that becomes redundant after another task
-supersedes it, update the plan to remove the redundant task rather
-than leaving the gap unexplained.
+supersedes it, the doc update is still required. Reword it to
+describe the post-refactor state.
 
 ## Scope Enumeration (Rename Side)
 
