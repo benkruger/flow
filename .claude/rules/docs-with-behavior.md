@@ -29,18 +29,12 @@ to write the same updates you could write now.
   future session reading the skill knows what the panel can
   contain.
 - **New permanent on-main artifact → `CLAUDE.md` "Key Files"
-  section and, if the artifact introduces a waiver/exception
-  discipline, also the "When You Must Update Docs and Tests —
-  Content sync" section.** "Permanent" here means a file that
-  lives on main (not `.flow-states/`, not `.flow-issue-body`,
-  not anything under `/tmp/`, and not gitignored). Examples:
-  `test_coverage.md` (per-file coverage waiver inventory
-  introduced in PR #1153), a future `security_waivers.md`, or
-  any other reference file the repo expects sessions to consult.
-  Future-session readers rely on Key Files as their index to the
-  repository surface area; a new permanent artifact that is
-  absent from Key Files is effectively invisible until a later
-  PR rediscovers it.
+  section.** "Permanent" here means a file that lives on main
+  (not `.flow-states/`, not `.flow-issue-body`, not anything
+  under `/tmp/`, and not gitignored). Future-session readers rely
+  on Key Files as their index to the repository surface area; a
+  new permanent artifact that is absent from Key Files is
+  effectively invisible until a later PR rediscovers it.
 - **Changed type signatures or module architecture → the module-
   level doc comment and every affected item's doc comment in the
   same source file.** This is where PR #1054 missed: splitting
@@ -51,38 +45,20 @@ to write the same updates you could write now.
   the type to its purpose for future readers who arrive via
   grep or rustdoc rather than through the module's external docs.
 
-## Waiver Discipline (test_coverage.md and friends)
+## Coverage Discipline (Cross-Reference)
 
-`test_coverage.md` at the repo root is the canonical waiver
-inventory for code that `bin/test`'s `--fail-under-*` thresholds
-cannot reach. Every entry must:
+Coverage is governed by `.claude/rules/no-waivers.md`. The summary:
+all Rust code must be covered by tests; `test_coverage.md` and any
+similar per-line waiver inventory file is forbidden; the only valid
+responses to a hard-to-reach branch are subprocess test, refactor,
+or design change. See that rule for the full discipline including
+forbidden plan prose patterns and per-phase enforcement.
 
-- Name specific `src/<file>.rs:LINE` coordinates (no file-wide
-  waivers — if a whole file is unreachable, the design is wrong,
-  not the coverage).
-- Include a one-sentence architectural reason (e.g.
-  `process::exit` unreachable from inside the calling process,
-  panic-only unreachable arm, defensive dead branch for
-  API-guaranteed-valid input, library-internal trait dispatch).
-- Be tied to a recorded plan-task justification — do not add
-  waiver entries speculatively during Code or Code Review.
-  Waivers in the diff without a matching plan task are a
-  Code Review finding in their own right: either drop the waiver
-  (cover the line) or back it with a plan-level architectural
-  argument.
-
-When a PR adds architecturally-unreachable code that survives
-coverage enforcement, the waiver entry lands in the same commit
-as the code. A waiver filed in a follow-up PR is the same class
-of double-work as a follow-up documentation issue — the current
-session has the context to justify the waiver; a future session
-starts from zero.
-
-Future waiver files (e.g., `security_waivers.md` for
-intentionally-unreachable security paths) follow the same
-discipline. The rule generalizes: permanent on-main waiver files
-are a kind of documentation, and documentation lives in the same
-commit as the behavior it describes.
+This rule (Docs With Behavior) does not override `no-waivers.md`.
+A documentation update describing a code change must land in the
+same commit as the code change, but a coverage waiver is never the
+documentation update — the documentation update is the test that
+covers the new behavior.
 
 ## Agent Input Section Sync
 
@@ -111,30 +87,34 @@ When a plan names specific test functions (e.g.
 `fetch_blockers_returns_empty_on_spawn_failure`) that become
 redundant after an extract-helper refactor — because a shared
 helper now owns the logic the tests would have exercised and the
-helper has its own direct tests — the Code phase has two
-acceptable paths, and the plan must make the choice explicit:
+helper has its own direct tests — the Code phase must keep the
+named tests, NOT skip them. Per `.claude/rules/no-waivers.md`,
+declaring "transitive coverage" via a `test_coverage.md` entry is
+forbidden. The two acceptable paths are:
 
 1. **Keep the named tests.** Add the tests anyway, driving them
    through the refactored callsite (e.g. via a test seam that
    accepts an injectable `Command`). This preserves the
    caller-level assertion that the delegation returns the
    expected value on each error class.
-2. **Declare transitive coverage.** Skip the named tests and
-   record the transitive-coverage path in `test_coverage.md`
-   (or the waiver file most appropriate to the project). The
-   entry must name the helper tests that cover the same branches
-   and explain why the caller-level duplicate would be redundant.
+2. **Update the plan.** If the refactor genuinely makes the named
+   tests redundant, edit the plan's Tasks section to remove the
+   redundant test names and replace them with a single
+   verification task that asserts the helper's existing tests
+   cover the named branches. Do not leave the plan saying "add
+   test X" while the PR does not add test X — back-edit the plan
+   so the prose matches what was delivered.
 
 Silent omission is not acceptable. A plan that names tests and a
-PR that does not add them, without a waiver note, is a Code Review
-finding — the reviewer agent correctly flags "plan said add X but
-X is not there." Force-functioning the decision at plan or code
-time prevents that friction.
+PR that does not add them, without a plan back-edit, is a Code
+Review finding — the reviewer agent correctly flags "plan said add
+X but X is not there." Force-functioning the decision at plan or
+code time prevents that friction.
 
 The rule applies equally to documentation tasks: if a plan task
 names a doc update that becomes redundant after another task
-supersedes it, route the redundancy through an explicit waiver
-note rather than leaving the plan-task gap unexplained.
+supersedes it, update the plan to remove the redundant task rather
+than leaving the gap unexplained.
 
 ## Scope Enumeration (Rename Side)
 
