@@ -24,6 +24,17 @@ Ask: "What happens when two flows hit this at the same time?"
 - **Main branch** — is the only shared local resource. Any
   operation on main (pull, commit, push) must be serialized
   via the start lock or avoided entirely.
+- **Start-gate runs CI on main under the start lock as a
+  coordination surface**, not a sandboxable safety check. The
+  first flow-start repairs dependency breakage once via
+  `ci-fixer`; subsequent flows inherit the fix via the CI
+  sentinel. Moving the CI check to a disposable worktree would
+  force every concurrent flow to rediscover and independently
+  repair the same breakage — O(N) work instead of O(1). Tools
+  that write artifacts under main's `target/` must stay coherent
+  across the many source generations that long-lived target dir
+  sees. See CLAUDE.md "Start-Gate CI on Main as Serialization
+  Point" for the full architecture.
 
 ## Completed Flow State File Leftovers
 

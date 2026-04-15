@@ -92,6 +92,88 @@ fn invokes_cargo_llvm_cov_nextest_by_default() {
     );
 }
 
+/// `bin/test` (no args) invokes `cargo clean -p flow-rs --target-dir
+/// target/llvm-cov-target` BEFORE `cargo llvm-cov nextest`.
+///
+/// Rationale: cargo-llvm-cov's `--no-clean` flag preserves instrumented
+/// binaries across runs for incremental speed. On a long-lived target
+/// dir, stale flow-rs binaries from prior source generations accumulate;
+/// each embeds its own `.covmap` describing the source layout it was
+/// compiled against. llvm-cov merges every binary's covmap, producing
+/// Frankenstein coverage numbers. Full-suite runs (the CI gate) must
+/// clear stale flow-rs binaries first; the dep cache stays warm because
+/// the clean is package-scoped.
+#[test]
+fn full_suite_cleans_flow_rs_before_nextest() {
+    let dir = tempfile::tempdir().unwrap();
+    let bin_dir = dir.path().join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+
+    let real_script = common::bin_dir().join("test");
+    let script_content = fs::read_to_string(&real_script).unwrap();
+    let target = bin_dir.join("test");
+    fs::write(&target, &script_content).unwrap();
+    let mut perms = fs::metadata(&target).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&target, perms).unwrap();
+
+    // Mock cargo appends each invocation's args to the log so both the
+    // clean call and the llvm-cov call are captured in the order they
+    // fire.
+    let mock_bin = dir.path().join("mock_bin");
+    fs::create_dir_all(&mock_bin).unwrap();
+    let log_file = dir.path().join("cargo_log");
+    fs::write(
+        mock_bin.join("cargo"),
+        format!(
+            "#!/usr/bin/env bash\necho \"$*\" >> \"{}\"\nexit 0\n",
+            log_file.display()
+        ),
+    )
+    .unwrap();
+    let mut perms = fs::metadata(mock_bin.join("cargo")).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(mock_bin.join("cargo"), perms).unwrap();
+
+    let path = format!("{}:{}", mock_bin.display(), std::env::var("PATH").unwrap());
+    let output = Command::new(&target)
+        .current_dir(dir.path())
+        .env("PATH", &path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let logged = fs::read_to_string(&log_file).unwrap();
+    let clean_pos = logged
+        .find("clean")
+        .unwrap_or_else(|| panic!("expected a `cargo clean` invocation, got:\n{}", logged));
+    let nextest_pos = logged.find("nextest").unwrap_or_else(|| {
+        panic!(
+            "expected a `cargo llvm-cov nextest` invocation, got:\n{}",
+            logged
+        )
+    });
+    assert!(
+        clean_pos < nextest_pos,
+        "clean must precede nextest so llvm-cov does not merge stale covmaps; got:\n{}",
+        logged
+    );
+    assert!(
+        logged.contains("-p flow-rs"),
+        "clean must target the flow-rs package scope so the dep cache stays warm; got:\n{}",
+        logged
+    );
+    assert!(
+        logged.contains("--target-dir target/llvm-cov-target"),
+        "clean must target the llvm-cov-target dir (not the default `target/`); got:\n{}",
+        logged
+    );
+}
+
 /// `bin/test` forwards trailing args to cargo nextest.
 #[test]
 fn forwards_trailing_args_to_nextest() {

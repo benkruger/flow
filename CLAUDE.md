@@ -82,6 +82,7 @@ CI will fail if these are missing:
 - Run tests with `bin/flow ci` only — never invoke cargo directly
 - `bin/flow ci` runs `bin/flow format`, `bin/flow lint`, `bin/flow build`, `bin/flow test` in sequence (format first for fail-fast)
 - **Use `bin/flow test -- <filter>` for targeted test runs during development** — `bin/flow ci` runs the full suite and is the gate before committing. `bin/flow test -- hooks` runs every test in `tests/hooks.rs`. Never call cargo directly — always use `bin/flow test` or `bin/flow ci`.
+- **Full-suite `bin/flow test` rebuilds `flow-rs` from clean; filtered runs stay incremental.** `bin/test` runs `cargo clean -p flow-rs --target-dir target/llvm-cov-target` at the top of the no-filter-args branch so full-suite coverage numbers come from a single source generation. Filtered runs (`bin/flow test -- <filter>`) skip the clean and keep cargo-llvm-cov's `--no-clean` fast path. See "Start-Gate CI on Main as Serialization Point" below for why this matters on main's long-lived target dir.
 - Dependencies managed via `bin/dependencies` (runs `cargo update`)
 
 ## Architecture
@@ -125,6 +126,14 @@ The state file (`.flow-states/<branch>.json`) is the backbone. Schema reference:
 | Shared | All engineers | PRs, issues, labels, branches | GitHub is the API — never assume local knowledge of other engineers' state |
 
 The "Flow In-Progress" label on issues is the cross-engineer WIP detection mechanism. See `.claude/rules/concurrency-model.md` for the developer checklist.
+
+### Start-Gate CI on Main as Serialization Point
+
+`start-gate` runs `bin/flow ci` on main, under the start lock, by design. This is not a safety check that could live in a worktree — it is the coordination surface for dependency-maintenance work across all concurrent flows.
+
+The pattern: the first flow-start of the day acquires the lock, runs CI on main, and if a dependency upgrade broke something, `ci-fixer` repairs it once, under the lock, with its fix committed to main. Subsequent flow-starts queue behind the lock; when they acquire, main is already repaired, and the CI sentinel (`.flow-states/main-ci-passed`) lets them pass through without re-running CI. Dependency churn costs O(1) human/agent time, not O(N). Running CI in a disposable worktree instead would defeat this: every concurrent flow would independently discover the breakage and independently repair it, producing duplicate fixes, merge conflicts, and wasted cycles.
+
+Consequence: **main's `target/` is a long-lived build surface that spans many source generations as PRs merge over time.** Any tool that writes artifacts under `target/` on main must stay coherent across those generations. cargo-llvm-cov with `--no-clean` is the canonical failure mode — stale instrumented binaries from prior source generations accumulate in `target/llvm-cov-target/debug/deps/`, each with its own embedded coverage map describing an old source layout, and llvm-cov silently merges them into the current report. `bin/test` cleans the `flow-rs` package scope before full-suite runs to prevent this; any future tool that writes coverage-like artifacts on main must enforce the same coherence invariant.
 
 ### Sub-Agents
 

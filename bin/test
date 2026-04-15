@@ -26,25 +26,45 @@ if [ "${1:-}" = "--file" ]; then
   exit
 fi
 
-# Full-suite invocations (no filter args) wipe accumulated *.profraw files
-# before nextest runs. Without this, llvm-profdata merge after the test
-# summary stalls for tens of seconds chewing through gigabytes of stale
-# coverage data carried forward by `--no-clean`. Filtered runs
-# (`bin/flow test -- <filter>`) keep accumulated data so coverage
-# aggregates across the iterative `llvm-cov show` workflow.
+# Full-suite invocations (no filter args) are the CI gate. They must
+# rebuild flow-rs artifacts from clean so llvm-cov measures a single,
+# coherent source generation.
+#
+# `--no-clean` (set below) preserves accumulated instrumented binaries
+# across runs so filtered iteration is fast. On a long-lived target
+# dir — notably main's, where start-gate runs CI every flow-start as
+# PRs merge and source evolves — stale flow-rs binaries accumulate.
+# Each binary embeds its own coverage map (`.covmap`) describing the
+# source layout it was compiled against. llvm-cov merges ALL binaries
+# present, so a pre-refactor binary's 4000-region analyze_issues.rs
+# covmap silently poisons the post-refactor binary's 2300-region
+# covmap, producing Frankenstein coverage numbers that look like a
+# regression but aren't.
+#
+# Cleaning flow-rs at the package scope removes stale binaries while
+# keeping the dep cache (`target/llvm-cov-target/debug/deps/*` for
+# serde, regex, etc.) warm, so rebuild is package-scoped rather than
+# from-zero. Filtered runs (`bin/flow test -- <filter>`) skip this
+# branch entirely and keep the full incremental cache.
+#
+# The profraw sweep following the clean removes accumulated coverage
+# samples from prior binaries so `llvm-profdata merge` does not stall
+# chewing through stale data carried forward by `--no-clean`.
 if [ $# -eq 0 ]; then
+  cargo clean --target-dir target/llvm-cov-target -p flow-rs
   /usr/bin/find target/llvm-cov-target -maxdepth 1 -name "*.profraw" -delete 2>/dev/null || true
 fi
 
-# Coverage floors. Each threshold sits roughly one percentage point
-# below the current aggregate TOTAL so normal day-to-day CI drift does
-# not block merges while genuine regressions do. Raise only when the
-# aggregate has comfortably moved above the current floor — use the
-# formula `floor(actual_whole_percent) - 1` after adding new coverage.
+# Coverage floors. Each threshold is the floor of the current aggregate
+# TOTAL — i.e., `floor(actual_whole_percent)`. The floor is a ratchet:
+# it tracks every whole-percent improvement and never moves down. When
+# coverage crosses into a new whole-percent range, bump the matching
+# threshold in the same commit that earned it so the gate captures the
+# new floor and protects against regression below it.
 # See `test_coverage.md` for the per-file waiver inventory when 100%
 # is not achievable.
 exec cargo llvm-cov --no-cfg-coverage --no-clean \
   --fail-under-lines 93 \
-  --fail-under-regions 93 \
+  --fail-under-regions 94 \
   --fail-under-functions 91 \
   nextest --status-level none --final-status-level fail "$@"
