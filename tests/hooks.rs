@@ -1297,3 +1297,148 @@ fn validate_pretool_safe_command_allowed_exits_zero() {
     let output = run_hook_in(&cwd, "validate-pretool", &input);
     assert_eq!(output.status.code().unwrap(), 0);
 }
+
+// --- validate-worktree-paths integration tests (issue #1145 Task 6) ---
+//
+// validate_worktree_paths::run() reads only stdin and the process cwd
+// via `std::env::current_dir()`. No FLOW state file or git repo is
+// required — the hook decides allow vs. block from cwd path structure
+// alone. Tests spawn the child with `current_dir` set to the tempdir
+// (or a `.worktrees/<branch>/` subtree) and feed tool_input JSON on
+// stdin. The `std::env::current_dir` Err arm is unreachable from
+// subprocess tests (a spawned child always has a valid cwd), so those
+// lines remain uncovered by this set.
+
+fn run_worktree_hook(cwd: &Path, stdin_data: &[u8]) -> Output {
+    run_hook_in(cwd, "validate-worktree-paths", stdin_data)
+}
+
+#[test]
+fn validate_worktree_paths_malformed_stdin_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = run_worktree_hook(dir.path(), b"not json at all");
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_worktree_paths_empty_file_path_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = serde_json::to_vec(&json!({"tool_input": {}})).unwrap();
+    let output = run_worktree_hook(dir.path(), &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_worktree_paths_glob_path_key_recognized() {
+    // Glob/Grep tool_input uses `path`, not `file_path`. The hook's
+    // `get_file_path` prefers `file_path` then falls back to `path`.
+    // cwd is inside a worktree; the path points to the main repo, so
+    // the hook must recognize the `path` key, route through validate,
+    // and block.
+    //
+    // macOS note: spawned subprocesses receive a canonicalized cwd
+    // (/private/var/folders/... rather than /var/folders/...). The
+    // hook computes project_root from that canonical cwd, so the
+    // file_path passed in tool_input must also be rooted at the
+    // canonical path for the block-branch `starts_with` prefix check
+    // to succeed.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let target = root.join("src/lib.rs");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&worktree, &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("BLOCKED"),
+        "glob path key should route through block: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_worktree_paths_outside_worktree_allows_main_edit() {
+    // cwd has no `.worktrees/` marker in its path → not in a worktree →
+    // validate returns allow regardless of file_path.
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("src/lib.rs");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(dir.path(), &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_worktree_paths_inside_worktree_blocks_main_edit() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let target = root.join("src/lib.rs");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&worktree, &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // The block message names the corrected in-worktree path.
+    let corrected = worktree.join("src/lib.rs");
+    assert!(
+        stderr.contains(corrected.to_string_lossy().as_ref()),
+        "stderr must show corrected worktree path: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_worktree_paths_inside_worktree_allows_worktree_edit() {
+    let dir = tempfile::tempdir().unwrap();
+    let worktree = dir.path().join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let target = worktree.join("src/lib.rs");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&worktree, &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_worktree_paths_inside_worktree_allows_flow_states() {
+    // `.flow-states/` lives at the main project root and is shared —
+    // edits must pass through even from inside a worktree.
+    let dir = tempfile::tempdir().unwrap();
+    let worktree = dir.path().join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let target = flow_states_dir(dir.path()).join("feat.json");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&worktree, &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_worktree_paths_inside_worktree_allows_home_path() {
+    // Paths outside the project prefix are always allowed
+    // (~/.claude, plugin cache, /tmp, etc.).
+    let dir = tempfile::tempdir().unwrap();
+    let worktree = dir.path().join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": "/Users/example/.claude/plans/p.md"}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&worktree, &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
