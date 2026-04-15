@@ -390,15 +390,15 @@ fn is_bg_truthy(value: &Value) -> bool {
     match value {
         Value::Bool(b) => *b,
         Value::String(s) => s.eq_ignore_ascii_case("true") || s == "1",
-        Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                i != 0
-            } else if let Some(f) = n.as_f64() {
-                f != 0.0
-            } else {
-                false
-            }
-        }
+        // serde_json guarantees every `Value::Number` is representable as
+        // at least one of i64/u64/f64, so the `as_i64().is_none()` branch
+        // always finds a finite f64. `is_some_and` folds that invariant
+        // into one test-covered path rather than a dead `else { false }`
+        // arm that no real caller can reach.
+        Value::Number(n) => match n.as_i64() {
+            Some(i) => i != 0,
+            None => n.as_f64().is_some_and(|f| f != 0.0),
+        },
         _ => false,
     }
 }
@@ -1111,6 +1111,66 @@ mod tests {
     fn test_is_bg_truthy_object_and_array() {
         assert!(!is_bg_truthy(&json!({})));
         assert!(!is_bg_truthy(&json!([])));
+    }
+
+    // Plan-named coverage tests for issue #1145 (Task 1). These lock
+    // each discrete JSON type variant of the `run_in_background` input
+    // to its expected truthy/falsy classification so a future refactor
+    // of `is_bg_truthy` cannot silently weaken a single variant. The
+    // f64 fractional variants exercise the `Number::as_i64() == None →
+    // Number::as_f64()` fallthrough, which no other test drives.
+
+    #[test]
+    fn is_bg_truthy_f64_nonzero_returns_true() {
+        // serde_json::Number::as_i64() returns None for fractional f64,
+        // routing the evaluation through the as_f64 arm.
+        assert!(is_bg_truthy(&json!(1.5)));
+    }
+
+    #[test]
+    fn is_bg_truthy_f64_zero_returns_false() {
+        // json!(0.0) stores as f64 but `as_i64()` recognizes it as a
+        // whole-number-valued float and returns Some(0), so this test
+        // routes through the i64 arm. The classification is still
+        // false and matches the user-facing contract.
+        assert!(!is_bg_truthy(&json!(0.0)));
+    }
+
+    #[test]
+    fn is_bg_truthy_i64_zero_returns_false() {
+        assert!(!is_bg_truthy(&json!(0)));
+    }
+
+    #[test]
+    fn is_bg_truthy_i64_negative_returns_true() {
+        assert!(is_bg_truthy(&json!(-1)));
+    }
+
+    #[test]
+    fn is_bg_truthy_string_1_returns_true() {
+        assert!(is_bg_truthy(&json!("1")));
+    }
+
+    #[test]
+    fn is_bg_truthy_string_0_returns_false() {
+        // "0" is not case-insensitively equal to "true" and not
+        // literally "1", so the String arm returns false.
+        assert!(!is_bg_truthy(&json!("0")));
+    }
+
+    #[test]
+    fn is_bg_truthy_array_returns_false() {
+        assert!(!is_bg_truthy(&json!([true, 1])));
+    }
+
+    #[test]
+    fn is_bg_truthy_object_returns_false() {
+        assert!(!is_bg_truthy(&json!({"x": 1})));
+    }
+
+    #[test]
+    fn is_bg_truthy_null_returns_false() {
+        assert!(!is_bg_truthy(&Value::Null));
     }
 
     // --- Agent validation ---
