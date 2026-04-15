@@ -216,6 +216,37 @@ Add <what the group accomplished> — Tasks <first>-<last> of <total>
 **Self-invoke** as usual after the group commit to continue with
 the next task after the group.
 
+### Measurement-Only Tasks
+
+Some plan tasks produce no file changes — a final `coverage TOTAL`
+capture for the PR body, a `threshold verification` re-run, or a
+`final regression re-run` that the plan explicitly names as a task.
+These tasks still route through the standard Commit flow below so
+every task honors CLAUDE.md's "All commits via `/flow:flow-commit`"
+convention and never invents a shortcut.
+
+Skip the TDD Cycle (there is no test or implementation to write
+for a task that produces no file changes) and perform the task's
+measurement action as the task body — for example, `bin/flow ci`
+to verify a threshold or `bin/flow log` to record a TOTAL into the
+session log. Then proceed through the `bin/flow ci` Gate section
+below just like a file-changing task would: the CI HARD-GATE still
+applies, and `bin/flow ci` must be green before the Commit step
+runs. (When the measurement action already invoked `bin/flow ci`,
+the gate's sentinel skip makes the second invocation a fast no-op.)
+After the CI Gate passes, follow the Commit section exactly as a
+file-changing task would: advance `code_task` via `set-timestamp`,
+set `_continue_context` and `_continue_pending=commit`, and invoke
+`/flow:flow-commit`. The commit skill stages all changes via
+`git add -A` in Round 3, then runs `git diff --cached` in Round 4;
+when the staged diff is empty it prints "Nothing to commit",
+prints its COMPLETE banner, and returns to the caller without
+calling `finalize-commit`. The self-invocation at the end of the
+Commit section then fires unchanged — it runs after
+`/flow:flow-commit` returns, independent of whether a commit was
+actually produced. Do not skip `/flow:flow-commit` even when you
+already know the diff will be empty.
+
 ### Before Starting a Task
 
 Persist the task name to the state file for TUI display:
