@@ -1,3 +1,15 @@
+//! Phase-entry gate logic and `bin/flow check-phase` CLI driver.
+//!
+//! `check_phase()` is the pure predicate: given a state JSON value
+//! and a target phase, return `(allowed, message)`. `run_impl_main()`
+//! is the thin CLI driver that loads the state file from disk and
+//! routes the predicate's output through the plain-text contract that
+//! `bin/flow check-phase` consumers (the `validate-claude-paths` hook
+//! and other phase-entry gates) parse from stdout. The driver is the
+//! `main.rs` `Commands::CheckPhase` arm's only behaviour — main.rs
+//! delegates here and prints the returned string via
+//! `dispatch::dispatch_text`.
+
 use std::path::Path;
 
 use indexmap::IndexMap;
@@ -137,7 +149,23 @@ pub fn run_impl_main(phase: &str, branch_override: Option<&str>, root: &Path) ->
         }
     };
 
-    let paths = FlowPaths::new(root, &branch);
+    // `resolve_branch` may return a raw git ref (slash-containing,
+    // empty) when no state file matches. `FlowPaths::new` panics on
+    // those; use `try_new` per `.claude/rules/external-input-validation.md`
+    // and treat invalid branches as "no active flow" just like the
+    // missing-state-file case below.
+    let paths = match FlowPaths::try_new(root, &branch) {
+        Some(p) => p,
+        None => {
+            return (
+                format!(
+                    "BLOCKED: No FLOW feature in progress on branch \"{}\".\nRun /flow:flow-start to begin a new feature.",
+                    branch
+                ),
+                1,
+            );
+        }
+    };
     let state_file = paths.state_file();
     if !state_file.exists() {
         return (
@@ -532,6 +560,29 @@ mod tests {
         let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
         assert_eq!(code, 0);
         assert!(out.contains("previously completed"));
+    }
+
+    #[test]
+    fn run_impl_main_slash_branch_returns_blocked_no_panic() {
+        // `--branch feature/foo` (standard git ref shape) must not
+        // panic — must route through `FlowPaths::try_new` to the
+        // "no active flow on this branch" branch. Guards against the
+        // Issue #1054 recurrence the adversarial agent caught.
+        let dir = tempfile::tempdir().unwrap();
+        let (out, code) = run_impl_main("flow-plan", Some("feature/foo"), dir.path());
+        assert_eq!(code, 1);
+        assert!(out.contains("BLOCKED"), "output: {}", out);
+        assert!(out.contains("feature/foo"), "output: {}", out);
+    }
+
+    #[test]
+    fn run_impl_main_empty_branch_returns_blocked_no_panic() {
+        // Empty `--branch ""` must not panic — must route through
+        // `FlowPaths::try_new` to the blocked message.
+        let dir = tempfile::tempdir().unwrap();
+        let (out, code) = run_impl_main("flow-plan", Some(""), dir.path());
+        assert_eq!(code, 1);
+        assert!(out.contains("BLOCKED"), "output: {}", out);
     }
 
     #[test]

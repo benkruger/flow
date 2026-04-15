@@ -1,3 +1,14 @@
+//! Phase state transitions and `bin/flow phase-transition` CLI driver.
+//!
+//! `phase_enter()` and `phase_complete()` are the pure mutators that
+//! apply state changes inside a `mutate_state` lock. `run_impl_main()`
+//! is the thin CLI driver that loads the state file, calls the
+//! mutator, writes the `[Phase N] phase-transition --action X --phase Y
+//! ("status")` log entry on both success and mutation-failure paths,
+//! and returns the JSON result for `dispatch::dispatch_json`. The
+//! `main.rs` `Commands::PhaseTransition` arm delegates here and prints
+//! the returned Value via `dispatch::dispatch_json`.
+
 use std::path::Path;
 use std::process::Command;
 
@@ -295,7 +306,23 @@ pub fn run_impl_main(
             return (json_error_value("Could not determine current branch"), 1);
         }
     };
-    let paths = FlowPaths::new(root, &branch);
+    // `resolve_branch` may return a raw git ref (slash-containing,
+    // empty) when no state file matches the override. `FlowPaths::new`
+    // panics on those; use `try_new` per `.claude/rules/external-input-validation.md`
+    // and surface the invalid branch as a structured error rather than
+    // a crashing panic.
+    let paths = match FlowPaths::try_new(root, &branch) {
+        Some(p) => p,
+        None => {
+            return (
+                json_error_value(&format!(
+                    "Invalid branch name: \"{}\" (contains '/' or is empty)",
+                    branch
+                )),
+                1,
+            );
+        }
+    };
     let state_path = paths.state_file();
 
     if !state_path.exists() {
@@ -1162,6 +1189,98 @@ mod tests {
         assert_eq!(code, 1);
         assert_eq!(out["status"], "error");
         assert!(out["message"].as_str().unwrap().contains("Invalid action"));
+    }
+
+    fn init_git_repo(dir: &std::path::Path, branch: &str) {
+        let run = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .output()
+                .expect("git command failed");
+            assert!(output.status.success(), "git {:?} failed", args);
+        };
+        run(&["init", "--initial-branch", branch]);
+        run(&["config", "user.email", "test@test.com"]);
+        run(&["config", "user.name", "Test"]);
+        run(&["config", "commit.gpgsign", "false"]);
+        run(&["commit", "--allow-empty", "-m", "init"]);
+    }
+
+    #[test]
+    fn run_impl_main_cwd_drift_returns_error() {
+        // Build a real git repo with branch "feature-x" and a state file
+        // whose `relative_cwd` is "api". The cwd_scope guard reads the
+        // branch via `current_branch_in(cwd)`, so a non-git TempDir
+        // would no-op the guard. Passing cwd = repo root (not repo/api)
+        // triggers the drift error path.
+        let dir = tempfile::tempdir().unwrap();
+        init_git_repo(dir.path(), "feature-x");
+        let mut state = make_state("flow-plan", &[("flow-start", "complete")]);
+        state["relative_cwd"] = json!("api");
+        write_state(dir.path(), "feature-x", state);
+
+        let (out, code) = run_impl_main(
+            "flow-plan",
+            "enter",
+            None,
+            None, // let resolve_branch use git
+            None,
+            dir.path(),
+            dir.path(), // cwd at repo root, but relative_cwd="api" expects repo/api
+        );
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        let msg = out["message"].as_str().unwrap();
+        // cwd_scope::enforce names the expected directory in the error.
+        assert!(
+            msg.to_lowercase().contains("api") || msg.to_lowercase().contains("expected"),
+            "expected cwd-drift error naming api or expected, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn run_impl_main_slash_branch_returns_error_no_panic() {
+        // `--branch feature/foo` (standard git ref shape) must not
+        // panic — must return a structured error. Guards against the
+        // Issue #1054 recurrence caught by the adversarial agent.
+        let dir = tempfile::tempdir().unwrap();
+        let (out, code) = run_impl_main(
+            "flow-plan",
+            "enter",
+            None,
+            Some("feature/foo"),
+            None,
+            dir.path(),
+            dir.path(),
+        );
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        let msg = out["message"].as_str().unwrap();
+        assert!(
+            msg.contains("Invalid branch") || msg.contains("feature/foo"),
+            "expected invalid-branch error, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn run_impl_main_empty_branch_returns_error_no_panic() {
+        // Empty `--branch ""` must not panic — must return structured error.
+        let dir = tempfile::tempdir().unwrap();
+        let (out, code) = run_impl_main(
+            "flow-plan",
+            "enter",
+            None,
+            Some(""),
+            None,
+            dir.path(),
+            dir.path(),
+        );
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        assert!(out["message"].as_str().unwrap().contains("Invalid branch"));
     }
 
     #[test]
