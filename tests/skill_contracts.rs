@@ -2969,6 +2969,45 @@ fn flow_plan_skill_has_extract_helper_branch_enumeration() {
 }
 
 #[test]
+fn extract_helper_refactor_rule_has_expected_structure() {
+    // The SKILL.md Extract-Helper Branch Enumeration subsection
+    // cross-references .claude/rules/extract-helper-refactor.md for the
+    // full trigger vocabulary, the three classifications, the opt-out
+    // grammar, and the motivating PR #1155 incident. This test asserts
+    // that rule file exists and contains the canonical elements the
+    // SKILL.md cross-reference promises, so a broken cross-reference
+    // or a missing section fails CI instead of silently shipping.
+    let path = common::repo_root()
+        .join(".claude")
+        .join("rules")
+        .join("extract-helper-refactor.md");
+    let content = std::fs::read_to_string(&path)
+        .expect(".claude/rules/extract-helper-refactor.md must exist");
+
+    for cls in [
+        "Testable via seam",
+        "Testable directly",
+        "Testable via subprocess",
+    ] {
+        assert!(
+            content.contains(cls),
+            "extract-helper-refactor.md must name classification: {cls}"
+        );
+    }
+
+    assert!(
+        content.contains("extract-helper-refactor: not-an-extraction"),
+        "extract-helper-refactor.md must document the opt-out comment token \
+         'extract-helper-refactor: not-an-extraction'"
+    );
+
+    assert!(
+        content.contains("PR #1155"),
+        "extract-helper-refactor.md must cite the motivating PR #1155 incident"
+    );
+}
+
+#[test]
 fn code_review_step_2_launches_four_agents() {
     let c = common::read_skill("flow-code-review");
     assert!(
