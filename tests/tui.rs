@@ -1099,6 +1099,69 @@ fn test_input_abort_confirm_capital_y_with_empty_flows_is_noop() {
 }
 
 #[test]
+fn test_activate_iterm_tab_with_test_platform_returns_without_panic() {
+    // `TuiAppPlatform::for_tests()` points the osascript binary at
+    // /bin/true. `/bin/true -e "<script>"` runs without panic and
+    // returns success with empty stdout. `parse_osascript_result`
+    // then returns false (because "" != "activated"). The whole
+    // Command::new(...).output() chain in
+    // `TuiApp::activate_iterm_tab` runs for real.
+    let app = make_app();
+    let result = app.activate_iterm_tab("/dev/ttys000");
+    // /bin/true exits 0 with empty stdout; parse_osascript_result
+    // returns false because stdout is not "activated".
+    assert!(!result);
+}
+
+#[test]
+fn test_input_enter_in_list_view_with_session_tty_exercises_activate() {
+    // Flow has a session_tty string — worktree_session_tty returns
+    // Some(tty), and open_worktree calls self.activate_iterm_tab(tty)
+    // which spawns `/bin/true` under the test platform. This
+    // exercises the full dispatch chain through
+    // Command::new(...).output() without side effects.
+    let mut app = make_app();
+    let mut flow = make_flow("A", "Code", 3);
+    flow.state = serde_json::json!({
+        "branch": "a",
+        "session_tty": "/dev/ttys000",
+    });
+    app.flows = vec![flow];
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(app.view, View::List);
+}
+
+#[test]
+fn test_input_abort_confirm_capital_y_with_flow_exercises_cleanup_spawn() {
+    // Populate a flow so abort_flow does NOT early-return. Then
+    // press Y on the confirm prompt. abort_flow spawns
+    // `/bin/true cleanup <root> --branch <b> --worktree <w>` via
+    // self.platform.bin_flow_path which is /bin/true under
+    // TuiAppPlatform::for_tests(). The Command::new(...).status()
+    // line runs for real with no side effects (/bin/true ignores
+    // args and exits 0).
+    //
+    // The raw-mode toggles (disable_raw_mode / LeaveAlternateScreen
+    // / enable_raw_mode / EnterAlternateScreen) also execute under
+    // cargo nextest's non-tty stdout — crossterm returns errors
+    // silently via the `let _ =` prefix and no panic occurs. The
+    // eprintln! line runs too.
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(tmp.path().join(".flow-states")).unwrap();
+    let mut app = TuiApp::new(
+        tmp.path().to_path_buf(),
+        "1.0.0".to_string(),
+        None,
+        TuiAppPlatform::for_tests(),
+    );
+    let flow = make_flow("Abort Target", "Code", 3);
+    app.flows = vec![flow];
+    app.confirming_abort = true;
+    app.handle_key(key(KeyCode::Char('Y')));
+    assert!(!app.confirming_abort);
+}
+
+#[test]
 fn test_render_list_feature_narrower_than_default_shows_full_name() {
     // Short feature name at a wide viewport should NOT show `...`
     // truncation — guards the non-truncation branch of the

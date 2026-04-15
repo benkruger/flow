@@ -345,7 +345,7 @@ impl TuiApp {
         }
         let flow = &self.flows[self.selected];
         if let Some(tty) = worktree_session_tty(flow) {
-            activate_iterm_tab(tty);
+            self.activate_iterm_tab(tty);
         }
     }
 
@@ -387,15 +387,14 @@ impl TuiApp {
         let flow = &self.flows[self.selected];
         let args =
             build_cleanup_command_args(&self.root, &flow.branch, &flow.worktree, flow.pr_number);
-
-        // Find bin/flow relative to this binary
-        let bin_flow = find_bin_flow();
+        let bin_flow = self.platform.bin_flow_path.clone();
+        let feature = flow.feature.clone();
 
         // Exit alternate screen for cleanup output
         let _ = disable_raw_mode();
         let _ = execute!(io::stdout(), LeaveAlternateScreen);
 
-        eprintln!("Aborting flow: {}...", flow.feature);
+        eprintln!("Aborting flow: {}...", feature);
         let _ = Command::new(&bin_flow).args(&args).status();
 
         // Re-enter alternate screen
@@ -403,6 +402,25 @@ impl TuiApp {
         let _ = execute!(io::stdout(), EnterAlternateScreen);
 
         self.refresh_data();
+    }
+
+    /// Activate an iTerm2 tab by matching its session tty. Reads the
+    /// osascript binary path from `self.platform.osascript_binary`
+    /// so tests can swap in `/bin/true` and exercise the real
+    /// `Command::new(...).output()` line without an osascript runtime.
+    pub fn activate_iterm_tab(&self, session_tty: &str) -> bool {
+        let script = build_iterm_activation_script(session_tty);
+
+        match Command::new(&self.platform.osascript_binary)
+            .arg("-e")
+            .arg(&script)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()
+        {
+            Ok(output) => parse_osascript_result(output.status.success(), &output.stdout),
+            Err(_) => false,
+        }
     }
 
     // --- Rendering ---
@@ -1331,31 +1349,14 @@ fn parse_osascript_result(success: bool, stdout: &[u8]) -> bool {
     success && String::from_utf8_lossy(stdout).trim() == "activated"
 }
 
-/// Activate an iTerm2 tab by matching its session tty.
-fn activate_iterm_tab(session_tty: &str) -> bool {
-    let script = build_iterm_activation_script(session_tty);
-
-    match Command::new("osascript")
-        .arg("-e")
-        .arg(&script)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-    {
-        Ok(output) => parse_osascript_result(output.status.success(), &output.stdout),
-        Err(_) => false,
-    }
-}
-
 /// Walk up three parent directories from `exe_path` (binary →
 /// `{debug|release}` → `target` → repo root) and return
 /// `Some(<root>/bin/flow)` when the resolved file exists, `None`
 /// otherwise.
 ///
-/// Pure helper — accepts the executable path explicitly so tests can
-/// drive the traversal logic with controlled tmpdirs. The
-/// `std::env::current_exe()` lookup and the bare-string fallback live
-/// in `find_bin_flow` and are covered by `test_coverage.md`.
+/// Pure helper used by `TuiAppPlatform::production()` to resolve
+/// the `bin_flow_path` at construction time. Tests can drive the
+/// traversal logic with controlled tmpdirs via inline unit tests.
 fn derive_bin_flow_path(exe_path: &Path) -> Option<PathBuf> {
     let root = exe_path
         .parent()
@@ -1367,16 +1368,6 @@ fn derive_bin_flow_path(exe_path: &Path) -> Option<PathBuf> {
     } else {
         None
     }
-}
-
-/// Locate bin/flow by traversing up from the current executable.
-fn find_bin_flow() -> PathBuf {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(bin_flow) = derive_bin_flow_path(&exe) {
-            return bin_flow;
-        }
-    }
-    PathBuf::from("bin/flow")
 }
 
 /// Entry point: initialize terminal and run the TUI.
