@@ -17,7 +17,6 @@ use flow_rs::cleanup;
 use flow_rs::close_issue;
 use flow_rs::close_issues;
 use flow_rs::commands;
-use flow_rs::commands::log::append_log;
 use flow_rs::complete_fast;
 use flow_rs::complete_finalize;
 use flow_rs::complete_merge;
@@ -39,15 +38,14 @@ use flow_rs::issue;
 use flow_rs::label_issues;
 use flow_rs::link_blocked_by;
 use flow_rs::lint;
-use flow_rs::lock::mutate_state;
 use flow_rs::notify_slack;
 use flow_rs::orchestrate_report;
 use flow_rs::orchestrate_state;
 use flow_rs::output::json_error;
-use flow_rs::phase_config::{find_state_files, load_phase_config, phase_number, PHASE_ORDER};
+use flow_rs::phase_config::{find_state_files, load_phase_config};
 use flow_rs::phase_enter;
 use flow_rs::phase_finalize;
-use flow_rs::phase_transition::{phase_complete, phase_enter as phase_enter_fn};
+use flow_rs::phase_transition;
 use flow_rs::plan_check;
 use flow_rs::plan_extract;
 use flow_rs::prime_check;
@@ -493,13 +491,18 @@ fn main() {
             branch,
             reason,
         }) => {
-            run_phase_transition(
+            let root = project_root();
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let (out, code) = phase_transition::run_impl_main(
                 &phase,
                 &action,
                 next_phase.as_deref(),
                 branch.as_deref(),
                 reason.as_deref(),
+                &root,
+                &cwd,
             );
+            flow_rs::dispatch::dispatch_json(out, code);
         }
         Some(Commands::Ci(args)) => ci::run(args),
         Some(Commands::Build(args)) => build::run(args),
@@ -686,148 +689,6 @@ fn main() {
         },
         Some(Commands::External(_)) => {
             process::exit(127);
-        }
-    }
-}
-
-fn run_phase_transition(
-    phase: &str,
-    action: &str,
-    next_phase: Option<&str>,
-    branch_override: Option<&str>,
-    reason: Option<&str>,
-) {
-    if !PHASE_ORDER.contains(&phase) {
-        json_error(
-            &format!(
-                "Invalid phase: {}. Must be one of: {}",
-                phase,
-                PHASE_ORDER.join(", ")
-            ),
-            &[],
-        );
-        process::exit(1);
-    }
-
-    if action != "enter" && action != "complete" {
-        json_error(
-            &format!("Invalid action: {}. Must be 'enter' or 'complete'", action),
-            &[],
-        );
-        process::exit(1);
-    }
-
-    let root = project_root();
-
-    // Drift guard: phase-transition mutates the state file and must
-    // run from inside the subdirectory the flow was started in. See
-    // crate::cwd_scope::enforce.
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    if let Err(msg) = flow_rs::cwd_scope::enforce(&cwd, &root) {
-        json_error(&msg, &[]);
-        process::exit(1);
-    }
-
-    let branch = match resolve_branch(branch_override, &root) {
-        Some(b) => b,
-        None => {
-            json_error("Could not determine current branch", &[]);
-            process::exit(1);
-        }
-    };
-    let paths = FlowPaths::new(&root, &branch);
-    let state_path = paths.state_file();
-
-    if !state_path.exists() {
-        json_error(
-            &format!("No state file found: {}", state_path.display()),
-            &[],
-        );
-        process::exit(1);
-    }
-
-    // Read state to validate phase key exists
-    let content = match std::fs::read_to_string(&state_path) {
-        Ok(c) => c,
-        Err(e) => {
-            json_error(&format!("Could not read state file: {}", e), &[]);
-            process::exit(1);
-        }
-    };
-
-    let state: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(e) => {
-            json_error(&format!("Could not read state file: {}", e), &[]);
-            process::exit(1);
-        }
-    };
-
-    // Validate phase key exists in state
-    if state.get("phases").is_none() || state["phases"].get(phase).is_none() {
-        json_error(&format!("Phase {} not found in state file", phase), &[]);
-        process::exit(1);
-    }
-
-    // Load frozen phase config if available
-    let frozen_path = paths.frozen_phases();
-    let frozen_config = if frozen_path.exists() {
-        load_phase_config(&frozen_path).ok()
-    } else {
-        None
-    };
-
-    let frozen_order: Option<Vec<String>> = frozen_config.as_ref().map(|c| c.order.clone());
-    let frozen_commands = frozen_config.as_ref().map(|c| c.commands.clone());
-
-    // Use mutate_state for atomic read-lock-transform-write
-    let result_holder = std::cell::RefCell::new(serde_json::Value::Null);
-
-    let mutate_result = mutate_state(&state_path, |state| {
-        let result = if action == "enter" {
-            phase_enter_fn(state, phase, reason)
-        } else {
-            phase_complete(
-                state,
-                phase,
-                next_phase,
-                frozen_order.as_deref(),
-                frozen_commands.as_ref(),
-            )
-        };
-        *result_holder.borrow_mut() = result;
-    });
-
-    let pn = phase_number(phase);
-
-    match mutate_result {
-        Ok(_) => {
-            let result = result_holder.into_inner();
-            let status = result
-                .get("status")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
-            let _ = append_log(
-                &root,
-                &branch,
-                &format!(
-                    "[Phase {}] phase-transition --action {} --phase {} (\"{}\")",
-                    pn, action, phase, status
-                ),
-            );
-            println!("{}", serde_json::to_string(&result).unwrap());
-        }
-        Err(e) => {
-            let _ = append_log(
-                &root,
-                &branch,
-                &format!(
-                    "[Phase {}] phase-transition --action {} --phase {} (\"error\")",
-                    pn, action, phase
-                ),
-            );
-            json_error(&format!("State mutation failed: {}", e), &[]);
-            process::exit(1);
         }
     }
 }

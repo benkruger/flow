@@ -1,9 +1,16 @@
+use std::path::Path;
 use std::process::Command;
 
 use indexmap::IndexMap;
 use serde_json::{json, Value};
 
-use crate::phase_config::{self, PHASE_ORDER};
+use crate::commands::log::append_log;
+use crate::cwd_scope;
+use crate::flow_paths::FlowPaths;
+use crate::git::resolve_branch;
+use crate::lock::mutate_state;
+use crate::output::json_error_string;
+use crate::phase_config::{self, load_phase_config, phase_number, PHASE_ORDER};
 use crate::utils::{elapsed_since, format_time, now, tolerant_i64};
 
 /// Apply phase entry mutations to the state Value in-place.
@@ -241,6 +248,163 @@ pub fn capture_diff_stats() -> Value {
         "deletions": deletions,
         "captured_at": now()
     })
+}
+
+/// Driver for the `bin/flow phase-transition` subcommand.
+///
+/// Returns `(output_json, exit_code)`. Output is always a JSON Value:
+/// the normal phase_enter/phase_complete result on success, or the
+/// `json_error` shape on validation/IO/state errors. Success and
+/// mutation-failure paths both append a one-line entry to
+/// `.flow-states/<branch>.log`.
+///
+/// Tests supply `root` as a fixture TempDir and `cwd` equal to the
+/// root so the cwd-drift guard passes; `branch_override` is required
+/// so the helper does not shell out to `git rev-parse` against the
+/// host worktree.
+pub fn run_impl_main(
+    phase: &str,
+    action: &str,
+    next_phase: Option<&str>,
+    branch_override: Option<&str>,
+    reason: Option<&str>,
+    root: &Path,
+    cwd: &Path,
+) -> (Value, i32) {
+    if !PHASE_ORDER.contains(&phase) {
+        let msg = format!(
+            "Invalid phase: {}. Must be one of: {}",
+            phase,
+            PHASE_ORDER.join(", ")
+        );
+        return (json_error_value(&msg), 1);
+    }
+
+    if action != "enter" && action != "complete" {
+        let msg = format!("Invalid action: {}. Must be 'enter' or 'complete'", action);
+        return (json_error_value(&msg), 1);
+    }
+
+    if let Err(msg) = cwd_scope::enforce(cwd, root) {
+        return (json_error_value(&msg), 1);
+    }
+
+    let branch = match resolve_branch(branch_override, root) {
+        Some(b) => b,
+        None => {
+            return (json_error_value("Could not determine current branch"), 1);
+        }
+    };
+    let paths = FlowPaths::new(root, &branch);
+    let state_path = paths.state_file();
+
+    if !state_path.exists() {
+        return (
+            json_error_value(&format!("No state file found: {}", state_path.display())),
+            1,
+        );
+    }
+
+    let content = match std::fs::read_to_string(&state_path) {
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                json_error_value(&format!("Could not read state file: {}", e)),
+                1,
+            );
+        }
+    };
+
+    let state: Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                json_error_value(&format!("Could not read state file: {}", e)),
+                1,
+            );
+        }
+    };
+
+    if state.get("phases").is_none() || state["phases"].get(phase).is_none() {
+        return (
+            json_error_value(&format!("Phase {} not found in state file", phase)),
+            1,
+        );
+    }
+
+    let frozen_path = paths.frozen_phases();
+    let frozen_config = if frozen_path.exists() {
+        load_phase_config(&frozen_path).ok()
+    } else {
+        None
+    };
+    let frozen_order: Option<Vec<String>> = frozen_config.as_ref().map(|c| c.order.clone());
+    let frozen_commands = frozen_config.as_ref().map(|c| c.commands.clone());
+
+    let result_holder = std::cell::RefCell::new(Value::Null);
+
+    let action_owned = action.to_string();
+    let phase_owned = phase.to_string();
+    let next_phase_owned = next_phase.map(|s| s.to_string());
+    let reason_owned = reason.map(|s| s.to_string());
+
+    let mutate_result = mutate_state(&state_path, |state| {
+        let result = if action_owned == "enter" {
+            phase_enter(state, &phase_owned, reason_owned.as_deref())
+        } else {
+            phase_complete(
+                state,
+                &phase_owned,
+                next_phase_owned.as_deref(),
+                frozen_order.as_deref(),
+                frozen_commands.as_ref(),
+            )
+        };
+        *result_holder.borrow_mut() = result;
+    });
+
+    let pn = phase_number(phase);
+
+    match mutate_result {
+        Ok(_) => {
+            let result = result_holder.into_inner();
+            let status = result
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let _ = append_log(
+                root,
+                &branch,
+                &format!(
+                    "[Phase {}] phase-transition --action {} --phase {} (\"{}\")",
+                    pn, action, phase, status
+                ),
+            );
+            (result, 0)
+        }
+        Err(e) => {
+            let _ = append_log(
+                root,
+                &branch,
+                &format!(
+                    "[Phase {}] phase-transition --action {} --phase {} (\"error\")",
+                    pn, action, phase
+                ),
+            );
+            (
+                json_error_value(&format!("State mutation failed: {}", e)),
+                1,
+            )
+        }
+    }
+}
+
+/// Build a `json_error`-shaped Value (parsed from `json_error_string`)
+/// so `run_impl_main` can return `(Value, i32)` while matching the
+/// pre-extraction `json_error` output contract exactly.
+fn json_error_value(message: &str) -> Value {
+    serde_json::from_str::<Value>(&json_error_string(message, &[]))
+        .unwrap_or_else(|_| json!({"status": "error", "message": message}))
 }
 
 #[cfg(test)]
@@ -955,5 +1119,170 @@ mod tests {
         assert!(stats.get("insertions").is_some());
         assert!(stats.get("deletions").is_some());
         assert!(stats.get("captured_at").is_some());
+    }
+
+    // ===== run_impl_main (main.rs PhaseTransition arm driver) =====
+
+    fn write_state(root: &std::path::Path, branch: &str, state: Value) {
+        let dir = root.join(".flow-states");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{}.json", branch));
+        std::fs::write(&path, state.to_string()).unwrap();
+    }
+
+    #[test]
+    fn run_impl_main_invalid_phase_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let (out, code) = run_impl_main(
+            "nonexistent",
+            "enter",
+            None,
+            Some("test"),
+            None,
+            dir.path(),
+            dir.path(),
+        );
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        assert!(out["message"].as_str().unwrap().contains("Invalid phase"));
+    }
+
+    #[test]
+    fn run_impl_main_invalid_action_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let (out, code) = run_impl_main(
+            "flow-plan",
+            "bogus",
+            None,
+            Some("test"),
+            None,
+            dir.path(),
+            dir.path(),
+        );
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        assert!(out["message"].as_str().unwrap().contains("Invalid action"));
+    }
+
+    #[test]
+    fn run_impl_main_no_state_file_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let (out, code) = run_impl_main(
+            "flow-plan",
+            "enter",
+            None,
+            Some("test"),
+            None,
+            dir.path(),
+            dir.path(),
+        );
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        assert!(out["message"]
+            .as_str()
+            .unwrap()
+            .contains("No state file found"));
+    }
+
+    #[test]
+    fn run_impl_main_unparseable_state_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".flow-states")).unwrap();
+        std::fs::write(
+            dir.path().join(".flow-states").join("test.json"),
+            "not-json",
+        )
+        .unwrap();
+        let (out, code) = run_impl_main(
+            "flow-plan",
+            "enter",
+            None,
+            Some("test"),
+            None,
+            dir.path(),
+            dir.path(),
+        );
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        assert!(out["message"]
+            .as_str()
+            .unwrap()
+            .contains("Could not read state file"));
+    }
+
+    #[test]
+    fn run_impl_main_missing_phase_key_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".flow-states")).unwrap();
+        // State has phases object but no flow-plan entry.
+        let bare = json!({"branch": "test", "current_phase": "flow-start", "phases": {}});
+        std::fs::write(
+            dir.path().join(".flow-states").join("test.json"),
+            bare.to_string(),
+        )
+        .unwrap();
+        let (out, code) = run_impl_main(
+            "flow-plan",
+            "enter",
+            None,
+            Some("test"),
+            None,
+            dir.path(),
+            dir.path(),
+        );
+        assert_eq!(code, 1);
+        assert!(out["message"]
+            .as_str()
+            .unwrap()
+            .contains("Phase flow-plan not found"));
+    }
+
+    #[test]
+    fn run_impl_main_enter_success_returns_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("flow-start", &[("flow-start", "complete")]);
+        write_state(dir.path(), "test", state);
+        let (out, code) = run_impl_main(
+            "flow-plan",
+            "enter",
+            None,
+            Some("test"),
+            None,
+            dir.path(),
+            dir.path(),
+        );
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+        assert_eq!(out["phase"], "flow-plan");
+        assert_eq!(out["action"], "enter");
+        // Log entry must be written on success.
+        let log_content = std::fs::read_to_string(dir.path().join(".flow-states").join("test.log"))
+            .expect("log file must exist after append_log");
+        assert!(log_content.contains("phase-transition --action enter --phase flow-plan"));
+        assert!(log_content.contains("\"ok\""));
+    }
+
+    #[test]
+    fn run_impl_main_complete_success_returns_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = make_state(
+            "flow-plan",
+            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        );
+        state["phases"]["flow-plan"]["started_at"] = json!("2026-01-01T00:00:00Z");
+        state["phases"]["flow-plan"]["session_started_at"] = json!("2026-01-01T00:00:00Z");
+        write_state(dir.path(), "test", state);
+        let (out, code) = run_impl_main(
+            "flow-plan",
+            "complete",
+            None,
+            Some("test"),
+            None,
+            dir.path(),
+            dir.path(),
+        );
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+        assert_eq!(out["action"], "complete");
     }
 }
