@@ -188,11 +188,6 @@ fn run_curl_with_timeout(
     }
 }
 
-/// Post a message to Slack via real curl subprocess.
-pub fn post_message(bot_token: &str, channel: &str, text: &str, thread_ts: Option<&str>) -> Value {
-    post_message_inner(bot_token, channel, text, thread_ts, &run_curl_with_timeout)
-}
-
 /// Core notification logic with injectable config reader and poster.
 ///
 /// `config_reader` returns the Slack credentials (or `None` when unconfigured).

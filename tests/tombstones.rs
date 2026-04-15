@@ -199,3 +199,18 @@ fn test_no_backward_facing_comments_in_rust_source() {
         violations.join("\n")
     );
 }
+
+#[test]
+fn test_notify_slack_no_post_message_wrapper() {
+    // Tombstone: removed in PR #1157. The three-line `post_message`
+    // closure-binder wrapper is superseded by `notify_with_deps`, which
+    // takes a `poster` closure and delegates directly to
+    // `post_message_inner`. Resurrection via merge conflict must fail.
+    let root = common::repo_root();
+    let path = root.join("src").join("notify_slack.rs");
+    let content = fs::read_to_string(&path).expect("notify_slack.rs must exist");
+    assert!(
+        !content.contains("pub fn post_message("),
+        "post_message wrapper must not return; callers use notify_with_deps + post_message_inner directly"
+    );
+}
