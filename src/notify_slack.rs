@@ -8,6 +8,28 @@
 //!   Success:  {"status": "ok", "ts": "1234567890.123456"}
 //!   Skipped:  {"status": "skipped", "reason": "no slack config"}
 //!   Error:    {"status": "error", "message": "..."}
+//!
+//! # Public entry points
+//!
+//! The module exposes a two-tier layering so inline tests can drive every
+//! branch without env-var mutation or real `curl` subprocesses:
+//!
+//! - [`notify_with_deps`] — dependency-injected core. Accepts a
+//!   `config_reader` closure returning `Option<SlackConfig>` and a
+//!   `poster` closure returning the Slack JSON response. Fully testable.
+//! - [`notify`] — production binder that wires `notify_with_deps` to
+//!   [`read_slack_config`] (env-var reader) and [`post_message_inner`]
+//!   bound to [`run_curl_with_timeout`] (real curl subprocess).
+//! - [`run_with_deps`] — CLI layer with an injected
+//!   `writer: &mut dyn Write`. Computes the notify result and writes one
+//!   JSON line. Testable via in-memory `Vec<u8>` buffers.
+//! - [`run`] — production CLI entry. Wires `run_with_deps` to
+//!   `std::io::stdout()` and the production closures above.
+//!
+//! The inner [`post_message_inner`] closure seam (injected `curl` runner)
+//! predates this split and remains the existing test entry for the
+//! `curl` response-parsing branches (success, 4xx/5xx, invalid JSON,
+//! timeout) via the inline `mock_curl` helper.
 
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -188,14 +210,21 @@ fn run_curl_with_timeout(
     }
 }
 
-/// Post a message to Slack via real curl subprocess.
-pub fn post_message(bot_token: &str, channel: &str, text: &str, thread_ts: Option<&str>) -> Value {
-    post_message_inner(bot_token, channel, text, thread_ts, &run_curl_with_timeout)
-}
-
-/// Core notification logic. Returns result Value.
-pub fn notify(args: &Args) -> Value {
-    let config = match read_slack_config() {
+/// Core notification logic with injectable config reader and poster.
+///
+/// `config_reader` returns the Slack credentials (or `None` when unconfigured).
+/// `poster` accepts (bot_token, channel, text, thread_ts) and returns the JSON
+/// response Value Slack produced. This split lets tests drive every branch
+/// without touching env vars or spawning `curl`. Production `notify()` binds
+/// the closures to `read_slack_config` and `post_message_inner +
+/// run_curl_with_timeout`.
+#[allow(clippy::type_complexity)]
+pub fn notify_with_deps(
+    args: &Args,
+    config_reader: &dyn Fn() -> Option<SlackConfig>,
+    poster: &dyn Fn(&str, &str, &str, Option<&str>) -> Value,
+) -> Value {
+    let config = match config_reader() {
         None => return json!({"status": "skipped", "reason": "no slack config"}),
         Some(c) => c,
     };
@@ -206,7 +235,7 @@ pub fn notify(args: &Args) -> Value {
         args.feature.as_deref(),
         args.pr_url.as_deref(),
     );
-    post_message(
+    poster(
         &config.bot_token,
         &config.channel,
         &text,
@@ -214,9 +243,40 @@ pub fn notify(args: &Args) -> Value {
     )
 }
 
+/// Core notification logic. Returns result Value.
+pub fn notify(args: &Args) -> Value {
+    notify_with_deps(args, &read_slack_config, &|bot, channel, text, tts| {
+        post_message_inner(bot, channel, text, tts, &run_curl_with_timeout)
+    })
+}
+
+/// CLI entry with injectable dependencies and writer.
+///
+/// Computes the notify result via `notify_with_deps` and writes it as JSON
+/// followed by a newline to `writer`. Production `run` binds the closures
+/// to `read_slack_config` + `post_message_inner(…, run_curl_with_timeout)`
+/// and passes `std::io::stdout()` so the CLI prints a single JSON line.
+#[allow(clippy::type_complexity)]
+pub fn run_with_deps(
+    args: Args,
+    config_reader: &dyn Fn() -> Option<SlackConfig>,
+    poster: &dyn Fn(&str, &str, &str, Option<&str>) -> Value,
+    writer: &mut dyn std::io::Write,
+) {
+    let result = notify_with_deps(&args, config_reader, poster);
+    let _ = writeln!(writer, "{}", result);
+}
+
 pub fn run(args: Args) {
-    let result = notify(&args);
-    println!("{}", result);
+    let mut stdout = std::io::stdout();
+    run_with_deps(
+        args,
+        &read_slack_config,
+        &|bot, channel, text, tts| {
+            post_message_inner(bot, channel, text, tts, &run_curl_with_timeout)
+        },
+        &mut stdout,
+    );
 }
 
 #[cfg(test)]
@@ -380,5 +440,156 @@ mod tests {
 
         let result = post_message_inner("xoxb-token", "C12345", "Hello", None, &curl);
         assert_eq!(result["status"], "error");
+    }
+
+    // --- notify_with_deps ---
+
+    fn test_args(
+        phase: &str,
+        message: &str,
+        thread_ts: Option<&str>,
+        feature: Option<&str>,
+        pr_url: Option<&str>,
+    ) -> Args {
+        Args {
+            phase: phase.to_string(),
+            message: message.to_string(),
+            thread_ts: thread_ts.map(|s| s.to_string()),
+            feature: feature.map(|s| s.to_string()),
+            pr_url: pr_url.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn notify_with_deps_no_config_returns_skipped() {
+        let args = test_args("flow-start", "Feature started", None, None, None);
+        let config_reader = || None;
+        let poster_called = RefCell::new(false);
+        let poster = |_: &str, _: &str, _: &str, _: Option<&str>| -> Value {
+            *poster_called.borrow_mut() = true;
+            json!({"status": "ok"})
+        };
+
+        let result = notify_with_deps(&args, &config_reader, &poster);
+        assert_eq!(result["status"], "skipped");
+        assert_eq!(result["reason"], "no slack config");
+        assert!(
+            !*poster_called.borrow(),
+            "poster must not be called when config is absent"
+        );
+    }
+
+    #[test]
+    fn notify_with_deps_success_formats_and_posts() {
+        type PosterCall = (String, String, String, Option<String>);
+        let args = test_args(
+            "flow-start",
+            "Feature started",
+            Some("1234567890.123456"),
+            None,
+            None,
+        );
+        let config_reader = || {
+            Some(SlackConfig {
+                bot_token: "xoxb-test-token".to_string(),
+                channel: "C12345".to_string(),
+            })
+        };
+        let poster_calls: RefCell<Vec<PosterCall>> = RefCell::new(Vec::new());
+        let poster = |bot: &str, channel: &str, text: &str, tts: Option<&str>| -> Value {
+            poster_calls.borrow_mut().push((
+                bot.to_string(),
+                channel.to_string(),
+                text.to_string(),
+                tts.map(|s| s.to_string()),
+            ));
+            json!({"status": "ok", "ts": "5555.6666"})
+        };
+
+        let result = notify_with_deps(&args, &config_reader, &poster);
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["ts"], "5555.6666");
+
+        let calls = poster_calls.borrow();
+        assert_eq!(calls.len(), 1);
+        let (bot, channel, text, tts) = &calls[0];
+        assert_eq!(bot, "xoxb-test-token");
+        assert_eq!(channel, "C12345");
+        assert!(text.contains("Feature started"));
+        assert!(text.contains("Start"));
+        assert_eq!(tts.as_deref(), Some("1234567890.123456"));
+    }
+
+    // --- run_with_deps ---
+
+    #[test]
+    fn run_with_deps_prints_notify_json() {
+        let args = test_args("flow-start", "hi", None, None, None);
+        let config_reader = || None;
+        let poster = |_: &str, _: &str, _: &str, _: Option<&str>| -> Value {
+            json!({"status": "ok", "ts": "9.9"})
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        run_with_deps(args, &config_reader, &poster, &mut buf);
+        let out = String::from_utf8(buf).unwrap();
+        // When config_reader returns None the result is the skipped JSON.
+        assert!(out.contains("\"status\":\"skipped\""));
+        // writeln! appends a newline; the production path needs the newline
+        // so `run` output is line-delimited for shell consumers.
+        assert!(out.ends_with('\n'));
+    }
+
+    #[test]
+    fn run_with_deps_success_writes_ok_json() {
+        let args = test_args("flow-start", "hi", None, None, None);
+        let config_reader = || {
+            Some(SlackConfig {
+                bot_token: "xoxb".to_string(),
+                channel: "C".to_string(),
+            })
+        };
+        let poster = |_: &str, _: &str, _: &str, _: Option<&str>| -> Value {
+            json!({"status": "ok", "ts": "9.9"})
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        run_with_deps(args, &config_reader, &poster, &mut buf);
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("\"status\":\"ok\""));
+        assert!(out.contains("\"ts\":\"9.9\""));
+    }
+
+    #[test]
+    fn notify_with_deps_with_feature_and_pr_url() {
+        let args = test_args(
+            "flow-start",
+            "Feature started",
+            None,
+            Some("Invoice Export"),
+            Some("https://github.com/org/repo/pull/42"),
+        );
+        let config_reader = || {
+            Some(SlackConfig {
+                bot_token: "xoxb-test-token".to_string(),
+                channel: "C12345".to_string(),
+            })
+        };
+        let posted_text: RefCell<String> = RefCell::new(String::new());
+        let poster = |_bot: &str, _channel: &str, text: &str, _tts: Option<&str>| -> Value {
+            *posted_text.borrow_mut() = text.to_string();
+            json!({"status": "ok", "ts": "5555.6666"})
+        };
+
+        let _ = notify_with_deps(&args, &config_reader, &poster);
+        let text = posted_text.borrow();
+        assert!(
+            text.contains("Invoice Export"),
+            "feature must flow into posted text: {}",
+            *text
+        );
+        assert!(
+            text.contains("https://github.com/org/repo/pull/42"),
+            "pr_url must flow into posted text: {}",
+            *text
+        );
     }
 }
