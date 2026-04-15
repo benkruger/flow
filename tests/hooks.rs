@@ -792,3 +792,128 @@ fn test_stop_continue_no_state_no_simulate_exits_cleanly() {
     assert_eq!(output.status.code().unwrap(), 0);
     assert!(output.stdout.is_empty(), "no state files → no block output");
 }
+
+// --- validate-ask-user integration tests (issue #1145 Task 3) ---
+//
+// These drive `src/hooks/validate_ask_user::run()` through `flow-rs hook
+// validate-ask-user` with a prepared state file and crafted stdin. They
+// cover every exit path: malformed stdin, missing branch/state, the
+// slash-branch FlowPaths::try_new None arm required by
+// `.claude/rules/external-input-validation.md`, the in-progress+auto
+// block path with exit 2, the _auto_continue auto-answer JSON path, and
+// the plain-allow path that writes `_blocked` and exits 0.
+
+#[test]
+fn validate_ask_user_malformed_stdin_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_and_state(dir.path(), "feat", &json!({"current_phase": "flow-code"}));
+    let output = run_hook("validate-ask-user", dir.path(), "feat", b"not json at all");
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_ask_user_empty_stdin_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_and_state(dir.path(), "feat", &json!({"current_phase": "flow-code"}));
+    let output = run_hook("validate-ask-user", dir.path(), "feat", b"");
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_ask_user_no_state_file_exits_zero() {
+    // FLOW_SIMULATE_BRANCH resolves the branch, but no state file exists
+    // at `.flow-states/feat.json`. `validate(Some(&state_path))` returns
+    // `(true, _, None)` because the `path.exists()` check fails.
+    let dir = tempfile::tempdir().unwrap();
+    let _ = std::process::Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output();
+    let output = run_hook("validate-ask-user", dir.path(), "feat", b"{}");
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_ask_user_slash_branch_exits_zero_no_panic() {
+    // Regression guard per .claude/rules/external-input-validation.md:
+    // slash-branches must not crash the hook. FlowPaths::try_new returns
+    // None; run() exits 0.
+    let dir = tempfile::tempdir().unwrap();
+    let _ = std::process::Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output();
+    let output = run_hook("validate-ask-user", dir.path(), "feature/foo", b"{}");
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked"),
+        "slash-branch must not panic the hook; stderr: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_ask_user_blocks_in_progress_auto_exits_2_with_phase_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = json!({
+        "current_phase": "flow-code",
+        "skills": {"flow-code": {"continue": "auto"}},
+        "phases": {"flow-code": {"status": "in_progress"}},
+    });
+    setup_git_and_state(dir.path(), "feat", &state);
+    let output = run_hook("validate-ask-user", dir.path(), "feat", b"{}");
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("flow-code"),
+        "stderr must name the phase: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr must say BLOCKED: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_ask_user_auto_continue_writes_stdout_json_exits_zero() {
+    // _auto_continue without in_progress+auto → the hook prints a JSON
+    // permissionDecision=allow with updatedInput naming the successor
+    // command so Claude Code auto-answers the AskUserQuestion.
+    let dir = tempfile::tempdir().unwrap();
+    let state = json!({
+        "current_phase": "flow-code",
+        "skills": {"flow-code": {"continue": "manual"}},
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "_auto_continue": "/flow:flow-code-review",
+    });
+    setup_git_and_state(dir.path(), "feat", &state);
+    let output = run_hook("validate-ask-user", dir.path(), "feat", b"{}");
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("permissionDecision") && stdout.contains("/flow:flow-code-review"),
+        "auto-answer stdout must carry permissionDecision + successor: {}",
+        stdout
+    );
+}
+
+#[test]
+fn validate_ask_user_plain_allow_writes_blocked_timestamp_exits_zero() {
+    // No block conditions, no _auto_continue → plain allow path that
+    // writes _blocked timestamp to the state file before exit 0.
+    let dir = tempfile::tempdir().unwrap();
+    let state = json!({"current_phase": "flow-code"});
+    setup_git_and_state(dir.path(), "feat", &state);
+    let output = run_hook("validate-ask-user", dir.path(), "feat", b"{}");
+    assert_eq!(output.status.code().unwrap(), 0);
+    let post = read_state(dir.path(), "feat");
+    let blocked = post.get("_blocked").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(
+        !blocked.is_empty(),
+        "plain-allow path must write _blocked timestamp; state: {}",
+        post
+    );
+}
