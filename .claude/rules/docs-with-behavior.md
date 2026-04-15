@@ -70,6 +70,20 @@ cannot reach. Every entry must:
   Code Review finding in their own right: either drop the waiver
   (cover the line) or back it with a plan-level architectural
   argument.
+- **Pass the Forward-Facing Test from
+  `.claude/rules/comment-quality.md`.** Waiver prose is
+  documentation, and documentation describes current code. Phrases
+  like "former inline ... from pre-refactor", "moved out of", or
+  "was extracted from" are backward-facing — they explain the
+  waiver only to a reader who already knows the history. Rewrite
+  every waiver entry using present-tense descriptions of what the
+  code currently does and why it is architecturally unreachable.
+  PR #1155 (issue #1137) is the reference incident — the initial
+  waiver prose said `production_ci_decider` "contains the former
+  inline CI dirty-check body from pre-refactor `run_impl`" and
+  was flagged in Code Review; the rewrite describes the function
+  as owning the current CI dirty-check body without referencing
+  history.
 
 When a PR adds architecturally-unreachable code that survives
 coverage enforcement, the waiver entry lands in the same commit

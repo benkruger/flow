@@ -77,6 +77,71 @@ All other lines in `src/analyze_issues.rs` are covered by the
 inline unit test module and the integration CLI tests that spawn
 the compiled binary with `--issues-json` fixtures.
 
+## src/complete_fast.rs
+
+`run_impl` is a thin wrapper that threads the production runner and
+CI-decider into `run_impl_inner`; the CI dirty-check body lives in
+`production_ci_decider`. The uncovered regions fall into two
+architectural categories: the `run()` CLI entry (terminates the test
+process via `process::exit`) and the `production_ci_decider` paths
+that delegate to `ci::run_impl` (require a real CI subprocess).
+
+### `run()` CLI wrapper (lines 607-620)
+
+`run()` invokes `run_impl(&args)` and routes the result: on `Ok`
+with `status == "error"` it prints and calls `std::process::exit(1)`;
+on `Err` it prints the error JSON and calls `std::process::exit(1)`.
+Both exit calls terminate the calling test process, so the exit arms
+cannot be reached from inside a Rust `#[test]`. The testable surface
+is `run_impl` / `run_impl_inner`, both covered by the inline test
+module.
+
+- `src/complete_fast.rs:609-614` — `Ok` branch with `println!` of
+  the result and the error-status exit arm. Reached indirectly via
+  any integration test that drives the CLI subcommand; the exit call
+  cannot be reached from inside a Rust `#[test]`. Standard
+  CLI-entry pattern per `.claude/rules/rust-patterns.md` (CLI
+  Testability — run_impl Pattern).
+- `src/complete_fast.rs:615-618` — `Err` branch. Same pattern; the
+  testable surface is `run_impl_inner` which returns
+  `Result<Value, String>` and is exercised by the
+  `test_run_impl_inner_*` cases.
+
+### `production_ci_decider` real-CI delegation (lines 408-450)
+
+`production_ci_decider` owns the Complete-phase CI dirty-check body:
+sentinel lookup, tree-snapshot comparison, and `ci::run_impl`
+invocation on miss. Its branches split into testable structure and
+untestable delegation:
+
+- `src/complete_fast.rs:414-416` — `tree_changed=true` early return.
+  Covered by `production_ci_decider_tree_changed_returns_not_skipped`.
+- `src/complete_fast.rs:418-427` — `tree_changed=false` sentinel
+  lookup and snapshot comparison. Requires a live `cwd` with a real
+  `tree_snapshot` and a sentinel file whose contents match that
+  snapshot. Achievable only from an integration test that runs in a
+  prepared git tree — unit-test fixtures using `tempfile::tempdir()`
+  cannot produce matching `tree_snapshot` output because
+  `tree_snapshot` reads HEAD, diff, and untracked files via git
+  subprocess.
+- `src/complete_fast.rs:429-449` — CI invocation path. Calls
+  `ci::run_impl(&ci_args, cwd, root, false)` which spawns the
+  full `bin/format` / `bin/lint` / `bin/build` / `bin/test` chain in
+  `cwd`. Unit tests cannot inject this path without running real CI
+  on the host system; the test seam `run_impl_inner(args, root,
+  runner, ci_decider)` exists specifically to bypass this callsite
+  in unit tests by supplying a mock closure. The branches inside
+  this arm (zero vs non-zero `ci_code`, `message` field lookup) are
+  exercised by the `run_impl_inner` tests that pass
+  `ci_failed_decider` and `no_ci` mock closures — those closures
+  return the same two outputs this production arm produces.
+
+The testable surface — `run_impl_inner` plus its ten `test_run_impl_inner_*`
+cases — covers every dispatch branch downstream of this decider.
+The decider itself is intentionally thin (a glue layer over
+`ci::tree_snapshot`, `ci::sentinel_path`, and `ci::run_impl`, each
+of which has its own test coverage in `src/ci.rs`).
+
 ### Note: `fetch_blockers` error-path coverage
 
 The plan (PR #1153, Task 5) originally listed named tests for

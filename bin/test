@@ -66,5 +66,5 @@ fi
 exec cargo llvm-cov --no-cfg-coverage --no-clean \
   --fail-under-lines 93 \
   --fail-under-regions 94 \
-  --fail-under-functions 91 \
+  --fail-under-functions 92 \
   nextest --status-level none --final-status-level fail "$@"
