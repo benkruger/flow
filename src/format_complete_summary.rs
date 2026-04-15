@@ -1,10 +1,8 @@
 use std::path::Path;
-use std::process;
 
 use clap::Parser;
 use serde_json::{json, Value};
 
-use crate::output::{json_error, json_ok};
 use crate::phase_config::{self, PHASE_ORDER};
 use crate::utils::{derive_feature, format_time, read_version, short_issue_ref};
 
@@ -236,8 +234,10 @@ pub struct Args {
     pub closed_issues_file: Option<String>,
 }
 
-/// Fallible CLI logic — returns the SummaryResult on success or an error message.
-/// Extracted from `run()` so error paths can be unit-tested without `process::exit`.
+/// Fallible CLI logic — returns the SummaryResult on success or an
+/// error message. `run_impl_main` wraps this into the `(Value, i32)`
+/// contract that `dispatch::dispatch_json` consumes; unit tests call
+/// `run_impl` directly to assert on typed results.
 pub fn run_impl(args: &Args) -> Result<SummaryResult, String> {
     let state_path = Path::new(&args.state_file);
     if !state_path.exists() {
@@ -262,19 +262,29 @@ pub fn run_impl(args: &Args) -> Result<SummaryResult, String> {
     Ok(format_complete_summary(&state, closed_issues.as_deref()))
 }
 
-pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(result) => {
-            json_ok(&[
-                ("summary", json!(result.summary)),
-                ("total_seconds", json!(result.total_seconds)),
-                ("issues_links", json!(result.issues_links)),
-            ]);
-        }
-        Err(msg) => {
-            json_error(&msg, &[]);
-            process::exit(1);
-        }
+/// Main-arm entry point: runs the fallible `run_impl` and wraps the
+/// result into the `(Value, i32)` contract that
+/// `dispatch::dispatch_json` consumes. Success returns exit 0 with a
+/// `status: "ok"` payload; error returns exit 1 with a
+/// `status: "error"` payload.
+pub fn run_impl_main(args: &Args) -> (Value, i32) {
+    match run_impl(args) {
+        Ok(result) => (
+            json!({
+                "status": "ok",
+                "summary": result.summary,
+                "total_seconds": result.total_seconds,
+                "issues_links": result.issues_links,
+            }),
+            0,
+        ),
+        Err(msg) => (
+            json!({
+                "status": "error",
+                "message": msg,
+            }),
+            1,
+        ),
     }
 }
 
@@ -1040,6 +1050,45 @@ mod tests {
             "Learn Findings section missing:\n{}",
             result.summary
         );
+    }
+
+    #[test]
+    fn run_impl_main_happy_path_returns_ok_value() {
+        // On success, run_impl_main wraps the SummaryResult into a
+        // status:ok JSON payload with exit code 0. This pins the
+        // contract main.rs's FormatCompleteSummary arm relies on
+        // when it calls dispatch::dispatch_json.
+        let dir = tempfile::tempdir().unwrap();
+        let state_file = write_state_file(dir.path());
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            closed_issues_file: None,
+        };
+        let (value, code) = run_impl_main(&args);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert!(value["summary"].as_str().unwrap().contains("Test Feature"));
+        assert!(value["total_seconds"].as_i64().unwrap() > 0);
+    }
+
+    #[test]
+    fn run_impl_main_missing_state_file_returns_err_exit_1() {
+        // On error, run_impl_main returns a status:error JSON
+        // payload with exit code 1 — no process::exit inside the
+        // module, isolating termination to dispatch::dispatch_json.
+        let dir = tempfile::tempdir().unwrap();
+        let args = Args {
+            state_file: dir
+                .path()
+                .join("missing.json")
+                .to_string_lossy()
+                .to_string(),
+            closed_issues_file: None,
+        };
+        let (value, code) = run_impl_main(&args);
+        assert_eq!(code, 1);
+        assert_eq!(value["status"], "error");
+        assert!(value["message"].as_str().unwrap().contains("not found"));
     }
 
     #[test]

@@ -626,7 +626,8 @@ fn main() {
             format_issues_summary::run(args);
         }
         Some(Commands::FormatCompleteSummary(args)) => {
-            format_complete_summary::run(args);
+            let (value, code) = format_complete_summary::run_impl_main(&args);
+            flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::FormatPrTimings(args)) => {
             format_pr_timings::run(args);
