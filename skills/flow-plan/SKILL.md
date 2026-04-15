@@ -412,6 +412,63 @@ trigger vocabulary, the table-detection heuristic, and the
 enforcement topology (`bin/flow plan-check` plus both
 `src/plan_extract.rs` callsites).
 
+### Extract-Helper Branch Enumeration
+
+When a plan task extracts a block of code into a new helper function,
+the new helper introduces its own internal branches that the plan
+must enumerate at Plan time — before the Code phase runs into them.
+Without enumeration, the Code phase discovers new branches mid-flow
+and is pressured to classify them ad hoc, which defeats the discipline
+documented in `.claude/rules/no-waivers.md`.
+
+When the plan proposes extracting a block into a new function, helper,
+or seam — or lifts, hoists, factors out, or pulls out an existing
+block — the plan's Exploration or Approach section must include a
+Branch Enumeration Table near the task description. The table has
+four columns:
+
+| Branch | Condition | Classification | Test |
+|---|---|---|---|
+| A | `tree_changed == true` | Testable directly | `production_ci_decider_tree_changed_returns_not_skipped` |
+
+Column definitions:
+
+- **Branch** — a letter or number label identifying the branch
+- **Condition** — the guard expression or prose condition
+- **Classification** — one of the three positive values below
+- **Test** — the named test function that will exercise this branch
+
+The three positive classifications:
+
+- **Testable via seam** — an injected closure, trait object, or
+  Command parameter; branches exercised by passing mock
+  implementations. Reference pattern:
+  `run_impl_inner(args, root, runner, ci_decider)` in
+  `src/complete_fast.rs`.
+- **Testable directly** — a unit test with a self-contained fixture
+  (TempDir, prepared state file, in-memory value). Reference pattern:
+  `production_ci_decider_tree_changed_returns_not_skipped`.
+- **Testable via subprocess** — spawn the compiled binary through
+  `tests/main_dispatch.rs`; cargo-llvm-cov instruments subprocess
+  calls when they spawn the same binary. Reference pattern:
+  `check_phase_first_phase_exits_0`.
+
+When no classification fits, the fourth response per
+`.claude/rules/no-waivers.md` is to refactor further or delete the
+branch — never to file a waiver.
+
+If the plan prose mentions extraction in discussion rather than as a
+proposal, add the opt-out comment
+`<!-- extract-helper-refactor: not-an-extraction -->` on the trigger
+line itself, on the line directly above, or two lines above with a
+single blank line in between (no chaining across more than one
+blank line).
+
+See `.claude/rules/extract-helper-refactor.md` for the full trigger
+vocabulary, the motivating PR #1155 incident, and the cross-
+references to `.claude/rules/no-waivers.md` and
+`.claude/rules/docs-with-behavior.md`.
+
 ### Supersession Enumeration
 
 `.claude/rules/supersession.md` requires plans that add replacements,

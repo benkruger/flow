@@ -2913,6 +2913,62 @@ fn plan_has_supersession_enumeration() {
 }
 
 #[test]
+fn flow_plan_skill_has_extract_helper_branch_enumeration() {
+    // The Extract-Helper Branch Enumeration subsection is the Plan-phase
+    // discipline from .claude/rules/extract-helper-refactor.md: when a
+    // plan task extracts a block into a new helper, the plan must
+    // enumerate the helper's branches with testability classifications
+    // before Code phase begins. The subsection lives inside Step 3 of
+    // flow-plan/SKILL.md alongside Supersession Enumeration.
+    let c = common::read_skill("flow-plan");
+
+    assert!(
+        c.contains("### Extract-Helper Branch Enumeration"),
+        "flow-plan/SKILL.md Step 3 must include an '### Extract-Helper Branch Enumeration' \
+         subsection per .claude/rules/extract-helper-refactor.md"
+    );
+
+    // Step headings are h2 (`## Step N`); subsections inside a step are
+    // h3 (`### Name`). The new subsection must sit between the Step 3
+    // h2 and the Step 4 h2.
+    let step3 = c.find("## Step 3").expect("Step 3 heading must exist");
+    let step4 = c.find("## Step 4").expect("Step 4 heading must exist");
+    let subsection = c
+        .find("### Extract-Helper Branch Enumeration")
+        .expect("Extract-Helper Branch Enumeration subsection must exist");
+    assert!(
+        subsection > step3 && subsection < step4,
+        "### Extract-Helper Branch Enumeration must sit inside Step 3 \
+         (between '## Step 3' and '## Step 4')"
+    );
+
+    // Isolate the subsection body: from the heading to the next '### ' heading.
+    let rest = &c[subsection..];
+    let sub_end_rel = rest[1..]
+        .find("\n### ")
+        .map(|i| i + 1)
+        .unwrap_or(rest.len());
+    let sub_body = &rest[..sub_end_rel];
+
+    assert!(
+        sub_body.contains(".claude/rules/extract-helper-refactor.md"),
+        "Extract-Helper Branch Enumeration subsection must cross-reference \
+         '.claude/rules/extract-helper-refactor.md'"
+    );
+
+    for cls in [
+        "Testable via seam",
+        "Testable directly",
+        "Testable via subprocess",
+    ] {
+        assert!(
+            sub_body.contains(cls),
+            "Extract-Helper Branch Enumeration subsection must name classification: {cls}"
+        );
+    }
+}
+
+#[test]
 fn code_review_step_2_launches_four_agents() {
     let c = common::read_skill("flow-code-review");
     assert!(
