@@ -25,7 +25,7 @@ use ratatui::Terminal;
 use serde_json::Value;
 
 use crate::flow_paths::FlowPaths;
-use crate::tui_data::{self, AccountMetrics, FlowSummary, OrchestrationSummary};
+use crate::tui_data::{self, AccountMetrics, FlowSummary, IssueSummary, OrchestrationSummary};
 
 /// Auto-refresh interval.
 const REFRESH_MS: u64 = 2000;
@@ -226,10 +226,8 @@ impl TuiApp {
                 self.issue_selected = (self.issue_selected + 1).min(issue_count.saturating_sub(1));
             }
             KeyCode::Enter => {
-                if let Some(issue) = flow.issues.get(self.issue_selected) {
-                    if !issue.url.is_empty() {
-                        open_url(&issue.url);
-                    }
+                if let Some(url) = issue_open_target(&flow.issues, self.issue_selected) {
+                    open_url(url);
                 }
             }
             _ => {}
@@ -1146,6 +1144,21 @@ fn orch_issue_url(repo: Option<&str>, issue_number: Option<i64>) -> Option<Strin
     Some(format!("https://github.com/{}/issues/{}", repo, num))
 }
 
+/// Return the URL to open for a given issue index, or `None` when
+/// the index is out of bounds OR the issue carries no URL. Filing
+/// an issue locally without a `url` is valid state — the helper
+/// preserves "nothing to open" as a first-class outcome.
+///
+/// Pure helper — used by `TuiApp::handle_issues_input`.
+fn issue_open_target(issues: &[IssueSummary], idx: usize) -> Option<&str> {
+    let issue = issues.get(idx)?;
+    if issue.url.is_empty() {
+        None
+    } else {
+        Some(&issue.url)
+    }
+}
+
 /// Decide whether a key confirms an abort prompt. Accepts both `y`
 /// and `Y`; everything else (including `n`, `Esc`, and unrelated
 /// chars) returns `false`.
@@ -1562,6 +1575,45 @@ mod tests {
     #[test]
     fn orch_issue_url_returns_none_when_issue_number_missing() {
         assert_eq!(orch_issue_url(Some("o/r"), None), None);
+    }
+
+    // --- issue_open_target ---
+
+    fn make_issue(url: &str) -> IssueSummary {
+        IssueSummary {
+            label: "Bug".to_string(),
+            title: "t".to_string(),
+            url: url.to_string(),
+            ref_str: "#1".to_string(),
+            phase_name: "Code".to_string(),
+        }
+    }
+
+    #[test]
+    fn issue_open_target_returns_url_when_present() {
+        let issues = vec![make_issue("https://github.com/o/r/issues/1")];
+        assert_eq!(
+            issue_open_target(&issues, 0),
+            Some("https://github.com/o/r/issues/1")
+        );
+    }
+
+    #[test]
+    fn issue_open_target_returns_none_when_url_empty() {
+        let issues = vec![make_issue("")];
+        assert_eq!(issue_open_target(&issues, 0), None);
+    }
+
+    #[test]
+    fn issue_open_target_returns_none_when_index_out_of_bounds() {
+        let issues = vec![make_issue("https://x/y")];
+        assert_eq!(issue_open_target(&issues, 1), None);
+        assert_eq!(issue_open_target(&issues, 99), None);
+    }
+
+    #[test]
+    fn issue_open_target_returns_none_when_list_empty() {
+        assert_eq!(issue_open_target(&[], 0), None);
     }
 
     // --- should_abort ---
