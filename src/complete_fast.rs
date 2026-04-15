@@ -1038,6 +1038,281 @@ mod tests {
             .contains("push failed"));
     }
 
+    // --- fast_inner error paths ---
+
+    #[test]
+    fn test_fast_inner_unknown_gh_ci_status_proceeds() {
+        // Unknown gh_ci_status values fall through the `_` arm and
+        // continue to freshness + merge (L198).
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        let state_path = setup_state_file(dir.path(), "test-feature", &state);
+
+        let runner = mock_runner(vec![ok(r#"{"status": "up_to_date"}"#), ok("merged")]);
+
+        let result = fast_inner(
+            "test-feature",
+            &state,
+            &state_path,
+            true,
+            false,
+            "/fake/bin/flow",
+            false,
+            true,
+            None,
+            "unknown", // unexpected status — `_` arm
+            &runner,
+        );
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["path"], "merged");
+    }
+
+    #[test]
+    fn test_fast_inner_freshness_runner_err() {
+        // check-freshness subprocess spawn failure (L223-232).
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        let state_path = setup_state_file(dir.path(), "test-feature", &state);
+
+        let runner = mock_runner(vec![Err("spawn failed".to_string())]);
+
+        let result = fast_inner(
+            "test-feature",
+            &state,
+            &state_path,
+            true,
+            false,
+            "/fake/bin/flow",
+            false,
+            true,
+            None,
+            "pass",
+            &runner,
+        );
+
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("check-freshness failed"));
+    }
+
+    #[test]
+    fn test_fast_inner_freshness_invalid_json() {
+        // check-freshness returns unparseable stdout (L234-243).
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        let state_path = setup_state_file(dir.path(), "test-feature", &state);
+
+        let runner = mock_runner(vec![ok("not json")]);
+
+        let result = fast_inner(
+            "test-feature",
+            &state,
+            &state_path,
+            true,
+            false,
+            "/fake/bin/flow",
+            false,
+            true,
+            None,
+            "pass",
+            &runner,
+        );
+
+        assert_eq!(result["status"], "error");
+        assert!(result["message"].as_str().unwrap().contains("Invalid JSON"));
+    }
+
+    #[test]
+    fn test_fast_inner_unexpected_freshness_status() {
+        // check-freshness returns a status the match does not recognize (L377-384).
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        let state_path = setup_state_file(dir.path(), "test-feature", &state);
+
+        let runner = mock_runner(vec![ok(r#"{"status": "rabbit"}"#)]);
+
+        let result = fast_inner(
+            "test-feature",
+            &state,
+            &state_path,
+            true,
+            false,
+            "/fake/bin/flow",
+            false,
+            true,
+            None,
+            "pass",
+            &runner,
+        );
+
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("Unexpected check-freshness status"));
+    }
+
+    #[test]
+    fn test_fast_inner_squash_merge_spawn_err() {
+        // gh pr merge subprocess spawn failure (L325-331).
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        let state_path = setup_state_file(dir.path(), "test-feature", &state);
+
+        let runner = mock_runner(vec![
+            ok(r#"{"status": "up_to_date"}"#),
+            Err("gh not found".to_string()),
+        ]);
+
+        let result = fast_inner(
+            "test-feature",
+            &state,
+            &state_path,
+            true,
+            false,
+            "/fake/bin/flow",
+            false,
+            true,
+            None,
+            "pass",
+            &runner,
+        );
+
+        assert_eq!(result["status"], "error");
+        assert!(result["message"].as_str().unwrap().contains("gh not found"));
+    }
+
+    #[test]
+    fn test_fast_inner_squash_merge_base_branch_policy() {
+        // gh pr merge fails with "base branch policy" stderr → ci_pending (L353-365).
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        let state_path = setup_state_file(dir.path(), "test-feature", &state);
+
+        let runner = mock_runner(vec![
+            ok(r#"{"status": "up_to_date"}"#),
+            Ok((
+                1,
+                String::new(),
+                "base branch policy: required status check".to_string(),
+            )),
+        ]);
+
+        let result = fast_inner(
+            "test-feature",
+            &state,
+            &state_path,
+            true,
+            false,
+            "/fake/bin/flow",
+            false,
+            true,
+            None,
+            "pass",
+            &runner,
+        );
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["path"], "ci_pending");
+    }
+
+    #[test]
+    fn test_fast_inner_squash_merge_generic_failure() {
+        // gh pr merge fails with non-policy stderr → error (L367-372).
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        let state_path = setup_state_file(dir.path(), "test-feature", &state);
+
+        let runner = mock_runner(vec![
+            ok(r#"{"status": "up_to_date"}"#),
+            Ok((1, String::new(), "Merge conflict detected".to_string())),
+        ]);
+
+        let result = fast_inner(
+            "test-feature",
+            &state,
+            &state_path,
+            true,
+            false,
+            "/fake/bin/flow",
+            false,
+            true,
+            None,
+            "pass",
+            &runner,
+        );
+
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("Merge conflict"));
+    }
+
+    #[test]
+    fn test_fast_inner_freshness_merged_push_success() {
+        // Freshness reports main moved; push succeeds → ci_stale (L305-317).
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        let state_path = setup_state_file(dir.path(), "test-feature", &state);
+
+        let runner = mock_runner(vec![ok(r#"{"status": "merged"}"#), ok("")]);
+
+        let result = fast_inner(
+            "test-feature",
+            &state,
+            &state_path,
+            true,
+            false,
+            "/fake/bin/flow",
+            false,
+            true,
+            None,
+            "pass",
+            &runner,
+        );
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["path"], "ci_stale");
+        assert!(result["reason"].as_str().unwrap().contains("main moved"));
+    }
+
+    #[test]
+    fn test_fast_inner_freshness_merged_runner_err_on_push() {
+        // Freshness reports main moved; push runner returns Err (L290-297).
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        let state_path = setup_state_file(dir.path(), "test-feature", &state);
+
+        let runner = mock_runner(vec![
+            ok(r#"{"status": "merged"}"#),
+            Err("no network".to_string()),
+        ]);
+
+        let result = fast_inner(
+            "test-feature",
+            &state,
+            &state_path,
+            true,
+            false,
+            "/fake/bin/flow",
+            false,
+            true,
+            None,
+            "pass",
+            &runner,
+        );
+
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("Push failed after freshness merge"));
+    }
+
     // --- parse_gh_checks_output ---
 
     #[test]
