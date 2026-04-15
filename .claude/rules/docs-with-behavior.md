@@ -66,6 +66,12 @@ Separate commits within the same PR are not sufficient: if the PR
 is reviewed commit-by-commit, the intermediate state shows stale
 documentation.
 
+For the sibling Plan-phase discipline covering **new branches
+introduced by extraction refactors** — the plan must enumerate each
+extracted helper's branches with a testability classification
+before Code phase begins — see
+`.claude/rules/extract-helper-refactor.md`.
+
 ### Named Tests After Refactor
 
 When a plan names specific test functions and a refactor lands
