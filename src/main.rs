@@ -26,13 +26,12 @@ use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
 use flow_rs::extract_release_notes;
 use flow_rs::finalize_commit;
-use flow_rs::flow_paths::FlowPaths;
 use flow_rs::format_check;
 use flow_rs::format_complete_summary;
 use flow_rs::format_issues_summary;
 use flow_rs::format_pr_timings;
 use flow_rs::format_status;
-use flow_rs::git::{project_root, resolve_branch};
+use flow_rs::git::project_root;
 use flow_rs::hooks;
 use flow_rs::issue;
 use flow_rs::label_issues;
@@ -42,7 +41,6 @@ use flow_rs::notify_slack;
 use flow_rs::orchestrate_report;
 use flow_rs::orchestrate_state;
 use flow_rs::output::json_error;
-use flow_rs::phase_config::{find_state_files, load_phase_config};
 use flow_rs::phase_enter;
 use flow_rs::phase_finalize;
 use flow_rs::phase_transition;
@@ -66,7 +64,6 @@ use flow_rs::tui_data;
 use flow_rs::update_deps;
 use flow_rs::update_pr_body;
 use flow_rs::upgrade_check;
-use flow_rs::utils::{detect_dev_mode, read_version};
 use flow_rs::write_rule;
 
 #[derive(Parser)]
@@ -610,7 +607,14 @@ fn main() {
             start_workspace::run(args);
         }
         Some(Commands::FormatStatus { branch }) => {
-            run_format_status(branch.as_deref());
+            let root = project_root();
+            match format_status::run_impl_main(branch.as_deref(), &root) {
+                Ok((text, code)) => flow_rs::dispatch::dispatch_text(&text, code),
+                Err((msg, code)) => {
+                    eprintln!("{}", msg);
+                    process::exit(code);
+                }
+            }
         }
         Some(Commands::SessionContext) => {
             commands::session_context::run();
@@ -691,51 +695,6 @@ fn main() {
             process::exit(127);
         }
     }
-}
-
-fn run_format_status(branch_override: Option<&str>) {
-    let root = project_root();
-    let branch = match resolve_branch(branch_override, &root) {
-        Some(b) => b,
-        None => {
-            eprintln!("Could not determine current branch");
-            process::exit(2);
-        }
-    };
-
-    let results = find_state_files(&root, &branch);
-    // No state file for this branch — show all active flows instead
-    let results = if results.is_empty() {
-        let all = find_state_files(&root, "");
-        if all.is_empty() {
-            process::exit(1);
-        }
-        all
-    } else {
-        results
-    };
-
-    let version = read_version();
-    let dev_mode = detect_dev_mode(&root);
-
-    if results.len() > 1 {
-        let panel = format_status::format_multi_panel(&results, &version, dev_mode);
-        println!("{}", panel);
-        process::exit(0);
-    }
-
-    let (_state_path, state, matched_branch) = &results[0];
-
-    // Load frozen phase config if available
-    let frozen_path = FlowPaths::new(&root, matched_branch).frozen_phases();
-    let phase_config = if frozen_path.exists() {
-        load_phase_config(&frozen_path).ok()
-    } else {
-        None
-    };
-
-    let panel = format_status::format_panel(state, &version, None, dev_mode, phase_config.as_ref());
-    println!("{}", panel);
 }
 
 fn run_tui_data(load_all: bool, load_orch: bool, load_metrics: bool) {
