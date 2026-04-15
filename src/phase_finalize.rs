@@ -75,7 +75,23 @@ pub fn run_impl_with_deps(
 ) -> Result<Value, String> {
     let branch = &args.branch;
     let phase_num = phase_config::phase_number(&args.phase);
-    let paths = FlowPaths::new(root, branch);
+    // `args.branch` is a raw clap `--branch` CLI arg — accepts any string
+    // the shell passes, including slashes (`feature/foo`) and empty values.
+    // `.claude/rules/external-input-validation.md` requires `try_new` on the
+    // CLI-override path so the caller sees a structured error rather than a
+    // Rust panic (issue #1137 reference incident).
+    let paths = match FlowPaths::try_new(root, branch) {
+        Some(p) => p,
+        None => {
+            return Ok(json!({
+                "status": "error",
+                "message": format!(
+                    "Invalid branch name: '{}' (must be non-empty and contain no '/')",
+                    branch
+                ),
+            }));
+        }
+    };
     let state_path = paths.state_file();
 
     // Drift guard: phase transitions must happen from inside the
@@ -252,7 +268,10 @@ pub fn run_impl_with_deps(
     Ok(response)
 }
 
-/// CLI entry point.
+/// CLI entry point. Thin dispatcher over [`run_impl`]: prints the
+/// success JSON on `Ok`, emits a `json_error` and calls
+/// `process::exit(1)` on infrastructure failure. All Slack-path and
+/// state-file logic lives in [`run_impl_with_deps`].
 pub fn run(args: Args) {
     match run_impl(&args) {
         Ok(result) => {
@@ -435,6 +454,52 @@ mod tests {
         assert!(
             notifs_empty,
             "slack_notifications must not be populated on notifier error"
+        );
+    }
+
+    #[test]
+    fn finalize_with_notifier_slash_branch_returns_structured_error_no_panic() {
+        // `--branch feature/foo` from the CLI must not panic at
+        // FlowPaths::new. The `try_new` guard returns a structured error
+        // JSON so the caller sees an "Invalid branch name" message instead
+        // of a Rust panic (issue #1137 reference pattern).
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "skipped"}) };
+        let args = test_args("flow-code", "feature/foo", None, None);
+
+        let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
+        assert_eq!(result["status"], "error");
+        assert!(
+            result["message"]
+                .as_str()
+                .unwrap()
+                .contains("Invalid branch name"),
+            "slash-containing branch must return Invalid branch name error: got {}",
+            result["message"]
+        );
+    }
+
+    #[test]
+    fn finalize_with_notifier_empty_branch_returns_structured_error_no_panic() {
+        // `--branch ""` (empty string) from the CLI must not panic at
+        // FlowPaths::new. Same try_new guard covers the empty case.
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "skipped"}) };
+        let args = test_args("flow-code", "", None, None);
+
+        let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
+        assert_eq!(result["status"], "error");
+        assert!(
+            result["message"]
+                .as_str()
+                .unwrap()
+                .contains("Invalid branch name"),
+            "empty branch must return Invalid branch name error: got {}",
+            result["message"]
         );
     }
 

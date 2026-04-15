@@ -8,6 +8,28 @@
 //!   Success:  {"status": "ok", "ts": "1234567890.123456"}
 //!   Skipped:  {"status": "skipped", "reason": "no slack config"}
 //!   Error:    {"status": "error", "message": "..."}
+//!
+//! # Public entry points
+//!
+//! The module exposes a two-tier layering so inline tests can drive every
+//! branch without env-var mutation or real `curl` subprocesses:
+//!
+//! - [`notify_with_deps`] — dependency-injected core. Accepts a
+//!   `config_reader` closure returning `Option<SlackConfig>` and a
+//!   `poster` closure returning the Slack JSON response. Fully testable.
+//! - [`notify`] — production binder that wires `notify_with_deps` to
+//!   [`read_slack_config`] (env-var reader) and [`post_message_inner`]
+//!   bound to [`run_curl_with_timeout`] (real curl subprocess).
+//! - [`run_with_deps`] — CLI layer with an injected
+//!   `writer: &mut dyn Write`. Computes the notify result and writes one
+//!   JSON line. Testable via in-memory `Vec<u8>` buffers.
+//! - [`run`] — production CLI entry. Wires `run_with_deps` to
+//!   `std::io::stdout()` and the production closures above.
+//!
+//! The inner [`post_message_inner`] closure seam (injected `curl` runner)
+//! predates this split and remains the existing test entry for the
+//! `curl` response-parsing branches (success, 4xx/5xx, invalid JSON,
+//! timeout) via the inline `mock_curl` helper.
 
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};

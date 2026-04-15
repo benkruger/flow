@@ -139,7 +139,7 @@ so unit tests can drive the Slack-success, Slack-error, and state-
 record branches against a tempdir state file. Two regions remain
 architecturally unreachable from the in-process test harness.
 
-### `cwd_scope::enforce` error forwarding (lines 60–63)
+### `cwd_scope::enforce` error forwarding (lines 86–88)
 
 `run_impl_with_deps` forwards `crate::cwd_scope::enforce(cwd, root)`'s
 `Err(msg)` through a three-line pass-through that wraps the message in
