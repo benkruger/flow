@@ -1839,6 +1839,31 @@ fn code_has_plan_test_verification() {
     );
 }
 
+#[test]
+fn code_documents_measurement_only_task_pathway() {
+    let c = common::read_skill("flow-code");
+    assert!(
+        c.contains("Measurement-Only Tasks"),
+        "Code skill must document the measurement-only task pathway as a named subsection"
+    );
+    assert!(
+        c.contains("Nothing to commit"),
+        "Code skill must reference the /flow:flow-commit empty-diff return path"
+    );
+    // The /flow:flow-commit reference must sit in or after the
+    // Measurement-Only Tasks subsection so the prose routes
+    // measurement tasks through the commit skill instead of
+    // leaving the reader to invent a shortcut.
+    let after_heading = c
+        .split("Measurement-Only Tasks")
+        .nth(1)
+        .expect("heading presence asserted above");
+    assert!(
+        after_heading.contains("/flow:flow-commit"),
+        "Measurement-only subsection must route through /flow:flow-commit"
+    );
+}
+
 // --- Learn phase ---
 
 #[test]
