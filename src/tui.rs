@@ -254,7 +254,7 @@ impl TuiApp {
 
     fn handle_abort_confirm(&mut self, key: KeyEvent) {
         self.confirming_abort = false;
-        if matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y')) {
+        if should_abort(key.code) {
             self.abort_flow();
         }
     }
@@ -1146,6 +1146,15 @@ fn orch_issue_url(repo: Option<&str>, issue_number: Option<i64>) -> Option<Strin
     Some(format!("https://github.com/{}/issues/{}", repo, num))
 }
 
+/// Decide whether a key confirms an abort prompt. Accepts both `y`
+/// and `Y`; everything else (including `n`, `Esc`, and unrelated
+/// chars) returns `false`.
+///
+/// Pure helper — used by `TuiApp::handle_abort_confirm`.
+fn should_abort(code: KeyCode) -> bool {
+    matches!(code, KeyCode::Char('y') | KeyCode::Char('Y'))
+}
+
 /// Compose the argument vector for `bin/flow cleanup`. `root` is
 /// lossy-converted to a `&str` (non-UTF-8 paths fall back to `.`,
 /// matching the pre-extraction behaviour). The `--pr <n>` pair is
@@ -1553,6 +1562,34 @@ mod tests {
     #[test]
     fn orch_issue_url_returns_none_when_issue_number_missing() {
         assert_eq!(orch_issue_url(Some("o/r"), None), None);
+    }
+
+    // --- should_abort ---
+
+    #[test]
+    fn should_abort_accepts_lowercase_y() {
+        assert!(should_abort(KeyCode::Char('y')));
+    }
+
+    #[test]
+    fn should_abort_accepts_uppercase_y() {
+        assert!(should_abort(KeyCode::Char('Y')));
+    }
+
+    #[test]
+    fn should_abort_rejects_n_and_other_chars() {
+        assert!(!should_abort(KeyCode::Char('n')));
+        assert!(!should_abort(KeyCode::Char('N')));
+        assert!(!should_abort(KeyCode::Char('z')));
+        assert!(!should_abort(KeyCode::Char(' ')));
+    }
+
+    #[test]
+    fn should_abort_rejects_non_char_keys() {
+        assert!(!should_abort(KeyCode::Esc));
+        assert!(!should_abort(KeyCode::Enter));
+        assert!(!should_abort(KeyCode::Up));
+        assert!(!should_abort(KeyCode::Down));
     }
 
     // --- build_cleanup_command_args ---
