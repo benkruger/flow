@@ -98,6 +98,25 @@ pub fn step_annotation(step: i64, total: i64, name: &str) -> String {
     }
 }
 
+/// Look up the display name for `key` in `names_map`, falling back
+/// to the raw key when the map lacks an entry.
+///
+/// The primary path returns `names_map[key].clone()` in every shipped
+/// configuration because the contract test
+/// `phase_order_keys_all_present_in_phase_names` keeps `PHASE_ORDER`
+/// and [`phase_config::phase_names`] in sync. The fallback exists so
+/// a future refactor that extends one table without the other
+/// degrades the timeline display to the raw key instead of panicking
+/// inside the TUI refresh loop.
+///
+/// Pure helper — used by [`phase_timeline`].
+fn resolve_phase_name(names_map: &indexmap::IndexMap<String, String>, key: &str) -> String {
+    names_map
+        .get(key)
+        .cloned()
+        .unwrap_or_else(|| key.to_string())
+}
+
 /// A single entry in the phase timeline display.
 #[derive(Debug, Clone, Serialize)]
 pub struct TimelineEntry {
@@ -187,14 +206,7 @@ pub fn phase_timeline(state: &Value, now: Option<DateTime<FixedOffset>>) -> Vec<
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let number = numbers_map.get(key).copied().unwrap_or(0);
-        // PHASE_ORDER iterates the same canonical phase keys that
-        // phase_names() defines, so this lookup never returns None
-        // in practice. The `expect` enforces the invariant — a
-        // mismatch is a maintainer bug, not a runtime condition.
-        let name = names_map
-            .get(key)
-            .cloned()
-            .expect("PHASE_ORDER key missing from phase_names()");
+        let name = resolve_phase_name(&names_map, key);
 
         let time_str = if status == "complete" {
             format_time(seconds)
@@ -2446,12 +2458,35 @@ mod tests {
         assert!(result.is_empty());
     }
 
+    // --- resolve_phase_name ---
+
+    #[test]
+    fn resolve_phase_name_returns_mapped_value_when_present() {
+        let mut map = indexmap::IndexMap::new();
+        map.insert("flow-code".to_string(), "Code".to_string());
+        assert_eq!(resolve_phase_name(&map, "flow-code"), "Code");
+    }
+
+    #[test]
+    fn resolve_phase_name_falls_back_to_raw_key_when_absent() {
+        // The fallback branch — exercised here directly because the
+        // production names_map is kept in sync with PHASE_ORDER by
+        // a contract test, so this branch is unreachable through
+        // phase_timeline. Future divergence between the tables would
+        // hit this path and degrade the display to the raw key.
+        let map: indexmap::IndexMap<String, String> = indexmap::IndexMap::new();
+        assert_eq!(resolve_phase_name(&map, "flow-novel"), "flow-novel");
+    }
+
     #[test]
     fn test_phase_order_keys_all_present_in_phase_names() {
-        // Invariant guard for the `.expect()` call inside phase_timeline:
-        // every key in PHASE_ORDER must have a corresponding entry in
-        // phase_names(). If a future PR adds a phase to one but not the
-        // other, this test fails before phase_timeline panics in production.
+        // Lock the invariant that drives phase_timeline's name lookup:
+        // every key in PHASE_ORDER must resolve to an entry in
+        // phase_names(). The lookup falls back to the raw key string
+        // when the entry is missing, so a violation degrades the
+        // timeline display instead of crashing — but it still mislabels
+        // the panel in user-facing output. This test fails CI before
+        // such a regression ships.
         let names = phase_config::phase_names();
         for &key in PHASE_ORDER {
             assert!(

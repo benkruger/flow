@@ -69,6 +69,9 @@ CI will fail if these are missing:
 - `docs/` — GitHub Pages site (static HTML); `docs/reference/flow-state-schema.md` for state file schema
 - `agents/*.md` — six custom plugin sub-agents: ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, documentation
 - `src/*.rs` — Rust source implementing all `bin/flow` subcommands
+- `src/tui.rs` — interactive TUI (`flow tui`) — ratatui app with keyboard-driven navigation over local state files. Subprocess surface (open, osascript, bin/flow, $HOME) is injected via `TuiAppPlatform` so unit tests exercise real `Command::new()` chains against a no-op `true` binary
+- `src/tui_data.rs` — state-file loaders and pure display helpers for the TUI (phase timeline, flow summaries, orchestration, account metrics). No IO in the helpers — `phase_timeline` and friends are deterministic given state JSON + clock
+- `src/main.rs::run_tui_terminal` — crossterm glue for the production TUI entry point. Owns raw-mode / alternate-screen lifecycle via a `TerminalGuard` Drop type so cleanup runs even on panic
 - `bin/flow` — Rust dispatcher: resolves the Rust binary (`target/release/flow-rs` or `target/debug/flow-rs`), auto-rebuilds when source is newer than binary
 - `bin/{format,lint,build,test}` — FLOW's own dogfood scripts; each repo gets its own copies installed by `/flow:flow-prime` from `assets/bin-stubs/`
 - `assets/bin-stubs/` — self-documenting bash stubs that prime copies into target projects when absent

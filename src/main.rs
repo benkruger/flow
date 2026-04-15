@@ -959,15 +959,14 @@ fn run_format_status(branch_override: Option<&str>) {
 /// alternate screen, constructs `Terminal<CrosstermBackend>`, builds
 /// the real `event::poll` + `event::read` closure, drives
 /// `TuiApp::run_event_loop`, and guarantees raw-mode / alternate-screen
-/// cleanup on every return path. Lives in `main.rs` so `src/tui.rs`
+/// cleanup on every return path INCLUDING panic unwinds via the
+/// [`TerminalGuard`] Drop impl. Lives in `main.rs` so `src/tui.rs`
 /// can stay testable — the crossterm-specific glue has no test seam
 /// that would work in a non-tty `cargo nextest` environment.
 fn run_tui_terminal(app: &mut flow_rs::tui::TuiApp) -> std::io::Result<()> {
     use crossterm::event;
     use crossterm::execute;
-    use crossterm::terminal::{
-        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
-    };
+    use crossterm::terminal::{enable_raw_mode, EnterAlternateScreen};
     use ratatui::backend::CrosstermBackend;
     use ratatui::{Frame, Terminal};
     use std::cell::RefCell;
@@ -980,6 +979,15 @@ fn run_tui_terminal(app: &mut flow_rs::tui::TuiApp) -> std::io::Result<()> {
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let terminal = Rc::new(RefCell::new(Terminal::new(backend)?));
+
+    // Drop guard: restores raw mode and leaves the alternate screen
+    // when this scope unwinds, including via panic from inside
+    // `app.run_event_loop`. Without this, a panic in the event loop
+    // would leave the user's terminal in raw mode + alternate screen
+    // with no way back short of `reset` or closing the tab.
+    let _guard = TerminalGuard {
+        terminal: Rc::clone(&terminal),
+    };
 
     // Draw closure: owns a shared handle to the terminal and calls
     // `terminal.draw(|f| render(f))` on each invocation.
@@ -999,13 +1007,36 @@ fn run_tui_terminal(app: &mut flow_rs::tui::TuiApp) -> std::io::Result<()> {
             }
         });
 
-    let result = app.run_event_loop(draw, events);
+    app.run_event_loop(draw, events)
+    // `_guard` drops here on Ok, on Err, AND on panic unwind — the
+    // Drop impl restores the terminal in every case.
+}
 
-    // Guaranteed cleanup: restore terminal even on error.
-    let _ = disable_raw_mode();
-    let _ = execute!(terminal.borrow_mut().backend_mut(), LeaveAlternateScreen);
+/// RAII guard that restores the terminal state when dropped. Owns a
+/// shared handle to the same `Terminal` the draw closure renders
+/// into, so the LeaveAlternateScreen call targets the live backend.
+///
+/// Panic-safe by construction: Rust calls `drop` on every value in
+/// scope during stack unwind, so a panic inside the event loop still
+/// runs the cleanup. Errors from `disable_raw_mode` and `execute!`
+/// are swallowed because the Drop impl cannot return them — the
+/// terminal-restoration attempt is best-effort either way.
+struct TerminalGuard {
+    terminal: std::rc::Rc<
+        std::cell::RefCell<ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>>,
+    >,
+}
 
-    result
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        use crossterm::execute;
+        use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
+        let _ = disable_raw_mode();
+        let _ = execute!(
+            self.terminal.borrow_mut().backend_mut(),
+            LeaveAlternateScreen
+        );
+    }
 }
 
 fn run_tui_data(load_all: bool, load_orch: bool, load_metrics: bool) {

@@ -57,22 +57,22 @@ pub enum View {
 /// Production constructs the platform via `TuiAppPlatform::production()`,
 /// which resolves `HOME` from the env and walks up from the current
 /// executable to find `bin/flow`. Tests construct via
-/// `TuiAppPlatform::for_tests()`, which points every binary at
-/// `/usr/bin/true` so spawn sites run the real `Command::new().spawn()`
-/// chain without side effects. `/usr/bin/true` is the canonical macOS
-/// location — `/bin/true` does not exist on macOS, so pointing the
-/// test platform there would silently exercise the spawn-failed Err
-/// arm and miss the Ok-arm code path.
+/// `TuiAppPlatform::for_tests()`, which points every binary at the
+/// no-op `true` binary resolved by [`probe_true_binary`] (probes
+/// `/usr/bin/true` then `/bin/true`) so spawn sites run the real
+/// `Command::new().spawn()` chain without side effects. The probe
+/// covers both macOS (`/usr/bin/true` — `/bin/true` does not exist)
+/// and pre-usrmerge Linux (`/bin/true` — historical canonical).
 pub struct TuiAppPlatform {
     /// Binary that opens URLs in the default browser. Production:
-    /// `"open"` (macOS). Tests: `"/usr/bin/true"`.
+    /// `"open"` (macOS). Tests: probed `true` binary path.
     pub open_binary: String,
     /// Binary that runs AppleScript snippets. Production:
-    /// `"osascript"`. Tests: `"/usr/bin/true"`.
+    /// `"osascript"`. Tests: probed `true` binary path.
     pub osascript_binary: String,
     /// Path to the `bin/flow` binary used for `cleanup`. Production:
     /// resolved via ancestor walk from `current_exe()`. Tests:
-    /// `"/usr/bin/true"`.
+    /// probed `true` binary path.
     pub bin_flow_path: PathBuf,
     /// Home directory, used by `tui_data::load_account_metrics` for
     /// rate-limits lookup. Production: `$HOME`. Tests: `temp_dir()`.
@@ -98,15 +98,24 @@ impl TuiAppPlatform {
         }
     }
 
-    /// Construct a test platform. Every spawn target is `/usr/bin/true`
-    /// — the canonical macOS path — so tests exercise the real
+    /// Construct a test platform. Every spawn target points at a
+    /// no-op `true` binary so tests exercise the real
     /// `Command::new().spawn()` chain (and `Command::output()`) without
     /// any side effects. `home` is `std::env::temp_dir()`.
+    ///
+    /// The path is resolved by [`probe_true_binary`], which probes
+    /// `/usr/bin/true` (canonical on macOS and most modern Linux
+    /// distributions with usrmerge) then `/bin/true` (canonical on
+    /// pre-usrmerge Linux). The first existing path wins. If neither
+    /// exists the fallback is `/usr/bin/true` so the failure surfaces
+    /// at spawn time with a clear `No such file or directory` rather
+    /// than silently masking the test as passing.
     pub fn for_tests() -> Self {
+        let true_bin = probe_true_binary();
         Self {
-            open_binary: "/usr/bin/true".to_string(),
-            osascript_binary: "/usr/bin/true".to_string(),
-            bin_flow_path: PathBuf::from("/usr/bin/true"),
+            open_binary: true_bin.to_string_lossy().to_string(),
+            osascript_binary: true_bin.to_string_lossy().to_string(),
+            bin_flow_path: true_bin,
             home: std::env::temp_dir(),
         }
     }
@@ -1199,20 +1208,60 @@ impl TuiApp {
 
 // --- Standalone helpers ---
 
-/// Build the "files view" URL for a PR by appending `/files` to the
-/// PR's canonical URL. Trailing slashes are normalized so we never
-/// emit `.../100//files`.
+/// Build the "files view" URL for a PR by inserting `/files` on the
+/// path component of the PR's canonical URL.
+///
+/// The helper splits `pr_url` into (path, query, fragment) so a URL
+/// like `https://github.com/o/r/pull/100?diff=split` becomes
+/// `https://github.com/o/r/pull/100/files?diff=split` — the `/files`
+/// segment lands on the path, before any `?` or `#`. A URL that
+/// already ends in `/files` (after trimming trailing slashes) is
+/// returned unchanged, so the helper is idempotent. An empty input
+/// returns the empty string — the caller is responsible for not
+/// invoking `open ""`.
 ///
 /// Pure helper — no IO. Used by `TuiApp::open_pr`.
 fn pr_files_url(pr_url: &str) -> String {
-    format!("{}/files", pr_url.trim_end_matches('/'))
+    if pr_url.is_empty() {
+        return String::new();
+    }
+    // Split off fragment first so `?` inside it is treated as content.
+    let (without_fragment, fragment) = match pr_url.split_once('#') {
+        Some((head, tail)) => (head, Some(tail)),
+        None => (pr_url, None),
+    };
+    let (path, query) = match without_fragment.split_once('?') {
+        Some((head, tail)) => (head, Some(tail)),
+        None => (without_fragment, None),
+    };
+    let trimmed_path = path.trim_end_matches('/');
+    let new_path = if trimmed_path.ends_with("/files") {
+        trimmed_path.to_string()
+    } else {
+        format!("{}/files", trimmed_path)
+    };
+    let mut result = new_path;
+    if let Some(q) = query {
+        result.push('?');
+        result.push_str(q);
+    }
+    if let Some(f) = fragment {
+        result.push('#');
+        result.push_str(f);
+    }
+    result
 }
 
 /// Compose the GitHub issue URL for the smallest issue number a flow
 /// references. Returns `None` when the flow has no issues OR when no
 /// repo is available (neither the state's `repo` key nor the
-/// fallback). The state's `repo` field wins over the fallback when
-/// both are present.
+/// fallback) OR when the resolved repo is the empty string.
+///
+/// Empty-string repo is treated as missing in BOTH the state-file and
+/// fallback positions — mirrors the `orch_issue_url` empty-repo guard
+/// so a corrupt state file with `repo: ""` falls back to the parameter
+/// (or `None`) instead of producing the malformed URL
+/// `https://github.com//issues/<n>`.
 ///
 /// Pure helper — no IO. Used by `TuiApp::open_flow_issue`.
 fn flow_issue_url(
@@ -1224,7 +1273,8 @@ fn flow_issue_url(
     let repo = state
         .get("repo")
         .and_then(|r| r.as_str())
-        .or(fallback_repo)?;
+        .filter(|s| !s.is_empty())
+        .or_else(|| fallback_repo.filter(|s| !s.is_empty()))?;
     Some(format!("https://github.com/{}/issues/{}", repo, num))
 }
 
@@ -1315,12 +1365,39 @@ fn rl_color(pct: i64) -> Style {
     }
 }
 
+/// Escape a string for safe interpolation inside an AppleScript
+/// double-quoted string literal. AppleScript treats `\` and `"` as
+/// the only structural characters inside `"..."` literals — every
+/// other byte (including newlines) is content. Escaping both with
+/// a leading backslash collapses the injection surface to zero.
+///
+/// Pure helper — used by [`build_iterm_activation_script`].
+fn escape_applescript_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        if ch == '\\' || ch == '"' {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out
+}
+
 /// Build the AppleScript text that asks iTerm2 to find and select the
 /// tab whose session tty matches `session_tty`.
 ///
+/// `session_tty` is read from the flow's state JSON, which is a file
+/// on disk that any process with filesystem access can write to. A
+/// crafted value containing `"` would otherwise close the AppleScript
+/// string literal early and inject arbitrary AppleScript that
+/// `osascript` then runs with the user's privileges. The interpolation
+/// runs through [`escape_applescript_string`] to neutralize that
+/// vector.
+///
 /// Pure helper — no IO. The osascript invocation lives in
-/// `activate_iterm_tab` and is covered by `test_coverage.md`.
+/// `TuiApp::activate_iterm_tab`.
 fn build_iterm_activation_script(session_tty: &str) -> String {
+    let escaped = escape_applescript_string(session_tty);
     format!(
         r#"tell application "iTerm2"
     repeat with w from 1 to count of windows
@@ -1335,7 +1412,7 @@ fn build_iterm_activation_script(session_tty: &str) -> String {
     end repeat
     return "not found"
 end tell"#,
-        tty = session_tty
+        tty = escaped
     )
 }
 
@@ -1348,6 +1425,43 @@ end tell"#,
 /// outside the std lib).
 fn parse_osascript_result(success: bool, stdout: &[u8]) -> bool {
     success && String::from_utf8_lossy(stdout).trim() == "activated"
+}
+
+/// Default probe candidates for the no-op `true` binary. Ordered
+/// by platform: `/usr/bin/true` is canonical on macOS and usrmerge
+/// Linux; `/bin/true` is canonical on pre-usrmerge Linux.
+const TRUE_BINARY_CANDIDATES: &[&str] = &["/usr/bin/true", "/bin/true"];
+
+/// Walk `candidates` in order and return the first path that exists.
+/// Falls back to `candidates[0]` when none exist so the failure
+/// surfaces at spawn time with a clear `No such file or directory`.
+///
+/// Panics if `candidates` is empty — an empty list is a programmer
+/// bug. The function is called only from [`probe_true_binary`],
+/// which passes a compile-time constant with two entries.
+///
+/// Pure helper factored out so tests can exercise the no-candidate-
+/// found fallback path (which is unreachable with the real
+/// [`TRUE_BINARY_CANDIDATES`] on any supported platform).
+fn probe_binary_in(candidates: &[&str]) -> PathBuf {
+    for candidate in candidates {
+        let path = PathBuf::from(candidate);
+        if path.exists() {
+            return path;
+        }
+    }
+    PathBuf::from(candidates[0])
+}
+
+/// Resolve the path to a no-op `true` binary suitable for the test
+/// platform. Probes `/usr/bin/true` first (macOS canonical, also
+/// usrmerge Linux), then `/bin/true` (pre-usrmerge Linux). Falls
+/// back to `/usr/bin/true` so spawn failures surface at runtime
+/// with a clear error rather than silently masking the test.
+///
+/// Pure helper used by [`TuiAppPlatform::for_tests`].
+fn probe_true_binary() -> PathBuf {
+    probe_binary_in(TRUE_BINARY_CANDIDATES)
 }
 
 /// Walk up three parent directories from `exe_path` (binary →
@@ -1441,6 +1555,128 @@ mod tests {
         assert!(script.ends_with("end tell"));
     }
 
+    #[test]
+    fn iterm_script_escapes_double_quote_in_tty() {
+        // A `"` in session_tty would otherwise close the AppleScript
+        // string literal and let the rest of the value run as code.
+        // The escaping converts it to `\"` — inert content.
+        let malicious = r#"x" then do shell script "rm -rf ~"--"#;
+        let script = build_iterm_activation_script(malicious);
+        // The escaped sequence is the only place the injected
+        // substring appears post-escape — `\" then do shell script
+        // \"rm -rf ~\"--` with every `"` from the input converted
+        // to `\"`. AppleScript treats `\"` as a literal `"` byte
+        // INSIDE the string; it does not close the string.
+        assert!(
+            script.contains(r#"\" then do shell script \"rm -rf ~\"--"#),
+            "expected escaped literal sequence in script:\n{}",
+            script
+        );
+        // Locate the line containing the interpolation and prove
+        // every `"` on it is part of either the framing quotes or
+        // the `\"` escape — no bare `"` in the interpolated region.
+        let interp_line = script
+            .lines()
+            .find(|l| l.trim_start().starts_with("if tty of s is"))
+            .expect("interpolation line must exist");
+        // The interpolation line contains exactly the framing quote
+        // pair plus one `\"` per `"` in the input. The input has 3
+        // `"` characters, so the line should contain 2 (framing) +
+        // 3 (escaped) = 5 `"` characters total, and 3 of them must
+        // be preceded by `\`.
+        let total_quotes = interp_line.matches('"').count();
+        let escaped_quotes = interp_line.matches(r#"\""#).count();
+        assert_eq!(total_quotes, 5, "line: {}", interp_line);
+        assert_eq!(escaped_quotes, 3, "line: {}", interp_line);
+    }
+
+    #[test]
+    fn iterm_script_escapes_backslash_in_tty() {
+        // A bare `\` would otherwise interact with the next character
+        // (e.g. `\"` would be an escaped quote opening an injection
+        // window). Escaping `\` as `\\` keeps `\"` literal in the
+        // input mapping to `\\\"` in the output — closed-quote-safe.
+        let with_backslash = r#"a\b"c"#;
+        let script = build_iterm_activation_script(with_backslash);
+        assert!(script.contains(r#"if tty of s is "a\\b\"c" then"#));
+    }
+
+    // --- escape_applescript_string ---
+
+    #[test]
+    fn escape_applescript_string_passes_safe_chars_through() {
+        assert_eq!(escape_applescript_string("/dev/ttys003"), "/dev/ttys003");
+        assert_eq!(escape_applescript_string(""), "");
+        assert_eq!(escape_applescript_string("abc 123"), "abc 123");
+    }
+
+    #[test]
+    fn escape_applescript_string_escapes_double_quote() {
+        assert_eq!(escape_applescript_string(r#"a"b"#), r#"a\"b"#);
+    }
+
+    #[test]
+    fn escape_applescript_string_escapes_backslash() {
+        assert_eq!(escape_applescript_string(r"a\b"), r"a\\b");
+    }
+
+    #[test]
+    fn escape_applescript_string_escapes_both() {
+        assert_eq!(escape_applescript_string(r#"a\"b"#), r#"a\\\"b"#);
+    }
+
+    // --- probe_true_binary ---
+
+    #[test]
+    fn probe_true_binary_returns_existing_path() {
+        // On any modern Unix the resolved path must be one of the
+        // candidates AND must exist on disk. The test passes on
+        // macOS (where /usr/bin/true exists) and on Linux variants
+        // (where one of the two exists).
+        let path = probe_true_binary();
+        let s = path.to_string_lossy();
+        assert!(
+            s == "/usr/bin/true" || s == "/bin/true",
+            "probe returned unexpected path: {}",
+            s
+        );
+        assert!(
+            path.exists(),
+            "probe returned non-existent path: {} \
+             (every supported platform has /usr/bin/true or /bin/true)",
+            s
+        );
+    }
+
+    // --- probe_binary_in ---
+
+    #[test]
+    fn probe_binary_in_picks_first_existing_candidate() {
+        // With /usr/bin/true as the first candidate on macOS, the
+        // helper returns it directly without probing /bin/true.
+        let path = probe_binary_in(&["/usr/bin/true", "/bin/true"]);
+        assert!(path.exists(), "expected an existing candidate");
+    }
+
+    #[test]
+    fn probe_binary_in_falls_through_to_second_candidate() {
+        // First candidate does not exist — the walk moves to the
+        // second. On any supported platform at least one of
+        // `/usr/bin/true` or `/bin/true` exists, so this branch
+        // resolves to an existing path.
+        let path = probe_binary_in(&["/nonexistent/first/candidate", "/usr/bin/true"]);
+        assert_eq!(path, PathBuf::from("/usr/bin/true"));
+    }
+
+    #[test]
+    fn probe_binary_in_returns_first_candidate_when_none_exist() {
+        // No candidate exists — the helper returns the first so the
+        // spawn failure surfaces with a clear error rather than
+        // silently masking the test as passing.
+        let path = probe_binary_in(&["/nonexistent/a", "/nonexistent/b"]);
+        assert_eq!(path, PathBuf::from("/nonexistent/a"));
+    }
+
     // --- TuiAppPlatform ---
 
     #[test]
@@ -1460,9 +1696,11 @@ mod tests {
     #[test]
     fn platform_for_tests_uses_true_binary_and_temp_home() {
         let p = TuiAppPlatform::for_tests();
-        assert_eq!(p.open_binary, "/usr/bin/true");
-        assert_eq!(p.osascript_binary, "/usr/bin/true");
-        assert_eq!(p.bin_flow_path, PathBuf::from("/usr/bin/true"));
+        let probed = probe_true_binary();
+        let probed_str = probed.to_string_lossy().to_string();
+        assert_eq!(p.open_binary, probed_str);
+        assert_eq!(p.osascript_binary, probed_str);
+        assert_eq!(p.bin_flow_path, probed);
         assert!(p.home.exists() || p.home == std::env::temp_dir());
     }
 
@@ -1543,10 +1781,60 @@ mod tests {
     }
 
     #[test]
-    fn pr_files_url_with_empty_input_returns_files() {
-        // No input validation — the helper trusts the caller's URL
-        // shape. Empty input still produces a well-formed string.
-        assert_eq!(pr_files_url(""), "/files");
+    fn pr_files_url_with_empty_input_returns_empty() {
+        // Empty input is a no-op — we never want to ship "/files" to
+        // the `open` binary, which on macOS would open Finder at the
+        // filesystem root.
+        assert_eq!(pr_files_url(""), "");
+    }
+
+    #[test]
+    fn pr_files_url_preserves_query_string() {
+        // `/files` lands on the path, before `?`. A naive append
+        // would produce `...pull/100?diff=split/files` which GitHub
+        // does not route to the files tab.
+        assert_eq!(
+            pr_files_url("https://github.com/owner/repo/pull/100?diff=split"),
+            "https://github.com/owner/repo/pull/100/files?diff=split"
+        );
+    }
+
+    #[test]
+    fn pr_files_url_preserves_fragment() {
+        // `/files` lands on the path, before `#`. Browsers scroll
+        // to the fragment after navigation.
+        assert_eq!(
+            pr_files_url("https://github.com/owner/repo/pull/100#discussion_r123"),
+            "https://github.com/owner/repo/pull/100/files#discussion_r123"
+        );
+    }
+
+    #[test]
+    fn pr_files_url_preserves_query_and_fragment() {
+        // Both present — order is path, query, fragment.
+        assert_eq!(
+            pr_files_url("https://github.com/o/r/pull/1?a=b#c"),
+            "https://github.com/o/r/pull/1/files?a=b#c"
+        );
+    }
+
+    #[test]
+    fn pr_files_url_is_idempotent_when_already_files_url() {
+        // Calling twice in a row must not produce `/files/files`.
+        assert_eq!(
+            pr_files_url("https://github.com/owner/repo/pull/100/files"),
+            "https://github.com/owner/repo/pull/100/files"
+        );
+    }
+
+    #[test]
+    fn pr_files_url_is_idempotent_with_trailing_slash_after_files() {
+        // `/files/` (trailing slash) should normalize to `/files`
+        // without doubling.
+        assert_eq!(
+            pr_files_url("https://github.com/owner/repo/pull/100/files/"),
+            "https://github.com/owner/repo/pull/100/files"
+        );
     }
 
     // --- flow_issue_url ---
@@ -1600,6 +1888,33 @@ mod tests {
             url,
             Some("https://github.com/fallback/repo/issues/1".to_string())
         );
+    }
+
+    #[test]
+    fn flow_issue_url_treats_empty_state_repo_as_missing() {
+        // Mirrors the orch_issue_url empty-repo guard. An empty
+        // string in the state's `repo` field must fall back to the
+        // parameter rather than producing the malformed URL
+        // `https://github.com//issues/1`.
+        let state = serde_json::json!({"repo": ""});
+        let url = flow_issue_url(&state, Some("fallback/repo"), &[1]);
+        assert_eq!(
+            url,
+            Some("https://github.com/fallback/repo/issues/1".to_string())
+        );
+    }
+
+    #[test]
+    fn flow_issue_url_returns_none_when_both_repos_empty() {
+        // Empty in state, empty fallback → None. No malformed URL.
+        let state = serde_json::json!({"repo": ""});
+        assert_eq!(flow_issue_url(&state, Some(""), &[1]), None);
+    }
+
+    #[test]
+    fn flow_issue_url_returns_none_when_state_empty_and_no_fallback() {
+        let state = serde_json::json!({"repo": ""});
+        assert_eq!(flow_issue_url(&state, None, &[1]), None);
     }
 
     // --- orch_issue_url ---
