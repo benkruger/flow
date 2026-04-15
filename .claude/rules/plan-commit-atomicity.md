@@ -76,7 +76,105 @@ gap — either the Code phase skipped the verification check, or the
 plan's atomicity was not actually load-bearing and the marker was
 misused. Either way, the finding reaches this file.
 
-## Motivating Incident
+## Plan Signature Deviations Must Be Logged
+
+The atomic-group rule above covers commit boundaries. The same
+discipline extends to **any Code-phase deviation from a plan-level
+interface prototype** — a function signature, a type name, a file
+name, or a task count. When the Code phase discovers that a plan's
+prototype is internally inconsistent (e.g., a test requirement that
+cannot be satisfied by the prototype's parameter list) and resolves
+the inconsistency by extending the prototype, the deviation must be
+recorded in the state log via `bin/flow log` before the commit that
+delivers the extended interface lands.
+
+### Why
+
+When the Plan phase produces a prototype like
+`run_impl_with_notifier(args, notifier)` but the Code phase delivers
+`run_impl_with_deps(root, cwd, args, notifier)` — with additional
+parameters that unlock testing surfaces the plan implied but could
+not express — the deviation is often a valid and well-considered
+design improvement. But if the deviation is not logged anywhere a
+future session can find it, the Learn phase audit replays the plan,
+sees the rename, and flags it as "plan said X but X is not there"
+without context. The Learn analyst then has to infer the justification
+from commit messages, which is expensive and sometimes impossible.
+
+The lowest-cost path is for the Code phase to record the deviation
+at the moment of discovery:
+
+```bash
+bin/flow log <branch> "[Phase 3] Plan signature deviation: run_impl_with_notifier -> run_impl_with_deps (added root/cwd injection to satisfy finalize_with_notifier_cwd_scope_rejects test requirement)"
+```
+
+The log entry serves three readers: (1) the immediate Code phase as a
+reminder when composing the commit message, (2) Code Review's
+reviewer agent when cross-referencing plan vs. implementation, and
+(3) the Learn phase audit when distinguishing "plan said X, code has
+Y, Learn should investigate" from "plan said X, code has Y, Learn
+should move on — this was a documented pivot."
+
+### What Counts as a Deviation
+
+The deviation log is required for:
+
+- **Function or method signature changes** — added/removed parameters,
+  changed return types, renamed functions with different intent.
+- **Type or struct shape changes** — added fields, different
+  serialization layout, new trait implementations.
+- **Task count or ordering changes** — the plan named 12 tasks and
+  the Code phase delivered 13 (or 11), or the dependency graph was
+  restructured mid-flow.
+- **File renames or new files** — the plan named `foo.rs` and Code
+  delivered `foo_bar.rs` because the new scope justified a split.
+
+It is NOT required for:
+
+- **Typo or spelling fixes** in the plan's prose that Code corrected
+  while reading the task description.
+- **Whitespace or formatting adjustments** to code the plan sketched
+  as pseudocode.
+- **Test-function renames** that stay within the plan's stated scope
+  (e.g., the plan said `test_foo_success` and Code wrote
+  `test_foo_happy_path_success` for clarity).
+
+### How to Apply (Deviation Logging)
+
+When a Code-phase task hits a plan-vs-reality contradiction that
+requires extending the plan's prototype:
+
+1. Stop and identify the root cause: is this a plan gap (the plan
+   should have anticipated this) or a Code-phase discovery (new
+   information from the exploration step)?
+2. If the extension is necessary, log the decision immediately:
+   `bin/flow log <branch> "[Phase 3] Plan deviation: <what changed>
+   (<why>)"`.
+3. Include the deviation in the commit message body so reviewers see
+   it without consulting the log file.
+4. During Learn, the analyst will cross-reference the plan against
+   the log file and confirm the deviation was documented. An
+   undocumented deviation becomes a Learn-phase process-gap finding.
+
+### Motivating Incident
+
+PR #1157 (Coverage: HTTP client trait seam for `notify_slack` and
+`phase_finalize`) planned `run_impl_with_notifier(args, notifier)`
+as Task 6's function prototype. Task 5's test list included
+`finalize_with_notifier_cwd_scope_rejects`, which requires the
+caller to control `cwd` — but the prototype had no `cwd` parameter.
+The Code phase discovered the contradiction during implementation
+and extended the prototype to
+`run_impl_with_deps(root, cwd, args, notifier)`. The extension was
+architecturally sound and every inline test passed on the first
+compile. But no state log entry recorded the deviation — the only
+trace was the commit message, which Learn had to read to confirm
+the pivot was intentional. The Learn-analyst audit surfaced this as
+a rule-compliance gap because the discipline for logging plan
+deviations was not documented in any rule file. This section
+codifies the discipline.
+
+## Motivating Incident (Atomic Group Split)
 
 PR #1056 (Plan-phase external-input audit gate) planned Task 21 as
 "Commit atomic group: Tasks 3, 5, 6, 9, 11, 13, 14, 15, 16, 17, 18,
