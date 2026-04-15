@@ -251,31 +251,66 @@ fn test_notify_slack_no_post_message_wrapper() {
 }
 
 #[test]
-fn no_subprocess_start_lock_in_concurrency_tests() {
+fn test_concurrency_no_subprocess_start_lock() {
     // Tombstone: removed in PR #1166. The two thundering-herd lock
-    // tests in `tests/concurrency.rs` call
+    // tests `thundering_herd_zero_delay` and `start_lock_serialization`
+    // in `tests/concurrency.rs` call
     // `flow_rs::commands::start_lock::{acquire_with_wait, release}`
     // directly instead of spawning `flow-rs start-lock` subprocesses.
     // Subprocess fork/exec contention under nextest full-suite
     // parallelism inflated the lock-holder's release latency past the
     // worker polling timeout; the library-call shape removes that
     // variability while still exercising the queue, mtime ordering,
-    // polling loop, and stale detection. CLI surface verification for
-    // the start-lock command lives in `tests/main_dispatch.rs`.
+    // polling loop, and stale detection. Functional CLI surface
+    // verification for the start-lock command lives in
+    // `tests/main_dispatch.rs::start_lock_cli_roundtrip`, which
+    // exercises `--acquire`, `--check`, and `--release` via real
+    // subprocess dispatch.
     //
-    // The match is the quoted CLI argument literal `"start-lock"` —
-    // tight enough that prose mentioning the unquoted phrase passes,
-    // but any `.args([...])` regression fails immediately.
+    // The assertion walks the function body of each converted test
+    // (bounded by the next `#[test]` attribute) and fails if
+    // `Command::new(FLOW_RS)` appears anywhere in the body — regardless
+    // of how the subprocess arguments are constructed. This catches
+    // every regression pattern that a byte-substring check on the file
+    // as a whole would miss: `concat!`, `format!`, `.join("")`, split
+    // constants, `String::push_str`, hex-escape prefixes, chained
+    // `.arg()` calls, etc. The bounded scope follows the
+    // subsection-local assertion pattern from
+    // `.claude/rules/testing-gotchas.md` — walk to the function with
+    // `split_once("fn <name>(")`, then walk to the next `#[test]`
+    // attribute (or EOF for the last test) to get the body.
     let root = common::repo_root();
     let path = root.join("tests").join("concurrency.rs");
     let content = fs::read_to_string(&path).expect("tests/concurrency.rs must exist");
-    assert!(
-        !content.contains("\"start-lock\""),
-        "tests/concurrency.rs must not spawn flow-rs start-lock subprocesses; \
-         use acquire_with_wait() and release() from \
-         flow_rs::commands::start_lock directly. See PR #1166 and \
-         tests/main_dispatch.rs for CLI surface verification."
-    );
+
+    const FORBIDDEN: &str = "Command::new(FLOW_RS)";
+    const PROTECTED_FNS: &[&str] = &["start_lock_serialization", "thundering_herd_zero_delay"];
+
+    for fn_name in PROTECTED_FNS {
+        let marker = format!("fn {}(", fn_name);
+        let tail = content
+            .split_once(&marker)
+            .map(|(_, t)| t)
+            .unwrap_or_else(|| {
+                panic!(
+                    "tests/concurrency.rs is missing `fn {}(` — the tombstone \
+                     protects a test that no longer exists. See PR #1166.",
+                    fn_name
+                )
+            });
+        let body = tail.split_once("#[test]").map(|(b, _)| b).unwrap_or(tail);
+        assert!(
+            !body.contains(FORBIDDEN),
+            "tests/concurrency.rs::{} must not spawn `flow-rs` subprocesses; \
+             use acquire_with_wait() and release() from \
+             flow_rs::commands::start_lock directly. Found `{}` in the function \
+             body — the library-call shape was reverted. See PR #1166 and \
+             tests/main_dispatch.rs::start_lock_cli_roundtrip for CLI surface \
+             verification.",
+            fn_name,
+            FORBIDDEN
+        );
+    }
 }
 
 // --- Coverage waiver loophole closure ---

@@ -199,12 +199,14 @@ fn start_lock_serialization() {
     // contention from the test path: under `nextest` full-suite
     // parallelism, the holder's subprocess release call gets queued
     // behind dozens of unrelated test forks long enough to push the
-    // polling losers past their wait timeout. CLI surface verification
-    // for the start-lock command lives in `tests/main_dispatch.rs`.
+    // polling losers past their wait timeout. Functional CLI surface
+    // verification for the start-lock command (`--acquire`, `--check`,
+    // `--release` dispatch) lives in
+    // `tests/main_dispatch.rs::start_lock_cli_roundtrip` — this test
+    // deliberately exercises the lock mechanism under thread contention,
+    // not the CLI.
     let tmp = tempfile::tempdir().expect("Failed to create tempdir");
-    let repo = tmp.path().to_path_buf();
-
-    let queue_dir = Arc::new(queue_path(&repo));
+    let queue_dir = Arc::new(queue_path(tmp.path()));
     let timings: Arc<Mutex<Vec<Timing>>> = Arc::new(Mutex::new(Vec::new()));
     let baseline = Instant::now();
 
@@ -288,13 +290,14 @@ fn thundering_herd_zero_delay() {
     // fork/exec contention from the test path: under `nextest`
     // full-suite parallelism, the holder's subprocess release call
     // gets queued behind dozens of unrelated test forks long enough to
-    // push the polling losers past their wait timeout. CLI surface
-    // verification for the start-lock command lives in
-    // `tests/main_dispatch.rs`.
+    // push the polling losers past their wait timeout. Functional CLI
+    // surface verification for the start-lock command (`--acquire`,
+    // `--check`, `--release` dispatch) lives in
+    // `tests/main_dispatch.rs::start_lock_cli_roundtrip` — this test
+    // deliberately exercises the lock mechanism under thread
+    // contention, not the CLI.
     let tmp = tempfile::tempdir().expect("Failed to create tempdir");
-    let repo = tmp.path().to_path_buf();
-
-    let queue_dir = Arc::new(queue_path(&repo));
+    let queue_dir = Arc::new(queue_path(tmp.path()));
     let timings: Arc<Mutex<Vec<Timing>>> = Arc::new(Mutex::new(Vec::new()));
     let barrier = Arc::new(Barrier::new(3));
     let baseline = Instant::now();
