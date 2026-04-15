@@ -60,9 +60,9 @@ fi
 # it tracks every whole-percent improvement and never moves down. When
 # coverage crosses into a new whole-percent range, bump the matching
 # threshold in the same commit that earned it so the gate captures the
-# new floor and protects against regression below it.
-# See `test_coverage.md` for the per-file waiver inventory when 100%
-# is not achievable.
+# new floor and protects against regression below it. The target is
+# 100/100/100 — coverage waivers are forbidden, so any code that
+# appears uncoverable must be refactored until it is testable.
 exec cargo llvm-cov --no-cfg-coverage --no-clean \
   --fail-under-lines 93 \
   --fail-under-regions 94 \
