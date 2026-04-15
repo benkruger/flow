@@ -69,6 +69,148 @@ capability was removed without replacement, say so. If a
 replacement is planned, reference the tracking issue number so the
 claim is verifiable.
 
+## Assertion Strength
+
+A tombstone test is only as strong as its assertion. A byte-
+substring check against a single literal (e.g.
+`content.contains("\"start-lock\"")`) looks airtight but is
+trivially bypassable — a merge resolver or a future author can
+re-introduce the forbidden behavior with any construct that
+produces the same string at runtime without the literal ever
+appearing in source.
+
+The byte-substring assertion `content.contains("\"start-lock\"")`
+fails to catch ALL of:
+
+- `concat!("start-", "lock")` — macro-concatenated literal
+- `format!("{a}-{b}", a = "start", b = "lock")` — runtime format
+- `["start-", "lock"].join("")` — slice join
+- `const PREFIX: &str = "start-"; const SUFFIX: &str = "lock";` —
+  split constants assembled later
+- `let mut s = String::from("start-"); s.push_str("lock");` —
+  mutating accumulation
+- `"start-".to_string() + "lock"` — `String` addition
+- `"\x73tart-lock"` — hex-escaped prefix
+- `.arg("start-").arg("lock")` — chained method calls that pass
+  the two halves as separate arguments
+
+PR #1166 proved all eight of these bypasses with failing adversarial
+tests. The initial tombstone for that PR shipped with a byte-
+substring check and had to be rewritten under Code Review pressure.
+The rewrite scans the function body of each protected test for
+`Command::new(FLOW_RS)` — a construct no bypass can hide. This
+section documents the strength criteria so future tombstones ship
+strong from the start.
+
+### Two kinds of tombstone
+
+A tombstone protects against resurrection of one of:
+
+1. **A stable source literal.** The forbidden thing is a fixed
+   string that appears in source — a CLI argument quoted with
+   double quotes (`"start-lock"`), a function name that cannot be
+   synthesized at runtime (e.g. `post_message`), a file path, a
+   config key. A byte-substring check is acceptable AS LONG AS
+   the literal cannot be constructed by any of the patterns above
+   and still produce the same runtime effect.
+2. **A structural construct.** The forbidden thing is a class of
+   runtime behavior (spawning a subprocess, opening a network
+   socket, calling a deprecated API) that can be expressed through
+   many different source shapes. The assertion must target the
+   construct itself, not a specific string.
+
+When in doubt, assume #2. Most "don't reintroduce this subprocess
+call" or "don't reintroduce this API" cases are structural, even
+when the current source happens to express them with a specific
+literal.
+
+### Structural tombstones — function-body scan
+
+For structural assertions, scan the body of the function the
+tombstone protects and assert the forbidden construct is absent
+from the body. Use the bounded-slice pattern from
+`.claude/rules/testing-gotchas.md` "Subsection-Local Assertions
+in Contract Tests":
+
+```rust
+#[test]
+fn test_concurrency_no_subprocess_start_lock() {
+    // Tombstone: removed in PR #1166. Scan each protected test's
+    // body for Command::new(FLOW_RS) regardless of how args are
+    // constructed.
+    let content = fs::read_to_string("tests/concurrency.rs")
+        .expect("file must exist");
+
+    const FORBIDDEN: &str = "Command::new(FLOW_RS)";
+    const PROTECTED_FNS: &[&str] =
+        &["start_lock_serialization", "thundering_herd_zero_delay"];
+
+    for fn_name in PROTECTED_FNS {
+        let marker = format!("fn {}(", fn_name);
+        let tail = content
+            .split_once(&marker)
+            .map(|(_, t)| t)
+            .expect("protected fn must exist");
+        let body = tail
+            .split_once("#[test]")
+            .map(|(b, _)| b)
+            .unwrap_or(tail);
+        assert!(
+            !body.contains(FORBIDDEN),
+            "tests/concurrency.rs::{} must not contain `{}`",
+            fn_name,
+            FORBIDDEN
+        );
+    }
+}
+```
+
+The `split_once("#[test]")` bounds the assertion scope to the
+function body. An `unwrap_or(tail)` fallback handles the case
+where the protected function is the last `#[test]` in the file.
+For protected functions in the middle of the file, the bound is
+the next `#[test]` attribute.
+
+### Literal tombstones — stability checklist
+
+When using a byte-substring check, the plan must document WHY the
+literal is stable. For each claimed literal, answer:
+
+1. **Can it be assembled by `concat!`?** If yes, the byte check
+   fails when a future author uses `concat!`.
+2. **Can it be produced by `format!`?** If yes, the byte check
+   fails under format-string reassembly.
+3. **Can it be a constant declared at the top of the file and
+   referenced by name?** If yes, the byte check fails when the
+   name-reference replaces the inline literal.
+4. **Can the construct be split into multiple `.arg()` calls or
+   other method chains?** If yes, structural scanning is
+   required; byte-substring is insufficient.
+
+If any answer is "yes", use a structural (function-body scoped)
+tombstone instead. If all answers are "no", document WHY in the
+test's doc comment so the next maintainer sees the reasoning.
+
+### Plan-phase responsibility
+
+When a plan proposes a tombstone, the Tasks section must specify:
+
+1. **Protection target.** Exact feature, construct, or literal
+   being protected.
+2. **Assertion kind.** Literal (byte-substring) or structural
+   (function-body scoped).
+3. **Stability argument.** If literal, the four-question checklist
+   above. If structural, the boundary markers used for the
+   bounded-slice pattern.
+4. **Bypass list.** For literal assertions, name at least three
+   plausible bypasses the author considered and rejected with
+   reasoning. For structural assertions, name the function(s)
+   being scanned.
+
+A tombstone proposal without this documentation is a Plan-phase
+gap. Code Review's adversarial agent will write failing tests
+against the weak assertion; the cheaper catch is at Plan time.
+
 ## Consolidation
 
 When removing a feature tested inline in a `src/*.rs` file, put
