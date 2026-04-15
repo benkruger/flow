@@ -390,15 +390,17 @@ fn is_bg_truthy(value: &Value) -> bool {
     match value {
         Value::Bool(b) => *b,
         Value::String(s) => s.eq_ignore_ascii_case("true") || s == "1",
-        Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                i != 0
-            } else if let Some(f) = n.as_f64() {
-                f != 0.0
-            } else {
-                false
-            }
-        }
+        // When `as_i64()` returns `Some`, the Number was stored as an
+        // integer variant — truthy iff the value is non-zero. When
+        // `as_i64()` returns `None`, the Number was stored as a float;
+        // `is_some_and(|f| f != 0.0)` classifies it truthy iff the
+        // float is non-zero. serde_json guarantees every `Value::Number`
+        // is representable as at least one of i64/u64/f64, so the `None`
+        // arm always finds a finite f64.
+        Value::Number(n) => match n.as_i64() {
+            Some(i) => i != 0,
+            None => n.as_f64().is_some_and(|f| f != 0.0),
+        },
         _ => false,
     }
 }
@@ -1111,6 +1113,69 @@ mod tests {
     fn test_is_bg_truthy_object_and_array() {
         assert!(!is_bg_truthy(&json!({})));
         assert!(!is_bg_truthy(&json!([])));
+    }
+
+    // Plan-named coverage tests for issue #1145 (Task 1). These lock
+    // each discrete JSON type variant of the `run_in_background` input
+    // to its expected truthy/falsy classification so a future refactor
+    // of `is_bg_truthy` cannot silently weaken a single variant. The
+    // two f64-typed variants exercise the `Number::as_i64() == None →
+    // Number::as_f64()` fallthrough, which no other test drives:
+    // `serde_json::Number::as_i64` returns `None` unconditionally for
+    // the internal `Float` variant (regardless of whether the float
+    // holds a whole-number value), so any `json!(<float literal>)`
+    // routes through `as_f64`.
+
+    #[test]
+    fn is_bg_truthy_f64_nonzero_returns_true() {
+        // Exercises the as_f64 arm's truthy branch: `f != 0.0` is true.
+        assert!(is_bg_truthy(&json!(1.5)));
+    }
+
+    #[test]
+    fn is_bg_truthy_f64_zero_returns_false() {
+        // Exercises the as_f64 arm's falsy branch: `f != 0.0` is false.
+        // json!(0.0) stores as serde_json's internal Float variant;
+        // Float::as_i64 always returns None, so evaluation reaches the
+        // as_f64 check rather than short-circuiting on the i64 arm.
+        assert!(!is_bg_truthy(&json!(0.0)));
+    }
+
+    #[test]
+    fn is_bg_truthy_i64_zero_returns_false() {
+        assert!(!is_bg_truthy(&json!(0)));
+    }
+
+    #[test]
+    fn is_bg_truthy_i64_negative_returns_true() {
+        assert!(is_bg_truthy(&json!(-1)));
+    }
+
+    #[test]
+    fn is_bg_truthy_string_1_returns_true() {
+        assert!(is_bg_truthy(&json!("1")));
+    }
+
+    #[test]
+    fn is_bg_truthy_string_0_returns_false() {
+        // "0" is not case-insensitively equal to "true" and not
+        // literally "1", so the String arm returns false.
+        assert!(!is_bg_truthy(&json!("0")));
+    }
+
+    #[test]
+    fn is_bg_truthy_array_returns_false() {
+        assert!(!is_bg_truthy(&json!([true, 1])));
+    }
+
+    #[test]
+    fn is_bg_truthy_object_returns_false() {
+        assert!(!is_bg_truthy(&json!({"x": 1})));
+    }
+
+    #[test]
+    fn is_bg_truthy_null_returns_false() {
+        assert!(!is_bg_truthy(&Value::Null));
     }
 
     // --- Agent validation ---

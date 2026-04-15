@@ -1839,6 +1839,42 @@ fn code_has_plan_test_verification() {
     );
 }
 
+#[test]
+fn code_documents_measurement_only_task_pathway() {
+    let c = common::read_skill("flow-code");
+    assert!(
+        c.contains("### Measurement-Only Tasks"),
+        "Code skill must document the measurement-only task pathway as a named `### ` subsection"
+    );
+    // Bound the slice to the subsection itself. Splitting on the
+    // heading string alone would leave `after_heading` covering
+    // everything from the heading to EOF, so a later section (e.g.
+    // the standard Commit section around L443) could satisfy the
+    // /flow:flow-commit and "Nothing to commit" assertions even if
+    // the subsection itself were gutted. Splitting the tail on the
+    // next `### ` heading keeps the checks local to the subsection.
+    let tail_at_heading = c
+        .split_once("### Measurement-Only Tasks")
+        .map(|(_, tail)| tail)
+        .expect("heading presence asserted above");
+    let subsection = tail_at_heading
+        .split_once("\n### ")
+        .map(|(section, _)| section)
+        .unwrap_or(tail_at_heading);
+    assert!(
+        subsection.contains("/flow:flow-commit"),
+        "Measurement-only subsection must route through /flow:flow-commit"
+    );
+    assert!(
+        subsection.contains("Nothing to commit"),
+        "Measurement-only subsection must reference the empty-diff return path"
+    );
+    assert!(
+        subsection.contains("bin/flow ci"),
+        "Measurement-only subsection must keep the bin/flow ci Gate mandatory"
+    );
+}
+
 // --- Learn phase ---
 
 #[test]
@@ -2909,6 +2945,150 @@ fn plan_has_supersession_enumeration() {
         lower.contains("supersession"),
         "flow-plan/SKILL.md Step 3 must include supersession enumeration instructions \
          per .claude/rules/supersession.md (Plan Phase section)"
+    );
+}
+
+#[test]
+fn flow_plan_skill_has_extract_helper_branch_enumeration() {
+    // The Extract-Helper Branch Enumeration subsection is the Plan-phase
+    // discipline from .claude/rules/extract-helper-refactor.md: when a
+    // plan task extracts a block into a new helper, the plan must
+    // enumerate the helper's branches with testability classifications
+    // before Code phase begins. The subsection lives inside Step 3 of
+    // flow-plan/SKILL.md alongside Supersession Enumeration.
+    let c = common::read_skill("flow-plan");
+
+    assert!(
+        c.contains("### Extract-Helper Branch Enumeration"),
+        "flow-plan/SKILL.md Step 3 must include an '### Extract-Helper Branch Enumeration' \
+         subsection per .claude/rules/extract-helper-refactor.md"
+    );
+
+    // Step headings are h2 (`## Step N`); subsections inside a step are
+    // h3 (`### Name`). The new subsection must sit between the Step 3
+    // h2 and the Step 4 h2.
+    let step3 = c.find("## Step 3").expect("Step 3 heading must exist");
+    let step4 = c.find("## Step 4").expect("Step 4 heading must exist");
+    let subsection = c
+        .find("### Extract-Helper Branch Enumeration")
+        .expect("Extract-Helper Branch Enumeration subsection must exist");
+    assert!(
+        subsection > step3 && subsection < step4,
+        "### Extract-Helper Branch Enumeration must sit inside Step 3 \
+         (between '## Step 3' and '## Step 4')"
+    );
+
+    // Isolate the subsection body: from the heading to the next '### ' heading.
+    let rest = &c[subsection..];
+    let sub_end_rel = rest[1..]
+        .find("\n### ")
+        .map(|i| i + 1)
+        .unwrap_or(rest.len());
+    let sub_body = &rest[..sub_end_rel];
+
+    assert!(
+        sub_body.contains(".claude/rules/extract-helper-refactor.md"),
+        "Extract-Helper Branch Enumeration subsection must cross-reference \
+         '.claude/rules/extract-helper-refactor.md'"
+    );
+
+    for cls in [
+        "Testable via seam",
+        "Testable directly",
+        "Testable via subprocess",
+    ] {
+        assert!(
+            sub_body.contains(cls),
+            "Extract-Helper Branch Enumeration subsection must name classification: {cls}"
+        );
+    }
+
+    // The subsection must present a Branch Enumeration Table (four
+    // columns: Branch / Condition / Classification / Test). The
+    // header row and separator together guarantee authors see the
+    // table shape inline instead of anchoring on an abbreviated
+    // prose summary.
+    assert!(
+        sub_body.contains("| Branch | Condition | Classification | Test |"),
+        "Extract-Helper Branch Enumeration subsection must include the \
+         four-column Branch Enumeration Table header"
+    );
+
+    // The subsection must document the opt-out comment token inline
+    // so Plan authors learn the escape hatch without having to
+    // follow the cross-reference to the rule file.
+    assert!(
+        sub_body.contains("extract-helper-refactor: not-an-extraction"),
+        "Extract-Helper Branch Enumeration subsection must document \
+         the opt-out comment token 'extract-helper-refactor: not-an-extraction'"
+    );
+}
+
+#[test]
+fn extract_helper_refactor_rule_has_expected_structure() {
+    // The SKILL.md Extract-Helper Branch Enumeration subsection
+    // cross-references .claude/rules/extract-helper-refactor.md for the
+    // full trigger vocabulary, the three classifications, the opt-out
+    // grammar, and the motivating PR #1155 incident. This test asserts
+    // that rule file exists and contains the canonical elements the
+    // SKILL.md cross-reference promises, so a broken cross-reference
+    // or a missing section fails CI instead of silently shipping.
+    let path = common::repo_root()
+        .join(".claude")
+        .join("rules")
+        .join("extract-helper-refactor.md");
+    let content = std::fs::read_to_string(&path)
+        .expect(".claude/rules/extract-helper-refactor.md must exist");
+
+    for cls in [
+        "Testable via seam",
+        "Testable directly",
+        "Testable via subprocess",
+    ] {
+        assert!(
+            content.contains(cls),
+            "extract-helper-refactor.md must name classification: {cls}"
+        );
+    }
+
+    assert!(
+        content.contains("extract-helper-refactor: not-an-extraction"),
+        "extract-helper-refactor.md must document the opt-out comment token \
+         'extract-helper-refactor: not-an-extraction'"
+    );
+
+    assert!(
+        content.contains("PR #1155"),
+        "extract-helper-refactor.md must cite the motivating PR #1155 incident"
+    );
+
+    // The rule file must carry the canonical section structure the
+    // SKILL.md cross-reference promises. A future edit that removes
+    // Why, The Rule, The Three Classifications, or Enforcement
+    // leaves the rule without its substantive scaffolding; these
+    // assertions fail CI on that regression.
+    for section in [
+        "## Vocabulary",
+        "## Why",
+        "## The Rule",
+        "## The Three Classifications",
+        "## Enforcement",
+        "## Opt-Out Grammar",
+        "## How to Apply",
+        "## Motivating Incident",
+    ] {
+        assert!(
+            content.contains(section),
+            "extract-helper-refactor.md must contain section heading: {section}"
+        );
+    }
+
+    // The canonical four-column Branch Enumeration Table must appear
+    // in the rule file as the reference for Plan authors.
+    assert!(
+        content.contains("| Branch | Condition | Classification | Test |"),
+        "extract-helper-refactor.md must include the four-column \
+         Branch Enumeration Table header"
     );
 }
 

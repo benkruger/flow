@@ -810,6 +810,60 @@ pub fn load_account_metrics(repo_root: &Path, home_override: Option<&Path>) -> A
     }
 }
 
+/// Driver for the `bin/flow tui-data` subcommand.
+///
+/// Returns `Result<(stdout_value, code), (stderr_text, code)>`:
+///
+/// - `Ok((value, 0))` — JSON to write to stdout for one of the three
+///   flag branches (`--load-all-flows`, `--load-orchestration`,
+///   `--load-account-metrics`). The `orchestration` no-state case
+///   returns `Value::Null` so the caller prints the string `"null"`.
+/// - `Err((msg, 1))` — none of the three flags was set. The caller
+///   writes the message to stderr and exits 1, matching the
+///   pre-extraction contract.
+///
+/// Tests supply `root` as a fixture TempDir and stage state files
+/// under `.flow-states/` before calling.
+pub fn run_impl_main(
+    load_all: bool,
+    load_orch: bool,
+    load_metrics: bool,
+    root: &Path,
+) -> Result<(Value, i32), (String, i32)> {
+    if load_all {
+        let flows = load_all_flows(root);
+        return Ok((
+            serde_json::to_value(&flows).expect("flow summaries serialize"),
+            0,
+        ));
+    }
+    if load_orch {
+        return match load_orchestration(root) {
+            Some(state) => {
+                let summary = orchestration_summary(Some(&state), None);
+                let result = serde_json::json!({
+                    "state": state,
+                    "summary": summary,
+                });
+                Ok((result, 0))
+            }
+            None => Ok((Value::Null, 0)),
+        };
+    }
+    if load_metrics {
+        let metrics = load_account_metrics(root, None);
+        return Ok((
+            serde_json::to_value(&metrics).expect("metrics serialize"),
+            0,
+        ));
+    }
+    Err((
+        "tui-data: specify one of --load-all-flows, --load-orchestration, --load-account-metrics"
+            .to_string(),
+        1,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2824,5 +2878,76 @@ mod tests {
         std::fs::create_dir(state_dir.join("orchestrate.json")).unwrap();
         let result = load_orchestration(tmp.path());
         assert!(result.is_none());
+    }
+
+    // --- run_impl_main (main.rs TuiData arm driver) ---
+
+    #[test]
+    fn run_impl_main_no_flag_returns_err_exit_1() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = run_impl_main(false, false, false, dir.path());
+        match result {
+            Err((msg, code)) => {
+                assert_eq!(code, 1);
+                assert!(msg.contains("--load-all-flows"));
+                assert!(msg.contains("--load-orchestration"));
+                assert!(msg.contains("--load-account-metrics"));
+            }
+            Ok(_) => panic!("expected Err for no-flag branch"),
+        }
+    }
+
+    #[test]
+    fn run_impl_main_load_all_flows_returns_array_exit_0() {
+        let dir = tempfile::tempdir().unwrap();
+        let (value, code) = run_impl_main(true, false, false, dir.path()).expect("ok path");
+        assert_eq!(code, 0);
+        assert!(value.is_array(), "expected array, got {:?}", value);
+    }
+
+    #[test]
+    fn run_impl_main_load_orchestration_no_state_returns_null_exit_0() {
+        let dir = tempfile::tempdir().unwrap();
+        let (value, code) = run_impl_main(false, true, false, dir.path()).expect("ok path");
+        assert_eq!(code, 0);
+        assert_eq!(value, Value::Null);
+    }
+
+    #[test]
+    fn run_impl_main_load_orchestration_with_state_returns_state_and_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".flow-states")).unwrap();
+        std::fs::write(
+            dir.path().join(".flow-states").join("orchestrate.json"),
+            serde_json::json!({
+                "issue_queue": [],
+                "started_at": "2026-04-14T00:00:00-07:00",
+                "completed_at": null,
+                "status": "running",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let (value, code) = run_impl_main(false, true, false, dir.path()).expect("ok path");
+        assert_eq!(code, 0);
+        assert!(
+            value.get("state").is_some(),
+            "expected state key: {}",
+            value
+        );
+        assert!(
+            value.get("summary").is_some(),
+            "expected summary key: {}",
+            value
+        );
+    }
+
+    #[test]
+    fn run_impl_main_load_account_metrics_returns_object_exit_0() {
+        let dir = tempfile::tempdir().unwrap();
+        let (value, code) = run_impl_main(false, false, true, dir.path()).expect("ok path");
+        assert_eq!(code, 0);
+        // Account metrics serialize as an object with cost/rl fields.
+        assert!(value.is_object(), "expected object, got {:?}", value);
     }
 }

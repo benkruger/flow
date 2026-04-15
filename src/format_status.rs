@@ -1,8 +1,12 @@
+use std::path::Path;
+
 use chrono::{DateTime, FixedOffset};
 use serde_json::Value;
 
-use crate::phase_config::{self, PhaseConfig, PHASE_ORDER};
-use crate::utils::{derive_feature, elapsed_since, format_time};
+use crate::flow_paths::FlowPaths;
+use crate::git::resolve_branch;
+use crate::phase_config::{self, find_state_files, load_phase_config, PhaseConfig, PHASE_ORDER};
+use crate::utils::{derive_feature, detect_dev_mode, elapsed_since, format_time, read_version};
 
 /// Column width for phase name alignment.
 const NAME_WIDTH: usize = 12;
@@ -336,6 +340,64 @@ pub fn format_multi_panel(
 
     lines.push("────────────────────────────────────────────".to_string());
     lines.join("\n")
+}
+
+/// Driver for the `bin/flow format-status` subcommand.
+///
+/// Returns `Result<(stdout_text, code), (stderr_text, code)>`:
+///
+/// - `Ok((panel, 0))` — a single-flow panel or a multi-flow panel
+///   was rendered and should be written to stdout with exit 0.
+/// - `Ok(("", 1))` — no state files exist for any branch. The caller
+///   exits 1 silently (historical contract: no stdout or stderr).
+/// - `Err(("Could not determine current branch", 2))` — branch
+///   resolution failed. The caller writes the message to stderr
+///   and exits 2.
+///
+/// Tests supply `root` as a fixture TempDir and `branch_override`
+/// explicitly so the helper does not shell out to `git rev-parse`
+/// against the host worktree.
+pub fn run_impl_main(
+    branch_override: Option<&str>,
+    root: &Path,
+) -> Result<(String, i32), (String, i32)> {
+    let branch = match resolve_branch(branch_override, root) {
+        Some(b) => b,
+        None => {
+            return Err(("Could not determine current branch".to_string(), 2));
+        }
+    };
+
+    let results = find_state_files(root, &branch);
+    let results = if results.is_empty() {
+        let all = find_state_files(root, "");
+        if all.is_empty() {
+            return Ok((String::new(), 1));
+        }
+        all
+    } else {
+        results
+    };
+
+    let version = read_version();
+    let dev_mode = detect_dev_mode(root);
+
+    if results.len() > 1 {
+        return Ok((format_multi_panel(&results, &version, dev_mode), 0));
+    }
+
+    let (_state_path, state, matched_branch) = &results[0];
+    let frozen_path = FlowPaths::new(root, matched_branch).frozen_phases();
+    let phase_config = if frozen_path.exists() {
+        load_phase_config(&frozen_path).ok()
+    } else {
+        None
+    };
+
+    Ok((
+        format_panel(state, &version, None, dev_mode, phase_config.as_ref()),
+        0,
+    ))
 }
 
 #[cfg(test)]
@@ -827,6 +889,72 @@ mod tests {
             panel.contains("Branch : other-feature"),
             "Panel:\n{}",
             panel
+        );
+    }
+
+    // --- run_impl_main (main.rs FormatStatus arm driver) ---
+
+    fn write_state_file(root: &std::path::Path, branch: &str, state: &Value) {
+        let dir = root.join(".flow-states");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(format!("{}.json", branch)), state.to_string()).unwrap();
+    }
+
+    #[test]
+    fn run_impl_main_no_state_files_returns_empty_exit_1() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = run_impl_main(Some("test"), dir.path());
+        assert_eq!(result, Ok((String::new(), 1)));
+    }
+
+    #[test]
+    fn run_impl_main_single_state_returns_panel_exit_0() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("flow-start", &[("flow-start", "in_progress")]);
+        write_state_file(dir.path(), "only-feature", &state);
+        let (text, code) = run_impl_main(Some("only-feature"), dir.path()).expect("ok path");
+        assert_eq!(code, 0);
+        // Single-flow panel header.
+        assert!(text.contains("FLOW"), "Panel:\n{}", text);
+    }
+
+    #[test]
+    fn run_impl_main_multi_state_returns_multi_panel_exit_0() {
+        let dir = tempfile::tempdir().unwrap();
+        let s1 = make_state("flow-start", &[("flow-start", "in_progress")]);
+        let s2 = make_state(
+            "flow-plan",
+            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        );
+        write_state_file(dir.path(), "first-feature", &s1);
+        write_state_file(dir.path(), "second-feature", &s2);
+        // Branch override that does not match — falls back to find_state_files(root, "") which returns both.
+        let (text, code) = run_impl_main(Some("nonexistent"), dir.path()).expect("ok path");
+        assert_eq!(code, 0);
+        assert!(
+            text.contains("Multiple Features Active"),
+            "Multi panel header missing:\n{}",
+            text
+        );
+    }
+
+    #[test]
+    fn run_impl_main_branch_match_returns_single_panel_exit_0() {
+        let dir = tempfile::tempdir().unwrap();
+        let s1 = make_state("flow-start", &[("flow-start", "in_progress")]);
+        let s2 = make_state(
+            "flow-plan",
+            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        );
+        write_state_file(dir.path(), "first-feature", &s1);
+        write_state_file(dir.path(), "second-feature", &s2);
+        // Exact branch match → single panel even though multiple states exist.
+        let (text, code) = run_impl_main(Some("second-feature"), dir.path()).expect("ok path");
+        assert_eq!(code, 0);
+        assert!(
+            !text.contains("Multiple Features Active"),
+            "Expected single panel, got multi:\n{}",
+            text
         );
     }
 }

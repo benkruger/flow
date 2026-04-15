@@ -69,6 +69,7 @@ CI will fail if these are missing:
 - `docs/` — GitHub Pages site (static HTML); `docs/reference/flow-state-schema.md` for state file schema
 - `agents/*.md` — six custom plugin sub-agents: ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, documentation
 - `src/*.rs` — Rust source implementing all `bin/flow` subcommands
+- `src/dispatch.rs` — centralized dispatch helpers (`dispatch_json`, `dispatch_text`) for `main.rs` match arms that delegate to module-level `run_impl_main` functions; both helpers print their result and then call `process::exit`
 - `src/tui.rs` — interactive TUI (`flow tui`) — ratatui app with keyboard-driven navigation over local state files. Subprocess surface (open, osascript, bin/flow, $HOME) is injected via `TuiAppPlatform` so unit tests exercise real `Command::new()` chains against a no-op `true` binary
 - `src/tui_data.rs` — state-file loaders and pure display helpers for the TUI (phase timeline, flow summaries, orchestration, account metrics). No IO in the helpers — `phase_timeline` and friends are deterministic given state JSON + clock
 - `src/main.rs::run_tui_terminal` — crossterm glue for the production TUI entry point. Owns raw-mode / alternate-screen lifecycle via a `TerminalGuard` Drop type so cleanup runs even on panic
@@ -207,7 +208,7 @@ Key test files: `tests/structural.rs` (config invariants, version consistency), 
 ## Conventions
 
 - **Never invoke `/flow-release` unless the user explicitly runs it** — fixing a bug does not authorize a release. Committing a fix and releasing it are separate decisions. The user decides when to ship.
-- All commits via `/flow:flow-commit` skill — no exceptions, no shortcuts, no "just this once". Infrastructure commits during `start-gate` (e.g., `commit_deps` for dependency lock files) are the sole carve-out: they commit directly via Rust under the start lock, before any worktree exists.
+- All commits via `/flow:flow-commit` skill — no exceptions, no shortcuts, no "just this once". Measurement-only tasks (e.g., a coverage TOTAL capture or a threshold verification re-run) still route through `/flow:flow-commit` — the commit skill's `git diff --cached` check handles the empty diff via its "Nothing to commit" return path, so the session never needs a shortcut. Infrastructure commits during `start-gate` (e.g., `commit_deps` for dependency lock files) are the sole carve-out: they commit directly via Rust under the start lock, before any worktree exists.
 - All changes require `bin/flow ci` green before committing — tests are the gate
 - New skills are automatically covered by `tests/skill_contracts.rs` (glob-based discovery)
 - Namespace is `flow:` — plugin.json name is `"flow"`
@@ -219,5 +220,6 @@ Key test files: `tests/structural.rs` (config invariants, version consistency), 
 - **Repo-level targets only** — see `.claude/rules/repo-level-only.md`
 - **Scope enumeration for universal-coverage claims** — see `.claude/rules/scope-enumeration.md`
 - **External-input audit for panic/assert tightenings** — see `.claude/rules/external-input-audit-gate.md`
+- **Extract-helper branch enumeration for refactor plans** — see `.claude/rules/extract-helper-refactor.md`
 - **No `run_in_background` during FLOW phases**; `bin/flow` (any subcommand) is never allowed in the background regardless of mode — see `.claude/rules/ci-is-a-gate.md`. Enforced by `bin/flow hook validate-pretool`.
 - **User evidence is ground truth** — when a user provides screenshots, error output, or logs that contradict your code analysis, trust the evidence. Your code reading is a hypothesis; the user's evidence is an observation. Never explain away evidence to preserve your analysis.

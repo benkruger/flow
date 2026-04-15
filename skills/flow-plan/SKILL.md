@@ -412,6 +412,65 @@ trigger vocabulary, the table-detection heuristic, and the
 enforcement topology (`bin/flow plan-check` plus both
 `src/plan_extract.rs` callsites).
 
+### Extract-Helper Branch Enumeration
+
+When a plan task extracts a block of code into a new helper function,
+the new helper introduces its own internal branches that the plan
+must enumerate at Plan time — before the Code phase runs into them.
+Without up-front enumeration, the Code phase discovers the new
+branches only after the extraction lands, and the branch-level test
+strategy ends up decided ad hoc instead of by design.
+
+When the plan proposes extracting a block into a new function, helper,
+or seam — or lifts, hoists, factors out, or pulls out an existing
+block — the plan's Exploration or Approach section must include a
+Branch Enumeration Table near the task description. The table has
+four columns:
+
+| Branch | Condition | Classification | Test |
+|---|---|---|---|
+| A | `tree_changed == true` | Testable directly | `production_ci_decider_tree_changed_returns_not_skipped` |
+| B | `tree_changed == false` ∧ sentinel matches | Testable directly | `production_ci_decider_sentinel_hit_returns_skipped` |
+| C | CI dirty-check dispatches to `ci::run_impl` | Testable via seam | (lift `ci::run_impl` into an injectable parameter and test via a mock) |
+
+Column definitions:
+
+- **Branch** — a letter or number label identifying the branch
+- **Condition** — the guard expression or prose condition
+- **Classification** — one of the three values below
+- **Test** — the named test function that will exercise this branch
+
+The three classifications:
+
+- **Testable via seam** — an injected closure, trait object, or
+  Command parameter; branches exercised by passing mock
+  implementations. Reference pattern:
+  `run_impl_inner(args, root, runner, ci_decider)` in
+  `src/complete_fast.rs`.
+- **Testable directly** — a unit test with a self-contained fixture
+  (TempDir, prepared state file, in-memory value). Reference pattern:
+  `production_ci_decider_tree_changed_returns_not_skipped`.
+- **Testable via subprocess** — spawn the compiled binary through
+  `tests/main_dispatch.rs`; cargo-llvm-cov instruments subprocess
+  calls when they spawn the same binary. Reference pattern:
+  `check_phase_first_phase_exits_0`.
+
+If a branch cannot be classified under one of the three, the
+extraction design is wrong — refactor further (push the untested
+surface behind a seam, fold the branch into the caller, or delete
+the branch entirely) until every branch lands in one of the three
+classifications.
+
+If the plan prose mentions extraction in discussion rather than as a
+proposal, add the opt-out comment
+`<!-- extract-helper-refactor: not-an-extraction -->` on the trigger
+line itself, on the line directly above, or two lines above with a
+single blank line in between (no chaining across more than one
+blank line).
+
+See `.claude/rules/extract-helper-refactor.md` for the full trigger
+vocabulary and the motivating PR #1155 incident.
+
 ### Supersession Enumeration
 
 `.claude/rules/supersession.md` requires plans that add replacements,

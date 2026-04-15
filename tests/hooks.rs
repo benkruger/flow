@@ -505,39 +505,6 @@ fn test_stop_continue_malformed_stdin_no_output() {
 }
 
 #[test]
-fn test_stop_continue_qa_pending_fallback_blocks() {
-    let dir = tempfile::tempdir().unwrap();
-    let _ = Command::new("git")
-        .args(["init"])
-        .current_dir(dir.path())
-        .output();
-
-    // No branch state file — only a qa-pending breadcrumb. The hook's
-    // `check_qa_pending` fallback in `run()` should fire and produce block
-    // output carrying the QA context.
-    let state_dir = flow_states_dir(dir.path());
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(
-        state_dir.join("qa-pending.json"),
-        r#"{"_continue_context": "Return to FLOW repo and verify."}"#,
-    )
-    .unwrap();
-
-    let output = run_hook("stop-continue", dir.path(), "test-feature", b"{}");
-
-    assert_eq!(output.status.code().unwrap(), 0);
-    let stdout = std::str::from_utf8(&output.stdout).unwrap().trim();
-    let parsed: Value = serde_json::from_str(stdout).unwrap();
-    assert_eq!(parsed["decision"], "block");
-    let reason = parsed["reason"].as_str().unwrap();
-    assert!(
-        reason.contains("Return to FLOW repo"),
-        "qa-pending context must be embedded in reason, got: {}",
-        reason
-    );
-}
-
-#[test]
 fn test_stop_continue_stale_session_clears_and_captures_new() {
     let dir = tempfile::tempdir().unwrap();
     let branch = "test-feature";
@@ -791,4 +758,800 @@ fn test_stop_continue_no_state_no_simulate_exits_cleanly() {
 
     assert_eq!(output.status.code().unwrap(), 0);
     assert!(output.stdout.is_empty(), "no state files → no block output");
+}
+
+// --- validate-ask-user integration tests (issue #1145 Task 3) ---
+//
+// These drive `src/hooks/validate_ask_user::run()` through `flow-rs hook
+// validate-ask-user` with a prepared state file and crafted stdin. They
+// cover every exit path: malformed stdin, missing branch/state, the
+// slash-branch FlowPaths::try_new None arm required by
+// `.claude/rules/external-input-validation.md`, the in-progress+auto
+// block path with exit 2, the _auto_continue auto-answer JSON path, and
+// the plain-allow path that writes `_blocked` and exits 0.
+
+#[test]
+fn validate_ask_user_malformed_stdin_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_and_state(dir.path(), "feat", &json!({"current_phase": "flow-code"}));
+    let output = run_hook("validate-ask-user", dir.path(), "feat", b"not json at all");
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_ask_user_empty_stdin_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_and_state(dir.path(), "feat", &json!({"current_phase": "flow-code"}));
+    let output = run_hook("validate-ask-user", dir.path(), "feat", b"");
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_ask_user_no_state_file_exits_zero() {
+    // FLOW_SIMULATE_BRANCH resolves the branch, but no state file exists
+    // at `.flow-states/feat.json`. `validate(Some(&state_path))` returns
+    // `(true, _, None)` because the `path.exists()` check fails.
+    let dir = tempfile::tempdir().unwrap();
+    let _ = std::process::Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output();
+    let output = run_hook("validate-ask-user", dir.path(), "feat", b"{}");
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_ask_user_slash_branch_exits_zero_no_panic() {
+    // Regression guard per .claude/rules/external-input-validation.md
+    // Hook callsite discipline: slash-branches are external input from
+    // git, not valid FLOW branch names. FlowPaths::try_new returns
+    // None, and run() treats that as "no active flow on this branch"
+    // and exits 0 — the hook neither panics nor constructs a state
+    // path against the invalid branch.
+    let dir = tempfile::tempdir().unwrap();
+    let _ = std::process::Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output();
+    let output = run_hook("validate-ask-user", dir.path(), "feature/foo", b"{}");
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked"),
+        "slash-branch must not panic the hook; stderr: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_ask_user_blocks_in_progress_auto_exits_2_with_phase_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = json!({
+        "current_phase": "flow-code",
+        "skills": {"flow-code": {"continue": "auto"}},
+        "phases": {"flow-code": {"status": "in_progress"}},
+    });
+    setup_git_and_state(dir.path(), "feat", &state);
+    let output = run_hook("validate-ask-user", dir.path(), "feat", b"{}");
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("flow-code"),
+        "stderr must name the phase: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr must say BLOCKED: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_ask_user_auto_continue_writes_stdout_json_exits_zero() {
+    // _auto_continue without in_progress+auto → the hook prints a JSON
+    // permissionDecision=allow with updatedInput naming the successor
+    // command so Claude Code auto-answers the AskUserQuestion.
+    let dir = tempfile::tempdir().unwrap();
+    let state = json!({
+        "current_phase": "flow-code",
+        "skills": {"flow-code": {"continue": "manual"}},
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "_auto_continue": "/flow:flow-code-review",
+    });
+    setup_git_and_state(dir.path(), "feat", &state);
+    let output = run_hook("validate-ask-user", dir.path(), "feat", b"{}");
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("permissionDecision") && stdout.contains("/flow:flow-code-review"),
+        "auto-answer stdout must carry permissionDecision + successor: {}",
+        stdout
+    );
+}
+
+#[test]
+fn validate_ask_user_plain_allow_writes_blocked_timestamp_exits_zero() {
+    // No block conditions, no _auto_continue → plain allow path that
+    // writes _blocked timestamp to the state file before exit 0.
+    let dir = tempfile::tempdir().unwrap();
+    let state = json!({"current_phase": "flow-code"});
+    setup_git_and_state(dir.path(), "feat", &state);
+    let output = run_hook("validate-ask-user", dir.path(), "feat", b"{}");
+    assert_eq!(output.status.code().unwrap(), 0);
+    let post = read_state(dir.path(), "feat");
+    let blocked = post.get("_blocked").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(
+        !blocked.is_empty(),
+        "plain-allow path must write _blocked timestamp; state: {}",
+        post
+    );
+}
+
+// --- validate-claude-paths integration tests (issue #1145 Task 4) ---
+//
+// validate_claude_paths::run() uses `detect_branch_from_cwd()` and
+// `find_project_root()` rather than FLOW_SIMULATE_BRANCH — both walk
+// the process cwd. Fixtures therefore create a tempdir with a
+// `.flow-states/<branch>.json` at the root and a `.worktrees/<branch>/`
+// subdir, then spawn the child subprocess with
+// `current_dir(<tempdir>/.worktrees/<branch>)` so both helpers succeed
+// and `is_flow_active` sees the state file.
+
+/// Prepare a `<tempdir>/.worktrees/<branch>/` subtree with
+/// `.flow-states/<branch>.json` at the project root when
+/// `with_state_file` is true. Returns the worktree cwd path.
+/// Create a `<dir>/.worktrees/<branch>/` subtree and return the
+/// worktree cwd path.
+///
+/// Writes a stub `.git` marker file inside the worktree dir so the
+/// hook's `detect_branch_from_cwd` finds the branch via the
+/// `.worktrees/<branch>/<has .git>` pattern the production code walks.
+/// Without the marker, detection falls back to `git branch --show-current`,
+/// which returns None in a tempdir fixture, and the hook
+/// allow-short-circuits before exercising the validate path the test
+/// is trying to reach.
+///
+/// When `with_state_file` is true, also creates
+/// `<dir>/.flow-states/<branch>.json` with a minimal state body so
+/// `is_flow_active` returns true — required by tests exercising
+/// the block path, optional for tests exercising the no-active-flow
+/// allow path.
+fn setup_worktree_fixture(dir: &Path, branch: &str, with_state_file: bool) -> std::path::PathBuf {
+    let worktree = dir.join(".worktrees").join(branch);
+    fs::create_dir_all(&worktree).unwrap();
+    fs::write(worktree.join(".git"), "gitdir: fake\n").unwrap();
+    if with_state_file {
+        let state_dir = flow_states_dir(dir);
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(
+            state_dir.join(format!("{}.json", branch)),
+            serde_json::to_string(&json!({"current_phase": "flow-code"})).unwrap(),
+        )
+        .unwrap();
+    }
+    worktree
+}
+
+fn run_hook_in(cwd: &Path, hook: &str, stdin_data: &[u8]) -> Output {
+    let mut cmd = flow_rs();
+    cmd.arg("hook")
+        .arg(hook)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("FLOW_CI_RUNNING")
+        .current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    {
+        let stdin = child.stdin.as_mut().unwrap();
+        stdin.write_all(stdin_data).unwrap();
+    }
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn validate_claude_paths_malformed_stdin_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_worktree_fixture(dir.path(), "feat", true);
+    let output = run_hook_in(&cwd, "validate-claude-paths", b"not json");
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_claude_paths_empty_file_path_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_worktree_fixture(dir.path(), "feat", true);
+    // `tool_input.file_path` missing entirely → empty string → exit 0.
+    let input = serde_json::to_vec(&json!({"tool_input": {}})).unwrap();
+    let output = run_hook_in(&cwd, "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_claude_paths_no_flow_states_dir_allows_any_path() {
+    // cwd has no `.flow-states/` anywhere above it → find_project_root
+    // returns None → flow_active=false → allow even a protected path.
+    let dir = tempfile::tempdir().unwrap();
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {
+            "file_path": dir.path().join(".claude/rules/foo.md").to_string_lossy(),
+        }
+    }))
+    .unwrap();
+    let output = run_hook_in(dir.path(), "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_claude_paths_worktree_blocks_claude_rules() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_worktree_fixture(dir.path(), "feat", true);
+    let target = cwd.join(".claude/rules/foo.md");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+    assert!(
+        stderr.contains("write-rule"),
+        "stderr must name the redirect command: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_claude_paths_worktree_blocks_claude_skills() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_worktree_fixture(dir.path(), "feat", true);
+    let target = cwd.join(".claude/skills/foo/SKILL.md");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+}
+
+#[test]
+fn validate_claude_paths_worktree_blocks_claude_md() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_worktree_fixture(dir.path(), "feat", true);
+    let target = cwd.join("CLAUDE.md");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+}
+
+#[test]
+fn validate_claude_paths_worktree_allows_settings_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_worktree_fixture(dir.path(), "feat", true);
+    let target = cwd.join(".claude/settings.json");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_claude_paths_worktree_allows_src_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_worktree_fixture(dir.path(), "feat", true);
+    let target = cwd.join("src/lib.rs");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_claude_paths_flow_state_file_missing_allows() {
+    // find_project_root finds `.flow-states/` at the project root, but
+    // no state file exists for this branch → is_flow_active returns
+    // false → allow even a protected path.
+    let dir = tempfile::tempdir().unwrap();
+    // Create `.flow-states/` so find_project_root succeeds, but skip
+    // the per-branch state file.
+    let states = flow_states_dir(dir.path());
+    fs::create_dir_all(&states).unwrap();
+    let cwd = dir.path().join(".worktrees").join("feat");
+    fs::create_dir_all(&cwd).unwrap();
+    fs::write(cwd.join(".git"), "gitdir: fake\n").unwrap();
+    let target = cwd.join(".claude/rules/foo.md");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-claude-paths", &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+// --- validate-pretool integration tests (issue #1145 Task 5) ---
+//
+// validate_pretool::run() uses `find_settings_and_root()`,
+// `detect_branch_from_cwd()`, and `is_flow_active()` together to
+// compute `flow_active`. The background-block path fires for
+// `bin/flow` and `bin/ci` commands regardless of flow_active, but
+// the agent and bash block paths require flow_active=true, so
+// tests that exercise those paths build a settings file at the
+// project root plus the full worktree fixture.
+
+/// Extend `setup_worktree_fixture` with a `.claude/settings.json` at
+/// the project root.
+///
+/// `validate_pretool::run` reads `settings.json` to compile its
+/// permission allow list; without the file, `find_settings_and_root`
+/// returns None and `flow_active` is forced to false, which skips the
+/// agent/bash validate paths tests want to exercise. The
+/// `allow_patterns` slice is the `permissions.allow` list written to
+/// the settings file — any Bash command pattern a test exercises on
+/// the allow (not block) path must appear here, in the standard
+/// `Bash(<glob>)` form.
+fn setup_pretool_fixture(dir: &Path, branch: &str, allow_patterns: &[&str]) -> std::path::PathBuf {
+    let cwd = setup_worktree_fixture(dir, branch, true);
+    let claude = dir.join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let allow: Vec<Value> = allow_patterns.iter().map(|p| json!(p)).collect();
+    let settings = json!({"permissions": {"allow": allow, "deny": []}});
+    fs::write(
+        claude.join("settings.json"),
+        serde_json::to_string(&settings).unwrap(),
+    )
+    .unwrap();
+    cwd
+}
+
+#[test]
+fn validate_pretool_malformed_stdin_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
+    let output = run_hook_in(&cwd, "validate-pretool", b"not json");
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_pretool_background_bin_flow_ci_blocked_exits_2() {
+    // Suffix-match coverage per .claude/rules/testing-gotchas.md
+    // "Suffix-Match Path Coverage" — bare form (`bin/flow`) variant
+    // paired with validate_pretool_background_absolute_bin_flow_blocked_exits_2.
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"command": "bin/flow ci", "run_in_background": true}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("bin/flow"),
+        "stderr must name bin/flow variant: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_pretool_background_bin_ci_blocked_exits_2() {
+    // Suffix-match coverage per .claude/rules/testing-gotchas.md
+    // "Suffix-Match Path Coverage" — bare form (`bin/ci`) variant
+    // paired with validate_pretool_background_absolute_bin_ci_blocked_exits_2.
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"command": "bin/ci", "run_in_background": true}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("bin/ci"),
+        "stderr must name bin/ci variant: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_pretool_background_absolute_bin_flow_blocked_exits_2() {
+    // Suffix-match coverage per .claude/rules/testing-gotchas.md
+    // "Suffix-Match Path Coverage" — absolute-path form of bin/flow.
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {
+            "command": "/Users/example/project/bin/flow ci",
+            "run_in_background": true,
+        }
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("bin/flow"),
+        "stderr must name bin/flow: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_pretool_background_absolute_bin_ci_blocked_exits_2() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {
+            "command": "/opt/tools/bin/ci",
+            "run_in_background": true,
+        }
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("bin/ci"),
+        "stderr must name bin/ci: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_pretool_general_purpose_agent_blocked_during_flow_exits_2() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
+    // Agent tool call: no `command`, subagent_type=general-purpose.
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"subagent_type": "general-purpose"}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("general-purpose"),
+        "stderr must name subagent type: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_pretool_non_general_purpose_agent_allowed_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"subagent_type": "flow:reviewer"}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_pretool_compound_command_blocked_exits_2() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &["Bash(echo *)"]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"command": "echo a && echo b"}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("BLOCKED"),
+        "compound command must block: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_pretool_file_read_command_blocked_exits_2() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &["Bash(cat *)"]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"command": "cat foo.txt"}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("BLOCKED") || stderr.contains("Read"),
+        "file-read command must block: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_pretool_safe_command_allowed_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &["Bash(git status)"]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"command": "git status"}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+// --- validate-worktree-paths integration tests (issue #1145 Task 6) ---
+//
+// validate_worktree_paths::run() reads only stdin and the process cwd
+// via `std::env::current_dir()`. No FLOW state file or git repo is
+// required — the hook decides allow vs. block from cwd path structure
+// alone. Tests spawn the child with `current_dir` set to the tempdir
+// (or a `.worktrees/<branch>/` subtree) and feed tool_input JSON on
+// stdin. The `std::env::current_dir` Err arm is unreachable from
+// subprocess tests (a spawned child always has a valid cwd), so those
+// lines remain uncovered by this set.
+
+fn run_worktree_hook(cwd: &Path, stdin_data: &[u8]) -> Output {
+    run_hook_in(cwd, "validate-worktree-paths", stdin_data)
+}
+
+#[test]
+fn validate_worktree_paths_malformed_stdin_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = run_worktree_hook(dir.path(), b"not json at all");
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_worktree_paths_empty_file_path_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = serde_json::to_vec(&json!({"tool_input": {}})).unwrap();
+    let output = run_worktree_hook(dir.path(), &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_worktree_paths_glob_path_key_recognized() {
+    // Glob/Grep tool_input uses `path`, not `file_path`. The hook's
+    // `get_file_path` prefers `file_path` then falls back to `path`.
+    // cwd is inside a worktree; the path points to the main repo, so
+    // the hook must recognize the `path` key, route through validate,
+    // and block.
+    //
+    // macOS note: spawned subprocesses receive a canonicalized cwd
+    // (/private/var/folders/... rather than /var/folders/...). The
+    // hook computes project_root from that canonical cwd, so the
+    // file_path passed in tool_input must also be rooted at the
+    // canonical path for the block-branch `starts_with` prefix check
+    // to succeed.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let target = root.join("src/lib.rs");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&worktree, &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("BLOCKED"),
+        "glob path key should route through block: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_worktree_paths_outside_worktree_allows_main_edit() {
+    // cwd has no `.worktrees/` marker in its path → not in a worktree →
+    // validate returns allow regardless of file_path. macOS tempdirs
+    // live under `/var/folders/...` which is symlinked to
+    // `/private/var/folders/...`; the subprocess's current_dir resolves
+    // through the symlink, so canonicalize the root before building
+    // the target — otherwise the file_path prefix check silently
+    // fails and the test passes via an unrelated early-return.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let target = root.join("src/lib.rs");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&root, &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_worktree_paths_inside_worktree_blocks_main_edit() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let target = root.join("src/lib.rs");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&worktree, &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // The block message names the corrected in-worktree path.
+    let corrected = worktree.join("src/lib.rs");
+    assert!(
+        stderr.contains(corrected.to_string_lossy().as_ref()),
+        "stderr must show corrected worktree path: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_worktree_paths_inside_worktree_allows_worktree_edit() {
+    // See validate_worktree_paths_inside_worktree_blocks_main_edit for
+    // why the macOS `canonicalize()` dance is needed — without it, the
+    // allow-path tests pass vacuously via the "outside project" early
+    // return instead of exercising the worktree-cwd allowlist.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let target = worktree.join("src/lib.rs");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&worktree, &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_worktree_paths_inside_worktree_allows_flow_states() {
+    // `.flow-states/` lives at the main project root and is shared —
+    // edits must pass through even from inside a worktree. Canonicalize
+    // the root so the macOS `/var/folders` symlink doesn't mask the
+    // `.flow-states/` allowlist branch behind the "outside project"
+    // early return.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let target = flow_states_dir(&root).join("feat.json");
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&worktree, &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_worktree_paths_inside_worktree_allows_home_path() {
+    // Paths outside the project prefix are always allowed
+    // (~/.claude, plugin cache, /tmp, etc.). `/Users/example/...` is
+    // never a prefix of the canonical `/private/var/folders/...`
+    // tempdir cwd, so this test exercises the real "outside project"
+    // allow branch whether or not the root is canonicalized. We still
+    // canonicalize for symmetry with the sibling tests.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"file_path": "/Users/example/.claude/plans/p.md"}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&worktree, &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+// --- stop-continue remaining-gap tests (issue #1145 Task 7) ---
+//
+// The existing `test_stop_continue_*` tests in this file cover most
+// of `stop_continue::run()`. These plan-named tests close the 8-line
+// coverage gap by pinning three specific paths: the slash-branch
+// `FlowPaths::try_new` None arm (a regression guard per
+// `.claude/rules/external-input-validation.md`), the QA-pending
+// fallback when no branch state file exists, and the
+// discussion-with-pending skill-name branch in `run()`'s output
+// formatter (lines 607–608). Similarly-named tests above use the
+// `test_` prefix; these keep the plan's naming convention (no
+// prefix) so both sets coexist.
+
+#[test]
+fn stop_continue_slash_branch_exits_zero_no_panic() {
+    // FLOW_SIMULATE_BRANCH=feature/foo → resolve_branch returns
+    // Some("feature/foo") → FlowPaths::try_new returns None → early
+    // return without panic. Regression guard per
+    // .claude/rules/external-input-validation.md.
+    let dir = tempfile::tempdir().unwrap();
+    let _ = Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output();
+    let output = run_hook("stop-continue", dir.path(), "feature/foo", b"{}");
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked"),
+        "slash-branch must not panic: {}",
+        stderr
+    );
+    // No state file for a slash branch → no block output.
+    assert!(
+        output.stdout.is_empty(),
+        "slash-branch must produce no block output: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
+fn stop_continue_qa_pending_fallback_blocks() {
+    // No branch state file, only a qa-pending.json breadcrumb at the
+    // project root. check_qa_pending fires in the run() fallback path
+    // (lines 582–589) and produces a block output with
+    // skill=flow-complete carrying the qa_context.
+    let dir = tempfile::tempdir().unwrap();
+    let _ = Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output();
+    let state_dir = flow_states_dir(dir.path());
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join("qa-pending.json"),
+        r#"{"_continue_context": "Resume QA verification now."}"#,
+    )
+    .unwrap();
+    let output = run_hook("stop-continue", dir.path(), "some-feature", b"{}");
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(parsed["decision"], "block");
+    assert!(
+        parsed["reason"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Resume QA verification now."),
+        "reason must embed QA context: {}",
+        parsed
+    );
+}
+
+#[test]
+fn stop_continue_discussion_with_pending_uses_context_message() {
+    // First-stop + pending path: check_first_stop sets
+    // skill=discussion-with-pending. run()'s output formatter branches
+    // on that name (lines 607–608) and uses result.context directly as
+    // the block reason — bypassing format_block_output's "child skill
+    // returned" framing.
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "feat-ctx";
+    let state = json!({
+        "branch": branch,
+        "_continue_pending": "commit",
+        "_continue_context": "Write the commit message now."
+    });
+    setup_git_and_state(dir.path(), branch, &state);
+    let output = run_hook("stop-continue", dir.path(), branch, b"{}");
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(parsed["decision"], "block");
+    let reason = parsed["reason"].as_str().unwrap_or("");
+    assert!(
+        reason.contains("Write the commit message now."),
+        "reason must embed the pending context verbatim: {}",
+        reason
+    );
 }

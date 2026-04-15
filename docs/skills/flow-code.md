@@ -50,6 +50,20 @@ by exactly 1 per task; only the commit is deferred.
 
 ---
 
+## Measurement-Only Tasks
+
+Some plan tasks produce no file changes — a final coverage TOTAL capture
+for the PR body, a threshold verification re-run, or a final regression
+re-run the plan names explicitly. The Code phase still routes these
+through `/flow-commit`, which detects the empty diff, prints "Nothing to
+commit", and returns to the caller without running `finalize-commit`.
+The `code_task` counter advances normally and the self-invocation at the
+end of the Commit sequence fires unchanged, so every task — file-changing
+or not — flows through the same commit funnel and honors the "All commits
+via `/flow-commit`" convention.
+
+---
+
 ## Project Architecture Enforced
 
 Architecture checks are defined by the project's CLAUDE.md. Each project documents its own conventions for reading code before writing, using test infrastructure correctly, and following its own architecture rules.
