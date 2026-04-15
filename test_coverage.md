@@ -104,16 +104,20 @@ fragments — terminal initialization, subprocess spawns, AppleScript
 result extraction via `output.status.success()`, and `process::exit`
 sites that cannot be reached from inside the test process.
 
-### open_url Command::spawn (lines 1153–1157)
+### abort_flow raw-mode dance and subprocess spawn (lines 317–325)
 
-- `src/tui.rs:1153–1157` — `Command::new(program).args(&args).stdout(Stdio::null()).stderr(Stdio::null()).spawn()`. Spawning the macOS `open` binary requires a real desktop environment; `cargo nextest` runs in a non-interactive subprocess where the spawn fires and is immediately discarded by the `let _ =`. The (program, args) decision is fully covered by `build_open_url_command` tests; only the spawn itself is unreachable.
+- `src/tui.rs:317–325` — `disable_raw_mode()` + `execute!(stdout, LeaveAlternateScreen)` + `eprintln!` + `Command::new(&bin_flow).args(&args).status()` + `enable_raw_mode()` + `execute!(stdout, EnterAlternateScreen)`. Toggling raw mode and the alternate screen requires a real terminal, and spawning `bin/flow cleanup` requires a primed target project — neither is present inside `cargo nextest`. The cleanup argument vector is fully covered by `build_cleanup_command_args` tests; only the spawn + terminal manipulation is unreachable.
 
-### activate_iterm_tab osascript spawn (lines 1199–1207)
+### open_url Command::spawn (lines 1211–1215)
 
-- `src/tui.rs:1199–1206` — `Command::new("osascript").arg("-e").arg(&script).output()` plus the `output.status.success()` extraction that feeds `parse_osascript_result`. Spawning a real osascript subprocess against an iTerm2 instance is a host-environment dependency; the test suite runs under cargo nextest with no AppleScript runtime guaranteed. The script body is covered by `build_iterm_activation_script` tests; the success/stdout decision is covered by `parse_osascript_result` tests; only the spawn + `output.status.success()` extraction is unreachable.
-- `src/tui.rs:1207` — the `Err(_) => false` arm. Reachable only when the osascript binary is missing entirely; the production failure mode is "iTerm2 inactive" which does NOT take this branch (osascript still runs successfully and returns "not found"). Covered architecturally by the negative-path symmetry in `parse_osascript_result` tests.
+- `src/tui.rs:1211–1215` — `Command::new(program).args(&args).stdout(Stdio::null()).stderr(Stdio::null()).spawn()`. Spawning the macOS `open` binary requires a real desktop environment; `cargo nextest` runs in a non-interactive subprocess where the spawn fires and is immediately discarded by the `let _ =`. The (program, args) decision is fully covered by `build_open_url_command` tests; only the spawn itself is unreachable.
 
-### find_bin_flow current_exe wrapper (lines 1234–1241)
+### activate_iterm_tab osascript spawn (lines 1257–1265)
 
-- `src/tui.rs:1234–1240` — the `current_exe()` lookup, the `Some(bin_flow) => return` happy-path return, and the `PathBuf::from("bin/flow")` fallback. `std::env::current_exe()` returns the test runner binary inside `cargo nextest`, not the production `flow-rs` binary, so the happy-path branch never resolves to the real `<root>/bin/flow` and the fallback is structurally a "best effort" path. The walk-up + existence check is fully covered by `derive_bin_flow_path` tests against synthetic tmpdir fixtures; only the outer `current_exe`/return shape remains unreachable.
+- `src/tui.rs:1257–1264` — `Command::new("osascript").arg("-e").arg(&script).output()` plus the `output.status.success()` extraction that feeds `parse_osascript_result`. Spawning a real osascript subprocess against an iTerm2 instance is a host-environment dependency; the test suite runs under cargo nextest with no AppleScript runtime guaranteed. The script body is covered by `build_iterm_activation_script` tests; the success/stdout decision is covered by `parse_osascript_result` tests; only the spawn + `output.status.success()` extraction is unreachable.
+- `src/tui.rs:1265` — the `Err(_) => false` arm. Reachable only when the osascript binary is missing entirely; the production failure mode is "iTerm2 inactive" which does NOT take this branch (osascript still runs successfully and returns "not found"). Covered architecturally by the negative-path symmetry in `parse_osascript_result` tests.
+
+### find_bin_flow current_exe wrapper (lines 1292–1299)
+
+- `src/tui.rs:1292–1298` — the `current_exe()` lookup, the `Some(bin_flow) => return` happy-path return, and the `PathBuf::from("bin/flow")` fallback. `std::env::current_exe()` returns the test runner binary inside `cargo nextest`, not the production `flow-rs` binary, so the happy-path branch never resolves to the real `<root>/bin/flow` and the fallback is structurally a "best effort" path. The walk-up + existence check is fully covered by `derive_bin_flow_path` tests against synthetic tmpdir fixtures; only the outer `current_exe`/return shape remains unreachable.
 

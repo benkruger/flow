@@ -307,30 +307,18 @@ impl TuiApp {
             return;
         }
         let flow = &self.flows[self.selected];
-        let branch = &flow.branch;
-        let worktree = &flow.worktree;
-        let pr_number = flow.pr_number;
+        let args =
+            build_cleanup_command_args(&self.root, &flow.branch, &flow.worktree, flow.pr_number);
 
         // Find bin/flow relative to this binary
         let bin_flow = find_bin_flow();
-
-        let mut cmd = Command::new(&bin_flow);
-        cmd.arg("cleanup")
-            .arg(self.root.to_str().unwrap_or("."))
-            .arg("--branch")
-            .arg(branch)
-            .arg("--worktree")
-            .arg(worktree);
-        if let Some(pr) = pr_number {
-            cmd.arg("--pr").arg(pr.to_string());
-        }
 
         // Exit alternate screen for cleanup output
         let _ = disable_raw_mode();
         let _ = execute!(io::stdout(), LeaveAlternateScreen);
 
         eprintln!("Aborting flow: {}...", flow.feature);
-        let _ = cmd.status();
+        let _ = Command::new(&bin_flow).args(&args).status();
 
         // Re-enter alternate screen
         let _ = enable_raw_mode();
@@ -1158,6 +1146,33 @@ fn orch_issue_url(repo: Option<&str>, issue_number: Option<i64>) -> Option<Strin
     Some(format!("https://github.com/{}/issues/{}", repo, num))
 }
 
+/// Compose the argument vector for `bin/flow cleanup`. `root` is
+/// lossy-converted to a `&str` (non-UTF-8 paths fall back to `.`,
+/// matching the pre-extraction behaviour). The `--pr <n>` pair is
+/// appended only when `pr_number` is `Some`.
+///
+/// Pure helper — no IO. Used by `TuiApp::abort_flow`.
+fn build_cleanup_command_args(
+    root: &Path,
+    branch: &str,
+    worktree: &str,
+    pr_number: Option<i64>,
+) -> Vec<String> {
+    let mut args = vec![
+        "cleanup".to_string(),
+        root.to_str().unwrap_or(".").to_string(),
+        "--branch".to_string(),
+        branch.to_string(),
+        "--worktree".to_string(),
+        worktree.to_string(),
+    ];
+    if let Some(pr) = pr_number {
+        args.push("--pr".to_string());
+        args.push(pr.to_string());
+    }
+    args
+}
+
 /// Read a flow's `session_tty` field from its raw state JSON.
 /// Returns `None` when the field is missing or non-string. Empty
 /// strings pass through as `Some("")` so the caller decides what to
@@ -1538,6 +1553,68 @@ mod tests {
     #[test]
     fn orch_issue_url_returns_none_when_issue_number_missing() {
         assert_eq!(orch_issue_url(Some("o/r"), None), None);
+    }
+
+    // --- build_cleanup_command_args ---
+
+    #[test]
+    fn cleanup_args_include_pr_flag_when_some() {
+        let args = build_cleanup_command_args(
+            Path::new("/home/user/project"),
+            "feature-x",
+            ".worktrees/feature-x",
+            Some(42),
+        );
+        assert_eq!(
+            args,
+            vec![
+                "cleanup".to_string(),
+                "/home/user/project".to_string(),
+                "--branch".to_string(),
+                "feature-x".to_string(),
+                "--worktree".to_string(),
+                ".worktrees/feature-x".to_string(),
+                "--pr".to_string(),
+                "42".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn cleanup_args_omit_pr_flag_when_none() {
+        let args = build_cleanup_command_args(
+            Path::new("/home/user/project"),
+            "feature-x",
+            ".worktrees/feature-x",
+            None,
+        );
+        assert_eq!(
+            args,
+            vec![
+                "cleanup".to_string(),
+                "/home/user/project".to_string(),
+                "--branch".to_string(),
+                "feature-x".to_string(),
+                "--worktree".to_string(),
+                ".worktrees/feature-x".to_string(),
+            ]
+        );
+        // Verify no `--pr` leaked in.
+        assert!(!args.iter().any(|a| a == "--pr"));
+    }
+
+    #[test]
+    fn cleanup_args_preserve_spaces_in_root_path() {
+        // Path::to_str on a space-containing path yields the string
+        // verbatim — `Command::args` will handle the spawn-side
+        // quoting. Test pins the no-escape contract.
+        let args = build_cleanup_command_args(
+            Path::new("/home/user/my project"),
+            "b",
+            ".worktrees/b",
+            None,
+        );
+        assert_eq!(args[1], "/home/user/my project");
     }
 
     // --- worktree_session_tty ---
