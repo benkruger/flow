@@ -94,6 +94,37 @@ added in this PR, every error branch `fetch_blockers` can take is
 exercised by existing tests; adding dedicated `fetch_blockers_*`
 variants would be duplicate coverage.
 
+## src/tui_data.rs
+
+### Transitive coverage for Tasks 15–17 (plan-level waiver)
+
+Plan Tasks 15–17 (`load_all_flows`, `load_orchestration`, and
+`load_account_metrics` tmpdir tests for issue #1135) are already
+covered by pre-existing tests in `src/tui_data.rs::tests`:
+
+- **`load_all_flows`** — `test_load_all_flows_empty`,
+  `_single`, `_multiple`, `_skips_corrupt_json`,
+  `_skips_phases_json`, `_no_state_dir`,
+  `_skips_json_without_branch`, `_sorted_by_phase_then_feature`,
+  `_unknown_phase_sorts_last`.
+- **`load_orchestration`** — `test_load_orchestration_no_file`,
+  `_with_state`, `_corrupt_json`, `_no_state_dir`.
+- **`load_account_metrics`** —
+  `test_load_account_metrics_happy_path`,
+  `_no_cost_directory`, `_no_rate_limits_file`,
+  `_stale_rate_limits`, `_malformed_cost_file`,
+  `_malformed_rate_limits`, `_null_rate_limit_values`.
+
+Per `.claude/rules/docs-with-behavior.md` "Transitive Test
+Coverage After Refactor", Tasks 15–17 are declared transitively
+covered by the named tests above and closed without additional
+test additions. `tui_data.rs` is at 99.04% functions / 98.73%
+lines after Task 14's `refresh_data` integration test; the narrow
+remaining gap in `load_account_metrics` (the `home_override=None`
+env-var branch at lines 746–751) is unreachable without mutating
+`HOME`, which `.claude/rules/testing-gotchas.md` "Rust Parallel
+Test Env Var Races" prohibits.
+
 ## src/tui.rs
 
 Closing the coverage gap on `tui.rs` (issue #1135) extracts the pure
