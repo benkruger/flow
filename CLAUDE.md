@@ -52,7 +52,6 @@ CI will fail if these are missing:
 - Changed skill behavior (new flag, changed steps, different workflow) — update `docs/skills/<name>.md` and the Description column in `docs/skills/index.md` to match
 - Changed phase behavior — update `docs/phases/phase-<N>-<name>.md` and the Description column in `docs/skills/index.md` to match
 - Changed architecture or capabilities — update `README.md` and `docs/index.html` if the change affects how FLOW is described to users
-- New architecturally-unreachable code — add an entry to `test_coverage.md` naming the specific `src/<file>.rs:LINE` coordinates and a one-sentence architectural reason. Every waiver must be tied to a recorded plan-task justification; do not add entries speculatively.
 
 ### Test requirements
 
@@ -75,7 +74,6 @@ CI will fail if these are missing:
 - `assets/bin-stubs/` — self-documenting bash stubs that prime copies into target projects when absent
 - `qa/templates/<name>/` — QA repo templates used by `/flow-qa`
 - `.claude-plugin/marketplace.json` — marketplace registry (version must match plugin.json)
-- `test_coverage.md` — per-file waiver inventory for lines that `bin/test`'s `--fail-under-*` thresholds cannot reach (architecturally unreachable code: `process::exit` sites, defensive dead branches, subprocess paths requiring real-network dependencies). Each entry names specific `src/<file>.rs:LINE` coordinates and a one-sentence architectural reason.
 
 ## Development Environment
 
