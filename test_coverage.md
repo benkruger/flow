@@ -79,14 +79,12 @@ the compiled binary with `--issues-json` fixtures.
 
 ## src/complete_fast.rs
 
-After the `run_impl_inner` extraction (issue #1137), `run_impl` is a
-3-line wrapper threading production dependencies into the testable
-inner function, and the CI dirty-check body lives in
-`production_ci_decider`. The remaining uncovered regions fall into
-two architectural categories: the `run()` CLI entry (terminates the
-test process via `process::exit`) and the `production_ci_decider`
-paths that delegate to `ci::run_impl` (require a real CI
-subprocess).
+`run_impl` is a thin wrapper that threads the production runner and
+CI-decider into `run_impl_inner`; the CI dirty-check body lives in
+`production_ci_decider`. The uncovered regions fall into two
+architectural categories: the `run()` CLI entry (terminates the test
+process via `process::exit`) and the `production_ci_decider` paths
+that delegate to `ci::run_impl` (require a real CI subprocess).
 
 ### `run()` CLI wrapper (lines 607-620)
 
@@ -111,9 +109,10 @@ module.
 
 ### `production_ci_decider` real-CI delegation (lines 408-450)
 
-`production_ci_decider` contains the former inline CI dirty-check
-body from pre-refactor `run_impl` (issue #1137). Its branches split
-into testable structure and untestable delegation:
+`production_ci_decider` owns the Complete-phase CI dirty-check body:
+sentinel lookup, tree-snapshot comparison, and `ci::run_impl`
+invocation on miss. Its branches split into testable structure and
+untestable delegation:
 
 - `src/complete_fast.rs:414-416` — `tree_changed=true` early return.
   Covered by `production_ci_decider_tree_changed_returns_not_skipped`.

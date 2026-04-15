@@ -6,6 +6,34 @@
 //!
 //! Usage: bin/flow complete-fast [--branch <name>] [--auto] [--manual]
 //!
+//! # Architecture
+//!
+//! Two injectable seams make the dispatch unit-testable without real
+//! subprocesses or a real CI run:
+//!
+//! - `runner: &dyn Fn(&[&str], u64) -> CmdResult` — every `gh`, `git`, and
+//!   `bin/flow check-freshness` subprocess call goes through this closure.
+//! - `ci_decider: &CiDecider` — the Complete-phase CI dirty-check block
+//!   (sentinel lookup, tree-snapshot comparison, `ci::run_impl` invocation
+//!   on miss) goes through this closure.
+//!
+//! Production code threads `run_cmd_with_timeout` and `production_ci_decider`
+//! into `run_impl_inner`; unit tests pass mock closures. `run_impl` is a
+//! three-line wrapper that resolves `project_root()` and delegates.
+//!
+//! Shape:
+//!
+//! ```text
+//! run(args) [CLI entry, process::exit on error]
+//!   └─ run_impl(args) [threads production deps]
+//!        └─ run_impl_inner(args, root, runner, ci_decider) [pure dispatch]
+//!             ├─ check_pr_status(..., runner)
+//!             ├─ merge_main(runner)
+//!             ├─ ci_decider(root, cwd, branch, tree_changed) → (ci_skipped, ci_failed_output)
+//!             ├─ runner(&["gh", "pr", "checks", ...])
+//!             └─ fast_inner(..., runner) [mode/freshness/squash-merge dispatch]
+//! ```
+//!
 //! Output (JSON to stdout):
 //!   Merged:       {"status": "ok", "path": "merged", ...}
 //!   Already:      {"status": "ok", "path": "already_merged", ...}
@@ -48,8 +76,22 @@ pub struct Args {
 }
 
 /// Read and parse a state file, returning (state_value, state_path).
+///
+/// Uses `FlowPaths::try_new` so a branch that contains '/' (e.g.
+/// `feature/foo`, `dependabot/*`) produces a structured error instead
+/// of panicking — `--branch` from the CLI is external input per
+/// `.claude/rules/external-input-validation.md`.
 fn read_state(root: &Path, branch: &str) -> Result<(Value, PathBuf), String> {
-    let state_path = FlowPaths::new(root, branch).state_file();
+    let state_path = FlowPaths::try_new(root, branch)
+        .ok_or_else(|| {
+            format!(
+                "Branch name '{}' is not a valid FLOW branch (contains '/' or is empty). \
+                 FLOW state files use a flat layout that cannot address slash-containing \
+                 branches; resume the flow in its canonical branch name.",
+                branch
+            )
+        })?
+        .state_file();
     if !state_path.exists() {
         return Err(format!(
             "No state file found for branch '{}'. Run /flow:flow-start first.",
@@ -395,16 +437,19 @@ pub type CiDecider = dyn Fn(&Path, &Path, &str, bool) -> (bool, Option<String>);
 /// Production CI-decider for the Complete phase dirty-check block.
 ///
 /// Returns `(ci_skipped, ci_failed_output)`:
-/// - `ci_skipped` is `true` when the sentinel file's stored tree
-///   snapshot matches the current cwd's snapshot, meaning a prior
-///   `bin/flow ci` run on this same tree already passed.
+/// - `ci_skipped` is `true` only when the sentinel file's stored tree
+///   snapshot matches the current cwd's snapshot — a prior
+///   `bin/flow ci` run on this same tree already passed and the
+///   current `complete-fast` call can skip re-running CI.
 /// - `ci_failed_output` is `Some(msg)` when CI runs and fails; `None`
 ///   when CI is skipped or runs and passes.
 ///
 /// A `tree_changed` input (main was merged into the branch, dirtying
-/// the tree) forces a fresh CI run by returning `(false, None)` — the
-/// caller's fast_inner dispatch then surfaces this as a `ci_stale`
-/// path.
+/// the tree) short-circuits to `(false, None)` without invoking CI.
+/// The `ci_stale` path itself is produced by `fast_inner` from its
+/// own `tree_changed` argument, not from this return value — the same
+/// `(false, None)` is returned when CI runs and passes, which does
+/// not produce `ci_stale`.
 fn production_ci_decider(
     root: &Path,
     cwd: &Path,
@@ -1663,6 +1708,34 @@ mod tests {
         fs::write(&state_path, "[]").unwrap();
         let err = read_state(dir.path(), "arr").unwrap_err();
         assert!(err.contains("Corrupt state file"));
+    }
+
+    #[test]
+    fn read_state_slash_branch_returns_structured_error_no_panic() {
+        // External input via `--branch` CLI override can carry slashes
+        // (`feature/foo`, `dependabot/*`). FlowPaths::new would panic;
+        // read_state must return a structured error instead.
+        let dir = tempfile::tempdir().unwrap();
+        let err = read_state(dir.path(), "feature/foo").unwrap_err();
+        assert!(err.contains("not a valid FLOW branch"));
+        assert!(err.contains("feature/foo"));
+    }
+
+    #[test]
+    fn run_impl_inner_slash_branch_returns_structured_error_no_panic() {
+        // End-to-end guard: --branch dependabot/cargo/serde-1.0.0 must
+        // produce a structured error through the entry point, not a
+        // process panic.
+        let dir = tempfile::tempdir().unwrap();
+        let runner = mock_runner(vec![]);
+        let args = Args {
+            branch: Some("dependabot/cargo/serde-1.0.0".to_string()),
+            auto: true,
+            manual: false,
+        };
+        let result = run_impl_inner(&args, dir.path(), &runner, &no_ci);
+        let err = result.unwrap_err();
+        assert!(err.contains("not a valid FLOW branch"));
     }
 
     #[test]
