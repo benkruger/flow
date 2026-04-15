@@ -256,3 +256,79 @@ gutted subsection passed the test. The fix bounded the slice with
 `split_once("### Measurement-Only Tasks")` followed by
 `split_once("\n### ")`. This rule codifies the pattern so future
 contract tests ship bounded from the start.
+
+## macOS Subprocess Path Canonicalization
+
+When a subprocess test spawns a child binary with `current_dir(dir)`
+and the child's production code computes paths from its `current_dir()`,
+the test fixture's path construction must match the child's view of
+the cwd — not the parent's. On macOS, `tempfile::tempdir()` returns a
+path under `/var/folders/...`, which is a symlink to
+`/private/var/folders/...`. The child's `std::env::current_dir()`
+resolves through the symlink and returns the canonical
+`/private/var/` form. If the test then constructs a `file_path` from
+the non-canonical `dir.path()` and passes it to the child, any
+production `starts_with` prefix check between the child's canonical
+cwd-derived project_root and the test's non-canonical file_path
+silently fails — and whichever fallback the production code takes
+(often an "outside project = allow" early return) fires instead of
+the branch the test claims to verify. The test passes vacuously.
+
+**The rule.** Every subprocess-spawning test that computes a file
+path for the child's `tool_input` (or equivalent payload) must
+canonicalize the tempdir root before constructing any descendant
+path. Do this once at the top of the test body and carry the
+canonical `root` through every `join()` call:
+
+```rust
+#[test]
+fn my_subprocess_test() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();  // <-- canonical
+    let worktree = root.join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let target = root.join("src/lib.rs");
+    // ... spawn child with current_dir(&worktree) ...
+}
+```
+
+**Why allow-path tests need this too.** The temptation is to think
+"only the block path compares paths, so only block tests need
+canonicalization." That is wrong. Allow paths also take their
+classification based on path comparisons — the "outside project"
+early-return is itself a code path, and a test that passes the
+"outside project" branch when it expected to test the ".flow-states
+allow" branch is vacuous. The fix is universal: canonicalize
+everywhere.
+
+**How to apply.** When reviewing a new subprocess test that spawns a
+child binary and passes a file_path constructed from the tempdir
+root, check that the test either canonicalizes at construction
+time or spawns with a cwd that shares the same
+canonicalization state as the file_path. Tests that fail this check
+are vacuous on macOS — fix them by canonicalizing.
+
+## Document Test Fixture Helpers
+
+Test fixture helpers that create worktrees, state files, settings
+files, or similar test environments are part of the test
+infrastructure — not scratch code. Every fixture helper that other
+tests depend on must have a doc comment that explains:
+
+1. What the helper returns (including what filesystem state it
+   creates as a side effect)
+2. What each parameter controls and what values mean (especially
+   for boolean flags like `with_state_file: bool` and slice
+   parameters like `allow_patterns: &[&str]`)
+3. Any production invariants the helper must satisfy that are
+   non-obvious (e.g., writing a `.git` marker file so
+   `detect_branch_from_cwd` succeeds instead of falling back to
+   `git branch --show-current`)
+
+A newcomer adding a test to the same file must be able to discover
+the helper's contract without reading its body or tracing the
+production code it emulates. The reference pattern is
+`setup_worktree_fixture` and `setup_pretool_fixture` in
+`tests/hooks.rs`, whose doc comments call out the `.git` marker
+rationale, the `with_state_file` branch, and the `allow_patterns`
+format.
