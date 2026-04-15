@@ -631,7 +631,8 @@ fn main() {
             flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::FormatPrTimings(args)) => {
-            format_pr_timings::run(args);
+            let (value, code) = format_pr_timings::run_impl_main(&args);
+            flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::FinalizeCommit(args)) => {
             finalize_commit::run(args);
