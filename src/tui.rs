@@ -1217,3 +1217,42 @@ fn atty_check() -> bool {
     // in a normal Unix process.
     unsafe { libc::isatty(libc::STDOUT_FILENO) != 0 }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- rl_color ---
+
+    #[test]
+    fn rl_color_below_yellow_threshold_is_default() {
+        // Below 70% — no color modifier applied.
+        assert_eq!(rl_color(0).fg, None);
+        assert_eq!(rl_color(1).fg, None);
+        assert_eq!(rl_color(69).fg, None);
+    }
+
+    #[test]
+    fn rl_color_yellow_band_is_yellow() {
+        // 70..=89 → Yellow.
+        assert_eq!(rl_color(70).fg, Some(Color::Yellow));
+        assert_eq!(rl_color(80).fg, Some(Color::Yellow));
+        assert_eq!(rl_color(89).fg, Some(Color::Yellow));
+    }
+
+    #[test]
+    fn rl_color_red_band_is_red() {
+        // 90..=100 (and above) → Red.
+        assert_eq!(rl_color(90).fg, Some(Color::Red));
+        assert_eq!(rl_color(95).fg, Some(Color::Red));
+        assert_eq!(rl_color(100).fg, Some(Color::Red));
+        assert_eq!(rl_color(150).fg, Some(Color::Red));
+    }
+
+    #[test]
+    fn rl_color_negative_input_is_default() {
+        // Negative percentages (e.g., from corrupted state) fall through to default.
+        assert_eq!(rl_color(-1).fg, None);
+        assert_eq!(rl_color(-100).fg, None);
+    }
+}
