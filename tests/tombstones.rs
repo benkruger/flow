@@ -577,3 +577,108 @@ mod source_scanner_tests {
         assert!(scan(src));
     }
 }
+
+// --- TUI refactor removals ---
+//
+// PR #1154 (issue #1135) extracted the TUI's subprocess surface into a
+// `TuiAppPlatform` struct and moved the crossterm terminal lifecycle into
+// `src/main.rs::run_tui_terminal`. The public API surface lost several
+// identifiers: `flow_rs::tui::run` (the module-level entry point),
+// `TuiApp::run_terminal` (the method variant that owned the crossterm
+// setup+cleanup), and the free functions `open_url` and
+// `activate_iterm_tab`. These tombstones fail CI if a merge conflict
+// resolution resurrects any of them.
+
+#[test]
+fn test_tui_no_free_fn_run_terminal() {
+    // Tombstone: removed in PR #1154. Method was superseded by the
+    // draw/events-closure seam in `TuiApp::run_event_loop` plus the
+    // crossterm glue in `src/main.rs::run_tui_terminal`.
+    let root = common::repo_root();
+    let path = root.join("src/tui.rs");
+    let content = fs::read_to_string(&path).expect("src/tui.rs must exist");
+    assert!(
+        !content.contains("pub fn run_terminal"),
+        "src/tui.rs must not define pub fn run_terminal — superseded by \
+         TuiApp::run_event_loop + src/main.rs::run_tui_terminal in PR #1154"
+    );
+}
+
+#[test]
+fn test_tui_no_free_fn_activate_iterm_tab() {
+    // Tombstone: removed in PR #1154. The free function became a
+    // method on `TuiApp` that reads `self.platform.osascript_binary`
+    // so tests can inject a /bin/true stub and cover the spawn path.
+    let root = common::repo_root();
+    let path = root.join("src/tui.rs");
+    let content = fs::read_to_string(&path).expect("src/tui.rs must exist");
+    // The method form `fn activate_iterm_tab(&self, ...)` is allowed;
+    // the free-fn form `fn activate_iterm_tab(session_tty` (no &self)
+    // is the removed shape.
+    assert!(
+        !content.contains("fn activate_iterm_tab(session_tty"),
+        "src/tui.rs must not define the free-fn activate_iterm_tab(session_tty: ...) — \
+         superseded by TuiApp::activate_iterm_tab in PR #1154"
+    );
+}
+
+#[test]
+fn test_tui_no_free_fn_open_url() {
+    // Tombstone: removed in PR #1154. Free fn was superseded by
+    // `TuiApp::open_url` which reads `self.platform.open_binary`.
+    let root = common::repo_root();
+    let path = root.join("src/tui.rs");
+    let content = fs::read_to_string(&path).expect("src/tui.rs must exist");
+    assert!(
+        !content.contains("fn open_url(url: &str)"),
+        "src/tui.rs must not define the free-fn open_url(url: &str) — \
+         superseded by TuiApp::open_url in PR #1154"
+    );
+}
+
+#[test]
+fn test_tui_no_free_fn_find_bin_flow() {
+    // Tombstone: removed in PR #1154. Binary-path resolution now
+    // happens once at `TuiAppPlatform::production()` via
+    // `derive_bin_flow_path`, then is cached on the platform struct.
+    let root = common::repo_root();
+    let path = root.join("src/tui.rs");
+    let content = fs::read_to_string(&path).expect("src/tui.rs must exist");
+    assert!(
+        !content.contains("fn find_bin_flow"),
+        "src/tui.rs must not define find_bin_flow — superseded by \
+         TuiAppPlatform::production() + derive_bin_flow_path in PR #1154"
+    );
+}
+
+#[test]
+fn test_tui_no_module_level_run_fn() {
+    // Tombstone: removed in PR #1154. `flow_rs::tui::run(root,
+    // version, repo)` was the pre-refactor entry point that wrapped
+    // construction + terminal setup + event loop in one. It is
+    // superseded by `TuiApp::new(root, version, repo, platform)` +
+    // `run_tui_terminal(&mut app)` in `src/main.rs`.
+    let root = common::repo_root();
+    let path = root.join("src/tui.rs");
+    let content = fs::read_to_string(&path).expect("src/tui.rs must exist");
+    assert!(
+        !content.contains("pub fn run(root: PathBuf"),
+        "src/tui.rs must not define pub fn run(root: PathBuf, ...) — \
+         superseded by TuiApp::new + run_tui_terminal in PR #1154"
+    );
+}
+
+#[test]
+fn test_tui_no_module_level_atty_check() {
+    // Tombstone: removed in PR #1154. The atty check was inlined
+    // into the TUI dispatch arm in `src/main.rs` using libc::isatty
+    // directly — the free function form is gone.
+    let root = common::repo_root();
+    let path = root.join("src/tui.rs");
+    let content = fs::read_to_string(&path).expect("src/tui.rs must exist");
+    assert!(
+        !content.contains("fn atty_check"),
+        "src/tui.rs must not define atty_check — the tty check lives \
+         inline in src/main.rs after PR #1154"
+    );
+}
