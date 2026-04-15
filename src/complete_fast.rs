@@ -1358,6 +1358,20 @@ mod tests {
             .contains("Push failed after freshness merge"));
     }
 
+    // --- production_ci_decider ---
+
+    #[test]
+    fn production_ci_decider_tree_changed_returns_not_skipped() {
+        // When main was merged into the branch, tree_changed=true forces
+        // a fresh CI run regardless of sentinel state. The decider
+        // short-circuits and returns (false, None) without touching the
+        // sentinel, so fast_inner's ci_stale path surfaces.
+        let dir = tempfile::tempdir().unwrap();
+        let (skipped, failed) = production_ci_decider(dir.path(), dir.path(), "test-feature", true);
+        assert!(!skipped);
+        assert!(failed.is_none());
+    }
+
     // --- run_impl_inner ---
 
     fn no_ci(_: &Path, _: &Path, _: &str, _: bool) -> (bool, Option<String>) {
