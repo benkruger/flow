@@ -9,7 +9,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifi
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
-use flow_rs::tui::{TuiApp, View};
+use flow_rs::tui::{TuiApp, TuiAppPlatform, View};
 use flow_rs::tui_data::{
     AccountMetrics, FlowSummary, IssueSummary, OrchestrationItem, OrchestrationSummary,
     TimelineEntry,
@@ -22,6 +22,7 @@ fn make_app() -> TuiApp {
         PathBuf::from("/tmp/test"),
         "1.0.0".to_string(),
         Some("test/repo".to_string()),
+        TuiAppPlatform::for_tests(),
     )
 }
 
@@ -123,7 +124,12 @@ fn test_tui_app_repo_name_extracted() {
 
 #[test]
 fn test_tui_app_repo_name_none() {
-    let app = TuiApp::new(PathBuf::from("/tmp"), "1.0.0".to_string(), None);
+    let app = TuiApp::new(
+        PathBuf::from("/tmp"),
+        "1.0.0".to_string(),
+        None,
+        TuiAppPlatform::for_tests(),
+    );
     assert!(app.repo_name.is_none());
 }
 
@@ -796,7 +802,12 @@ fn test_render_log_view_with_entries() {
     )
     .unwrap();
 
-    let mut app = TuiApp::new(root.to_path_buf(), "1.0.0".to_string(), None);
+    let mut app = TuiApp::new(
+        root.to_path_buf(),
+        "1.0.0".to_string(),
+        None,
+        TuiAppPlatform::for_tests(),
+    );
     let mut flow = make_flow("Log Feature", "Code", 3);
     flow.branch = "test-feature".to_string();
     app.flows = vec![flow];
@@ -913,7 +924,12 @@ fn test_input_p_in_list_view_dispatches_without_spawn() {
 fn test_input_capital_i_in_list_view_dispatches_without_spawn() {
     // No repo in state AND no fallback repo → flow_issue_url returns
     // None → open_flow_issue early-returns before open_url.
-    let mut app = TuiApp::new(PathBuf::from("/tmp/test"), "1.0.0".to_string(), None);
+    let mut app = TuiApp::new(
+        PathBuf::from("/tmp/test"),
+        "1.0.0".to_string(),
+        None,
+        TuiAppPlatform::for_tests(),
+    );
     let mut flow = make_flow("A", "Code", 3);
     flow.state = serde_json::json!({"branch": "a"});
     flow.issue_numbers = vec![42];
@@ -927,7 +943,12 @@ fn test_input_r_in_list_view_refreshes_data_from_tmpdir() {
     // Press r → refresh_data reads .flow-states/, clears flows
     // because the tmpdir has no state files.
     let tmp = tempfile::TempDir::new().unwrap();
-    let mut app = TuiApp::new(tmp.path().to_path_buf(), "1.0.0".to_string(), None);
+    let mut app = TuiApp::new(
+        tmp.path().to_path_buf(),
+        "1.0.0".to_string(),
+        None,
+        TuiAppPlatform::for_tests(),
+    );
     app.flows = vec![make_flow("Pre-refresh", "Code", 3)];
     app.handle_key(key(KeyCode::Char('r')));
     // After refresh, no state files found → flows is empty.
@@ -937,7 +958,12 @@ fn test_input_r_in_list_view_refreshes_data_from_tmpdir() {
 #[test]
 fn test_input_r_in_orch_view_refreshes_data() {
     let tmp = tempfile::TempDir::new().unwrap();
-    let mut app = TuiApp::new(tmp.path().to_path_buf(), "1.0.0".to_string(), None);
+    let mut app = TuiApp::new(
+        tmp.path().to_path_buf(),
+        "1.0.0".to_string(),
+        None,
+        TuiAppPlatform::for_tests(),
+    );
     app.active_tab = 1;
     app.orch_data = Some(OrchestrationSummary {
         elapsed: "5m".to_string(),
@@ -956,7 +982,12 @@ fn test_input_r_in_orch_view_refreshes_data() {
 fn test_input_i_in_orch_view_dispatches_without_spawn() {
     // No repo → orch_issue_url returns None → open_orch_issue
     // early-returns before open_url.
-    let mut app = TuiApp::new(PathBuf::from("/tmp/test"), "1.0.0".to_string(), None);
+    let mut app = TuiApp::new(
+        PathBuf::from("/tmp/test"),
+        "1.0.0".to_string(),
+        None,
+        TuiAppPlatform::for_tests(),
+    );
     app.active_tab = 1;
     app.orch_data = Some(OrchestrationSummary {
         elapsed: "5m".to_string(),
@@ -1020,7 +1051,12 @@ fn test_refresh_data_populates_flows_orch_and_metrics_and_clamps_indices() {
     std::fs::create_dir_all(&cost_dir).unwrap();
     std::fs::write(cost_dir.join("session1"), "1.50").unwrap();
 
-    let mut app = TuiApp::new(root.to_path_buf(), "1.0.0".to_string(), None);
+    let mut app = TuiApp::new(
+        root.to_path_buf(),
+        "1.0.0".to_string(),
+        None,
+        TuiAppPlatform::for_tests(),
+    );
     // Pre-set the selection indices past the end of the refreshed
     // lists to exercise the saturating-clamp logic.
     app.selected = 99;

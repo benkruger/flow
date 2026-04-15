@@ -39,6 +39,64 @@ pub enum View {
     Tasks,
 }
 
+/// Platform-bound external dependencies injected into `TuiApp`.
+///
+/// The four fields hold the subprocess binary names and filesystem
+/// anchors that the TUI reaches out to when running on a real machine.
+/// Production constructs the platform via `TuiAppPlatform::production()`,
+/// which resolves `HOME` from the env and walks up from the current
+/// executable to find `bin/flow`. Tests construct via
+/// `TuiAppPlatform::for_tests()`, which points every binary at
+/// `/bin/true` so spawn sites run the real `Command::new().spawn()`
+/// chain without side effects.
+pub struct TuiAppPlatform {
+    /// Binary that opens URLs in the default browser. Production:
+    /// `"open"` (macOS). Tests: `"/bin/true"`.
+    pub open_binary: String,
+    /// Binary that runs AppleScript snippets. Production:
+    /// `"osascript"`. Tests: `"/bin/true"`.
+    pub osascript_binary: String,
+    /// Path to the `bin/flow` binary used for `cleanup`. Production:
+    /// resolved via ancestor walk from `current_exe()`. Tests:
+    /// `"/bin/true"`.
+    pub bin_flow_path: PathBuf,
+    /// Home directory, used by `tui_data::load_account_metrics` for
+    /// rate-limits lookup. Production: `$HOME`. Tests: `temp_dir()`.
+    pub home: PathBuf,
+}
+
+impl TuiAppPlatform {
+    /// Construct the production platform. Reads `$HOME` from the
+    /// env and walks up from `std::env::current_exe()` to find
+    /// `bin/flow`.
+    pub fn production() -> Self {
+        let bin_flow_path = std::env::current_exe()
+            .ok()
+            .as_deref()
+            .and_then(derive_bin_flow_path)
+            .unwrap_or_else(|| PathBuf::from("bin/flow"));
+        let home = std::env::var("HOME").map(PathBuf::from).unwrap_or_default();
+        Self {
+            open_binary: "open".to_string(),
+            osascript_binary: "osascript".to_string(),
+            bin_flow_path,
+            home,
+        }
+    }
+
+    /// Construct a test platform. Every spawn target is `/bin/true`
+    /// so tests exercise the real `Command::new().spawn()` chain
+    /// without any side effects. `home` is `std::env::temp_dir()`.
+    pub fn for_tests() -> Self {
+        Self {
+            open_binary: "/bin/true".to_string(),
+            osascript_binary: "/bin/true".to_string(),
+            bin_flow_path: PathBuf::from("/bin/true"),
+            home: std::env::temp_dir(),
+        }
+    }
+}
+
 /// The main TUI application state.
 pub struct TuiApp {
     pub root: PathBuf,
@@ -55,11 +113,21 @@ pub struct TuiApp {
     pub orch_selected: usize,
     pub issue_selected: usize,
     pub metrics: AccountMetrics,
+    pub platform: TuiAppPlatform,
 }
 
 impl TuiApp {
-    /// Create a new TuiApp with the given root directory.
-    pub fn new(root: PathBuf, version: String, repo: Option<String>) -> Self {
+    /// Create a new TuiApp with the given root directory and platform.
+    ///
+    /// The `platform` argument supplies subprocess binary names and
+    /// filesystem anchors so the TUI's IO surface can be exercised by
+    /// tests with `/bin/true` stubs and tmpdir homes.
+    pub fn new(
+        root: PathBuf,
+        version: String,
+        repo: Option<String>,
+        platform: TuiAppPlatform,
+    ) -> Self {
         let repo_name = repo
             .as_ref()
             .map(|r| r.rsplit('/').next().unwrap_or(r.as_str()).to_string());
@@ -83,7 +151,19 @@ impl TuiApp {
                 rl_7d: None,
                 stale: true,
             },
+            platform,
         }
+    }
+
+    /// Open a URL in the default browser using the platform-supplied
+    /// binary. Production: `open <url>` on macOS. Tests: `/bin/true
+    /// <url>` — ignores the URL, exits 0, no side effect.
+    pub fn open_url(&self, url: &str) {
+        let _ = Command::new(&self.platform.open_binary)
+            .arg(url)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
     }
 
     /// Reload all data from state files.
@@ -227,7 +307,7 @@ impl TuiApp {
             }
             KeyCode::Enter => {
                 if let Some(url) = issue_open_target(&flow.issues, self.issue_selected) {
-                    open_url(url);
+                    self.open_url(url);
                 }
             }
             _ => {}
@@ -276,7 +356,7 @@ impl TuiApp {
         let flow = &self.flows[self.selected];
         if let Some(ref url) = flow.pr_url {
             let files_url = pr_files_url(url);
-            open_url(&files_url);
+            self.open_url(&files_url);
         }
     }
 
@@ -286,7 +366,7 @@ impl TuiApp {
         }
         let flow = &self.flows[self.selected];
         if let Some(url) = flow_issue_url(&flow.state, self.repo.as_deref(), &flow.issue_numbers) {
-            open_url(&url);
+            self.open_url(&url);
         }
     }
 
@@ -294,7 +374,7 @@ impl TuiApp {
         if let Some(ref orch) = self.orch_data {
             if let Some(item) = orch.items.get(self.orch_selected) {
                 if let Some(url) = orch_issue_url(self.repo.as_deref(), item.issue_number) {
-                    open_url(&url);
+                    self.open_url(&url);
                 }
             }
         }
@@ -1216,27 +1296,6 @@ fn rl_color(pct: i64) -> Style {
     }
 }
 
-/// Build the (program, args) pair that opens `url` in the default
-/// macOS browser. Returns `("open", vec![url])` — the URL passes
-/// through unmodified so callers can audit the spawn surface as data
-/// rather than as a chained `Command` builder.
-///
-/// Pure helper — `Command::spawn` happens in `open_url` and is covered
-/// by `test_coverage.md`.
-fn build_open_url_command(url: &str) -> (&'static str, Vec<String>) {
-    ("open", vec![url.to_string()])
-}
-
-/// Open a URL in the default browser (macOS).
-fn open_url(url: &str) {
-    let (program, args) = build_open_url_command(url);
-    let _ = Command::new(program)
-        .args(&args)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
-}
-
 /// Build the AppleScript text that asks iTerm2 to find and select the
 /// tab whose session tty matches `session_tty`.
 ///
@@ -1327,7 +1386,7 @@ pub fn run(root: PathBuf, version: String, repo: Option<String>) -> io::Result<(
         eprintln!("Error: flow tui requires an interactive terminal.");
         std::process::exit(1);
     }
-    let mut app = TuiApp::new(root, version, repo);
+    let mut app = TuiApp::new(root, version, repo, TuiAppPlatform::production());
     app.run_terminal()
 }
 
@@ -1411,6 +1470,49 @@ mod tests {
         assert!(script.ends_with("end tell"));
     }
 
+    // --- TuiAppPlatform ---
+
+    #[test]
+    fn platform_production_resolves_fields_without_panic() {
+        // Runs the real production factory against the dev machine's
+        // env. The test asserts the factory returns without panicking
+        // and populates each field with a non-empty value that
+        // callers can feed to `Command::new`.
+        let p = TuiAppPlatform::production();
+        assert_eq!(p.open_binary, "open");
+        assert_eq!(p.osascript_binary, "osascript");
+        // bin_flow_path is either the resolved absolute path or the
+        // "bin/flow" fallback — both are non-empty.
+        assert!(!p.bin_flow_path.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn platform_for_tests_uses_true_binary_and_temp_home() {
+        let p = TuiAppPlatform::for_tests();
+        assert_eq!(p.open_binary, "/bin/true");
+        assert_eq!(p.osascript_binary, "/bin/true");
+        assert_eq!(p.bin_flow_path, PathBuf::from("/bin/true"));
+        assert!(p.home.exists() || p.home == std::env::temp_dir());
+    }
+
+    #[test]
+    fn tuiapp_open_url_spawns_platform_binary_without_panic() {
+        // Construct a TuiApp with the test platform (/bin/true) and
+        // call open_url directly. /bin/true ignores its args and exits
+        // 0; the spawn returns a child handle that we drop. The entire
+        // Command::new(...).spawn() chain runs for real.
+        let app = TuiApp::new(
+            PathBuf::from("/tmp/test"),
+            "1.0.0".to_string(),
+            None,
+            TuiAppPlatform::for_tests(),
+        );
+        app.open_url("https://example.com/anything");
+        // No assertion needed — the test passes if the call does not
+        // panic. The spawn is best-effort; /bin/true is present on
+        // every Unix machine the test suite runs on.
+    }
+
     // --- parse_osascript_result ---
 
     #[test]
@@ -1440,29 +1542,6 @@ mod tests {
     fn osascript_empty_stdout_is_false() {
         assert!(!parse_osascript_result(true, b""));
         assert!(!parse_osascript_result(false, b""));
-    }
-
-    // --- build_open_url_command ---
-
-    #[test]
-    fn open_url_command_uses_macos_open_binary() {
-        let (program, _args) = build_open_url_command("https://example.com");
-        assert_eq!(program, "open");
-    }
-
-    #[test]
-    fn open_url_command_passes_url_through_unmodified() {
-        let (_, args) = build_open_url_command("https://github.com/o/r/pull/100");
-        assert_eq!(args, vec!["https://github.com/o/r/pull/100".to_string()]);
-    }
-
-    #[test]
-    fn open_url_command_passes_empty_url_through() {
-        // Empty input does NOT get filtered or rewritten — the caller is
-        // responsible for any guards. Test pins the no-validation contract.
-        let (program, args) = build_open_url_command("");
-        assert_eq!(program, "open");
-        assert_eq!(args, vec![String::new()]);
     }
 
     // --- pr_files_url ---
@@ -1825,16 +1904,6 @@ mod tests {
         // because `bin_flow.exists()` reports false on the synthetic root.
         let exe = std::path::PathBuf::from("/nonexistent/target/debug/flow-rs");
         assert_eq!(derive_bin_flow_path(&exe), None);
-    }
-
-    #[test]
-    fn open_url_command_preserves_query_strings_and_fragments() {
-        // No URL escaping happens in the helper — `Command::arg` handles
-        // the shell quoting downstream. Test guards against accidental
-        // future "sanitization" that would corrupt query strings.
-        let url = "https://example.com/path?query=value&other=1#fragment";
-        let (_, args) = build_open_url_command(url);
-        assert_eq!(args, vec![url.to_string()]);
     }
 
     #[test]
