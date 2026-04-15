@@ -104,20 +104,34 @@ fragments — terminal initialization, subprocess spawns, AppleScript
 result extraction via `output.status.success()`, and `process::exit`
 sites that cannot be reached from inside the test process.
 
-### abort_flow raw-mode dance and subprocess spawn (lines 317–325)
+### TuiApp::run_terminal terminal initialization (lines 109–123)
 
-- `src/tui.rs:317–325` — `disable_raw_mode()` + `execute!(stdout, LeaveAlternateScreen)` + `eprintln!` + `Command::new(&bin_flow).args(&args).status()` + `enable_raw_mode()` + `execute!(stdout, EnterAlternateScreen)`. Toggling raw mode and the alternate screen requires a real terminal, and spawning `bin/flow cleanup` requires a primed target project — neither is present inside `cargo nextest`. The cleanup argument vector is fully covered by `build_cleanup_command_args` tests; only the spawn + terminal manipulation is unreachable.
+- `src/tui.rs:109–123` — `enable_raw_mode()` + `execute!(stdout, EnterAlternateScreen)` + `Terminal::new(CrosstermBackend::new(stdout))` + the inner `run_event_loop` call + the guaranteed `disable_raw_mode` / `LeaveAlternateScreen` cleanup. The test process inherits cargo nextest's non-tty stdout, so `enable_raw_mode` returns `ErrorKind::InvalidInput` immediately and the `?` on line 110 short-circuits before any render or event read happens. Constructing a real `CrosstermBackend` against cargo's piped stdout is the underlying obstacle — the render and refresh paths that the event loop wraps are exercised by the dedicated `TestBackend` render tests + `refresh_data` integration test (added in this PR).
 
-### open_url Command::spawn (lines 1211–1215)
+### TuiApp::run_event_loop event poll loop (lines 126–148)
 
-- `src/tui.rs:1211–1215` — `Command::new(program).args(&args).stdout(Stdio::null()).stderr(Stdio::null()).spawn()`. Spawning the macOS `open` binary requires a real desktop environment; `cargo nextest` runs in a non-interactive subprocess where the spawn fires and is immediately discarded by the `let _ =`. The (program, args) decision is fully covered by `build_open_url_command` tests; only the spawn itself is unreachable.
+- `src/tui.rs:126–148` — the inner loop that calls `terminal.draw(...)`, `event::poll(Duration::from_millis(REFRESH_MS))`, and `event::read()`. Crossterm event sources cannot be synthesized without a real terminal (there is no public API for injecting key events into the crossterm reader inside a process that owns no tty), and `Terminal<CrosstermBackend>` construction is itself blocked by the `run_terminal` waiver above. The render-under-loop path is exercised by the `TestBackend`-backed render tests; the refresh-under-loop path is exercised by the dedicated `refresh_data` test.
 
-### activate_iterm_tab osascript spawn (lines 1257–1265)
+### abort_flow raw-mode dance and subprocess spawn (lines 315–323)
 
-- `src/tui.rs:1257–1264` — `Command::new("osascript").arg("-e").arg(&script).output()` plus the `output.status.success()` extraction that feeds `parse_osascript_result`. Spawning a real osascript subprocess against an iTerm2 instance is a host-environment dependency; the test suite runs under cargo nextest with no AppleScript runtime guaranteed. The script body is covered by `build_iterm_activation_script` tests; the success/stdout decision is covered by `parse_osascript_result` tests; only the spawn + `output.status.success()` extraction is unreachable.
-- `src/tui.rs:1265` — the `Err(_) => false` arm. Reachable only when the osascript binary is missing entirely; the production failure mode is "iTerm2 inactive" which does NOT take this branch (osascript still runs successfully and returns "not found"). Covered architecturally by the negative-path symmetry in `parse_osascript_result` tests.
+- `src/tui.rs:315–323` — `disable_raw_mode()` + `execute!(stdout, LeaveAlternateScreen)` + `eprintln!` + `Command::new(&bin_flow).args(&args).status()` + `enable_raw_mode()` + `execute!(stdout, EnterAlternateScreen)`. Toggling raw mode and the alternate screen requires a real terminal, and spawning `bin/flow cleanup` requires a primed target project — neither is present inside `cargo nextest`. The cleanup argument vector is fully covered by `build_cleanup_command_args` tests; only the spawn + terminal manipulation is unreachable.
 
-### find_bin_flow current_exe wrapper (lines 1292–1299)
+### open_url Command::spawn (lines 1233–1237)
 
-- `src/tui.rs:1292–1298` — the `current_exe()` lookup, the `Some(bin_flow) => return` happy-path return, and the `PathBuf::from("bin/flow")` fallback. `std::env::current_exe()` returns the test runner binary inside `cargo nextest`, not the production `flow-rs` binary, so the happy-path branch never resolves to the real `<root>/bin/flow` and the fallback is structurally a "best effort" path. The walk-up + existence check is fully covered by `derive_bin_flow_path` tests against synthetic tmpdir fixtures; only the outer `current_exe`/return shape remains unreachable.
+- `src/tui.rs:1233–1237` — `Command::new(program).args(&args).stdout(Stdio::null()).stderr(Stdio::null()).spawn()`. Spawning the macOS `open` binary requires a real desktop environment; `cargo nextest` runs in a non-interactive subprocess where the spawn fires and is immediately discarded by the `let _ =`. The (program, args) decision is fully covered by `build_open_url_command` tests; only the spawn itself is unreachable.
+
+### activate_iterm_tab osascript spawn (lines 1279–1287)
+
+- `src/tui.rs:1279–1286` — `Command::new("osascript").arg("-e").arg(&script).output()` plus the `output.status.success()` extraction that feeds `parse_osascript_result`. Spawning a real osascript subprocess against an iTerm2 instance is a host-environment dependency; the test suite runs under cargo nextest with no AppleScript runtime guaranteed. The script body is covered by `build_iterm_activation_script` tests; the success/stdout decision is covered by `parse_osascript_result` tests; only the spawn + `output.status.success()` extraction is unreachable.
+- `src/tui.rs:1287` — the `Err(_) => false` arm. Reachable only when the osascript binary is missing entirely; the production failure mode is "iTerm2 inactive" which does NOT take this branch (osascript still runs successfully and returns "not found"). Covered architecturally by the negative-path symmetry in `parse_osascript_result` tests.
+
+### find_bin_flow current_exe wrapper (lines 1314–1321)
+
+- `src/tui.rs:1314–1320` — the `current_exe()` lookup, the `Some(bin_flow) => return` happy-path return, and the `PathBuf::from("bin/flow")` fallback. `std::env::current_exe()` returns the test runner binary inside `cargo nextest`, not the production `flow-rs` binary, so the happy-path branch never resolves to the real `<root>/bin/flow` and the fallback is structurally a "best effort" path. The walk-up + existence check is fully covered by `derive_bin_flow_path` tests against synthetic tmpdir fixtures; only the outer `current_exe`/return shape remains unreachable.
+
+### Entry point `run` and `atty_check` (lines 1324–1342)
+
+- `src/tui.rs:1326–1329` — the non-tty branch: `if !atty_check() { eprintln!(...); std::process::exit(1); }`. `std::process::exit(1)` terminates the calling process; a test that reached this line would kill the nextest runner mid-suite, so the branch is unreachable from inside the test process.
+- `src/tui.rs:1330–1331` — the happy-path delegation: `TuiApp::new(...); app.run_terminal()`. `TuiApp::new` is fully covered by existing TuiApp construction tests; the `run_terminal()` call terminates at the first `enable_raw_mode()` in a non-tty environment (see the run_terminal waiver above), so the entry-point line that chains them is unreachable.
+- `src/tui.rs:1338–1342` — `atty_check` wraps `unsafe libc::isatty(libc::STDOUT_FILENO)`. The return value reflects the test runner's stdout state rather than production stdout, and there is no process-portable way to intercept `isatty(1)` from inside a Rust test without changing the production signature. The function is a single `unsafe` call; its behaviour matches the underlying libc directly.
 

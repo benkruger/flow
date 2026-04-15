@@ -979,6 +979,69 @@ fn test_input_i_in_orch_view_dispatches_without_spawn() {
 }
 
 #[test]
+fn test_refresh_data_populates_flows_orch_and_metrics_and_clamps_indices() {
+    // Build a complete production-layout fixture: one valid state
+    // file, an orchestrate.json, and a cost file under .claude/cost.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join(".flow-states")).unwrap();
+    let state_json = serde_json::json!({
+        "branch": "test-feature",
+        "current_phase": "flow-code",
+        "pr_number": 1,
+        "started_at": "2026-01-01T00:00:00-08:00",
+        "phases": {
+            "flow-start": {"name": "Start", "status": "complete", "cumulative_seconds": 60, "visit_count": 1},
+            "flow-code": {"name": "Code", "status": "in_progress", "cumulative_seconds": 0, "visit_count": 1},
+        },
+        "prompt": "work on it",
+    });
+    std::fs::write(
+        root.join(".flow-states").join("test-feature.json"),
+        serde_json::to_string_pretty(&state_json).unwrap(),
+    )
+    .unwrap();
+    let orch_json = serde_json::json!({
+        "started_at": "2026-01-01T00:00:00-08:00",
+        "queue": [
+            {"issue_number": 1, "title": "Item", "status": "in_progress",
+             "started_at": "2026-01-01T00:00:00-08:00"}
+        ],
+    });
+    std::fs::write(
+        root.join(".flow-states").join("orchestrate.json"),
+        serde_json::to_string_pretty(&orch_json).unwrap(),
+    )
+    .unwrap();
+    // Cost file under .claude/cost/<YYYY-MM>/session1. Use the
+    // current YYYY-MM so load_account_metrics picks it up.
+    let year_month = chrono::Local::now().format("%Y-%m").to_string();
+    let cost_dir = root.join(".claude").join("cost").join(&year_month);
+    std::fs::create_dir_all(&cost_dir).unwrap();
+    std::fs::write(cost_dir.join("session1"), "1.50").unwrap();
+
+    let mut app = TuiApp::new(root.to_path_buf(), "1.0.0".to_string(), None);
+    // Pre-set the selection indices past the end of the refreshed
+    // lists to exercise the saturating-clamp logic.
+    app.selected = 99;
+    app.orch_selected = 99;
+
+    app.refresh_data();
+
+    // All three load_* IO chains populated the state.
+    assert_eq!(app.flows.len(), 1, "flows did not populate from state file");
+    assert!(app.orch_data.is_some(), "orch_data did not populate");
+    assert_ne!(
+        app.metrics.cost_monthly, "0.00",
+        "metrics.cost_monthly did not accumulate cost files"
+    );
+
+    // Saturating clamps pulled the indices back in-range.
+    assert_eq!(app.selected, 0, "selected did not clamp");
+    assert_eq!(app.orch_selected, 0, "orch_selected did not clamp");
+}
+
+#[test]
 fn test_input_abort_confirm_yes_with_empty_flows_is_noop() {
     // Y dispatches to abort_flow but flows.is_empty() guards the
     // subprocess spawn. Safe to exercise in tests.
