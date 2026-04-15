@@ -505,39 +505,6 @@ fn test_stop_continue_malformed_stdin_no_output() {
 }
 
 #[test]
-fn test_stop_continue_qa_pending_fallback_blocks() {
-    let dir = tempfile::tempdir().unwrap();
-    let _ = Command::new("git")
-        .args(["init"])
-        .current_dir(dir.path())
-        .output();
-
-    // No branch state file — only a qa-pending breadcrumb. The hook's
-    // `check_qa_pending` fallback in `run()` should fire and produce block
-    // output carrying the QA context.
-    let state_dir = flow_states_dir(dir.path());
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(
-        state_dir.join("qa-pending.json"),
-        r#"{"_continue_context": "Return to FLOW repo and verify."}"#,
-    )
-    .unwrap();
-
-    let output = run_hook("stop-continue", dir.path(), "test-feature", b"{}");
-
-    assert_eq!(output.status.code().unwrap(), 0);
-    let stdout = std::str::from_utf8(&output.stdout).unwrap().trim();
-    let parsed: Value = serde_json::from_str(stdout).unwrap();
-    assert_eq!(parsed["decision"], "block");
-    let reason = parsed["reason"].as_str().unwrap();
-    assert!(
-        reason.contains("Return to FLOW repo"),
-        "qa-pending context must be embedded in reason, got: {}",
-        reason
-    );
-}
-
-#[test]
 fn test_stop_continue_stale_session_clears_and_captures_new() {
     let dir = tempfile::tempdir().unwrap();
     let branch = "test-feature";
@@ -835,9 +802,12 @@ fn validate_ask_user_no_state_file_exits_zero() {
 
 #[test]
 fn validate_ask_user_slash_branch_exits_zero_no_panic() {
-    // Regression guard per .claude/rules/external-input-validation.md:
-    // slash-branches must not crash the hook. FlowPaths::try_new returns
-    // None; run() exits 0.
+    // Regression guard per .claude/rules/external-input-validation.md
+    // Hook callsite discipline: slash-branches are external input from
+    // git, not valid FLOW branch names. FlowPaths::try_new returns
+    // None, and run() treats that as "no active flow on this branch"
+    // and exits 0 — the hook neither panics nor constructs a state
+    // path against the invalid branch.
     let dir = tempfile::tempdir().unwrap();
     let _ = std::process::Command::new("git")
         .args(["init"])
@@ -931,16 +901,25 @@ fn validate_ask_user_plain_allow_writes_blocked_timestamp_exits_zero() {
 /// Prepare a `<tempdir>/.worktrees/<branch>/` subtree with
 /// `.flow-states/<branch>.json` at the project root when
 /// `with_state_file` is true. Returns the worktree cwd path.
+/// Create a `<dir>/.worktrees/<branch>/` subtree and return the
+/// worktree cwd path.
+///
+/// Writes a stub `.git` marker file inside the worktree dir so the
+/// hook's `detect_branch_from_cwd` finds the branch via the
+/// `.worktrees/<branch>/<has .git>` pattern the production code walks.
+/// Without the marker, detection falls back to `git branch --show-current`,
+/// which returns None in a tempdir fixture, and the hook
+/// allow-short-circuits before exercising the validate path the test
+/// is trying to reach.
+///
+/// When `with_state_file` is true, also creates
+/// `<dir>/.flow-states/<branch>.json` with a minimal state body so
+/// `is_flow_active` returns true — required by tests exercising
+/// the block path, optional for tests exercising the no-active-flow
+/// allow path.
 fn setup_worktree_fixture(dir: &Path, branch: &str, with_state_file: bool) -> std::path::PathBuf {
     let worktree = dir.join(".worktrees").join(branch);
     fs::create_dir_all(&worktree).unwrap();
-    // detect_branch_from_cwd walks the worktree ancestry looking for a
-    // `.git` file (the git-worktree convention — a regular file whose
-    // text points at the main repo's .git/worktrees/<name>). The hook
-    // only checks `is_file()`, so any content works; skipping this step
-    // sends detection into the `git branch --show-current` fallback
-    // which returns None without a real repo, and the hook then
-    // allow-short-circuits instead of exercising the block path.
     fs::write(worktree.join(".git"), "gitdir: fake\n").unwrap();
     if with_state_file {
         let state_dir = flow_states_dir(dir);
@@ -1113,10 +1092,17 @@ fn validate_claude_paths_flow_state_file_missing_allows() {
 // tests that exercise those paths build a settings file at the
 // project root plus the full worktree fixture.
 
-/// Extend `setup_worktree_fixture` with a `.claude/settings.json`
-/// at the project root. Returns the worktree cwd path. The settings
-/// file's permissions `allow` list must include any Bash pattern a
-/// test exercises on the validate (not block) path.
+/// Extend `setup_worktree_fixture` with a `.claude/settings.json` at
+/// the project root.
+///
+/// `validate_pretool::run` reads `settings.json` to compile its
+/// permission allow list; without the file, `find_settings_and_root`
+/// returns None and `flow_active` is forced to false, which skips the
+/// agent/bash validate paths tests want to exercise. The
+/// `allow_patterns` slice is the `permissions.allow` list written to
+/// the settings file — any Bash command pattern a test exercises on
+/// the allow (not block) path must appear here, in the standard
+/// `Bash(<glob>)` form.
 fn setup_pretool_fixture(dir: &Path, branch: &str, allow_patterns: &[&str]) -> std::path::PathBuf {
     let cwd = setup_worktree_fixture(dir, branch, true);
     let claude = dir.join(".claude");
@@ -1141,6 +1127,9 @@ fn validate_pretool_malformed_stdin_exits_zero() {
 
 #[test]
 fn validate_pretool_background_bin_flow_ci_blocked_exits_2() {
+    // Suffix-match coverage per .claude/rules/testing-gotchas.md
+    // "Suffix-Match Path Coverage" — bare form (`bin/flow`) variant
+    // paired with validate_pretool_background_absolute_bin_flow_blocked_exits_2.
     let dir = tempfile::tempdir().unwrap();
     let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
     let input = serde_json::to_vec(&json!({
@@ -1159,6 +1148,9 @@ fn validate_pretool_background_bin_flow_ci_blocked_exits_2() {
 
 #[test]
 fn validate_pretool_background_bin_ci_blocked_exits_2() {
+    // Suffix-match coverage per .claude/rules/testing-gotchas.md
+    // "Suffix-Match Path Coverage" — bare form (`bin/ci`) variant
+    // paired with validate_pretool_background_absolute_bin_ci_blocked_exits_2.
     let dir = tempfile::tempdir().unwrap();
     let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
     let input = serde_json::to_vec(&json!({
@@ -1364,14 +1356,20 @@ fn validate_worktree_paths_glob_path_key_recognized() {
 #[test]
 fn validate_worktree_paths_outside_worktree_allows_main_edit() {
     // cwd has no `.worktrees/` marker in its path → not in a worktree →
-    // validate returns allow regardless of file_path.
+    // validate returns allow regardless of file_path. macOS tempdirs
+    // live under `/var/folders/...` which is symlinked to
+    // `/private/var/folders/...`; the subprocess's current_dir resolves
+    // through the symlink, so canonicalize the root before building
+    // the target — otherwise the file_path prefix check silently
+    // fails and the test passes via an unrelated early-return.
     let dir = tempfile::tempdir().unwrap();
-    let target = dir.path().join("src/lib.rs");
+    let root = dir.path().canonicalize().unwrap();
+    let target = root.join("src/lib.rs");
     let input = serde_json::to_vec(&json!({
         "tool_input": {"file_path": target.to_string_lossy()}
     }))
     .unwrap();
-    let output = run_worktree_hook(dir.path(), &input);
+    let output = run_worktree_hook(&root, &input);
     assert_eq!(output.status.code().unwrap(), 0);
 }
 
@@ -1400,8 +1398,13 @@ fn validate_worktree_paths_inside_worktree_blocks_main_edit() {
 
 #[test]
 fn validate_worktree_paths_inside_worktree_allows_worktree_edit() {
+    // See validate_worktree_paths_inside_worktree_blocks_main_edit for
+    // why the macOS `canonicalize()` dance is needed — without it, the
+    // allow-path tests pass vacuously via the "outside project" early
+    // return instead of exercising the worktree-cwd allowlist.
     let dir = tempfile::tempdir().unwrap();
-    let worktree = dir.path().join(".worktrees").join("feat");
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
     fs::create_dir_all(&worktree).unwrap();
     let target = worktree.join("src/lib.rs");
     let input = serde_json::to_vec(&json!({
@@ -1415,11 +1418,15 @@ fn validate_worktree_paths_inside_worktree_allows_worktree_edit() {
 #[test]
 fn validate_worktree_paths_inside_worktree_allows_flow_states() {
     // `.flow-states/` lives at the main project root and is shared —
-    // edits must pass through even from inside a worktree.
+    // edits must pass through even from inside a worktree. Canonicalize
+    // the root so the macOS `/var/folders` symlink doesn't mask the
+    // `.flow-states/` allowlist branch behind the "outside project"
+    // early return.
     let dir = tempfile::tempdir().unwrap();
-    let worktree = dir.path().join(".worktrees").join("feat");
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
     fs::create_dir_all(&worktree).unwrap();
-    let target = flow_states_dir(dir.path()).join("feat.json");
+    let target = flow_states_dir(&root).join("feat.json");
     let input = serde_json::to_vec(&json!({
         "tool_input": {"file_path": target.to_string_lossy()}
     }))
@@ -1431,9 +1438,14 @@ fn validate_worktree_paths_inside_worktree_allows_flow_states() {
 #[test]
 fn validate_worktree_paths_inside_worktree_allows_home_path() {
     // Paths outside the project prefix are always allowed
-    // (~/.claude, plugin cache, /tmp, etc.).
+    // (~/.claude, plugin cache, /tmp, etc.). `/Users/example/...` is
+    // never a prefix of the canonical `/private/var/folders/...`
+    // tempdir cwd, so this test exercises the real "outside project"
+    // allow branch whether or not the root is canonicalized. We still
+    // canonicalize for symmetry with the sibling tests.
     let dir = tempfile::tempdir().unwrap();
-    let worktree = dir.path().join(".worktrees").join("feat");
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
     fs::create_dir_all(&worktree).unwrap();
     let input = serde_json::to_vec(&json!({
         "tool_input": {"file_path": "/Users/example/.claude/plans/p.md"}

@@ -390,11 +390,13 @@ fn is_bg_truthy(value: &Value) -> bool {
     match value {
         Value::Bool(b) => *b,
         Value::String(s) => s.eq_ignore_ascii_case("true") || s == "1",
-        // serde_json guarantees every `Value::Number` is representable as
-        // at least one of i64/u64/f64, so the `as_i64().is_none()` branch
-        // always finds a finite f64. `is_some_and` folds that invariant
-        // into one test-covered path rather than a dead `else { false }`
-        // arm that no real caller can reach.
+        // When `as_i64()` returns `Some`, the Number was stored as an
+        // integer variant — truthy iff the value is non-zero. When
+        // `as_i64()` returns `None`, the Number was stored as a float;
+        // `is_some_and(|f| f != 0.0)` classifies it truthy iff the
+        // float is non-zero. serde_json guarantees every `Value::Number`
+        // is representable as at least one of i64/u64/f64, so the `None`
+        // arm always finds a finite f64.
         Value::Number(n) => match n.as_i64() {
             Some(i) => i != 0,
             None => n.as_f64().is_some_and(|f| f != 0.0),
@@ -1117,22 +1119,25 @@ mod tests {
     // each discrete JSON type variant of the `run_in_background` input
     // to its expected truthy/falsy classification so a future refactor
     // of `is_bg_truthy` cannot silently weaken a single variant. The
-    // f64 fractional variants exercise the `Number::as_i64() == None →
-    // Number::as_f64()` fallthrough, which no other test drives.
+    // two f64-typed variants exercise the `Number::as_i64() == None →
+    // Number::as_f64()` fallthrough, which no other test drives:
+    // `serde_json::Number::as_i64` returns `None` unconditionally for
+    // the internal `Float` variant (regardless of whether the float
+    // holds a whole-number value), so any `json!(<float literal>)`
+    // routes through `as_f64`.
 
     #[test]
     fn is_bg_truthy_f64_nonzero_returns_true() {
-        // serde_json::Number::as_i64() returns None for fractional f64,
-        // routing the evaluation through the as_f64 arm.
+        // Exercises the as_f64 arm's truthy branch: `f != 0.0` is true.
         assert!(is_bg_truthy(&json!(1.5)));
     }
 
     #[test]
     fn is_bg_truthy_f64_zero_returns_false() {
-        // json!(0.0) stores as f64 but `as_i64()` recognizes it as a
-        // whole-number-valued float and returns Some(0), so this test
-        // routes through the i64 arm. The classification is still
-        // false and matches the user-facing contract.
+        // Exercises the as_f64 arm's falsy branch: `f != 0.0` is false.
+        // json!(0.0) stores as serde_json's internal Float variant;
+        // Float::as_i64 always returns None, so evaluation reaches the
+        // as_f64 check rather than short-circuiting on the i64 arm.
         assert!(!is_bg_truthy(&json!(0.0)));
     }
 
