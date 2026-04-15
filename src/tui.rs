@@ -1145,9 +1145,13 @@ fn open_url(url: &str) {
         .spawn();
 }
 
-/// Activate an iTerm2 tab by matching its session tty.
-fn activate_iterm_tab(session_tty: &str) -> bool {
-    let script = format!(
+/// Build the AppleScript text that asks iTerm2 to find and select the
+/// tab whose session tty matches `session_tty`.
+///
+/// Pure helper — no IO. The osascript invocation lives in
+/// `activate_iterm_tab` and is covered by `test_coverage.md`.
+fn build_iterm_activation_script(session_tty: &str) -> String {
+    format!(
         r#"tell application "iTerm2"
     repeat with w from 1 to count of windows
         repeat with t from 1 to count of tabs of (item w of windows)
@@ -1162,7 +1166,23 @@ fn activate_iterm_tab(session_tty: &str) -> bool {
     return "not found"
 end tell"#,
         tty = session_tty
-    );
+    )
+}
+
+/// Decide whether the osascript invocation reported a successful
+/// activation. Returns true only when the process exited zero AND
+/// stdout, after trimming, is the literal string `activated`.
+///
+/// Pure helper — accepts primitives so tests do not need to construct a
+/// `std::process::ExitStatus` (which stable Rust does not allow from
+/// outside the std lib).
+fn parse_osascript_result(success: bool, stdout: &[u8]) -> bool {
+    success && String::from_utf8_lossy(stdout).trim() == "activated"
+}
+
+/// Activate an iTerm2 tab by matching its session tty.
+fn activate_iterm_tab(session_tty: &str) -> bool {
+    let script = build_iterm_activation_script(session_tty);
 
     match Command::new("osascript")
         .arg("-e")
@@ -1171,9 +1191,7 @@ end tell"#,
         .stderr(std::process::Stdio::piped())
         .output()
     {
-        Ok(output) => {
-            output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "activated"
-        }
+        Ok(output) => parse_osascript_result(output.status.success(), &output.stdout),
         Err(_) => false,
     }
 }
@@ -1254,5 +1272,77 @@ mod tests {
         // Negative percentages (e.g., from corrupted state) fall through to default.
         assert_eq!(rl_color(-1).fg, None);
         assert_eq!(rl_color(-100).fg, None);
+    }
+
+    // --- build_iterm_activation_script ---
+
+    #[test]
+    fn iterm_script_embeds_tty_argument() {
+        let script = build_iterm_activation_script("/dev/ttys003");
+        assert!(script.contains(r#"if tty of s is "/dev/ttys003" then"#));
+    }
+
+    #[test]
+    fn iterm_script_starts_and_ends_with_tell_application() {
+        let script = build_iterm_activation_script("/dev/ttys000");
+        assert!(script.starts_with(r#"tell application "iTerm2""#));
+        assert!(script.ends_with("end tell"));
+    }
+
+    #[test]
+    fn iterm_script_returns_activated_and_not_found_branches() {
+        let script = build_iterm_activation_script("/dev/ttys000");
+        assert!(script.contains(r#"return "activated""#));
+        assert!(script.contains(r#"return "not found""#));
+    }
+
+    #[test]
+    fn iterm_script_handles_empty_tty_without_panic() {
+        // Empty tty produces a well-formed script with an empty literal —
+        // the AppleScript will simply never match, but the formatter must
+        // not panic or drop the surrounding template.
+        let script = build_iterm_activation_script("");
+        assert!(script.contains(r#"if tty of s is "" then"#));
+        assert!(script.ends_with("end tell"));
+    }
+
+    // --- parse_osascript_result ---
+
+    #[test]
+    fn osascript_success_with_activated_stdout_is_true() {
+        assert!(parse_osascript_result(true, b"activated"));
+    }
+
+    #[test]
+    fn osascript_success_trims_surrounding_whitespace() {
+        // osascript adds a trailing newline; leading whitespace is also tolerated.
+        assert!(parse_osascript_result(true, b"  activated\n"));
+        assert!(parse_osascript_result(true, b"activated\r\n"));
+    }
+
+    #[test]
+    fn osascript_success_with_not_found_stdout_is_false() {
+        assert!(!parse_osascript_result(true, b"not found"));
+    }
+
+    #[test]
+    fn osascript_failure_status_is_false_even_with_activated_stdout() {
+        // Non-zero exit must dominate the decision regardless of stdout content.
+        assert!(!parse_osascript_result(false, b"activated"));
+    }
+
+    #[test]
+    fn osascript_empty_stdout_is_false() {
+        assert!(!parse_osascript_result(true, b""));
+        assert!(!parse_osascript_result(false, b""));
+    }
+
+    #[test]
+    fn osascript_invalid_utf8_does_not_panic_and_is_false() {
+        // String::from_utf8_lossy replaces invalid sequences with U+FFFD,
+        // so the trimmed comparison fails and the function returns false
+        // without panicking.
+        let bad_bytes: &[u8] = &[0xff, 0xfe, 0xfd];
+        assert!(!parse_osascript_result(true, bad_bytes));
     }
 }

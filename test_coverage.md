@@ -94,3 +94,18 @@ added in this PR, every error branch `fetch_blockers` can take is
 exercised by existing tests; adding dedicated `fetch_blockers_*`
 variants would be duplicate coverage.
 
+## src/tui.rs
+
+Closing the coverage gap on `tui.rs` (issue #1135) extracts the pure
+fragments of the TUI's keystroke handlers, action methods, and free
+helpers into directly-tested functions. The lines below remain
+uncovered because they are the IO shell that wraps those pure
+fragments — terminal initialization, subprocess spawns, AppleScript
+result extraction via `output.status.success()`, and `process::exit`
+sites that cannot be reached from inside the test process.
+
+### activate_iterm_tab osascript spawn (lines 1187–1195)
+
+- `src/tui.rs:1187–1194` — `Command::new("osascript").arg("-e").arg(&script).output()` plus the `output.status.success()` extraction that feeds `parse_osascript_result`. Spawning a real osascript subprocess against an iTerm2 instance is a host-environment dependency; the test suite runs under cargo nextest with no AppleScript runtime guaranteed. The script body is covered by `build_iterm_activation_script` tests; the success/stdout decision is covered by `parse_osascript_result` tests; only the spawn + `output.status.success()` extraction is unreachable.
+- `src/tui.rs:1195` — the `Err(_) => false` arm. Reachable only when the osascript binary is missing entirely; the production failure mode is "iTerm2 inactive" which does NOT take this branch (osascript still runs successfully and returns "not found"). Covered architecturally by the negative-path symmetry in `parse_osascript_result` tests.
+
