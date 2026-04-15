@@ -384,16 +384,94 @@ pub fn fast_inner(
     }
 }
 
-/// Core complete-fast logic. Returns Ok(json) on success paths (including
-/// unhappy paths like ci_failed that the skill handles interactively),
-/// Err(string) only for infrastructure failures.
-pub fn run_impl(args: &Args) -> Result<Value, String> {
-    let root = project_root();
-    let branch = resolve_branch(args.branch.as_deref(), &root)
-        .ok_or("Could not determine current branch")?;
+/// Signature of the Complete-phase CI dirty-check seam.
+///
+/// Inputs: `(root, cwd, branch, tree_changed)`.
+/// Output: `(ci_skipped, ci_failed_output)` — `ci_skipped` is true when
+/// a prior CI run on the same tree-snapshot passed; `ci_failed_output`
+/// carries a failure message when CI ran and failed.
+pub type CiDecider = dyn Fn(&Path, &Path, &str, bool) -> (bool, Option<String>);
+
+/// Production CI-decider for the Complete phase dirty-check block.
+///
+/// Returns `(ci_skipped, ci_failed_output)`:
+/// - `ci_skipped` is `true` when the sentinel file's stored tree
+///   snapshot matches the current cwd's snapshot, meaning a prior
+///   `bin/flow ci` run on this same tree already passed.
+/// - `ci_failed_output` is `Some(msg)` when CI runs and fails; `None`
+///   when CI is skipped or runs and passes.
+///
+/// A `tree_changed` input (main was merged into the branch, dirtying
+/// the tree) forces a fresh CI run by returning `(false, None)` — the
+/// caller's fast_inner dispatch then surfaces this as a `ci_stale`
+/// path.
+fn production_ci_decider(
+    root: &Path,
+    cwd: &Path,
+    branch: &str,
+    tree_changed: bool,
+) -> (bool, Option<String>) {
+    if tree_changed {
+        return (false, None);
+    }
+
+    let snapshot = ci::tree_snapshot(cwd, None);
+    let sentinel = ci::sentinel_path(root, branch);
+
+    let ci_skipped = if sentinel.exists() {
+        std::fs::read_to_string(&sentinel)
+            .map(|c| c == snapshot)
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
+    if ci_skipped {
+        return (true, None);
+    }
+
+    let ci_args = ci::Args {
+        force: false,
+        retry: 0,
+        branch: Some(branch.to_string()),
+        simulate_branch: None,
+    };
+    let (ci_result, ci_code) = ci::run_impl(&ci_args, cwd, root, false);
+    if ci_code != 0 {
+        let msg = ci_result
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("CI failed")
+            .to_string();
+        (false, Some(msg))
+    } else {
+        (false, None)
+    }
+}
+
+/// Core complete-fast logic with injectable `root`, `runner`, and
+/// `ci_decider` seams for testability.
+///
+/// All subprocess calls (gh, git, check-freshness) go through `runner`.
+/// The Complete-phase CI dirty-check block goes through `ci_decider`,
+/// which in production wraps `ci::run_impl` and returns
+/// `(ci_skipped, ci_failed_output)` for the given `(root, cwd, branch,
+/// tree_changed)` inputs.
+///
+/// Returns Ok(json) on success paths (including unhappy paths like
+/// `ci_failed` that the skill handles interactively), Err(string) only
+/// for infrastructure failures that prevent any path determination.
+pub fn run_impl_inner(
+    args: &Args,
+    root: &Path,
+    runner: &dyn Fn(&[&str], u64) -> CmdResult,
+    ci_decider: &CiDecider,
+) -> Result<Value, String> {
+    let branch =
+        resolve_branch(args.branch.as_deref(), root).ok_or("Could not determine current branch")?;
 
     // Read state file
-    let (state, state_path) = read_state(&root, &branch)?;
+    let (state, state_path) = read_state(root, &branch)?;
 
     // Gate: Learn phase must be complete
     let learn_status = state
@@ -424,7 +502,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let pr_state = match check_pr_status(
         state.get("pr_number").and_then(|v| v.as_i64()),
         &branch,
-        &run_cmd_with_timeout,
+        runner,
     ) {
         Ok(s) => s,
         Err(e) => {
@@ -459,7 +537,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
 
     // --- Merge main into branch ---
-    let (merge_status, merge_data) = merge_main(&run_cmd_with_timeout);
+    let (merge_status, merge_data) = merge_main(runner);
     let tree_changed = merge_status == "merged";
 
     if merge_status == "conflict" {
@@ -487,53 +565,13 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 
     // --- CI dirty check (no simulate-branch) ---
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let ci_skipped;
-    let ci_failed_output: Option<String>;
-
-    if tree_changed {
-        ci_skipped = false;
-        ci_failed_output = None;
-    } else {
-        let snapshot = ci::tree_snapshot(&cwd, None);
-        let sentinel = ci::sentinel_path(&root, &branch);
-
-        ci_skipped = if sentinel.exists() {
-            std::fs::read_to_string(&sentinel)
-                .map(|c| c == snapshot)
-                .unwrap_or(false)
-        } else {
-            false
-        };
-
-        if !ci_skipped {
-            let ci_args = ci::Args {
-                force: false,
-                retry: 0,
-                branch: Some(branch.clone()),
-                simulate_branch: None,
-            };
-            let (ci_result, ci_code) = ci::run_impl(&ci_args, &cwd, &root, false);
-            if ci_code != 0 {
-                ci_failed_output = Some(
-                    ci_result
-                        .get("message")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("CI failed")
-                        .to_string(),
-                );
-            } else {
-                ci_failed_output = None;
-            }
-        } else {
-            ci_failed_output = None;
-        }
-    }
+    let (ci_skipped, ci_failed_output) = ci_decider(root, &cwd, &branch, tree_changed);
 
     // --- GitHub CI check ---
     let pr_number = state.get("pr_number").and_then(|v| v.as_i64());
     let gh_ci_status = if let Some(pr_num) = pr_number {
         let pr_str = pr_num.to_string();
-        match run_cmd_with_timeout(&["gh", "pr", "checks", &pr_str], NETWORK_TIMEOUT) {
+        match runner(&["gh", "pr", "checks", &pr_str], NETWORK_TIMEOUT) {
             Ok((_, stdout, _)) => parse_gh_checks_output(&stdout),
             Err(_) => "none".to_string(),
         }
@@ -554,8 +592,15 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         ci_skipped,
         ci_failed_output.as_deref(),
         &gh_ci_status,
-        &run_cmd_with_timeout,
+        runner,
     ))
+}
+
+/// CLI entry wrapper: threads the production root, runner, and
+/// CI-decider into `run_impl_inner`.
+pub fn run_impl(args: &Args) -> Result<Value, String> {
+    let root = project_root();
+    run_impl_inner(args, &root, &run_cmd_with_timeout, &production_ci_decider)
 }
 
 /// CLI entry point.
@@ -1311,6 +1356,230 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Push failed after freshness merge"));
+    }
+
+    // --- run_impl_inner ---
+
+    fn no_ci(_: &Path, _: &Path, _: &str, _: bool) -> (bool, Option<String>) {
+        (true, None) // default: sentinel hit, no CI failure
+    }
+
+    fn ci_failed_decider(_: &Path, _: &Path, _: &str, _: bool) -> (bool, Option<String>) {
+        (false, Some("ci failed on sample test".to_string()))
+    }
+
+    fn inner_args(branch: &str) -> Args {
+        Args {
+            branch: Some(branch.to_string()),
+            auto: true,
+            manual: false,
+        }
+    }
+
+    #[test]
+    fn test_run_impl_inner_learn_gate_pending_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("pending", None);
+        setup_state_file(dir.path(), "test-feature", &state);
+
+        let runner = mock_runner(vec![]);
+        let args = inner_args("test-feature");
+
+        let result = run_impl_inner(&args, dir.path(), &runner, &no_ci).unwrap();
+
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("Phase 5: Learn must be complete"));
+    }
+
+    #[test]
+    fn test_run_impl_inner_pr_status_runner_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        setup_state_file(dir.path(), "test-feature", &state);
+
+        // First runner call is check_pr_status's `gh pr view`; return Err.
+        let runner = mock_runner(vec![Err("gh not found".to_string())]);
+        let args = inner_args("test-feature");
+
+        let result = run_impl_inner(&args, dir.path(), &runner, &no_ci).unwrap();
+
+        assert_eq!(result["status"], "error");
+        assert!(result["message"].as_str().unwrap().contains("gh not found"));
+    }
+
+    #[test]
+    fn test_run_impl_inner_pr_merged_returns_already_merged() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        setup_state_file(dir.path(), "test-feature", &state);
+
+        let runner = mock_runner(vec![ok("MERGED")]);
+        let args = inner_args("test-feature");
+
+        let result = run_impl_inner(&args, dir.path(), &runner, &no_ci).unwrap();
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["path"], "already_merged");
+    }
+
+    #[test]
+    fn test_run_impl_inner_pr_closed_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        setup_state_file(dir.path(), "test-feature", &state);
+
+        let runner = mock_runner(vec![ok("CLOSED")]);
+        let args = inner_args("test-feature");
+
+        let result = run_impl_inner(&args, dir.path(), &runner, &no_ci).unwrap();
+
+        assert_eq!(result["status"], "error");
+        assert!(result["message"].as_str().unwrap().contains("closed"));
+    }
+
+    #[test]
+    fn test_run_impl_inner_merge_main_conflict() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        setup_state_file(dir.path(), "test-feature", &state);
+
+        // gh pr view → OPEN; fetch ok; is-ancestor non-zero (not ancestor);
+        // merge non-zero; status --porcelain shows UU conflict marker.
+        let runner = mock_runner(vec![
+            ok("OPEN"),                                // check_pr_status
+            ok(""),                                    // git fetch
+            Ok((1, String::new(), String::new())),     // is-ancestor → not
+            Ok((1, String::new(), "conflict".into())), // git merge fails
+            ok("UU src/conflicting.rs\n"),             // git status --porcelain
+        ]);
+        let args = inner_args("test-feature");
+
+        let result = run_impl_inner(&args, dir.path(), &runner, &no_ci).unwrap();
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["path"], "conflict");
+        let files = result["conflict_files"].as_array().unwrap();
+        assert!(files
+            .iter()
+            .any(|v| v.as_str().unwrap() == "src/conflicting.rs"));
+    }
+
+    #[test]
+    fn test_run_impl_inner_merge_main_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        setup_state_file(dir.path(), "test-feature", &state);
+
+        // gh pr view → OPEN; fetch fails.
+        let runner = mock_runner(vec![ok("OPEN"), Err("network down".to_string())]);
+        let args = inner_args("test-feature");
+
+        let result = run_impl_inner(&args, dir.path(), &runner, &no_ci).unwrap();
+
+        assert_eq!(result["status"], "error");
+        assert!(result["message"].as_str().unwrap().contains("network down"));
+    }
+
+    #[test]
+    fn test_run_impl_inner_ci_skipped_sentinel_hit() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        setup_state_file(dir.path(), "test-feature", &state);
+
+        // gh pr view → OPEN; merge_main clean (fetch ok + is-ancestor 0);
+        // gh pr checks → pass; freshness up_to_date; squash merge → success.
+        let runner = mock_runner(vec![
+            ok("OPEN"),                            // check_pr_status
+            ok(""),                                // git fetch
+            Ok((0, String::new(), String::new())), // is-ancestor ok → clean
+            ok("CI\tpass\t\n"),                    // gh pr checks
+            ok(r#"{"status": "up_to_date"}"#),     // check-freshness
+            ok("merged"),                          // gh pr merge --squash
+        ]);
+        let args = inner_args("test-feature");
+
+        let result = run_impl_inner(&args, dir.path(), &runner, &no_ci).unwrap();
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["path"], "merged");
+        assert_eq!(result["ci_skipped"], true);
+    }
+
+    #[test]
+    fn test_run_impl_inner_ci_failed() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        setup_state_file(dir.path(), "test-feature", &state);
+
+        // gh pr view → OPEN; merge clean; gh pr checks → pass; ci_decider
+        // reports failure → fast_inner returns ci_failed before freshness.
+        let runner = mock_runner(vec![
+            ok("OPEN"),                            // check_pr_status
+            ok(""),                                // git fetch
+            Ok((0, String::new(), String::new())), // is-ancestor ok
+            ok("CI\tpass\t\n"),                    // gh pr checks
+        ]);
+        let args = inner_args("test-feature");
+
+        let result = run_impl_inner(&args, dir.path(), &runner, &ci_failed_decider).unwrap();
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["path"], "ci_failed");
+        assert!(result["output"]
+            .as_str()
+            .unwrap()
+            .contains("ci failed on sample test"));
+    }
+
+    #[test]
+    fn test_run_impl_inner_gh_ci_pending() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("complete", None);
+        setup_state_file(dir.path(), "test-feature", &state);
+
+        // gh pr view → OPEN; merge clean; gh pr checks → pending.
+        let runner = mock_runner(vec![
+            ok("OPEN"),                            // check_pr_status
+            ok(""),                                // git fetch
+            Ok((0, String::new(), String::new())), // is-ancestor ok
+            ok("CI\tpending\t\n"),                 // gh pr checks
+        ]);
+        let args = inner_args("test-feature");
+
+        let result = run_impl_inner(&args, dir.path(), &runner, &no_ci).unwrap();
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["path"], "ci_pending");
+    }
+
+    #[test]
+    fn test_run_impl_inner_no_pr_number_skips_gh_check() {
+        let dir = tempfile::tempdir().unwrap();
+        // Build a state with no pr_number (Null).
+        let mut state = make_state("complete", None);
+        state["pr_number"] = serde_json::Value::Null;
+        setup_state_file(dir.path(), "test-feature", &state);
+
+        // check_pr_status falls back to branch identifier and still makes
+        // one runner call. The gh pr checks call is SKIPPED because
+        // pr_number is None, so the queue has no entry for it.
+        let runner = mock_runner(vec![
+            ok("OPEN"),                            // check_pr_status (by branch)
+            ok(""),                                // git fetch
+            Ok((0, String::new(), String::new())), // is-ancestor ok
+            // no gh pr checks entry — should not be invoked
+            ok(r#"{"status": "up_to_date"}"#), // check-freshness
+            ok("merged"),                      // gh pr merge --squash
+        ]);
+        let args = inner_args("test-feature");
+
+        let result = run_impl_inner(&args, dir.path(), &runner, &no_ci).unwrap();
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["path"], "merged");
     }
 
     // --- parse_gh_checks_output ---
