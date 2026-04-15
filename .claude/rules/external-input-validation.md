@@ -27,6 +27,17 @@ slashes (`feature/foo`, `dependabot/*`). Five hook entry points and
 standard git branch. Adversarial testing caught it; planning should
 have.
 
+Issue #1137 surfaced a second instance of the same class — this time
+in a CLI subcommand rather than a hook. `bin/flow complete-fast
+--branch feature/foo` panicked in `src/complete_fast.rs:read_state`
+because `read_state` called `FlowPaths::new(root, branch)` directly
+with the unvalidated `--branch` CLI override. The rule's callsite
+inventory listed only `src/hooks/*.rs`, so the Plan phase did not
+audit the CLI-entry callsite. The fix used `FlowPaths::try_new` with
+a structured error return. The motivating lesson is that **any CLI
+subcommand accepting a `--branch` override is a branch-validation
+callsite just like a hook**, and must use the fallible constructor.
+
 ## Mechanical Enforcement
 
 The Plan-phase prose audit gate (`bin/flow plan-check`) catches
@@ -77,10 +88,14 @@ For any FLOW type that accepts a parameter from git (branch names,
 tags, commit SHAs), the public API must expose at least one fallible
 constructor alongside the panicking one. Callers that receive the
 value from `current_branch()`, `resolve_branch()`, `resolve_branch_in()`,
-or any subprocess running `git` must use the fallible variant. The
-panicking variant is reserved for callers that have already validated
-the value at a prior boundary (state-file keyspace, `branch_name()`
-output, upstream `try_new` success).
+or any subprocess running `git` must use the fallible variant. **A
+`--branch` CLI override is also an external input** — `clap` accepts
+any string the shell passes, including slash-containing and empty
+values, so the override is no more trusted than a git subprocess
+result. Callers that accept `--branch` must use the fallible variant.
+The panicking variant is reserved for callers that have already
+validated the value at a prior boundary (state-file keyspace,
+`branch_name()` output, upstream `try_new` success).
 
 The reference implementation is `FlowPaths::new` / `FlowPaths::try_new`:
 
@@ -109,6 +124,26 @@ The current hook inventory that receives a branch from git includes
 `validate_ask_user.rs`, and `validate_claude_paths.rs`. Any new hook
 that joins this list must follow the same discipline.
 
+### CLI subcommand entry callsite discipline
+
+CLI subcommands that accept a `--branch` override (or any other
+branch-valued CLI arg) are the same category of caller as hooks:
+the string comes from outside the process and is unvalidated before
+it reaches the FLOW-side invariant. A panic in a CLI subcommand
+terminates the user's shell invocation with a Rust backtrace — a
+user-visible failure indistinguishable from a session-lifecycle
+hook panic.
+
+The CLI subcommand entry inventory that receives a branch via
+`--branch` (and therefore must guard with `FlowPaths::try_new` or
+pre-validate via `FlowPaths::is_valid_branch`) includes
+`src/complete_fast.rs:read_state` (commit `12b098f6`, the issue
+#1137 fix). Any new CLI subcommand that accepts `--branch` and
+constructs a `FlowPaths` must follow the same discipline. When
+refactoring an existing CLI subcommand, audit its `read_state` /
+`FlowPaths::new` callsites against this discipline before declaring
+the refactor complete.
+
 ### Code Review enforcement
 
 During Code Review, the reviewer agent and adversarial agent check
@@ -126,3 +161,10 @@ characters). Hooks that use the fallible variant must have an
 integration test that exercises the "no active flow" branch — the
 test passes a slash-containing branch or a branch with no state file
 and asserts the hook exits 0 / returns early without panicking.
+
+CLI subcommands that accept `--branch` must include a regression
+test that exercises the slash-branch path and asserts a structured
+error (not a panic). The issue-#1137 fix added
+`read_state_slash_branch_returns_structured_error_no_panic` and
+`run_impl_inner_slash_branch_returns_structured_error_no_panic` as
+the reference pattern.
