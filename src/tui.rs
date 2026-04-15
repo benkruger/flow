@@ -5,7 +5,7 @@
 //! Uses tui_data module for data loading.
 
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -1208,20 +1208,33 @@ fn activate_iterm_tab(session_tty: &str) -> bool {
     }
 }
 
+/// Walk up three parent directories from `exe_path` (binary →
+/// `{debug|release}` → `target` → repo root) and return
+/// `Some(<root>/bin/flow)` when the resolved file exists, `None`
+/// otherwise.
+///
+/// Pure helper — accepts the executable path explicitly so tests can
+/// drive the traversal logic with controlled tmpdirs. The
+/// `std::env::current_exe()` lookup and the bare-string fallback live
+/// in `find_bin_flow` and are covered by `test_coverage.md`.
+fn derive_bin_flow_path(exe_path: &Path) -> Option<PathBuf> {
+    let root = exe_path
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())?;
+    let bin_flow = root.join("bin").join("flow");
+    if bin_flow.exists() {
+        Some(bin_flow)
+    } else {
+        None
+    }
+}
+
 /// Locate bin/flow by traversing up from the current executable.
 fn find_bin_flow() -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
-        // exe is in target/debug/ or target/release/
-        // Go up 3 levels: binary → {debug|release} → target → root
-        if let Some(root) = exe
-            .parent()
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
-        {
-            let bin_flow = root.join("bin").join("flow");
-            if bin_flow.exists() {
-                return bin_flow;
-            }
+        if let Some(bin_flow) = derive_bin_flow_path(&exe) {
+            return bin_flow;
         }
     }
     PathBuf::from("bin/flow")
@@ -1370,6 +1383,71 @@ mod tests {
         let (program, args) = build_open_url_command("");
         assert_eq!(program, "open");
         assert_eq!(args, vec![String::new()]);
+    }
+
+    // --- derive_bin_flow_path ---
+
+    #[test]
+    fn bin_flow_path_returns_some_when_target_exists_at_depth_three() {
+        // Simulate the production layout: <root>/target/debug/flow-rs.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        std::fs::write(root.join("bin/flow"), "#!/bin/sh\n").unwrap();
+        std::fs::create_dir_all(root.join("target/debug")).unwrap();
+        let exe = root.join("target/debug/flow-rs");
+        std::fs::write(&exe, "").unwrap();
+        let resolved = derive_bin_flow_path(&exe);
+        assert_eq!(resolved, Some(root.join("bin").join("flow")));
+    }
+
+    #[test]
+    fn bin_flow_path_returns_none_when_root_lacks_bin_flow() {
+        // Layout exists but `bin/flow` is missing.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("target/release")).unwrap();
+        let exe = root.join("target/release/flow-rs");
+        std::fs::write(&exe, "").unwrap();
+        assert_eq!(derive_bin_flow_path(&exe), None);
+    }
+
+    #[test]
+    fn bin_flow_path_returns_none_when_path_is_too_shallow() {
+        // No three-level ancestry available — should yield None instead
+        // of panicking on Option chaining.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let exe = tmp.path().join("flow-rs");
+        std::fs::write(&exe, "").unwrap();
+        // Path has at most one parent (tmp), can't walk up three.
+        assert_eq!(derive_bin_flow_path(&exe), None);
+    }
+
+    #[test]
+    fn bin_flow_path_walks_up_exactly_three_levels() {
+        // Deeper ancestry: <root>/target/debug/deps/flow-rs-<hash>.
+        // The walk-up should land at "deps", NOT at root, so bin/flow
+        // would have to live at `<root>/target/debug/bin/flow` — which
+        // we deliberately do NOT create here, so the result is None.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        std::fs::write(root.join("bin/flow"), "").unwrap();
+        std::fs::create_dir_all(root.join("target/debug/deps")).unwrap();
+        let exe = root.join("target/debug/deps/flow-rs-abc");
+        std::fs::write(&exe, "").unwrap();
+        // Walking up three from `target/debug/deps/flow-rs-abc` lands at
+        // `<root>/target` — `<root>/target/bin/flow` does not exist.
+        assert_eq!(derive_bin_flow_path(&exe), None);
+    }
+
+    #[test]
+    fn bin_flow_path_returns_none_when_exe_path_does_not_exist() {
+        // The walk-up uses Path::parent which is purely lexical, so a
+        // non-existent path with sufficient ancestry still returns None
+        // because `bin_flow.exists()` reports false on the synthetic root.
+        let exe = std::path::PathBuf::from("/nonexistent/target/debug/flow-rs");
+        assert_eq!(derive_bin_flow_path(&exe), None);
     }
 
     #[test]
