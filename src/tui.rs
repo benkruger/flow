@@ -9,12 +9,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent};
+use crossterm::event::{Event, KeyCode, KeyEvent};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -182,45 +181,34 @@ impl TuiApp {
         self.metrics = tui_data::load_account_metrics(&self.root, None);
     }
 
-    /// Run the TUI event loop with a real terminal.
+    /// Run the TUI event loop against a pre-constructed terminal and
+    /// event source. The caller owns the terminal's lifetime and
+    /// cleanup — this method only drives the render + dispatch loop.
     ///
-    /// Terminal cleanup (raw mode + alternate screen) is guaranteed even
-    /// on error via an explicit cleanup call before returning.
-    pub fn run_terminal(&mut self) -> io::Result<()> {
-        enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
-
-        let result = self.run_event_loop(&mut terminal);
-
-        // Guaranteed cleanup: restore terminal even on error
-        let _ = disable_raw_mode();
-        let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
-
-        result
-    }
-
-    /// Inner event loop — separated so run_terminal can guarantee cleanup.
-    fn run_event_loop(
+    /// Tests pass `Terminal<TestBackend>` and a closure that pops
+    /// fake events from a queue. Production passes
+    /// `Terminal<CrosstermBackend<Stdout>>` and a closure wrapping
+    /// `crossterm::event::poll` + `crossterm::event::read`.
+    pub fn run_event_loop<B, E>(
         &mut self,
-        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    ) -> io::Result<()> {
+        terminal: &mut Terminal<B>,
+        mut events: E,
+    ) -> io::Result<()>
+    where
+        B: ratatui::backend::Backend,
+        E: FnMut(Duration) -> io::Result<Option<Event>>,
+    {
         self.refresh_data();
 
         while self.running {
             terminal.draw(|f| self.render(f))?;
 
-            if event::poll(Duration::from_millis(REFRESH_MS))? {
-                match event::read()? {
-                    Event::Key(key) => self.handle_key(key),
-                    Event::Resize(_, _) => self.refresh_data(),
-                    _ => {}
-                }
-            } else {
+            match events(Duration::from_millis(REFRESH_MS))? {
+                Some(Event::Key(key)) => self.handle_key(key),
+                Some(Event::Resize(_, _)) => self.refresh_data(),
+                Some(_) => {}
                 // Timeout — refresh data
-                self.refresh_data();
+                None => self.refresh_data(),
             }
         }
 
@@ -1368,27 +1356,6 @@ fn derive_bin_flow_path(exe_path: &Path) -> Option<PathBuf> {
     } else {
         None
     }
-}
-
-/// Entry point: initialize terminal and run the TUI.
-pub fn run(root: PathBuf, version: String, repo: Option<String>) -> io::Result<()> {
-    // Check if stdout is a terminal
-    if !atty_check() {
-        eprintln!("Error: flow tui requires an interactive terminal.");
-        std::process::exit(1);
-    }
-    let mut app = TuiApp::new(root, version, repo, TuiAppPlatform::production());
-    app.run_terminal()
-}
-
-/// Check if stdout is a terminal using libc::isatty.
-///
-/// Uses libc directly rather than crossterm's terminal detection to avoid
-/// importing crossterm APIs beyond event handling and alternate screen.
-fn atty_check() -> bool {
-    // SAFETY: STDOUT_FILENO (1) is always a valid open file descriptor
-    // in a normal Unix process.
-    unsafe { libc::isatty(libc::STDOUT_FILENO) != 0 }
 }
 
 #[cfg(test)]

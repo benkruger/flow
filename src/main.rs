@@ -653,10 +653,24 @@ fn main() {
         Some(Commands::OrchestrateState(args)) => orchestrate_state::run(args),
         Some(Commands::TombstoneAudit(args)) => tombstone_audit::run(args),
         Some(Commands::Tui) => {
+            // Check if stdout is a terminal.
+            // SAFETY: STDOUT_FILENO (1) is always a valid open file
+            // descriptor in a normal Unix process.
+            let is_tty = unsafe { libc::isatty(libc::STDOUT_FILENO) != 0 };
+            if !is_tty {
+                eprintln!("Error: flow tui requires an interactive terminal.");
+                process::exit(1);
+            }
             let root = project_root();
             let version = flow_rs::utils::read_version();
             let repo = flow_rs::github::detect_repo(Some(&root));
-            if let Err(e) = flow_rs::tui::run(root, version, repo) {
+            let mut app = flow_rs::tui::TuiApp::new(
+                root,
+                version,
+                repo,
+                flow_rs::tui::TuiAppPlatform::production(),
+            );
+            if let Err(e) = run_tui_terminal(&mut app) {
                 eprintln!("TUI error: {}", e);
                 process::exit(1);
             }
@@ -937,6 +951,50 @@ fn run_format_status(branch_override: Option<&str>) {
 
     let panel = format_status::format_panel(state, &version, None, dev_mode, phase_config.as_ref());
     println!("{}", panel);
+}
+
+/// Run the TUI event loop against a real crossterm terminal.
+///
+/// Owns the crossterm setup + cleanup: enables raw mode, enters the
+/// alternate screen, constructs `Terminal<CrosstermBackend>`, builds
+/// the real `event::poll` + `event::read` closure, drives
+/// `TuiApp::run_event_loop`, and guarantees raw-mode / alternate-screen
+/// cleanup on every return path. Lives in `main.rs` so `src/tui.rs`
+/// can stay testable — the crossterm-specific glue has no test seam
+/// that would work in a non-tty `cargo nextest` environment.
+fn run_tui_terminal(app: &mut flow_rs::tui::TuiApp) -> std::io::Result<()> {
+    use crossterm::event;
+    use crossterm::execute;
+    use crossterm::terminal::{
+        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    };
+    use ratatui::backend::CrosstermBackend;
+    use ratatui::Terminal;
+    use std::io;
+    use std::time::Duration;
+
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    // Event source closure wrapping crossterm::event::poll + event::read.
+    let events = |timeout: Duration| -> io::Result<Option<event::Event>> {
+        if event::poll(timeout)? {
+            Ok(Some(event::read()?))
+        } else {
+            Ok(None)
+        }
+    };
+
+    let result = app.run_event_loop(&mut terminal, events);
+
+    // Guaranteed cleanup: restore terminal even on error.
+    let _ = disable_raw_mode();
+    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+
+    result
 }
 
 fn run_tui_data(load_all: bool, load_orch: bool, load_metrics: bool) {

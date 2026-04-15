@@ -3,9 +3,11 @@
 //! Uses ratatui's TestBackend for rendering assertions and
 //! direct state manipulation for input handling tests.
 
+use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::time::Duration;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
@@ -1129,6 +1131,85 @@ fn test_input_enter_in_list_view_with_session_tty_exercises_activate() {
     app.flows = vec![flow];
     app.handle_key(key(KeyCode::Enter));
     assert_eq!(app.view, View::List);
+}
+
+// --- run_event_loop tests via TestBackend + fake event source ---
+
+/// Build a fake event source closure that pops events from a queue.
+/// Returns `None` when the queue is empty (simulating a timeout).
+fn fake_event_source(
+    events: VecDeque<Option<Event>>,
+) -> impl FnMut(Duration) -> std::io::Result<Option<Event>> {
+    let mut queue = events;
+    move |_timeout| Ok(queue.pop_front().unwrap_or(None))
+}
+
+fn key_event(code: KeyCode) -> Event {
+    Event::Key(KeyEvent {
+        code,
+        modifiers: KeyModifiers::NONE,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    })
+}
+
+#[test]
+fn test_run_event_loop_with_test_backend_and_quit_key_exits_cleanly() {
+    // The simplest happy path: queue a single `q` keypress, which
+    // triggers `handle_key` → `self.running = false`, ending the
+    // loop on the next iteration. Assert the loop exits Ok.
+    let mut app = make_app();
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let events = fake_event_source(VecDeque::from(vec![Some(key_event(KeyCode::Char('q')))]));
+    let result = app.run_event_loop(&mut terminal, events);
+    assert!(result.is_ok());
+    assert!(!app.running);
+}
+
+#[test]
+fn test_run_event_loop_handles_resize_then_quit() {
+    // Queue a resize event (which triggers refresh_data) and then a
+    // `q` keypress to exit. Covers the Event::Resize arm.
+    let mut app = make_app();
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let events = fake_event_source(VecDeque::from(vec![
+        Some(Event::Resize(100, 30)),
+        Some(key_event(KeyCode::Char('q'))),
+    ]));
+    let result = app.run_event_loop(&mut terminal, events);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_run_event_loop_handles_timeout_then_quit() {
+    // Queue None (timeout → refresh_data) then `q`. Covers the None
+    // arm in the match.
+    let mut app = make_app();
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let events = fake_event_source(VecDeque::from(vec![
+        None,
+        Some(key_event(KeyCode::Char('q'))),
+    ]));
+    let result = app.run_event_loop(&mut terminal, events);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_run_event_loop_handles_mouse_event_then_quit() {
+    // Queue an unhandled event variant (Event::FocusGained) then `q`.
+    // Covers the Some(_) catchall arm.
+    let mut app = make_app();
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let events = fake_event_source(VecDeque::from(vec![
+        Some(Event::FocusGained),
+        Some(key_event(KeyCode::Char('q'))),
+    ]));
+    let result = app.run_event_loop(&mut terminal, events);
+    assert!(result.is_ok());
 }
 
 #[test]
