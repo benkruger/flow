@@ -233,9 +233,33 @@ pub fn notify(args: &Args) -> Value {
     })
 }
 
+/// CLI entry with injectable dependencies and writer.
+///
+/// Computes the notify result via `notify_with_deps` and writes it as JSON
+/// followed by a newline to `writer`. Production `run` binds the closures
+/// to `read_slack_config` + `post_message_inner(…, run_curl_with_timeout)`
+/// and passes `std::io::stdout()` so the CLI prints a single JSON line.
+#[allow(clippy::type_complexity)]
+pub fn run_with_deps(
+    args: Args,
+    config_reader: &dyn Fn() -> Option<SlackConfig>,
+    poster: &dyn Fn(&str, &str, &str, Option<&str>) -> Value,
+    writer: &mut dyn std::io::Write,
+) {
+    let result = notify_with_deps(&args, config_reader, poster);
+    let _ = writeln!(writer, "{}", result);
+}
+
 pub fn run(args: Args) {
-    let result = notify(&args);
-    println!("{}", result);
+    let mut stdout = std::io::stdout();
+    run_with_deps(
+        args,
+        &read_slack_config,
+        &|bot, channel, text, tts| {
+            post_message_inner(bot, channel, text, tts, &run_curl_with_timeout)
+        },
+        &mut stdout,
+    );
 }
 
 #[cfg(test)]
@@ -477,6 +501,44 @@ mod tests {
         assert!(text.contains("Feature started"));
         assert!(text.contains("Start"));
         assert_eq!(tts.as_deref(), Some("1234567890.123456"));
+    }
+
+    // --- run_with_deps ---
+
+    #[test]
+    fn run_with_deps_prints_notify_json() {
+        let args = test_args("flow-start", "hi", None, None, None);
+        let config_reader = || None;
+        let poster = |_: &str, _: &str, _: &str, _: Option<&str>| -> Value {
+            json!({"status": "ok", "ts": "9.9"})
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        run_with_deps(args, &config_reader, &poster, &mut buf);
+        let out = String::from_utf8(buf).unwrap();
+        // When config_reader returns None the result is the skipped JSON.
+        assert!(out.contains("\"status\":\"skipped\""));
+        // writeln! appends a newline; the production path needs the newline
+        // so `run` output is line-delimited for shell consumers.
+        assert!(out.ends_with('\n'));
+    }
+
+    #[test]
+    fn run_with_deps_success_writes_ok_json() {
+        let args = test_args("flow-start", "hi", None, None, None);
+        let config_reader = || {
+            Some(SlackConfig {
+                bot_token: "xoxb".to_string(),
+                channel: "C".to_string(),
+            })
+        };
+        let poster = |_: &str, _: &str, _: &str, _: Option<&str>| -> Value {
+            json!({"status": "ok", "ts": "9.9"})
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        run_with_deps(args, &config_reader, &poster, &mut buf);
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("\"status\":\"ok\""));
+        assert!(out.contains("\"ts\":\"9.9\""));
     }
 
     #[test]
