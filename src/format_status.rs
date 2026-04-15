@@ -1000,4 +1000,79 @@ mod tests {
         assert!(panel.contains("Branch : feature-a"), "Panel:\n{}", panel);
         assert!(panel.contains("Branch : feature-b"), "Panel:\n{}", panel);
     }
+
+    #[test]
+    fn format_status_run_impl_main_no_state_files_returns_ok_empty_1() {
+        // Pin the silent-exit-1 contract documented at run_impl_main's
+        // doc comment: no state files in .flow-states → Ok(("", 1)).
+        // Sibling test run_impl_main_no_state_files_returns_empty_exit_1
+        // covers the same branch from the same angle; this
+        // plan-named test locks the contract under the specific
+        // name flow-plan Task 3 enumerated.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join(".flow-states")).unwrap();
+        let result = run_impl_main(Some("nonexistent-branch"), &root);
+        assert_eq!(result, Ok((String::new(), 1)));
+    }
+
+    #[test]
+    fn format_status_run_impl_main_loads_frozen_phase_config() {
+        // The frozen_path.exists() branch in run_impl_main (~L391) loads
+        // the frozen phase config that a flow captured at flow-start,
+        // so a panel rendered mid-flow uses the ordering the flow was
+        // started with even if main's phase config has since changed.
+        // No other test reaches this branch.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let branch = "test-frozen";
+        let state_dir = root.join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        let state = make_state(
+            "flow-plan",
+            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        );
+        std::fs::write(
+            state_dir.join(format!("{}.json", branch)),
+            serde_json::to_string(&state).unwrap(),
+        )
+        .unwrap();
+
+        // frozen phases JSON shape expected by load_phase_config:
+        // top-level `order` array plus `phases` object whose entries
+        // carry `name` and `command` strings. Numbers derive from the
+        // order index, so we override only the display name for
+        // flow-plan to give the panel a detectable signal.
+        let frozen = json!({
+            "order": [
+                "flow-start",
+                "flow-plan",
+                "flow-code",
+                "flow-code-review",
+                "flow-learn",
+                "flow-complete"
+            ],
+            "phases": {
+                "flow-start": {"name": "Start", "command": "/flow:flow-start"},
+                "flow-plan": {"name": "Custom Plan Name", "command": "/flow:flow-plan-custom"},
+                "flow-code": {"name": "Code", "command": "/flow:flow-code"},
+                "flow-code-review": {"name": "Code Review", "command": "/flow:flow-code-review"},
+                "flow-learn": {"name": "Learn", "command": "/flow:flow-learn"},
+                "flow-complete": {"name": "Complete", "command": "/flow:flow-complete"}
+            }
+        });
+        std::fs::write(
+            state_dir.join(format!("{}-phases.json", branch)),
+            serde_json::to_string(&frozen).unwrap(),
+        )
+        .unwrap();
+
+        let (text, code) = run_impl_main(Some(branch), &root).expect("ok path");
+        assert_eq!(code, 0);
+        assert!(
+            text.contains("Custom Plan Name"),
+            "Panel should reflect frozen phase name:\n{}",
+            text
+        );
+    }
 }

@@ -1043,6 +1043,44 @@ mod tests {
     }
 
     #[test]
+    fn run_impl_closed_content_unreadable_omits_resolved() {
+        // The run_impl closed-issues read uses read_to_string(...).ok()?
+        // so a closed file that exists but cannot be read silently
+        // omits the Resolved section. Pin the graceful-degradation
+        // contract by pointing closed_issues_file at a directory —
+        // read_to_string returns Err(IsADirectory), the .ok()? drops
+        // it, and run_impl still produces a summary.
+        let dir = tempfile::tempdir().unwrap();
+        let state_file = write_state_file(dir.path());
+        let closed_dir = dir.path().join("closed_as_dir");
+        std::fs::create_dir_all(&closed_dir).unwrap();
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            closed_issues_file: Some(closed_dir.to_string_lossy().to_string()),
+        };
+        let result = run_impl(&args).unwrap();
+        assert!(!result.summary.contains("Resolved"));
+        assert!(result.summary.contains("Test Feature"));
+    }
+
+    #[test]
+    fn run_impl_closed_content_malformed_omits_resolved() {
+        // Malformed JSON in closed_issues_file: from_str(...).ok()?
+        // drops the parse error and omits the Resolved section.
+        let dir = tempfile::tempdir().unwrap();
+        let state_file = write_state_file(dir.path());
+        let closed_file = dir.path().join("malformed.json");
+        std::fs::write(&closed_file, "{not valid json").unwrap();
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            closed_issues_file: Some(closed_file.to_string_lossy().to_string()),
+        };
+        let result = run_impl(&args).unwrap();
+        assert!(!result.summary.contains("Resolved"));
+        assert!(result.summary.contains("Test Feature"));
+    }
+
+    #[test]
     fn test_summary_findings_with_existing_artifacts() {
         let mut state = all_complete_state();
         state["findings"] = json!([

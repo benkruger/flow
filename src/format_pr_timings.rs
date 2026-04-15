@@ -387,4 +387,44 @@ mod tests {
         assert!(table.contains("| Phase | Duration |"));
         assert!(output_file.exists());
     }
+
+    #[test]
+    fn run_impl_write_error_returns_err() {
+        // run_impl's fs::write error branch (wrapping the OS error
+        // into "Failed to write output: ..."). Point the output
+        // path at a child of an existing regular file: create_dir_all
+        // silently no-ops on a file, then fs::write fails with
+        // NotADirectory — triggering the Err branch.
+        let dir = tempfile::tempdir().unwrap();
+        let parent_as_file = dir.path().join("not-a-dir");
+        std::fs::write(&parent_as_file, "blocker").unwrap();
+        let output_path = parent_as_file.join("out.md");
+
+        let all_phases = [
+            "flow-start",
+            "flow-plan",
+            "flow-code",
+            "flow-code-review",
+            "flow-learn",
+            "flow-complete",
+        ];
+        let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
+        let state = make_state("flow-complete", &statuses);
+        let state_file = dir.path().join("state.json");
+        std::fs::write(&state_file, serde_json::to_string(&state).unwrap()).unwrap();
+
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            output: output_path.to_string_lossy().to_string(),
+            started_only: false,
+        };
+        let result = run_impl(&args);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("Failed to write output"),
+            "Unexpected err msg: {}",
+            msg
+        );
+    }
 }
