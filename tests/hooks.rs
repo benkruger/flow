@@ -1102,3 +1102,198 @@ fn validate_claude_paths_flow_state_file_missing_allows() {
     let output = run_hook_in(&cwd, "validate-claude-paths", &input);
     assert_eq!(output.status.code().unwrap(), 0);
 }
+
+// --- validate-pretool integration tests (issue #1145 Task 5) ---
+//
+// validate_pretool::run() uses `find_settings_and_root()`,
+// `detect_branch_from_cwd()`, and `is_flow_active()` together to
+// compute `flow_active`. The background-block path fires for
+// `bin/flow` and `bin/ci` commands regardless of flow_active, but
+// the agent and bash block paths require flow_active=true, so
+// tests that exercise those paths build a settings file at the
+// project root plus the full worktree fixture.
+
+/// Extend `setup_worktree_fixture` with a `.claude/settings.json`
+/// at the project root. Returns the worktree cwd path. The settings
+/// file's permissions `allow` list must include any Bash pattern a
+/// test exercises on the validate (not block) path.
+fn setup_pretool_fixture(dir: &Path, branch: &str, allow_patterns: &[&str]) -> std::path::PathBuf {
+    let cwd = setup_worktree_fixture(dir, branch, true);
+    let claude = dir.join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let allow: Vec<Value> = allow_patterns.iter().map(|p| json!(p)).collect();
+    let settings = json!({"permissions": {"allow": allow, "deny": []}});
+    fs::write(
+        claude.join("settings.json"),
+        serde_json::to_string(&settings).unwrap(),
+    )
+    .unwrap();
+    cwd
+}
+
+#[test]
+fn validate_pretool_malformed_stdin_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
+    let output = run_hook_in(&cwd, "validate-pretool", b"not json");
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_pretool_background_bin_flow_ci_blocked_exits_2() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"command": "bin/flow ci", "run_in_background": true}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("bin/flow"),
+        "stderr must name bin/flow variant: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_pretool_background_bin_ci_blocked_exits_2() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"command": "bin/ci", "run_in_background": true}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("bin/ci"),
+        "stderr must name bin/ci variant: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_pretool_background_absolute_bin_flow_blocked_exits_2() {
+    // Suffix-match coverage per .claude/rules/testing-gotchas.md
+    // "Suffix-Match Path Coverage" — absolute-path form of bin/flow.
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {
+            "command": "/Users/example/project/bin/flow ci",
+            "run_in_background": true,
+        }
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("bin/flow"),
+        "stderr must name bin/flow: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_pretool_background_absolute_bin_ci_blocked_exits_2() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {
+            "command": "/opt/tools/bin/ci",
+            "run_in_background": true,
+        }
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("bin/ci"),
+        "stderr must name bin/ci: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_pretool_general_purpose_agent_blocked_during_flow_exits_2() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
+    // Agent tool call: no `command`, subagent_type=general-purpose.
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"subagent_type": "general-purpose"}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("general-purpose"),
+        "stderr must name subagent type: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_pretool_non_general_purpose_agent_allowed_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &[]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"subagent_type": "flow:reviewer"}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_pretool_compound_command_blocked_exits_2() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &["Bash(echo *)"]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"command": "echo a && echo b"}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("BLOCKED"),
+        "compound command must block: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_pretool_file_read_command_blocked_exits_2() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &["Bash(cat *)"]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"command": "cat foo.txt"}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("BLOCKED") || stderr.contains("Read"),
+        "file-read command must block: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_pretool_safe_command_allowed_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = setup_pretool_fixture(dir.path(), "feat", &["Bash(git status)"]);
+    let input = serde_json::to_vec(&json!({
+        "tool_input": {"command": "git status"}
+    }))
+    .unwrap();
+    let output = run_hook_in(&cwd, "validate-pretool", &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
