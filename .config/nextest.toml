@@ -1,8 +1,21 @@
 [profile.default]
-# Concurrency tests spawn multiple subprocesses that acquire filesystem
-# locks with polling intervals. Under full parallelism, system load
-# delays subprocess startup enough to cause lock timeouts. Run them
-# with limited parallelism to avoid flaky failures.
+# Concurrency tests in `tests/concurrency.rs` share filesystem state
+# across threads (tempdir-scoped queues, log files, per-branch state
+# files). Running more than one concurrency test at a time inside the
+# `flow-rs::concurrency` binary creates unrelated contention on
+# tempdir creation, git init, and subprocess fork/exec. Two of the
+# tests — `log_append_under_contention` and `cleanup_isolation` —
+# still spawn `flow-rs` subprocesses (for `log` and `cleanup`
+# respectively) and under heavy parallelism those subprocess startups
+# compete for the kernel fork/exec lock. Pin the whole binary to
+# single-threaded execution so these tests run one at a time.
+#
+# The two lock tests in this file (`start_lock_serialization` and
+# `thundering_herd_zero_delay`) were converted in PR #1166 to call
+# `acquire_with_wait()` and `release()` from
+# `flow_rs::commands::start_lock` directly, eliminating fork/exec
+# contention from the lock path. The serialization group remains
+# correct and necessary for the other tests.
 
 [[profile.default.overrides]]
 filter = "binary_id(flow-rs::concurrency)"

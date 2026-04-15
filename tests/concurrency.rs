@@ -13,6 +13,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use common::flow_states_dir;
+use flow_rs::commands::start_lock::{acquire_with_wait, queue_path, release};
 use flow_rs::lock::mutate_state;
 use fs2::FileExt;
 use serde_json::{self, json, Value};
@@ -188,20 +189,30 @@ fn log_append_under_contention() {
 
 #[test]
 fn start_lock_serialization() {
-    //3 parallel threads acquire the start lock via `flow-rs start-lock`.
-    //No two hold it simultaneously — intervals must not overlap.
+    // Three worker threads start with 100ms staggered offsets and each
+    // acquires the FLOW start lock for 300ms. The held intervals must
+    // not overlap (the lock serializes contended access).
+    //
+    // Each worker invokes `flow_rs::commands::start_lock::acquire_with_wait`
+    // and `flow_rs::commands::start_lock::release` directly so the polling
+    // loop runs in-process. Direct library calls eliminate fork/exec
+    // contention from the test path: under `nextest` full-suite
+    // parallelism, the holder's subprocess release call gets queued
+    // behind dozens of unrelated test forks long enough to push the
+    // polling losers past their wait timeout. Functional CLI surface
+    // verification for the start-lock command (`--acquire`, `--check`,
+    // `--release` dispatch) lives in
+    // `tests/main_dispatch.rs::start_lock_cli_roundtrip` — this test
+    // deliberately exercises the lock mechanism under thread contention,
+    // not the CLI.
     let tmp = tempfile::tempdir().expect("Failed to create tempdir");
-    let repo = tmp.path().to_path_buf();
-    init_git_repo(&repo);
-    fs::create_dir_all(flow_states_dir(&repo)).expect("Failed to create .flow-states");
-
-    let repo = Arc::new(repo);
+    let queue_dir = Arc::new(queue_path(tmp.path()));
     let timings: Arc<Mutex<Vec<Timing>>> = Arc::new(Mutex::new(Vec::new()));
     let baseline = Instant::now();
 
     let handles: Vec<_> = (0..3)
         .map(|id| {
-            let repo = Arc::clone(&repo);
+            let queue_dir = Arc::clone(&queue_dir);
             let timings = Arc::clone(&timings);
 
             thread::spawn(move || {
@@ -209,38 +220,9 @@ fn start_lock_serialization() {
                 thread::sleep(Duration::from_millis(id as u64 * 100));
 
                 let feature = format!("feature-{}", id);
-                let output = Command::new(FLOW_RS)
-                    .args([
-                        "start-lock",
-                        "--acquire",
-                        "--wait",
-                        "--timeout",
-                        "90",
-                        "--interval",
-                        "1",
-                        "--feature",
-                        &feature,
-                    ])
-                    .current_dir(repo.as_ref())
-                    .output()
-                    .expect("Failed to run flow-rs start-lock --acquire");
-                assert!(
-                    output.status.success(),
-                    "start-lock acquire failed for {}: stdout={} stderr={}",
-                    feature,
-                    String::from_utf8_lossy(&output.stdout),
-                    String::from_utf8_lossy(&output.stderr)
-                );
-
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let data: Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
-                    panic!(
-                        "Failed to parse start-lock JSON for {}: {} output: {}",
-                        feature, e, stdout
-                    )
-                });
+                let acquire_result = acquire_with_wait(&feature, &queue_dir, 90, 1);
                 assert_eq!(
-                    data["status"].as_str().unwrap(),
+                    acquire_result["status"].as_str().unwrap(),
                     "acquired",
                     "Worker {} did not acquire lock",
                     id
@@ -250,16 +232,13 @@ fn start_lock_serialization() {
                 thread::sleep(Duration::from_millis(300));
                 let released_at = baseline.elapsed().as_secs_f64();
 
-                let output = Command::new(FLOW_RS)
-                    .args(["start-lock", "--release", "--feature", &feature])
-                    .current_dir(repo.as_ref())
-                    .output()
-                    .expect("Failed to run flow-rs start-lock --release");
-                assert!(
-                    output.status.success(),
-                    "start-lock release failed for {}: {}",
-                    feature,
-                    String::from_utf8_lossy(&output.stderr)
+                let release_result = release(&feature, &queue_dir);
+                assert_eq!(
+                    release_result["status"].as_str().unwrap(),
+                    "released",
+                    "Worker {} release returned status={}",
+                    id,
+                    release_result["status"]
                 );
 
                 timings.lock().unwrap().push(Timing {
@@ -298,24 +277,34 @@ fn start_lock_serialization() {
 
 #[test]
 fn thundering_herd_zero_delay() {
-    // 3 threads start simultaneously (barrier). All acquire lock, no overlaps.
-    // Uses 3 workers with 100ms hold time to keep wall time under 5 seconds
-    // normally. The 90-second timeout and join deadline provide generous
-    // headroom for CI environments under heavy parallel test load, where
-    // thread scheduling delays can stretch sleep durations significantly.
+    // Three worker threads start simultaneously through a `Barrier` and
+    // race to acquire the FLOW start lock with zero spawn delay. Each
+    // worker holds the lock for 100ms then releases it; the held
+    // intervals must not overlap. The 90-second per-worker wait timeout
+    // and the 90-second join deadline give the file-based polling loop
+    // generous headroom for scheduler jitter on loaded CI machines.
+    //
+    // Each worker invokes `flow_rs::commands::start_lock::acquire_with_wait`
+    // and `flow_rs::commands::start_lock::release` directly so the
+    // polling loop runs in-process. Direct library calls eliminate
+    // fork/exec contention from the test path: under `nextest`
+    // full-suite parallelism, the holder's subprocess release call
+    // gets queued behind dozens of unrelated test forks long enough to
+    // push the polling losers past their wait timeout. Functional CLI
+    // surface verification for the start-lock command (`--acquire`,
+    // `--check`, `--release` dispatch) lives in
+    // `tests/main_dispatch.rs::start_lock_cli_roundtrip` — this test
+    // deliberately exercises the lock mechanism under thread
+    // contention, not the CLI.
     let tmp = tempfile::tempdir().expect("Failed to create tempdir");
-    let repo = tmp.path().to_path_buf();
-    init_git_repo(&repo);
-    fs::create_dir_all(flow_states_dir(&repo)).expect("Failed to create .flow-states");
-
-    let repo = Arc::new(repo);
+    let queue_dir = Arc::new(queue_path(tmp.path()));
     let timings: Arc<Mutex<Vec<Timing>>> = Arc::new(Mutex::new(Vec::new()));
     let barrier = Arc::new(Barrier::new(3));
     let baseline = Instant::now();
 
     let handles: Vec<_> = (0..3)
         .map(|id| {
-            let repo = Arc::clone(&repo);
+            let queue_dir = Arc::clone(&queue_dir);
             let timings = Arc::clone(&timings);
             let barrier = Arc::clone(&barrier);
 
@@ -323,58 +312,26 @@ fn thundering_herd_zero_delay() {
                 barrier.wait();
 
                 let feature = format!("feature-{}", id);
-                let output = Command::new(FLOW_RS)
-                    .args([
-                        "start-lock",
-                        "--acquire",
-                        "--wait",
-                        "--timeout",
-                        "90",
-                        "--interval",
-                        "1",
-                        "--feature",
-                        &feature,
-                    ])
-                    .current_dir(repo.as_ref())
-                    .output()
-                    .expect("Failed to run flow-rs start-lock --acquire");
-                assert!(
-                    output.status.success(),
-                    "start-lock acquire failed for {}: stdout={} stderr={}",
-                    feature,
-                    String::from_utf8_lossy(&output.stdout),
-                    String::from_utf8_lossy(&output.stderr)
-                );
-
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let data: Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
-                    panic!(
-                        "Failed to parse start-lock JSON for {}: {} output: {}",
-                        feature, e, stdout
-                    )
-                });
+                let acquire_result = acquire_with_wait(&feature, &queue_dir, 90, 1);
                 assert_eq!(
-                    data["status"].as_str().unwrap(),
+                    acquire_result["status"].as_str().unwrap(),
                     "acquired",
                     "Worker {} got status={} instead of acquired",
                     id,
-                    data["status"]
+                    acquire_result["status"]
                 );
 
                 let acquired_at = baseline.elapsed().as_secs_f64();
                 thread::sleep(Duration::from_millis(100));
                 let released_at = baseline.elapsed().as_secs_f64();
 
-                let output = Command::new(FLOW_RS)
-                    .args(["start-lock", "--release", "--feature", &feature])
-                    .current_dir(repo.as_ref())
-                    .output()
-                    .expect("Failed to run flow-rs start-lock --release");
-                assert!(
-                    output.status.success(),
-                    "start-lock release failed for {}: {}",
-                    feature,
-                    String::from_utf8_lossy(&output.stderr)
+                let release_result = release(&feature, &queue_dir);
+                assert_eq!(
+                    release_result["status"].as_str().unwrap(),
+                    "released",
+                    "Worker {} release returned status={}",
+                    id,
+                    release_result["status"]
                 );
 
                 timings.lock().unwrap().push(Timing {
