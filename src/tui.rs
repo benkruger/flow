@@ -1136,10 +1136,22 @@ fn rl_color(pct: i64) -> Style {
     }
 }
 
+/// Build the (program, args) pair that opens `url` in the default
+/// macOS browser. Returns `("open", vec![url])` — the URL passes
+/// through unmodified so callers can audit the spawn surface as data
+/// rather than as a chained `Command` builder.
+///
+/// Pure helper — `Command::spawn` happens in `open_url` and is covered
+/// by `test_coverage.md`.
+fn build_open_url_command(url: &str) -> (&'static str, Vec<String>) {
+    ("open", vec![url.to_string()])
+}
+
 /// Open a URL in the default browser (macOS).
 fn open_url(url: &str) {
-    let _ = Command::new("open")
-        .arg(url)
+    let (program, args) = build_open_url_command(url);
+    let _ = Command::new(program)
+        .args(&args)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn();
@@ -1335,6 +1347,39 @@ mod tests {
     fn osascript_empty_stdout_is_false() {
         assert!(!parse_osascript_result(true, b""));
         assert!(!parse_osascript_result(false, b""));
+    }
+
+    // --- build_open_url_command ---
+
+    #[test]
+    fn open_url_command_uses_macos_open_binary() {
+        let (program, _args) = build_open_url_command("https://example.com");
+        assert_eq!(program, "open");
+    }
+
+    #[test]
+    fn open_url_command_passes_url_through_unmodified() {
+        let (_, args) = build_open_url_command("https://github.com/o/r/pull/100");
+        assert_eq!(args, vec!["https://github.com/o/r/pull/100".to_string()]);
+    }
+
+    #[test]
+    fn open_url_command_passes_empty_url_through() {
+        // Empty input does NOT get filtered or rewritten — the caller is
+        // responsible for any guards. Test pins the no-validation contract.
+        let (program, args) = build_open_url_command("");
+        assert_eq!(program, "open");
+        assert_eq!(args, vec![String::new()]);
+    }
+
+    #[test]
+    fn open_url_command_preserves_query_strings_and_fragments() {
+        // No URL escaping happens in the helper — `Command::arg` handles
+        // the shell quoting downstream. Test guards against accidental
+        // future "sanitization" that would corrupt query strings.
+        let url = "https://example.com/path?query=value&other=1#fragment";
+        let (_, args) = build_open_url_command(url);
+        assert_eq!(args, vec![url.to_string()]);
     }
 
     #[test]
