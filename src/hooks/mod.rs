@@ -280,4 +280,47 @@ mod tests {
         fs::write(paths.state_file(), "{}").unwrap();
         assert!(is_flow_active("feat-branch", dir.path()));
     }
+
+    /// Covers the `Err(_) => return (None, None)` arm on line 37 of
+    /// `find_settings_and_root_from`: `is_file()` succeeds and
+    /// `read_to_string` returns Ok, but `serde_json::from_str` fails
+    /// because the file is not valid JSON. The sibling test
+    /// `find_settings_read_failure_returns_none_none` covers the
+    /// outer `Err` arm (EACCES on read); this pins the inner JSON-
+    /// parse-failure arm which the subprocess integration tests
+    /// never reach because they always write syntactically valid
+    /// settings.
+    #[test]
+    fn find_settings_invalid_json_returns_none_none() {
+        use std::fs;
+        let dir = tempfile::tempdir().unwrap();
+        let claude = dir.path().join(".claude");
+        fs::create_dir(&claude).unwrap();
+        fs::write(claude.join("settings.json"), "{not valid json").unwrap();
+
+        let (val, root) = find_settings_and_root_from(dir.path());
+        assert!(val.is_none());
+        assert!(root.is_none());
+    }
+
+    /// Covers the `resolve_main_root` branch that trims a worktree
+    /// suffix off a project_root path — only the no-marker arm was
+    /// exercised by the existing suite.
+    #[test]
+    fn resolve_main_root_strips_worktree_suffix() {
+        let worktree = std::path::Path::new("/project/.worktrees/feat");
+        assert_eq!(
+            resolve_main_root(worktree),
+            std::path::PathBuf::from("/project")
+        );
+    }
+
+    #[test]
+    fn resolve_main_root_passthrough_without_marker() {
+        let plain = std::path::Path::new("/project");
+        assert_eq!(
+            resolve_main_root(plain),
+            std::path::PathBuf::from("/project")
+        );
+    }
 }
