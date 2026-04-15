@@ -875,6 +875,130 @@ fn test_render_list_shows_diamond_marker_for_orch_in_progress_issue() {
     );
 }
 
+// --- Dispatch tests for action keys (Task 13) ---
+//
+// These tests cover the match arms in `handle_list_input`,
+// `handle_orch_input`, and `handle_abort_confirm`. Each test sets
+// state up so the action method reached by the dispatch hits its
+// early-return / None branch and never spawns a subprocess. This
+// covers the dispatch lines without launching browsers or running
+// `bin/flow cleanup`.
+
+#[test]
+fn test_input_enter_in_list_view_dispatches_without_spawn() {
+    // Flow has no session_tty → worktree_session_tty returns None →
+    // open_worktree early-returns before activate_iterm_tab.
+    let mut app = make_app();
+    let mut flow = make_flow("A", "Code", 3);
+    // Default make_flow state has no session_tty field.
+    flow.state = serde_json::json!({"branch": "a"});
+    app.flows = vec![flow];
+    app.handle_key(key(KeyCode::Enter));
+    // Dispatch reached the Enter arm without panicking.
+    assert_eq!(app.view, View::List);
+}
+
+#[test]
+fn test_input_p_in_list_view_dispatches_without_spawn() {
+    // Flow has no pr_url → open_pr early-returns before open_url.
+    let mut app = make_app();
+    let mut flow = make_flow("A", "Code", 3);
+    flow.pr_url = None;
+    app.flows = vec![flow];
+    app.handle_key(key(KeyCode::Char('p')));
+    assert_eq!(app.view, View::List);
+}
+
+#[test]
+fn test_input_capital_i_in_list_view_dispatches_without_spawn() {
+    // No repo in state AND no fallback repo → flow_issue_url returns
+    // None → open_flow_issue early-returns before open_url.
+    let mut app = TuiApp::new(PathBuf::from("/tmp/test"), "1.0.0".to_string(), None);
+    let mut flow = make_flow("A", "Code", 3);
+    flow.state = serde_json::json!({"branch": "a"});
+    flow.issue_numbers = vec![42];
+    app.flows = vec![flow];
+    app.handle_key(key(KeyCode::Char('I')));
+    assert_eq!(app.view, View::List);
+}
+
+#[test]
+fn test_input_r_in_list_view_refreshes_data_from_tmpdir() {
+    // Press r → refresh_data reads .flow-states/, clears flows
+    // because the tmpdir has no state files.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let mut app = TuiApp::new(tmp.path().to_path_buf(), "1.0.0".to_string(), None);
+    app.flows = vec![make_flow("Pre-refresh", "Code", 3)];
+    app.handle_key(key(KeyCode::Char('r')));
+    // After refresh, no state files found → flows is empty.
+    assert!(app.flows.is_empty());
+}
+
+#[test]
+fn test_input_r_in_orch_view_refreshes_data() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let mut app = TuiApp::new(tmp.path().to_path_buf(), "1.0.0".to_string(), None);
+    app.active_tab = 1;
+    app.orch_data = Some(OrchestrationSummary {
+        elapsed: "5m".to_string(),
+        completed_count: 0,
+        failed_count: 0,
+        total: 1,
+        is_running: true,
+        items: vec![],
+    });
+    app.handle_key(key(KeyCode::Char('r')));
+    // After refresh against empty tmpdir, orch_data is None.
+    assert!(app.orch_data.is_none());
+}
+
+#[test]
+fn test_input_i_in_orch_view_dispatches_without_spawn() {
+    // No repo → orch_issue_url returns None → open_orch_issue
+    // early-returns before open_url.
+    let mut app = TuiApp::new(PathBuf::from("/tmp/test"), "1.0.0".to_string(), None);
+    app.active_tab = 1;
+    app.orch_data = Some(OrchestrationSummary {
+        elapsed: "5m".to_string(),
+        completed_count: 0,
+        failed_count: 0,
+        total: 1,
+        is_running: true,
+        items: vec![OrchestrationItem {
+            icon: "\u{25b6}".to_string(),
+            issue_number: Some(42),
+            title: "Item".to_string(),
+            elapsed: "1m".to_string(),
+            pr_url: None,
+            reason: None,
+            status: "in_progress".to_string(),
+        }],
+    });
+    app.handle_key(key(KeyCode::Char('i')));
+    assert_eq!(app.active_tab, 1);
+}
+
+#[test]
+fn test_input_abort_confirm_yes_with_empty_flows_is_noop() {
+    // Y dispatches to abort_flow but flows.is_empty() guards the
+    // subprocess spawn. Safe to exercise in tests.
+    let mut app = make_app();
+    app.confirming_abort = true;
+    app.handle_key(key(KeyCode::Char('y')));
+    // Dispatch cleared confirming_abort AND took the Y branch.
+    assert!(!app.confirming_abort);
+    // No flows, no spawn.
+    assert!(app.flows.is_empty());
+}
+
+#[test]
+fn test_input_abort_confirm_capital_y_with_empty_flows_is_noop() {
+    let mut app = make_app();
+    app.confirming_abort = true;
+    app.handle_key(key(KeyCode::Char('Y')));
+    assert!(!app.confirming_abort);
+}
+
 #[test]
 fn test_render_list_feature_narrower_than_default_shows_full_name() {
     // Short feature name at a wide viewport should NOT show `...`
