@@ -118,6 +118,39 @@ make `run()` a thin wrapper that calls it and `process::exit(1)` on
 `Err`. `process::exit` terminates the test process, so error-path
 tests must target `run_impl`.
 
+**Main-arm dispatch.** The same seam applies to `src/main.rs` match
+arms whose body is more than a one-line delegation. When an arm owns
+branch resolution, state-file IO, or validation that calls
+`process::exit` directly, extract the body into the owning module as
+`pub fn run_impl_main(params, root[, cwd]) -> (ReturnType, i32)` and
+have the main arm call one of the centralized helpers in
+`src/dispatch.rs`:
+
+- `dispatch::dispatch_json(Value, i32)` — for subcommands whose
+  stdout contract is JSON (e.g., `check_phase::run_impl_main`,
+  `phase_transition::run_impl_main`, `tui_data::run_impl_main`).
+- `dispatch::dispatch_text(&str, i32)` — for subcommands whose
+  stdout contract is plain text (e.g., `format_status::run_impl_main`).
+
+Return type choices:
+
+- `(Value, i32)` — JSON-only stdout, no stderr path.
+- `(String, i32)` — plain-text stdout, no stderr path.
+- `Result<(Value, i32), (String, i32)>` — when the arm has a stderr
+  error path. `Ok` routes to stdout via `dispatch_json`; `Err` goes
+  to stderr with the paired exit code. Reference:
+  `tui_data::run_impl_main` (no-flag error) and
+  `format_status::run_impl_main` (branch-resolution failure at exit
+  2). The main arm pattern-matches the Result.
+
+`run_impl_main` functions take `root: &Path` (and `cwd: &Path` where
+the arm enforces cwd drift) as parameters rather than calling
+`project_root()` / `current_dir()` internally, so inline unit tests
+can pass a `TempDir` fixture without colliding with the host
+worktree. Main.rs resolves those values once per arm and passes them
+in, matching the shape of the pre-existing `run_impl` seam in
+`ci.rs::run()`.
+
 ## Test Subprocess Stdio
 
 Cargo's test harness does not capture inherited child-process stdio.
