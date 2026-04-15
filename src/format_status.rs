@@ -957,4 +957,47 @@ mod tests {
             text
         );
     }
+
+    // --- format_multi_panel direct coverage ---
+
+    #[test]
+    fn format_status_multi_panel_renders_two_flows() {
+        // Construct two (PathBuf, Value, String) tuples and call
+        // format_multi_panel directly so the multi-panel rendering path
+        // is exercised without routing through run_impl_main's state
+        // discovery. Sibling test run_impl_main_multi_state_returns_multi_panel_exit_0
+        // covers the same function via the production dispatch path;
+        // this test pins format_multi_panel's rendering contract
+        // independently of the state-discovery surface.
+        let state_a = make_state(
+            "flow-code",
+            &[("flow-start", "complete"), ("flow-code", "in_progress")],
+        );
+        let state_b = make_state(
+            "flow-plan",
+            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        );
+        let results = vec![
+            (
+                std::path::PathBuf::from("/tmp/state-a.json"),
+                state_a,
+                "feature-a".to_string(),
+            ),
+            (
+                std::path::PathBuf::from("/tmp/state-b.json"),
+                state_b,
+                "feature-b".to_string(),
+            ),
+        ];
+        let panel = format_multi_panel(&results, VERSION, false);
+        assert!(
+            panel.contains("Multiple Features Active"),
+            "Panel:\n{}",
+            panel
+        );
+        assert!(panel.contains("Feature A"), "Panel:\n{}", panel);
+        assert!(panel.contains("Feature B"), "Panel:\n{}", panel);
+        assert!(panel.contains("Branch : feature-a"), "Panel:\n{}", panel);
+        assert!(panel.contains("Branch : feature-b"), "Panel:\n{}", panel);
+    }
 }
