@@ -373,9 +373,13 @@ fn violations_response(
     // callsites render identical wording. plan_extract adds the
     // path-specific "Edit the plan, then re-run /flow:flow-plan"
     // suffix that plan_check's bare-check variant omits.
+    // dup_count is 0 at this callsite — the plan_extract path wires
+    // the duplicate-test-coverage scanner in a subsequent commit.
+    // Passing 0 keeps this caller compiling until that wiring lands.
     let base = crate::plan_check::build_violation_message(
         scope_violations.len(),
         audit_violations.len(),
+        0,
         total,
     );
     json!({
