@@ -1442,3 +1442,104 @@ fn validate_worktree_paths_inside_worktree_allows_home_path() {
     let output = run_worktree_hook(&worktree, &input);
     assert_eq!(output.status.code().unwrap(), 0);
 }
+
+// --- stop-continue remaining-gap tests (issue #1145 Task 7) ---
+//
+// The existing `test_stop_continue_*` tests in this file cover most
+// of `stop_continue::run()`. These plan-named tests close the 8-line
+// coverage gap by pinning three specific paths: the slash-branch
+// `FlowPaths::try_new` None arm (a regression guard per
+// `.claude/rules/external-input-validation.md`), the QA-pending
+// fallback when no branch state file exists, and the
+// discussion-with-pending skill-name branch in `run()`'s output
+// formatter (lines 607–608). Similarly-named tests above use the
+// `test_` prefix; these keep the plan's naming convention (no
+// prefix) so both sets coexist.
+
+#[test]
+fn stop_continue_slash_branch_exits_zero_no_panic() {
+    // FLOW_SIMULATE_BRANCH=feature/foo → resolve_branch returns
+    // Some("feature/foo") → FlowPaths::try_new returns None → early
+    // return without panic. Regression guard per
+    // .claude/rules/external-input-validation.md.
+    let dir = tempfile::tempdir().unwrap();
+    let _ = Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output();
+    let output = run_hook("stop-continue", dir.path(), "feature/foo", b"{}");
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked"),
+        "slash-branch must not panic: {}",
+        stderr
+    );
+    // No state file for a slash branch → no block output.
+    assert!(
+        output.stdout.is_empty(),
+        "slash-branch must produce no block output: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
+fn stop_continue_qa_pending_fallback_blocks() {
+    // No branch state file, only a qa-pending.json breadcrumb at the
+    // project root. check_qa_pending fires in the run() fallback path
+    // (lines 582–589) and produces a block output with
+    // skill=flow-complete carrying the qa_context.
+    let dir = tempfile::tempdir().unwrap();
+    let _ = Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output();
+    let state_dir = flow_states_dir(dir.path());
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join("qa-pending.json"),
+        r#"{"_continue_context": "Resume QA verification now."}"#,
+    )
+    .unwrap();
+    let output = run_hook("stop-continue", dir.path(), "some-feature", b"{}");
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(parsed["decision"], "block");
+    assert!(
+        parsed["reason"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Resume QA verification now."),
+        "reason must embed QA context: {}",
+        parsed
+    );
+}
+
+#[test]
+fn stop_continue_discussion_with_pending_uses_context_message() {
+    // First-stop + pending path: check_first_stop sets
+    // skill=discussion-with-pending. run()'s output formatter branches
+    // on that name (lines 607–608) and uses result.context directly as
+    // the block reason — bypassing format_block_output's "child skill
+    // returned" framing.
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "feat-ctx";
+    let state = json!({
+        "branch": branch,
+        "_continue_pending": "commit",
+        "_continue_context": "Write the commit message now."
+    });
+    setup_git_and_state(dir.path(), branch, &state);
+    let output = run_hook("stop-continue", dir.path(), branch, b"{}");
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(parsed["decision"], "block");
+    let reason = parsed["reason"].as_str().unwrap_or("");
+    assert!(
+        reason.contains("Write the commit message now."),
+        "reason must embed the pending context verbatim: {}",
+        reason
+    );
+}
