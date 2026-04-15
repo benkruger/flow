@@ -250,6 +250,34 @@ fn test_notify_slack_no_post_message_wrapper() {
     );
 }
 
+#[test]
+fn no_subprocess_start_lock_in_concurrency_tests() {
+    // Tombstone: removed in PR #1166. The two thundering-herd lock
+    // tests in `tests/concurrency.rs` call
+    // `flow_rs::commands::start_lock::{acquire_with_wait, release}`
+    // directly instead of spawning `flow-rs start-lock` subprocesses.
+    // Subprocess fork/exec contention under nextest full-suite
+    // parallelism inflated the lock-holder's release latency past the
+    // worker polling timeout; the library-call shape removes that
+    // variability while still exercising the queue, mtime ordering,
+    // polling loop, and stale detection. CLI surface verification for
+    // the start-lock command lives in `tests/main_dispatch.rs`.
+    //
+    // The match is the quoted CLI argument literal `"start-lock"` —
+    // tight enough that prose mentioning the unquoted phrase passes,
+    // but any `.args([...])` regression fails immediately.
+    let root = common::repo_root();
+    let path = root.join("tests").join("concurrency.rs");
+    let content = fs::read_to_string(&path).expect("tests/concurrency.rs must exist");
+    assert!(
+        !content.contains("\"start-lock\""),
+        "tests/concurrency.rs must not spawn flow-rs start-lock subprocesses; \
+         use acquire_with_wait() and release() from \
+         flow_rs::commands::start_lock directly. See PR #1166 and \
+         tests/main_dispatch.rs for CLI surface verification."
+    );
+}
+
 // --- Coverage waiver loophole closure ---
 //
 // Coverage waivers are forbidden. The `test_coverage.md` file, the
