@@ -368,3 +368,54 @@ fn claude_md_no_test_coverage_references() {
          bullet — coverage waivers are forbidden."
     );
 }
+
+/// Structural tombstone: scan `format_complete_summary.rs` for the
+/// forbidden `pub fn run(args: Args)` signature. The refactor replaced
+/// it with `pub fn run_impl_main(&Args) -> (Value, i32)` so that
+/// `process::exit` lives in `dispatch::dispatch_json` instead of the
+/// formatter. A merge resolver that reintroduces the wrapper would
+/// regress the module's coverage by terminating the subprocess before
+/// cargo-llvm-cov flushes its profdata.
+#[test]
+fn test_format_complete_summary_no_pub_fn_run_wrapper() {
+    // Tombstone: removed in PR #1176. Must not return.
+    let root = common::repo_root();
+    let path = root.join("src/format_complete_summary.rs");
+    let content = fs::read_to_string(&path).expect("format_complete_summary.rs must exist");
+    assert!(
+        !content.contains("pub fn run(args: Args)"),
+        "src/format_complete_summary.rs must not contain \
+         `pub fn run(args: Args)` — use `run_impl_main` + \
+         `dispatch::dispatch_json` so process::exit is isolated."
+    );
+}
+
+/// Structural tombstone: see `test_format_complete_summary_no_pub_fn_run_wrapper`.
+#[test]
+fn test_format_issues_summary_no_pub_fn_run_wrapper() {
+    // Tombstone: removed in PR #1176. Must not return.
+    let root = common::repo_root();
+    let path = root.join("src/format_issues_summary.rs");
+    let content = fs::read_to_string(&path).expect("format_issues_summary.rs must exist");
+    assert!(
+        !content.contains("pub fn run(args: Args)"),
+        "src/format_issues_summary.rs must not contain \
+         `pub fn run(args: Args)` — use `run_impl_main` + \
+         `dispatch::dispatch_json` so process::exit is isolated."
+    );
+}
+
+/// Structural tombstone: see `test_format_complete_summary_no_pub_fn_run_wrapper`.
+#[test]
+fn test_format_pr_timings_no_pub_fn_run_wrapper() {
+    // Tombstone: removed in PR #1176. Must not return.
+    let root = common::repo_root();
+    let path = root.join("src/format_pr_timings.rs");
+    let content = fs::read_to_string(&path).expect("format_pr_timings.rs must exist");
+    assert!(
+        !content.contains("pub fn run(args: Args)"),
+        "src/format_pr_timings.rs must not contain \
+         `pub fn run(args: Args)` — use `run_impl_main` + \
+         `dispatch::dispatch_json` so process::exit is isolated."
+    );
+}
