@@ -417,9 +417,9 @@ enforcement topology (`bin/flow plan-check` plus both
 When a plan task extracts a block of code into a new helper function,
 the new helper introduces its own internal branches that the plan
 must enumerate at Plan time — before the Code phase runs into them.
-Without enumeration, the Code phase discovers new branches mid-flow
-and is pressured to classify them ad hoc, which defeats the discipline
-documented in `.claude/rules/no-waivers.md`.
+Without up-front enumeration, the Code phase discovers the new
+branches only after the extraction lands, and the branch-level test
+strategy ends up decided ad hoc instead of by design.
 
 When the plan proposes extracting a block into a new function, helper,
 or seam — or lifts, hoists, factors out, or pulls out an existing
@@ -435,10 +435,10 @@ Column definitions:
 
 - **Branch** — a letter or number label identifying the branch
 - **Condition** — the guard expression or prose condition
-- **Classification** — one of the three positive values below
+- **Classification** — one of the three values below
 - **Test** — the named test function that will exercise this branch
 
-The three positive classifications:
+The three classifications:
 
 - **Testable via seam** — an injected closure, trait object, or
   Command parameter; branches exercised by passing mock
@@ -453,9 +453,11 @@ The three positive classifications:
   calls when they spawn the same binary. Reference pattern:
   `check_phase_first_phase_exits_0`.
 
-When no classification fits, the fourth response per
-`.claude/rules/no-waivers.md` is to refactor further or delete the
-branch — never to file a waiver.
+If a branch cannot be classified under one of the three, the
+extraction design is wrong — refactor further (push the untested
+surface behind a seam, fold the branch into the caller, or delete
+the branch entirely) until every branch lands in one of the three
+classifications.
 
 If the plan prose mentions extraction in discussion rather than as a
 proposal, add the opt-out comment
@@ -465,9 +467,7 @@ single blank line in between (no chaining across more than one
 blank line).
 
 See `.claude/rules/extract-helper-refactor.md` for the full trigger
-vocabulary, the motivating PR #1155 incident, and the cross-
-references to `.claude/rules/no-waivers.md` and
-`.claude/rules/docs-with-behavior.md`.
+vocabulary and the motivating PR #1155 incident.
 
 ### Supersession Enumeration
 
