@@ -2966,6 +2966,26 @@ fn flow_plan_skill_has_extract_helper_branch_enumeration() {
             "Extract-Helper Branch Enumeration subsection must name classification: {cls}"
         );
     }
+
+    // The subsection must present a Branch Enumeration Table (four
+    // columns: Branch / Condition / Classification / Test). The
+    // header row and separator together guarantee authors see the
+    // table shape inline instead of anchoring on an abbreviated
+    // prose summary.
+    assert!(
+        sub_body.contains("| Branch | Condition | Classification | Test |"),
+        "Extract-Helper Branch Enumeration subsection must include the \
+         four-column Branch Enumeration Table header"
+    );
+
+    // The subsection must document the opt-out comment token inline
+    // so Plan authors learn the escape hatch without having to
+    // follow the cross-reference to the rule file.
+    assert!(
+        sub_body.contains("extract-helper-refactor: not-an-extraction"),
+        "Extract-Helper Branch Enumeration subsection must document \
+         the opt-out comment token 'extract-helper-refactor: not-an-extraction'"
+    );
 }
 
 #[test]
@@ -3004,6 +3024,35 @@ fn extract_helper_refactor_rule_has_expected_structure() {
     assert!(
         content.contains("PR #1155"),
         "extract-helper-refactor.md must cite the motivating PR #1155 incident"
+    );
+
+    // The rule file must carry the canonical section structure the
+    // SKILL.md cross-reference promises. A future edit that removes
+    // Why, The Rule, The Three Classifications, or Enforcement
+    // leaves the rule without its substantive scaffolding; these
+    // assertions fail CI on that regression.
+    for section in [
+        "## Vocabulary",
+        "## Why",
+        "## The Rule",
+        "## The Three Classifications",
+        "## Enforcement",
+        "## Opt-Out Grammar",
+        "## How to Apply",
+        "## Motivating Incident",
+    ] {
+        assert!(
+            content.contains(section),
+            "extract-helper-refactor.md must contain section heading: {section}"
+        );
+    }
+
+    // The canonical four-column Branch Enumeration Table must appear
+    // in the rule file as the reference for Plan authors.
+    assert!(
+        content.contains("| Branch | Condition | Classification | Test |"),
+        "extract-helper-refactor.md must include the four-column \
+         Branch Enumeration Table header"
     );
 }
 

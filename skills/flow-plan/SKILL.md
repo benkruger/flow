@@ -430,6 +430,8 @@ four columns:
 | Branch | Condition | Classification | Test |
 |---|---|---|---|
 | A | `tree_changed == true` | Testable directly | `production_ci_decider_tree_changed_returns_not_skipped` |
+| B | `tree_changed == false` ∧ sentinel matches | Testable directly | `production_ci_decider_sentinel_hit_returns_skipped` |
+| C | CI dirty-check dispatches to `ci::run_impl` | Testable via seam | (lift `ci::run_impl` into an injectable parameter and test via a mock) |
 
 Column definitions:
 

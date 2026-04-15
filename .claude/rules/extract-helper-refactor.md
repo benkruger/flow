@@ -11,6 +11,24 @@ This rule is the mechanical complement to the
 Plan-phase trigger; this file is the full reference the subsection
 cross-references.
 
+## Vocabulary
+
+- **seam** — a parameterized injection point in a function's
+  signature that lets tests substitute a mock for a concrete
+  dependency. When this rule says "lift X into a seam," it means
+  turning `X` into a parameter the caller passes in rather than a
+  hard-coded call inside the function body.
+- **decider** — a closure or trait object that encapsulates a
+  yes/no or branch-selection decision, passed into a function as a
+  seam so tests can control the decision.
+- **sentinel** — a small cached marker file that records the tree
+  state from the most recent successful `bin/flow ci` run. See
+  `src/ci.rs::tree_snapshot` and `src/ci.rs::sentinel_path` for
+  the canonical readers/writers.
+- **CiDecider** — the concrete type alias in `src/complete_fast.rs`
+  for the Complete-phase CI dirty-check seam:
+  `dyn Fn(&Path, &Path, &str, bool) -> (bool, Option<String>)`.
+
 ## Why
 
 A plan that counts tests against the seam a refactor introduces is
@@ -102,6 +120,36 @@ directly at the caller, or delete the branch entirely if it is
 unreachable from any production path. Every branch must land under
 one of the three classifications before the plan is complete.
 
+## Enforcement
+
+Iteration 1 of this rule is **prose-only** — there is no scanner
+in `src/plan_check.rs` that mechanically blocks a Plan phase from
+completing without a Branch Enumeration Table. This is a deliberate
+choice per `.claude/rules/skill-authoring.md` "Simplest Approach
+First," mirroring `.claude/rules/supersession.md`'s model.
+
+The enforcement layers in iteration 1 are:
+
+1. **The rule file itself** (this file) — the primary instrument.
+   Plan authors read it via the cross-reference from
+   `skills/flow-plan/SKILL.md` Step 3.
+2. **The SKILL.md subsection** — reminds the Plan phase of the
+   discipline at authoring time.
+3. **The Code Review reviewer agent** — cross-references the plan's
+   Branch Enumeration Table against the landed tests and raises a
+   Real finding per `.claude/rules/code-review-scope.md` when a
+   plan-named test is missing.
+4. **The adversarial agent in Code Review** — writes failing tests
+   against uncovered branches, surfacing the same gap as test
+   failures.
+
+If a future iteration adds a mechanical scanner, the natural home
+is `src/extract_helper_refactor.rs` following the topology of
+`src/scope_enumeration.rs` and `src/external_input_audit.rs`. That
+scanner is **not present today**; any session that goes looking
+for one should stop at this section rather than spending turns
+searching.
+
 ## Opt-Out Grammar
 
 When the plan prose mentions extraction in discussion rather than as
@@ -118,6 +166,10 @@ Larger gaps do not chain — the rule is "the next non-blank line with
 at most one blank line separating them," matching the sibling
 opt-out grammar in `.claude/rules/scope-enumeration.md` and
 `.claude/rules/external-input-audit-gate.md`.
+
+The grammar is documented now as part of the rule's stable API so
+that when a scanner is eventually implemented it inherits the
+placement rules verbatim. Today the comment is inert.
 
 ## How to Apply
 
@@ -203,7 +255,7 @@ Commit references:
 - `.claude/rules/skill-authoring.md` — Plan Task Ordering (TDD order)
   and Simplest Approach First (iteration 1 is instructional only, no
   mechanical scanner).
-- `src/complete_fast.rs` lines 429–495 — the reference
+- `src/complete_fast.rs` lines 453–495 — the reference
   `production_ci_decider` helper cited throughout this rule.
 - `tests/main_dispatch.rs` — the reference subprocess test surface
   used by the `Testable via subprocess` classification.
