@@ -369,12 +369,93 @@ fn claude_md_no_test_coverage_references() {
     );
 }
 
-/// Structural tombstone: scan `format_complete_summary.rs` for the
-/// forbidden `pub fn run(args: Args)` signature. The refactor replaced
-/// it with `pub fn run_impl_main(&Args) -> (Value, i32)` so that
-/// `process::exit` lives in `dispatch::dispatch_json` instead of the
-/// formatter. A merge resolver that reintroduces the wrapper would
-/// regress the module's coverage by terminating the subprocess before
+/// Scan a Rust source file for a `pub fn run` wrapper whose body
+/// calls `process::exit`. Returns `true` when the forbidden construct
+/// is present. The scan is structural — it tolerates whitespace
+/// variants (space before paren, newline before paren), generic
+/// parameters (`pub fn run<T>`), reference parameters
+/// (`pub fn run(args: &Args)`), and renamed arg types
+/// (`pub fn run(args: RunArgs)`). A literal byte-substring check
+/// against a fixed signature cannot catch these bypasses; the
+/// structural scan locates every `pub fn run` token not followed by
+/// an identifier character, finds its braced body, and inspects the
+/// body for `process::exit`.
+fn source_contains_pub_fn_run_with_process_exit(content: &str) -> bool {
+    let needle = "pub fn run";
+    let mut search_from = 0usize;
+    while let Some(rel) = content[search_from..].find(needle) {
+        let abs = search_from + rel;
+        let after_needle = abs + needle.len();
+        search_from = after_needle;
+
+        // Reject matches that extend `run` into a longer identifier
+        // (e.g. `pub fn run_impl`, `pub fn run_impl_main`).
+        match content[after_needle..].chars().next() {
+            Some(c) if c.is_ascii_alphanumeric() || c == '_' => continue,
+            Some(_) => {}
+            None => continue,
+        }
+
+        // Locate the opening brace of the function body.
+        let tail = &content[after_needle..];
+        let brace_idx = tail.find('{');
+        let Some(bi) = brace_idx else {
+            continue;
+        };
+
+        // Scan the braced body with depth tracking so nested blocks
+        // don't terminate the scan early.
+        let body_slice = &tail[bi..];
+        let mut depth: i32 = 0;
+        let mut body_end: Option<usize> = None;
+        for (i, ch) in body_slice.char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        body_end = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(be) = body_end else {
+            continue;
+        };
+        let body = &body_slice[..=be];
+
+        // Look for `process::exit` in any non-comment span. A naive
+        // `line.contains("process::exit")` misidentifies inline
+        // comments (e.g. `let x = 1; // process::exit ...`) as
+        // matches. Strip everything from `//` onward on each line
+        // before searching — this handles both leading and inline
+        // comments. It doesn't handle block comments (/* ... */),
+        // but those are rare in wrapper bodies and a stricter parser
+        // would exceed the tombstone's risk/complexity budget.
+        for line in body.lines() {
+            let code = match line.find("//") {
+                Some(idx) => &line[..idx],
+                None => line,
+            };
+            if code.contains("process::exit") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Structural tombstone: scan `format_complete_summary.rs` for any
+/// `pub fn run` wrapper whose body calls `process::exit`. The refactor
+/// replaced the wrapper with `pub fn run_impl_main(&Args) -> (Value, i32)`
+/// so that `process::exit` lives in `dispatch::dispatch_json` instead
+/// of the formatter. A merge resolver that reintroduces the wrapper —
+/// in any signature variant the adversarial agent proved could bypass
+/// a literal check (space before paren, newline before paren, generic
+/// parameters, reference parameter, renamed Args type) — regresses
+/// the module's coverage by terminating the subprocess before
 /// cargo-llvm-cov flushes its profdata.
 #[test]
 fn test_format_complete_summary_no_pub_fn_run_wrapper() {
@@ -383,10 +464,11 @@ fn test_format_complete_summary_no_pub_fn_run_wrapper() {
     let path = root.join("src/format_complete_summary.rs");
     let content = fs::read_to_string(&path).expect("format_complete_summary.rs must exist");
     assert!(
-        !content.contains("pub fn run(args: Args)"),
-        "src/format_complete_summary.rs must not contain \
-         `pub fn run(args: Args)` — use `run_impl_main` + \
-         `dispatch::dispatch_json` so process::exit is isolated."
+        !source_contains_pub_fn_run_with_process_exit(&content),
+        "src/format_complete_summary.rs must not contain a \
+         `pub fn run` wrapper whose body calls `process::exit` — \
+         use `run_impl_main` + `dispatch::dispatch_json` so \
+         `process::exit` is isolated to the dispatcher."
     );
 }
 
@@ -398,10 +480,11 @@ fn test_format_issues_summary_no_pub_fn_run_wrapper() {
     let path = root.join("src/format_issues_summary.rs");
     let content = fs::read_to_string(&path).expect("format_issues_summary.rs must exist");
     assert!(
-        !content.contains("pub fn run(args: Args)"),
-        "src/format_issues_summary.rs must not contain \
-         `pub fn run(args: Args)` — use `run_impl_main` + \
-         `dispatch::dispatch_json` so process::exit is isolated."
+        !source_contains_pub_fn_run_with_process_exit(&content),
+        "src/format_issues_summary.rs must not contain a \
+         `pub fn run` wrapper whose body calls `process::exit` — \
+         use `run_impl_main` + `dispatch::dispatch_json` so \
+         `process::exit` is isolated to the dispatcher."
     );
 }
 
@@ -413,9 +496,84 @@ fn test_format_pr_timings_no_pub_fn_run_wrapper() {
     let path = root.join("src/format_pr_timings.rs");
     let content = fs::read_to_string(&path).expect("format_pr_timings.rs must exist");
     assert!(
-        !content.contains("pub fn run(args: Args)"),
-        "src/format_pr_timings.rs must not contain \
-         `pub fn run(args: Args)` — use `run_impl_main` + \
-         `dispatch::dispatch_json` so process::exit is isolated."
+        !source_contains_pub_fn_run_with_process_exit(&content),
+        "src/format_pr_timings.rs must not contain a \
+         `pub fn run` wrapper whose body calls `process::exit` — \
+         use `run_impl_main` + `dispatch::dispatch_json` so \
+         `process::exit` is isolated to the dispatcher."
     );
+}
+
+#[cfg(test)]
+mod source_scanner_tests {
+    // Unit tests for the structural scanner — ensures it catches
+    // every adversarial bypass the literal byte-substring check
+    // would miss.
+    use super::source_contains_pub_fn_run_with_process_exit as scan;
+
+    #[test]
+    fn scanner_catches_canonical_wrapper() {
+        let src = "pub fn run(args: Args) { process::exit(1); }\n";
+        assert!(scan(src));
+    }
+
+    #[test]
+    fn scanner_catches_space_before_paren() {
+        let src = "pub fn run (args: Args) { process::exit(1); }\n";
+        assert!(scan(src));
+    }
+
+    #[test]
+    fn scanner_catches_newline_before_paren() {
+        let src = "pub fn run\n    (args: Args) { process::exit(1); }\n";
+        assert!(scan(src));
+    }
+
+    #[test]
+    fn scanner_catches_generic_parameter() {
+        let src = "pub fn run<T>(args: Args) { process::exit(1); }\n";
+        assert!(scan(src));
+    }
+
+    #[test]
+    fn scanner_catches_reference_parameter() {
+        let src = "pub fn run(args: &Args) { process::exit(1); }\n";
+        assert!(scan(src));
+    }
+
+    #[test]
+    fn scanner_catches_renamed_args_type() {
+        let src = "pub fn run(args: RunArgs) { process::exit(1); }\n";
+        assert!(scan(src));
+    }
+
+    #[test]
+    fn scanner_accepts_run_impl_main_without_process_exit() {
+        let src = "pub fn run_impl_main(args: &Args) -> (Value, i32) { (Value::Null, 0) }\n";
+        assert!(!scan(src));
+    }
+
+    #[test]
+    fn scanner_accepts_run_impl_fallible() {
+        let src = "pub fn run_impl(args: &Args) -> Result<(), String> { Ok(()) }\n";
+        assert!(!scan(src));
+    }
+
+    #[test]
+    fn scanner_ignores_process_exit_in_comment() {
+        let src =
+            "pub fn run(args: Args) { // process::exit used to be here\n    let _ = args;\n}\n";
+        assert!(!scan(src));
+    }
+
+    #[test]
+    fn scanner_accepts_empty_file() {
+        assert!(!scan(""));
+    }
+
+    #[test]
+    fn scanner_catches_process_exit_inside_nested_block() {
+        let src = "pub fn run(args: Args) { if args.foo { process::exit(1); } }\n";
+        assert!(scan(src));
+    }
 }

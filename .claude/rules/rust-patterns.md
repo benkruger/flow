@@ -128,7 +128,10 @@ have the main arm call one of the centralized helpers in
 
 - `dispatch::dispatch_json(Value, i32)` — for subcommands whose
   stdout contract is JSON (e.g., `check_phase::run_impl_main`,
-  `phase_transition::run_impl_main`, `tui_data::run_impl_main`).
+  `phase_transition::run_impl_main`, `tui_data::run_impl_main`,
+  `format_complete_summary::run_impl_main`,
+  `format_issues_summary::run_impl_main`,
+  `format_pr_timings::run_impl_main`).
 - `dispatch::dispatch_text(&str, i32)` — for subcommands whose
   stdout contract is plain text (e.g., `format_status::run_impl_main`).
 

@@ -1075,4 +1075,78 @@ mod tests {
             text
         );
     }
+
+    #[test]
+    fn format_status_all_complete_renders_all_phases_complete_panel() {
+        // format_panel dispatches to format_all_complete when every
+        // phase is "complete" (L49-51). Exercising that branch covers
+        // the all-complete panel's border, feature line, PR line,
+        // total-elapsed calculation, and per-phase [x] rows — none of
+        // which any other test reaches.
+        let mut state = make_state(
+            "flow-complete",
+            &[
+                ("flow-start", "complete"),
+                ("flow-plan", "complete"),
+                ("flow-code", "complete"),
+                ("flow-code-review", "complete"),
+                ("flow-learn", "complete"),
+                ("flow-complete", "complete"),
+            ],
+        );
+        state["phases"]["flow-start"]["cumulative_seconds"] = json!(36);
+        state["phases"]["flow-plan"]["cumulative_seconds"] = json!(300);
+        state["phases"]["flow-code"]["cumulative_seconds"] = json!(600);
+        let panel = format_panel(&state, VERSION, None, false, None);
+        assert!(
+            panel.contains("All Phases Complete"),
+            "Expected all-complete panel header:\n{}",
+            panel
+        );
+        assert!(
+            panel.contains("Feature : Test Feature"),
+            "Expected feature line:\n{}",
+            panel
+        );
+        assert!(
+            panel.contains("[x] Phase 1:"),
+            "Expected Phase 1 completed row:\n{}",
+            panel
+        );
+        assert!(
+            panel.contains("[x] Phase 6:"),
+            "Expected Phase 6 completed row:\n{}",
+            panel
+        );
+    }
+
+    #[test]
+    fn format_status_all_complete_with_relative_cwd_renders_subdir_line() {
+        // Covers the relative_cwd branch inside format_all_complete
+        // (L231-233) — shown when the flow was started from a
+        // mono-repo subdirectory.
+        let mut state = make_state(
+            "flow-complete",
+            &[
+                ("flow-start", "complete"),
+                ("flow-plan", "complete"),
+                ("flow-code", "complete"),
+                ("flow-code-review", "complete"),
+                ("flow-learn", "complete"),
+                ("flow-complete", "complete"),
+            ],
+        );
+        state["relative_cwd"] = json!("api");
+        let panel = format_panel(&state, VERSION, None, false, None);
+        assert!(
+            panel.contains("All Phases Complete"),
+            "Expected all-complete panel:\n{}",
+            panel
+        );
+        assert!(
+            panel.contains("Subdir  : api"),
+            "Expected Subdir line when relative_cwd is set:\n{}",
+            panel
+        );
+    }
 }
