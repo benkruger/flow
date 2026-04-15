@@ -1843,24 +1843,35 @@ fn code_has_plan_test_verification() {
 fn code_documents_measurement_only_task_pathway() {
     let c = common::read_skill("flow-code");
     assert!(
-        c.contains("Measurement-Only Tasks"),
-        "Code skill must document the measurement-only task pathway as a named subsection"
+        c.contains("### Measurement-Only Tasks"),
+        "Code skill must document the measurement-only task pathway as a named `### ` subsection"
     );
-    assert!(
-        c.contains("Nothing to commit"),
-        "Code skill must reference the /flow:flow-commit empty-diff return path"
-    );
-    // The /flow:flow-commit reference must sit in or after the
-    // Measurement-Only Tasks subsection so the prose routes
-    // measurement tasks through the commit skill instead of
-    // leaving the reader to invent a shortcut.
-    let after_heading = c
-        .split("Measurement-Only Tasks")
-        .nth(1)
+    // Bound the slice to the subsection itself. Splitting on the
+    // heading string alone would leave `after_heading` covering
+    // everything from the heading to EOF, so a later section (e.g.
+    // the standard Commit section around L443) could satisfy the
+    // /flow:flow-commit and "Nothing to commit" assertions even if
+    // the subsection itself were gutted. Splitting the tail on the
+    // next `### ` heading keeps the checks local to the subsection.
+    let tail_at_heading = c
+        .split_once("### Measurement-Only Tasks")
+        .map(|(_, tail)| tail)
         .expect("heading presence asserted above");
+    let subsection = tail_at_heading
+        .split_once("\n### ")
+        .map(|(section, _)| section)
+        .unwrap_or(tail_at_heading);
     assert!(
-        after_heading.contains("/flow:flow-commit"),
+        subsection.contains("/flow:flow-commit"),
         "Measurement-only subsection must route through /flow:flow-commit"
+    );
+    assert!(
+        subsection.contains("Nothing to commit"),
+        "Measurement-only subsection must reference the empty-diff return path"
+    );
+    assert!(
+        subsection.contains("bin/flow ci"),
+        "Measurement-only subsection must keep the bin/flow ci Gate mandatory"
     );
 }
 
