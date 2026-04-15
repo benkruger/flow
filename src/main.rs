@@ -623,7 +623,8 @@ fn main() {
             label_issues::run(args);
         }
         Some(Commands::FormatIssuesSummary(args)) => {
-            format_issues_summary::run(args);
+            let (value, code) = format_issues_summary::run_impl_main(&args);
+            flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::FormatCompleteSummary(args)) => {
             let (value, code) = format_complete_summary::run_impl_main(&args);
