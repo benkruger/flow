@@ -969,30 +969,41 @@ fn run_tui_terminal(app: &mut flow_rs::tui::TuiApp) -> std::io::Result<()> {
         disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
     };
     use ratatui::backend::CrosstermBackend;
-    use ratatui::Terminal;
+    use ratatui::{Frame, Terminal};
+    use std::cell::RefCell;
     use std::io;
+    use std::rc::Rc;
     use std::time::Duration;
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let terminal = Rc::new(RefCell::new(Terminal::new(backend)?));
+
+    // Draw closure: owns a shared handle to the terminal and calls
+    // `terminal.draw(|f| render(f))` on each invocation.
+    let draw_terminal = Rc::clone(&terminal);
+    let draw: flow_rs::tui::DrawFn = Box::new(move |render_fn: &mut dyn FnMut(&mut Frame)| {
+        draw_terminal.borrow_mut().draw(|f| render_fn(f))?;
+        Ok(())
+    });
 
     // Event source closure wrapping crossterm::event::poll + event::read.
-    let events = |timeout: Duration| -> io::Result<Option<event::Event>> {
-        if event::poll(timeout)? {
-            Ok(Some(event::read()?))
-        } else {
-            Ok(None)
-        }
-    };
+    let events: flow_rs::tui::EventSourceFn =
+        Box::new(|timeout: Duration| -> io::Result<Option<event::Event>> {
+            if event::poll(timeout)? {
+                Ok(Some(event::read()?))
+            } else {
+                Ok(None)
+            }
+        });
 
-    let result = app.run_event_loop(&mut terminal, events);
+    let result = app.run_event_loop(draw, events);
 
     // Guaranteed cleanup: restore terminal even on error.
     let _ = disable_raw_mode();
-    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+    let _ = execute!(terminal.borrow_mut().backend_mut(), LeaveAlternateScreen);
 
     result
 }

@@ -19,7 +19,6 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
-use ratatui::Terminal;
 
 use serde_json::Value;
 
@@ -28,6 +27,19 @@ use crate::tui_data::{self, AccountMetrics, FlowSummary, IssueSummary, Orchestra
 
 /// Auto-refresh interval.
 const REFRESH_MS: u64 = 2000;
+
+/// Boxed draw closure passed into [`TuiApp::run_event_loop`]. The
+/// inner `&mut dyn FnMut(&mut Frame)` is the render callback the
+/// caller invokes via `terminal.draw(|f| render(f))` — this erases
+/// ratatui's `Backend` generic from the event-loop signature so
+/// exactly one monomorphization of the loop body exists in
+/// coverage reports.
+pub type DrawFn = Box<dyn FnMut(&mut dyn FnMut(&mut Frame)) -> io::Result<()>>;
+
+/// Boxed event-source closure passed into [`TuiApp::run_event_loop`].
+/// Returns `Ok(Some(event))` when an event is available within the
+/// timeout, or `Ok(None)` on timeout.
+pub type EventSourceFn = Box<dyn FnMut(Duration) -> io::Result<Option<Event>>>;
 
 /// Active view in the TUI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,18 +58,21 @@ pub enum View {
 /// which resolves `HOME` from the env and walks up from the current
 /// executable to find `bin/flow`. Tests construct via
 /// `TuiAppPlatform::for_tests()`, which points every binary at
-/// `/bin/true` so spawn sites run the real `Command::new().spawn()`
-/// chain without side effects.
+/// `/usr/bin/true` so spawn sites run the real `Command::new().spawn()`
+/// chain without side effects. `/usr/bin/true` is the canonical macOS
+/// location — `/bin/true` does not exist on macOS, so pointing the
+/// test platform there would silently exercise the spawn-failed Err
+/// arm and miss the Ok-arm code path.
 pub struct TuiAppPlatform {
     /// Binary that opens URLs in the default browser. Production:
-    /// `"open"` (macOS). Tests: `"/bin/true"`.
+    /// `"open"` (macOS). Tests: `"/usr/bin/true"`.
     pub open_binary: String,
     /// Binary that runs AppleScript snippets. Production:
-    /// `"osascript"`. Tests: `"/bin/true"`.
+    /// `"osascript"`. Tests: `"/usr/bin/true"`.
     pub osascript_binary: String,
     /// Path to the `bin/flow` binary used for `cleanup`. Production:
     /// resolved via ancestor walk from `current_exe()`. Tests:
-    /// `"/bin/true"`.
+    /// `"/usr/bin/true"`.
     pub bin_flow_path: PathBuf,
     /// Home directory, used by `tui_data::load_account_metrics` for
     /// rate-limits lookup. Production: `$HOME`. Tests: `temp_dir()`.
@@ -83,14 +98,15 @@ impl TuiAppPlatform {
         }
     }
 
-    /// Construct a test platform. Every spawn target is `/bin/true`
-    /// so tests exercise the real `Command::new().spawn()` chain
-    /// without any side effects. `home` is `std::env::temp_dir()`.
+    /// Construct a test platform. Every spawn target is `/usr/bin/true`
+    /// — the canonical macOS path — so tests exercise the real
+    /// `Command::new().spawn()` chain (and `Command::output()`) without
+    /// any side effects. `home` is `std::env::temp_dir()`.
     pub fn for_tests() -> Self {
         Self {
-            open_binary: "/bin/true".to_string(),
-            osascript_binary: "/bin/true".to_string(),
-            bin_flow_path: PathBuf::from("/bin/true"),
+            open_binary: "/usr/bin/true".to_string(),
+            osascript_binary: "/usr/bin/true".to_string(),
+            bin_flow_path: PathBuf::from("/usr/bin/true"),
             home: std::env::temp_dir(),
         }
     }
@@ -178,30 +194,34 @@ impl TuiApp {
                 self.orch_selected = orch.items.len().saturating_sub(1);
             }
         }
-        self.metrics = tui_data::load_account_metrics(&self.root, None);
+        self.metrics =
+            tui_data::load_account_metrics(&self.root, Some(self.platform.home.as_path()));
     }
 
-    /// Run the TUI event loop against a pre-constructed terminal and
-    /// event source. The caller owns the terminal's lifetime and
-    /// cleanup — this method only drives the render + dispatch loop.
+    /// Run the TUI event loop against a caller-supplied draw closure
+    /// and event source.
     ///
-    /// Tests pass `Terminal<TestBackend>` and a closure that pops
-    /// fake events from a queue. Production passes
-    /// `Terminal<CrosstermBackend<Stdout>>` and a closure wrapping
-    /// `crossterm::event::poll` + `crossterm::event::read`.
-    pub fn run_event_loop<B, E>(
+    /// The `draw` closure receives a render callback and is
+    /// responsible for calling `terminal.draw(|f| render(f))` on the
+    /// caller's terminal — this keeps ratatui's `Backend` generic
+    /// out of `run_event_loop`'s signature, so there is exactly ONE
+    /// compiled instantiation of the loop body regardless of which
+    /// backend the caller uses. Production (in `src/main.rs`) wraps
+    /// a `Terminal<CrosstermBackend<Stdout>>` and tests (in
+    /// `tests/tui.rs`) wrap a `Terminal<TestBackend>`; both paths
+    /// share the same `run_event_loop` symbol in coverage reports.
+    ///
+    /// The `events` closure returns `Some(event)` when an event is
+    /// available within the timeout, or `None` on timeout.
+    pub fn run_event_loop(
         &mut self,
-        terminal: &mut Terminal<B>,
-        mut events: E,
-    ) -> io::Result<()>
-    where
-        B: ratatui::backend::Backend,
-        E: FnMut(Duration) -> io::Result<Option<Event>>,
-    {
+        mut draw: DrawFn,
+        mut events: EventSourceFn,
+    ) -> io::Result<()> {
         self.refresh_data();
 
         while self.running {
-            terminal.draw(|f| self.render(f))?;
+            draw(&mut |f| self.render(f))?;
 
             match events(Duration::from_millis(REFRESH_MS))? {
                 Some(Event::Key(key)) => self.handle_key(key),
@@ -328,9 +348,6 @@ impl TuiApp {
     // --- Actions ---
 
     fn open_worktree(&self) {
-        if self.flows.is_empty() {
-            return;
-        }
         let flow = &self.flows[self.selected];
         if let Some(tty) = worktree_session_tty(flow) {
             self.activate_iterm_tab(tty);
@@ -338,9 +355,6 @@ impl TuiApp {
     }
 
     fn open_pr(&self) {
-        if self.flows.is_empty() {
-            return;
-        }
         let flow = &self.flows[self.selected];
         if let Some(ref url) = flow.pr_url {
             let files_url = pr_files_url(url);
@@ -349,9 +363,6 @@ impl TuiApp {
     }
 
     fn open_flow_issue(&self) {
-        if self.flows.is_empty() {
-            return;
-        }
         let flow = &self.flows[self.selected];
         if let Some(url) = flow_issue_url(&flow.state, self.repo.as_deref(), &flow.issue_numbers) {
             self.open_url(&url);
@@ -456,16 +467,17 @@ impl TuiApp {
         let header_area = Rect::new(area.x, area.y, area.width, 1);
         frame.render_widget(header, header_area);
 
-        // Render metrics on same row if they fit
+        // Render metrics on same row if `render_metrics_spans` produced
+        // any. The inner sizing guard lives inside `render_metrics_spans`
+        // — when the panel is too narrow it returns an empty Vec, so
+        // `is_empty()` here is the only check we need.
         if !metrics_spans.is_empty() {
             let metrics_width: usize = metrics_spans.iter().map(|s| s.width()).sum();
-            if metrics_width + 30 < width {
-                let col = (width - metrics_width - 2) as u16;
-                let metrics_line = Line::from(metrics_spans);
-                let metrics_p = Paragraph::new(metrics_line);
-                let metrics_area = Rect::new(area.x + col, area.y, metrics_width as u16 + 2, 1);
-                frame.render_widget(metrics_p, metrics_area);
-            }
+            let col = (width - metrics_width - 2) as u16;
+            let metrics_line = Line::from(metrics_spans);
+            let metrics_p = Paragraph::new(metrics_line);
+            let metrics_area = Rect::new(area.x + col, area.y, metrics_width as u16 + 2, 1);
+            frame.render_widget(metrics_p, metrics_area);
         }
 
         // Row 2: tab bar
@@ -657,12 +669,12 @@ impl TuiApp {
         )));
         frame.render_widget(hdr_line, Rect::new(area.x, area.y + 3, area.width, 1));
 
-        // Flow rows
+        // Flow rows. `list_end = self.flows.len().min(max_y - 18)`
+        // already bounds `i` so `row = 4 + i <= max_y - 15`, which is
+        // always less than the panel's footer row at `max_y - 1`. No
+        // additional clamp is needed inside the loop.
         for (i, flow) in self.flows.iter().enumerate().take(list_end) {
             let row = 4 + i;
-            if row >= max_y.saturating_sub(1) {
-                break;
-            }
 
             let marker = if i == self.selected {
                 "\u{25b8} "
@@ -1019,11 +1031,12 @@ impl TuiApp {
             let msg = Paragraph::new(Line::from("  No log entries."));
             frame.render_widget(msg, Rect::new(area.x, area.y + 2, area.width, 1));
         } else {
+            // `parse_log_entries` already truncates to `max_y - 4`
+            // entries, so `row = 2 + i <= max_y - 3`, which is always
+            // less than the panel's footer row at `max_y - 1`. No
+            // additional clamp is needed inside the loop.
             for (i, entry) in entries.iter().enumerate() {
                 let row = 2 + i;
-                if row >= max_y.saturating_sub(2) {
-                    break;
-                }
                 let line =
                     Paragraph::new(Line::from(format!("    {}  {}", entry.time, entry.message)));
                 frame.render_widget(line, Rect::new(area.x, area.y + row as u16, area.width, 1));
@@ -1447,9 +1460,9 @@ mod tests {
     #[test]
     fn platform_for_tests_uses_true_binary_and_temp_home() {
         let p = TuiAppPlatform::for_tests();
-        assert_eq!(p.open_binary, "/bin/true");
-        assert_eq!(p.osascript_binary, "/bin/true");
-        assert_eq!(p.bin_flow_path, PathBuf::from("/bin/true"));
+        assert_eq!(p.open_binary, "/usr/bin/true");
+        assert_eq!(p.osascript_binary, "/usr/bin/true");
+        assert_eq!(p.bin_flow_path, PathBuf::from("/usr/bin/true"));
         assert!(p.home.exists() || p.home == std::env::temp_dir());
     }
 
@@ -1862,6 +1875,18 @@ mod tests {
         // because `bin_flow.exists()` reports false on the synthetic root.
         let exe = std::path::PathBuf::from("/nonexistent/target/debug/flow-rs");
         assert_eq!(derive_bin_flow_path(&exe), None);
+    }
+
+    #[test]
+    fn bin_flow_path_returns_none_when_ancestor_chain_runs_out() {
+        // A path with fewer than three ancestors trips the `?` early
+        // return inside `.and_then(|p| p.parent())?`. `/foo` has one
+        // parent (`/`), and `/` has no parent (None) — the second
+        // and_then yields None, and the `?` returns None before the
+        // bin_flow.exists() check ever runs.
+        assert_eq!(derive_bin_flow_path(Path::new("/foo")), None);
+        // Equivalently, a bare filename has no parents at all.
+        assert_eq!(derive_bin_flow_path(Path::new("just-a-file")), None);
     }
 
     #[test]

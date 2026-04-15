@@ -187,10 +187,14 @@ pub fn phase_timeline(state: &Value, now: Option<DateTime<FixedOffset>>) -> Vec<
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let number = numbers_map.get(key).copied().unwrap_or(0);
+        // PHASE_ORDER iterates the same canonical phase keys that
+        // phase_names() defines, so this lookup never returns None
+        // in practice. The `expect` enforces the invariant — a
+        // mismatch is a maintainer bug, not a runtime condition.
         let name = names_map
             .get(key)
             .cloned()
-            .unwrap_or_else(|| key.to_string());
+            .expect("PHASE_ORDER key missing from phase_names()");
 
         let time_str = if status == "complete" {
             format_time(seconds)
@@ -282,15 +286,19 @@ pub fn phase_timeline(state: &Value, now: Option<DateTime<FixedOffset>>) -> Vec<
                 .copied()
                 .unwrap_or("");
             step_annotation(display_step, learn_steps_total, sn)
-        } else if key == "flow-complete" {
+        } else {
+            // PHASE_ORDER guarantees the only remaining key here is
+            // "flow-complete" (the prior arms cover every other phase).
+            // Collapsing flow-complete into the final else removes a
+            // dead arm and keeps coverage at 100% without an
+            // unreachable defensive branch.
+            debug_assert_eq!(key, "flow-complete");
             let sn = all_step_names
                 .get("flow-complete")
                 .and_then(|m| m.get(&complete_step))
                 .copied()
                 .unwrap_or("");
             step_annotation(complete_step, complete_steps_total, sn)
-        } else {
-            String::new()
         };
 
         entries.push(TimelineEntry {
@@ -754,18 +762,28 @@ pub fn load_account_metrics(repo_root: &Path, home_override: Option<&Path>) -> A
     let mut rl_7d = None;
     let mut stale = true;
 
+    // Rate-limits freshness gate. `metadata.modified()` and
+    // `SystemTime::now().duration_since(mtime)` are both fallible at
+    // the type level but unreachable in practice on macOS/Linux:
+    // APFS/EXT filesystems always populate mtime, and a future-mtime
+    // (clock skew) triggering `duration_since` Err is exotic enough
+    // that we collapse it into the staleness branch via `unwrap_or`.
+    // That keeps the chain linear and ensures coverage tracks only
+    // branches that are reachable from a portable test.
     if let Ok(metadata) = rl_path.metadata() {
-        if let Ok(mtime) = metadata.modified() {
-            if let Ok(age) = std::time::SystemTime::now().duration_since(mtime) {
-                if age.as_secs() <= STALE_THRESHOLD_SECONDS {
-                    if let Ok(content) = std::fs::read_to_string(&rl_path) {
-                        if let Ok(data) = serde_json::from_str::<Value>(&content) {
-                            rl_5h = data.get("five_hour_pct").and_then(tolerant_i64_opt);
-                            rl_7d = data.get("seven_day_pct").and_then(tolerant_i64_opt);
-                            if rl_5h.is_some() && rl_7d.is_some() {
-                                stale = false;
-                            }
-                        }
+        let mtime = metadata
+            .modified()
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        let age = std::time::SystemTime::now()
+            .duration_since(mtime)
+            .unwrap_or(std::time::Duration::MAX);
+        if age.as_secs() <= STALE_THRESHOLD_SECONDS {
+            if let Ok(content) = std::fs::read_to_string(&rl_path) {
+                if let Ok(data) = serde_json::from_str::<Value>(&content) {
+                    rl_5h = data.get("five_hour_pct").and_then(tolerant_i64_opt);
+                    rl_7d = data.get("seven_day_pct").and_then(tolerant_i64_opt);
+                    if rl_5h.is_some() && rl_7d.is_some() {
+                        stale = false;
                     }
                 }
             }
@@ -2412,5 +2430,364 @@ mod tests {
         assert!(result.stale);
         assert!(result.rl_5h.is_none());
         assert!(result.rl_7d.is_none());
+    }
+
+    // --- Coverage gap closures ---
+
+    #[test]
+    fn test_phase_timeline_now_none_uses_real_clock() {
+        // Covers the `unwrap_or_else(|| { Utc::now()... })` closure on
+        // line 114 — the now-fallback path that production callers use
+        // when they don't want to compute their own time.
+        let state = serde_json::json!({"phases": {}});
+        let result = phase_timeline(&state, None);
+        // No phases → empty result. The point of this test is just to
+        // execute the now-fallback closure, not to assert times.
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_phase_order_keys_all_present_in_phase_names() {
+        // Invariant guard for the `.expect()` call inside phase_timeline:
+        // every key in PHASE_ORDER must have a corresponding entry in
+        // phase_names(). If a future PR adds a phase to one but not the
+        // other, this test fails before phase_timeline panics in production.
+        let names = phase_config::phase_names();
+        for &key in PHASE_ORDER {
+            assert!(
+                names.contains_key(key),
+                "PHASE_ORDER key '{}' missing from phase_names()",
+                key
+            );
+        }
+    }
+
+    #[test]
+    fn test_load_account_metrics_none_home_override_falls_back_to_env() {
+        // Covers the `None => std::env::var("HOME")...` arm of
+        // load_account_metrics. Production callers all pass Some now,
+        // so this is the only path that exercises the env-var fallback.
+        // The test does not assert specific contents — the real $HOME
+        // varies — only that the call returns an AccountMetrics struct
+        // without panicking.
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path();
+        let result = load_account_metrics(repo_root, None);
+        // total_cost is "0.00" because tmpdir has no .claude/cost dir.
+        assert_eq!(result.cost_monthly, "0.00");
+    }
+
+    // --- _blocked field variants ---
+
+    #[test]
+    fn test_flow_summary_blocked_null_value() {
+        // Covers the `Value::Null => false` arm of the _blocked match.
+        let state = serde_json::json!({
+            "branch": "test",
+            "_blocked": serde_json::Value::Null,
+            "phases": {},
+        });
+        let summary = flow_summary(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
+        assert!(!summary.blocked);
+    }
+
+    #[test]
+    fn test_flow_summary_blocked_bool_true() {
+        // Covers the `Value::Bool(b) => *b` arm with b=true.
+        let state = serde_json::json!({
+            "branch": "test",
+            "_blocked": true,
+            "phases": {},
+        });
+        let summary = flow_summary(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
+        assert!(summary.blocked);
+    }
+
+    #[test]
+    fn test_flow_summary_blocked_bool_false() {
+        // Covers the `Value::Bool(b) => *b` arm with b=false.
+        let state = serde_json::json!({
+            "branch": "test",
+            "_blocked": false,
+            "phases": {},
+        });
+        let summary = flow_summary(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
+        assert!(!summary.blocked);
+    }
+
+    #[test]
+    fn test_flow_summary_blocked_compound_value() {
+        // Covers the `_ => true` arm — any Value::Number / Value::Array
+        // / Value::Object is treated as "blocked".
+        let state = serde_json::json!({
+            "branch": "test",
+            "_blocked": {"reason": "ci_failed"},
+            "phases": {},
+        });
+        let summary = flow_summary(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
+        assert!(summary.blocked);
+    }
+
+    // --- load_all_flows directory failure ---
+
+    #[cfg(unix)]
+    #[test]
+    fn test_load_all_flows_unreadable_state_dir_returns_empty() {
+        // Covers the `Err(_) => return vec![]` arm in load_all_flows.
+        // Creates a .flow-states directory and chmods it 0o000 so the
+        // user (test process) cannot read its contents. is_dir() still
+        // reports true (metadata works) but read_dir fails with EACCES.
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let state_dir = tmp.path().join(".flow-states");
+        std::fs::create_dir(&state_dir).unwrap();
+
+        let mut perms = std::fs::metadata(&state_dir).unwrap().permissions();
+        perms.set_mode(0o000);
+        std::fs::set_permissions(&state_dir, perms).unwrap();
+
+        let result = load_all_flows(tmp.path());
+
+        // Restore so tempfile can clean up.
+        let mut perms = std::fs::metadata(&state_dir).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&state_dir, perms).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_load_all_flows_skips_non_json_files() {
+        // Covers `if !name_str.ends_with(".json") { continue; }` —
+        // a file in .flow-states whose name doesn't end with .json
+        // (e.g. a log file or a temp file) is silently skipped.
+        let tmp = tempfile::tempdir().unwrap();
+        let state_dir = tmp.path().join(".flow-states");
+        std::fs::create_dir(&state_dir).unwrap();
+        std::fs::write(state_dir.join("ignore-me.txt"), "not json").unwrap();
+        std::fs::write(state_dir.join("noise.log"), "log entry").unwrap();
+        let result = load_all_flows(tmp.path());
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_orchestration_summary_item_with_invalid_completed_at_uses_empty_elapsed() {
+        // Inside the items closure, the inner `if let (Some(is), Some(ic))`
+        // path tries `DateTime::parse_from_rfc3339(ic)`. If ic is a
+        // non-empty but malformed timestamp, parse_from_rfc3339 returns
+        // Err and the `else { String::new() }` arm runs.
+        let now = pacific("2026-01-01T00:00:00-08:00");
+        let orch = serde_json::json!({
+            "started_at": "2026-01-01T00:00:00-08:00",
+            "queue": [
+                {
+                    "issue_number": 1,
+                    "title": "X",
+                    "status": "completed",
+                    "started_at": "2026-01-01T00:00:00-08:00",
+                    "completed_at": "not-a-real-timestamp",
+                }
+            ],
+        });
+        let summary = orchestration_summary(Some(&orch), Some(now)).unwrap();
+        // The item should still appear, but with empty elapsed because
+        // the timestamp parse failed.
+        assert_eq!(summary.items.len(), 1);
+        assert_eq!(summary.items[0].elapsed, "");
+    }
+
+    #[test]
+    fn test_orchestration_summary_with_invalid_completed_at_falls_back_to_now() {
+        // The outer elapsed_seconds calculation also has a parse-failure
+        // branch: `if let Some(ca) = completed_at` → `if let Ok(ca_dt) =
+        // parse_from_rfc3339(ca)` → Err arm uses `elapsed_since(started_at, Some(now))`.
+        let now = pacific("2026-01-01T00:01:00-08:00");
+        let orch = serde_json::json!({
+            "started_at": "2026-01-01T00:00:00-08:00",
+            "completed_at": "not-a-real-timestamp",
+            "queue": [],
+        });
+        let summary = orchestration_summary(Some(&orch), Some(now)).unwrap();
+        // Falls back to now (1 minute after started_at) → elapsed = "1m".
+        assert_eq!(summary.elapsed, "1m");
+    }
+
+    #[test]
+    fn test_orchestration_summary_with_valid_completed_at_uses_parsed_dt() {
+        // Covers the Ok arm of `if let Ok(ca_dt) = parse_from_rfc3339(ca)`.
+        // With a valid completed_at, elapsed = (completed_at - started_at).
+        let orch = serde_json::json!({
+            "started_at": "2026-01-01T00:00:00-08:00",
+            "completed_at": "2026-01-01T00:02:00-08:00",
+            "queue": [],
+        });
+        // `now` is irrelevant since the function uses ca_dt instead.
+        let now = pacific("2026-01-01T05:00:00-08:00");
+        let summary = orchestration_summary(Some(&orch), Some(now)).unwrap();
+        assert_eq!(summary.elapsed, "2m");
+        // Completed orchestration → not running.
+        assert!(!summary.is_running);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_load_account_metrics_with_directory_in_cost_dir_skips_via_read_err() {
+        // Covers the implicit Err arm of `if let Ok(content) = read_to_string(entry.path())`
+        // inside load_account_metrics' cost loop. read_to_string on a
+        // directory returns Err, so the if-let body is skipped — the
+        // close-brace region at the end of the inner if-let is the
+        // only path the loop body takes for that entry.
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path();
+        let now = chrono::Local::now();
+        let year_month = now.format("%Y-%m").to_string();
+        let cost_dir = repo_root.join(".claude").join("cost").join(&year_month);
+        std::fs::create_dir_all(&cost_dir).unwrap();
+        // A valid file plus a subdirectory at the same level.
+        std::fs::write(cost_dir.join("session1"), "1.50").unwrap();
+        std::fs::create_dir(cost_dir.join("subdir")).unwrap();
+
+        let home_dir = dir.path().join("home");
+        std::fs::create_dir(&home_dir).unwrap();
+        let result = load_account_metrics(repo_root, Some(&home_dir));
+        // Only the valid file contributed; the subdirectory was silently
+        // skipped via the read_to_string Err arm.
+        assert_eq!(result.cost_monthly, "1.50");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_load_account_metrics_with_unreadable_cost_dir_skips_via_read_dir_err() {
+        // Covers the implicit Err arm of `if let Ok(entries) = read_dir(&cost_dir)`.
+        // chmod 000 on cost_dir makes read_dir fail with EACCES, so
+        // the if-let body never executes.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path();
+        let now = chrono::Local::now();
+        let year_month = now.format("%Y-%m").to_string();
+        let cost_dir = repo_root.join(".claude").join("cost").join(&year_month);
+        std::fs::create_dir_all(&cost_dir).unwrap();
+        // Create a file so the directory has contents.
+        std::fs::write(cost_dir.join("session1"), "1.50").unwrap();
+        // Strip read+execute from the cost dir so read_dir fails.
+        let mut perms = std::fs::metadata(&cost_dir).unwrap().permissions();
+        perms.set_mode(0o000);
+        std::fs::set_permissions(&cost_dir, perms).unwrap();
+
+        let home_dir = dir.path().join("home");
+        std::fs::create_dir(&home_dir).unwrap();
+        let result = load_account_metrics(repo_root, Some(&home_dir));
+
+        // Restore so tempfile can clean up.
+        let mut perms = std::fs::metadata(&cost_dir).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&cost_dir, perms).unwrap();
+
+        // No cost files were read → cost_monthly stays at 0.00.
+        assert_eq!(result.cost_monthly, "0.00");
+    }
+
+    #[test]
+    fn test_load_all_flows_with_directory_named_json_skips_via_read_err() {
+        // Covers the implicit Err arm of `if let Ok(content) = read_to_string`
+        // inside load_all_flows. A directory named "foo.json" inside
+        // .flow-states/ passes the .ends_with(".json") filter, but
+        // read_to_string fails because the path is a directory.
+        let tmp = tempfile::tempdir().unwrap();
+        let state_dir = tmp.path().join(".flow-states");
+        std::fs::create_dir(&state_dir).unwrap();
+        std::fs::create_dir(state_dir.join("dir-with-json-suffix.json")).unwrap();
+        let result = load_all_flows(tmp.path());
+        assert!(result.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_load_account_metrics_with_rate_limits_as_directory_skips_via_read_err() {
+        // rl_path = home/.claude/rate-limits.json. If we create that
+        // path as a directory, metadata().is_ok(), modified().is_ok(),
+        // duration_since().is_ok(), age check passes (just-created
+        // dir has fresh mtime), but read_to_string fails because the
+        // path is a directory. Covers the inner Err arm of
+        // `if let Ok(content) = read_to_string(&rl_path)`.
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path();
+        let home_dir = dir.path().join("home");
+        let claude_dir = home_dir.join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        // Create rate-limits.json as a DIRECTORY.
+        std::fs::create_dir(claude_dir.join("rate-limits.json")).unwrap();
+
+        let result = load_account_metrics(repo_root, Some(&home_dir));
+        // read_to_string failed → stayed stale, no rate-limit values.
+        assert!(result.stale);
+        assert!(result.rl_5h.is_none());
+        assert!(result.rl_7d.is_none());
+    }
+
+    #[test]
+    fn test_load_account_metrics_with_future_mtime_treated_as_stale() {
+        // When a rate-limits.json file's mtime is in the future
+        // (clock skew), `SystemTime::now().duration_since(mtime)`
+        // would return Err. The function collapses that Err into
+        // `Duration::MAX` via `unwrap_or`, which then trips the
+        // staleness check below. The rate-limits file is never read
+        // and the result is marked stale.
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path();
+        let home_dir = dir.path().join("home");
+        let claude_dir = home_dir.join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        let rl_path = claude_dir.join("rate-limits.json");
+        std::fs::write(&rl_path, r#"{"five_hour_pct": 50, "seven_day_pct": 30}"#).unwrap();
+
+        // Set the file's mtime to 1 hour in the future.
+        let future = filetime::FileTime::from_system_time(
+            std::time::SystemTime::now() + std::time::Duration::from_secs(3600),
+        );
+        filetime::set_file_mtime(&rl_path, future).unwrap();
+
+        let result = load_account_metrics(repo_root, Some(&home_dir));
+        assert!(result.stale);
+        assert!(result.rl_5h.is_none());
+        assert!(result.rl_7d.is_none());
+    }
+
+    // --- phase_timeline early-return when phases is missing ---
+
+    #[test]
+    fn test_phase_timeline_with_no_phases_field_returns_empty() {
+        // Covers the `None => return vec![]` arm of `match phases` in
+        // phase_timeline. State without a `phases` key (or with a
+        // non-object phases value) returns an empty timeline.
+        let state_no_phases = serde_json::json!({});
+        let result = phase_timeline(&state_no_phases, Some(pacific("2026-01-01T00:00:00-08:00")));
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_phase_timeline_with_non_object_phases_returns_empty() {
+        // Same arm — phases field exists but isn't an object.
+        let state_array_phases = serde_json::json!({"phases": []});
+        let result = phase_timeline(
+            &state_array_phases,
+            Some(pacific("2026-01-01T00:00:00-08:00")),
+        );
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_load_orchestration_with_orchestrate_as_directory_returns_none() {
+        // orchestrate.json existing as a directory passes `path.exists()`
+        // but `std::fs::read_to_string(path).ok()?` fails — the `.ok()?`
+        // None-branch returns from load_orchestration. Covers the
+        // implicit early-return region of the `?` operator.
+        let tmp = tempfile::tempdir().unwrap();
+        let state_dir = tmp.path().join(".flow-states");
+        std::fs::create_dir(&state_dir).unwrap();
+        std::fs::create_dir(state_dir.join("orchestrate.json")).unwrap();
+        let result = load_orchestration(tmp.path());
+        assert!(result.is_none());
     }
 }
