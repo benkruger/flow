@@ -11,7 +11,7 @@ use flow_rs::auto_close_parent;
 use flow_rs::build;
 use flow_rs::bump_version;
 use flow_rs::check_freshness;
-use flow_rs::check_phase::check_phase;
+use flow_rs::check_phase;
 use flow_rs::ci;
 use flow_rs::cleanup;
 use flow_rs::close_issue;
@@ -482,7 +482,9 @@ fn main() {
         Some(Commands::BumpVersion(args)) => bump_version::run(args),
         Some(Commands::CheckFreshness(args)) => check_freshness::run(args),
         Some(Commands::CheckPhase { required, branch }) => {
-            run_check_phase(&required, branch.as_deref());
+            let root = project_root();
+            let (out, code) = check_phase::run_impl_main(&required, branch.as_deref(), &root);
+            flow_rs::dispatch::dispatch_text(&out, code);
         }
         Some(Commands::PhaseTransition {
             phase,
@@ -684,70 +686,6 @@ fn main() {
         },
         Some(Commands::External(_)) => {
             process::exit(127);
-        }
-    }
-}
-
-fn run_check_phase(phase: &str, branch_override: Option<&str>) {
-    // First phase has no prerequisites
-    if phase == PHASE_ORDER[0] {
-        process::exit(0);
-    }
-
-    let root = project_root();
-    let branch = match resolve_branch(branch_override, &root) {
-        Some(b) => b,
-        None => {
-            println!("BLOCKED: Could not determine current git branch.");
-            process::exit(1);
-        }
-    };
-
-    let paths = FlowPaths::new(&root, &branch);
-    let state_file = paths.state_file();
-    if !state_file.exists() {
-        println!(
-            "BLOCKED: No FLOW feature in progress on branch \"{}\".",
-            branch
-        );
-        println!("Run /flow:flow-start to begin a new feature.");
-        process::exit(1);
-    }
-
-    let content = match std::fs::read_to_string(&state_file) {
-        Ok(c) => c,
-        Err(e) => {
-            println!("BLOCKED: Could not read state file: {}", e);
-            process::exit(1);
-        }
-    };
-
-    let state: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(e) => {
-            println!("BLOCKED: Could not read state file: {}", e);
-            process::exit(1);
-        }
-    };
-
-    // Load frozen phase config if available
-    let frozen_path = paths.frozen_phases();
-    let frozen_config = if frozen_path.exists() {
-        load_phase_config(&frozen_path).ok()
-    } else {
-        None
-    };
-
-    match check_phase(&state, phase, frozen_config.as_ref()) {
-        Ok((allowed, output)) => {
-            if !output.is_empty() {
-                println!("{}", output);
-            }
-            process::exit(if allowed { 0 } else { 1 });
-        }
-        Err(msg) => {
-            json_error(&msg, &[]);
-            process::exit(1);
         }
     }
 }

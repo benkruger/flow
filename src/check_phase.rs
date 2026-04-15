@@ -1,7 +1,12 @@
+use std::path::Path;
+
 use indexmap::IndexMap;
 use serde_json::Value;
 
-use crate::phase_config::{self, PhaseConfig, PHASE_ORDER};
+use crate::flow_paths::FlowPaths;
+use crate::git::resolve_branch;
+use crate::output::json_error_string;
+use crate::phase_config::{self, load_phase_config, PhaseConfig, PHASE_ORDER};
 
 /// Check if entry into `phase` is allowed given the state JSON.
 ///
@@ -101,6 +106,74 @@ pub fn check_phase(
     }
 
     Ok((true, String::new()))
+}
+
+/// Driver for the `bin/flow check-phase` subcommand.
+///
+/// Returns `(output, exit_code)`. The output is plain text for the
+/// BLOCKED/NOTE/allowed paths and a JSON error object for
+/// branch-resolution, file-read, and parse errors — mirroring the
+/// mixed output contract of the pre-extraction inline dispatch. The
+/// first-phase short-circuit returns `("", 0)`.
+///
+/// Tests supply `root` as a fixture TempDir containing
+/// `.flow-states/<branch>.json`; `branch_override` is required so the
+/// helper does not shell out to `git rev-parse` against the host
+/// worktree.
+pub fn run_impl_main(phase: &str, branch_override: Option<&str>, root: &Path) -> (String, i32) {
+    // First phase has no prerequisites — short-circuit before touching
+    // the filesystem or resolving a branch.
+    if phase == PHASE_ORDER[0] {
+        return (String::new(), 0);
+    }
+
+    let branch = match resolve_branch(branch_override, root) {
+        Some(b) => b,
+        None => {
+            return (
+                "BLOCKED: Could not determine current git branch.".to_string(),
+                1,
+            );
+        }
+    };
+
+    let paths = FlowPaths::new(root, &branch);
+    let state_file = paths.state_file();
+    if !state_file.exists() {
+        return (
+            format!(
+                "BLOCKED: No FLOW feature in progress on branch \"{}\".\nRun /flow:flow-start to begin a new feature.",
+                branch
+            ),
+            1,
+        );
+    }
+
+    let content = match std::fs::read_to_string(&state_file) {
+        Ok(c) => c,
+        Err(e) => {
+            return (format!("BLOCKED: Could not read state file: {}", e), 1);
+        }
+    };
+
+    let state: Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            return (format!("BLOCKED: Could not read state file: {}", e), 1);
+        }
+    };
+
+    let frozen_path = paths.frozen_phases();
+    let frozen_config = if frozen_path.exists() {
+        load_phase_config(&frozen_path).ok()
+    } else {
+        None
+    };
+
+    match check_phase(&state, phase, frozen_config.as_ref()) {
+        Ok((allowed, output)) => (output, if allowed { 0 } else { 1 }),
+        Err(msg) => (json_error_string(&msg, &[]), 1),
+    }
 }
 
 #[cfg(test)]
@@ -382,6 +455,98 @@ mod tests {
         // raw phase keys and command defaults like `/flow:flow-start`.
         assert!(output.contains("flow-start"));
         assert!(output.contains("/flow:flow-start"));
+    }
+
+    // --- run_impl_main (main.rs CheckPhase arm driver) ---
+
+    fn write_state(root: &std::path::Path, branch: &str, state: Value) {
+        let dir = root.join(".flow-states");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{}.json", branch));
+        std::fs::write(&path, state.to_string()).unwrap();
+    }
+
+    #[test]
+    fn run_impl_main_first_phase_returns_empty_and_exit_0() {
+        let dir = tempfile::tempdir().unwrap();
+        let (out, code) = run_impl_main(PHASE_ORDER[0], Some("any"), dir.path());
+        assert_eq!(code, 0);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn run_impl_main_no_state_file_returns_blocked() {
+        let dir = tempfile::tempdir().unwrap();
+        let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+        assert_eq!(code, 1);
+        assert!(out.contains("BLOCKED"));
+        assert!(out.contains("No FLOW feature in progress"));
+        assert!(out.contains("test"));
+    }
+
+    #[test]
+    fn run_impl_main_unparseable_state_file_returns_blocked() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".flow-states")).unwrap();
+        std::fs::write(
+            dir.path().join(".flow-states").join("test.json"),
+            "not-valid-json",
+        )
+        .unwrap();
+        let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+        assert_eq!(code, 1);
+        assert!(out.contains("BLOCKED"));
+        assert!(out.contains("Could not read state file"));
+    }
+
+    #[test]
+    fn run_impl_main_allowed_returns_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("flow-plan", &[("flow-start", "complete")]);
+        write_state(dir.path(), "test", state);
+        let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+        assert_eq!(code, 0);
+        // Allowed + first visit → empty message.
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn run_impl_main_blocked_returns_one_with_blocked_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("flow-plan", &[("flow-start", "pending")]);
+        write_state(dir.path(), "test", state);
+        let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+        assert_eq!(code, 1);
+        assert!(out.contains("BLOCKED"));
+    }
+
+    #[test]
+    fn run_impl_main_reentry_returns_note_and_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = make_state(
+            "flow-plan",
+            &[("flow-start", "complete"), ("flow-plan", "complete")],
+        );
+        state["phases"]["flow-plan"]["visit_count"] = json!(2);
+        write_state(dir.path(), "test", state);
+        let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+        assert_eq!(code, 0);
+        assert!(out.contains("previously completed"));
+    }
+
+    #[test]
+    fn run_impl_main_invalid_phase_returns_json_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_state("flow-start", &[("flow-start", "complete")]);
+        write_state(dir.path(), "test", state);
+        let (out, code) = run_impl_main("nonexistent", Some("test"), dir.path());
+        assert_eq!(code, 1);
+        let parsed: Value = serde_json::from_str(&out).expect("invalid-phase path emits JSON");
+        assert_eq!(parsed["status"], "error");
+        assert!(parsed["message"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid phase"));
     }
 
     #[test]
