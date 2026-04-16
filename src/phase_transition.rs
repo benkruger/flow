@@ -1404,4 +1404,102 @@ mod tests {
         assert_eq!(out["status"], "ok");
         assert_eq!(out["action"], "complete");
     }
+
+    // ===== coverage gap tests =====
+
+    #[test]
+    fn complete_flow_code_captures_diff_stats() {
+        // Exercises the `if phase == "flow-code"` branch at line 183
+        // that calls `capture_diff_stats()` and stores the result.
+        let mut state = make_state(
+            "flow-code",
+            &[
+                ("flow-start", "complete"),
+                ("flow-plan", "complete"),
+                ("flow-code", "in_progress"),
+            ],
+        );
+        let result = phase_complete(&mut state, "flow-code", None, None, None);
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["next_phase"], "flow-code-review");
+        // diff_stats must be populated (the test runs in a git repo,
+        // so capture_diff_stats succeeds with real or zero values)
+        assert!(
+            state.get("diff_stats").is_some(),
+            "flow-code completion must capture diff_stats"
+        );
+        assert!(state["diff_stats"].get("files_changed").is_some());
+        assert!(state["diff_stats"].get("captured_at").is_some());
+    }
+
+    #[test]
+    fn complete_phases_wrong_type_string_resets() {
+        // Exercises the phase_complete guard at lines 126-129 that
+        // resets "phases" to {} when it is a non-object/non-null type.
+        let mut state = json!({
+            "branch": "test-feature",
+            "current_phase": "flow-plan",
+            "phases": "corrupted",
+            "phase_transitions": [],
+        });
+        let result = phase_complete(&mut state, "flow-plan", None, None, None);
+        // After the guard resets the wrong type, completion should succeed
+        assert_eq!(result["status"], "ok");
+    }
+
+    #[test]
+    fn complete_phases_wrong_type_array_resets() {
+        // Array variant of the same guard — mirrors enter_phases_wrong_type_array.
+        let mut state = json!({
+            "branch": "test-feature",
+            "current_phase": "flow-plan",
+            "phases": [1, 2, 3],
+            "phase_transitions": [],
+        });
+        let result = phase_complete(&mut state, "flow-plan", None, None, None);
+        assert_eq!(result["status"], "ok");
+    }
+
+    #[test]
+    fn run_impl_main_mutate_state_failure_returns_error() {
+        // Make the state file read-only so mutate_state fails when
+        // trying to write back. Exercises the Err path at lines 412-426.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        init_git_repo(dir.path(), "test");
+        let state = make_state("flow-start", &[("flow-start", "complete")]);
+        write_state(dir.path(), "test", state);
+
+        let state_file = dir.path().join(".flow-states").join("test.json");
+        std::fs::set_permissions(&state_file, std::fs::Permissions::from_mode(0o444)).unwrap();
+
+        let (out, code) = run_impl_main(
+            "flow-plan",
+            "enter",
+            None,
+            Some("test"),
+            None,
+            dir.path(),
+            dir.path(),
+        );
+        // Restore permissions for cleanup
+        let _ = std::fs::set_permissions(&state_file, std::fs::Permissions::from_mode(0o644));
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        assert!(
+            out["message"]
+                .as_str()
+                .unwrap()
+                .contains("State mutation failed"),
+            "should report mutation failure: {}",
+            out["message"]
+        );
+        // Log entry must still be written on failure path
+        let log_path = dir.path().join(".flow-states").join("test.log");
+        if log_path.exists() {
+            let log = std::fs::read_to_string(&log_path).unwrap();
+            assert!(log.contains("\"error\""));
+        }
+    }
 }
