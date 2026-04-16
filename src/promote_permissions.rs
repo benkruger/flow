@@ -190,16 +190,21 @@ pub fn run(args: Args) {
 mod tests {
     use super::*;
 
+    /// Create a fresh temporary directory for use as a worktree root.
     fn setup_dir() -> tempfile::TempDir {
         tempfile::tempdir().unwrap()
     }
 
+    /// Write `content` as `.claude/settings.local.json` inside `dir`,
+    /// creating the `.claude/` directory if needed.
     fn write_local(dir: &Path, content: &str) {
         let claude_dir = dir.join(".claude");
         fs::create_dir_all(&claude_dir).unwrap();
         fs::write(claude_dir.join("settings.local.json"), content).unwrap();
     }
 
+    /// Write `content` as `.claude/settings.json` inside `dir`,
+    /// creating the `.claude/` directory if needed.
     fn write_settings(dir: &Path, content: &str) {
         let claude_dir = dir.join(".claude");
         fs::create_dir_all(&claude_dir).unwrap();
@@ -210,9 +215,8 @@ mod tests {
 
     #[test]
     fn promote_non_object_settings_returns_error() {
-        // settings.json is a valid JSON array — the non-object guard
-        // at L107 catches this before the IndexMut assignment that
-        // would otherwise crash.
+        // settings.json containing a JSON array is rejected before
+        // the IndexMut assignment that would otherwise panic.
         let dir = setup_dir();
         write_local(
             dir.path(),

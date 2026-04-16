@@ -560,8 +560,9 @@ mod tests {
     #[test]
     fn version_mismatch_with_empty_stored_version() {
         // An empty flow_version string is treated as absent by
-        // as_nonempty_str, so stored_display defaults to "" and
-        // the mismatch message fires with an empty version prefix.
+        // the `as_nonempty_str` helper (defined above in this module),
+        // so stored_display defaults to "" and the mismatch message
+        // fires with an empty version prefix.
         let dir = tempfile::tempdir().unwrap();
         let root = real_plugin_root();
         write_flow_json(dir.path(), r#"{"flow_version": ""}"#);

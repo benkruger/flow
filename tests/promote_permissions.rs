@@ -379,8 +379,8 @@ fn cli_no_local_skipped() {
 
 #[test]
 fn settings_non_object_top_level_returns_error() {
-    // settings.json is a valid JSON array at the root level — the
-    // non-object guard at L107 rejects it before IndexMut access.
+    // settings.json containing a JSON array at root level is rejected
+    // before IndexMut access that would otherwise panic.
     let tmp = tempfile::tempdir().unwrap();
     let claude_dir = tmp.path().join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();
