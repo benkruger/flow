@@ -67,10 +67,10 @@ PR #1177 surfaced the Shape B case: the `duplicate_test_coverage`
 scanner was wired into three callsites (plan_check::run_impl,
 plan_extract extracted, plan_extract resume). The plan described
 the scanner and the integration topology but did not enumerate
-each callsite as a distinct test row — the Code Review reviewer
+each callsite as a distinct test row — the Code Review reviewer <!-- scope-enumeration: imperative -->
 agent noted the absence during triage. A plan that introduces a
 new scanner-family feature must name each integration-test
-function for each callsite before the Code phase begins.
+function for each callsite before the Code phase begins. <!-- scope-enumeration: imperative -->
 
 ## Anti-Patterns
 
@@ -85,4 +85,4 @@ function for each callsite before the Code phase begins.
   callers that will take it and the tests that prove the new paths
 - Introducing a new scanner, hook, or helper family and describing
   the integration as "the three callsites" without enumerating
-  each callsite and its named test
+  each callsite and its named test <!-- scope-enumeration: imperative -->
