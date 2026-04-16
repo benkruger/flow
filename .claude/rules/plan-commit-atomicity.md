@@ -174,6 +174,62 @@ a rule-compliance gap because the discipline for logging plan
 deviations was not documented in any rule file. This section
 codifies the discipline.
 
+### Mechanical Enforcement
+
+Instructional enforcement alone leaves the rule a suggestion — a
+Code-phase agent can drift from plan-named fixtures and commit
+without logging. The plan-deviation gate inside
+`src/finalize_commit.rs::run_impl` converts the instructional
+discipline into a mechanical check.
+
+**What it detects.** `src/plan_deviation.rs::scan` walks the plan
+file's `## Tasks` section, collects `(test_name, fixture_key,
+plan_value)` triples from eligible fenced code blocks (info string
+empty or in `rust`/`bash`/`json`/`python`), and cross-references
+them against string literals found in the added bodies of
+corresponding test functions in `git diff --cached`. A
+`Deviation` is emitted when the plan names `test_foo` with
+`key = "expected"` but the diff's added `fn test_foo` body does
+not contain the literal `"expected"`.
+
+**Where it runs.** The gate fires inside
+`finalize_commit::run_impl`, after `ci::run_impl()` succeeds and
+before `finalize_commit_inner` calls `git commit`. Every commit
+path — `/flow:flow-commit`, direct `bin/flow finalize-commit`
+invocations, any future wrapper — routes through `run_impl` and
+therefore through the gate. There is no bypass path that lands a
+commit without the gate running first.
+
+**How to acknowledge.** When a deviation is intentional (the Code
+phase discovered a better fixture value, or the plan's prototype
+was internally inconsistent), the user logs the deviation via
+`bin/flow log <branch> "[Phase 3] Plan signature deviation: <text
+naming the test and the plan value>"`. The gate re-reads the log
+file on every invocation and clears any deviation whose
+`(test_name, plan_value)` pair both appear as substrings on a
+single log line. After logging, the user re-runs the commit and
+the gate passes.
+
+**What is intentionally out of scope.** Tests that the Code phase
+adds that the plan never names are invisible to this gate — the
+Plan Test Verification check in `skills/flow-code/SKILL.md` owns
+that separate invariant. Multi-line string literals are
+single-line only in v1. Prefix-renamed tests (plan says
+`fn test_foo`, code writes `fn test_foo_happy_path`) are not
+matched because exact `fn <name>(` matching is the v1 contract.
+Plan prose outside `## Tasks` (Context, Risks, Approach) is not
+scanned.
+
+**Structural context.** The scanner follows the peer pattern
+established by `src/scope_enumeration.rs` and
+`src/external_input_audit.rs` — a pure `scan` function returning
+a structured violation vector, a thin `run_impl` orchestrator
+that reads files from disk, and an inline `#[cfg(test)] mod tests`
+block for unit tests. Integration coverage comes from
+`tests/plan_deviation_integration.rs`, which spawns the compiled
+`flow-rs` binary against fixture repos to drive the five branches
+the gate adds to `finalize_commit::run_impl`.
+
 ## Motivating Incident (Atomic Group Split)
 
 PR #1056 (Plan-phase external-input audit gate) planned Task 21 as
