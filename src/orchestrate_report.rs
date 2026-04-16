@@ -509,6 +509,139 @@ mod tests {
         assert!(content.contains("Add PDF export"));
     }
 
+    // --- missing-field edge branches ---
+    //
+    // Each test guards a specific `unwrap_or(default)` branch in
+    // `generate_report`. If a future edit removes the default or
+    // changes the rendered sentinel, these tests catch it.
+
+    #[test]
+    fn report_missing_issue_number_renders_question_mark() {
+        let state = make_report_state(
+            vec![json!({
+                "title": "No issue number",
+                "outcome": "completed",
+                "pr_url": "https://github.com/x/y/pull/1",
+            })],
+            "2026-03-20T22:00:00-07:00",
+            Some("2026-03-21T06:00:00-07:00"),
+        );
+        let result = generate_report(&state);
+        let summary = result["summary"].as_str().unwrap();
+        assert!(
+            summary.contains("| #? "),
+            "expected `| #? ` sentinel cell, got: {}",
+            summary
+        );
+    }
+
+    #[test]
+    fn report_missing_title_renders_empty_title() {
+        let state = make_report_state(
+            vec![json!({
+                "issue_number": 99,
+                "outcome": "completed",
+                "pr_url": "https://github.com/x/y/pull/1",
+            })],
+            "2026-03-20T22:00:00-07:00",
+            Some("2026-03-21T06:00:00-07:00"),
+        );
+        let result = generate_report(&state);
+        let summary = result["summary"].as_str().unwrap();
+        // `#99 ` followed by empty title then ` | completed` in the row.
+        assert!(
+            summary.contains("| #99  | completed |"),
+            "expected empty-title row, got: {}",
+            summary
+        );
+    }
+
+    #[test]
+    fn report_missing_outcome_renders_pending() {
+        let state = make_report_state(
+            vec![json!({
+                "issue_number": 99,
+                "title": "Pending item",
+            })],
+            "2026-03-20T22:00:00-07:00",
+            Some("2026-03-21T06:00:00-07:00"),
+        );
+        let result = generate_report(&state);
+        let summary = result["summary"].as_str().unwrap();
+        assert!(
+            summary.contains("| pending |"),
+            "expected `pending` outcome cell, got: {}",
+            summary
+        );
+        // An item with no `outcome` is neither completed nor failed — no
+        // sections should list it.
+        assert_eq!(result["completed"], 0);
+        assert_eq!(result["failed"], 0);
+    }
+
+    #[test]
+    fn report_missing_pr_url_renders_em_dash() {
+        let state = make_report_state(
+            vec![json!({
+                "issue_number": 99,
+                "title": "No PR yet",
+                "outcome": "completed",
+            })],
+            "2026-03-20T22:00:00-07:00",
+            Some("2026-03-21T06:00:00-07:00"),
+        );
+        let result = generate_report(&state);
+        let summary = result["summary"].as_str().unwrap();
+        assert!(
+            summary.contains("| \u{2014} |"),
+            "expected em-dash pr_url cell, got: {}",
+            summary
+        );
+    }
+
+    #[test]
+    fn report_failed_item_missing_reason_renders_unknown() {
+        let state = make_report_state(
+            vec![json!({
+                "issue_number": 42,
+                "title": "Broken item",
+                "outcome": "failed",
+            })],
+            "2026-03-20T22:00:00-07:00",
+            Some("2026-03-21T06:00:00-07:00"),
+        );
+        let result = generate_report(&state);
+        let summary = result["summary"].as_str().unwrap();
+        assert!(
+            summary.contains("\u{2014} Unknown"),
+            "expected `Unknown` reason in Failed section, got: {}",
+            summary
+        );
+    }
+
+    #[test]
+    fn generate_and_write_report_write_failure_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = make_report_state(
+            vec![completed_item(42, "Add PDF export", None)],
+            "2026-03-20T22:00:00-07:00",
+            Some("2026-03-21T06:00:00-07:00"),
+        );
+        let state_path = dir.path().join("orchestrate.json");
+        fs::write(&state_path, serde_json::to_string(&state).unwrap()).unwrap();
+
+        // Pre-create the summary path as a directory so fs::write returns EISDIR.
+        let summary_path = dir.path().join("orchestrate-summary.md");
+        fs::create_dir(&summary_path).unwrap();
+
+        let result = generate_and_write_report(&state_path, dir.path());
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("Failed to write summary"));
+    }
+
     // --- CLI run_impl tests ---
 
     #[test]
