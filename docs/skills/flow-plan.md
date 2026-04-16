@@ -149,7 +149,7 @@ override the configured mode.
 - Requires Phase 1: Start to be complete
 - Plan file path must be stored in state before phase completion
 - **Plan-check gate** — before the phase completes, `bin/flow
-  plan-check` runs two scanners against the plan file:
+  plan-check` runs three scanners against the plan file:
   - **Scope-enumeration** flags universal-coverage language ("every
     subcommand", "all runners", "each CLI entry point", …) that is
     not paired with a named list of the concrete siblings the claim
@@ -160,6 +160,13 @@ override the configured mode.
     callsite source-classification audit table (Caller, Source,
     Classification, Handling). See
     `.claude/rules/external-input-audit-gate.md`.
+  - **Duplicate-test-coverage** flags proposed test function names
+    that normalize (strip `test_` prefix, lowercase) to an
+    existing test in the repo's corpus (`tests/**/*.rs` +
+    `src/**/*.rs` inline `#[test]` functions). Violations carry
+    `existing_test` and `existing_file` fields so the author sees
+    both sides of the collision. See
+    `.claude/rules/duplicate-test-coverage.md`.
 
   Each violation in the JSON response carries a `rule` field naming
   the scanner that fired so the repair loop points the author at

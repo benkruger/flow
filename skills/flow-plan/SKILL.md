@@ -471,6 +471,54 @@ blank line).
 See `.claude/rules/extract-helper-refactor.md` for the full trigger
 vocabulary and the motivating PR #1155 incident.
 
+### Duplicate Test Coverage Check
+
+Plans that name a test function matching an existing test in the
+suite typically waste a Code Review cycle — the duplicate is
+caught by the reviewer agent and one of the two tests is deleted,
+work that could have been prevented at Plan time. This subsection
+gates Plan-phase completion on a mechanical scanner so the
+duplication is surfaced before the Code phase writes the second
+test. Violations carry `existing_test` and `existing_file` fields
+so the author can see both sides of the collision inline.
+
+When a plan names a new test function whose normalized form (strip
+`test_` prefix, lowercase) matches an existing test in the repo's
+corpus, the duplicate-test-coverage scanner flags the proposal so
+the plan author either renames the test, strengthens the existing
+one, or adds an opt-out confirming the duplication is intentional.
+Issue #1175 / PR #1173 motivated the gate: Task 7 of that PR named
+`stop_continue_qa_pending_fallback_blocks` as a new subprocess
+test, a pre-existing identically-named test (modulo the `test_`
+prefix) already exercised the same production path, and Code
+Review deleted the older twin — a full review cycle that the
+plan-time gate would have prevented.
+
+The scanner extracts two kinds of candidate names from plan prose:
+`fn <name>(` declarations inside fenced Rust blocks, and
+backtick-quoted identifiers ≥ 10 characters in surrounding prose.
+Matches are symmetric — `test_foo_bar_quux` and `foo_bar_quux`
+normalize to the same key. Violations carry `existing_test` and
+`existing_file` so the author can see both sides of the collision.
+
+Two line-level HTML comment opt-outs suppress a trigger, following
+the same walk-back-one-blank-line grammar as the sibling scanners
+(same line, next non-blank line, or two lines below with a single
+blank line between — no chaining):
+
+- `<!-- duplicate-test-coverage: not-a-new-test -->` — plan prose
+  discusses or cites an existing test by name rather than
+  proposing one. Use in Exploration sections that reference prior
+  art.
+- `<!-- duplicate-test-coverage: intentional-duplicate -->` — the
+  author is knowingly adding a parallel test per the Named Tests
+  After Refactor pattern in `.claude/rules/docs-with-behavior.md`.
+
+See `.claude/rules/duplicate-test-coverage.md` for the full
+rationale and the three-callsite enforcement topology
+(`src/plan_check.rs::run_impl`, `src/plan_extract.rs` extracted
+path, and `src/plan_extract.rs` resume path).
+
 ### Supersession Enumeration
 
 `.claude/rules/supersession.md` requires plans that add replacements,
@@ -623,6 +671,18 @@ Parse the JSON output:
     lines of the trigger, OR add the
     `<!-- external-input-audit: not-a-tightening -->` opt-out
     comment if the prose is discussion rather than a proposal.
+  - **`rule: "duplicate-test-coverage"`** — the violation's
+    `existing_test` and `existing_file` fields name the pre-existing
+    test. Either rename the proposed test so the normalized form
+    differs (e.g. pick a more specific name), delete the new-test
+    proposal entirely in favor of strengthening the existing test,
+    OR add the
+    `<!-- duplicate-test-coverage: not-a-new-test -->` opt-out
+    when the prose references an existing test rather than
+    proposing one, or the
+    `<!-- duplicate-test-coverage: intentional-duplicate -->`
+    opt-out when the duplication is intentional per the
+    Named-Tests-After-Refactor pattern.
 
   Re-run `bin/flow plan-check` and loop until the response is
   `"status": "ok"`. Only then proceed to the task-count and

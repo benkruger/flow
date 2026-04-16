@@ -69,6 +69,7 @@ CI will fail if these are missing:
 - `docs/` — GitHub Pages site (static HTML); `docs/reference/flow-state-schema.md` for state file schema
 - `agents/*.md` — six custom plugin sub-agents: ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, documentation
 - `src/*.rs` — Rust source implementing all `bin/flow` subcommands
+- `src/plan_deviation.rs` — pure detector module for plan signature deviations (plan-named test fixture values drifting in the staged diff). Runs as a post-CI, pre-commit gate inside `src/finalize_commit.rs::run_impl` and blocks the commit when a drift is unacknowledged by a matching `bin/flow log` entry
 - `src/dispatch.rs` — centralized dispatch helpers (`dispatch_json`, `dispatch_text`) for `main.rs` match arms that delegate to module-level `run_impl_main` functions; both helpers print their result and then call `process::exit`
 - `src/tui.rs` — interactive TUI (`flow tui`) — ratatui app with keyboard-driven navigation over local state files. Subprocess surface (open, osascript, bin/flow, $HOME) is injected via `TuiAppPlatform` so unit tests exercise real `Command::new()` chains against a no-op `true` binary
 - `src/tui_data.rs` — state-file loaders and pure display helpers for the TUI (phase timeline, flow summaries, orchestration, account metrics). No IO in the helpers — `phase_timeline` and friends are deterministic given state JSON + clock
@@ -139,6 +140,7 @@ Consequence: **main's `target/` is a long-lived build surface that spans many so
 
 ### Sub-Agents
 
+<!-- duplicate-test-coverage: not-a-new-test -->
 Six custom plugin sub-agents in `agents/*.md` — tiered by task complexity: opus (ci-fixer, adversarial), sonnet (reviewer, pre-mortem), haiku (learn-analyst, documentation). Agent frontmatter must only use supported keys (`name`, `description`, `model`, `effort`, `maxTurns`, `tools`, `disallowedTools`, `skills`, `memory`, `background`, `isolation`) — `test_agent_frontmatter_only_supported_keys` enforces this. The global `PreToolUse` hook (`bin/flow hook validate-pretool`) enforces Bash and Agent tool restrictions across all agents. See `.claude/rules/cognitive-isolation.md` for the two-tier context model and debiasing rationale.
 
 Agent `maxTurns` budgets are set in each agent's frontmatter. When adding or modifying an agent's budget, read peer agents' frontmatter to maintain parity between agents with similar scope (e.g. context-rich read-only agents should have comparable budgets).
@@ -154,6 +156,8 @@ Auto-memory is shared across git worktrees of the same repository (since Claude 
 Learn routes learnings to project CLAUDE.md and `.claude/rules/`. Also files GitHub issues for process gaps. All filed issues recorded via `bin/flow add-issue`. All triage findings recorded via `bin/flow add-finding`.
 
 CI is enforced inside `finalize-commit` itself — `run_impl` calls `ci::run_impl()` before `git commit`, so every commit path (including direct `bin/flow finalize-commit` calls) runs CI mechanically. The sentinel skip optimization means zero overhead when CI already passed. The `commit_format` preference is copied from `.flow.json` into the state file by `/flow-start`; the commit skill reads it from the state file. After `finalize-commit` succeeds and `git pull` did not introduce new content (`pull_merged == false`), the CI sentinel is automatically refreshed so the next `bin/flow ci` run skips when the working tree hasn't changed.
+
+Plan signature deviations are enforced the same way. After `ci::run_impl()` succeeds and before the `git commit` call, `run_impl` invokes `crate::plan_deviation::run_impl` which reads the plan file's `## Tasks` section, collects `(test_name, fixture_key, plan_value)` triples from eligible fenced code blocks, and cross-references each plan value against the string literals found in the corresponding diff-added test function's body. A deviation is reported when a plan-named test appears in `git diff --cached` but the plan's fixture value is absent from the test's added lines. When drift is detected and not acknowledged by a matching `bin/flow log` entry (a log line containing both the test name and the plan value as substrings), `finalize-commit` blocks with `{"status": "error", "step": "plan_deviation"}` on stdout and a structured stderr message naming each deviation and the exact `bin/flow log` command the user should run to acknowledge it. See `.claude/rules/plan-commit-atomicity.md` "Mechanical Enforcement" for the full gate design.
 
 ### Logging
 
@@ -187,7 +191,7 @@ Every bash block in every skill must run without triggering a permission prompt.
 
 ### Plan-Phase Gates
 
-Phase 2 (Plan) gates completion on two scanners that share `bin/flow plan-check`: `src/scope_enumeration.rs::scan` (universal-coverage prose without a named sibling list) and `src/external_input_audit.rs::scan` (panic/assert tightening proposals without a paired callsite source-classification audit table). Both scanners run at three callsites — the standard path (`src/plan_check.rs::run_impl`), the pre-decomposed extracted path (`src/plan_extract.rs` extracted), and the resume path (`src/plan_extract.rs` resume) — so the gate cannot be bypassed by routing through an alternative phase entry. Each violation in the JSON response carries a `rule` field (`"scope-enumeration"` or `"external-input-audit"`) tying it to the rule file (`.claude/rules/scope-enumeration.md` or `.claude/rules/external-input-audit-gate.md`) the author should consult for the fix. Contract tests in `tests/scope_enumeration.rs` and `tests/external_input_audit.rs` lock the committed prose corpus (CLAUDE.md, `.claude/rules/*.md`, `skills/**/SKILL.md`, `.claude/skills/**/SKILL.md`) against drift.
+Phase 2 (Plan) gates completion on three scanners that share `bin/flow plan-check`: `src/scope_enumeration.rs::scan` (universal-coverage prose without a named sibling list), `src/external_input_audit.rs::scan` (panic/assert tightening proposals without a paired callsite source-classification audit table), and `src/duplicate_test_coverage.rs::scan` (proposed test names that normalize — strip `test_` prefix, lowercase — to an existing test in the repo's test corpus from `tests/**/*.rs` and `src/**/*.rs`). All three scanners run at three callsites — the standard path (`src/plan_check.rs::run_impl`), the pre-decomposed extracted path (`src/plan_extract.rs` extracted), and the resume path (`src/plan_extract.rs` resume) — so the gate cannot be bypassed by routing through an alternative phase entry. Each violation in the JSON response carries a `rule` field (`"scope-enumeration"`, `"external-input-audit"`, or `"duplicate-test-coverage"`) tying it to the rule file (`.claude/rules/scope-enumeration.md`, `.claude/rules/external-input-audit-gate.md`, or `.claude/rules/duplicate-test-coverage.md`) the author should consult for the fix. Duplicate-test-coverage violations additionally carry `existing_test` and `existing_file` fields naming the pre-existing test's location. Contract tests in `tests/scope_enumeration.rs` and `tests/external_input_audit.rs` lock the committed prose corpus (CLAUDE.md, `.claude/rules/*.md`, `skills/**/SKILL.md`, `.claude/skills/**/SKILL.md`) against drift for the scope-enumeration and external-input-audit rules. The duplicate-test-coverage scanner intentionally ships without a corpus contract test — legitimate educational test-name citations in rule files (e.g. `test_agent_frontmatter_only_supported_keys` above in the Sub-Agents section) would false-positive, and the Plan-phase gate already catches the real regression (a plan that names an existing test is rejected at plan-check time regardless of where the name appeared in committed prose). See `tests/duplicate_test_coverage.rs` for the rationale.
 
 ### Tombstone Lifecycle
 
@@ -197,7 +201,8 @@ Tombstone tests prevent merge conflicts from silently resurrecting deleted code.
 
 All tests are Rust integration tests in `tests/*.rs`. Shared helpers in `tests/common/mod.rs` provide `repo_root()`, `bin_dir()`, `hooks_dir()`, `skills_dir()`, `docs_dir()`, `agents_dir()`, `load_phases()`, `load_hooks()`, `plugin_version()`, `phase_order()`, `utility_skills()`, `read_skill()`, `collect_md_files()`, and `create_git_repo_with_remote()`.
 
-Key test files: `tests/structural.rs` (config invariants, version consistency), `tests/skill_contracts.rs` (SKILL.md content via glob-based discovery — new skills auto-covered), `tests/permissions.rs` (allow/deny simulation, placeholder validation), `tests/docs_sync.rs` (docs completeness), `tests/concurrency.rs` (real-process concurrency).
+<!-- duplicate-test-coverage: not-a-new-test -->
+Key test files: `tests/structural.rs` (config invariants, version consistency), `tests/skill_contracts.rs` (SKILL.md content via glob-based discovery — new skills auto-covered; `phase_skills_no_inline_time_computation` blocks skills that instruct Claude to compute values), `tests/permissions.rs` (allow/deny simulation, placeholder validation), `tests/docs_sync.rs` (docs completeness), `tests/concurrency.rs` (real-process concurrency).
 
 ## Maintainer Skills (private to this repo)
 
@@ -221,5 +226,6 @@ Key test files: `tests/structural.rs` (config invariants, version consistency), 
 - **Scope enumeration for universal-coverage claims** — see `.claude/rules/scope-enumeration.md`
 - **External-input audit for panic/assert tightenings** — see `.claude/rules/external-input-audit-gate.md`
 - **Extract-helper branch enumeration for refactor plans** — see `.claude/rules/extract-helper-refactor.md`
+- **Duplicate test coverage for proposed test names** — see `.claude/rules/duplicate-test-coverage.md`
 - **No `run_in_background` during FLOW phases**; `bin/flow` (any subcommand) is never allowed in the background regardless of mode — see `.claude/rules/ci-is-a-gate.md`. Enforced by `bin/flow hook validate-pretool`.
 - **User evidence is ground truth** — when a user provides screenshots, error output, or logs that contradict your code analysis, trust the evidence. Your code reading is a hypothesis; the user's evidence is an observation. Never explain away evidence to preserve your analysis.

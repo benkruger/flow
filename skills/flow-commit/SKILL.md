@@ -224,7 +224,13 @@ Files are already staged from Round 3. No need to `git add -A` again.
 
 ### Round 6 — Finalize
 
-Run the finalize script to commit, clean up the message file, pull, and push in one call:
+Run the finalize script to commit, clean up the message file, pull,
+and push in one call. `finalize-commit` runs `ci::run_impl()` before
+`git commit` (see CLAUDE.md "CI is enforced inside `finalize-commit`
+itself"), so use a 10-minute Bash tool timeout (`timeout: 600000`) —
+CI runs can take 3–4 minutes and the default 2-minute timeout would
+background the process, defeating the gate (per
+`.claude/rules/ci-is-a-gate.md`).
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow finalize-commit .flow-commit-msg <current-branch>
