@@ -116,6 +116,11 @@ user approves the edit, proceed. If not, find a different path.
 
 ## Enforcement
 
+Shared-config protection is a workflow discipline, not a universal
+rule. Outside a flow context, users can modify shared config
+freely. Once a flow starts and the session is inside a worktree,
+the gate activates to enforce the explicit-permission requirement.
+
 The `validate-worktree-paths` PreToolUse hook
 (`src/hooks/validate_worktree_paths.rs`) enforces this rule
 mechanically. The `is_shared_config` predicate matches the nine

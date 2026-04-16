@@ -5,9 +5,11 @@
 //!    main repo when the working directory is inside a FLOW worktree, directing
 //!    the caller to use the worktree copy instead.
 //! 2. **Shared config protection** — blocks Edit/Write calls on shared
-//!    configuration files (`.gitignore`, `Cargo.toml`, `.github/`, etc.) during
-//!    active FLOW phases, directing the caller to confirm with the user first.
-//!    Read/Glob/Grep are allowed so codebase exploration is not impacted.
+//!    configuration files (`.gitignore`, `Cargo.toml`, `.github/`, etc.) when
+//!    the CWD is inside a `.worktrees/` directory (the flow-active proxy).
+//!    Only Edit and Write tool names trigger the block — Read/Glob/Grep are
+//!    allowed so codebase exploration is not impacted. The block message
+//!    directs the caller to confirm with the user before proceeding.
 //!
 //! Fires on Edit, Write, Read, Glob, and Grep tool calls.
 //!
@@ -89,6 +91,10 @@ pub fn validate_shared_config(file_path: &str, cwd: &str, tool_name: &str) -> (b
         return (true, String::new());
     }
 
+    // The hook fires on all Edit/Write calls, but shared-config blocking
+    // only applies during active flows. The `.worktrees/` marker in CWD is
+    // the flow-active proxy — outside a worktree, the gate is a no-op so
+    // pre-flow and post-flow edits are not blocked.
     if !cwd.contains(WORKTREE_MARKER) {
         return (true, String::new());
     }
@@ -103,10 +109,18 @@ pub fn validate_shared_config(file_path: &str, cwd: &str, tool_name: &str) -> (b
         return (true, String::new());
     }
 
-    let filename = Path::new(file_path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(file_path);
+    // For .github/ directory matches, surface `.github/` as the protected
+    // boundary rather than the leaf filename (e.g. "ci.yml" is not inherently
+    // shared config — the `.github/` directory is).
+    let display_name = if file_path.contains("/.github/") {
+        ".github/".to_string()
+    } else {
+        Path::new(file_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(file_path)
+            .to_string()
+    };
 
     (
         false,
@@ -115,7 +129,7 @@ pub fn validate_shared_config(file_path: &str, cwd: &str, tool_name: &str) -> (b
              in the repository. Modifying it during a FLOW phase requires explicit \
              user permission. Use AskUserQuestion to confirm with the user before \
              proceeding. See .claude/rules/permissions.md \"Shared Config Files\" section.",
-            filename
+            display_name
         ),
     )
 }
@@ -486,8 +500,10 @@ mod tests {
 
     #[test]
     fn test_shared_config_edit_main_repo_shared_allowed() {
-        // Path targets main repo's .gitignore from inside worktree.
-        // The existing validate() already blocks main-repo paths;
+        // When a shared-config file lives at the main repo level (outside
+        // the worktree), the CWD-scope check allows it because the gate
+        // only applies to edits inside `.worktrees/`. The existing
+        // validate() already blocks main-repo paths via a separate check;
         // validate_shared_config only fires for worktree-internal paths.
         let cwd = "/project/.worktrees/feat";
         let file_path = "/project/.gitignore";
