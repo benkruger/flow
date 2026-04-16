@@ -22,13 +22,25 @@ where the code runs.
 
 The rule above applies to fixes, but it must also apply in the Plan
 phase whenever a plan introduces a **new** execution path that a
-production caller will take. Adding a new branch (a new `if` arm,
-a new `match` arm, a new early-return guard) inside a function with
-a live production caller creates a path that never ran before —
-and therefore has no coverage and no proof it behaves as intended.
+production caller will take. Two shapes of this class:
 
-When the plan modifies a function, the plan must enumerate the
-callers and, for every row:
+**Shape A — new branch inside an existing function.** Adding a new
+branch (a new `if` arm, a new `match` arm, a new early-return guard)
+inside a function with a live production caller creates a path that
+never ran before — and therefore has no coverage and no proof it
+behaves as intended.
+
+**Shape B — new callsite family introduced by a feature.** Adding a
+new function, scanner, helper, or module and wiring it into multiple
+existing entry points (plan_check, plan_extract extracted path,
+plan_extract resume path; hook family; CI runner family) creates
+multiple production paths in the same PR. Each invocation site is
+its own callsite audit row — the plan must list every invocation
+point and name the test that exercises it, not rely on a single
+"integration test" that happens to hit one of them.
+
+When the plan modifies a function OR introduces a new callsite
+family, the plan must enumerate the callers and, for every row:
 
 <!-- scope-enumeration: imperative -->
 1. Record the conditions under which the caller hits the new code
@@ -36,8 +48,12 @@ callers and, for every row:
 2. Name the test that exercises the new path, using inputs that
    drive the caller's conditions (not a contrived unit-test
    fixture).
+3. For callsite families, list every invocation point separately —
+   do not collapse "plan_check + plan_extract extracted +
+   plan_extract resume" into "the three callsites" without
+   enumerating each one by name and each one's test.
 
-PR #1054 surfaced this omission: `find_state_files` gained an
+PR #1054 surfaced the Shape A case: `find_state_files` gained an
 empty-branch code path to support the `format-status` multi-flow
 fallback (`src/main.rs:910`) and the stop-continue hook
 (`src/hooks/stop_continue.rs:270`). The plan migrated the callers
@@ -46,6 +62,15 @@ gap and added `find_state_files_empty_branch_scans_directory` and
 two slash-branch regression tests covering the production callers.
 A Plan-phase callsite audit would have included these tasks from
 the start.
+
+PR #1177 surfaced the Shape B case: the `duplicate_test_coverage`
+scanner was wired into three callsites (plan_check::run_impl,
+plan_extract extracted, plan_extract resume). The plan described
+the scanner and the integration topology but did not enumerate
+each callsite as a distinct test row — the Code Review reviewer <!-- scope-enumeration: imperative -->
+agent noted the absence during triage. A plan that introduces a
+new scanner-family feature must name each integration-test
+function for each callsite before the Code phase begins. <!-- scope-enumeration: imperative -->
 
 ## Anti-Patterns
 
@@ -58,3 +83,6 @@ the start.
   grepping for all writers
 - Adding a new branch to a function without listing the production
   callers that will take it and the tests that prove the new paths
+- Introducing a new scanner, hook, or helper family and describing
+  the integration as "the three callsites" without enumerating
+  each callsite and its named test <!-- scope-enumeration: imperative -->

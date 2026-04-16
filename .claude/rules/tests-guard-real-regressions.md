@@ -62,6 +62,50 @@ name.
   `tests/external_input_audit.rs`. Broader scans without a named
   incident or vocabulary are speculative.
 
+### Corpus-scan viability check
+
+When a PR proposes a new corpus contract test (scanning the
+committed prose corpus for a rule's forbidden pattern), run a
+viability check **before** writing the test. The check is already
+documented in `.claude/rules/scope-enumeration.md` "False-positive
+sweep before expanding the vocabulary" for one specific case
+(vocabulary expansion), but it applies universally to any
+corpus-class contract test:
+
+1. **Run the scanner over the current corpus.** Apply the candidate
+   trigger vocabulary to `CLAUDE.md`, `.claude/rules/*.md`,
+   `skills/**/SKILL.md`, and `.claude/skills/**/SKILL.md` and count
+   how many lines the scanner would flag.
+2. **Classify the flags.** If the count is **zero or low (≤ 4)**,
+   audit each flagged line — genuine missing items are fixed in the
+   same PR, false triggers get opt-out comments. If the count is
+   **high (≥ 5)**, the scanner has a false-positive problem
+   intrinsic to the project's existing prose.
+3. **On high false-positive count, defer the corpus test.** The
+   candidate is not viable as a mechanical enforcer in this
+   codebase. Ship only the Plan-phase gate (which scans plan
+   content, not the committed prose corpus) and document the
+   deferral in the rule file's Enforcement section with the
+   false-positive count and the legitimate-citation examples that
+   triggered it.
+4. **Replace the contract test with a documented marker.** Leave
+   `tests/<scanner-name>.rs` as an intentionally empty integration
+   test file whose module doc comment records the decision. A
+   future session looking for the contract test finds the rationale
+   without re-deriving it.
+
+**Motivating incident.** PR #1177's `duplicate_test_coverage`
+scanner flagged 18+ legitimate educational test-name citations in
+the prose corpus (e.g. `test_agent_frontmatter_only_supported_keys`
+in CLAUDE.md documenting an enforcement mechanism,
+`production_ci_decider_tree_changed_returns_not_skipped` in
+`extract-helper-refactor.md` as a reference pattern). The Plan-phase
+gate catches the real regression path (a plan proposing a duplicate
+test name is flagged at plan-check time regardless of where the
+name appeared in committed prose), so the corpus scanner added no
+protection on top of the existing gate. `tests/duplicate_test_coverage.rs`
+now ships as a documented empty marker per step 4 above.
+
 ### Forbidden patterns
 
 - **"Just in case"** scans over broad file sets without a named
@@ -81,12 +125,16 @@ name.
 **Plan phase.** When a plan task adds a test, the task description
 must include a one-line statement of (1), (2), and (3). A test
 task that cannot state them is incomplete — revise the task or
-drop it.
+drop it. For plan tasks that propose a corpus contract test, the
+plan must also state whether the viability check has been run and
+what the false-positive count was.
 
 **Code phase.** Before writing a test, state (1), (2), and (3)
 internally. If you are about to write "This test guards against
 future drift" or "This test ensures no regressions," stop — name
-the specific regression or delete the test.
+the specific regression or delete the test. For corpus contract
+tests, run the viability check as the first action; if the count
+is ≥ 5, defer the test and document the deferral in the rule file.
 
 **Code Review phase.** The reviewer agent treats any test that
 cannot be traced to a named regression as a Real finding. The fix
@@ -120,5 +168,12 @@ themselves (silently). I reverted the test.
 - `.claude/rules/scope-enumeration.md` and
   `.claude/rules/external-input-audit-gate.md` — canonical forms
   for targeted corpus scans with named trigger vocabularies.
+- `.claude/rules/scope-enumeration.md` "False-positive sweep before
+  expanding the vocabulary" — the original protocol that the
+  Corpus-scan viability check section generalizes.
 - `.claude/rules/skill-authoring.md` "Plan Task Ordering" — TDD
   discipline that this rule complements.
+- `.claude/rules/duplicate-test-coverage.md` "Enforcement Topology"
+  — a rule that intentionally ships without a corpus contract
+  test per the viability check above, with the deferral rationale
+  inline.
