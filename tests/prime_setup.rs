@@ -868,3 +868,190 @@ fn cli_installs_bin_stubs() {
         assert!(path.exists(), "expected bin/{} installed", tool);
     }
 }
+
+// ── merge_settings error/guard branches ────────────────────
+
+#[test]
+fn merge_settings_read_error_returns_err() {
+    // When settings.json exists but cannot be read (e.g., it is a
+    // directory instead of a file), merge_settings returns an Err
+    // with a "Could not read" message.
+    let tmp = tempfile::tempdir().unwrap();
+    let claude_dir = tmp.path().join(".claude");
+    fs::create_dir_all(claude_dir.join("settings.json")).unwrap();
+    let result = prime_setup::merge_settings(tmp.path());
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Could not read"));
+}
+
+#[test]
+fn merge_settings_parse_error_returns_err() {
+    // When settings.json contains invalid JSON, merge_settings
+    // returns an Err with a "Could not parse" message.
+    let tmp = tempfile::tempdir().unwrap();
+    write_settings(tmp.path(), &json!("placeholder"));
+    fs::write(
+        tmp.path().join(".claude").join("settings.json"),
+        "not valid json {{{",
+    )
+    .unwrap();
+    let result = prime_setup::merge_settings(tmp.path());
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Could not parse"));
+}
+
+#[test]
+fn merge_settings_non_object_top_level_resets() {
+    // When settings.json parses as a JSON array (valid JSON but not
+    // an object), the guard at L135 resets it to {} and the merge
+    // proceeds normally without crashing.
+    let tmp = tempfile::tempdir().unwrap();
+    let claude_dir = tmp.path().join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    fs::write(claude_dir.join("settings.json"), "[1, 2, 3]").unwrap();
+    let result = prime_setup::merge_settings(tmp.path()).unwrap();
+    assert!(result["permissions"]["allow"].is_array());
+    assert!(result["permissions"]["deny"].is_array());
+    assert_eq!(result["permissions"]["defaultMode"], "acceptEdits");
+}
+
+#[test]
+fn merge_settings_non_object_permissions_resets() {
+    // When permissions is a string instead of an object, the guard
+    // at L138 resets it to {} so allow/deny arrays can be created.
+    let tmp = tempfile::tempdir().unwrap();
+    write_settings(tmp.path(), &json!({"permissions": "not an object"}));
+    let result = prime_setup::merge_settings(tmp.path()).unwrap();
+    assert!(result["permissions"]["allow"].is_array());
+    assert!(result["permissions"]["deny"].is_array());
+}
+
+#[test]
+fn merge_settings_non_array_allow_resets() {
+    // When permissions.allow is a string instead of an array, the
+    // guard at L141 resets it to [] so the merge can populate it.
+    let tmp = tempfile::tempdir().unwrap();
+    write_settings(
+        tmp.path(),
+        &json!({"permissions": {"allow": "not-array", "deny": []}}),
+    );
+    let result = prime_setup::merge_settings(tmp.path()).unwrap();
+    assert!(result["permissions"]["allow"].is_array());
+    let allow_len = result["permissions"]["allow"].as_array().unwrap().len();
+    assert!(allow_len > 0, "UNIVERSAL_ALLOW entries should be added");
+}
+
+#[test]
+fn merge_settings_non_array_deny_resets() {
+    // When permissions.deny is a number instead of an array, the
+    // guard at L144 resets it to [] so deny entries can be added.
+    let tmp = tempfile::tempdir().unwrap();
+    write_settings(
+        tmp.path(),
+        &json!({"permissions": {"allow": [], "deny": 42}}),
+    );
+    let result = prime_setup::merge_settings(tmp.path()).unwrap();
+    assert!(result["permissions"]["deny"].is_array());
+    let deny_len = result["permissions"]["deny"].as_array().unwrap().len();
+    assert!(deny_len > 0, "FLOW_DENY entries should be added");
+}
+
+#[test]
+fn merge_settings_sets_auto_background_env() {
+    // merge_settings writes env.CLAUDE_AUTO_BACKGROUND_TASKS to
+    // disable auto-backgrounding of CI gates.
+    let tmp = tempfile::tempdir().unwrap();
+    prime_setup::merge_settings(tmp.path()).unwrap();
+    let settings = read_settings(tmp.path());
+    assert_eq!(settings["env"]["CLAUDE_AUTO_BACKGROUND_TASKS"], "false");
+}
+
+#[test]
+fn merge_settings_preserves_existing_env() {
+    // Pre-existing env entries survive alongside the new key.
+    let tmp = tempfile::tempdir().unwrap();
+    write_settings(
+        tmp.path(),
+        &json!({
+            "permissions": {"allow": [], "deny": []},
+            "env": {"MY_VAR": "hello"},
+        }),
+    );
+    prime_setup::merge_settings(tmp.path()).unwrap();
+    let settings = read_settings(tmp.path());
+    assert_eq!(settings["env"]["MY_VAR"], "hello");
+    assert_eq!(settings["env"]["CLAUDE_AUTO_BACKGROUND_TASKS"], "false");
+}
+
+#[test]
+fn merge_settings_non_object_env_resets() {
+    // When env is a string instead of an object, the guard at L205
+    // resets it to {} so the auto-background key can be set.
+    let tmp = tempfile::tempdir().unwrap();
+    write_settings(
+        tmp.path(),
+        &json!({
+            "permissions": {"allow": [], "deny": []},
+            "env": "not an object",
+        }),
+    );
+    prime_setup::merge_settings(tmp.path()).unwrap();
+    let settings = read_settings(tmp.path());
+    assert_eq!(settings["env"]["CLAUDE_AUTO_BACKGROUND_TASKS"], "false");
+}
+
+// ── install_bin_stubs edge cases ───────────────────────────
+
+#[test]
+fn install_bin_stubs_skips_dangling_symlink() {
+    // A dangling symlink at the target path is detected by
+    // fs::symlink_metadata and skipped — the installer never writes
+    // through a symlink per rust-patterns.md "Symlink-Safe Existence
+    // Checks Before Writes".
+    let tmp = tempfile::tempdir().unwrap();
+    let plugin_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let bin_dir = tmp.path().join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    std::os::unix::fs::symlink("/nonexistent/target", bin_dir.join("format")).unwrap();
+    let installed = prime_setup::install_bin_stubs(tmp.path(), plugin_root);
+    // format was skipped (dangling symlink), the other three installed
+    assert!(!installed.contains(&"format".to_string()));
+    assert!(installed.contains(&"lint".to_string()));
+    assert!(installed.contains(&"build".to_string()));
+    assert!(installed.contains(&"test".to_string()));
+    // The symlink should still exist (not overwritten)
+    assert!(
+        fs::symlink_metadata(bin_dir.join("format")).is_ok(),
+        "dangling symlink should be preserved"
+    );
+}
+
+#[test]
+fn install_bin_stubs_skips_when_source_missing() {
+    // When the stub source template does not exist (empty plugin
+    // assets dir), the installer skips that tool gracefully.
+    let tmp = tempfile::tempdir().unwrap();
+    let fake_plugin = tempfile::tempdir().unwrap();
+    // Create an empty assets/bin-stubs/ directory with no .sh files
+    fs::create_dir_all(fake_plugin.path().join("assets").join("bin-stubs")).unwrap();
+    let installed = prime_setup::install_bin_stubs(tmp.path(), fake_plugin.path());
+    assert!(
+        installed.is_empty(),
+        "no stubs should be installed when source templates are missing"
+    );
+}
+
+#[test]
+fn install_bin_stubs_handles_mkdir_failure() {
+    // When bin/ cannot be created (a regular file blocks it), the
+    // installer skips gracefully instead of crashing.
+    let tmp = tempfile::tempdir().unwrap();
+    let plugin_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    // Create a regular file at bin/ so create_dir_all fails
+    fs::write(tmp.path().join("bin"), "blocking file").unwrap();
+    let installed = prime_setup::install_bin_stubs(tmp.path(), plugin_root);
+    assert!(
+        installed.is_empty(),
+        "no stubs should be installed when bin/ directory cannot be created"
+    );
+}
