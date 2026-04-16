@@ -131,10 +131,16 @@ fn resolve_mode(state: &Value, phase: &str) -> (String, String) {
                 .to_string();
             (commit, cont)
         }
-        // Simple string config (e.g. "flow-abort": "auto") — applies to both axes
+        // Simple string config (e.g. "flow-abort": "auto") — applies to both axes.
+        // Empty strings fall through to defaults per the same discipline as
+        // missing-key: a config that is present but contentless is not a config.
         Some(cfg) if cfg.is_string() => {
-            let mode = cfg.as_str().unwrap_or(default_commit).to_string();
-            (mode.clone(), mode)
+            let s = cfg.as_str().unwrap_or("");
+            if s.is_empty() {
+                (default_commit.to_string(), default_continue.to_string())
+            } else {
+                (s.to_string(), s.to_string())
+            }
         }
         _ => (default_commit.to_string(), default_continue.to_string()),
     }
@@ -411,13 +417,26 @@ mod tests {
 
     #[test]
     fn resolve_mode_string_config() {
-        // Exercises the `cfg.is_string()` branch (line 135).
+        // Exercises the `cfg.is_string()` branch.
         let state = json!({
             "skills": {"flow-code": "auto"}
         });
         let (commit, cont) = resolve_mode(&state, "flow-code");
         assert_eq!(commit, "auto");
         assert_eq!(cont, "auto");
+    }
+
+    #[test]
+    fn resolve_mode_empty_string_falls_to_defaults() {
+        // Empty-string config is treated as absent — falls through
+        // to per-phase defaults rather than propagating an invalid
+        // empty mode value.
+        let state = json!({
+            "skills": {"flow-code": ""}
+        });
+        let (commit, cont) = resolve_mode(&state, "flow-code");
+        assert_eq!(commit, "manual");
+        assert_eq!(cont, "manual");
     }
 
     #[test]
