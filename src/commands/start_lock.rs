@@ -706,9 +706,9 @@ mod tests {
 
     #[test]
     fn release_error_when_file_persists() {
-        // Exercises the error branch at lines 205-211: after remove_file
-        // fails (permission denied on read-only dir), the file still
-        // exists and release returns status="error".
+        // Exercises the release error branch: after remove_file fails
+        // (permission denied on read-only dir), the file still exists
+        // and release returns status="error".
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir().unwrap();
@@ -717,8 +717,17 @@ mod tests {
         let entry = queue_dir.join("locked-feature");
         fs::write(&entry, "").unwrap();
 
-        // Make the directory read-only so remove_file fails
+        // Drop guard restores permissions even if an assertion panics,
+        // preventing leaked read-only dirs in the temp tree.
+        struct PermGuard(std::path::PathBuf);
+        impl Drop for PermGuard {
+            fn drop(&mut self) {
+                let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+            }
+        }
+
         fs::set_permissions(&queue_dir, fs::Permissions::from_mode(0o555)).unwrap();
+        let _guard = PermGuard(queue_dir.clone());
 
         let result = release("locked-feature", &queue_dir);
         assert_eq!(result["status"], "error");
@@ -727,9 +736,6 @@ mod tests {
             .unwrap_or("")
             .contains("persists after unlink"));
         assert_eq!(result["was_present"], true);
-
-        // Restore permissions for cleanup
-        fs::set_permissions(&queue_dir, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     #[test]

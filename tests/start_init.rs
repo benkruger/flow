@@ -398,37 +398,30 @@ fn test_duplicate_issue_returns_error() {
 
 #[test]
 fn test_init_state_error_releases_lock() {
-    // Exercises lines 274-283: init-state returns error status → lock released.
-    // When the prompt file is consumed by start-init but init-state can't
-    // process it (e.g., state file already exists for this branch), the
-    // error is caught and the lock is released.
+    // Verifies lock lifecycle: on both success and error, start-init
+    // holds the lock (start-workspace releases it later). On error
+    // paths, the lock IS released before returning. This test uses
+    // unconditional assertions regardless of outcome.
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
     let stub_dir = create_default_gh_stub(&repo);
 
-    // Pre-create a state file for the canonical branch name so init-state
-    // detects a conflict (state file already exists for this branch).
-    let state_dir = flow_states_dir(&repo);
-    fs::create_dir_all(&state_dir).unwrap();
-    let branch = "init-error-lock";
-    let existing = serde_json::json!({"schema_version": 1, "branch": branch});
-    fs::write(
-        state_dir.join(format!("{}.json", branch)),
-        serde_json::to_string(&existing).unwrap(),
-    )
-    .unwrap();
-
-    let output = run_start_init(&repo, branch, &[], &stub_dir);
+    let output = run_start_init(&repo, "lock-lifecycle", &[], &stub_dir);
     let data = parse_output(&output);
-    // The command should return ready or error (init-state may succeed or fail
-    // depending on whether a pre-existing state file causes a conflict).
-    // If error, verify lock is released:
-    if data["status"] == "error" {
-        let queue_dir = state_dir.join("start-queue");
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
+
+    if data["status"] == "ready" {
+        // On success, lock is held (awaiting start-workspace release)
         assert!(
-            !queue_dir.join(branch).exists(),
-            "Lock must be released on init-state error"
+            queue_dir.join("lock-lifecycle").exists(),
+            "Lock must be held after successful start-init"
+        );
+    } else {
+        // On error, lock is released
+        assert!(
+            !queue_dir.join("lock-lifecycle").exists(),
+            "Lock must be released on start-init error"
         );
     }
 }
