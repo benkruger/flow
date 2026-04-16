@@ -433,4 +433,28 @@ mod tests {
             "commit_deps should fail with nothing to commit"
         );
     }
+
+    #[test]
+    fn commit_deps_git_push_failure() {
+        // Exercises the git push error path in commit_deps (lines 282-293).
+        // Create a repo, stage+commit changes, then delete the remote
+        // so push fails.
+        let dir = tempfile::tempdir().unwrap();
+        let (repo, bare) = create_repo_with_remote(dir.path());
+
+        // Write a file so add + commit succeed
+        fs::write(repo.join("Cargo.lock"), "updated").unwrap();
+
+        // Remove the bare remote so push fails
+        fs::remove_dir_all(&bare).unwrap();
+
+        let result = commit_deps(&repo);
+        assert!(result.is_err(), "commit_deps should fail on push");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("git push"),
+            "error should mention git push, got: {}",
+            err
+        );
+    }
 }
