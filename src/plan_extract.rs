@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 use std::process::Command;
 
 use crate::commands::log::append_log;
+use crate::duplicate_test_coverage::{scan as dup_scan, TestCorpus, Violation as DupViolation};
 use crate::external_input_audit::{scan as audit_scan, Violation as AuditViolation};
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
@@ -347,6 +348,7 @@ pub fn count_tasks_any_level(content: &str) -> usize {
 fn violations_response(
     scope_violations: &[Violation],
     audit_violations: &[AuditViolation],
+    dup_violations: &[DupViolation],
     path_label: &str,
 ) -> Value {
     let mut violations_json: Vec<Value> = Vec::new();
@@ -368,7 +370,12 @@ fn violations_response(
             "rule": "external-input-audit",
         }));
     }
-    let total = scope_violations.len() + audit_violations.len();
+    for v in dup_violations {
+        // Shared helper with `plan_check.rs` so the JSON shape
+        // stays in sync across both gate callsites.
+        violations_json.push(crate::plan_check::duplicate_violation_to_tagged_json(v));
+    }
+    let total = scope_violations.len() + audit_violations.len() + dup_violations.len();
     // Reuse the message builder from plan_check so both gate
     // callsites render identical wording. plan_extract adds the
     // path-specific "Edit the plan, then re-run /flow:flow-plan"
@@ -376,6 +383,7 @@ fn violations_response(
     let base = crate::plan_check::build_violation_message(
         scope_violations.len(),
         audit_violations.len(),
+        dup_violations.len(),
         total,
     );
     json!({
@@ -444,20 +452,27 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         let plan_content = std::fs::read_to_string(&plan_abs)
             .map_err(|e| format!("Could not read plan file: {}", e))?;
 
-        // Gate resume on BOTH Plan-phase rules. The plan file may
-        // have been written by a prior plan-extract run that left
-        // `files.plan` set despite violations (see extracted path
-        // below); scanning on resume ensures the phase cannot
-        // complete until the user edits the plan to satisfy both
-        // scanners. See `.claude/rules/scope-enumeration.md` and
-        // `.claude/rules/external-input-audit-gate.md` for the
-        // rules and the opt-out comment vocabularies.
+        // Gate resume on all three Plan-phase rules. The plan file
+        // may have been written by a prior plan-extract run that
+        // left `files.plan` set despite violations (see extracted
+        // path below); scanning on resume ensures the phase cannot
+        // complete until the user edits the plan to satisfy every
+        // scanner. See `.claude/rules/scope-enumeration.md`,
+        // `.claude/rules/external-input-audit-gate.md`, and
+        // `.claude/rules/duplicate-test-coverage.md` for the rules
+        // and their opt-out comment vocabularies.
         let scope_violations = scope_scan(&plan_content, &plan_abs);
         let audit_violations = audit_scan(&plan_content, &plan_abs);
-        if !scope_violations.is_empty() || !audit_violations.is_empty() {
+        let test_corpus = TestCorpus::from_repo(&root);
+        let dup_violations = dup_scan(&plan_content, &plan_abs, &test_corpus);
+        if !scope_violations.is_empty()
+            || !audit_violations.is_empty()
+            || !dup_violations.is_empty()
+        {
             return Ok(violations_response(
                 &scope_violations,
                 &audit_violations,
+                &dup_violations,
                 "resumed",
             ));
         }
@@ -676,29 +691,33 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     })
     .map_err(|e| format!("Failed to update state: {}", e))?;
 
-    // Gate completion on BOTH Plan-phase rules. Scope-enumeration
-    // violations and external-input-audit violations both block
-    // phase completion — the model must edit the plan file to
-    // satisfy both scanners and re-run. See
-    // `.claude/rules/scope-enumeration.md` and
-    // `.claude/rules/external-input-audit-gate.md` for the rules
-    // and their opt-out comment vocabularies.
+    // Gate completion on all three Plan-phase rules. Any violation
+    // blocks phase completion — the model must edit the plan file
+    // to satisfy every scanner and re-run. See
+    // `.claude/rules/scope-enumeration.md`,
+    // `.claude/rules/external-input-audit-gate.md`, and
+    // `.claude/rules/duplicate-test-coverage.md` for the rules and
+    // their opt-out comment vocabularies.
     let scope_violations = scope_scan(&promoted, &plan_abs);
     let audit_violations = audit_scan(&promoted, &plan_abs);
-    if !scope_violations.is_empty() || !audit_violations.is_empty() {
+    let test_corpus = TestCorpus::from_repo(&root);
+    let dup_violations = dup_scan(&promoted, &plan_abs, &test_corpus);
+    if !scope_violations.is_empty() || !audit_violations.is_empty() || !dup_violations.is_empty() {
         let _ = append_log(
             &root,
             &branch,
             &format!(
-                "[Phase 2] plan-extract — plan-check violations (scope {} / audit {}) in {} (exit 0)",
+                "[Phase 2] plan-extract — plan-check violations (scope {} / audit {} / dup {}) in {} (exit 0)",
                 scope_violations.len(),
                 audit_violations.len(),
+                dup_violations.len(),
                 plan_rel
             ),
         );
         return Ok(violations_response(
             &scope_violations,
             &audit_violations,
+            &dup_violations,
             "extracted",
         ));
     }
@@ -808,11 +827,14 @@ mod tests {
 
     // --- violations_response ---
 
-    /// Both scanners' violations land in one tagged `violations[]`
-    /// array. The `rule` field tells the repair loop which scanner
-    /// fired so the user can be pointed at the right rule file.
+    /// All three scanners' violations land in one tagged
+    /// `violations[]` array. The `rule` field tells the repair loop
+    /// which scanner fired so the user can be pointed at the right
+    /// rule file. Duplicate-test-coverage violations additionally
+    /// carry `existing_test` and `existing_file` so the caller can
+    /// name both the proposed test and its pre-existing twin.
     #[test]
-    fn violations_response_aggregates_both_scanners_with_rule_tags() {
+    fn violations_response_aggregates_all_three_scanners_with_rule_tags() {
         let scope = vec![Violation {
             file: PathBuf::from("/tmp/plan.md"),
             line: 10,
@@ -825,30 +847,55 @@ mod tests {
             phrase: "panic on empty".to_string(),
             context: "tighten to panic on empty".to_string(),
         }];
-        let resp = violations_response(&scope, &audit, "extracted");
+        let dup = vec![DupViolation {
+            file: PathBuf::from("/tmp/plan.md"),
+            line: 30,
+            phrase: "duplicate_name_here".to_string(),
+            context: "Plan names `duplicate_name_here` as new.".to_string(),
+            existing_test: "test_duplicate_name_here".to_string(),
+            existing_file: "tests/hooks.rs:1499".to_string(),
+        }];
+        let resp = violations_response(&scope, &audit, &dup, "extracted");
         assert_eq!(resp["status"], "error");
         assert_eq!(resp["path"], "extracted");
 
         let violations = resp["violations"].as_array().expect("array");
-        assert_eq!(violations.len(), 2);
+        assert_eq!(violations.len(), 3);
         let rules: Vec<String> = violations
             .iter()
             .map(|v| v["rule"].as_str().unwrap_or("").to_string())
             .collect();
         assert!(rules.contains(&"scope-enumeration".to_string()));
         assert!(rules.contains(&"external-input-audit".to_string()));
+        assert!(rules.contains(&"duplicate-test-coverage".to_string()));
+
+        // Duplicate entries must carry existing_test and existing_file.
+        let dup_entry = violations
+            .iter()
+            .find(|v| v["rule"].as_str() == Some("duplicate-test-coverage"))
+            .expect("dup entry present");
+        assert_eq!(
+            dup_entry["existing_test"].as_str(),
+            Some("test_duplicate_name_here")
+        );
+        assert_eq!(
+            dup_entry["existing_file"].as_str(),
+            Some("tests/hooks.rs:1499")
+        );
 
         let msg = resp["message"].as_str().unwrap_or("");
-        assert!(msg.contains("2 plan-check violation"));
+        assert!(msg.contains("3 plan-check violation"));
         assert!(msg.contains("scope-enumeration.md"));
         assert!(msg.contains("external-input-audit-gate.md"));
+        assert!(msg.contains("duplicate-test-coverage.md"));
     }
 
     /// When only the audit scanner finds a violation, the message
     /// names only the audit rule file — not the scope-enumeration
-    /// one — so the user is not misdirected.
+    /// or duplicate-test-coverage rules — so the user is not
+    /// misdirected.
     #[test]
-    fn violations_response_audit_only_omits_scope_message() {
+    fn violations_response_audit_only_omits_other_rule_messages() {
         let scope: Vec<Violation> = vec![];
         let audit = vec![AuditViolation {
             file: PathBuf::from("/tmp/plan.md"),
@@ -856,10 +903,32 @@ mod tests {
             phrase: "panic on empty".to_string(),
             context: "tighten to panic on empty".to_string(),
         }];
-        let resp = violations_response(&scope, &audit, "resumed");
+        let dup: Vec<DupViolation> = vec![];
+        let resp = violations_response(&scope, &audit, &dup, "resumed");
         let msg = resp["message"].as_str().unwrap_or("");
         assert!(msg.contains("external-input-audit-gate.md"));
         assert!(!msg.contains("scope-enumeration.md"));
+        assert!(!msg.contains("duplicate-test-coverage.md"));
         assert_eq!(resp["path"], "resumed");
+    }
+
+    /// Duplicate-only response names only the duplicate rule file.
+    #[test]
+    fn violations_response_duplicate_only_names_only_duplicate_rule() {
+        let scope: Vec<Violation> = vec![];
+        let audit: Vec<AuditViolation> = vec![];
+        let dup = vec![DupViolation {
+            file: PathBuf::from("/tmp/plan.md"),
+            line: 42,
+            phrase: "proposed_dup_name".to_string(),
+            context: "Add `proposed_dup_name` as a new test.".to_string(),
+            existing_test: "test_proposed_dup_name".to_string(),
+            existing_file: "tests/foo.rs:100".to_string(),
+        }];
+        let resp = violations_response(&scope, &audit, &dup, "extracted");
+        let msg = resp["message"].as_str().unwrap_or("");
+        assert!(msg.contains("duplicate-test-coverage.md"));
+        assert!(!msg.contains("scope-enumeration.md"));
+        assert!(!msg.contains("external-input-audit-gate.md"));
     }
 }
