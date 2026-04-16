@@ -221,27 +221,17 @@ pub struct Args {
 
 /// Testable implementation — returns the JSON Value to print.
 ///
-/// Returns `Ok(value)` for both success and application-error
-/// responses so the CLI prints the result and exits 0 in either case;
-/// the morning-report flow keeps running even when one orchestration
-/// queue file is malformed. `Err(msg)` is reserved for infrastructure
-/// failures (unreadable plugin root, etc.) that should exit 1.
-pub fn run_impl(args: &Args) -> Result<Value, String> {
-    Ok(generate_and_write_report(
-        Path::new(&args.state_file),
-        Path::new(&args.output_dir),
-    ))
+/// The morning-report flow keeps running even when one orchestration
+/// queue file is malformed: missing state files and corrupt JSON are
+/// surfaced as `{"status":"error", ...}` values, not as failures.
+/// There is no infrastructure-error path to distinguish, so the
+/// return type is `Value`, not `Result`.
+pub fn run_impl(args: &Args) -> Value {
+    generate_and_write_report(Path::new(&args.state_file), Path::new(&args.output_dir))
 }
 
 pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(value) => {
-            println!("{}", value);
-        }
-        Err(msg) => {
-            println!("{}", json!({"status": "error", "message": msg}));
-        }
-    }
+    println!("{}", run_impl(&args));
 }
 
 #[cfg(test)]
@@ -540,7 +530,7 @@ mod tests {
             output_dir: dir.path().to_string_lossy().to_string(),
         };
 
-        let result = run_impl(&args).unwrap();
+        let result = run_impl(&args);
         assert_eq!(result["status"], "ok");
         assert_eq!(result["completed"], 1);
         assert_eq!(result["failed"], 1);
@@ -559,7 +549,7 @@ mod tests {
             output_dir: dir.path().to_string_lossy().to_string(),
         };
 
-        let result = run_impl(&args).unwrap();
+        let result = run_impl(&args);
         assert_eq!(result["status"], "error");
         assert!(result["message"].as_str().unwrap().contains("not found"));
     }
@@ -575,7 +565,7 @@ mod tests {
             output_dir: dir.path().to_string_lossy().to_string(),
         };
 
-        let result = run_impl(&args).unwrap();
+        let result = run_impl(&args);
         assert_eq!(result["status"], "error");
     }
 }

@@ -73,15 +73,12 @@ pub fn create_state(queue: &[Value], state_dir: &Path) -> Value {
         "current_index": null,
     });
 
-    match serde_json::to_string_pretty(&state) {
-        Ok(content) => {
-            if let Err(e) = std::fs::write(&state_path, content) {
-                return json!({"status": "error", "message": format!("Failed to write state: {}", e)});
-            }
-            json!({"status": "ok"})
-        }
-        Err(e) => json!({"status": "error", "message": format!("Failed to serialize: {}", e)}),
+    // serde_json::to_string_pretty on a `json!({...})` literal is infallible.
+    let content = serde_json::to_string_pretty(&state).expect("json! literal serializes");
+    if let Err(e) = std::fs::write(&state_path, content) {
+        return json!({"status": "error", "message": format!("Failed to write state: {}", e)});
     }
+    json!({"status": "ok"})
 }
 
 /// Mark queue item at index as in_progress.
