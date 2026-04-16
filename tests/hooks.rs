@@ -1455,6 +1455,129 @@ fn validate_worktree_paths_inside_worktree_allows_home_path() {
     assert_eq!(output.status.code().unwrap(), 0);
 }
 
+// --- validate-worktree-paths shared-config integration tests (issue #1170) ---
+//
+// Subprocess tests for the shared-config protection layer added in
+// validate_worktree_paths.rs. The hook blocks Edit/Write on shared
+// config files inside a worktree (exit 2) and allows Read/Grep (exit 0).
+// Tests pass `tool_name` in the hook input JSON to exercise the
+// tool-name gating in `run()`.
+
+#[test]
+fn validate_worktree_paths_shared_config_edit_gitignore_blocked() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let target = worktree.join(".gitignore");
+    let input = serde_json::to_vec(&json!({
+        "tool_name": "Edit",
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&worktree, &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("shared configuration"),
+        "stderr must mention shared configuration: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_worktree_paths_shared_config_write_package_json_blocked() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let target = worktree.join("package.json");
+    let input = serde_json::to_vec(&json!({
+        "tool_name": "Write",
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&worktree, &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("shared configuration"),
+        "stderr must mention shared configuration: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_worktree_paths_shared_config_edit_github_workflow_blocked() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let target = worktree.join(".github").join("workflows").join("ci.yml");
+    let input = serde_json::to_vec(&json!({
+        "tool_name": "Edit",
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&worktree, &input);
+    assert_eq!(output.status.code().unwrap(), 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("shared configuration"),
+        "stderr must mention shared configuration: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_worktree_paths_shared_config_read_gitignore_allowed() {
+    // Read on shared config should be allowed — only Edit/Write are blocked
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let target = worktree.join(".gitignore");
+    let input = serde_json::to_vec(&json!({
+        "tool_name": "Read",
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&worktree, &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_worktree_paths_shared_config_edit_regular_file_allowed() {
+    // Regular files inside the worktree should not be blocked
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
+    fs::create_dir_all(&worktree).unwrap();
+    let target = worktree.join("src").join("lib.rs");
+    let input = serde_json::to_vec(&json!({
+        "tool_name": "Edit",
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&worktree, &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
+#[test]
+fn validate_worktree_paths_shared_config_edit_outside_worktree_allowed() {
+    // Edit on .gitignore when NOT in a worktree should pass through
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let target = root.join(".gitignore");
+    let input = serde_json::to_vec(&json!({
+        "tool_name": "Edit",
+        "tool_input": {"file_path": target.to_string_lossy()}
+    }))
+    .unwrap();
+    let output = run_worktree_hook(&root, &input);
+    assert_eq!(output.status.code().unwrap(), 0);
+}
+
 // --- stop-continue remaining-gap tests (issue #1145 Task 7) ---
 //
 // The existing `test_stop_continue_*` tests in this file cover most
