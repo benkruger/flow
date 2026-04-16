@@ -1,11 +1,9 @@
 use std::path::Path;
-use std::process;
 
 use clap::Parser;
 use indexmap::IndexMap;
-use serde_json::json;
+use serde_json::{json, Value};
 
-use crate::output::{json_error, json_ok};
 use crate::utils::short_issue_ref;
 
 #[derive(Debug, PartialEq)]
@@ -89,28 +87,21 @@ pub struct Args {
     pub output: String,
 }
 
-pub fn run(args: Args) {
+/// Fallible CLI logic — returns the SummaryResult on success or an
+/// error message. `run_impl_main` wraps this into the `(Value, i32)`
+/// contract that `dispatch::dispatch_json` consumes; unit tests call
+/// `run_impl` directly to assert on typed results.
+pub fn run_impl(args: &Args) -> Result<SummaryResult, String> {
     let state_path = Path::new(&args.state_file);
     if !state_path.exists() {
-        json_error(&format!("State file not found: {}", args.state_file), &[]);
-        process::exit(1);
+        return Err(format!("State file not found: {}", args.state_file));
     }
 
-    let content = match std::fs::read_to_string(state_path) {
-        Ok(c) => c,
-        Err(e) => {
-            json_error(&format!("Failed to read state file: {}", e), &[]);
-            process::exit(1);
-        }
-    };
+    let content = std::fs::read_to_string(state_path)
+        .map_err(|e| format!("Failed to read state file: {}", e))?;
 
-    let state: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(e) => {
-            json_error(&format!("Failed to parse state file: {}", e), &[]);
-            process::exit(1);
-        }
-    };
+    let state: Value =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse state file: {}", e))?;
 
     let result = format_issues_summary(&state);
 
@@ -119,17 +110,34 @@ pub fn run(args: Args) {
         if let Some(parent) = output_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        if let Err(e) = std::fs::write(output_path, &result.table) {
-            json_error(&format!("Failed to write output: {}", e), &[]);
-            process::exit(1);
-        }
+        std::fs::write(output_path, &result.table)
+            .map_err(|e| format!("Failed to write output: {}", e))?;
     }
 
-    json_ok(&[
-        ("has_issues", json!(result.has_issues)),
-        ("banner_line", json!(result.banner_line)),
-        ("table", json!(result.table)),
-    ]);
+    Ok(result)
+}
+
+/// Main-arm entry point: wraps `run_impl` into the `(Value, i32)`
+/// contract consumed by `dispatch::dispatch_json`.
+pub fn run_impl_main(args: &Args) -> (Value, i32) {
+    match run_impl(args) {
+        Ok(result) => (
+            json!({
+                "status": "ok",
+                "has_issues": result.has_issues,
+                "banner_line": result.banner_line,
+                "table": result.table,
+            }),
+            0,
+        ),
+        Err(msg) => (
+            json!({
+                "status": "error",
+                "message": msg,
+            }),
+            1,
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -273,5 +281,125 @@ mod tests {
         assert!(!result.has_issues);
         // Should not write file when no issues
         assert!(!output_path.exists());
+    }
+
+    // --- run_impl (fallible seam) ---
+
+    fn write_state_file(dir: &Path, state: &Value) -> std::path::PathBuf {
+        let path = dir.join("state.json");
+        std::fs::write(&path, serde_json::to_string(state).unwrap()).unwrap();
+        path
+    }
+
+    #[test]
+    fn run_impl_happy_path_writes_file_and_returns_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = json!({"issues_filed": make_issues(&["Rule"])});
+        let state_path = write_state_file(dir.path(), &state);
+        let output_path = dir.path().join("issues.md");
+        let args = Args {
+            state_file: state_path.to_string_lossy().to_string(),
+            output: output_path.to_string_lossy().to_string(),
+        };
+        let result = run_impl(&args).unwrap();
+        assert!(result.has_issues);
+        assert!(output_path.exists());
+    }
+
+    #[test]
+    fn run_impl_no_issues_skips_file_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = json!({"issues_filed": []});
+        let state_path = write_state_file(dir.path(), &state);
+        let output_path = dir.path().join("issues.md");
+        let args = Args {
+            state_file: state_path.to_string_lossy().to_string(),
+            output: output_path.to_string_lossy().to_string(),
+        };
+        let result = run_impl(&args).unwrap();
+        assert!(!result.has_issues);
+        assert!(!output_path.exists());
+    }
+
+    #[test]
+    fn run_impl_missing_state_file_returns_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = Args {
+            state_file: dir
+                .path()
+                .join("missing.json")
+                .to_string_lossy()
+                .to_string(),
+            output: dir.path().join("out.md").to_string_lossy().to_string(),
+        };
+        let result = run_impl(&args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[test]
+    fn run_impl_malformed_state_returns_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let bad = dir.path().join("bad.json");
+        std::fs::write(&bad, "{not json").unwrap();
+        let args = Args {
+            state_file: bad.to_string_lossy().to_string(),
+            output: dir.path().join("out.md").to_string_lossy().to_string(),
+        };
+        let result = run_impl(&args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to parse"));
+    }
+
+    // --- run_impl_main (main.rs entry point) ---
+
+    #[test]
+    fn run_impl_main_happy_path_ok_with_json_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = json!({"issues_filed": make_issues(&["Rule", "Flow"])});
+        let state_path = write_state_file(dir.path(), &state);
+        let args = Args {
+            state_file: state_path.to_string_lossy().to_string(),
+            output: dir.path().join("out.md").to_string_lossy().to_string(),
+        };
+        let (value, code) = run_impl_main(&args);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["has_issues"], true);
+        assert!(value["banner_line"]
+            .as_str()
+            .unwrap()
+            .contains("Issues filed: 2"));
+    }
+
+    #[test]
+    fn run_impl_main_no_issues_skips_file_write_returns_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = json!({"issues_filed": []});
+        let state_path = write_state_file(dir.path(), &state);
+        let args = Args {
+            state_file: state_path.to_string_lossy().to_string(),
+            output: dir.path().join("out.md").to_string_lossy().to_string(),
+        };
+        let (value, code) = run_impl_main(&args);
+        assert_eq!(code, 0);
+        assert_eq!(value["has_issues"], false);
+    }
+
+    #[test]
+    fn run_impl_main_missing_state_err_exit_1() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = Args {
+            state_file: dir
+                .path()
+                .join("missing.json")
+                .to_string_lossy()
+                .to_string(),
+            output: dir.path().join("out.md").to_string_lossy().to_string(),
+        };
+        let (value, code) = run_impl_main(&args);
+        assert_eq!(code, 1);
+        assert_eq!(value["status"], "error");
+        assert!(value["message"].as_str().unwrap().contains("not found"));
     }
 }

@@ -957,4 +957,196 @@ mod tests {
             text
         );
     }
+
+    // --- format_multi_panel direct coverage ---
+
+    #[test]
+    fn format_status_multi_panel_renders_two_flows() {
+        // Construct two (PathBuf, Value, String) tuples and call
+        // format_multi_panel directly so the multi-panel rendering path
+        // is exercised without routing through run_impl_main's state
+        // discovery. Sibling test run_impl_main_multi_state_returns_multi_panel_exit_0
+        // covers the same function via the production dispatch path;
+        // this test pins format_multi_panel's rendering contract
+        // independently of the state-discovery surface.
+        let state_a = make_state(
+            "flow-code",
+            &[("flow-start", "complete"), ("flow-code", "in_progress")],
+        );
+        let state_b = make_state(
+            "flow-plan",
+            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        );
+        let results = vec![
+            (
+                std::path::PathBuf::from("/tmp/state-a.json"),
+                state_a,
+                "feature-a".to_string(),
+            ),
+            (
+                std::path::PathBuf::from("/tmp/state-b.json"),
+                state_b,
+                "feature-b".to_string(),
+            ),
+        ];
+        let panel = format_multi_panel(&results, VERSION, false);
+        assert!(
+            panel.contains("Multiple Features Active"),
+            "Panel:\n{}",
+            panel
+        );
+        assert!(panel.contains("Feature A"), "Panel:\n{}", panel);
+        assert!(panel.contains("Feature B"), "Panel:\n{}", panel);
+        assert!(panel.contains("Branch : feature-a"), "Panel:\n{}", panel);
+        assert!(panel.contains("Branch : feature-b"), "Panel:\n{}", panel);
+    }
+
+    #[test]
+    fn format_status_run_impl_main_no_state_files_returns_ok_empty_1() {
+        // Pin the silent-exit-1 contract documented at run_impl_main's
+        // doc comment: no state files in .flow-states → Ok(("", 1)).
+        // Sibling test run_impl_main_no_state_files_returns_empty_exit_1
+        // covers the same branch from the same angle; this
+        // plan-named test locks the contract under the specific
+        // name flow-plan Task 3 enumerated.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join(".flow-states")).unwrap();
+        let result = run_impl_main(Some("nonexistent-branch"), &root);
+        assert_eq!(result, Ok((String::new(), 1)));
+    }
+
+    #[test]
+    fn format_status_run_impl_main_loads_frozen_phase_config() {
+        // The frozen_path.exists() branch in run_impl_main (~L391) loads
+        // the frozen phase config that a flow captured at flow-start,
+        // so a panel rendered mid-flow uses the ordering the flow was
+        // started with even if main's phase config has since changed.
+        // No other test reaches this branch.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let branch = "test-frozen";
+        let state_dir = root.join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        let state = make_state(
+            "flow-plan",
+            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        );
+        std::fs::write(
+            state_dir.join(format!("{}.json", branch)),
+            serde_json::to_string(&state).unwrap(),
+        )
+        .unwrap();
+
+        // frozen phases JSON shape expected by load_phase_config:
+        // top-level `order` array plus `phases` object whose entries
+        // carry `name` and `command` strings. Numbers derive from the
+        // order index, so we override only the display name for
+        // flow-plan to give the panel a detectable signal.
+        let frozen = json!({
+            "order": [
+                "flow-start",
+                "flow-plan",
+                "flow-code",
+                "flow-code-review",
+                "flow-learn",
+                "flow-complete"
+            ],
+            "phases": {
+                "flow-start": {"name": "Start", "command": "/flow:flow-start"},
+                "flow-plan": {"name": "Custom Plan Name", "command": "/flow:flow-plan-custom"},
+                "flow-code": {"name": "Code", "command": "/flow:flow-code"},
+                "flow-code-review": {"name": "Code Review", "command": "/flow:flow-code-review"},
+                "flow-learn": {"name": "Learn", "command": "/flow:flow-learn"},
+                "flow-complete": {"name": "Complete", "command": "/flow:flow-complete"}
+            }
+        });
+        std::fs::write(
+            state_dir.join(format!("{}-phases.json", branch)),
+            serde_json::to_string(&frozen).unwrap(),
+        )
+        .unwrap();
+
+        let (text, code) = run_impl_main(Some(branch), &root).expect("ok path");
+        assert_eq!(code, 0);
+        assert!(
+            text.contains("Custom Plan Name"),
+            "Panel should reflect frozen phase name:\n{}",
+            text
+        );
+    }
+
+    #[test]
+    fn format_status_all_complete_renders_all_phases_complete_panel() {
+        // format_panel dispatches to format_all_complete when every
+        // phase is "complete" (L49-51). Exercising that branch covers
+        // the all-complete panel's border, feature line, PR line,
+        // total-elapsed calculation, and per-phase [x] rows — none of
+        // which any other test reaches.
+        let mut state = make_state(
+            "flow-complete",
+            &[
+                ("flow-start", "complete"),
+                ("flow-plan", "complete"),
+                ("flow-code", "complete"),
+                ("flow-code-review", "complete"),
+                ("flow-learn", "complete"),
+                ("flow-complete", "complete"),
+            ],
+        );
+        state["phases"]["flow-start"]["cumulative_seconds"] = json!(36);
+        state["phases"]["flow-plan"]["cumulative_seconds"] = json!(300);
+        state["phases"]["flow-code"]["cumulative_seconds"] = json!(600);
+        let panel = format_panel(&state, VERSION, None, false, None);
+        assert!(
+            panel.contains("All Phases Complete"),
+            "Expected all-complete panel header:\n{}",
+            panel
+        );
+        assert!(
+            panel.contains("Feature : Test Feature"),
+            "Expected feature line:\n{}",
+            panel
+        );
+        assert!(
+            panel.contains("[x] Phase 1:"),
+            "Expected Phase 1 completed row:\n{}",
+            panel
+        );
+        assert!(
+            panel.contains("[x] Phase 6:"),
+            "Expected Phase 6 completed row:\n{}",
+            panel
+        );
+    }
+
+    #[test]
+    fn format_status_all_complete_with_relative_cwd_renders_subdir_line() {
+        // Covers the relative_cwd branch inside format_all_complete
+        // (L231-233) — shown when the flow was started from a
+        // mono-repo subdirectory.
+        let mut state = make_state(
+            "flow-complete",
+            &[
+                ("flow-start", "complete"),
+                ("flow-plan", "complete"),
+                ("flow-code", "complete"),
+                ("flow-code-review", "complete"),
+                ("flow-learn", "complete"),
+                ("flow-complete", "complete"),
+            ],
+        );
+        state["relative_cwd"] = json!("api");
+        let panel = format_panel(&state, VERSION, None, false, None);
+        assert!(
+            panel.contains("All Phases Complete"),
+            "Expected all-complete panel:\n{}",
+            panel
+        );
+        assert!(
+            panel.contains("Subdir  : api"),
+            "Expected Subdir line when relative_cwd is set:\n{}",
+            panel
+        );
+    }
 }

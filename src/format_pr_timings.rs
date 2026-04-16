@@ -1,10 +1,8 @@
 use std::path::Path;
-use std::process;
 
 use clap::Parser;
 use serde_json::{json, Value};
 
-use crate::output::{json_error, json_ok};
 use crate::phase_config::{self, PHASE_ORDER};
 use crate::utils::{format_time, tolerant_i64};
 
@@ -77,8 +75,10 @@ pub struct Args {
     pub started_only: bool,
 }
 
-/// Fallible CLI logic — returns the timings table on success or an error message.
-/// Extracted from `run()` so error paths can be unit-tested without `process::exit`.
+/// Fallible CLI logic — returns the timings table on success or an
+/// error message. `run_impl_main` wraps this into the `(Value, i32)`
+/// contract that `dispatch::dispatch_json` consumes; unit tests call
+/// `run_impl` directly to assert on typed results.
 pub fn run_impl(args: &Args) -> Result<String, String> {
     let state_path = Path::new(&args.state_file);
     if !state_path.exists() {
@@ -102,15 +102,25 @@ pub fn run_impl(args: &Args) -> Result<String, String> {
     Ok(table)
 }
 
-pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(table) => {
-            json_ok(&[("output", json!(args.output)), ("table", json!(table))]);
-        }
-        Err(msg) => {
-            json_error(&msg, &[]);
-            process::exit(1);
-        }
+/// Main-arm entry point: wraps `run_impl` into the `(Value, i32)`
+/// contract consumed by `dispatch::dispatch_json`.
+pub fn run_impl_main(args: &Args) -> (Value, i32) {
+    match run_impl(args) {
+        Ok(table) => (
+            json!({
+                "status": "ok",
+                "output": args.output,
+                "table": table,
+            }),
+            0,
+        ),
+        Err(msg) => (
+            json!({
+                "status": "error",
+                "message": msg,
+            }),
+            1,
+        ),
     }
 }
 
@@ -386,5 +396,117 @@ mod tests {
         let table = result.unwrap();
         assert!(table.contains("| Phase | Duration |"));
         assert!(output_file.exists());
+    }
+
+    #[test]
+    fn run_impl_write_error_returns_err() {
+        // run_impl's fs::write error branch (wrapping the OS error
+        // into "Failed to write output: ..."). Point the output
+        // path at a child of an existing regular file: create_dir_all
+        // silently no-ops on a file, then fs::write fails with
+        // NotADirectory — triggering the Err branch.
+        let dir = tempfile::tempdir().unwrap();
+        let parent_as_file = dir.path().join("not-a-dir");
+        std::fs::write(&parent_as_file, "blocker").unwrap();
+        let output_path = parent_as_file.join("out.md");
+
+        let all_phases = [
+            "flow-start",
+            "flow-plan",
+            "flow-code",
+            "flow-code-review",
+            "flow-learn",
+            "flow-complete",
+        ];
+        let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
+        let state = make_state("flow-complete", &statuses);
+        let state_file = dir.path().join("state.json");
+        std::fs::write(&state_file, serde_json::to_string(&state).unwrap()).unwrap();
+
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            output: output_path.to_string_lossy().to_string(),
+            started_only: false,
+        };
+        let result = run_impl(&args);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("Failed to write output"),
+            "Unexpected err msg: {}",
+            msg
+        );
+    }
+
+    // --- run_impl_main (main.rs entry point) ---
+
+    #[test]
+    fn run_impl_main_happy_path_ok_with_json_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let all_phases = [
+            "flow-start",
+            "flow-plan",
+            "flow-code",
+            "flow-code-review",
+            "flow-learn",
+            "flow-complete",
+        ];
+        let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
+        let state = make_state("flow-complete", &statuses);
+        let state_file = dir.path().join("state.json");
+        std::fs::write(&state_file, serde_json::to_string(&state).unwrap()).unwrap();
+        let output = dir.path().join("t.md");
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            output: output.to_string_lossy().to_string(),
+            started_only: false,
+        };
+        let (value, code) = run_impl_main(&args);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert!(value["table"]
+            .as_str()
+            .unwrap()
+            .contains("| Phase | Duration |"));
+        assert!(output.exists());
+    }
+
+    #[test]
+    fn run_impl_main_missing_state_err_exit_1() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = Args {
+            state_file: dir
+                .path()
+                .join("missing.json")
+                .to_string_lossy()
+                .to_string(),
+            output: dir.path().join("t.md").to_string_lossy().to_string(),
+            started_only: false,
+        };
+        let (value, code) = run_impl_main(&args);
+        assert_eq!(code, 1);
+        assert_eq!(value["status"], "error");
+    }
+
+    #[test]
+    fn run_impl_main_write_error_err_exit_1() {
+        let dir = tempfile::tempdir().unwrap();
+        let parent_as_file = dir.path().join("blocker");
+        std::fs::write(&parent_as_file, "block").unwrap();
+        let state = make_state("flow-complete", &[]);
+        let state_file = dir.path().join("state.json");
+        std::fs::write(&state_file, serde_json::to_string(&state).unwrap()).unwrap();
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            output: parent_as_file.join("t.md").to_string_lossy().to_string(),
+            started_only: false,
+        };
+        let (value, code) = run_impl_main(&args);
+        assert_eq!(code, 1);
+        assert_eq!(value["status"], "error");
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Failed to write output"));
     }
 }
