@@ -375,3 +375,58 @@ fn start_lock_cli_roundtrip() {
         serde_json::from_str(check_stdout.trim()).expect("start-lock --check stdout must be JSON");
     assert_eq!(check_json["status"], "free");
 }
+
+/// `flow-rs finalize-commit "" ""` passes Clap but fails the
+/// empty-args check in `run_impl`, exercising the `run()` →
+/// `json_error` → `process::exit(1)` path.
+#[test]
+fn finalize_commit_empty_args_exits_1() {
+    let output = flow_rs_no_recursion()
+        .args(["finalize-commit", "", ""])
+        .output()
+        .expect("spawn flow-rs finalize-commit");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("error") || stdout.contains("Usage"),
+        "expected error in stdout, got: {}",
+        stdout
+    );
+}
+
+/// `flow-rs cleanup /nonexistent --branch test --worktree .worktrees/test`
+/// exercises the `run()` → `json_error` → `process::exit(1)` path
+/// for an invalid project root.
+#[test]
+fn cleanup_invalid_root_exits_1() {
+    let output = flow_rs_no_recursion()
+        .args([
+            "cleanup",
+            "/nonexistent/path/that/does/not/exist",
+            "--branch",
+            "test",
+            "--worktree",
+            ".worktrees/test",
+        ])
+        .output()
+        .expect("spawn flow-rs cleanup");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("not found") || stdout.contains("error"),
+        "expected error message in stdout, got: {}",
+        stdout
+    );
+}
