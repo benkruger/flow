@@ -332,3 +332,37 @@ production code it emulates. The reference pattern is
 `tests/hooks.rs`, whose doc comments call out the `.git` marker
 rationale, the `with_state_file` branch, and the `allow_patterns`
 format.
+
+## Timing-Sensitive Test Isolation
+
+When a test verifies behavior that depends on elapsed time
+(staleness, timeout, expiration), never use `thread::sleep` or
+real-time delays. Inject a time-control seam so the test sets the
+clock without waiting.
+
+**Why.** Real-time delays introduce flakiness — a test that sleeps
+100ms and expects a stale entry to be cleaned up fails when system
+load delays the check past the threshold. Sleep-based tests also
+slow the suite: ten 100ms sleeps add a full second of wall-clock
+time per CI run, compounding across the test corpus.
+
+**Patterns by domain:**
+
+- **Filesystem mtime** — use `filetime::set_file_mtime` to
+  backdate or forward-date entries. Reference:
+  `src/commands/start_lock.rs` inline tests use `FileTime` to
+  simulate stale queue entries without sleeping.
+- **Wall-clock functions** — accept an injectable `now_fn`
+  closure parameter so tests can return a controlled timestamp.
+- **Retry/timeout loops** — accept an injectable `sleep_fn`
+  closure so the test can count calls without blocking. Reference:
+  `acquire_with_wait_impl` in `src/commands/start_lock.rs` injects
+  `sleep_fn: F` where tests pass a no-op or a side-effecting
+  closure.
+
+**How to apply.** When writing a test for time-dependent behavior,
+identify which time source the production code reads (mtime, system
+clock, sleep duration) and inject a seam at that point. If the
+production code does not accept a seam, refactor it to accept one
+before writing the test. A test that uses `thread::sleep` is a
+signal that the production code lacks a time-injection seam.
