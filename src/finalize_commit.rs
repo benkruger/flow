@@ -1550,4 +1550,27 @@ exit 0
             "sentinel should not exist when pull merged"
         );
     }
+
+    // --- emit_deviation_stderr ---
+
+    #[test]
+    fn emit_deviation_stderr_exercises_all_branches() {
+        // Exercises the loop and format! calls in emit_deviation_stderr.
+        // The function writes to stderr only; coverage is the goal.
+        let deviations = vec![
+            Deviation {
+                test_name: "test_alpha".to_string(),
+                fixture_key: "expected_value".to_string(),
+                plan_value: "old_value".to_string(),
+                plan_line: 42,
+            },
+            Deviation {
+                test_name: "test_beta".to_string(),
+                fixture_key: "status".to_string(),
+                plan_value: "pending".to_string(),
+                plan_line: 99,
+            },
+        ];
+        emit_deviation_stderr("test-branch", &deviations);
+    }
 }
