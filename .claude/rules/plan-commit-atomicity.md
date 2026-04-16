@@ -198,7 +198,14 @@ before `finalize_commit_inner` calls `git commit`. Every commit
 path — `/flow:flow-commit`, direct `bin/flow finalize-commit`
 invocations, any future wrapper — routes through `run_impl` and
 therefore through the gate. There is no bypass path that lands a
-commit without the gate running first.
+commit without the gate running first. The gate runs during Code
+phase rather than Plan phase because it cross-references the plan
+against the actual staged implementation — a comparison that
+requires implementation code to exist. The scope-enumeration and
+external-input-audit gates validate plan prose against itself and
+therefore run at Plan phase completion; the plan-deviation gate
+validates plan prose against code and therefore runs at commit
+time.
 
 **How to acknowledge.** When a deviation is intentional (the Code
 phase discovered a better fixture value, or the plan's prototype
