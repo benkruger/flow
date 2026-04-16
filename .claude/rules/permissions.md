@@ -116,11 +116,31 @@ user approves the edit, proceed. If not, find a different path.
 
 ## Enforcement
 
-A proposed `PreToolUse` hook would match `Edit`/`Write` calls
-targeting shared config files during an active FLOW phase and
-warn with a pointer to this section. Until the hook lands, the
-rule file is the primary instrument: every FLOW session must
-read it before editing any file in the canonical list above.
+Shared-config protection is a workflow discipline, not a universal
+rule. Outside a flow context, users can modify shared config
+freely. Once a flow starts and the session is inside a worktree,
+the gate activates to enforce the explicit-permission requirement.
+
+The `validate-worktree-paths` PreToolUse hook
+(`src/hooks/validate_worktree_paths.rs`) enforces this rule
+mechanically. The `is_shared_config` predicate matches the nine
+canonical filenames (`.gitignore`, `.gitattributes`, `Makefile`,
+`Rakefile`, `justfile`, `package.json`, `requirements.txt`,
+`go.mod`, `Cargo.toml`) plus any path passing through a `.github/`
+directory component.
+
+The `validate_shared_config` function gates on tool name: only
+`Edit` and `Write` tool calls are blocked (exit 2). `Read`,
+`Glob`, and `Grep` calls pass through so codebase exploration is
+unaffected. The block fires only when the CWD is inside a
+`.worktrees/` directory (the flow-active proxy) and the target
+path is inside the worktree.
+
+The block message directs the model to confirm with the user via
+`AskUserQuestion` before proceeding, and points to this section
+for context. No hook registration changes are needed — the
+existing `validate-worktree-paths` entries for Edit and Write in
+`hooks/hooks.json` already cover the tool surface.
 
 ## Cross-References
 
