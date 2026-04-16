@@ -430,3 +430,92 @@ fn test_worktree_partial_failure_recovery_after_cleanup() {
         "Worktree directory should exist after successful retry"
     );
 }
+
+#[test]
+fn test_prompt_file_not_found_releases_lock() {
+    // Exercises lines 171-188: prompt file read fails → error + lock released.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "prompt-fail-branch");
+    create_lock_entry(&repo, "prompt-fail-branch");
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args([
+            "start-workspace",
+            "Prompt Fail Feature",
+            "--branch",
+            "prompt-fail-branch",
+            "--prompt-file",
+            "/nonexistent/path/to/prompt",
+        ])
+        .current_dir(&repo)
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                stub_dir.to_string_lossy(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .env("CLAUDE_PLUGIN_ROOT", &manifest_dir)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .output()
+        .unwrap();
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(
+        data["step"].as_str().unwrap_or(""),
+        "prompt_file",
+        "step should be prompt_file"
+    );
+
+    // Lock must be released
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
+    assert!(
+        !queue_dir.join("prompt-fail-branch").exists(),
+        "Lock must be released on prompt file error"
+    );
+}
+
+#[test]
+fn test_backfill_non_object_state_guard() {
+    // Exercises lines 264-266: state file has array content → backfill
+    // guard fires, IndexMut crash prevented. The command still succeeds
+    // (worktree + PR created), but state is not backfilled.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+
+    // Write array content as state file instead of the normal object
+    let state_dir = flow_states_dir(&repo);
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(state_dir.join("array-state-branch.json"), "[]").unwrap();
+    create_lock_entry(&repo, "array-state-branch");
+
+    let output = run_start_workspace(
+        &repo,
+        "Array State Feature",
+        "array-state-branch",
+        &stub_dir,
+    );
+    let data = parse_output(&output);
+    assert_eq!(
+        data["status"],
+        "ok",
+        "Should succeed despite array state; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // State file should still be array (guard prevented IndexMut write)
+    let state_content = fs::read_to_string(state_dir.join("array-state-branch.json")).unwrap();
+    let state_val: Value = serde_json::from_str(&state_content).unwrap();
+    assert!(
+        state_val.is_array(),
+        "Array state root should be preserved by the guard"
+    );
+}
