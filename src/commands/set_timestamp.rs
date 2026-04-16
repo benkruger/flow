@@ -104,8 +104,13 @@ pub fn validate_code_task(state: &Value, new_value: i64) -> Result<(), String> {
     if new_value != current + 1 {
         return Err(format!(
             "code_task can only increment by 1. Current: {}, attempted: {}. \
-             Commit each task individually before advancing.",
-            current, new_value
+             Use multiple --set args in one call for atomic groups: \
+             --set code_task={} --set code_task={} ... --set code_task={}",
+            current,
+            new_value,
+            current + 1,
+            current + 2,
+            new_value
         ));
     }
     Ok(())
@@ -453,5 +458,34 @@ mod tests {
         let result = apply_updates(&mut state, &["code_task=5".to_string()]);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("increment by 1"));
+    }
+
+    #[test]
+    fn test_code_task_error_message_mentions_batch_set() {
+        let state = json!({"code_task": 0});
+        let result = validate_code_task(&state, 5);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("--set code_task="),
+            "Error message should mention batch --set pattern, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_code_task_batch_increment_in_single_call() {
+        let mut state = json!({"code_task": 0});
+        let updates = apply_updates(
+            &mut state,
+            &[
+                "code_task=1".to_string(),
+                "code_task=2".to_string(),
+                "code_task=3".to_string(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(updates.len(), 3);
+        assert_eq!(state["code_task"], 3);
     }
 }
