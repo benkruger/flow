@@ -328,12 +328,6 @@ pub fn run_impl(cwd: &Path, plugin_root: &Path) -> Result<Value, String> {
         if config_match && setup_match {
             let old_version = stored_display.clone();
             let mut updated = init_data.clone();
-            if !(updated.is_object() || updated.is_null()) {
-                return Ok(json!({
-                    "status": "error",
-                    "message": "FLOW not initialized. Run /flow:flow-prime first.",
-                }));
-            }
             updated["flow_version"] = json!(plugin_version);
             let serialized = serde_json::to_string(&updated)
                 .map_err(|e| format!("Could not serialize .flow.json: {}", e))?;
@@ -561,5 +555,30 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let err = compute_setup_hash(dir.path()).unwrap_err();
         assert!(err.contains("Could not read"));
+    }
+
+    #[test]
+    fn version_mismatch_with_empty_stored_version() {
+        // An empty flow_version string is treated as absent by
+        // as_nonempty_str, so stored_display defaults to "" and
+        // the mismatch message fires with an empty version prefix.
+        let dir = tempfile::tempdir().unwrap();
+        let root = real_plugin_root();
+        write_flow_json(dir.path(), r#"{"flow_version": ""}"#);
+
+        let result = run_impl(dir.path(), &root).unwrap();
+        assert_eq!(result["status"], "error");
+        let msg = result["message"].as_str().unwrap();
+        assert!(
+            msg.contains("version mismatch"),
+            "expected mismatch, got: {}",
+            msg
+        );
+        // The stored version display should be empty (initialized for v)
+        assert!(
+            msg.contains("initialized for v,"),
+            "expected empty version prefix, got: {}",
+            msg
+        );
     }
 }
