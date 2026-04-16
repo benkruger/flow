@@ -135,32 +135,36 @@ pub fn finalize_inner(
     result
 }
 
-/// Core complete-finalize logic. Runs post-merge then cleanup,
-/// continuing cleanup even if post-merge fails.
+/// Testable core with injectable post-merge, cleanup, and an explicit
+/// `root`. Unit tests exercise the orchestration (log-closure
+/// branches, `has_failures` effective-status selection) without real
+/// subprocess side effects by passing mock closures.
 ///
-/// Returns Ok(json) with merged results from both operations,
-/// Err(string) only for catastrophic failures that prevent any output.
-pub fn run_impl(args: &Args) -> Result<Value, String> {
-    let root = project_root();
-
-    // Best-effort logging — only log when .flow-states/ already exists.
-    // Matches the guard pattern in complete_post_merge.rs to avoid
-    // creating the directory in test fixtures that deliberately omit it.
+/// Returns the merged JSON result from both operations. Always
+/// returns a `Value` (never errors) because `finalize_inner` catches
+/// panics from both closures and reports them as fields on the result.
+pub fn run_impl_with_deps(
+    args: &Args,
+    root: &std::path::Path,
+    post_merge_fn: &dyn Fn() -> Value,
+    cleanup_fn: &dyn Fn() -> IndexMap<String, String>,
+) -> Value {
+    // Best-effort logging — `try_new` tolerates slash-containing
+    // branches per `.claude/rules/external-input-validation.md`
+    // because `args.branch` comes from the `--branch` CLI arg.
+    // The `.flow-states/` existence check avoids creating the
+    // directory in test fixtures that deliberately omit it.
     let log = |msg: &str| {
-        if FlowPaths::new(&root, &args.branch)
-            .flow_states_dir()
-            .is_dir()
-        {
-            let _ = append_log(&root, &args.branch, msg);
+        if let Some(paths) = FlowPaths::try_new(root, &args.branch) {
+            if paths.flow_states_dir().is_dir() {
+                let _ = append_log(root, &args.branch, msg);
+            }
         }
     };
 
     log("[Phase 6] complete-finalize — starting");
 
-    let result = finalize_inner(
-        &|| complete_post_merge::post_merge(args.pr, &args.state_file, &args.branch),
-        &|| cleanup::cleanup(&root, &args.branch, &args.worktree, None, args.pull),
-    );
+    let result = finalize_inner(post_merge_fn, cleanup_fn);
 
     let has_failures = result.get("post_merge_error").is_some()
         || result
@@ -178,20 +182,25 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         effective_status
     ));
 
-    Ok(result)
+    result
+}
+
+/// Core complete-finalize logic. Wraps `run_impl_with_deps` with
+/// production `project_root()`, `complete_post_merge::post_merge`,
+/// and `cleanup::cleanup` closures.
+pub fn run_impl(args: &Args) -> Value {
+    let root = project_root();
+    run_impl_with_deps(
+        args,
+        &root,
+        &|| complete_post_merge::post_merge(args.pr, &args.state_file, &args.branch),
+        &|| cleanup::cleanup(&root, &args.branch, &args.worktree, None, args.pull),
+    )
 }
 
 /// CLI entry point. Always exits 0 (best-effort — matches post-merge behavior).
 pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(result) => {
-            println!("{}", result);
-        }
-        Err(e) => {
-            println!("{}", json!({"status": "error", "message": e}));
-            std::process::exit(1);
-        }
-    }
+    println!("{}", run_impl(&args));
 }
 
 #[cfg(test)]
@@ -354,5 +363,73 @@ mod tests {
         assert_eq!(result["summary"], "");
         assert_eq!(result["issues_links"], "");
         assert_eq!(result["banner_line"], "");
+    }
+
+    // --- run_impl_with_deps ---
+
+    fn fake_args(branch: &str, state_file: &str, worktree: &str) -> Args {
+        Args {
+            pr: 42,
+            state_file: state_file.to_string(),
+            branch: branch.to_string(),
+            worktree: worktree.to_string(),
+            pull: false,
+        }
+    }
+
+    /// `run_impl_with_deps` returns a `Value` (not `Result`) and its
+    /// `status` field is `"ok"` for clean inputs. Guards the
+    /// design-change deletion of the dead `Err` arm: `finalize_inner`
+    /// never panics its closures when the mocks return ok, and
+    /// `has_failures` evaluates false, so the orchestration produces
+    /// the canonical happy-path Value.
+    #[test]
+    fn run_impl_returns_ok_status_value_for_clean_inputs() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join(".flow-states/test.json");
+        let args = fake_args(
+            "test-feature",
+            state_path.to_string_lossy().as_ref(),
+            ".worktrees/test-feature",
+        );
+
+        let result: Value =
+            run_impl_with_deps(&args, dir.path(), &mock_post_merge_ok, &mock_cleanup_ok);
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["formatted_time"], "2m");
+        assert_eq!(result["cumulative_seconds"], 120);
+        assert_eq!(result["summary"], "Feature complete");
+        assert!(result.get("post_merge_error").is_none());
+        assert!(result.get("post_merge_failures").is_none());
+    }
+
+    /// When the injected post-merge closure panics,
+    /// `run_impl_with_deps` returns a `Value` whose `status` stays
+    /// `"ok"` (cleanup still runs) but `post_merge_error` is
+    /// populated. This exercises the `has_failures == true` log-line
+    /// path in `run_impl_with_deps` — the effective_status is
+    /// "ok with failures" — and proves the signature change
+    /// (`Result<Value, String>` → `Value`) preserves the capture of
+    /// post-merge panic into a structured field rather than into an
+    /// `Err` variant.
+    #[test]
+    fn run_impl_returns_post_merge_error_in_result_when_post_merge_panics() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join(".flow-states/test.json");
+        let args = fake_args(
+            "test-feature",
+            state_path.to_string_lossy().as_ref(),
+            ".worktrees/test-feature",
+        );
+        let panic_pm = || -> Value { panic!("simulated post-merge crash") };
+
+        let result: Value = run_impl_with_deps(&args, dir.path(), &panic_pm, &mock_cleanup_ok);
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["post_merge_error"], "post-merge panicked");
+        // Cleanup still ran — asserts the `has_failures` branch did
+        // not short-circuit the closure invocation.
+        assert_eq!(result["cleanup"]["worktree"], "removed");
     }
 }
