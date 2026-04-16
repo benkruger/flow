@@ -565,6 +565,136 @@ mod tests {
         assert_eq!(result["status"], "error");
     }
 
+    // --- run_impl non-NotFound I/O error ---
+
+    /// When `--plan-file` points at a directory, `read_to_string`
+    /// returns an I/O error with kind `IsADirectory` (not
+    /// `NotFound`). This exercises the infrastructure-failure branch
+    /// at lines 126-131 that returns `Err(String)`.
+    #[test]
+    fn run_impl_plan_file_is_directory_returns_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = Args {
+            branch: None,
+            plan_file: Some(dir.path().to_string_lossy().to_string()),
+        };
+        let err = run_impl(&args).unwrap_err();
+        assert!(
+            err.contains("Could not read plan file"),
+            "expected I/O error message, got: {}",
+            err
+        );
+    }
+
+    // --- run_impl duplicate-test-coverage loop ---
+
+    /// Trigger the dup-violations loop body (lines 173-174) by
+    /// creating a plan whose fenced code block declares a function
+    /// name that collides with an existing test in the repo's
+    /// corpus. `absolute_override_passes_through` is a test in this
+    /// file; the scanner normalizes both sides and detects the
+    /// collision.
+    #[test]
+    fn run_impl_triggers_dup_violations() {
+        let tmp = std::env::temp_dir().join(format!("plan-check-dup-{}.md", std::process::id()));
+        let plan_content = "## Tasks\n\n```rust\nfn absolute_override_passes_through() {\n}\n```\n";
+        std::fs::write(&tmp, plan_content).expect("write fixture plan");
+
+        let args = Args {
+            branch: None,
+            plan_file: Some(tmp.to_string_lossy().to_string()),
+        };
+        let result = run_impl(&args).expect("run_impl returns business response");
+        let _ = std::fs::remove_file(&tmp);
+
+        assert_eq!(result["status"], "error");
+        let violations = result["violations"]
+            .as_array()
+            .expect("violations is an array");
+        let rules: Vec<String> = violations
+            .iter()
+            .map(|v| v["rule"].as_str().unwrap_or("").to_string())
+            .collect();
+        assert!(
+            rules.iter().any(|r| r == "duplicate-test-coverage"),
+            "expected duplicate-test-coverage violation, got rules: {:?}",
+            rules
+        );
+    }
+
+    // --- resolve_plan_file_from_state edge paths ---
+
+    /// When the state file has a top-level `plan_file` key but no
+    /// `files.plan`, the legacy fallback at lines 350-355 fires.
+    #[test]
+    fn resolve_plan_file_from_state_legacy_plan_file_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let branch = "test-legacy-fallback";
+        let flow_states = root.join(".flow-states");
+        std::fs::create_dir_all(&flow_states).unwrap();
+        let state_path = flow_states.join(format!("{}.json", branch));
+        std::fs::write(&state_path, r#"{"plan_file": "legacy-plan.md"}"#).unwrap();
+
+        let result = resolve_plan_file_from_state(root, Some(branch));
+        let path = result
+            .expect("outer Result should be Ok")
+            .expect("inner Result should be Ok");
+        assert_eq!(path, root.join("legacy-plan.md"));
+    }
+
+    /// When the state file contains invalid JSON, the parse
+    /// `.map_err` closure at line 342 fires, returning
+    /// `Err(String)`.
+    #[test]
+    fn resolve_plan_file_from_state_invalid_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let branch = "test-invalid-json";
+        let flow_states = root.join(".flow-states");
+        std::fs::create_dir_all(&flow_states).unwrap();
+        let state_path = flow_states.join(format!("{}.json", branch));
+        std::fs::write(&state_path, "{not valid json").unwrap();
+
+        let result = resolve_plan_file_from_state(root, Some(branch));
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Invalid JSON in state file"),
+            "expected JSON parse error, got: {}",
+            err
+        );
+    }
+
+    /// When the state file exists but is unreadable (chmod 000),
+    /// the read `.map_err` closure at line 340 fires, returning
+    /// `Err(String)`.
+    #[test]
+    fn resolve_plan_file_from_state_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let branch = "test-unreadable";
+        let flow_states = root.join(".flow-states");
+        std::fs::create_dir_all(&flow_states).unwrap();
+        let state_path = flow_states.join(format!("{}.json", branch));
+        std::fs::write(&state_path, r#"{"valid": true}"#).unwrap();
+
+        // Remove read permission so read_to_string fails
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&state_path, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let result = resolve_plan_file_from_state(root, Some(branch));
+
+        // Restore permissions so tempdir cleanup succeeds
+        let _ = std::fs::set_permissions(&state_path, std::fs::Permissions::from_mode(0o644));
+
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Could not read state file"),
+            "expected read error, got: {}",
+            err
+        );
+    }
+
     /// Clean plan (no violations) returns `{"status": "ok"}` from
     /// the dual-scanner aggregation path.
     #[test]
