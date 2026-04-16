@@ -1627,4 +1627,38 @@ mod tests {
     fn elapsed_since_unparseable_string_returns_zero() {
         assert_eq!(elapsed_since(Some("not-a-timestamp"), None), 0);
     }
+
+    // --- run_cmd ---
+
+    #[test]
+    fn run_cmd_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let (stdout, _stderr) = run_cmd(&["echo", "hello"], dir.path(), "test-step", None).unwrap();
+        assert_eq!(stdout, "hello");
+    }
+
+    #[test]
+    fn run_cmd_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = run_cmd(&["false"], dir.path(), "test-step", None).unwrap_err();
+        assert_eq!(err.step, "test-step");
+    }
+
+    #[test]
+    fn run_cmd_timeout() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = run_cmd(
+            &["sleep", "10"],
+            dir.path(),
+            "test-step",
+            Some(Duration::from_millis(200)),
+        )
+        .unwrap_err();
+        assert_eq!(err.step, "test-step");
+        assert!(
+            err.message.contains("Timed out"),
+            "expected timeout message, got: {}",
+            err.message
+        );
+    }
 }
