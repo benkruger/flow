@@ -190,3 +190,39 @@ fn add_notification_appends_multiple() {
     let on_disk: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(on_disk["slack_notifications"].as_array().unwrap().len(), 3);
 }
+
+#[test]
+fn add_notification_corrupt_state_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let state_dir = repo.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(state_dir.join("bad.json"), "{corrupt").unwrap();
+
+    let output = run_add_notification(
+        &repo,
+        &[
+            "--phase",
+            "flow-code",
+            "--ts",
+            "1",
+            "--thread-ts",
+            "0",
+            "--message",
+            "m",
+            "--branch",
+            "bad",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Failed to add notification"),
+        "Error should mention the operation that failed"
+    );
+}
