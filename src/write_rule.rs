@@ -162,6 +162,30 @@ mod tests {
         fs::set_permissions(&readonly, perms).unwrap();
     }
 
+    #[test]
+    fn write_rule_create_dir_error() {
+        let dir = tempfile::tempdir().unwrap();
+        // Place a regular file where the parent directory needs to be.
+        // create_dir_all("blocker/rule.md"'s parent) fails because
+        // "blocker" already exists as a file, not a directory.
+        let blocker = dir.path().join("blocker");
+        fs::write(&blocker, "I am a file").unwrap();
+
+        let target = blocker.join("nested").join("rule.md");
+        let result = write_rule(target.to_str().unwrap(), "content");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Could not create directories"));
+    }
+
+    #[test]
+    fn write_rule_empty_path_errors() {
+        // Empty string path: parent() returns None so create_dir_all is
+        // skipped, and fs::write on an empty path returns an OS error.
+        let result = write_rule("", "content");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Could not write"));
+    }
+
     // --- end-to-end ---
 
     #[test]
