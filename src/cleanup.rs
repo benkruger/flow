@@ -54,6 +54,10 @@ fn run_cmd(args: &[&str], cwd: &Path) -> (bool, String) {
 }
 
 /// Run a command with an explicit timeout, returning (success, output_string).
+///
+/// Extracted from `run_cmd` so tests can inject a short timeout Duration
+/// to exercise the timeout-kill path without waiting for `CMD_TIMEOUT`
+/// (30 seconds). Production callers use `run_cmd`, which passes `CMD_TIMEOUT`.
 fn run_cmd_with_timeout(args: &[&str], cwd: &Path, timeout: Duration) -> (bool, String) {
     let result = Command::new(args[0])
         .args(&args[1..])

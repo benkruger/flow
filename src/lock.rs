@@ -322,18 +322,28 @@ mod tests {
 
     #[test]
     fn write_and_truncate_success() {
+        // Use longer initial content so the replacement is shorter and
+        // set_len actually truncates (exercises the truncation path).
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("output.json");
-        fs::write(&path, "old content").unwrap();
+        fs::write(&path, "much longer initial content that will be truncated").unwrap();
+        let initial_len = fs::metadata(&path).unwrap().len();
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .open(&path)
             .unwrap();
-        let data = b"new content";
+        let data = b"short";
         write_and_truncate(&mut file, data).unwrap();
         let result = fs::read_to_string(&path).unwrap();
-        assert_eq!(result, "new content");
+        assert_eq!(result, "short");
+        let final_len = fs::metadata(&path).unwrap().len();
+        assert!(
+            final_len < initial_len,
+            "file should be truncated: initial={}, final={}",
+            initial_len,
+            final_len
+        );
     }
 
     #[test]
