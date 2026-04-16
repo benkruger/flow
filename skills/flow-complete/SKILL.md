@@ -120,15 +120,26 @@ detection, PR status check, merge main, local CI dirty check (without
 simulate-branch), GitHub CI check, and squash merge — all in a single
 call.
 
-Pass the mode flag resolved from Mode Resolution:
+Pass the mode flag resolved from Mode Resolution. Each variant below
+runs `complete-fast`, which dispatches to `ci::run_impl()` on a
+sentinel miss — each invocation needs a 10-minute Bash tool timeout
+so CI's 3–4 minute duration does not trip the default 2-minute Bash
+tool timeout and background the process, defeating the gate (per
+`.claude/rules/ci-is-a-gate.md`).
+
+**Auto mode.** Use a 10-minute Bash tool timeout (`timeout: 600000`).
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow complete-fast --branch <branch> --auto
 ```
 
+**Manual mode.** Use a 10-minute Bash tool timeout (`timeout: 600000`).
+
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow complete-fast --branch <branch> --manual
 ```
+
+**State-file default.** Use a 10-minute Bash tool timeout (`timeout: 600000`).
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow complete-fast --branch <branch>
@@ -262,7 +273,10 @@ to the confirmation step in Step 4.
 
 ### Step 2 — Run local CI gate
 
-Run CI locally:
+Run CI locally. Use a 10-minute Bash tool timeout (`timeout: 600000`)
+— CI runs can take 3–4 minutes and the default 2-minute timeout
+would background the process, defeating the gate (per
+`.claude/rules/ci-is-a-gate.md`).
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow ci

@@ -347,6 +347,10 @@ user visibility, but skip the AskUserQuestion and proceed directly to
 
 ### bin/flow ci Gate
 
+Use a 10-minute Bash tool timeout (`timeout: 600000`) — CI runs can
+take 3–4 minutes and the default 2-minute timeout would background
+the process, defeating the gate (per `.claude/rules/ci-is-a-gate.md`).
+
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 ```
@@ -357,7 +361,8 @@ This must be green before committing.
 
 - Read the output carefully
 - Fix each failure following the **CI Failure Fix Order** from the project CLAUDE.md
-- Re-run CI after each fix:
+- Re-run CI after each fix. Use a 10-minute Bash tool timeout
+  (`timeout: 600000`) on the retry for the same reason:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
@@ -479,7 +484,10 @@ Use AskUserQuestion:
 
 Once every task from the plan file is complete:
 
-**Final `bin/flow ci` sweep:**
+**Final `bin/flow ci` sweep:** Use a 10-minute Bash tool timeout
+(`timeout: 600000`) — CI runs can take 3–4 minutes and the default
+2-minute timeout would background the process, defeating the gate
+(per `.claude/rules/ci-is-a-gate.md`).
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
@@ -488,7 +496,8 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 Then check coverage — Read `coverage/uncovered.txt`.
 
 If there are uncovered lines, write tests for each uncovered line, then
-run CI again:
+run CI again with the same 10-minute Bash tool timeout
+(`timeout: 600000`):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow ci

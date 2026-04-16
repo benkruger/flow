@@ -441,7 +441,10 @@ For each real finding, fix the issue in code. After fixing each finding, record 
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "fixed" --phase "flow-code-review"
 ```
 
-After fixing all findings, run CI once:
+After fixing all findings, run CI once. Use a 10-minute Bash tool
+timeout (`timeout: 600000`) — CI runs can take 3–4 minutes and the
+default 2-minute timeout would background the process, defeating the
+gate (per `.claude/rules/ci-is-a-gate.md`).
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
