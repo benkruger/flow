@@ -1116,6 +1116,47 @@ exit 0
         assert_eq!(out["attempts"], 1);
     }
 
+    #[test]
+    fn run_impl_retry_with_sentinel_skips_before_dispatch() {
+        // When retry > 0 but a matching sentinel exists and force is
+        // false, run_impl returns "skipped" without dispatching to
+        // run_with_retry. The sentinel check at line 470-488 runs
+        // before the retry dispatch at line 493.
+        let f = make_ci_fixture();
+        write_script(
+            &f.path.join("bin").join("format"),
+            "#!/usr/bin/env bash\nexit 0\n",
+        );
+        // First run: create the sentinel
+        let args_first = Args {
+            branch: Some(f.branch.clone()),
+            force: false,
+            retry: 0,
+            simulate_branch: None,
+        };
+        let (first_out, _) = run_impl(&args_first, &f.path, &f.path, false);
+        assert_eq!(first_out["skipped"], false);
+        assert!(fixture_sentinel(&f).exists());
+
+        // Second run: retry > 0 but sentinel matches → skip
+        let args_retry = Args {
+            branch: Some(f.branch.clone()),
+            force: false,
+            retry: 2,
+            simulate_branch: None,
+        };
+        let (out, code) = run_impl(&args_retry, &f.path, &f.path, false);
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+        assert_eq!(out["skipped"], true);
+        assert_eq!(out["reason"], "no changes since last CI pass");
+        // No "attempts" field — run_with_retry was never called
+        assert!(
+            out.get("attempts").is_none(),
+            "sentinel skip must prevent retry dispatch"
+        );
+    }
+
     // --- run_with_retry inner-loop failure ---
 
     #[test]
