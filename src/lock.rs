@@ -39,17 +39,29 @@ where
     let output = serde_json::to_string_pretty(&state)
         .map_err(|e| MutateError::Json(format!("Failed to serialize: {}", e)))?;
 
-    file.seek(SeekFrom::Start(0))
-        .map_err(|e| MutateError::Io(format!("Failed to seek: {}", e)))?;
-
-    file.write_all(output.as_bytes())
-        .map_err(|e| MutateError::Io(format!("Failed to write: {}", e)))?;
-
-    file.set_len(output.len() as u64)
-        .map_err(|e| MutateError::Io(format!("Failed to truncate: {}", e)))?;
+    write_and_truncate(&mut file, output.as_bytes())?;
 
     // Lock released on drop
     Ok(state)
+}
+
+/// Seek to start, write data, and truncate to the written length.
+///
+/// Encapsulates the three I/O operations that follow JSON serialization
+/// in `mutate_state`. Extracted so tests can exercise the error arms
+/// (write failure on a read-only fd, truncate failure) without needing
+/// a full mutate_state round-trip.
+fn write_and_truncate(file: &mut std::fs::File, data: &[u8]) -> Result<(), MutateError> {
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| MutateError::Io(format!("Failed to seek: {}", e)))?;
+
+    file.write_all(data)
+        .map_err(|e| MutateError::Io(format!("Failed to write: {}", e)))?;
+
+    file.set_len(data.len() as u64)
+        .map_err(|e| MutateError::Io(format!("Failed to truncate: {}", e)))?;
+
+    Ok(())
 }
 
 /// Errors from mutate_state.
@@ -303,6 +315,44 @@ mod tests {
         match err {
             MutateError::Json(_) => {}
             other => panic!("Expected Json variant, got: {:?}", other),
+        }
+    }
+
+    // --- write_and_truncate ---
+
+    #[test]
+    fn write_and_truncate_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("output.json");
+        fs::write(&path, "old content").unwrap();
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap();
+        let data = b"new content";
+        write_and_truncate(&mut file, data).unwrap();
+        let result = fs::read_to_string(&path).unwrap();
+        assert_eq!(result, "new content");
+    }
+
+    #[test]
+    fn write_and_truncate_readonly_fd_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("readonly.json");
+        fs::write(&path, "content").unwrap();
+        // Open read-only — write_all will fail with a permission error.
+        let mut file = OpenOptions::new().read(true).open(&path).unwrap();
+        let err = write_and_truncate(&mut file, b"new data").unwrap_err();
+        match err {
+            MutateError::Io(msg) => {
+                assert!(
+                    msg.contains("Failed to write") || msg.contains("Failed to seek"),
+                    "expected write or seek failure, got: {}",
+                    msg
+                );
+            }
+            other => panic!("Expected Io variant, got: {:?}", other),
         }
     }
 }
