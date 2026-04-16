@@ -64,6 +64,9 @@ pub fn run(args: Args) {
     let timestamp = now();
 
     match mutate_state(&state_path, |state| {
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
         if state.get("slack_notifications").is_none() || !state["slack_notifications"].is_array() {
             state["slack_notifications"] = json!([]);
         }
@@ -252,6 +255,36 @@ mod tests {
             on_disk["slack_notifications"][0]["message_preview"],
             "persisted"
         );
+    }
+
+    #[test]
+    fn add_notification_array_root_state_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let path = state_dir.join("test.json");
+        let content = "[1, 2, 3]";
+        fs::write(&path, content).unwrap();
+
+        mutate_state(&path, |state| {
+            if !(state.is_object() || state.is_null()) {
+                return;
+            }
+            if state.get("slack_notifications").is_none()
+                || !state["slack_notifications"].is_array()
+            {
+                state["slack_notifications"] = json!([]);
+            }
+            if let Some(arr) = state["slack_notifications"].as_array_mut() {
+                arr.push(json!({"phase": "flow-code", "message_preview": "should not appear"}));
+            }
+        })
+        .unwrap();
+
+        let after = fs::read_to_string(&path).unwrap();
+        let parsed: Value = serde_json::from_str(&after).unwrap();
+        assert!(parsed.is_array(), "Root should still be an array");
+        assert_eq!(parsed.as_array().unwrap().len(), 3);
     }
 
     #[test]

@@ -57,6 +57,9 @@ pub fn run(args: Args) {
     let timestamp = now();
 
     match mutate_state(&state_path, |state| {
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
         if state.get("notes").is_none() || !state["notes"].is_array() {
             state["notes"] = json!([]);
         }
@@ -252,6 +255,34 @@ mod tests {
         let path = dir.path().join("state.json");
         fs::write(&path, "{corrupt").unwrap();
         assert_eq!(read_current_phase(&path), None);
+    }
+
+    #[test]
+    fn append_note_array_root_state_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let path = state_dir.join("test.json");
+        let content = "[1, 2, 3]";
+        fs::write(&path, content).unwrap();
+
+        mutate_state(&path, |state| {
+            if !(state.is_object() || state.is_null()) {
+                return;
+            }
+            if state.get("notes").is_none() || !state["notes"].is_array() {
+                state["notes"] = json!([]);
+            }
+            if let Some(arr) = state["notes"].as_array_mut() {
+                arr.push(json!({"note": "should not appear"}));
+            }
+        })
+        .unwrap();
+
+        let after = fs::read_to_string(&path).unwrap();
+        let parsed: Value = serde_json::from_str(&after).unwrap();
+        assert!(parsed.is_array(), "Root should still be an array");
+        assert_eq!(parsed.as_array().unwrap().len(), 3);
     }
 
     #[test]

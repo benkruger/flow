@@ -58,6 +58,9 @@ pub fn run(args: Args) {
     let timestamp = now();
 
     match mutate_state(&state_path, |state| {
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
         if state.get("issues_filed").is_none() || !state["issues_filed"].is_array() {
             state["issues_filed"] = json!([]);
         }
@@ -206,6 +209,34 @@ mod tests {
         let content = fs::read_to_string(&path).unwrap();
         let on_disk: Value = serde_json::from_str(&content).unwrap();
         assert_eq!(on_disk["issues_filed"][0]["title"], "persisted");
+    }
+
+    #[test]
+    fn add_issue_array_root_state_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let path = state_dir.join("test.json");
+        let content = "[1, 2, 3]";
+        fs::write(&path, content).unwrap();
+
+        mutate_state(&path, |state| {
+            if !(state.is_object() || state.is_null()) {
+                return;
+            }
+            if state.get("issues_filed").is_none() || !state["issues_filed"].is_array() {
+                state["issues_filed"] = json!([]);
+            }
+            if let Some(arr) = state["issues_filed"].as_array_mut() {
+                arr.push(json!({"label": "Rule", "title": "should not appear"}));
+            }
+        })
+        .unwrap();
+
+        let after = fs::read_to_string(&path).unwrap();
+        let parsed: Value = serde_json::from_str(&after).unwrap();
+        assert!(parsed.is_array(), "Root should still be an array");
+        assert_eq!(parsed.as_array().unwrap().len(), 3);
     }
 
     #[test]

@@ -482,6 +482,48 @@ mod tests {
         );
     }
 
+    // --- set_nested edge cases ---
+
+    #[test]
+    fn set_nested_empty_path_errors() {
+        let mut obj = json!({});
+        let result = set_nested(&mut obj, &[], json!("v"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Empty path"));
+    }
+
+    #[test]
+    fn set_nested_null_intermediate_errors() {
+        let mut obj = json!({"a": null});
+        let result = set_nested(&mut obj, &["a", "x", "y"], json!("v"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("NoneType"));
+    }
+
+    #[test]
+    fn set_nested_bool_intermediate_errors() {
+        let mut obj = json!({"a": true});
+        let result = set_nested(&mut obj, &["a", "x", "y"], json!("v"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("bool"));
+    }
+
+    #[test]
+    fn set_nested_null_final_errors() {
+        let mut obj = json!({"a": null});
+        let result = set_nested(&mut obj, &["a", "x"], json!("v"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("NoneType"));
+    }
+
+    #[test]
+    fn set_nested_bool_final_errors() {
+        let mut obj = json!({"a": true});
+        let result = set_nested(&mut obj, &["a", "x"], json!("v"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("bool"));
+    }
+
     #[test]
     fn test_code_task_batch_increment_in_single_call() {
         let mut state = json!({"code_task": 0});
