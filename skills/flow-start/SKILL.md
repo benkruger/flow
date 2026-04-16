@@ -192,6 +192,10 @@ Do NOT proceed if version check fails. Show the error message and stop.
 
 ### Step 2 — CI and dependency gate
 
+Use a 10-minute Bash tool timeout (`timeout: 600000`) — CI runs can
+take 3–4 minutes and the default 2-minute timeout would background
+the process, defeating the gate (per `.claude/rules/ci-is-a-gate.md`).
+
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow start-gate --branch <branch>
 ```

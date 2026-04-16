@@ -157,7 +157,12 @@ Staging must happen before writing `.flow-commit-msg` in Step 7 — otherwise
 
 Write `Release v<new_version>` to `.flow-commit-msg` via the Write tool.
 
-Then finalize the commit in one call:
+Then finalize the commit in one call. `finalize-commit` runs
+`ci::run_impl()` before `git commit` (see CLAUDE.md "CI is enforced
+inside `finalize-commit` itself"), so use a 10-minute Bash tool
+timeout (`timeout: 600000`) — CI runs can take 3–4 minutes and the
+default 2-minute timeout would background the process, defeating
+the gate (per `.claude/rules/ci-is-a-gate.md`).
 
 ```bash
 bin/flow finalize-commit .flow-commit-msg main

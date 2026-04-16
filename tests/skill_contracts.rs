@@ -8,6 +8,7 @@ mod common;
 
 use std::collections::HashSet;
 use std::fs;
+use std::path::PathBuf;
 
 use flow_rs::tombstone_audit::extract_pr_numbers;
 use regex::Regex;
@@ -676,6 +677,141 @@ fn phase_skills_no_inline_time_computation() {
             skill
         );
     }
+}
+
+/// Every fenced bash block that invokes a CI-running subcommand
+/// (`bin/flow ci`, `bin/flow start-gate`, `bin/flow finalize-commit`,
+/// `bin/flow complete-fast`) must be preceded by prose that instructs
+/// the model to set a 10-minute Bash tool timeout. Without the
+/// instruction, the default 2-minute Bash tool timeout backgrounds
+/// long-running CI invocations, defeating the gate (see
+/// `.claude/rules/ci-is-a-gate.md`).
+///
+/// Regression guarded: a future SKILL.md refactor drops the adjacent
+/// timeout-instruction prose. The test scans every SKILL.md under
+/// both `skills/` and `.claude/skills/` (maintainer skills like
+/// `flow-release` invoke `finalize-commit` too) and panics with the
+/// file path and opening-fence line number when the instruction is
+/// missing.
+///
+/// Scan window: the 5 immediately preceding non-blank lines of prose
+/// above each opening ```bash fence. This is narrow enough that a
+/// timeout mention attached to an unrelated bash block ~10 lines away
+/// does not count as coverage, and wide enough to accommodate prose
+/// placements one short paragraph above (per
+/// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions in
+/// Contract Tests" — the assertion scope must be bounded).
+#[test]
+fn skill_ci_invocations_specify_long_timeout() {
+    let ci_re = Regex::new(r"bin/flow (ci|start-gate|finalize-commit|complete-fast)\b").unwrap();
+    // Either form of the instruction is accepted: the raw Bash tool
+    // parameter (`timeout: 600000`) or the prose phrase
+    // (`10-minute Bash tool timeout`). The commit-phase author may
+    // tune wording but the substring must remain greppable.
+    const REQUIRED_FORMS: &[&str] = &["timeout: 600000", "10-minute Bash tool timeout"];
+    const WINDOW_NON_BLANK_LINES: usize = 5;
+
+    let mut violations: Vec<String> = Vec::new();
+
+    let mut scan_dir = |dir: PathBuf, label: &str| {
+        let files = common::collect_md_files(&dir);
+        for (rel, content) in &files {
+            if !rel.ends_with("SKILL.md") {
+                continue;
+            }
+            let lines: Vec<&str> = content.lines().collect();
+
+            // First pass: tag which lines are inside any fenced code
+            // block (including the fence lines themselves). A line is
+            // "prose" if and only if it is NOT tagged.
+            //
+            // Adjacent code blocks separated only by blank lines are a
+            // common pattern in this corpus (e.g. three complete-fast
+            // variants in flow-complete's Step 1). The backward walk
+            // from the second and third blocks must skip across the
+            // earlier blocks rather than stop at their closing fences,
+            // so that all three share the same preceding prose for
+            // timeout-instruction coverage.
+            let mut in_block_line = vec![false; lines.len()];
+            {
+                let mut open = false;
+                for (idx, line) in lines.iter().enumerate() {
+                    let t = line.trim_start();
+                    if t.starts_with("```") {
+                        in_block_line[idx] = true;
+                        open = !open;
+                    } else if open {
+                        in_block_line[idx] = true;
+                    }
+                }
+            }
+
+            let mut in_bash = false;
+            let mut bash_body = String::new();
+            let mut fence_line: usize = 0;
+            let mut prev_prose: Vec<String> = Vec::new();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed_left = line.trim_start();
+                if !in_bash && trimmed_left.starts_with("```bash") {
+                    in_bash = true;
+                    bash_body.clear();
+                    // Line numbers are 1-based for human-readable error output.
+                    fence_line = idx + 1;
+                    // Walk backward collecting the preceding non-blank
+                    // prose lines, skipping blank lines and any line
+                    // that is inside (or is the fence of) another code
+                    // block.
+                    prev_prose.clear();
+                    let mut j = idx;
+                    while j > 0 && prev_prose.len() < WINDOW_NON_BLANK_LINES {
+                        j -= 1;
+                        if in_block_line[j] {
+                            continue;
+                        }
+                        let prev = lines[j];
+                        if prev.trim().is_empty() {
+                            continue;
+                        }
+                        prev_prose.push(prev.to_string());
+                    }
+                    continue;
+                }
+                if in_bash && trimmed_left.starts_with("```") {
+                    in_bash = false;
+                    if ci_re.is_match(&bash_body) {
+                        let has_instruction = prev_prose
+                            .iter()
+                            .any(|l| REQUIRED_FORMS.iter().any(|form| l.contains(form)));
+                        if !has_instruction {
+                            violations.push(format!(
+                                "{}/{}:{} — bash block invokes a CI-running `bin/flow` subcommand but the preceding {} non-blank prose lines do not mention `timeout: 600000` or `10-minute Bash tool timeout`",
+                                label, rel, fence_line, WINDOW_NON_BLANK_LINES
+                            ));
+                        }
+                    }
+                    bash_body.clear();
+                    continue;
+                }
+                if in_bash {
+                    bash_body.push_str(line);
+                    bash_body.push('\n');
+                }
+            }
+        }
+    };
+
+    scan_dir(common::skills_dir(), "skills");
+    let dot_skills = common::repo_root().join(".claude").join("skills");
+    if dot_skills.exists() {
+        scan_dir(dot_skills, ".claude/skills");
+    }
+
+    assert!(
+        violations.is_empty(),
+        "SKILL.md bash blocks invoke CI-running commands without an adjacent 10-minute timeout instruction (see .claude/rules/ci-is-a-gate.md):\n{}",
+        violations.join("\n")
+    );
 }
 
 #[test]
