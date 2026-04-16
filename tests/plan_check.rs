@@ -443,3 +443,42 @@ fn plan_check_accepts_plan_file_override() {
     assert_eq!(code, 0);
     assert_eq!(json["status"], "ok");
 }
+
+// --- Infrastructure error (exit 1) ---
+
+/// When the state file contains invalid JSON, `run_impl` returns
+/// `Err(String)` and `run()` hits the `json_error` + `exit(1)` branch
+/// (lines 57-59). The error is written to stderr, not stdout.
+#[test]
+fn plan_check_invalid_json_state_exits_with_code_1() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    let state_dir = flow_states_dir(dir.path());
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join("test-feature.json"),
+        "{not valid json at all",
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["plan-check", "--branch", "test-feature"])
+        .current_dir(dir.path())
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+
+    let code = output.status.code().unwrap_or(-1);
+    assert_eq!(
+        code, 1,
+        "expected exit 1 for corrupt state file, got {}",
+        code
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Invalid JSON"),
+        "stdout should mention JSON parse failure, got: {}",
+        stdout
+    );
+}

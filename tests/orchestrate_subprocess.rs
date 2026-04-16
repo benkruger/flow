@@ -18,6 +18,31 @@ use std::process::Command;
 use serde_json::json;
 
 const FLOW_RS: &str = env!("CARGO_BIN_EXE_flow-rs");
+const MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
+
+/// Absolute `LLVM_PROFILE_FILE` template for instrumented child spawns.
+///
+/// cargo-llvm-cov sets `LLVM_PROFILE_FILE` on the test process itself but
+/// does NOT propagate it to subprocesses. Without this env var set on
+/// each spawn, the instrumented `flow-rs` child falls back to LLVM's
+/// default template `default_<pid>_<counter>.profraw` and writes to cwd
+/// — which under `cargo nextest` is the worktree root. The result is
+/// orphan `.profraw` files at the repo root that (a) pollute `git status`
+/// and (b) never get merged into the coverage report, so the subprocess's
+/// coverage data is lost.
+///
+/// Setting the env var to a path under `target/llvm-cov-target/` directs
+/// the profile data into the directory `bin/test`'s sweep already cleans
+/// and `cargo llvm-cov` already merges. `%p` expands to PID and `%m` to
+/// the binary's module-unique ID, preventing collisions between
+/// concurrent subprocess tests. Absolute path ensures the child writes to
+/// the right place regardless of its own cwd.
+fn profile_file_template() -> String {
+    format!(
+        "{}/target/llvm-cov-target/orchestrate-subprocess-%p-%m.profraw",
+        MANIFEST_DIR
+    )
+}
 
 /// Happy-path spawn of `flow-rs orchestrate-report` — verifies that the
 /// `run()` wrapper's `println!(run_impl(&args))` line prints the
@@ -53,6 +78,7 @@ fn orchestrate_report_run_happy_path_prints_ok_status() {
         .arg("--output-dir")
         .arg(&root)
         .env_remove("FLOW_CI_RUNNING")
+        .env("LLVM_PROFILE_FILE", profile_file_template())
         .output()
         .expect("failed to spawn flow-rs");
 
@@ -110,6 +136,7 @@ fn orchestrate_state_run_read_happy_path_prints_ok_status() {
         .arg("--state-file")
         .arg(&state_path)
         .env_remove("FLOW_CI_RUNNING")
+        .env("LLVM_PROFILE_FILE", profile_file_template())
         .output()
         .expect("failed to spawn flow-rs");
 
@@ -151,6 +178,7 @@ fn orchestrate_state_run_create_missing_queue_file_prints_error_status() {
         .arg("--state-dir")
         .arg(&state_dir)
         .env_remove("FLOW_CI_RUNNING")
+        .env("LLVM_PROFILE_FILE", profile_file_template())
         .output()
         .expect("failed to spawn flow-rs");
 
