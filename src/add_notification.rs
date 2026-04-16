@@ -64,6 +64,13 @@ pub fn run(args: Args) {
     let timestamp = now();
 
     match mutate_state(&state_path, |state| {
+        // Corruption resilience: skip mutation when state root is wrong
+        // type (e.g. array from interrupted write) to prevent IndexMut
+        // panics. See .claude/rules/rust-patterns.md "State Mutation
+        // Object Guards".
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
         if state.get("slack_notifications").is_none() || !state["slack_notifications"].is_array() {
             state["slack_notifications"] = json!([]);
         }
@@ -252,6 +259,39 @@ mod tests {
             on_disk["slack_notifications"][0]["message_preview"],
             "persisted"
         );
+    }
+
+    /// Verify that an array-root state file triggers the object guard's
+    /// early return, leaving the file unchanged and preventing an
+    /// IndexMut panic on non-object root types.
+    #[test]
+    fn add_notification_array_root_state_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let path = state_dir.join("test.json");
+        let content = "[1, 2, 3]";
+        fs::write(&path, content).unwrap();
+
+        mutate_state(&path, |state| {
+            if !(state.is_object() || state.is_null()) {
+                return;
+            }
+            if state.get("slack_notifications").is_none()
+                || !state["slack_notifications"].is_array()
+            {
+                state["slack_notifications"] = json!([]);
+            }
+            if let Some(arr) = state["slack_notifications"].as_array_mut() {
+                arr.push(json!({"phase": "flow-code", "message_preview": "should not appear"}));
+            }
+        })
+        .unwrap();
+
+        let after = fs::read_to_string(&path).unwrap();
+        let parsed: Value = serde_json::from_str(&after).unwrap();
+        assert!(parsed.is_array(), "Root should still be an array");
+        assert_eq!(parsed.as_array().unwrap().len(), 3);
     }
 
     #[test]

@@ -515,6 +515,37 @@ mod tests {
         );
     }
 
+    /// Verify that an array-root state file triggers the object guard's
+    /// early return, leaving the file unchanged and preventing an
+    /// IndexMut panic on non-object root types.
+    #[test]
+    fn add_finding_array_root_state_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let path = state_dir.join("test.json");
+        let content = "[1, 2, 3]";
+        fs::write(&path, content).unwrap();
+
+        mutate_state(&path, |state| {
+            if !(state.is_object() || state.is_null()) {
+                return;
+            }
+            if state.get("findings").is_none() || !state["findings"].is_array() {
+                state["findings"] = json!([]);
+            }
+            if let Some(arr) = state["findings"].as_array_mut() {
+                arr.push(json!({"finding": "should not appear"}));
+            }
+        })
+        .unwrap();
+
+        let after = fs::read_to_string(&path).unwrap();
+        let parsed: Value = serde_json::from_str(&after).unwrap();
+        assert!(parsed.is_array(), "Root should still be an array");
+        assert_eq!(parsed.as_array().unwrap().len(), 3);
+    }
+
     #[test]
     fn future_outcome_rejected_for_code_review() {
         // Forward-compat: if VALID_OUTCOMES is extended with a new
