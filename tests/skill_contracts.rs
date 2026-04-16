@@ -695,20 +695,40 @@ fn phase_skills_no_inline_time_computation() {
 /// missing.
 ///
 /// Scan window: the 5 immediately preceding non-blank lines of prose
-/// above each opening ```bash fence. This is narrow enough that a
-/// timeout mention attached to an unrelated bash block ~10 lines away
-/// does not count as coverage, and wide enough to accommodate prose
-/// placements one short paragraph above (per
-/// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions in
-/// Contract Tests" — the assertion scope must be bounded).
+/// above each opening ```bash fence. The backward walk stops at any
+/// prior fenced block — each CI-invoking block must have its own
+/// adjacent preamble, and inheritance across unrelated blocks is
+/// prohibited. This closes the adjacent-block inheritance gap found
+/// by Code Review's adversarial agent (PR #1183, finding A10) at the
+/// cost of requiring each adjacent variant in the same section to
+/// carry its own preamble.
 #[test]
 fn skill_ci_invocations_specify_long_timeout() {
+    // CI-running subcommand family. Each entry runs `ci::run_impl()`
+    // directly or transitively:
+    //
+    // - `ci`              — the direct CI runner
+    // - `start-gate`      — runs CI on main under the start lock per
+    //                       CLAUDE.md "Start-Gate CI on Main as
+    //                       Serialization Point"
+    // - `finalize-commit` — runs `ci::run_impl()` before `git commit`
+    //                       per CLAUDE.md "CI is enforced inside
+    //                       `finalize-commit` itself"
+    // - `complete-fast`   — runs a local CI dirty check before the
+    //                       Complete merge, and dispatches to
+    //                       `ci::run_impl()` on sentinel miss
+    //
+    // When adding a new CI-running `bin/flow` subcommand, extend this
+    // regex in the same PR and update the list above.
     let ci_re = Regex::new(r"bin/flow (ci|start-gate|finalize-commit|complete-fast)\b").unwrap();
-    // Either form of the instruction is accepted: the raw Bash tool
-    // parameter (`timeout: 600000`) or the prose phrase
-    // (`10-minute Bash tool timeout`). The commit-phase author may
-    // tune wording but the substring must remain greppable.
-    const REQUIRED_FORMS: &[&str] = &["timeout: 600000", "10-minute Bash tool timeout"];
+    // Numeric form: the Bash tool `timeout` parameter must equal
+    // exactly 600000 (10 minutes). The trailing `\D` (or end of
+    // string) anchor prevents typo'd values like `timeout: 6000000`
+    // (100 minutes) from passing the gate as substring matches.
+    let timeout_num_re = Regex::new(r"timeout:\s*600000(\D|$)").unwrap();
+    // Prose form: the canonical phrase authors use when describing
+    // the instruction in surrounding text.
+    const TIMEOUT_PROSE: &str = "10-minute Bash tool timeout";
     const WINDOW_NON_BLANK_LINES: usize = 5;
 
     let mut violations: Vec<String> = Vec::new();
@@ -721,57 +741,50 @@ fn skill_ci_invocations_specify_long_timeout() {
             }
             let lines: Vec<&str> = content.lines().collect();
 
-            // First pass: tag which lines are inside any fenced code
-            // block (including the fence lines themselves). A line is
-            // "prose" if and only if it is NOT tagged.
-            //
-            // Adjacent code blocks separated only by blank lines are a
-            // common pattern in this corpus (e.g. three complete-fast
-            // variants in flow-complete's Step 1). The backward walk
-            // from the second and third blocks must skip across the
-            // earlier blocks rather than stop at their closing fences,
-            // so that all three share the same preceding prose for
-            // timeout-instruction coverage.
-            let mut in_block_line = vec![false; lines.len()];
-            {
-                let mut open = false;
-                for (idx, line) in lines.iter().enumerate() {
-                    let t = line.trim_start();
-                    if t.starts_with("```") {
-                        in_block_line[idx] = true;
-                        open = !open;
-                    } else if open {
-                        in_block_line[idx] = true;
-                    }
-                }
-            }
-
             let mut in_bash = false;
             let mut bash_body = String::new();
             let mut fence_line: usize = 0;
             let mut prev_prose: Vec<String> = Vec::new();
+            let mut saw_opening_fence = false;
+
+            let check_coverage = |prev_prose: &[String],
+                                  violations: &mut Vec<String>,
+                                  fence_line: usize| {
+                let has_instruction = prev_prose
+                    .iter()
+                    .any(|l| timeout_num_re.is_match(l) || l.contains(TIMEOUT_PROSE));
+                if !has_instruction {
+                    violations.push(format!(
+                        "{}/{}:{} — bash block invokes a CI-running `bin/flow` subcommand but the preceding {} non-blank prose lines (stopping at any prior fence) do not mention `timeout: 600000` or `10-minute Bash tool timeout`",
+                        label, rel, fence_line, WINDOW_NON_BLANK_LINES
+                    ));
+                }
+            };
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed_left = line.trim_start();
                 if !in_bash && trimmed_left.starts_with("```bash") {
                     in_bash = true;
+                    saw_opening_fence = true;
                     bash_body.clear();
                     // Line numbers are 1-based for human-readable error output.
                     fence_line = idx + 1;
                     // Walk backward collecting the preceding non-blank
-                    // prose lines, skipping blank lines and any line
-                    // that is inside (or is the fence of) another code
-                    // block.
+                    // prose lines. Stop immediately at any prior fence
+                    // line — each CI-invoking block must have its own
+                    // adjacent preamble, not inherit from a distant
+                    // section across unrelated blocks.
                     prev_prose.clear();
                     let mut j = idx;
                     while j > 0 && prev_prose.len() < WINDOW_NON_BLANK_LINES {
                         j -= 1;
-                        if in_block_line[j] {
+                        let prev = lines[j];
+                        let prev_t = prev.trim();
+                        if prev_t.is_empty() {
                             continue;
                         }
-                        let prev = lines[j];
-                        if prev.trim().is_empty() {
-                            continue;
+                        if prev_t.starts_with("```") {
+                            break;
                         }
                         prev_prose.push(prev.to_string());
                     }
@@ -780,15 +793,7 @@ fn skill_ci_invocations_specify_long_timeout() {
                 if in_bash && trimmed_left.starts_with("```") {
                     in_bash = false;
                     if ci_re.is_match(&bash_body) {
-                        let has_instruction = prev_prose
-                            .iter()
-                            .any(|l| REQUIRED_FORMS.iter().any(|form| l.contains(form)));
-                        if !has_instruction {
-                            violations.push(format!(
-                                "{}/{}:{} — bash block invokes a CI-running `bin/flow` subcommand but the preceding {} non-blank prose lines do not mention `timeout: 600000` or `10-minute Bash tool timeout`",
-                                label, rel, fence_line, WINDOW_NON_BLANK_LINES
-                            ));
-                        }
+                        check_coverage(&prev_prose, &mut violations, fence_line);
                     }
                     bash_body.clear();
                     continue;
@@ -797,6 +802,20 @@ fn skill_ci_invocations_specify_long_timeout() {
                     bash_body.push_str(line);
                     bash_body.push('\n');
                 }
+            }
+
+            // Unclosed ```bash fence at EOF: the main loop never saw a
+            // closing fence, so `bash_body` was accumulated but never
+            // checked. Treat this as a violation — either the file is
+            // truncated (interrupted write, merge-conflict half-save)
+            // or a merge conflict dropped the closing fence. Either
+            // way, the gate should surface it loudly rather than
+            // silently passing.
+            if in_bash && saw_opening_fence && ci_re.is_match(&bash_body) {
+                violations.push(format!(
+                    "{}/{}:{} — unclosed ```bash fence at EOF contains a CI-running `bin/flow` invocation. Close the fence or restore the truncated content.",
+                    label, rel, fence_line
+                ));
             }
         }
     };
