@@ -195,3 +195,39 @@ fn add_issue_unknown_phase_falls_back_to_raw_name() {
     assert_eq!(f["phase"], "some-custom-phase");
     assert_eq!(f["phase_name"], "some-custom-phase");
 }
+
+#[test]
+fn add_issue_corrupt_state_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let state_dir = repo.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(state_dir.join("bad.json"), "{corrupt").unwrap();
+
+    let output = run_add_issue(
+        &repo,
+        &[
+            "--label",
+            "Rule",
+            "--title",
+            "t",
+            "--url",
+            "u",
+            "--phase",
+            "flow-learn",
+            "--branch",
+            "bad",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Failed to add issue"),
+        "Error should mention the operation that failed"
+    );
+}

@@ -482,6 +482,54 @@ mod tests {
         );
     }
 
+    // --- set_nested edge cases ---
+    // Exercises value_type_name match arms and the empty-path guard.
+    // Covered: empty path, Null intermediate, Bool intermediate,
+    // Null final, Bool final. String and Number arms are covered by
+    // the existing tests above (non_traversable_intermediate and
+    // non_settable_final). Array and Object arms are handled by
+    // set_nested's dedicated match arms and never reach value_type_name.
+
+    #[test]
+    fn set_nested_empty_path_errors() {
+        let mut obj = json!({});
+        let result = set_nested(&mut obj, &[], json!("v"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Empty path"));
+    }
+
+    #[test]
+    fn set_nested_null_intermediate_errors() {
+        let mut obj = json!({"a": null});
+        let result = set_nested(&mut obj, &["a", "x", "y"], json!("v"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("NoneType"));
+    }
+
+    #[test]
+    fn set_nested_bool_intermediate_errors() {
+        let mut obj = json!({"a": true});
+        let result = set_nested(&mut obj, &["a", "x", "y"], json!("v"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("bool"));
+    }
+
+    #[test]
+    fn set_nested_null_final_errors() {
+        let mut obj = json!({"a": null});
+        let result = set_nested(&mut obj, &["a", "x"], json!("v"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("NoneType"));
+    }
+
+    #[test]
+    fn set_nested_bool_final_errors() {
+        let mut obj = json!({"a": true});
+        let result = set_nested(&mut obj, &["a", "x"], json!("v"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("bool"));
+    }
+
     #[test]
     fn test_code_task_batch_increment_in_single_call() {
         let mut state = json!({"code_task": 0});
