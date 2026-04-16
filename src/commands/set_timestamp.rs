@@ -483,6 +483,12 @@ mod tests {
     }
 
     // --- set_nested edge cases ---
+    // Exercises value_type_name match arms and the empty-path guard.
+    // Covered: empty path, Null intermediate, Bool intermediate,
+    // Null final, Bool final. String and Number arms are covered by
+    // the existing tests above (non_traversable_intermediate and
+    // non_settable_final). Array and Object arms are handled by
+    // set_nested's dedicated match arms and never reach value_type_name.
 
     #[test]
     fn set_nested_empty_path_errors() {

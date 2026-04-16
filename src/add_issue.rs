@@ -58,6 +58,10 @@ pub fn run(args: Args) {
     let timestamp = now();
 
     match mutate_state(&state_path, |state| {
+        // Corruption resilience: skip mutation when state root is wrong
+        // type (e.g. array from interrupted write) to prevent IndexMut
+        // panics. See .claude/rules/rust-patterns.md "State Mutation
+        // Object Guards".
         if !(state.is_object() || state.is_null()) {
             return;
         }
@@ -211,6 +215,9 @@ mod tests {
         assert_eq!(on_disk["issues_filed"][0]["title"], "persisted");
     }
 
+    /// Verify that an array-root state file triggers the object guard's
+    /// early return, leaving the file unchanged and preventing an
+    /// IndexMut panic on non-object root types.
     #[test]
     fn add_issue_array_root_state_noop() {
         let dir = tempfile::tempdir().unwrap();

@@ -515,6 +515,9 @@ mod tests {
         );
     }
 
+    /// Verify that an array-root state file triggers the object guard's
+    /// early return, leaving the file unchanged and preventing an
+    /// IndexMut panic on non-object root types.
     #[test]
     fn add_finding_array_root_state_noop() {
         let dir = tempfile::tempdir().unwrap();
