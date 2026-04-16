@@ -266,3 +266,34 @@ fn claude_md_no_test_coverage_references() {
 //   format_pr_timings — pub fn run wrappers replaced by run_impl_main
 // PR #1154: TUI refactor — run_terminal, activate_iterm_tab, open_url,
 //   find_bin_flow, module-level run, atty_check removed
+
+// --- TUI extraction to tui_terminal module ---
+//
+// `run_tui_terminal` and `TerminalGuard` live in `src/tui_terminal.rs`,
+// not `src/main.rs`. Keeping the crossterm-coupled glue out of main.rs
+// allows main.rs to reach 100% coverage — the new module's seam-injected
+// `run_tui_arm_impl` is unit-testable in `cargo nextest`, while the
+// crossterm-bound `run_terminal` only runs in production. A merge
+// resolution that re-introduces either symbol into main.rs would
+// duplicate the definitions and reintroduce uncovered crossterm code in
+// a file expected to stay 100% covered.
+
+#[test]
+fn test_main_rs_no_run_tui_terminal_or_terminal_guard() {
+    // Tombstone: removed in PR #1205. Must not return to main.rs.
+    let root = common::repo_root();
+    let path = root.join("src/main.rs");
+    let content = fs::read_to_string(&path).expect("src/main.rs must exist");
+    assert!(
+        !content.contains("fn run_tui_terminal("),
+        "src/main.rs must not contain `fn run_tui_terminal(` — \
+         crossterm event-loop glue lives in `src/tui_terminal.rs` to \
+         keep main.rs 100% covered."
+    );
+    assert!(
+        !content.contains("struct TerminalGuard"),
+        "src/main.rs must not contain `struct TerminalGuard` — the RAII \
+         guard lives in `src/tui_terminal.rs` so its Drop is unit-testable \
+         via an injected `release_fn` closure."
+    );
+}
