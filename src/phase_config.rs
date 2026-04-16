@@ -861,4 +861,75 @@ mod tests {
         let _ = fs::set_permissions(&state_dir, fs::Permissions::from_mode(0o755));
         assert!(results.is_empty());
     }
+
+    // --- MIR region coverage tests ---
+
+    #[test]
+    fn load_phase_config_order_non_string_element_filtered() {
+        // Exercises the None branch of `filter_map(|v| v.as_str())`
+        // on line 117 when an order array element is not a string.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("phases.json");
+        fs::write(
+            &path,
+            r#"{
+                "order": ["flow-start", 42, "flow-plan"],
+                "phases": {
+                    "flow-start": {"name": "Start", "command": "/t:s"},
+                    "flow-plan": {"name": "Plan", "command": "/t:p"}
+                }
+            }"#,
+        )
+        .unwrap();
+        let cfg = load_phase_config(&path).unwrap();
+        // The integer 42 is filtered out — only string elements survive
+        assert_eq!(cfg.order, vec!["flow-start", "flow-plan"]);
+        assert_eq!(cfg.order.len(), 2);
+    }
+
+    #[test]
+    fn load_phase_config_name_non_string_skipped() {
+        // Exercises the None branch of `phase.get("name").and_then(|v| v.as_str())`
+        // on line 131 when the "name" value is not a string.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("phases.json");
+        fs::write(
+            &path,
+            r#"{
+                "order": ["flow-start"],
+                "phases": {
+                    "flow-start": {"name": 123, "command": "/t:s"}
+                }
+            }"#,
+        )
+        .unwrap();
+        let cfg = load_phase_config(&path).unwrap();
+        // name is not a string so it's skipped — names map is empty
+        assert!(!cfg.names.contains_key("flow-start"));
+        // command IS a string so it's preserved
+        assert_eq!(cfg.commands.get("flow-start").unwrap(), "/t:s");
+    }
+
+    #[test]
+    fn load_phase_config_command_non_string_skipped() {
+        // Exercises the None branch of `phase.get("command").and_then(|v| v.as_str())`
+        // on line 134 when the "command" value is not a string.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("phases.json");
+        fs::write(
+            &path,
+            r#"{
+                "order": ["flow-start"],
+                "phases": {
+                    "flow-start": {"name": "Start", "command": true}
+                }
+            }"#,
+        )
+        .unwrap();
+        let cfg = load_phase_config(&path).unwrap();
+        // name IS a string so it's preserved
+        assert_eq!(cfg.names.get("flow-start").unwrap(), "Start");
+        // command is not a string so it's skipped
+        assert!(!cfg.commands.contains_key("flow-start"));
+    }
 }
