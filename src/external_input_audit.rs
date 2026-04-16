@@ -966,6 +966,98 @@ mod tests {
         );
     }
 
+    // --- compute_fenced_mask edge cases ---
+
+    #[test]
+    fn scan_trigger_after_unclosed_fence_detected() {
+        // An unclosed fence must fail open — content after the fence
+        // is NOT masked, so triggers are still detected.
+        let content = "```\nfenced content\ntighten FlowPaths::new to panic on empty.\n";
+        let v = scan(content, &dummy_path());
+        assert!(
+            !v.is_empty(),
+            "trigger after unclosed fence must be detected (fail-open)"
+        );
+    }
+
+    // --- is_audit_header_row edge cases ---
+
+    #[test]
+    fn audit_header_with_leading_empty_cells() {
+        // Leading pipe creates an empty first cell — the filter in
+        // is_audit_header_row must discard it and still match 4 columns.
+        assert!(is_audit_header_row(
+            "| | Caller | Source | Classification | Handling |"
+        ));
+    }
+
+    // --- is_separator_row edge cases ---
+
+    #[test]
+    fn separator_row_rejects_pipes_only() {
+        // A row of only pipes and spaces (no dashes) is not a separator.
+        assert!(!is_separator_row("| | | | |"));
+    }
+
+    // --- next_non_blank edge cases ---
+
+    #[test]
+    fn next_non_blank_returns_none_at_eof() {
+        let window: Vec<String> = vec![
+            "trigger line".to_string(),
+            "   ".to_string(),
+            "".to_string(),
+            "  ".to_string(),
+        ];
+        assert_eq!(next_non_blank(&window, 1), None);
+    }
+
+    // --- scan_for_table window exhaustion ---
+
+    #[test]
+    fn forward_scan_exhausts_window_no_table() {
+        // Fill the window with enough non-blank non-table lines to
+        // exceed WINDOW_NON_BLANK_LINES, then place a valid table
+        // past the window. The forward scan should give up before
+        // reaching the table.
+        let mut lines: Vec<String> = Vec::new();
+        lines.push("tighten to panic on empty.".to_string()); // trigger at index 0
+        for i in 0..(WINDOW_NON_BLANK_LINES + 5) {
+            lines.push(format!("filler line {}", i));
+        }
+        lines.push("| Caller | Source | Classification | Handling |".to_string());
+        lines.push("|--------|--------|----------------|----------|".to_string());
+        lines.push("| a | b | c | d |".to_string());
+
+        assert!(!scan_for_table_forward(&lines, 0));
+    }
+
+    #[test]
+    fn backward_scan_exhausts_window_no_table() {
+        // Place a valid table at the top, then enough filler to
+        // exceed WINDOW_NON_BLANK_LINES, then the trigger. The
+        // backward scan should give up before reaching the table.
+        let mut lines: Vec<String> = Vec::new();
+        lines.push("| Caller | Source | Classification | Handling |".to_string());
+        lines.push("|--------|--------|----------------|----------|".to_string());
+        lines.push("| a | b | c | d |".to_string());
+        for i in 0..(WINDOW_NON_BLANK_LINES + 5) {
+            lines.push(format!("filler line {}", i));
+        }
+        let trigger_idx = lines.len();
+        lines.push("tighten to panic on empty.".to_string());
+
+        assert!(!scan_for_table_backward(&lines, trigger_idx));
+    }
+
+    // --- has_negation_prefix edge cases ---
+
+    #[test]
+    fn negation_prefix_out_of_bounds_returns_false() {
+        // match_start exceeds line length — the bounds guard returns false.
+        assert!(!has_negation_prefix("short", 100));
+    }
+
     // --- integration: Violation fields ---
 
     #[test]
