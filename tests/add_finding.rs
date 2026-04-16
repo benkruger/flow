@@ -317,3 +317,38 @@ fn add_finding_multiple_invocations_append() {
     let on_disk: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(on_disk["findings"].as_array().unwrap().len(), 3);
 }
+
+#[test]
+fn add_finding_array_root_state_returns_ok_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let state_dir = repo.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(state_dir.join("test-feature.json"), "[1, 2, 3]").unwrap();
+
+    let output = run_add_finding(
+        &repo,
+        &[
+            "--finding",
+            "x",
+            "--reason",
+            "y",
+            "--outcome",
+            "fixed",
+            "--phase",
+            "flow-code",
+            "--branch",
+            "test-feature",
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "Array-root state should not crash; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["finding_count"], 0);
+}
