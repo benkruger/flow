@@ -44,12 +44,14 @@ skipped.
    for the superseded code
 9. Claude writes the plan file with a Dependency Graph section and
    ordered tasks derived from the DAG
-10. `bin/flow plan-check` runs both Plan-phase scanners against the
-    plan: scope-enumeration (universal-coverage prose without a
-    named sibling list) and external-input audit (panic/assert
+10. `bin/flow plan-check` runs all three Plan-phase scanners against
+    the plan: scope-enumeration (universal-coverage prose without a
+    named sibling list), external-input audit (panic/assert
     tightening proposals without a paired callsite source-
-    classification table). Phase completion is blocked until both
-    scanners pass (see Gates below)
+    classification table), and duplicate-test-coverage (proposed
+    test names that normalize to an existing test in the repo's
+    corpus). Phase completion is blocked until every scanner passes
+    (see Gates below)
 11. The plan file path is stored in the state file and the phase completes
 
 DAG decomposition is configurable via `skills.flow-plan.dag` in
@@ -95,7 +97,7 @@ By the end of Phase 2:
 ## Gates
 
 - **Start phase must be complete** before Plan can enter
-- **Plan-check gate** — before the phase completes, two scanners
+- **Plan-check gate** — before the phase completes, three scanners
   run against the plan file:
   - **Scope-enumeration** — flags universal-coverage language
     ("every subcommand", "all runners", "each CLI entry point", …)
@@ -112,13 +114,22 @@ By the end of Phase 2:
     `<!-- external-input-audit: not-a-tightening -->` opt-out for
     discussion prose. See
     `.claude/rules/external-input-audit-gate.md`.
+  - **Duplicate-test-coverage** — flags proposed test function
+    names that normalize (strip `test_` prefix, lowercase) to an
+    existing test in the repo's test corpus. Violations carry
+    `existing_test` and `existing_file` fields so the author can
+    see both sides of the collision. Fix paths: rename the
+    proposed test, strengthen the existing one, or add the
+    `<!-- duplicate-test-coverage: not-a-new-test -->` /
+    `<!-- duplicate-test-coverage: intentional-duplicate -->`
+    opt-out. See `.claude/rules/duplicate-test-coverage.md`.
 
   The gate runs at three callsites — the standard path
   (`bin/flow plan-check` in Step 4) and both `src/plan_extract.rs`
-  paths (extracted and resumed) — so neither scanner can be
-  bypassed by routing through the pre-decomposed or session-resume
-  entries. Each violation in the JSON response carries a `rule`
-  field naming the scanner that fired.
+  paths (extracted and resumed) — so none of the three scanners
+  can be bypassed by routing through the pre-decomposed or
+  session-resume entries. Each violation in the JSON response
+  carries a `rule` field naming the scanner that fired.
 
 ---
 

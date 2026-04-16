@@ -1,27 +1,34 @@
-//! Plan-check: scan the current plan file for universal-coverage
-//! prose that lacks a named enumeration of concrete siblings.
+//! Plan-check: scan the current plan file for Plan-phase rule
+//! violations.
 //!
-//! This command is the Plan-phase gate half of the scope-enumeration
-//! rule (`.claude/rules/scope-enumeration.md`). Invoked from
+//! This command is the Plan-phase gate that aggregates three scanners
+//! — `src/scope_enumeration.rs::scan` (universal-coverage prose
+//! without a named sibling list), `src/external_input_audit.rs::scan`
+//! (panic/assert tightening proposals without a paired callsite
+//! audit table), and
+//! `src/duplicate_test_coverage.rs::scan` (proposed test names that
+//! collide with existing tests in the corpus). Invoked from
 //! `skills/flow-plan/SKILL.md` Step 4 before
 //! `phase-transition --action complete`, the gate refuses to let the
-//! Plan phase finish if the plan file contains a universal-quantifier
-//! claim ("every subcommand", "all runners", "each CLI entry point")
-//! that is not paired with a named list of the concrete siblings the
-//! claim covers. The pre-decomposed path in `src/plan_extract.rs`
-//! invokes `scope_enumeration::scan` directly against the promoted
-//! plan content before `complete_plan_phase` to gate the same class
-//! of mistake for pre-planned issues.
+//! Plan phase finish if any scanner finds violations. Each violation
+//! in the JSON response carries a `rule` field naming which scanner
+//! fired, so the skill's repair loop can point the author at the
+//! right fix. The extracted and resume paths in
+//! `src/plan_extract.rs` invoke the same three scanners against the
+//! promoted plan content before `complete_plan_phase` to gate the
+//! same class of mistakes for pre-planned issues.
 //!
-//! Both callsites share `src/scope_enumeration.rs::scan` so the
-//! trigger vocabulary and the enumeration-present heuristic cannot
-//! drift between the standard skill path and the extracted path.
+//! All four callsites (standard, extracted, resume, and the
+//! committed-prose contract test) share the same scanner modules so
+//! the trigger vocabulary, opt-out grammars, and rule tagging cannot
+//! drift between the three paths.
 
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use serde_json::{json, Value};
 
+use crate::duplicate_test_coverage::{self, TestCorpus};
 use crate::external_input_audit;
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
@@ -125,21 +132,22 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }
     };
 
-    // Run BOTH Plan-phase scanners and aggregate violations into a
-    // single response. Each violation carries a `rule` field so the
+    // Run all three Plan-phase scanners and aggregate violations into
+    // a single response. Each violation carries a `rule` field so the
     // skill's repair loop can render which rule fired and point the
     // user at the right fix. The scope-enumeration scanner fires on
     // universal-coverage prose without a named sibling list. The
     // external-input-audit scanner fires on panic/assert tightening
     // proposals without a paired callsite source-classification
-    // table. Both scanners share the same call shape
-    // (`scan(content, source) -> Vec<Violation>`) but return
-    // distinct Violation types — we convert each to a tagged JSON
-    // payload at the boundary here.
+    // table. The duplicate-test-coverage scanner fires on proposed
+    // test names that collide with existing tests in the repo's test
+    // corpus (indexed from `tests/**/*.rs` and `src/**/*.rs`).
     let scope_violations = scan(&content, &plan_path);
     let audit_violations = external_input_audit::scan(&content, &plan_path);
+    let test_corpus = TestCorpus::from_repo(&root);
+    let dup_violations = duplicate_test_coverage::scan(&content, &plan_path, &test_corpus);
 
-    if scope_violations.is_empty() && audit_violations.is_empty() {
+    if scope_violations.is_empty() && audit_violations.is_empty() && dup_violations.is_empty() {
         return Ok(json!({"status": "ok"}));
     }
 
@@ -162,9 +170,17 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
             "external-input-audit",
         ));
     }
+    for v in &dup_violations {
+        violations_json.push(duplicate_violation_to_tagged_json(v));
+    }
 
-    let total = scope_violations.len() + audit_violations.len();
-    let message = build_violation_message(scope_violations.len(), audit_violations.len(), total);
+    let total = scope_violations.len() + audit_violations.len() + dup_violations.len();
+    let message = build_violation_message(
+        scope_violations.len(),
+        audit_violations.len(),
+        dup_violations.len(),
+        total,
+    );
 
     Ok(json!({
         "status": "error",
@@ -173,9 +189,31 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }))
 }
 
-/// Build a human-readable summary message that names both scanners'
-/// counts when either is non-zero. The message must tell the author
-/// which rule file to consult for each violation class.
+/// Serialize a duplicate-test-coverage violation with its extra
+/// `existing_test` and `existing_file` fields so the skill's repair
+/// loop can name both the proposed test and its pre-existing twin.
+///
+/// Shared with `src/plan_extract.rs::violations_response` — both
+/// callsites MUST produce the same JSON shape so the skill's repair
+/// loop renders consistent output regardless of which path triggered
+/// the failure. If a field is added to
+/// `duplicate_test_coverage::Violation`, updating this helper
+/// automatically updates both callers.
+pub(crate) fn duplicate_violation_to_tagged_json(v: &duplicate_test_coverage::Violation) -> Value {
+    json!({
+        "file": v.file.display().to_string(),
+        "line": v.line,
+        "phrase": v.phrase,
+        "context": v.context,
+        "rule": "duplicate-test-coverage",
+        "existing_test": v.existing_test,
+        "existing_file": v.existing_file,
+    })
+}
+
+/// Build a human-readable summary message that names each scanner's
+/// count when non-zero. The message must tell the author which rule
+/// file to consult for each violation class.
 ///
 /// Shared with `src/plan_extract.rs::violations_response` — both
 /// callsites MUST produce the same message shape so the skill's
@@ -185,6 +223,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 pub(crate) fn build_violation_message(
     scope_count: usize,
     audit_count: usize,
+    dup_count: usize,
     total: usize,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -200,6 +239,14 @@ pub(crate) fn build_violation_message(
             "{} panic/assert tightening(s) lack a callsite audit table (see \
              .claude/rules/external-input-audit-gate.md)",
             audit_count
+        ));
+    }
+    if dup_count > 0 {
+        parts.push(format!(
+            "{} duplicate-test-coverage violation(s): proposed test name(s) \
+             collide with existing tests (see \
+             .claude/rules/duplicate-test-coverage.md)",
+            dup_count
         ));
     }
     format!("{} plan-check violation(s): {}.", total, parts.join("; "))
@@ -373,35 +420,52 @@ mod tests {
 
     #[test]
     fn message_names_only_scope_when_audit_count_is_zero() {
-        let m = build_violation_message(2, 0, 2);
+        let m = build_violation_message(2, 0, 0, 2);
         assert!(m.contains("2 universal-coverage"));
         assert!(m.contains("scope-enumeration.md"));
         assert!(!m.contains("panic/assert"));
+        assert!(!m.contains("duplicate-test-coverage"));
     }
 
     #[test]
     fn message_names_only_audit_when_scope_count_is_zero() {
-        let m = build_violation_message(0, 3, 3);
+        let m = build_violation_message(0, 3, 0, 3);
         assert!(m.contains("3 panic/assert"));
         assert!(m.contains("external-input-audit-gate.md"));
         assert!(!m.contains("universal-coverage"));
     }
 
     #[test]
-    fn message_names_both_rules_when_both_have_violations() {
-        let m = build_violation_message(2, 1, 3);
-        assert!(m.contains("2 universal-coverage"));
-        assert!(m.contains("1 panic/assert"));
-        assert!(m.contains("scope-enumeration.md"));
-        assert!(m.contains("external-input-audit-gate.md"));
-        assert!(m.contains("3 plan-check violation"));
+    fn message_names_only_duplicate_when_others_are_zero() {
+        let m = build_violation_message(0, 0, 2, 2);
+        assert!(m.contains("2 duplicate-test-coverage"));
+        assert!(m.contains("duplicate-test-coverage.md"));
+        assert!(!m.contains("universal-coverage"));
+        assert!(!m.contains("panic/assert"));
     }
 
-    // --- run_impl dual-scanner aggregation ---
+    #[test]
+    fn message_names_all_three_rules_when_all_have_violations() {
+        let m = build_violation_message(2, 1, 3, 6);
+        assert!(m.contains("2 universal-coverage"));
+        assert!(m.contains("1 panic/assert"));
+        assert!(m.contains("3 duplicate-test-coverage"));
+        assert!(m.contains("scope-enumeration.md"));
+        assert!(m.contains("external-input-audit-gate.md"));
+        assert!(m.contains("duplicate-test-coverage.md"));
+        assert!(m.contains("6 plan-check violation"));
+    }
 
-    /// Both scanners run inside `run_impl` with `--plan-file`
-    /// override, and the response aggregates violations from both
-    /// with the correct `rule` tag per violation.
+    // --- run_impl three-scanner aggregation ---
+
+    /// All three scanners run inside `run_impl` with `--plan-file`
+    /// override, and the response aggregates violations with the
+    /// correct `rule` tag per violation. Note the duplicate-test-
+    /// coverage scanner indexes the running repo's own test corpus;
+    /// this fixture plan deliberately names no existing test to keep
+    /// only scope + audit violations in scope. The duplicate-scanner
+    /// integration test below uses a different fixture that does
+    /// name an existing test.
     #[test]
     fn run_impl_aggregates_violations_from_both_scanners() {
         let tmp = std::env::temp_dir().join(format!("plan-check-dual-{}.md", std::process::id()));
@@ -443,6 +507,38 @@ mod tests {
             "message must summarize total: {:?}",
             result["message"]
         );
+    }
+
+    /// Hermetic unit test for the duplicate-test-coverage JSON
+    /// serialization. Builds a synthetic `Violation` from the
+    /// scanner module and serializes it via the shared helper, so
+    /// the test does not depend on the live test corpus and will
+    /// not break if any specific test in the repo is renamed. The
+    /// end-to-end scanner-against-corpus behavior is covered by
+    /// the hermetic integration tests in
+    /// `src/duplicate_test_coverage.rs` that build a `TestCorpus`
+    /// from a `TempDir` fixture.
+    #[test]
+    fn duplicate_violation_json_shape_has_all_required_fields() {
+        let v = duplicate_test_coverage::Violation {
+            file: PathBuf::from("/tmp/plan.md"),
+            line: 42,
+            phrase: "foo_bar_baz_quux".to_string(),
+            context: "Plan names `foo_bar_baz_quux` as a new test.".to_string(),
+            existing_test: "test_foo_bar_baz_quux".to_string(),
+            existing_file: "tests/hooks.rs:1499".to_string(),
+        };
+        let json = duplicate_violation_to_tagged_json(&v);
+        assert_eq!(json["file"], "/tmp/plan.md");
+        assert_eq!(json["line"], 42);
+        assert_eq!(json["phrase"], "foo_bar_baz_quux");
+        assert_eq!(
+            json["context"],
+            "Plan names `foo_bar_baz_quux` as a new test."
+        );
+        assert_eq!(json["rule"], "duplicate-test-coverage");
+        assert_eq!(json["existing_test"], "test_foo_bar_baz_quux");
+        assert_eq!(json["existing_file"], "tests/hooks.rs:1499");
     }
 
     /// Regression: `run_impl` must NOT panic when the current git
