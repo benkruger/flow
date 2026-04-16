@@ -983,4 +983,24 @@ mod tests {
         assert!(!msg.contains("scope-enumeration.md"));
         assert!(!msg.contains("external-input-audit-gate.md"));
     }
+
+    // --- complete_plan_phase error path ---
+
+    /// When `mutate_state` fails (e.g. non-existent state file path),
+    /// `complete_plan_phase` returns `Err(String)` via the `.map_err`
+    /// closure at line 412.
+    #[test]
+    fn complete_plan_phase_returns_err_on_missing_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let state_path = root.join(".flow-states").join("nonexistent.json");
+        let result = complete_plan_phase(&state_path, root, "nonexistent");
+        assert!(result.is_err(), "expected Err when state file is missing");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Failed to complete phase"),
+            "expected map_err message, got: {}",
+            err
+        );
+    }
 }
