@@ -249,8 +249,8 @@ pub fn promote_headings(content: &str) -> String {
 
     for line in content.lines() {
         let trimmed = line.trim_start();
-        // Track fenced code blocks
-        if trimmed.starts_with("```") {
+        // Track fenced code blocks (backtick and tilde per CommonMark)
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
             in_code_block = !in_code_block;
             result.push_str(line);
             result.push('\n');
@@ -296,7 +296,7 @@ pub fn count_tasks(content: &str) -> usize {
 
     for line in content.lines() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("```") {
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
             in_code_block = !in_code_block;
             continue;
         }
@@ -323,7 +323,7 @@ pub fn count_tasks_any_level(content: &str) -> usize {
 
     for line in content.lines() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("```") {
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
             in_code_block = !in_code_block;
             continue;
         }
