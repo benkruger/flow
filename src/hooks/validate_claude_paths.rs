@@ -95,14 +95,25 @@ fn find_project_root_in(cwd: &Path) -> Option<std::path::PathBuf> {
 ///
 /// Accepts the parsed stdin payload and the resolved cwd as injected
 /// dependencies so every branch is reachable from unit tests with a
-/// `TempDir` fixture. Follows the `run_impl_main` pattern in
-/// `.claude/rules/rust-patterns.md` — `process::exit` and stderr I/O
-/// live in the thin `run()` wrapper below.
+/// `TempDir` fixture. `cwd` is optional so the wrapper can pass
+/// `std::env::current_dir().ok()` without an untestable fallback
+/// closure — an unresolvable cwd means no project_root can be
+/// detected, so the hook silently allows the action. Follows the
+/// `run_impl_main` pattern in `.claude/rules/rust-patterns.md` —
+/// `process::exit` and stderr I/O live in the thin `run()` wrapper
+/// below.
 ///
 /// Return contract:
 /// - `(0, None)` → allow silently (wrapper exits 0, no stderr)
 /// - `(2, Some(message))` → block (wrapper prints message to stderr, exits 2)
-pub fn run_impl_main(hook_input: Option<serde_json::Value>, cwd: &Path) -> (i32, Option<String>) {
+pub fn run_impl_main(
+    hook_input: Option<serde_json::Value>,
+    cwd: Option<&Path>,
+) -> (i32, Option<String>) {
+    let cwd = match cwd {
+        Some(p) => p,
+        None => return (0, None),
+    };
     let hook_input = match hook_input {
         Some(v) => v,
         None => return (0, None),
@@ -147,8 +158,8 @@ pub fn run_impl_main(hook_input: Option<serde_json::Value>, cwd: &Path) -> (i32,
 /// exits with the returned code.
 pub fn run() {
     let input = read_hook_input();
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"));
-    let (code, message) = run_impl_main(input, &cwd);
+    let cwd = std::env::current_dir().ok();
+    let (code, message) = run_impl_main(input, cwd.as_deref());
     if let Some(m) = message {
         eprintln!("{}", m);
     }
@@ -398,10 +409,25 @@ mod tests {
     }
 
     #[test]
+    fn run_impl_main_returns_zero_when_cwd_none() {
+        // Wrapper couldn't resolve std::env::current_dir() — no way to
+        // detect a FLOW phase, so the hook silently allows the action.
+        let cwd: Option<&Path> = None;
+        let (code, msg) = run_impl_main(
+            Some(serde_json::json!({
+                "tool_input": {"file_path": "/anything/.claude/rules/foo.md"}
+            })),
+            cwd,
+        );
+        assert_eq!(code, 0);
+        assert!(msg.is_none());
+    }
+
+    #[test]
     fn run_impl_main_returns_zero_when_hook_input_missing() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
-        let (code, msg) = run_impl_main(None, &root);
+        let (code, msg) = run_impl_main(None, Some(&root));
         assert_eq!(code, 0);
         assert!(msg.is_none());
     }
@@ -411,7 +437,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         let input = serde_json::json!({"tool_input": {}});
-        let (code, msg) = run_impl_main(Some(input), &root);
+        let (code, msg) = run_impl_main(Some(input), Some(&root));
         assert_eq!(code, 0);
         assert!(msg.is_none());
     }
@@ -425,7 +451,7 @@ mod tests {
         let input = serde_json::json!({
             "tool_input": {"file_path": "/anything/.claude/rules/foo.md"}
         });
-        let (code, msg) = run_impl_main(Some(input), &root);
+        let (code, msg) = run_impl_main(Some(input), Some(&root));
         assert_eq!(code, 0);
         assert!(msg.is_none());
     }
@@ -439,7 +465,7 @@ mod tests {
         let input = serde_json::json!({
             "tool_input": {"file_path": target.to_string_lossy()}
         });
-        let (code, msg) = run_impl_main(Some(input), &worktree);
+        let (code, msg) = run_impl_main(Some(input), Some(&worktree));
         assert_eq!(code, 2);
         let msg = msg.expect("block returns Some(message)");
         assert!(msg.contains("BLOCKED"), "message: {}", msg);
@@ -454,7 +480,7 @@ mod tests {
         let input = serde_json::json!({
             "tool_input": {"file_path": target.to_string_lossy()}
         });
-        let (code, msg) = run_impl_main(Some(input), &worktree);
+        let (code, msg) = run_impl_main(Some(input), Some(&worktree));
         assert_eq!(code, 0);
         assert!(msg.is_none());
     }
@@ -474,7 +500,7 @@ mod tests {
         let input = serde_json::json!({
             "tool_input": {"file_path": "/anything/.claude/rules/foo.md"}
         });
-        let (code, msg) = run_impl_main(Some(input), &sub);
+        let (code, msg) = run_impl_main(Some(input), Some(&sub));
         assert_eq!(code, 0);
         assert!(msg.is_none());
     }
