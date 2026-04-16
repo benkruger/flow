@@ -48,8 +48,13 @@ pub struct Args {
     pub pull: bool,
 }
 
-/// Run a command with a timeout, returning (success, output_string).
+/// Run a command with `CMD_TIMEOUT`, returning (success, output_string).
 fn run_cmd(args: &[&str], cwd: &Path) -> (bool, String) {
+    run_cmd_with_timeout(args, cwd, CMD_TIMEOUT)
+}
+
+/// Run a command with an explicit timeout, returning (success, output_string).
+fn run_cmd_with_timeout(args: &[&str], cwd: &Path, timeout: Duration) -> (bool, String) {
     let result = Command::new(args[0])
         .args(&args[1..])
         .stdout(std::process::Stdio::piped())
@@ -88,12 +93,12 @@ fn run_cmd(args: &[&str], cwd: &Path) -> (bool, String) {
                 return (false, error);
             }
             Ok(None) => {
-                if start.elapsed() >= CMD_TIMEOUT {
+                if start.elapsed() >= timeout {
                     let _ = child.kill();
                     let _ = child.wait();
                     return (false, "timeout".to_string());
                 }
-                let remaining = CMD_TIMEOUT - start.elapsed();
+                let remaining = timeout.saturating_sub(start.elapsed());
                 std::thread::sleep(poll_interval.min(remaining));
             }
             Err(e) => return (false, e.to_string()),
@@ -1083,5 +1088,25 @@ mod tests {
         let (ok, output) = run_cmd(&["nonexistent_command_12345"], dir.path());
         assert!(!ok);
         assert!(!output.is_empty());
+    }
+
+    // --- run_cmd_with_timeout ---
+
+    #[test]
+    fn run_cmd_with_timeout_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let (ok, output) =
+            run_cmd_with_timeout(&["echo", "hello"], dir.path(), Duration::from_secs(5));
+        assert!(ok);
+        assert_eq!(output, "hello");
+    }
+
+    #[test]
+    fn run_cmd_with_timeout_timeout() {
+        let dir = tempfile::tempdir().unwrap();
+        let (ok, output) =
+            run_cmd_with_timeout(&["sleep", "10"], dir.path(), Duration::from_millis(200));
+        assert!(!ok);
+        assert_eq!(output, "timeout");
     }
 }
