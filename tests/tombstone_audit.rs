@@ -741,6 +741,139 @@ fn run_impl_detect_repo_failure() {
 }
 
 #[test]
+fn run_impl_detect_repo_success() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_tombstone_repo(dir.path());
+    let tests_dir = dir.path().join("tests");
+    fs::create_dir(&tests_dir).unwrap();
+    fs::write(
+        tests_dir.join("tombstones.rs"),
+        tombstone_line(839, " Must not return."),
+    )
+    .unwrap();
+
+    let graphql = r#"{"data":{"repository":{"pr_839":{"mergedAt":"2024-01-15T10:00:00Z"}}}}"#;
+    let stub_dir = write_gh_multi_stub(
+        dir.path(),
+        "2024-06-01T00:00:00Z",
+        0,
+        graphql,
+        0,
+        "owner/repo",
+        0,
+    );
+
+    // No --repo flag → detect_repo runs → gh repo view succeeds
+    let output = flow_rs()
+        .args(["tombstone-audit"])
+        .current_dir(dir.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let data = parse_stdout(&output);
+    assert_eq!(data["total_tombstones"], 1);
+    assert_eq!(data["stale"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn run_impl_detect_repo_malformed_output() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_tombstone_repo(dir.path());
+    let tests_dir = dir.path().join("tests");
+    fs::create_dir(&tests_dir).unwrap();
+    fs::write(
+        tests_dir.join("tombstones.rs"),
+        tombstone_line(839, " Must not return."),
+    )
+    .unwrap();
+
+    // gh repo view returns output without `/` → detect_repo returns None
+    let stub_dir = write_gh_multi_stub(dir.path(), "", 0, "", 0, "no-slash-here", 0);
+
+    let output = flow_rs()
+        .args(["tombstone-audit"])
+        .current_dir(dir.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let data = parse_stdout(&output);
+    assert_eq!(data["status"], "error");
+}
+
+#[test]
+fn run_impl_null_threshold() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_tombstone_repo(dir.path());
+    let tests_dir = dir.path().join("tests");
+    fs::create_dir(&tests_dir).unwrap();
+    fs::write(
+        tests_dir.join("tombstones.rs"),
+        tombstone_line(839, " Must not return."),
+    )
+    .unwrap();
+
+    let graphql = r#"{"data":{"repository":{"pr_839":{"mergedAt":"2024-01-15T10:00:00Z"}}}}"#;
+    // gh pr list returns literal "null" (some gh/jq versions)
+    let stub_dir = write_gh_stub_simple(dir.path(), "null", 0, graphql, 0);
+
+    let output = flow_rs()
+        .args(["tombstone-audit", "--repo", "owner/repo"])
+        .current_dir(dir.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let data = parse_stdout(&output);
+    // "null" treated as no open PRs → all merged are stale
+    assert!(data["threshold"].is_null());
+    assert_eq!(data["stale"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn scan_test_files_skips_unreadable_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let tests_dir = dir.path().join("tests");
+    fs::create_dir(&tests_dir).unwrap();
+
+    fs::write(
+        tests_dir.join("readable.rs"),
+        tombstone_line(100, " Must not return.\n"),
+    )
+    .unwrap();
+
+    // Unreadable file — scan should skip it
+    let unreadable = tests_dir.join("unreadable.rs");
+    fs::write(&unreadable, tombstone_line(200, " Must not return.\n")).unwrap();
+    let mut perms = fs::metadata(&unreadable).unwrap().permissions();
+    perms.set_mode(0o000);
+    fs::set_permissions(&unreadable, perms).unwrap();
+
+    let entries = scan_test_files(dir.path());
+    let prs: HashSet<u64> = entries.iter().map(|e| e.pr).collect();
+    assert!(prs.contains(&100), "readable file should be scanned");
+    assert!(!prs.contains(&200), "unreadable file should be skipped");
+
+    // Restore permissions for cleanup
+    let mut perms = fs::metadata(&unreadable).unwrap().permissions();
+    perms.set_mode(0o644);
+    fs::set_permissions(&unreadable, perms).unwrap();
+}
+
+#[test]
+fn parse_merge_response_missing_data_key() {
+    // GraphQL error response without "data" key
+    let json = r#"{"errors":[{"message":"rate limited"}]}"#;
+    let result = parse_merge_response(json, &[839]);
+    // PR present but merged_at is None (no data to extract from)
+    assert!(result.get(&839).unwrap().merged_at.is_none());
+}
+
+#[test]
 fn run_impl_graphql_failure() {
     let dir = tempfile::tempdir().unwrap();
     setup_tombstone_repo(dir.path());

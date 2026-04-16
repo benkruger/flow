@@ -1087,4 +1087,241 @@ exit 0
         assert_eq!(out["status"], "ok");
         assert_eq!(out["skipped"], false);
     }
+
+    // --- run_impl retry dispatch ---
+
+    #[test]
+    fn run_impl_retry_dispatches_to_retry_path() {
+        // run_impl with retry > 0 must dispatch to run_with_retry.
+        // The "attempts" field in the output is only produced by
+        // run_with_retry, so its presence proves the dispatch.
+        let f = make_ci_fixture();
+        write_script(
+            &f.path.join("bin").join("format"),
+            "#!/usr/bin/env bash\nexit 0\n",
+        );
+        let args = Args {
+            branch: Some(f.branch.clone()),
+            force: false,
+            retry: 2,
+            simulate_branch: None,
+        };
+        let (out, code) = run_impl(&args, &f.path, &f.path, false);
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+        assert!(
+            out.get("attempts").is_some(),
+            "retry dispatch must produce 'attempts' field"
+        );
+        assert_eq!(out["attempts"], 1);
+    }
+
+    #[test]
+    fn run_impl_retry_with_sentinel_skips_before_dispatch() {
+        // When retry > 0 but a matching sentinel exists and force is
+        // false, run_impl returns "skipped" without dispatching to
+        // run_with_retry. The sentinel check at line 470-488 runs
+        // before the retry dispatch at line 493.
+        let f = make_ci_fixture();
+        write_script(
+            &f.path.join("bin").join("format"),
+            "#!/usr/bin/env bash\nexit 0\n",
+        );
+        // First run: create the sentinel
+        let args_first = Args {
+            branch: Some(f.branch.clone()),
+            force: false,
+            retry: 0,
+            simulate_branch: None,
+        };
+        let (first_out, _) = run_impl(&args_first, &f.path, &f.path, false);
+        assert_eq!(first_out["skipped"], false);
+        assert!(fixture_sentinel(&f).exists());
+
+        // Second run: retry > 0 but sentinel matches → skip
+        let args_retry = Args {
+            branch: Some(f.branch.clone()),
+            force: false,
+            retry: 2,
+            simulate_branch: None,
+        };
+        let (out, code) = run_impl(&args_retry, &f.path, &f.path, false);
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+        assert_eq!(out["skipped"], true);
+        assert_eq!(out["reason"], "no changes since last CI pass");
+        // No "attempts" field — run_with_retry was never called
+        assert!(
+            out.get("attempts").is_none(),
+            "sentinel skip must prevent retry dispatch"
+        );
+    }
+
+    // --- run_with_retry inner-loop failure ---
+
+    #[test]
+    fn retry_tool_failure_mid_sequence() {
+        // Two tools: first passes, second fails. With retry=2, both
+        // attempts fail at tool 2 → consistent failure with output
+        // captured from the second tool.
+        let f = make_ci_fixture();
+        let pass = f.path.join("pass.sh");
+        write_script(&pass, "#!/usr/bin/env bash\nexit 0\n");
+        let fail = f.path.join("fail.sh");
+        write_script(
+            &fail,
+            "#!/usr/bin/env bash\necho 'TOOL2 FAILED' >&2\nexit 1\n",
+        );
+        let tools = vec![
+            CiTool {
+                name: "format".to_string(),
+                program: pass.to_string_lossy().to_string(),
+                args: vec![],
+            },
+            CiTool {
+                name: "test".to_string(),
+                program: fail.to_string_lossy().to_string(),
+                args: vec![],
+            },
+        ];
+        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 2, None);
+        assert_eq!(code, 1);
+        assert_eq!(out["consistent"], true);
+        assert!(out["output"].as_str().unwrap().contains("TOOL2 FAILED"));
+    }
+
+    #[test]
+    fn retry_flaky_via_marker_file() {
+        // A tool that fails on the first invocation (no marker file)
+        // and succeeds on the second (marker file exists). This exercises
+        // the flaky classification path where attempt > 1 succeeds.
+        let f = make_ci_fixture();
+        let marker = f.path.join("flaky-marker");
+        let script = f.path.join("flaky-marker.sh");
+        write_script(
+            &script,
+            &format!(
+                r#"#!/usr/bin/env bash
+MARKER="{}"
+if [ -f "$MARKER" ]; then
+  exit 0
+else
+  touch "$MARKER"
+  echo "FIRST FAIL" >&2
+  exit 1
+fi
+"#,
+                marker.display()
+            ),
+        );
+        let tools = single_tool(&script);
+        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 3, None);
+        assert_eq!(code, 0);
+        assert_eq!(out["flaky"], true);
+        assert_eq!(out["attempts"], 2);
+        let first_fail = out["first_failure_output"].as_str().unwrap();
+        assert!(first_fail.contains("FIRST FAIL"));
+    }
+
+    #[test]
+    fn retry_all_attempts_fail_removes_sentinel() {
+        // Pre-create a sentinel, then run retry with a failing tool.
+        // All attempts fail → sentinel must be removed.
+        let f = make_ci_fixture();
+        let sentinel = fixture_sentinel(&f);
+        fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+        fs::write(&sentinel, "stale-content").unwrap();
+        assert!(sentinel.exists());
+
+        let script = f.path.join("always-fail.sh");
+        write_script(
+            &script,
+            "#!/usr/bin/env bash\necho 'ALWAYS FAIL' >&2\nexit 1\n",
+        );
+        let tools = single_tool(&script);
+        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 2, None);
+        assert_eq!(code, 1);
+        assert_eq!(out["consistent"], true);
+        assert!(
+            !sentinel.exists(),
+            "sentinel must be removed after all retry attempts fail"
+        );
+    }
+
+    // --- stub/sentinel error paths ---
+
+    #[test]
+    fn any_tool_is_stub_unreadable_file() {
+        // When a tool script cannot be read (e.g. permissions), the
+        // function should return false (cannot confirm it's a stub).
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("tool.sh");
+        write_script(
+            &script,
+            &format!("#!/usr/bin/env bash\n# {}\nexit 0\n", STUB_MARKER),
+        );
+        // Make unreadable
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let tools = vec![CiTool {
+            name: "test".to_string(),
+            program: script.to_string_lossy().to_string(),
+            args: vec![],
+        }];
+        let result = any_tool_is_stub(&tools);
+        assert!(!result, "unreadable file should not be detected as stub");
+
+        // Restore for cleanup
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[test]
+    fn run_once_spawn_failure() {
+        // Point tool to a non-existent executable → cmd.status() fails.
+        let f = make_ci_fixture();
+        let tools = vec![CiTool {
+            name: "format".to_string(),
+            program: "/nonexistent/path/to/tool".to_string(),
+            args: vec![],
+        }];
+        let (out, code) = run_once(&f.path, &f.path, &tools, Some(&f.branch), true, None);
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        assert!(out["message"].as_str().unwrap().contains("failed to run"));
+    }
+
+    #[test]
+    fn retry_spawn_failure() {
+        // Same as run_once_spawn_failure but through run_with_retry.
+        let f = make_ci_fixture();
+        let tools = vec![CiTool {
+            name: "format".to_string(),
+            program: "/nonexistent/path/to/tool".to_string(),
+            args: vec![],
+        }];
+        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 2, None);
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        assert!(out["message"].as_str().unwrap().contains("failed to run"));
+    }
+
+    // --- cwd_scope enforce error ---
+
+    #[test]
+    fn run_impl_cwd_scope_rejects_wrong_dir() {
+        // Call run_impl with a cwd that doesn't match root. The
+        // cwd_scope::enforce guard should return an error.
+        let f = make_ci_fixture();
+        let wrong_dir = tempfile::tempdir().unwrap();
+        let args = Args {
+            branch: Some(f.branch.clone()),
+            force: true,
+            ..default_args()
+        };
+        let (out, code) = run_impl(&args, wrong_dir.path(), &f.path, false);
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        assert!(!out["message"].as_str().unwrap().is_empty());
+    }
 }
