@@ -1,9 +1,14 @@
 //! Commit, cleanup, pull, push.
 //!
-//! Enforces CI before committing: calls [`ci::run_impl`] as the first step
-//! in [`run_impl`]. If CI fails, returns an error and commits nothing.
-//! When the CI sentinel is fresh (CI already passed for this tree state),
-//! the check noops instantly — no overhead on the happy path.
+//! Two gates run before committing:
+//!
+//! 1. **CI gate** — calls [`ci::run_impl`]. If CI fails, returns an error
+//!    and commits nothing. When the CI sentinel is fresh (CI already passed
+//!    for this tree state), the check noops instantly.
+//! 2. **Plan-deviation gate** — calls [`plan_deviation::run_impl`] to
+//!    cross-reference plan-named test fixture values against the staged
+//!    diff. If an unacknowledged drift is detected, returns an error with
+//!    `step = "plan_deviation"` and a structured stderr message.
 //!
 //! Usage:
 //!   bin/flow finalize-commit <message-file> <branch>
@@ -12,7 +17,7 @@
 //!   Success:   {"status": "ok", "sha": "<commit-hash>", "pull_merged": <bool>}
 //!   Warning:   {"status": "ok", "sha": "", "pull_merged": true, "warning": "..."}
 //!   Conflict:  {"status": "conflict", "files": ["file1.py", ...]}
-//!   Error:     {"status": "error", "step": "ci|commit|pull|push", "message": "..."}
+//!   Error:     {"status": "error", "step": "ci|plan_deviation|commit|pull|push", "message": "..."}
 
 use std::fs;
 use std::process::{Command, Stdio};
@@ -27,6 +32,7 @@ use crate::flow_paths::FlowPaths;
 use crate::lock::mutate_state;
 use crate::output::json_error;
 use crate::phase_config::phase_number;
+use crate::plan_deviation::Deviation;
 use crate::utils::parse_conflict_files;
 
 #[derive(Parser, Debug)]
@@ -44,6 +50,39 @@ pub struct Args {
 /// Remove the commit message file, ignoring errors.
 fn remove_message_file(path: &str) {
     let _ = fs::remove_file(path);
+}
+
+/// Print a user-facing block message for unacknowledged plan
+/// signature deviations. Each deviation shows the plan file
+/// line, the fixture key, and the plan value that is missing
+/// from the staged test body. The trailing section lists the
+/// `bin/flow log` template the user runs to acknowledge each
+/// deviation before re-running the commit.
+fn emit_deviation_stderr(branch: &str, deviations: &[Deviation]) {
+    eprintln!("BLOCKED: Plan signature deviation detected.");
+    eprintln!();
+    for dev in deviations {
+        eprintln!("Test: {}", dev.test_name);
+        eprintln!(
+            "  Plan value (line {}): {} = \"{}\"",
+            dev.plan_line, dev.fixture_key, dev.plan_value
+        );
+        eprintln!(
+            "  Staged diff does not contain \"{}\" in the test body.",
+            dev.plan_value
+        );
+        eprintln!();
+    }
+    eprintln!("If this deviation is intentional, log it before committing:");
+    eprintln!();
+    for dev in deviations {
+        eprintln!(
+            "  bin/flow log {} \"[Phase 3] Plan signature deviation: {} drifted from {} to <new value>. Reason: <why>\"",
+            branch, dev.test_name, dev.plan_value
+        );
+    }
+    eprintln!();
+    eprintln!("Then re-run the commit.");
 }
 
 /// Run a git command with a timeout. Returns (exit_code, stdout, stderr).
@@ -286,7 +325,58 @@ pub fn run_impl(
         let git = |git_args: &[&str], timeout: u64| -> Result<(i32, String, String), String> {
             run_git_in_dir(&cwd_owned, git_args, timeout)
         };
-        finalize_commit_inner(&args.message_file, &args.branch, &git)
+
+        // Capture the staged diff for the plan-deviation gate.
+        // An error or non-zero exit from `git diff --cached`
+        // produces an empty diff, which makes the gate a no-op
+        // (the plan has no tests to cross-reference against).
+        let staged_diff = match git(&["diff", "--cached"], LOCAL_TIMEOUT) {
+            Ok((0, stdout, _)) => stdout,
+            _ => String::new(),
+        };
+
+        // Plan signature deviation gate. Blocks the commit when
+        // a plan-named test's fixture value drifts without a
+        // matching log acknowledgment. The gate is mechanical
+        // enforcement of `.claude/rules/plan-commit-atomicity.md`
+        // "Plan Signature Deviations Must Be Logged".
+        match crate::plan_deviation::run_impl(root, &args.branch, &staged_diff) {
+            Ok(()) => finalize_commit_inner(&args.message_file, &args.branch, &git),
+            Err(deviations) => {
+                emit_deviation_stderr(&args.branch, &deviations);
+                let _ = append_log(
+                    root,
+                    &args.branch,
+                    &format!(
+                        "[Phase {}] finalize-commit — plan_deviation (blocked: {} deviation{})",
+                        pn,
+                        deviations.len(),
+                        if deviations.len() == 1 { "" } else { "s" }
+                    ),
+                );
+                let deviation_json: Vec<Value> = deviations
+                    .iter()
+                    .map(|d| {
+                        json!({
+                            "test_name": d.test_name,
+                            "fixture_key": d.fixture_key,
+                            "plan_value": d.plan_value,
+                            "plan_line": d.plan_line,
+                        })
+                    })
+                    .collect();
+                json!({
+                    "status": "error",
+                    "step": "plan_deviation",
+                    "message": format!(
+                        "{} unacknowledged plan signature deviation{}",
+                        deviations.len(),
+                        if deviations.len() == 1 { "" } else { "s" }
+                    ),
+                    "deviations": deviation_json,
+                })
+            }
+        }
     };
 
     // Log final result
