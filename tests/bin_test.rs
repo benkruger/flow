@@ -139,6 +139,7 @@ fn full_suite_cleans_flow_rs_before_nextest() {
     let output = Command::new(&target)
         .current_dir(dir.path())
         .env("PATH", &path)
+        .env_remove("FLOW_CI_FORCE")
         .output()
         .unwrap();
     assert!(
@@ -170,6 +171,64 @@ fn full_suite_cleans_flow_rs_before_nextest() {
     assert!(
         logged.contains("--target-dir target/llvm-cov-target"),
         "clean must target the llvm-cov-target dir (not the default `target/`); got:\n{}",
+        logged
+    );
+}
+
+/// When `FLOW_CI_FORCE=1`, `bin/test` skips the `cargo clean` step so
+/// incremental compilation is used. The `--force` flag on `bin/flow ci`
+/// means "re-run tests regardless of sentinel" — not "rebuild from scratch."
+#[test]
+fn force_skips_clean_step() {
+    let dir = tempfile::tempdir().unwrap();
+    let bin_dir = dir.path().join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+
+    let real_script = common::bin_dir().join("test");
+    let script_content = fs::read_to_string(&real_script).unwrap();
+    let target = bin_dir.join("test");
+    fs::write(&target, &script_content).unwrap();
+    let mut perms = fs::metadata(&target).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&target, perms).unwrap();
+
+    let mock_bin = dir.path().join("mock_bin");
+    fs::create_dir_all(&mock_bin).unwrap();
+    let log_file = dir.path().join("cargo_log");
+    fs::write(
+        mock_bin.join("cargo"),
+        format!(
+            "#!/usr/bin/env bash\necho \"$*\" >> \"{}\"\nexit 0\n",
+            log_file.display()
+        ),
+    )
+    .unwrap();
+    let mut perms = fs::metadata(mock_bin.join("cargo")).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(mock_bin.join("cargo"), perms).unwrap();
+
+    let path = format!("{}:{}", mock_bin.display(), std::env::var("PATH").unwrap());
+    let output = Command::new(&target)
+        .current_dir(dir.path())
+        .env("PATH", &path)
+        .env("FLOW_CI_FORCE", "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let logged = fs::read_to_string(&log_file).unwrap();
+    assert!(
+        !logged.contains("clean --target-dir"),
+        "FLOW_CI_FORCE=1 must skip the cargo clean step for incremental compilation; got:\n{}",
+        logged
+    );
+    assert!(
+        logged.contains("nextest"),
+        "tests must still run via nextest; got:\n{}",
         logged
     );
 }

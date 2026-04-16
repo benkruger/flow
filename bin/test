@@ -50,7 +50,7 @@ fi
 # The profraw sweep following the clean removes accumulated coverage
 # samples from prior binaries so `llvm-profdata merge` does not stall
 # chewing through stale data carried forward by `--no-clean`.
-if [ $# -eq 0 ]; then
+if [ $# -eq 0 ] && [ "${FLOW_CI_FORCE:-}" != "1" ]; then
   cargo clean --target-dir target/llvm-cov-target -p flow-rs
   /usr/bin/find target/llvm-cov-target -maxdepth 1 -name "*.profraw" -delete 2>/dev/null || true
 fi
@@ -63,8 +63,35 @@ fi
 # new floor and protects against regression below it. The target is
 # 100/100/100 — coverage waivers are forbidden, so any code that
 # appears uncoverable must be refactored until it is testable.
-exec cargo llvm-cov --no-cfg-coverage --no-clean \
+# Merge stderr+stdout through awk so nextest sees a non-TTY (no animated
+# progress bar dumping hundreds of frames). The awk filter:
+#   - Converts each PASS line to a dot (wraps at terminal width)
+#   - Prints FAIL lines in full
+#   - Skips coverage files where all three metrics are 100.00%
+#   - Passes everything else through (compile output, summary, TOTAL, errors)
+# --status-level pass: nextest prints one line per passing test (fuel for dots)
+# --final-status-level fail: failures in the end-of-run summary (leaky tests
+#   produce LEAK lines during the run which pass through the awk filter in full)
+# pipefail (set above) preserves cargo llvm-cov's exit code.
+cargo llvm-cov --no-cfg-coverage --no-clean \
   --fail-under-lines 94 \
   --fail-under-regions 95 \
   --fail-under-functions 93 \
-  nextest --status-level none --final-status-level fail "$@"
+  nextest --status-level pass --final-status-level fail "$@" 2>&1 | awk '
+/^ *PASS / {
+  printf "."
+  c++
+  fflush()
+  next
+}
+{
+  if (c > 0) { printf "\n\n"; c = 0 }
+  s = $0
+  n = gsub(/100\.00%/, "&", s)
+  if (n >= 3) next
+  print
+  fflush()
+}
+END {
+  if (c > 0) printf "\n"
+}'

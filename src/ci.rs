@@ -271,6 +271,9 @@ pub fn run_once(
         cmd.args(&tool.args)
             .current_dir(cwd)
             .env("FLOW_CI_RUNNING", "1");
+        if force {
+            cmd.env("FLOW_CI_FORCE", "1");
+        }
         if let Some(sim) = simulate_branch {
             cmd.env("FLOW_SIMULATE_BRANCH", sim);
         }
