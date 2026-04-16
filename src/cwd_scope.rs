@@ -324,4 +324,23 @@ mod tests {
         // No `git init` — not a git directory.
         assert!(worktree_root_for(dir.path()).is_none());
     }
+
+    #[test]
+    fn enforce_canonicalize_fallback_nonexistent_relative_cwd() {
+        // When relative_cwd names a subdirectory that does not exist,
+        // expected.canonicalize() fails and the unwrap_or_else fallback
+        // fires. The cwd (repo root) is not inside the nonexistent
+        // expected path, so enforce returns Err.
+        let dir = tempfile::tempdir().unwrap();
+        init_git_repo(dir.path(), "feature-x");
+        write_state(dir.path(), "feature-x", "nonexistent-subdir");
+        let result = enforce(dir.path(), dir.path());
+        assert!(result.is_err(), "expected error, got: {:?}", result);
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("nonexistent-subdir"),
+            "error should name expected directory: {}",
+            msg
+        );
+    }
 }

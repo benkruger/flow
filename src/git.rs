@@ -283,6 +283,20 @@ mod tests {
     }
 
     #[test]
+    fn resolve_branch_impl_state_file_exists_returns_branch() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir(&state_dir).unwrap();
+        fs::write(
+            state_dir.join("test-branch.json"),
+            r#"{"branch": "test-branch"}"#,
+        )
+        .unwrap();
+        let result = resolve_branch_impl(None, dir.path(), Some("test-branch".to_string()));
+        assert_eq!(result, Some("test-branch".to_string()));
+    }
+
+    #[test]
     fn current_branch_in_ignores_simulate_env_var() {
         // current_branch_in is cwd-scoped and does NOT consult the
         // FLOW_SIMULATE_BRANCH env var. This test documents that
