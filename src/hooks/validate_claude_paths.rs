@@ -110,10 +110,6 @@ pub fn run_impl_main(
     hook_input: Option<serde_json::Value>,
     cwd: Option<&Path>,
 ) -> (i32, Option<String>) {
-    let cwd = match cwd {
-        Some(p) => p,
-        None => return (0, None),
-    };
     let hook_input = match hook_input {
         Some(v) => v,
         None => return (0, None),
@@ -132,11 +128,13 @@ pub fn run_impl_main(
         return (0, None);
     }
 
-    let project_root = find_project_root_in(cwd);
-    let branch = if project_root.is_some() {
-        detect_branch_from_path(cwd)
-    } else {
-        None
+    // Unresolvable cwd (None) flows through the same branch as
+    // "no .flow-states/ ancestor" — project_root ends up None and
+    // flow_active stays false, so the hook silently allows the action.
+    let project_root = cwd.and_then(find_project_root_in);
+    let branch = match (project_root.as_ref(), cwd) {
+        (Some(_), Some(c)) => detect_branch_from_path(c),
+        _ => None,
     };
     let flow_active = match (&branch, &project_root) {
         (Some(b), Some(r)) => is_flow_active(b, &resolve_main_root(r)),
