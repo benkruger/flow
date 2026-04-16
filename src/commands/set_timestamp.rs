@@ -101,16 +101,25 @@ pub fn validate_code_task(state: &Value, new_value: i64) -> Result<(), String> {
         return Ok(());
     }
     let current = state.get("code_task").and_then(|v| v.as_i64()).unwrap_or(0);
-    if new_value != current + 1 {
+    if new_value != current.saturating_add(1) {
+        let hint = if new_value == current.saturating_add(2) {
+            format!(
+                "--set code_task={} --set code_task={}",
+                current.saturating_add(1),
+                new_value
+            )
+        } else {
+            format!(
+                "--set code_task={} --set code_task={} ... --set code_task={}",
+                current.saturating_add(1),
+                current.saturating_add(2),
+                new_value
+            )
+        };
         return Err(format!(
             "code_task can only increment by 1. Current: {}, attempted: {}. \
-             Use multiple --set args in one call for atomic groups: \
-             --set code_task={} --set code_task={} ... --set code_task={}",
-            current,
-            new_value,
-            current + 1,
-            current + 2,
-            new_value
+             Use multiple --set args in one call for atomic groups: {}",
+            current, new_value, hint
         ));
     }
     Ok(())
