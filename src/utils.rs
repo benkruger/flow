@@ -1661,4 +1661,61 @@ mod tests {
             err.message
         );
     }
+
+    // --- bin_flow_path ---
+
+    #[test]
+    fn bin_flow_path_returns_path_or_fallback() {
+        let result = bin_flow_path();
+        assert!(
+            result.ends_with("bin/flow"),
+            "expected path ending with bin/flow, got: {}",
+            result
+        );
+    }
+
+    // --- detect_tty ---
+
+    #[test]
+    fn detect_tty_does_not_panic() {
+        let result = detect_tty();
+        if let Some(ref tty) = result {
+            assert!(
+                tty.starts_with("/dev/"),
+                "expected /dev/ prefix, got: {}",
+                tty
+            );
+        }
+        // None is acceptable in headless CI
+    }
+
+    // --- write_tab_sequences ---
+
+    #[test]
+    fn write_tab_sequences_with_repo_does_not_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        // No .flow.json — uses hash-based color. /dev/tty write may fail
+        // in headless CI; either Ok or Err is acceptable.
+        let _ = write_tab_sequences(Some("test/repo"), Some(dir.path()));
+    }
+
+    #[test]
+    fn write_tab_sequences_none_repo_returns_ok() {
+        let result = write_tab_sequences(None, None);
+        assert!(result.is_ok());
+    }
+
+    // --- read_version / plugin_root ---
+
+    #[test]
+    fn read_version_returns_nonempty_string() {
+        let v = read_version();
+        assert!(!v.is_empty(), "read_version should never return empty");
+    }
+
+    #[test]
+    fn plugin_root_does_not_panic() {
+        // Returns Some(path) if CLAUDE_PLUGIN_ROOT is set, None otherwise.
+        let _ = plugin_root();
+    }
 }
