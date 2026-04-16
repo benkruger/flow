@@ -400,6 +400,36 @@ fn finalize_commit_empty_args_exits_1() {
     );
 }
 
+/// `flow-rs init-state ""` exercises the empty-name guard in the
+/// `InitState` arm body of `main.rs` — the `if feature_name.is_empty()`
+/// branch fires `json_error` + `process::exit(1)` before reaching the
+/// `commands::init_state::run` delegation.
+#[test]
+fn main_init_state_empty_name_exits_1() {
+    let output = flow_rs_no_recursion()
+        .args(["init-state", ""])
+        .output()
+        .expect("spawn flow-rs init-state");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Feature name required"),
+        "expected stdout to contain 'Feature name required', got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("\"step\":\"args\""),
+        "expected stdout JSON to contain `\"step\":\"args\"`, got: {}",
+        stdout
+    );
+}
+
 /// `flow-rs cleanup /nonexistent --branch test --worktree .worktrees/test`
 /// exercises the `run()` → `json_error` → `process::exit(1)` path
 /// for an invalid project root.
