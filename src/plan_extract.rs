@@ -912,6 +912,58 @@ mod tests {
         assert_eq!(resp["path"], "resumed");
     }
 
+    // --- load_frozen_config ---
+
+    /// When a frozen phases file exists at the expected path,
+    /// `load_frozen_config` returns `(Some(order), Some(commands))`
+    /// with values parsed from the file. This exercises lines 117,
+    /// 121-122 which are unreached when no frozen file exists.
+    #[test]
+    fn load_frozen_config_with_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let branch = "test-frozen";
+        let flow_states = root.join(".flow-states");
+        std::fs::create_dir_all(&flow_states).unwrap();
+        let frozen_path = flow_states.join(format!("{}-phases.json", branch));
+        let frozen_json = serde_json::json!({
+            "order": ["flow-start", "flow-plan"],
+            "phases": {
+                "flow-start": {"name": "Start", "command": "/flow:flow-start"},
+                "flow-plan": {"name": "Plan", "command": "/flow:flow-plan"}
+            }
+        });
+        std::fs::write(&frozen_path, frozen_json.to_string()).unwrap();
+
+        let (order, commands) = load_frozen_config(root, branch);
+        assert!(
+            order.is_some(),
+            "order should be Some when frozen file exists"
+        );
+        assert!(
+            commands.is_some(),
+            "commands should be Some when frozen file exists"
+        );
+        let order = order.unwrap();
+        assert_eq!(order.len(), 2);
+        assert_eq!(order[0], "flow-start");
+    }
+
+    // --- count_tasks_any_level code-block toggle ---
+
+    /// `count_tasks_any_level` must not count task headings inside
+    /// fenced code blocks. This exercises lines 327-328 (the
+    /// code-block toggle branch).
+    #[test]
+    fn count_tasks_any_level_skips_code_blocks() {
+        let content = "### Task 1: Real task\n\n\
+            ```\n\
+            ### Task 2: Inside code block\n\
+            ```\n\n\
+            ### Task 3: Another real task\n";
+        assert_eq!(count_tasks_any_level(content), 2);
+    }
+
     /// Duplicate-only response names only the duplicate rule file.
     #[test]
     fn violations_response_duplicate_only_names_only_duplicate_rule() {
