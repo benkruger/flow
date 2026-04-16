@@ -185,3 +185,73 @@ pub fn run(args: Args) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_dir() -> tempfile::TempDir {
+        tempfile::tempdir().unwrap()
+    }
+
+    fn write_local(dir: &Path, content: &str) {
+        let claude_dir = dir.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+        fs::write(claude_dir.join("settings.local.json"), content).unwrap();
+    }
+
+    fn write_settings(dir: &Path, content: &str) {
+        let claude_dir = dir.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+        fs::write(claude_dir.join("settings.json"), content).unwrap();
+    }
+
+    // --- promote ---
+
+    #[test]
+    fn promote_non_object_settings_returns_error() {
+        // settings.json is a valid JSON array — the non-object guard
+        // at L107 catches this before the IndexMut assignment that
+        // would otherwise crash.
+        let dir = setup_dir();
+        write_local(
+            dir.path(),
+            r#"{"permissions": {"allow": ["Bash(echo *)"]}}"#,
+        );
+        write_settings(dir.path(), "[1, 2, 3]");
+        let result = promote(dir.path());
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("not a JSON object"));
+    }
+
+    // --- run_impl ---
+
+    #[test]
+    fn run_impl_skipped_is_ok() {
+        let dir = setup_dir();
+        let args = Args {
+            worktree_path: dir.path().to_string_lossy().to_string(),
+        };
+        let result = run_impl(&args).unwrap();
+        assert_eq!(result["status"], "skipped");
+    }
+
+    #[test]
+    fn run_impl_error_is_err() {
+        let dir = setup_dir();
+        write_local(
+            dir.path(),
+            r#"{"permissions": {"allow": ["Bash(echo *)"]}}"#,
+        );
+        // No settings.json → error
+        let args = Args {
+            worktree_path: dir.path().to_string_lossy().to_string(),
+        };
+        let result = run_impl(&args);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err()["status"], "error");
+    }
+}

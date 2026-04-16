@@ -378,6 +378,27 @@ fn cli_no_local_skipped() {
 }
 
 #[test]
+fn settings_non_object_top_level_returns_error() {
+    // settings.json is a valid JSON array at the root level — the
+    // non-object guard at L107 rejects it before IndexMut access.
+    let tmp = tempfile::tempdir().unwrap();
+    let claude_dir = tmp.path().join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    fs::write(claude_dir.join("settings.json"), "[1, 2, 3]").unwrap();
+    setup_local(
+        tmp.path(),
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
+    let (data, code) = run_promote(tmp.path());
+    assert_eq!(data["status"], "error");
+    assert!(data["message"]
+        .as_str()
+        .unwrap()
+        .contains("not a JSON object"));
+    assert_eq!(code, 1);
+}
+
+#[test]
 fn settings_permissions_as_array_does_not_panic() {
     // Guards the contract that `promote()` tolerates a malformed
     // `permissions` value: if `settings.json` stores `permissions` as
